@@ -1,12 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import Conf, { type Schema } from 'conf';
 import {
   UserConfigSchema,
   USER_CONFIG_DEFAULTS,
   defaultRemoteAccessSettings,
 } from '@dorkos/shared/config-schema';
 import {
-  CONF_JSON_SCHEMA,
   CONFIG_MIGRATIONS,
   seedFullPowerDecision,
   raiseSchedulerConcurrencyFloor,
@@ -16,10 +14,32 @@ import {
   seedCodexTransport,
   seedCloudRemoteAccess,
 } from '../../config-manager.js';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
-import { createMockStore } from './config-manager.fixtures.js';
+import {
+  createMockStore,
+  upgradeConfigFile,
+  upgradeConfigFileRaw,
+} from './config-manager.fixtures.js';
+
+// A body must not create the section (or sub-block) it seeds into: the
+// section-level backfills and the defaults merge own a missing one.
+describe('a migration body leaves a config without its section alone', () => {
+  it.each([
+    ['seedFullPowerDecision', seedFullPowerDecision, {}],
+    ['raiseSchedulerConcurrencyFloor', raiseSchedulerConcurrencyFloor, {}],
+    ['warmClaudeCodeSessionsByDefault', warmClaudeCodeSessionsByDefault, {}],
+    [
+      'warmClaudeCodeSessionsByDefault (no claudeCode)',
+      warmClaudeCodeSessionsByDefault,
+      { runtimes: { default: 'codex' } },
+    ],
+    ['seedCloudCreditsChoices', seedCloudCreditsChoices, { server: { port: 4242 } }],
+    ['seedCodexTransport', seedCodexTransport, { runtimes: { default: 'claude-code' } }],
+  ] as const)('%s', (_name, migrate, initial) => {
+    const store = createMockStore(structuredClone(initial));
+    migrate(store);
+    expect(store.data).toEqual(initial);
+  });
+});
 
 describe('seedDoeDefaultModel migration (DOR-2784)', () => {
   it('reserves the leaf on a `runtimes.doe` block that predates it', () => {
@@ -43,40 +63,21 @@ describe('seedDoeDefaultModel migration (DOR-2784)', () => {
   });
 
   it('a real pre-0.109.0 config file gains the leaf on disk (full conf path)', () => {
-    const dir = path.join(os.tmpdir(), 'test-dork-doe-default-model-mig-' + Date.now());
-    const cfgPath = path.join(dir, 'config.json');
-    fs.mkdirSync(dir, { recursive: true });
-    try {
-      fs.writeFileSync(
-        cfgPath,
-        JSON.stringify({
-          version: 1,
-          runtimes: {
-            ...USER_CONFIG_DEFAULTS.runtimes,
-            doe: { enabled: true, inference: null, defaultTrustStop: 'act' },
-          },
-          __internal__: { migrations: { version: '0.108.0' } },
-        }),
-        'utf-8'
-      );
-      new Conf({
-        configName: 'config',
-        cwd: dir,
-        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
-        defaults: USER_CONFIG_DEFAULTS,
-        clearInvalidConfig: false,
-        projectVersion: '0.109.0',
-        migrations: CONFIG_MIGRATIONS,
-      });
-      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
-        runtimes: { doe: Record<string, unknown> };
-      };
-      expect(onDisk.runtimes.doe).toHaveProperty('defaultModel', null);
-      expect(onDisk.runtimes.doe.defaultTrustStop).toBe('act');
-      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    const onDisk = upgradeConfigFile<{
+      runtimes: { doe: Record<string, unknown> };
+    }>(
+      {
+        runtimes: {
+          ...USER_CONFIG_DEFAULTS.runtimes,
+          doe: { enabled: true, inference: null, defaultTrustStop: 'act' },
+        },
+      },
+      '0.108.0',
+      '0.109.0'
+    );
+    expect(onDisk.runtimes.doe).toHaveProperty('defaultModel', null);
+    expect(onDisk.runtimes.doe.defaultTrustStop).toBe('act');
+    expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
   });
 });
 
@@ -106,14 +107,6 @@ describe('the 0.67.0 bodies (spec full-power-defaults)', () => {
         fullPowerDecidedAt: '2026-08-22T09:00:00.000Z',
         fullPowerChoice: 'full',
       });
-    });
-
-    it('does nothing at all when there is no ui block to seed into', () => {
-      const store = createMockStore({});
-
-      seedFullPowerDecision(store);
-
-      expect(store.data.ui).toBeUndefined();
     });
 
     it('touches no consent-gated value (invariant A1)', () => {
@@ -156,14 +149,6 @@ describe('the 0.67.0 bodies (spec full-power-defaults)', () => {
 
       expect(store.data.scheduler).toEqual({ maxConcurrentRuns: 7 });
     });
-
-    it('is a no-op with no scheduler section', () => {
-      const store = createMockStore({});
-
-      raiseSchedulerConcurrencyFloor(store);
-
-      expect(store.data.scheduler).toBeUndefined();
-    });
   });
 
   describe('warmClaudeCodeSessionsByDefault', () => {
@@ -201,16 +186,6 @@ describe('the 0.67.0 bodies (spec full-power-defaults)', () => {
       // Two more runs after a deliberate off would flip it back only if the body
       // read a version rather than the value. It reads the value.
       expect(store.data.runtimes).toEqual({ claudeCode: { persistentSession: true } });
-    });
-
-    it('is a no-op with no runtimes or no claudeCode block', () => {
-      const empty = createMockStore({});
-      warmClaudeCodeSessionsByDefault(empty);
-      expect(empty.data.runtimes).toBeUndefined();
-
-      const noSection = createMockStore({ runtimes: { default: 'codex' } });
-      warmClaudeCodeSessionsByDefault(noSection);
-      expect(noSection.data.runtimes).toEqual({ default: 'codex' });
     });
   });
 
@@ -250,28 +225,7 @@ describe('seedCloudCreditsChoices migration (ADR 261001-000811)', () => {
     cloud: Record<string, unknown>,
     from = '0.95.0'
   ): { cloud: Record<string, unknown> } {
-    const dir = path.join(os.tmpdir(), 'test-dork-cloud-credits-' + Date.now() + Math.random());
-    const cfgPath = path.join(dir, 'config.json');
-    fs.mkdirSync(dir, { recursive: true });
-    try {
-      fs.writeFileSync(
-        cfgPath,
-        JSON.stringify({ version: 1, cloud, __internal__: { migrations: { version: from } } }),
-        'utf-8'
-      );
-      new Conf({
-        configName: 'config',
-        cwd: dir,
-        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
-        defaults: USER_CONFIG_DEFAULTS,
-        clearInvalidConfig: false,
-        projectVersion: '0.96.0',
-        migrations: CONFIG_MIGRATIONS,
-      });
-      return JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as { cloud: Record<string, unknown> };
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    return upgradeConfigFile({ cloud }, from, '0.96.0');
   }
 
   const link = {
@@ -317,12 +271,6 @@ describe('seedCloudCreditsChoices migration (ADR 261001-000811)', () => {
     seedCloudCreditsChoices(store);
     expect((store.data.cloud as { credits: unknown }).credits).toEqual(credits);
   });
-
-  it('skips a config with no cloud section', () => {
-    const store = createMockStore({ server: { port: 4242 } });
-    seedCloudCreditsChoices(store);
-    expect(store.data.cloud).toBeUndefined();
-  });
 });
 
 describe('seedCodexTransport migration (ADR 261005-113107)', () => {
@@ -334,30 +282,7 @@ describe('seedCodexTransport migration (ADR 261005-113107)', () => {
     runtimes: Record<string, unknown>,
     from = '0.99.0'
   ): { runtimes: { codex: Record<string, unknown> } } {
-    const dir = path.join(os.tmpdir(), 'test-dork-codex-transport-' + Date.now() + Math.random());
-    const cfgPath = path.join(dir, 'config.json');
-    fs.mkdirSync(dir, { recursive: true });
-    try {
-      fs.writeFileSync(
-        cfgPath,
-        JSON.stringify({ version: 1, runtimes, __internal__: { migrations: { version: from } } }),
-        'utf-8'
-      );
-      new Conf({
-        configName: 'config',
-        cwd: dir,
-        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
-        defaults: USER_CONFIG_DEFAULTS,
-        clearInvalidConfig: false,
-        projectVersion: '0.100.0',
-        migrations: CONFIG_MIGRATIONS,
-      });
-      return JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
-        runtimes: { codex: Record<string, unknown> };
-      };
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    return upgradeConfigFile({ runtimes }, from, '0.100.0');
   }
 
   const codex = {
@@ -394,12 +319,6 @@ describe('seedCodexTransport migration (ADR 261005-113107)', () => {
     seedCodexTransport(stale);
     expect((stale.data.runtimes as { codex: { transport: unknown } }).codex.transport).toBe('auto');
   });
-
-  it('skips a config with no codex block', () => {
-    const store = createMockStore({ runtimes: { default: 'claude-code' } });
-    seedCodexTransport(store);
-    expect((store.data.runtimes as { codex?: unknown }).codex).toBeUndefined();
-  });
 });
 
 describe('seedCloudRemoteAccess migration (DOR-2086)', () => {
@@ -427,29 +346,8 @@ describe('seedCloudRemoteAccess migration (DOR-2086)', () => {
     stored: Record<string, unknown>,
     from = '0.105.0'
   ): { raw: string; onDisk: Record<string, unknown> } {
-    const dir = path.join(os.tmpdir(), 'test-dork-cloud-remote-' + Date.now() + Math.random());
-    const cfgPath = path.join(dir, 'config.json');
-    fs.mkdirSync(dir, { recursive: true });
-    try {
-      fs.writeFileSync(
-        cfgPath,
-        JSON.stringify({ version: 1, ...stored, __internal__: { migrations: { version: from } } }),
-        'utf-8'
-      );
-      new Conf({
-        configName: 'config',
-        cwd: dir,
-        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
-        defaults: USER_CONFIG_DEFAULTS,
-        clearInvalidConfig: false,
-        projectVersion: '0.106.0',
-        migrations: CONFIG_MIGRATIONS,
-      });
-      const raw = fs.readFileSync(cfgPath, 'utf-8');
-      return { raw, onDisk: JSON.parse(raw) as Record<string, unknown> };
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    const raw = upgradeConfigFileRaw(stored, from, '0.106.0');
+    return { raw, onDisk: JSON.parse(raw) as Record<string, unknown> };
   }
 
   it('seeds `byo` into a stored cloud block when the own tunnel is on', () => {
@@ -526,7 +424,6 @@ describe('seedCloudRemoteAccess migration (DOR-2086)', () => {
 
     const empty = createMockStore({ tunnel });
     seedCloudRemoteAccess(empty);
-    expect(empty.data.cloud).toBeUndefined();
-    expect(empty.data.tunnel).toBe(tunnel);
+    expect(empty.data).toEqual({ tunnel });
   });
 });

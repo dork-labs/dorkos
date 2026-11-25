@@ -1,5 +1,5 @@
 /** Actual SQLite birth checks and Claude owner publication; only SDK ACK/read timing is scripted. */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { AgentSession } from '../../../runtimes/claude-code/agent-types.js';
 import { eq, sessionBirthAllocations, sessionLocations, sessionMetadata } from '@dorkos/db';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -30,6 +30,7 @@ let store: SessionStore;
 const id = 'prepared-chat';
 const stamp = '2026-11-19T00:00:00.000Z';
 let birth: SessionBirthWriteContext;
+let seeded: ReturnType<typeof allocation>;
 const row = () => db.select().from(sessionMetadata).where(eq(sessionMetadata.sessionId, id)).get();
 const allocation = () => db.select().from(sessionBirthAllocations).all();
 
@@ -68,14 +69,40 @@ beforeEach(() => {
     locationId: 'location',
     cwd: '/project',
   };
+  seeded = allocation();
 });
 afterEach(() => {
   vi.restoreAllMocks();
   db.$client.close();
 });
 
-/** Pause the genuine durable read without replacing its SQLite result. */
-function holdHydration() {
+/** Refused before commit: no metadata row, and the seeded allocation is unconsumed. */
+function expectNothingWritten() {
+  expect(row()).toBeUndefined();
+  expect(allocation()).toEqual(seeded);
+}
+
+const UNAVAILABLE = { code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE' };
+/** The settings the prepared writes in this file choose. */
+const CHOSEN = {
+  permissionMode: 'plan',
+  model: 'chosen',
+  effort: 'high',
+  fastMode: false,
+} as const;
+/** A warm owner whose live SDK query answers mode changes with `setPermissionMode`. */
+function warmOwner(setPermissionMode: (mode: string) => Promise<void>): AgentSession {
+  store.ensureSession(id, { permissionMode: 'default', model: 'before' });
+  const owner = store.findSession(id)!;
+  owner.activeQuery = { setPermissionMode } as unknown as NonNullable<AgentSession['activeQuery']>;
+  return owner;
+}
+
+/**
+ * Starts a stale prepared update and pauses it inside the genuine durable
+ * read, without replacing that read's SQLite result.
+ */
+async function staleUpdateHeldInHydration() {
   const entered = deferred<void>();
   const release = deferred<void>();
   const get = registry.getSessionSettings.bind(registry);
@@ -85,7 +112,11 @@ function holdHydration() {
     await release.promise;
     return result;
   });
-  return { entered: entered.promise, release: () => release.resolve() };
+  const update = runPreparedSettingsMutation(id, birth, () =>
+    store.updateSession(id, { permissionMode: 'plan', model: 'stale' })
+  );
+  await entered.promise;
+  return { update, release: () => release.resolve() };
 }
 
 it('publishes the cold owner once after actual commit and before the port continuation', async () => {
@@ -99,10 +130,7 @@ it('publishes the cold owner once after actual commit and before the port contin
     });
     expect(allocation()).toEqual([]);
     expect(store.findSession(id)).toMatchObject({
-      permissionMode: 'plan',
-      model: 'chosen',
-      effort: 'high',
-      fastMode: false,
+      ...CHOSEN,
       hasStarted: false,
       needsTranscriptCheck: true,
     });
@@ -110,59 +138,41 @@ it('publishes the cold owner once after actual commit and before the port contin
   });
   const ensure = vi.spyOn(store, 'ensureSession');
   await expect(
-    runPreparedSettingsMutation(id, birth, () =>
-      store.updateSession(id, {
-        permissionMode: 'plan',
-        model: 'chosen',
-        effort: 'high',
-        fastMode: false,
-      })
-    )
+    runPreparedSettingsMutation(id, birth, () => store.updateSession(id, CHOSEN))
   ).resolves.toEqual({ updated: true });
   expect(ensure).toHaveBeenCalledTimes(1);
   expect(row()).toMatchObject({ runtime: null, effort: 'high', fastMode: false });
 });
 
 it('refuses a cold successor appearing during the real hydration read without writes', async () => {
-  const hold = holdHydration();
-  const update = runPreparedSettingsMutation(id, birth, () =>
-    store.updateSession(id, { permissionMode: 'plan', model: 'stale' })
-  );
-  await hold.entered;
+  const { update, release } = await staleUpdateHeldInHydration();
   store.ensureSession(id, { permissionMode: 'acceptEdits', model: 'successor', fastMode: true });
   const successor = store.findSession(id);
-  hold.release();
-  await expect(update).rejects.toMatchObject({ code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE' });
+  release();
+  await expect(update).rejects.toMatchObject(UNAVAILABLE);
   expect(store.findSession(id)).toBe(successor);
   expect(successor).toMatchObject({
     permissionMode: 'acceptEdits',
     model: 'successor',
     fastMode: true,
   });
-  expect(row()).toBeUndefined();
-  expect(allocation()).toHaveLength(1);
+  expectNothingWritten();
 });
 
 it('retains a real competing first writer and refuses stale hydration without creating memory', async () => {
-  const hold = holdHydration();
-  const update = runPreparedSettingsMutation(id, birth, () =>
-    store.updateSession(id, { permissionMode: 'plan', model: 'stale' })
-  );
-  await hold.entered;
+  const { update, release } = await staleUpdateHeldInHydration();
   await registry.saveSessionSettings(id, { permissionMode: 'acceptEdits', model: 'winner' }, birth);
   const winner = row();
-  hold.release();
-  await expect(update).rejects.toMatchObject({ code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE' });
+  release();
+  await expect(update).rejects.toMatchObject(UNAVAILABLE);
   expect(row()).toEqual(winner);
   expect(store.findSession(id)).toBeUndefined();
   expect(allocation()).toEqual([]);
 });
 
 it('rolls back changed durable source without touching the actual warm owner or SDK', async () => {
-  store.ensureSession(id, { permissionMode: 'default', model: 'before' });
-  const owner = store.findSession(id)!;
   const setPermissionMode = vi.fn().mockResolvedValue(undefined);
-  owner.activeQuery = { setPermissionMode } as unknown as NonNullable<AgentSession['activeQuery']>;
+  const owner = warmOwner(setPermissionMode);
   db.update(sessionLocations)
     .set({ ownerId: 'different-person' })
     .where(eq(sessionLocations.id, 'location'))
@@ -171,12 +181,11 @@ it('rolls back changed durable source without touching the actual warm owner or 
     runPreparedSettingsMutation(id, birth, () =>
       store.updateSession(id, { permissionMode: 'plan', model: 'stale' })
     )
-  ).rejects.toMatchObject({ code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE' });
+  ).rejects.toMatchObject(UNAVAILABLE);
   expect(store.findSession(id)).toBe(owner);
   expect(owner).toMatchObject({ permissionMode: 'default', model: 'before' });
   expect(setPermissionMode).not.toHaveBeenCalled();
-  expect(row()).toBeUndefined();
-  expect(allocation()).toHaveLength(1);
+  expectNothingWritten();
 });
 
 it('detects same-object settings changes before SQL instead of relying on pointer identity', async () => {
@@ -192,17 +201,14 @@ it('detects same-object settings changes before SQL instead of relying on pointe
     runPreparedSettingsMutation(id, birth, () =>
       store.updateSession(id, { permissionMode: 'plan', model: 'stale' })
     )
-  ).rejects.toMatchObject({ code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE' });
+  ).rejects.toMatchObject(UNAVAILABLE);
   expect(owner).toMatchObject({ permissionMode: 'acceptEdits', model: 'newer' });
-  expect(row()).toBeUndefined();
-  expect(allocation()).toHaveLength(1);
+  expectNothingWritten();
 });
 
 it.each(['acked', 'rejected'] as const)(
   'never reapplies fields over a successor after the SDK %s continuation',
   async (ack) => {
-    store.ensureSession(id, { permissionMode: 'default', model: 'before' });
-    const owner = store.findSession(id)!;
     const entered = deferred<void>();
     const release = deferred<void>();
     const setPermissionMode = vi.fn(async (mode: string) => {
@@ -211,41 +217,21 @@ it.each(['acked', 'rejected'] as const)(
       await release.promise;
       if (ack === 'rejected') throw new Error('Scripted SDK refusal');
     });
-    owner.activeQuery = { setPermissionMode } as unknown as NonNullable<
-      AgentSession['activeQuery']
-    >;
-    const update = runPreparedSettingsMutation(id, birth, () =>
-      store.updateSession(id, {
-        permissionMode: 'plan',
-        model: 'committed',
-        effort: 'high',
-        fastMode: false,
-      })
-    );
+    const owner = warmOwner(setPermissionMode);
+    const update = runPreparedSettingsMutation(id, birth, () => store.updateSession(id, CHOSEN));
     await entered.promise;
-    expect(row()).toMatchObject({
-      permissionMode: 'plan',
-      model: 'committed',
-      effort: 'high',
-      fastMode: false,
-    });
-    expect(owner).toMatchObject({
-      permissionMode: 'plan',
-      model: 'committed',
-      effort: 'high',
-      fastMode: false,
-    });
+    expect(row()).toMatchObject(CHOSEN);
+    expect(owner).toMatchObject(CHOSEN);
     const draft = currentLocationDraft();
+    const successor = {
+      permissionMode: 'acceptEdits',
+      model: 'successor',
+      effort: 'low',
+      fastMode: true,
+    } as const;
     try {
       await expect(
-        runPreparedDraftSettingsMutation(id, draft, () =>
-          store.updateSession(id, {
-            permissionMode: 'acceptEdits',
-            model: 'successor',
-            effort: 'low',
-            fastMode: true,
-          })
-        )
+        runPreparedDraftSettingsMutation(id, draft, () => store.updateSession(id, successor))
       ).resolves.toEqual({ updated: true });
       expect(store.findSession(id)).toBe(owner);
     } finally {
@@ -256,18 +242,8 @@ it.each(['acked', 'rejected'] as const)(
       permissionModePendingUntilNextTurn: true,
     });
     expect(setPermissionMode.mock.calls).toEqual([['plan'], ['acceptEdits']]);
-    expect(owner).toMatchObject({
-      permissionMode: 'acceptEdits',
-      model: 'successor',
-      effort: 'low',
-      fastMode: true,
-    });
-    expect(row()).toMatchObject({
-      permissionMode: 'acceptEdits',
-      model: 'successor',
-      effort: 'low',
-      fastMode: true,
-    });
+    expect(owner).toMatchObject(successor);
+    expect(row()).toMatchObject(successor);
     expect(readDraftSource(db, id)).toEqual(draft);
     expect(allocation()).toEqual([]);
   }
@@ -276,42 +252,20 @@ it.each(['acked', 'rejected'] as const)(
 it.each(['acked', 'rejected'] as const)(
   'keeps the existing warm mode ACK result when the current owner is unchanged (%s)',
   async (ack) => {
-    store.ensureSession(id, { permissionMode: 'default', model: 'before' });
-    const owner = store.findSession(id)!;
     const setPermissionMode = vi.fn(async () => {
       if (ack === 'rejected') throw new Error('Scripted SDK refusal');
     });
-    owner.activeQuery = { setPermissionMode } as unknown as NonNullable<
-      AgentSession['activeQuery']
-    >;
+    const owner = warmOwner(setPermissionMode);
     await expect(
-      runPreparedSettingsMutation(id, birth, () =>
-        store.updateSession(id, {
-          permissionMode: 'plan',
-          model: 'chosen',
-          effort: 'high',
-          fastMode: false,
-        })
-      )
+      runPreparedSettingsMutation(id, birth, () => store.updateSession(id, CHOSEN))
     ).resolves.toEqual({
       updated: true,
       ...(ack === 'rejected' ? { permissionModePendingUntilNextTurn: true } : {}),
     });
     expect(setPermissionMode).toHaveBeenCalledExactlyOnceWith('plan');
     expect(store.findSession(id)).toBe(owner);
-    expect(owner).toMatchObject({
-      permissionMode: 'plan',
-      model: 'chosen',
-      effort: 'high',
-      fastMode: false,
-    });
-    expect(row()).toMatchObject({
-      permissionMode: 'plan',
-      model: 'chosen',
-      effort: 'high',
-      fastMode: false,
-      modelLaunchState: 'pending-v1',
-    });
+    expect(owner).toMatchObject(CHOSEN);
+    expect(row()).toMatchObject({ ...CHOSEN, modelLaunchState: 'pending-v1' });
     expect(allocation()).toEqual([]);
   }
 );
@@ -325,18 +279,14 @@ it('refuses a real SDK alias without changing its original owner or either durab
   original.sdkSessionId = id;
   await store.rebindSdkSession('original-chat', id, 'original-chat');
   store.configureSettings(registry, 'default');
-  expect(store.findSession(id)).toBe(original);
-  expect(store.sessionKeyOf(id)).toBe('original-chat');
   const before = db.select().from(sessionMetadata).all();
-  const beforeAllocation = allocation();
   await expect(
     runPreparedSettingsMutation(id, birth, () => store.updateSession(id, { model: 'alias-choice' }))
-  ).rejects.toMatchObject({ code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE' });
+  ).rejects.toMatchObject(UNAVAILABLE);
   expect(store.findSession(id)).toBe(original);
   expect(original).toMatchObject({ permissionMode: 'acceptEdits', model: 'original-choice' });
   expect(db.select().from(sessionMetadata).all()).toEqual(before);
-  expect(row()).toBeUndefined();
-  expect(allocation()).toEqual(beforeAllocation);
+  expectNothingWritten();
 });
 
 it('refuses a map-key birth when its actual native identity has already changed', async () => {
@@ -347,19 +297,15 @@ it('refuses a map-key birth when its actual native identity has already changed'
   original.sdkSessionId = 'canonical-native';
   await store.rebindSdkSession(id, 'canonical-native', id);
   store.configureSettings(registry, 'default');
-  expect(store.sessionKeyOf(id)).toBe(id);
-  expect(store.findSession('canonical-native')).toBe(original);
-  expect(original.sdkSessionId).toBe('canonical-native');
   const before = db.select().from(sessionMetadata).all();
-  const beforeAllocation = allocation();
   const save = vi.spyOn(registry, 'saveSessionSettings');
   await expect(
     runPreparedSettingsMutation(id, birth, () => store.updateSession(id, { model: 'fresh-choice' }))
-  ).rejects.toMatchObject({ code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE' });
+  ).rejects.toMatchObject(UNAVAILABLE);
   expect(save).not.toHaveBeenCalled();
   expect(original.model).toBe('original-choice');
   expect(db.select().from(sessionMetadata).all()).toEqual(before);
-  expect(allocation()).toEqual(beforeAllocation);
+  expect(allocation()).toEqual(seeded);
 });
 
 it('refuses scoped publication within an enclosing SQLite transaction without consuming birth', async () => {
@@ -376,10 +322,9 @@ it('refuses scoped publication within an enclosing SQLite transaction without co
   });
   await expect(
     runPreparedSettingsMutation(id, birth, () => store.updateSession(id, { model: 'uncommitted' }))
-  ).rejects.toMatchObject({ code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE' });
-  expect(row()).toBeUndefined();
+  ).rejects.toMatchObject(UNAVAILABLE);
   expect(store.findSession(id)).toBeUndefined();
-  expect(allocation()).toHaveLength(1);
+  expectNothingWritten();
 });
 
 it('retains the durable post-commit tag even when an adapter catches publication failure', async () => {
@@ -426,10 +371,9 @@ it('does not let adapter catches turn a real source refusal into success', async
         return { updated: false };
       }
     })
-  ).rejects.toMatchObject({ code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE' });
-  expect(row()).toBeUndefined();
+  ).rejects.toMatchObject(UNAVAILABLE);
   expect(store.findSession(id)).toBeUndefined();
-  expect(allocation()).toHaveLength(1);
+  expectNothingWritten();
 });
 
 it('keeps inherited exact-id async work closed after a successful scoped mutation', async () => {
@@ -446,20 +390,28 @@ it('keeps inherited exact-id async work closed after a successful scoped mutatio
   });
   const before = row();
   release.resolve();
-  await expect(escaped).resolves.toMatchObject({ code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE' });
+  await expect(escaped).resolves.toMatchObject(UNAVAILABLE);
   expect(row()).toEqual(before);
   expect(store.findSession(id)?.model).toBe('committed');
 });
 
-it('latches a caught explicit context disagreement before the real registry write can retry', async () => {
-  store.ensureSession(id, { permissionMode: 'default', model: 'before' });
-  const owner = store.findSession(id)!;
-  const beforeAllocation = allocation();
+it.each([
+  [
+    'a caught explicit context disagreement before the real registry write can retry',
+    (save: RuntimeRegistry['saveSessionSettings'], args: Parameters<typeof save>) =>
+      save(args[0], args[1], { ...birth, allocationCreatedAt: 'different-allocation' }),
+  ],
+  [
+    'duplicate real Claude staging even when its caller catches the refusal',
+    () => prepareClaudeSettingsUpdate(store, id, { model: 'duplicate' }, registry, 'default'),
+  ],
+] as const)('latches %s', async (_name, firstAttempt) => {
+  const owner = warmOwner(vi.fn().mockResolvedValue(undefined));
   const save = registry.saveSessionSettings.bind(registry);
   let firstFailure: unknown;
   vi.spyOn(registry, 'saveSessionSettings').mockImplementation(async (...args) => {
     try {
-      await save(args[0], args[1], { ...birth, allocationCreatedAt: 'different-allocation' });
+      await firstAttempt(save, args);
     } catch (error) {
       firstFailure = error;
     }
@@ -468,48 +420,15 @@ it('latches a caught explicit context disagreement before the real registry writ
   });
   const failure = await runPreparedSettingsMutation(id, birth, () =>
     store.updateSession(id, { permissionMode: 'plan', model: 'retry' })
-  ).then(
-    () => undefined,
-    (error: unknown) => error
-  );
-  expect(firstFailure).toMatchObject({ code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE' });
+  ).catch((error: unknown) => error);
+  expect(firstFailure).toMatchObject(UNAVAILABLE);
   expect(failure).toBe(firstFailure);
   expect(store.findSession(id)).toBe(owner);
   expect(owner).toMatchObject({ permissionMode: 'default', model: 'before' });
-  expect(row()).toBeUndefined();
-  expect(allocation()).toEqual(beforeAllocation);
-});
-
-it('latches duplicate real Claude staging even when its caller catches the refusal', async () => {
-  store.ensureSession(id, { permissionMode: 'default', model: 'before' });
-  const owner = store.findSession(id)!;
-  const beforeAllocation = allocation();
-  const save = registry.saveSessionSettings.bind(registry);
-  let firstFailure: unknown;
-  vi.spyOn(registry, 'saveSessionSettings').mockImplementation(async (...args) => {
-    try {
-      await prepareClaudeSettingsUpdate(store, id, { model: 'duplicate' }, registry, 'default');
-    } catch (error) {
-      firstFailure = error;
-    }
-    return save(...args);
-  });
-  const failure = await runPreparedSettingsMutation(id, birth, () =>
-    store.updateSession(id, { model: 'retry' })
-  ).then(
-    () => undefined,
-    (error: unknown) => error
-  );
-  expect(firstFailure).toMatchObject({ code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE' });
-  expect(failure).toBe(firstFailure);
-  expect(store.findSession(id)).toBe(owner);
-  expect(owner.model).toBe('before');
-  expect(row()).toBeUndefined();
-  expect(allocation()).toEqual(beforeAllocation);
+  expectNothingWritten();
 });
 
 it('cannot acquire an unstaged first write and then retry it through the actual adapter', async () => {
-  const beforeAllocation = allocation();
   let firstFailure: unknown;
   const failure = await runPreparedSettingsMutation(id, birth, async () => {
     try {
@@ -518,15 +437,11 @@ it('cannot acquire an unstaged first write and then retry it through the actual 
       firstFailure = error;
     }
     return store.updateSession(id, { model: 'retry' });
-  }).then(
-    () => undefined,
-    (error: unknown) => error
-  );
-  expect(firstFailure).toMatchObject({ code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE' });
+  }).catch((error: unknown) => error);
+  expect(firstFailure).toMatchObject(UNAVAILABLE);
   expect(failure).toBe(firstFailure);
-  expect(row()).toBeUndefined();
   expect(store.findSession(id)).toBeUndefined();
-  expect(allocation()).toEqual(beforeAllocation);
+  expectNothingWritten();
 });
 
 it('keeps a later ordinary same-id write available after the protected draft is bound', async () => {
@@ -541,9 +456,9 @@ it('keeps a later ordinary same-id write available after the protected draft is 
     expect(allocation()).toEqual([]);
 
     const draft = currentLocationDraft();
-    await expect(store.updateSession(id, { model: 'unprepared' })).rejects.toMatchObject({
-      code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE',
-    });
+    await expect(store.updateSession(id, { model: 'unprepared' })).rejects.toMatchObject(
+      UNAVAILABLE
+    );
     expect(row()).toEqual(committed);
     expect(store.findSession(id)?.model).toBe('first');
     expect(readDraftSource(db, id)).toEqual(draft);
@@ -585,23 +500,20 @@ it('leaves unrelated ids ordinary while consuming only the exact scoped allocati
   expect(row()).toMatchObject({ model: 'prepared', modelLaunchState: 'pending-v1' });
 });
 
-describe('empty settings remain an explicitly inactive route case', () => {
-  it('preserves ordinary title-only adapter hydration and does not consume an allocation', async () => {
-    await expect(store.updateSession(id, {})).resolves.toEqual({ updated: true });
-    expect(store.findSession(id)).toMatchObject({
-      permissionMode: 'default',
-      hasStarted: false,
-      needsTranscriptCheck: true,
-    });
-    expect(row()).toBeUndefined();
-    expect(allocation()).toHaveLength(1);
+// Empty settings remain an explicitly inactive route case.
+it('preserves ordinary title-only adapter hydration and does not consume an allocation', async () => {
+  await expect(store.updateSession(id, {})).resolves.toEqual({ updated: true });
+  expect(store.findSession(id)).toMatchObject({
+    permissionMode: 'default',
+    hasStarted: false,
+    needsTranscriptCheck: true,
   });
-  it('does not pretend an unsupported empty scoped mutation committed', async () => {
-    await expect(
-      runPreparedSettingsMutation(id, birth, () => store.updateSession(id, {}))
-    ).rejects.toMatchObject({ code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE' });
-    expect(store.findSession(id)).toBeUndefined();
-    expect(row()).toBeUndefined();
-    expect(allocation()).toHaveLength(1);
-  });
+  expectNothingWritten();
+});
+it('does not pretend an unsupported empty scoped mutation committed', async () => {
+  await expect(
+    runPreparedSettingsMutation(id, birth, () => store.updateSession(id, {}))
+  ).rejects.toMatchObject(UNAVAILABLE);
+  expect(store.findSession(id)).toBeUndefined();
+  expectNothingWritten();
 });

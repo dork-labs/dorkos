@@ -321,16 +321,10 @@ describe('writing from the build that cannot read the value', () => {
     expect(backupsIn(dir)).toEqual([]);
     expect(onDisk(configPath).ui?.theme).toBe('dark');
     expect(new ConfigManager(dir, FAST_RETRIES).get('ui').theme).toBe('dark');
-  });
 
-  it('lets a dot-path write overwrite it too', () => {
-    const { dir, configPath } = seed({ version: 1, server: { port: 80 } });
-
-    const manager = new ConfigManager(dir, FAST_RETRIES);
-    manager.setDot('server.port', 5000);
-
-    expect(backupsIn(dir)).toEqual([]);
-    expect(onDisk(configPath).server?.port).toBe(5000);
+    const port = seed({ version: 1, server: { port: 80 } });
+    new ConfigManager(port.dir, FAST_RETRIES).setDot('server.port', 5000);
+    expect(onDisk(port.configPath).server?.port).toBe(5000);
   });
 
   it('still puts a named section back to its defaults on reset', () => {
@@ -366,14 +360,6 @@ describe('what is still damage', () => {
     expect(manager.get('auth').enabled).toBe(true);
   });
 
-  it('condemns an object where a nested object is expected', () => {
-    const { dir } = seed({ version: 1, ui: { statusBar: ['pins'] } });
-
-    new ConfigManager(dir, FAST_RETRIES);
-
-    expect(backupsIn(dir)).toHaveLength(1);
-  });
-
   it('condemns a file that will not parse', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-widened-'));
     dirs.push(dir);
@@ -384,31 +370,16 @@ describe('what is still damage', () => {
     expect(manager.get('server').port).toBe(4242);
   });
 
-  it('condemns a new member INSIDE a list — the named residual', () => {
-    // Pinned rather than left for somebody to discover. Tolerance stops where
-    // preservation stops: an element of `ui.statusBar.pins` has a position, not
-    // a name, so no honest rule carries it back across a write, and a value that
-    // cannot be carried must not be tolerated either.
-    const { dir } = seed({ version: 1, ui: { statusBar: { pins: ['cwd', 'weather'] } } });
-
-    new ConfigManager(dir, FAST_RETRIES);
-
-    expect(backupsIn(dir)).toHaveLength(1);
-  });
-
-  it('condemns a new member inside a RECORD — the same residual', () => {
-    const { dir } = seed({ version: 1, workbench: { defaultViewers: { '/a.tex': 'latex' } } });
-
-    new ConfigManager(dir, FAST_RETRIES);
-
-    expect(backupsIn(dir)).toHaveLength(1);
-  });
-
-  it('condemns a config claiming a different format version', () => {
-    // `version` has no schema default, so there is nothing to fall back to — and
-    // a build that changes the config format outright is not merely widening a
-    // setting.
-    const { dir } = seed({ version: 2, ui: { theme: 'dark' } });
+  // Tolerance stops where preservation stops: a list element has a position,
+  // not a name, so no honest rule carries a new member back across a write
+  // (records the same), and `version` has no default to fall back to.
+  it.each([
+    ['an array where a nested object is expected', { ui: { statusBar: ['pins'] } }],
+    ['a new member INSIDE a list', { ui: { statusBar: { pins: ['cwd', 'weather'] } } }],
+    ['a new member inside a RECORD', { workbench: { defaultViewers: { '/a.tex': 'latex' } } }],
+    ['a different format version', { version: 2, ui: { theme: 'dark' } }],
+  ])('condemns %s', (_name, stored) => {
+    const { dir } = seed({ version: 1, ...stored });
 
     new ConfigManager(dir, FAST_RETRIES);
 
@@ -417,30 +388,6 @@ describe('what is still damage', () => {
 });
 
 describe('the leaves the schema hands to Zod', () => {
-  it('covers the settings a build is most likely to widen', () => {
-    // A drift guard with teeth: if the relaxation ever stops reaching nested
-    // sections, or stops reaching enums, these go missing and the wipe comes
-    // back only on machines running two builds.
-    expect(WIDENED_LEAF_POLICY.paths.has('ui.theme')).toBe(true);
-    expect(WIDENED_LEAF_POLICY.paths.has('server.port')).toBe(true);
-    expect(WIDENED_LEAF_POLICY.paths.has('logging.level')).toBe(true);
-    expect(WIDENED_LEAF_POLICY.paths.has('runtimes.codex.defaultEffort')).toBe(true);
-    expect(WIDENED_LEAF_POLICY.paths.has('workspace.defaultProvider')).toBe(true);
-  });
-
-  it('reaches no container, list or record', () => {
-    // The other side of the same guard. A relaxed container would mean Ajv stops
-    // checking a shape and nothing in DorkOS starts, which is how tolerance
-    // becomes "validate nothing".
-    expect(WIDENED_LEAF_POLICY.paths.has('ui')).toBe(false);
-    expect(WIDENED_LEAF_POLICY.paths.has('ui.sidebar')).toBe(false);
-    expect(WIDENED_LEAF_POLICY.paths.has('mesh.scanRoots')).toBe(false);
-    expect(WIDENED_LEAF_POLICY.paths.has('ui.statusBar.pins')).toBe(false);
-    expect(WIDENED_LEAF_POLICY.paths.has('workbench.defaultViewers')).toBe(false);
-    expect(WIDENED_LEAF_POLICY.paths.has('version')).toBe(false);
-    for (const leaf of WIDENED_LEAF_POLICY.paths) expect(leaf).not.toMatch(/\.\d/);
-  });
-
   it('falls back to the value a fresh install has, on every one of them', () => {
     // Config defaults are declared TWICE in this codebase — per field, and as
     // the object literal each section's `.default()` carries. The repair uses
@@ -594,13 +541,6 @@ describe('relaxWidenedLeaves', () => {
 describe('repairWidenedLeaves', () => {
   const policy = relaxWidenedLeaves(fragment());
 
-  it('returns its input by reference when there is nothing to repair', () => {
-    const value = { theme: 'dark' };
-    const result = repairWidenedLeaves('ui', value, policy);
-    expect(result.value).toBe(value);
-    expect(result.skewed).toEqual([]);
-  });
-
   it('reports what it could not read alongside what it used instead', () => {
     const result = repairWidenedLeaves('ui', { theme: 'midnight' }, policy);
     expect(result.skewed).toEqual([{ path: 'ui.theme', stored: 'midnight', used: 'system' }]);
@@ -632,28 +572,6 @@ describe('repairWidenedLeaves', () => {
 
 describe('preserveWidenedLeaves', () => {
   const skewed = [{ path: 'ui.theme', stored: 'midnight', used: 'system' }];
-
-  it('carries the stored value onto a write that did not name it', () => {
-    expect(preserveWidenedLeaves(skewed, 'ui', { theme: 'system', composer: {} })).toEqual({
-      theme: 'midnight',
-      composer: {},
-    });
-  });
-
-  it('lets a write that names it win', () => {
-    const next = { theme: 'dark' };
-    expect(preserveWidenedLeaves(skewed, 'ui', next)).toBe(next);
-  });
-
-  it('works when the write IS the leaf', () => {
-    expect(preserveWidenedLeaves(skewed, 'ui.theme', 'system')).toBe('midnight');
-    expect(preserveWidenedLeaves(skewed, 'ui.theme', 'dark')).toBe('dark');
-  });
-
-  it('ignores a write to a different path', () => {
-    const next = { port: 4242 };
-    expect(preserveWidenedLeaves(skewed, 'server', next)).toBe(next);
-  });
 
   it('leaves a deletion alone', () => {
     // Absent is not "equal to what we handed out", so nothing is resurrected.

@@ -205,38 +205,28 @@ describe('extractTopLevelDeclarations', () => {
 });
 
 describe('normalizeForHash', () => {
-  it('ignores a comment change', () => {
-    const before = helper('backfillSeed', "store.set('seed', true);", 'first wording');
-    const after = helper('backfillSeed', "store.set('seed', true);", 'second wording');
-    expect(normalizeForHash(after)).toBe(normalizeForHash(before));
-  });
-
-  it('ignores Prettier reflow — line breaks, indentation, trailing commas', () => {
-    const flat = 'call(alpha, beta);';
-    const broken = 'call(\n      alpha,\n      beta,\n    );';
-    expect(normalizeForHash(broken)).toBe(normalizeForHash(flat));
-  });
-
-  it('ignores a member access Prettier broke onto its own line', () => {
-    // Found at `--print-width 80` against the real file: `(x as {...})\n.retired`
-    // left a space before the dot that no other rule removed.
-    expect(normalizeForHash('(stored as { retired: unknown[] })\n      .retired;')).toBe(
-      normalizeForHash('(stored as { retired: unknown[] }).retired;')
-    );
-  });
-
-  it('ignores a generic Prettier broke across lines', () => {
-    // Found at `--print-width 60`: `Record<\n  string,\n  unknown\n>`.
-    expect(normalizeForHash('const s: Record<\n  string,\n  unknown\n> = {};')).toBe(
-      normalizeForHash('const s: Record<string, unknown> = {};')
-    );
-  });
-
-  it('ignores whether a body ends with its own semicolon before the brace', () => {
-    // Prettier moves the last statement of a body on and off its own line as the
-    // print width changes, taking the semicolon with it. Measured: at
-    // `--print-width 140` this single difference moved all eleven real pins.
-    expect(normalizeForHash('{ backfill(store); }')).toBe(normalizeForHash('{ backfill(store) }'));
+  // Each pair is the same program; Prettier at another print width produced the
+  // second (the semicolon case alone moved all eleven real pins at width 140).
+  it.each([
+    [
+      'a comment change',
+      helper('backfillSeed', "store.set('seed', true);", 'first wording'),
+      helper('backfillSeed', "store.set('seed', true);", 'second wording'),
+    ],
+    ['Prettier reflow', 'call(\n      alpha,\n      beta,\n    );', 'call(alpha, beta);'],
+    [
+      'a member access on its own line',
+      '(stored as { retired: unknown[] })\n      .retired;',
+      '(stored as { retired: unknown[] }).retired;',
+    ],
+    [
+      'a generic broken across lines',
+      'const s: Record<\n  string,\n  unknown\n> = {};',
+      'const s: Record<string, unknown> = {};',
+    ],
+    ['a trailing semicolon before the brace', '{ backfill(store); }', '{ backfill(store) }'],
+  ])('ignores %s', (_what, a, b) => {
+    expect(normalizeForHash(a)).toBe(normalizeForHash(b));
   });
 
   it('keeps the contents of a string, including something that looks like a comment', () => {
@@ -303,18 +293,11 @@ describe('template literal interpolations (DOR-1733)', () => {
   // drifted freely under a shipped pin. It now blanks only the LITERAL text and
   // leaves each `${…}` expression standing.
   //
-  // Ten of the eleven cases here are written to fail in BOTH directions: each
-  // fixture puts one helper where the walk must now see it and the other where
-  // the walk must still not, so a mask that stops looking inside interpolations
-  // goes red, and so does one that starts reading literal prose as code. All ten
-  // were confirmed against a mask mutated back to wholesale blanking.
-  //
-  // The exception is 'keeps a binding whole through the braces an interpolation
-  // adds', which passes under wholesale blanking too — blanking a `{` hides it
-  // from the bracket count just as well as balancing it does. It is not idle:
-  // its subject is the mutation where `scanCode` swallows the closing brace it
-  // is supposed to leave standing, and against that one it is the SOLE failure
-  // in this file. It guards the seam the other ten never touch.
+  // The cases fail in BOTH directions: a mask that stops looking inside
+  // interpolations goes red, and so does one that reads literal prose as code
+  // (confirmed against a mask mutated back to wholesale blanking). 'keeps a
+  // binding whole...' guards a different seam: `scanCode` swallowing the closing
+  // brace it must leave standing, where it is the sole failure in this file.
   const POOL = extractTopLevelDeclarations([SEED, OTHER].join('\n\n'));
 
   /**
@@ -325,61 +308,36 @@ describe('template literal interpolations (DOR-1733)', () => {
    */
   const reaches = (slice: string): string[] => reachedDeclarations(slice, POOL);
 
-  it('sees a call written inside an interpolation', () => {
-    expect(reaches('const msg = `seeded: ${backfillSeed(store)}`;')).toEqual(['backfillSeed']);
-  });
-
-  it('still hides a name that is only a template literal text', () => {
-    // The other half of the same rule: literal prose is a string, and a helper
-    // NAME sitting in one is not a call to it.
-    expect(reaches('const msg = `backfillOther(store) ${backfillSeed(store)}`;')).toEqual([
-      'backfillSeed',
-    ]);
+  // Every case puts `backfillOther` where the walk must NOT look (literal text,
+  // an escaped `\${`, after an escaped backtick, inside a string) and
+  // `backfillSeed` where it must.
+  it.each([
+    ['a call inside an interpolation', 'const msg = `seeded: ${backfillSeed(store)}`;'],
+    [
+      'a name that is only literal text',
+      'const msg = `backfillOther(store) ${backfillSeed(store)}`;',
+    ],
+    [
+      'a template nested inside an interpolation',
+      'const msg = `a ${wrap(`b ${backfillSeed(store)} backfillOther`)} c`;',
+    ],
+    ['an escaped dollar', 'const msg = `\\${backfillOther(store)} ${backfillSeed(store)}`;'],
+    ['an escaped backtick', 'const msg = `\\` backfillOther ${backfillSeed(store)}`;'],
+    [
+      'a backtick inside a string inside an interpolation',
+      'const msg = `${label("`")}${backfillSeed(store)} backfillOther`;',
+    ],
+    [
+      'a string inside an interpolation',
+      "const msg = `${pick('backfillOther')}${backfillSeed(store)}`;",
+    ],
+  ])('reaches only the code, given %s', (_what, slice) => {
+    expect(reaches(slice)).toEqual(['backfillSeed']);
   });
 
   it('sees every interpolation in a template, not just the first', () => {
     expect(reaches('const msg = `${backfillSeed(store)}/${backfillOther(store)}`;')).toEqual([
       'backfillOther',
-      'backfillSeed',
-    ]);
-  });
-
-  it('descends into a template nested inside an interpolation', () => {
-    // The recursion the flat scanner could not do: a template, inside an
-    // interpolation, inside a template. The inner literal text must stay hidden
-    // while the inner interpolation stays visible.
-    expect(reaches('const msg = `a ${wrap(`b ${backfillSeed(store)} backfillOther`)} c`;')).toEqual(
-      ['backfillSeed']
-    );
-  });
-
-  it('reads an escaped dollar as literal text, not as an interpolation', () => {
-    expect(reaches('const msg = `\\${backfillOther(store)} ${backfillSeed(store)}`;')).toEqual([
-      'backfillSeed',
-    ]);
-  });
-
-  it('reads an escaped backtick as literal text, not as the end of the template', () => {
-    // If `\`` closed the template, everything after it would read as code and
-    // `backfillOther` would be reached — which is what the assertion below
-    // catches. The classic lexer slip.
-    expect(reaches('const msg = `\\` backfillOther ${backfillSeed(store)}`;')).toEqual([
-      'backfillSeed',
-    ]);
-  });
-
-  it('is not fooled by a backtick inside a string inside an interpolation', () => {
-    // The interpolation holds a normal string whose CONTENT is a backtick. Read
-    // as a template opening it would flip the parity for the rest of the file,
-    // and the trailing literal `backfillOther` would land on the code side.
-    expect(reaches('const msg = `${label("`")}${backfillSeed(store)} backfillOther`;')).toEqual([
-      'backfillSeed',
-    ]);
-  });
-
-  it('still blanks a string that sits inside an interpolation', () => {
-    // An interpolation is code, and a string inside code is still a string.
-    expect(reaches("const msg = `${pick('backfillOther')}${backfillSeed(store)}`;")).toEqual([
       'backfillSeed',
     ]);
   });

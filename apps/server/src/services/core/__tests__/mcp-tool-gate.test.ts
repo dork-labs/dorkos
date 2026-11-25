@@ -31,36 +31,12 @@
  * - **`observe` and `act` are untouched**, because a gate that made ordinary work
  *   prompt would be reverted within a day, and rightly.
  *
- * ## This suite was shown to fail before it was trusted
+ * Break-it record: making `runGate` always allow turns 19 of 33 red; dropping
+ * `approvalToken` from `gatedInputSchema` turns the advertisement checks and both
+ * real-client round trips red (the MCP SDK strips an unadvertised argument).
  *
- * A check nobody has broken is a check nobody has tested. Two drifts were seeded
- * into `mcp-tool-gate.ts`, run, and reverted:
- *
- * 1. `runGate` allows regardless of what the gate decided. **19 of 33 red**, on
- *    both servers, reporting `the handler ran anyway` and `the schedule was
- *    deleted before anyone approved` — read off the fake service, not off the
- *    response shape.
- * 2. `gatedInputSchema` stops adding `approvalToken`. **4 of 33 red**: the two
- *    advertisement checks, and both real-client round trips, which come back
- *    `approval_required` a SECOND time after a person granted the approval. That
- *    is the infinite loop, reproduced — and it also settles empirically that the
- *    MCP SDK silently STRIPS an unadvertised argument rather than rejecting the
- *    call, which is why the advertisement is load-bearing rather than cosmetic.
- *    (One SDK observed on both servers, not two: `createSdkMcpServer` hands back
- *    an `@modelcontextprotocol/sdk` `McpServer`, which is what the external server
- *    is too.)
- *
- * ## What this file deliberately does NOT check
- *
- * That a raw `McpServer` cannot be used as a `ToolRegistrar`. That guarantee is a
- * TYPE, and the pin for it lives in `mcp-tool-gate.ts` next to the brand instead.
- *
- * The reason has narrowed since that was written. `apps/server/tsconfig.json` used
- * to exclude `src/**\/__tests__/**` wholesale, so nothing in any test file was
- * typechecked; DOR-508 fixed that. But THIS file is one of the test files still
- * quarantined in that tsconfig's `exclude` while its own type errors are worked
- * off, so a `@ts-expect-error` written here today would still be decoration that
- * can never fail. When this file leaves quarantine, the pin can move here.
+ * The type pin that a raw `McpServer` is not a `ToolRegistrar` lives in
+ * `mcp-tool-gate.ts`, because this file is quarantined from the tsconfig.
  *
  * @vitest-environment node
  */
@@ -333,33 +309,8 @@ describe('hand-registered MCP tools carry a permission tier', () => {
 
     it('covers the whole hand-registered surface, and it is not empty', () => {
       // A count, so a composer that silently registered nothing cannot make every
-      // other check in this file vacuously green.
-      // 47 -> 53 for the six browser-driving verbs, and 53 -> 55 for the two
-      // recording verbs (spec `canvas-agent-seat` §2 and §3). All eight landed on
-      // the IN-SESSION side only: a verb that acts inside a preview has to know
-      // whose window is holding it, and the external surface is session-less by
-      // construction.
-      //
-      // 55 -> 42 when the whole browser-and-canvas surface left this table (spec
-      // `canvas-agent-seat` §5). `control_ui`, `get_ui_state` and every
-      // `browser_*` verb are `ui` CAPABILITIES now, so the gate they go through
-      // is `registry.invoke`'s — the same `enforceCapabilityTier` this file is
-      // about, reached from the inside instead of from a wrapper. Thirteen names
-      // leave, the external count does not move (none of them was ever there),
-      // and what is left is the hand-registered surface that really is still
-      // hand-registered.
-      //
-      // 42 -> 43 (and 40 -> 41 external) for `accounts_usage` (spec
-      // `claude-account-fleet` D2), registered on both servers.
-      //
-      // 43 -> 44 (and 41 -> 42 external) for `accounts_probe` (spec
-      // `claude-account-fleet` D3), registered on both servers.
-      // 44 -> 45 (and 42 -> 43 external) for `session_start` (spec
-      // `claude-account-fleet` D5), registered on both servers.
-      // 45 -> 39 (and 43 -> 37 external) for spin-off chats (spec
-      // `spin-off-chats` §7): the six relay send, inbox and endpoint tools
-      // retire from both servers. The chat tools replacing them are
-      // capabilities, so they move none of these hand-registered counts.
+      // other check in this file vacuously green. Browser, canvas and chat tools are
+      // capabilities, gated in `registry.invoke`, so they are not counted here.
       expect(registeredByServer['in-session']).toHaveLength(39);
       expect(registeredByServer.external).toHaveLength(37);
       expect(declaredNames).toHaveLength(39);
@@ -373,23 +324,6 @@ describe('hand-registered MCP tools carry a permission tier', () => {
   });
 
   describe('the table itself', () => {
-    it('gives every destructive tool the fields its approval card shows', () => {
-      for (const name of DESTRUCTIVE) {
-        const fields = MCP_TOOL_TIERS[name].approvalDisplayFields;
-        expect(fields, `${name} would ask a person to approve an unnamed action`).toBeTruthy();
-        expect(fields!.length).toBeGreaterThan(0);
-        // And the named fields are arguments the tool really takes, on both
-        // servers — a card that names a field the tool does not have shows nothing.
-        for (const server of ['in-session', 'external'] as const) {
-          const tool = (server === 'in-session' ? inSessionTools() : externalTools()).get(name);
-          if (!tool) continue;
-          for (const field of fields!) {
-            expect(Object.keys(tool.inputSchema), `${name} on ${server}`).toContain(field);
-          }
-        }
-      }
-    });
-
     it('lets every destructive tool NAME what it would destroy (DOR-1929)', () => {
       for (const name of DESTRUCTIVE) {
         const subject = MCP_TOOL_TIERS[name].approvalSubject;
@@ -398,15 +332,9 @@ describe('hand-registered MCP tools carry a permission tier', () => {
           `${name} would ask a person to approve destroying a bare id. Declare ` +
             `approvalSubject so the card can say WHICH thing.`
         ).toBeTruthy();
-        // The subject argument must be one the card already shows, or the id
-        // whose name replaces it would never have been on the card to replace.
+        // The subject must be a field the card shows; 'names only real arguments
+        // on a card' below proves every card field is a real argument.
         expect(MCP_TOOL_TIERS[name].approvalDisplayFields).toContain(subject!.field);
-        // …and an argument the tool really takes, on every server it appears on.
-        for (const server of ['in-session', 'external'] as const) {
-          const tool = (server === 'in-session' ? inSessionTools() : externalTools()).get(name);
-          if (!tool) continue;
-          expect(Object.keys(tool.inputSchema), `${name} on ${server}`).toContain(subject!.field);
-        }
       }
     });
 
@@ -532,36 +460,10 @@ describe('hand-registered MCP tools carry a permission tier', () => {
     });
 
     /**
-     * The two checks above are what shipped DOR-625, and it is worth being exact
-     * about how they passed a hole this size.
-     *
-     * `control_ui` IS in `MCP_TOOL_TIERS` and it is tier `act`, so both assertions
-     * were true and green. Neither one asks the question that mattered: an `act`
-     * tool sitting on a NO-PROMPT list is a tool that mutates and never asks, and
-     * "not destructive" is a very long way from "safe to auto-allow".
-     *
-     * The obvious repair — require every auto-allowed tool to be `observe` — is
-     * the wrong one, and worth writing down so it is not proposed again. Several
-     * members are deliberately `act`: `chat_send` starts turns in other chats,
-     * `chat_stop` ends one, `mesh_register` creates things, and `control_ui`
-     * drives the app. That is the whole point of the list (see its TSDoc), so
-     * the rule would have to be suppressed on its first run, and a suppressed rule
-     * is not a rule.
-     *
-     * So the shape here is the one this repo already uses for the same problem
-     * (`capabilities/__tests__/gate-bypass-scan.ts`): not "no `act` tools", but
-     * **every `act` tool named, one line each, saying why it may skip the prompt**.
-     * A tool cannot join the no-prompt path as a side effect of a tier choice — a
-     * human has to write the sentence.
-     *
-     * **`observe` is not automatically exempt either (DOR-1229).** The rule used
-     * to be "mutating tools need a sentence" on the unstated premise that every
-     * `observe` entry reads local machine state — true of `mesh_list`,
-     * `mesh_status`, `get_agent`, `get_ui_state`. The rooms reads broke it: they
-     * return OTHER PEOPLE'S MESSAGES, which is not machine state and is not
-     * harmless to hand over without asking. So the requirement is the union: every
-     * `act` entry, plus every entry whose auto-allow is only sound under an
-     * identity ({@link IDENTITY_SCOPED_TOOLS}), whatever its tier.
+     * DOR-625: "not destructive" is not "safe to auto-allow". Every `act` entry on
+     * the no-prompt list, plus every identity-scoped one whatever its tier
+     * (DOR-1229: room reads return other people's messages), must carry a written
+     * reason, so nothing joins the no-prompt path by inheriting a tier.
      */
     it('makes every mutating or identity-scoped auto-allow entry say out loud why it may skip the prompt', () => {
       /**
@@ -643,43 +545,11 @@ describe('hand-registered MCP tools carry a permission tier', () => {
     });
 
     /**
-     * `control_ui` is the only MULTIPLEXER on the auto-allow list: one tool name,
-     * 22 different effects chosen by an argument. Every check in this file above
-     * this line reasons about tool NAMES, which is precisely the resolution at
-     * which a multiplexer is invisible — `apply_layout` reaches
-     * `POST /api/shapes/:name/apply`, which writes `SKILL.md` files into the
-     * operator's skills root, rewrites their active-Shape config and creates,
-     * rebinds and deletes scheduled tasks, and it shared a verdict with
-     * `celebrate`.
-     *
-     * ## What this pins, and what it cannot see
-     *
-     * It pins that the classification is TOTAL: every branch of the command union
-     * carries a verdict, so a twenty-third action cannot arrive unclassified. That
-     * is also enforced by `tsc` (`UI_COMMAND_REACH` is a `Record` over
-     * `UiCommand['action']`), and asserted again here because THIS file is
-     * quarantined from `apps/server/tsconfig.json`, so a type-level guard written
-     * in it could never fail.
-     *
-     * It does NOT verify the verdicts. Deciding that `open_file` only reads and
-     * `apply_layout` does not is a judgment about client code in another package,
-     * and no assertion in the server test suite can follow `control_ui` →
-     * `ui-action-dispatcher` → `Transport` → route. What checks that half is
-     * `apps/client/src/layers/shared/lib/__tests__/ui-action-dispatcher.test.ts`,
-     * which drives the real dispatcher and fails if a `client-only` command
-     * reaches a transport call. Two guards, because neither package can see the
-     * other's end.
-     *
-     * It also does not cover Codex, which reaches the same classification by a
-     * different route. That runtime registers the same `control_ui` contract on
-     * its scoped `dorkos_ui` server and has no `canUseTool` of its own — its
-     * approvals are the Codex SDK's, which in exec mode cannot ask at all. So it
-     * cannot raise a card and instead REFUSES every `reaches-the-machine` action
-     * outright (DOR-639), in the scoped MCP handler and again in its event-mapper;
-     * `services/runtimes/codex/__tests__/` owns those checks. OpenCode needs
-     * neither gate: `control_ui` is in-session-only and its only DorkOS tool
-     * surface is the external `/mcp` server, which excludes it — see
-     * `external-mcp/__tests__/surface-parity.test.ts`.
+     * `control_ui` is one tool name with many effects chosen by an argument, so
+     * name-level checks cannot see it. This pins that every action carries a reach
+     * verdict (the `Record` type would too, but this file is tsconfig-quarantined).
+     * The verdicts themselves are checked by the client's
+     * `ui-action-dispatcher.test.ts`; Codex refuses reaching actions in its own tests.
      */
     it('classifies every branch of the control_ui multiplexer', () => {
       const options = (
@@ -870,9 +740,12 @@ describe('hand-registered MCP tools carry a permission tier', () => {
           });
         }
 
-        it(`${server} ${name}: runs once a person approves, and hides the token`, async () => {
+        // Spec `audit-trail` PR2: an allowed call used to leave nothing at all.
+        it(`${server} ${name}: runs once a person approves, recorded in the audit log as the agent`, async () => {
           const tools = toolsFor(AGENT);
           const asked = payloadOf(await tools.get(name)!.call(DESTRUCTIVE_INPUT[name]));
+          // Parked for approval: the gate's own audit row is not written for that.
+          expect(gateAuditRows()).toEqual([]);
           expect(sideEffects()).toEqual([]);
 
           approvals.grant(asked.approvalId as string);
@@ -884,21 +757,6 @@ describe('hand-registered MCP tools carry a permission tier', () => {
           // The handler ran, with the arguments the approval was bound to.
           expect(sideEffects()).toEqual([Object.values(DESTRUCTIVE_INPUT[name])[0]]);
           expect(payloadOf(result).status).not.toBe('approval_required');
-        });
-
-        // Spec `audit-trail` PR2: an allowed call used to leave nothing at all.
-        it(`${server} ${name}: an approved call that ran is in the audit log, as the agent`, async () => {
-          const tools = toolsFor(AGENT);
-          const asked = payloadOf(await tools.get(name)!.call(DESTRUCTIVE_INPUT[name]));
-          // Parked for approval: the gate's own audit row is not written for that.
-          expect(gateAuditRows()).toEqual([]);
-
-          approvals.grant(asked.approvalId as string);
-          await tools.get(name)!.call({
-            ...DESTRUCTIVE_INPUT[name],
-            approvalToken: asked.approvalToken as string,
-          });
-
           const rows = gateAuditRows();
           expect(rows).toHaveLength(1);
           expect(rows[0]).toMatchObject({

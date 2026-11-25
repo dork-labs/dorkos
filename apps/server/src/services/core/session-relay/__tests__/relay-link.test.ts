@@ -42,6 +42,13 @@ const ORIGIN = 'https://me.dorkos.test';
 const CODE = '7K3M-Q9TD-X2HV-8RNB';
 const LINK_CODE = `${CODE}@me.dorkos.test`;
 const NOT_LINKED = async (): Promise<CloudLinkIdentity> => ({ linked: false });
+/** This computer, linked to DorkOS account `acct_me`. */
+const LINKED_ME = async (): Promise<CloudLinkIdentity> => ({
+  linked: true,
+  instanceId: 'inst_42',
+  accountKey: 'acct_me',
+  issuer: null,
+});
 /** A hub on the internet, as DNS would answer for it. */
 const PUBLIC = async () => [{ address: '203.0.113.10' }];
 
@@ -104,14 +111,16 @@ function answering(response: () => Response) {
 }
 
 const NAME = 'Studio Mac';
+const INPUT = { linkCode: LINK_CODE, computerName: NAME };
 
 describe('linkToHub', () => {
   it('links over https without following redirects, and pins the key the hub signed with', async () => {
     const hub = fakeHub();
-    const result = await link(
-      { linkCode: LINK_CODE, computerName: NAME },
-      { dorkHome: home, fetch: hub.fetch, cloudIdentity: NOT_LINKED }
-    );
+    const result = await link(INPUT, {
+      dorkHome: home,
+      fetch: hub.fetch,
+      cloudIdentity: NOT_LINKED,
+    });
     expect(result.ok).toBe(true);
 
     const [url, init] = hub.calls.mock.calls[0]!;
@@ -138,15 +147,17 @@ describe('linkToHub', () => {
   });
 
   it('keeps the same computer id when linking again after an unlink', async () => {
-    const first = await link(
-      { linkCode: LINK_CODE, computerName: NAME },
-      { dorkHome: home, fetch: fakeHub().fetch, cloudIdentity: NOT_LINKED }
-    );
+    const first = await link(INPUT, {
+      dorkHome: home,
+      fetch: fakeHub().fetch,
+      cloudIdentity: NOT_LINKED,
+    });
     fs.rmSync(path.join(home, 'session-relay', 'pin.json'));
-    const second = await link(
-      { linkCode: LINK_CODE, computerName: NAME },
-      { dorkHome: home, fetch: fakeHub().fetch, cloudIdentity: NOT_LINKED }
-    );
+    const second = await link(INPUT, {
+      dorkHome: home,
+      fetch: fakeHub().fetch,
+      cloudIdentity: NOT_LINKED,
+    });
     expect(first.ok && second.ok && first.pin.computerId === second.pin.computerId).toBe(true);
   });
 
@@ -154,19 +165,11 @@ describe('linkToHub', () => {
     const hub = fakeHub({
       owner: { ownerAccountId: 'acct_me', issuer: 'https://accounts.dorkos.test' },
     });
-    const result = await link(
-      { linkCode: LINK_CODE, computerName: NAME },
-      {
-        dorkHome: home,
-        fetch: hub.fetch,
-        cloudIdentity: async () => ({
-          linked: true,
-          instanceId: 'inst_42',
-          accountKey: 'acct_me',
-          issuer: null,
-        }),
-      }
-    );
+    const result = await link(INPUT, {
+      dorkHome: home,
+      fetch: hub.fetch,
+      cloudIdentity: LINKED_ME,
+    });
     expect(result.ok).toBe(true);
     expect(readRelayPin(home)).toMatchObject({
       computerId: 'inst_42',
@@ -179,48 +182,38 @@ describe('linkToHub', () => {
     const hub = fakeHub({
       owner: { ownerAccountId: 'acct_someone', issuer: 'https://accounts.dorkos.test' },
     });
-    const result = await link(
-      { linkCode: LINK_CODE, computerName: NAME },
-      {
-        dorkHome: home,
-        fetch: hub.fetch,
-        cloudIdentity: async () => ({
-          linked: true,
-          instanceId: 'inst_42',
-          accountKey: 'acct_me',
-          issuer: null,
-        }),
-      }
-    );
+    const result = await link(INPUT, {
+      dorkHome: home,
+      fetch: hub.fetch,
+      cloudIdentity: LINKED_ME,
+    });
     expect(result).toEqual({ ok: false, reason: 'different-account' });
     expect(readRelayPin(home)).toBeNull();
   });
 
   it('refuses when this computer’s own DorkOS account cannot be read', async () => {
     const hub = fakeHub();
-    const result = await link(
-      { linkCode: LINK_CODE, computerName: NAME },
-      {
-        dorkHome: home,
-        fetch: hub.fetch,
-        cloudIdentity: async () => ({
-          linked: true,
-          instanceId: null,
-          accountKey: null,
-          issuer: null,
-        }),
-      }
-    );
+    const result = await link(INPUT, {
+      dorkHome: home,
+      fetch: hub.fetch,
+      cloudIdentity: async () => ({
+        linked: true,
+        instanceId: null,
+        accountKey: null,
+        issuer: null,
+      }),
+    });
     expect(result).toEqual({ ok: false, reason: 'account-unreadable' });
     expect(hub.calls).not.toHaveBeenCalled();
   });
 
   it('refuses an answer not signed by the key the hub hands over', async () => {
     const hub = fakeHub({ signWith: generateKeyPairSync('ed25519').privateKey });
-    const result = await link(
-      { linkCode: LINK_CODE, computerName: NAME },
-      { dorkHome: home, fetch: hub.fetch, cloudIdentity: NOT_LINKED }
-    );
+    const result = await link(INPUT, {
+      dorkHome: home,
+      fetch: hub.fetch,
+      cloudIdentity: NOT_LINKED,
+    });
     expect(result).toEqual({ ok: false, reason: 'signature-failed' });
     expect(readRelayPin(home)).toBeNull();
   });
@@ -239,10 +232,11 @@ describe('linkToHub', () => {
       ).toString('base64url');
       return Response.json({ ...answer, signature });
     });
-    const result = await link(
-      { linkCode: LINK_CODE, computerName: NAME },
-      { dorkHome: home, fetch: relaxed as unknown as typeof fetch, cloudIdentity: NOT_LINKED }
-    );
+    const result = await link(INPUT, {
+      dorkHome: home,
+      fetch: relaxed as unknown as typeof fetch,
+      cloudIdentity: NOT_LINKED,
+    });
     expect(result).toEqual({ ok: false, reason: 'signature-failed' });
   });
 
@@ -259,10 +253,11 @@ describe('linkToHub', () => {
           headers: status === 302 ? { location: 'https://evil.test/api/hub/link' } : {},
         })
     );
-    const result = await link(
-      { linkCode: LINK_CODE, computerName: NAME },
-      { dorkHome: home, fetch: hub.fetch, cloudIdentity: NOT_LINKED }
-    );
+    const result = await link(INPUT, {
+      dorkHome: home,
+      fetch: hub.fetch,
+      cloudIdentity: NOT_LINKED,
+    });
     expect(result).toEqual({ ok: false, reason });
     expect(hub.calls).toHaveBeenCalledTimes(1);
     expect(readRelayPin(home)).toBeNull();
@@ -290,15 +285,12 @@ describe('linkToHub', () => {
           init?.signal?.addEventListener('abort', () => reject(init.signal!.reason));
         })
     );
-    const result = await link(
-      { linkCode: LINK_CODE, computerName: NAME },
-      {
-        dorkHome: home,
-        fetch: hang as unknown as typeof fetch,
-        cloudIdentity: NOT_LINKED,
-        timeoutMs: 30,
-      }
-    );
+    const result = await link(INPUT, {
+      dorkHome: home,
+      fetch: hang as unknown as typeof fetch,
+      cloudIdentity: NOT_LINKED,
+      timeoutMs: 30,
+    });
     expect(result).toEqual({ ok: false, reason: 'hub-unreachable' });
   });
 
@@ -306,42 +298,42 @@ describe('linkToHub', () => {
     const hub = answering(
       () => new Response('x'.repeat(RELAY_LINK_MAX_RESPONSE_BYTES + 1), { status: 200 })
     );
-    const result = await link(
-      { linkCode: LINK_CODE, computerName: NAME },
-      { dorkHome: home, fetch: hub.fetch, cloudIdentity: NOT_LINKED }
-    );
+    const result = await link(INPUT, {
+      dorkHome: home,
+      fetch: hub.fetch,
+      cloudIdentity: NOT_LINKED,
+    });
     expect(result).toEqual({ ok: false, reason: 'hub-unreachable' });
   });
 
   it('refuses while this computer is already linked, without asking the hub', async () => {
-    const first = await link(
-      { linkCode: LINK_CODE, computerName: NAME },
-      { dorkHome: home, fetch: fakeHub().fetch, cloudIdentity: NOT_LINKED }
-    );
+    const first = await link(INPUT, {
+      dorkHome: home,
+      fetch: fakeHub().fetch,
+      cloudIdentity: NOT_LINKED,
+    });
     expect(first.ok).toBe(true);
     const hub = fakeHub();
-    const again = await link(
-      { linkCode: LINK_CODE, computerName: NAME },
-      { dorkHome: home, fetch: hub.fetch, cloudIdentity: NOT_LINKED }
-    );
+    const again = await link(INPUT, {
+      dorkHome: home,
+      fetch: hub.fetch,
+      cloudIdentity: NOT_LINKED,
+    });
     expect(again).toEqual({ ok: false, reason: 'already-linked' });
     expect(hub.calls).not.toHaveBeenCalled();
   });
 
   it('refuses a hub that names no owner, on a computer linked to a DorkOS account', async () => {
-    const result = await link(
-      { linkCode: LINK_CODE, computerName: NAME },
-      {
-        dorkHome: home,
-        fetch: fakeHub().fetch,
-        cloudIdentity: async () => ({
-          linked: true,
-          instanceId: 'inst_42',
-          accountKey: 'acct_me',
-          issuer: null,
-        }),
-      }
-    );
+    const result = await link(INPUT, {
+      dorkHome: home,
+      fetch: fakeHub().fetch,
+      cloudIdentity: async () => ({
+        linked: true,
+        instanceId: 'inst_42',
+        accountKey: 'acct_me',
+        issuer: null,
+      }),
+    });
     expect(result).toEqual({ ok: false, reason: 'different-account' });
     expect(readRelayPin(home)).toBeNull();
   });
@@ -376,33 +368,27 @@ describe('linkToHub', () => {
     '::ffff:127.0.0.1',
   ])('refuses a hub name that resolves to %s', async (address) => {
     const hub = fakeHub();
-    const result = await link(
-      { linkCode: LINK_CODE, computerName: NAME },
-      {
-        dorkHome: home,
-        fetch: hub.fetch,
-        cloudIdentity: NOT_LINKED,
-        // One public address beside it is not enough.
-        lookup: async () => [{ address: '203.0.113.10' }, { address }],
-      }
-    );
+    const result = await link(INPUT, {
+      dorkHome: home,
+      fetch: hub.fetch,
+      cloudIdentity: NOT_LINKED,
+      // One public address beside it is not enough.
+      lookup: async () => [{ address: '203.0.113.10' }, { address }],
+    });
     expect(result).toEqual({ ok: false, reason: 'not-public' });
     expect(hub.calls).not.toHaveBeenCalled();
   });
 
   it('answers unreachable for a hub name that does not resolve', async () => {
     const hub = fakeHub();
-    const result = await link(
-      { linkCode: LINK_CODE, computerName: NAME },
-      {
-        dorkHome: home,
-        fetch: hub.fetch,
-        cloudIdentity: NOT_LINKED,
-        lookup: async () => {
-          throw Object.assign(new Error('nope'), { code: 'ENOTFOUND' });
-        },
-      }
-    );
+    const result = await link(INPUT, {
+      dorkHome: home,
+      fetch: hub.fetch,
+      cloudIdentity: NOT_LINKED,
+      lookup: async () => {
+        throw Object.assign(new Error('nope'), { code: 'ENOTFOUND' });
+      },
+    });
     expect(result).toEqual({ ok: false, reason: 'hub-unreachable' });
     expect(hub.calls).not.toHaveBeenCalled();
   });
@@ -446,14 +432,11 @@ describe('accountMatches: a check against the wrong hub, not proof of ownership'
 
   it('refuses a hub naming another issuer, and pins nothing', async () => {
     const hub = fakeHub({ owner: { ownerAccountId: 'acct_me', issuer: 'https://id.evil.test' } });
-    const result = await link(
-      { linkCode: LINK_CODE, computerName: NAME },
-      {
-        dorkHome: home,
-        fetch: hub.fetch,
-        cloudIdentity: async () => ({ ...me, issuer: ISSUER }),
-      }
-    );
+    const result = await link(INPUT, {
+      dorkHome: home,
+      fetch: hub.fetch,
+      cloudIdentity: async () => ({ ...me, issuer: ISSUER }),
+    });
     expect(result).toEqual({ ok: false, reason: 'different-account' });
     expect(readRelayPin(home)).toBeNull();
   });

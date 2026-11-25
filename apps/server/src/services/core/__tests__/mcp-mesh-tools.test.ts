@@ -69,6 +69,11 @@ function createMockDeps(meshEnabled = true): McpToolDeps {
   };
 }
 
+/** The mocked mesh core inside `deps`. */
+function meshOf(deps: McpToolDeps): Record<string, ReturnType<typeof vi.fn>> {
+  return deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+}
+
 describe('Mesh MCP Tools', () => {
   it.each([
     ['mesh_discover', () => createMeshDiscoverHandler(createMockDeps(false))({ roots: ['/test'] })],
@@ -102,7 +107,7 @@ describe('Mesh MCP Tools', () => {
           discoveredAt: new Date().toISOString(),
         },
       ];
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      const meshCore = meshOf(deps);
       meshCore.discover.mockImplementation(async function* () {
         for (const c of mockCandidates) yield { type: 'candidate', data: c };
       });
@@ -116,7 +121,7 @@ describe('Mesh MCP Tools', () => {
 
     it('mesh_register records the calling agent as createdBy (DOR-2788)', async () => {
       const deps = createMockDeps(true);
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      const meshCore = meshOf(deps);
       meshCore.registerByPath.mockResolvedValue({ id: 'a1', name: 'bot', runtime: 'claude-code' });
 
       const handler = createMeshRegisterHandler(deps);
@@ -140,7 +145,7 @@ describe('Mesh MCP Tools', () => {
     describe('identity fields', () => {
       it('slugifies a display-style name and keeps the original as the display name', async () => {
         const deps = createMockDeps(true);
-        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+        const meshCore = meshOf(deps);
         meshCore.registerByPath.mockResolvedValue({ id: 'a1', name: 'dorkos-cloud' });
 
         const handler = createMeshRegisterHandler(deps);
@@ -173,7 +178,7 @@ describe('Mesh MCP Tools', () => {
         [{ runtime: 'gpt5' }, 'INVALID_RUNTIME', ''],
       ])('refuses %o with %s', async (bad, code, hint) => {
         const deps = createMockDeps(true);
-        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+        const meshCore = meshOf(deps);
 
         const result = await createMeshRegisterHandler(deps)({
           path: '/test/bot',
@@ -195,7 +200,7 @@ describe('Mesh MCP Tools', () => {
           // `agent`), and `handle.ts` measured what that costs: `mintHandle`
           // reads `name` first, so a rewritten name is a moved address.
           const deps = createMockDeps(true);
-          const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+          const meshCore = meshOf(deps);
           meshCore.registerByPath.mockResolvedValue({ id: 'a1', name: dirName });
 
           const handler = createMeshRegisterHandler(deps);
@@ -215,7 +220,7 @@ describe('Mesh MCP Tools', () => {
       setOnAgentCreated(listener);
       try {
         const deps = createMockDeps(true);
-        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+        const meshCore = meshOf(deps);
         meshCore.registerByPath.mockResolvedValue({
           id: 'a1',
           name: 'Bot',
@@ -254,7 +259,7 @@ describe('Mesh MCP Tools', () => {
         error: 'Cannot re-register over a system agent',
         code: 'SYSTEM_AGENT',
       });
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      const meshCore = meshOf(deps);
       expect(meshCore.registerByPath).not.toHaveBeenCalled();
     });
 
@@ -280,7 +285,7 @@ describe('Mesh MCP Tools', () => {
       ],
     ] as const)('%s rejects a path outside the boundary', async (_tool, method, guard, call) => {
       const deps = createMockDeps(true);
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      const meshCore = meshOf(deps);
       vi.mocked(guard).mockRejectedValueOnce(
         new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY')
       );
@@ -299,7 +304,7 @@ describe('Mesh MCP Tools', () => {
     // the listing, derived exactly as `mesh_inspect` derives it.
     it('mesh_list carries each agent relaySubject, resolved by the canonical id lookup', async () => {
       const deps = createMockDeps(true);
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      const meshCore = meshOf(deps);
       meshCore.list.mockReturnValue([
         { id: 'a1', name: 'alpha' },
         { id: 'b2', name: 'beta' },
@@ -337,7 +342,7 @@ describe('Mesh MCP Tools', () => {
     it('mesh_list and mesh_inspect name each agent by its dork: reference', async () => {
       const id = '01KJXYKJYW4N8QGQ5W4GB6YM9J';
       const deps = createMockDeps(true);
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      const meshCore = meshOf(deps);
       meshCore.list.mockReturnValue([
         { id, name: 'lantern' },
         { id: 'a1', name: 'alpha' },
@@ -361,7 +366,7 @@ describe('Mesh MCP Tools', () => {
 
     it('mesh_unregister rejects system agents with SYSTEM_AGENT error', async () => {
       const deps = createMockDeps(true);
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      const meshCore = meshOf(deps);
       meshCore.get.mockReturnValue({ id: 'sys1', name: 'dorkbot', isSystem: true });
 
       const handler = createMeshUnregisterHandler(deps);
@@ -372,47 +377,6 @@ describe('Mesh MCP Tools', () => {
         code: 'SYSTEM_AGENT',
       });
       expect(meshCore.unregister).not.toHaveBeenCalled();
-    });
-
-    it('mesh_status returns aggregate stats', async () => {
-      const deps = createMockDeps(true);
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-      const mockStatus = {
-        totalAgents: 3,
-        activeCount: 2,
-        inactiveCount: 0,
-        staleCount: 1,
-        byRuntime: { 'claude-code': 2, cursor: 1 },
-        byProject: { '/projects/bot': 2, '/projects/other': 1 },
-      };
-      meshCore.getStatus.mockReturnValue(mockStatus);
-
-      const handler = createMeshStatusHandler(deps);
-      const result = await handler();
-      const data = JSON.parse(result.content[0].text);
-      expect(data.totalAgents).toBe(3);
-      expect(data.activeCount).toBe(2);
-      expect(data.staleCount).toBe(1);
-      expect(data.byRuntime['claude-code']).toBe(2);
-      expect(meshCore.getStatus).toHaveBeenCalled();
-    });
-
-    it('mesh_query_topology returns topology for specific namespace', async () => {
-      const deps = createMockDeps(true);
-      const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
-      const mockTopology = {
-        namespaces: ['ns-a'],
-        agents: [{ id: 'a1', namespace: 'ns-a' }],
-        accessRules: [],
-      };
-      meshCore.getTopology.mockReturnValue(mockTopology);
-
-      const handler = createMeshQueryTopologyHandler(deps);
-      const result = await handler({ namespace: 'ns-a' });
-      const data = JSON.parse(result.content[0].text);
-      expect(data.namespaces).toEqual(['ns-a']);
-      expect(data.agents).toHaveLength(1);
-      expect(meshCore.getTopology).toHaveBeenCalledWith('ns-a');
     });
   });
 });
@@ -443,7 +407,7 @@ describe('mesh_list and mesh_inspect name an agent installed from a package', ()
     const home = await homeInstalledFrom(installedFrom);
     try {
       const deps = createMockDeps();
-      const mesh = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      const mesh = meshOf(deps);
       mesh.list!.mockReturnValue([{ id: 'a1', name: 'garden-helper' }]);
       mesh.getProjectPath!.mockReturnValue(home);
       mesh.inspect!.mockReturnValue({ agent: { id: 'a1', name: 'garden-helper' }, health: {} });

@@ -1,12 +1,10 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import Conf, { type Schema } from 'conf';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import {
   ConfigManager,
   initConfigManager,
   backfillAutonomyAcknowledgement,
   backfillConnectorsDefaults,
-  CONF_JSON_SCHEMA,
   CONFIG_MIGRATIONS,
   backfillApprovalsDefaults,
   applyTier1OptInDefaults,
@@ -17,11 +15,28 @@ import {
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { createMockStore } from './config-manager.fixtures.js';
+import { createMockStore, upgradeConfigFile } from './config-manager.fixtures.js';
 
 // A frozen merged body (0.66.0-era). The leaf it seeds is retired by the
 // 0.102.0 key (`config-autonomy-ack-retired-migration.test.ts`); these pin the
 // body itself, which may never change.
+// The section-level backfills and the defaults merge own a missing section, so
+// a body must not create a partial one.
+describe('a backfill leaves a config without its section alone', () => {
+  it.each([
+    ['backfillAutonomyAcknowledgement', backfillAutonomyAcknowledgement, 'ui'],
+    ['backfillRuntimeExecutionDefaults', backfillRuntimeExecutionDefaults, 'runtimes'],
+    ['backfillDefaultTrustStops', backfillDefaultTrustStops, 'runtimes'],
+    ['backfillClaudeCodePersistentSession', backfillClaudeCodePersistentSession, 'runtimes'],
+    ['applyTier1OptInDefaults', applyTier1OptInDefaults, 'telemetry'],
+  ] as const)('%s', (_name, migrate, section) => {
+    const store = createMockStore({ server: { port: 4242 } });
+    migrate(store);
+    expect(store.data).toEqual({ server: { port: 4242 } });
+    expect(store.data[section]).toBeUndefined();
+  });
+});
+
 describe('backfillAutonomyAcknowledgement migration (spec trust-dial, decision 5)', () => {
   it('fresh install: the retired leaf is not declared any more (DOR-2739)', () => {
     expect(USER_CONFIG_DEFAULTS.ui).not.toHaveProperty('autonomyAcknowledgedAt');
@@ -39,12 +54,6 @@ describe('backfillAutonomyAcknowledgement migration (spec trust-dial, decision 5
     });
   });
 
-  it('never hands out a consent nobody gave', () => {
-    const store = createMockStore({ ui: { theme: 'system' } });
-    backfillAutonomyAcknowledgement(store);
-    expect((store.data.ui as Record<string, unknown>).autonomyAcknowledgedAt).toBeNull();
-  });
-
   it('is idempotent — never overwrites an acknowledgement already on file', () => {
     const existing = { theme: 'system', autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' };
     const store = createMockStore({ ui: structuredClone(existing) });
@@ -59,12 +68,6 @@ describe('backfillAutonomyAcknowledgement migration (spec trust-dial, decision 5
     const store = createMockStore({ ui: { theme: 'system', autonomyAcknowledgedAt: null } });
     backfillAutonomyAcknowledgement(store);
     expect(store.data.ui).toEqual({ theme: 'system', autonomyAcknowledgedAt: null });
-  });
-
-  it('is a no-op when the ui section is absent (the defaults merge owns that case)', () => {
-    const store = createMockStore({ server: { port: 4242 } });
-    backfillAutonomyAcknowledgement(store);
-    expect(store.data.ui).toBeUndefined();
   });
 });
 
@@ -149,44 +152,18 @@ describe('approvals section — the shipped 0.57.0 seed, frozen history (DOR-501
   });
 
   it('a config written before the section existed upgrades without a wipe (full conf path)', () => {
-    // The half of the surface a fresh-install test cannot reach: a real stored
-    // file from an earlier version, run through the real migration chain.
-    // projectVersion is stated explicitly because SERVER_VERSION lags the
-    // unreleased key this migration is filed under.
-    //
     // The schema no longer declares `approvals`, so conf's pre-migration defaults
     // merge no longer writes it: the `'0.57.0'` body is now the only writer, and
-    // `projectVersion` stops before `'0.83.0'` deletes it again.
-    const dir = path.join(os.tmpdir(), 'test-dork-approvals-backfill-' + Date.now());
-    const cfgPath = path.join(dir, 'config.json');
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(
-      cfgPath,
-      JSON.stringify({
-        version: 1,
+    // the upgrade stops before `'0.83.0'` deletes it again.
+    const onDisk = upgradeConfigFile(
+      {
         server: { port: 5000, cwd: null, boundary: null, open: true },
         auth: { enabled: true },
         ui: { theme: 'dark' },
-        __internal__: { migrations: { version: '0.56.0' } },
-      }),
-      'utf-8'
+      },
+      '0.56.0',
+      '0.57.0'
     );
-
-    const store = new Conf({
-      configName: 'config',
-      cwd: dir,
-      // The shipped schema, tolerances included — never rebuilt here (see CONF_JSON_SCHEMA).
-      schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
-      defaults: USER_CONFIG_DEFAULTS,
-      clearInvalidConfig: false,
-      projectVersion: '0.57.0',
-      migrations: CONFIG_MIGRATIONS,
-    });
-
-    const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
-      approvals: unknown;
-      ui: Record<string, unknown>;
-    };
     expect(onDisk.approvals).toEqual({
       standingGrants: false,
       trustWindowMinutes: 480,
@@ -194,18 +171,13 @@ describe('approvals section — the shipped 0.57.0 seed, frozen history (DOR-501
     });
     // The upgrade does not disturb what was already there, including the login
     // setting standing permissions depend on.
-    expect((store.get('auth') as { enabled: boolean }).enabled).toBe(true);
-    expect((store.get('server') as { port: number }).port).toBe(5000);
+    expect(onDisk.auth.enabled).toBe(true);
+    expect(onDisk.server.port).toBe(5000);
     expect(onDisk.ui.theme).toBe('dark');
-    // The composite key's other body still ran, so composing did not drop it.
-    // Read off the FILE, unlike the rest: `ui.statusBar` is a NESTED seed into a
-    // `ui` object the stored config already has, so `store.get('ui')` would show
-    // it whether or not `migrateStatusBarToPins` ran — Ajv fills it into the copy
-    // conf's getter is about to hand back, and the copy is thrown away. That form
-    // could not have detected the composition being dropped, which is the one
-    // thing this line is here to detect.
+    // The composite key's other body still ran: `ui.statusBar` is a NESTED seed
+    // into a stored `ui`, so only the file shows whether `migrateStatusBarToPins`
+    // ran.
     expect(onDisk.ui.statusBar).toEqual({ pins: [] });
-    fs.rmSync(dir, { recursive: true, force: true });
   });
 });
 
@@ -253,15 +225,11 @@ describe('applyTier1OptInDefaults migration', () => {
     expect(store.data.telemetry).toEqual(decidedNo);
   });
 
-  it('is idempotent and leaves an absent block alone', () => {
+  it('is idempotent', () => {
     const already = { userHasDecided: false, install: false, heartbeat: false, usage: false };
     const store = createMockStore({ telemetry: { ...already } });
     applyTier1OptInDefaults(store);
     expect(store.data.telemetry).toEqual(already);
-
-    const noBlock = createMockStore({ server: { port: 4242 } });
-    applyTier1OptInDefaults(noBlock);
-    expect(noBlock.data.telemetry).toBeUndefined();
   });
 });
 
@@ -377,16 +345,12 @@ describe('backfillRuntimeExecutionDefaults migration (execution-defaults E1)', (
     });
   });
 
-  it('leaves a config with no runtimes block alone', () => {
-    // The section-level backfills that run before it own that case.
-    const store = createMockStore({ server: { port: 4242 } });
-    backfillRuntimeExecutionDefaults(store);
-    expect(store.data.runtimes).toBeUndefined();
-  });
-
-  it('rides the newest migration key, after the section it seeds into exists', () => {
+  it('rides the 0.57.0 key with the trust stops, after the section it seeds into exists', () => {
     const store = createMockStore({ runtimes: { default: 'claude-code' } });
     CONFIG_MIGRATIONS['0.57.0'](store);
+    // backfillDefaultTrustStops rides the same key: the global stop, and the
+    // claudeCode leaf the composite's earlier body made a section for.
+    expect((store.data.runtimes as Record<string, unknown>).defaultTrustStop).toBeNull();
     expect((store.data.runtimes as Record<string, unknown>).claudeCode).toEqual({
       activeAccount: null,
       accounts: [],
@@ -435,23 +399,6 @@ describe('backfillDefaultTrustStops migration (trust-dial, decision 6)', () => {
     expect(runtimes.defaultTrustStop).toBe('autonomy');
     expect(runtimes.codex.defaultTrustStop).toBe('ask');
   });
-
-  it('leaves a config with no runtimes block alone', () => {
-    const store = createMockStore({ server: { port: 4242 } });
-    backfillDefaultTrustStops(store);
-    expect(store.data.runtimes).toBeUndefined();
-  });
-
-  it('rides the newest migration key', () => {
-    const store = createMockStore({ runtimes: { default: 'claude-code' } });
-    CONFIG_MIGRATIONS['0.57.0'](store);
-    // Only the leaves the composite's earlier bodies actually seeded a section
-    // for: `backfillClaudeCodeRuntimeDefaults` supplies `claudeCode`, and a
-    // `runtimes` block with no `codex` object has nothing to add a leaf to.
-    const runtimes = store.data.runtimes as Record<string, Record<string, unknown>>;
-    expect(runtimes.defaultTrustStop).toBeNull();
-    expect(runtimes.claudeCode.defaultTrustStop).toBeNull();
-  });
 });
 
 describe('backfillClaudeCodePersistentSession migration (persistent-session-runtime P3)', () => {
@@ -498,13 +445,6 @@ describe('backfillClaudeCodePersistentSession migration (persistent-session-runt
       accounts: [],
       persistentSession: true,
     });
-  });
-
-  it('leaves a config with no runtimes block alone', () => {
-    // The section-level backfills in the earlier keys own that case.
-    const store = createMockStore({ server: { port: 4242 } });
-    backfillClaudeCodePersistentSession(store);
-    expect(store.data.runtimes).toBeUndefined();
   });
 
   it('leaves a runtimes block with no claudeCode section alone', () => {

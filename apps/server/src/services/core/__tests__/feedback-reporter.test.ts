@@ -11,50 +11,27 @@
  * gating, and it does no consent-channel reads — pressing Send is the
  * consent.
  */
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { sendFeedback, listMyFeedback } from '../feedback-reporter.js';
+import {
+  DURABLE_ENDPOINT,
+  METRICS_ENDPOINT,
+  type FetchMock,
+  bodyForUrl,
+  durableBodies,
+  feedbackOptions,
+  makeFetch,
+  useTempDorkHome,
+} from './feedback-reporter/feedback-reporter.fixtures.js';
 
-vi.mock('../auth/index.js', () => ({
-  getUserById: vi.fn(),
-}));
+const dorkHome = useTempDorkHome();
 
-import type { FeedbackDiagnostics } from '@dorkos/shared/telemetry-events';
-
-import { sendFeedback, resolveFeedbackIdentity, listMyFeedback } from '../feedback-reporter.js';
-import { getUserById } from '../auth/index.js';
-
-/** The `clientReport` half of a diagnostics bundle, typed from the schema. */
-type ClientReport = FeedbackDiagnostics['clientReport'];
-
-const mockGetUserById = vi.mocked(getUserById);
-
-const DURABLE_ENDPOINT = 'https://example.test/api/feedback';
-const METRICS_ENDPOINT = 'https://example.test/ingest';
-
-let dorkHome: string;
-
-beforeEach(async () => {
-  dorkHome = await mkdtemp(path.join(tmpdir(), 'dork-feedback-'));
-  mockGetUserById.mockReset();
-});
-
-afterEach(async () => {
-  await rm(dorkHome, { recursive: true, force: true });
-  vi.unstubAllEnvs();
-});
-
-/** A mocked `fetch`: a vitest mock usable both as `typeof fetch` and for call inspection. */
-type FetchMock = ReturnType<typeof vi.fn> & typeof fetch;
-
-/** A same-behavior-for-both-posts fetch stub. */
-function makeFetch(behavior: 'ok' | 'not-ok' | 'reject'): FetchMock {
-  return vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => {
-    if (behavior === 'reject') throw new Error('network down');
-    return new Response(null, { status: behavior === 'ok' ? 200 : 500 });
-  }) as unknown as FetchMock;
+/** Default options shared by most `sendFeedback` calls below. */
+function baseOptions(
+  overrides: Partial<Parameters<typeof sendFeedback>[0]> = {}
+): Parameters<typeof sendFeedback>[0] {
+  return feedbackOptions(dorkHome(), overrides);
 }
 
 /**
@@ -74,47 +51,7 @@ function makeSplitFetch(behaviors: {
   }) as unknown as FetchMock;
 }
 
-/** Default options shared by most `sendFeedback` calls below. */
-function baseOptions(overrides: Partial<Parameters<typeof sendFeedback>[0]> = {}) {
-  return {
-    submission: { kind: 'bug' as const, message: 'broken thing' },
-    dorkHome,
-    dorkosVersion: '0.47.0',
-    endpoint: METRICS_ENDPOINT,
-    cloudUrl: 'https://example.test',
-    ...overrides,
-  };
-}
-
-/** Find the call made to `url`, returning its parsed JSON body. */
-function bodyForUrl(fetchImpl: FetchMock, url: string): Record<string, unknown> {
-  const calls = fetchImpl.mock.calls as unknown as Array<[string | URL | Request, RequestInit]>;
-  const call = calls.find(([callUrl]) => String(callUrl) === url);
-  if (!call) throw new Error(`${url} was never called`);
-  const [, init] = call;
-  return JSON.parse(init.body as string) as Record<string, unknown>;
-}
-
-/** Every durable-endpoint body, in call order. */
-function durableBodies(fetchImpl: FetchMock): Array<Record<string, unknown>> {
-  const calls = fetchImpl.mock.calls as unknown as Array<[string | URL | Request, RequestInit]>;
-  return calls
-    .filter(([url]) => String(url) === DURABLE_ENDPOINT)
-    .map(([, init]) => JSON.parse(init.body as string) as Record<string, unknown>);
-}
-
 describe('sendFeedback — dual-write', () => {
-  it('posts to BOTH the durable site route and the metrics ingest', async () => {
-    const fetchImpl = makeFetch('ok');
-    await sendFeedback(baseOptions({ fetchImpl }));
-
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-    const calls = fetchImpl.mock.calls as unknown as Array<[string | URL | Request, RequestInit]>;
-    const urls = calls.map(([url]) => String(url));
-    expect(urls).toContain(DURABLE_ENDPOINT);
-    expect(urls).toContain(METRICS_ENDPOINT);
-  });
-
   // `ok` reflects ONLY the durable post; the metrics post is best-effort, and
   // nothing ever throws.
   it.each([
@@ -210,219 +147,6 @@ describe('sendFeedback — durable payload shape', () => {
     const body = durableBody(fetchImpl);
     expect(body.reporterName).toBe('x'.repeat(128));
     expect(body).not.toHaveProperty('reporterEmail');
-  });
-
-  it("names the desktop shell's own log apart from the server's (DOR-2045)", async () => {
-    // Without a section of its own the field is inert: it would reach the route,
-    // validate, and then never appear in the report anyone reads. The two logs
-    // are labelled separately because they come from different processes and a
-    // reader has to know which one said what.
-    const fetchImpl = makeFetch('ok');
-    await sendFeedback(
-      baseOptions({
-        submission: {
-          kind: 'bug',
-          message: 'the window keeps reloading itself',
-          diagnostics: {
-            clientReport: {
-              version: '0.75.0',
-              platform: 'darwin-arm64',
-              runtimes: [],
-              flags: {},
-              shell: 'desktop-app' as const,
-            },
-            serverLogExcerpt: '2026-09-14T22:25:25.000Z warn [http] slow request',
-            shellLogExcerpt: '2026-09-14 15:25:25.123 info [renderer] Reloading the window.',
-          },
-        },
-        fetchImpl,
-      })
-    );
-
-    const diagnostics = durableBody(fetchImpl).diagnostics as string;
-    expect(diagnostics).toContain('Server log excerpt:\n2026-09-14T22:25:25.000Z warn');
-    expect(diagnostics).toContain(
-      'Desktop app log excerpt:\n2026-09-14 15:25:25.123 info [renderer] Reloading the window.'
-    );
-  });
-
-  it('says so in the report when a section had no room, instead of vanishing', async () => {
-    // `flags` is an uncapped record, so a report CAN arrive with almost the
-    // whole block already spent. A section that silently disappears reads as
-    // "there was no log", which sends triage looking in the wrong place.
-    const fetchImpl = makeFetch('ok');
-    // 166 flags is the middle of the band (measured 163-169) where the header
-    // leaves room to NAME what was dropped but not to carry it: below it the
-    // excerpts still fit front-cut, above it not even the markers do.
-    const flags = Object.fromEntries(
-      Array.from({ length: 166 }, (_, i) => [`f${i}`, 'v'.repeat(40)])
-    );
-
-    await sendFeedback(
-      baseOptions({
-        submission: {
-          kind: 'bug',
-          message: 'the window keeps reloading itself',
-          diagnostics: {
-            clientReport: {
-              version: '0.75.0',
-              platform: 'darwin-arm64',
-              runtimes: [],
-              flags,
-              shell: 'desktop-app' as const,
-            },
-            serverLogExcerpt: `2026-09-14T22:25:00.000Z warn [http] slow ${'y'.repeat(4000)}`,
-            shellLogExcerpt: `2026-09-14 15:25:25.123 info [renderer] reload ${'z'.repeat(4000)}`,
-          },
-        },
-        fetchImpl,
-      })
-    );
-
-    const diagnostics = durableBody(fetchImpl).diagnostics as string;
-    expect(diagnostics.length).toBeLessThanOrEqual(8000);
-    expect(diagnostics).toContain('Server log excerpt: (omitted, no room)');
-    expect(diagnostics).toContain('Desktop app log excerpt: (omitted, no room)');
-  });
-
-  it('folds a run of identical breadcrumbs into one line with a count (DOR-2234)', async () => {
-    // A retry loop logs the same crumb many times in a row; printed one per
-    // line it buried the crumbs around it and spent the shared budget.
-    const fetchImpl = makeFetch('ok');
-    type Crumb = NonNullable<FeedbackDiagnostics['breadcrumbs']>[number];
-    const crumb = (at: string, kind: Crumb['kind'], message: string): Crumb => ({
-      at,
-      kind,
-      message,
-    });
-    await sendFeedback(
-      baseOptions({
-        submission: {
-          kind: 'bug',
-          message: 'it keeps retrying',
-          diagnostics: {
-            clientReport: { version: '0.47.0', platform: 'darwin-arm64', runtimes: [], flags: {} },
-            breadcrumbs: [
-              crumb('2026-08-03T00:00:00.000Z', 'sse_disconnect', 'stream closed'),
-              crumb('2026-08-03T00:00:01.000Z', 'console_error', 'fetch failed'),
-              crumb('2026-08-03T00:00:02.000Z', 'console_error', 'fetch failed'),
-              crumb('2026-08-03T00:00:03.000Z', 'console_error', 'fetch failed'),
-              crumb('2026-08-03T00:00:04.000Z', 'query_error', 'rooms failed'),
-              // Same words, different kind: not a repeat.
-              crumb('2026-08-03T00:00:05.000Z', 'console_warn', 'rooms failed'),
-              // A repeat that is not adjacent keeps its own place in time.
-              crumb('2026-08-03T00:00:06.000Z', 'console_error', 'fetch failed'),
-            ],
-          },
-        },
-        fetchImpl,
-      })
-    );
-
-    const diagnostics = durableBody(fetchImpl).diagnostics as string;
-    const crumbs = diagnostics.split('Breadcrumbs:\n')[1]!.split('\n');
-    expect(crumbs).toEqual([
-      '[2026-08-03T00:00:00.000Z] sse_disconnect: stream closed',
-      '[2026-08-03T00:00:01.000Z] console_error: fetch failed (x3, last 2026-08-03T00:00:03.000Z)',
-      '[2026-08-03T00:00:04.000Z] query_error: rooms failed',
-      '[2026-08-03T00:00:05.000Z] console_warn: rooms failed',
-      '[2026-08-03T00:00:06.000Z] console_error: fetch failed',
-    ]);
-  });
-
-  describe('diagnostics context lines (DOR-1960)', () => {
-    /** A `clientReport` carrying every environment field the client can capture. */
-    function reportWithEnvironment(overrides: Partial<ClientReport> = {}): ClientReport {
-      return {
-        version: '0.47.0',
-        platform: 'darwin-arm64',
-        runtimes: ['claude-code'],
-        flags: {},
-        viewport: { width: 1280, height: 720, devicePixelRatio: 2 },
-        browser: 'Mozilla/5.0 (Macintosh) TestBrowser/1.0',
-        shell: 'desktop-app' as const,
-        theme: 'dark' as const,
-        locale: 'en-GB',
-        timezone: 'Europe/London',
-        ...overrides,
-      };
-    }
-
-    /** Send one submission with the given clientReport and return the rendered text. */
-    async function renderedFor(
-      clientReport: ClientReport,
-      options: Partial<Parameters<typeof sendFeedback>[0]> = {}
-    ): Promise<string> {
-      const fetchImpl = makeFetch('ok');
-      await sendFeedback(
-        baseOptions({
-          submission: { kind: 'bug', message: 'layout broke', diagnostics: { clientReport } },
-          fetchImpl,
-          ...options,
-        })
-      );
-      return durableBody(fetchImpl).diagnostics as string;
-    }
-
-    it('renders every captured environment field as a Key: value line', async () => {
-      const diagnostics = await renderedFor(reportWithEnvironment());
-
-      // Asserted as whole lines, not substrings: the site fences this text
-      // verbatim into the Linear issue, so the LINE is the contract a human
-      // reads. A bare `toContain('dark')` would also pass on `darwin-arm64`.
-      const lines = diagnostics.split('\n');
-      expect(lines).toContain('Viewport: 1280x720 @2x');
-      expect(lines).toContain('Shell: desktop-app');
-      expect(lines).toContain('Theme: dark');
-      expect(lines).toContain('Locale: en-GB');
-      expect(lines).toContain('Timezone: Europe/London');
-      expect(lines).toContain('Browser: Mozilla/5.0 (Macintosh) TestBrowser/1.0');
-    });
-
-    it.each([
-      { client: '0.47.0', server: '0.47.0', line: 'Version: 0.47.0' },
-      // Upgrade skew: a long-lived tab holding a cached config.
-      { client: '0.47.0', server: '0.48.1', line: 'Version: 0.47.0 (server 0.48.1)' },
-      // `unknown` is a loading state, not a version, so it is not skew.
-      { client: 'unknown', server: '0.48.1', line: 'Version: 0.48.1' },
-    ])('renders client $client / server $server as "$line"', async ({ client, server, line }) => {
-      const diagnostics = await renderedFor(reportWithEnvironment({ version: client }), {
-        dorkosVersion: server,
-      });
-      expect(diagnostics.split('\n')).toContain(line);
-    });
-
-    it('keeps the context lines when a full breadcrumb trail overruns the 8000-char cap', async () => {
-      // Breadcrumbs alone reach ~17,000 characters at their own caps (50 x 300),
-      // so the final slice is a live possibility on a real report. The context
-      // header must be on the surviving side of it — which is only true while
-      // the header is rendered BEFORE the breadcrumb section.
-      const fetchImpl = makeFetch('ok');
-      await sendFeedback(
-        baseOptions({
-          submission: {
-            kind: 'bug',
-            message: 'layout broke',
-            diagnostics: {
-              clientReport: reportWithEnvironment(),
-              breadcrumbs: Array.from({ length: 50 }, (_, i) => ({
-                at: '2026-08-03T00:00:00.000Z',
-                kind: 'console_error' as const,
-                message: `${i}-${'x'.repeat(295)}`,
-              })),
-            },
-          },
-          fetchImpl,
-        })
-      );
-
-      const diagnostics = durableBody(fetchImpl).diagnostics as string;
-      expect(diagnostics).toHaveLength(8000);
-      const lines = diagnostics.split('\n');
-      expect(lines).toContain('Viewport: 1280x720 @2x');
-      expect(lines).toContain('Theme: dark');
-      expect(lines).toContain('Browser: Mozilla/5.0 (Macintosh) TestBrowser/1.0');
-    });
   });
 
   it('carries transcriptExcerpt, truncated to the durable route cap, with hasTranscript:true', async () => {
@@ -613,29 +337,6 @@ describe('sendFeedback — metrics post (best-effort)', () => {
   });
 });
 
-describe('resolveFeedbackIdentity', () => {
-  it('resolves { userId, email, name } from a verified session userId', async () => {
-    mockGetUserById.mockReturnValue({
-      id: 'user_1',
-      email: 'dorian@example.com',
-      name: 'Dorian',
-    });
-
-    const identity = await resolveFeedbackIdentity('user_1');
-
-    expect(identity).toEqual({ userId: 'user_1', email: 'dorian@example.com', name: 'Dorian' });
-    expect(mockGetUserById).toHaveBeenCalledWith('user_1');
-  });
-
-  it('resolves undefined when the id does not resolve to a user', async () => {
-    mockGetUserById.mockReturnValue(null);
-
-    const identity = await resolveFeedbackIdentity('unknown_id');
-
-    expect(identity).toBeUndefined();
-  });
-});
-
 describe('listMyFeedback', () => {
   const ITEMS = [
     {
@@ -654,7 +355,7 @@ describe('listMyFeedback', () => {
     }) as unknown as typeof fetch;
 
     const result = await listMyFeedback({
-      dorkHome,
+      dorkHome: dorkHome(),
       cloudUrl: 'https://example.test',
       fetchImpl,
     });
@@ -669,7 +370,7 @@ describe('listMyFeedback', () => {
     ) as unknown as typeof fetch;
 
     await expect(
-      listMyFeedback({ dorkHome, cloudUrl: 'https://example.test', fetchImpl })
+      listMyFeedback({ dorkHome: dorkHome(), cloudUrl: 'https://example.test', fetchImpl })
     ).rejects.toThrow(/500/);
   });
 });

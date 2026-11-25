@@ -1,20 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import Conf, { type Schema } from 'conf';
-import { UserConfigSchema, USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
+import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import {
   backfillExtensionsApprovedToRun,
   seedExtensionsApprovedSources,
   backfillHarnessApprovedHooks,
-  CONF_JSON_SCHEMA,
-  CONFIG_MIGRATIONS,
   seedHarnessAutoAdopt,
   seedHarnessGlobal,
   seedHarnessRefusedHooks,
 } from '../../config-manager.js';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
-import { createMockStore } from './config-manager.fixtures.js';
+import { createMockStore, upgradeConfigFile } from './config-manager.fixtures.js';
 
 describe('backfillExtensionsApprovedToRun migration (DOR-516)', () => {
   it('seeds an EMPTY list, approving nothing the user already had installed', () => {
@@ -243,45 +237,20 @@ describe('seedHarnessRefusedHooks migration (DOR-1849)', () => {
     // ONLY thing that puts the leaf on the file: suppress it and this goes red
     // while `store.get('harness').refusedHooks` still answers `[]` from Ajv's
     // discarded copy.
-    //
-    // `projectVersion` is stated explicitly because `SERVER_VERSION` resolves to
-    // `0.0.0` in a dev tree, which runs no migration at all.
-    const dir = path.join(os.tmpdir(), 'test-dork-refused-hooks-mig-' + Date.now());
-    const cfgPath = path.join(dir, 'config.json');
-    fs.mkdirSync(dir, { recursive: true });
-    try {
-      fs.writeFileSync(
-        cfgPath,
-        JSON.stringify({
-          version: 1,
-          harness: { autoSync: false, approvedHooks: ['flow@abc'] },
-          __internal__: { migrations: { version: '0.74.0' } },
-        }),
-        'utf-8'
-      );
-
-      new Conf({
-        configName: 'config',
-        cwd: dir,
-        // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
-        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
-        defaults: USER_CONFIG_DEFAULTS,
-        clearInvalidConfig: false,
-        projectVersion: '0.75.0',
-        migrations: CONFIG_MIGRATIONS,
-      });
-
-      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
-        harness: Record<string, unknown>;
-      };
-      expect(onDisk.harness.refusedHooks).toEqual([]);
-      // The upgrade adds a leaf; it changes nothing the person had set.
-      expect(onDisk.harness.autoSync).toBe(false);
-      expect(onDisk.harness.approvedHooks).toEqual(['flow@abc']);
-      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    const onDisk = upgradeConfigFile<{
+      harness: Record<string, unknown>;
+    }>(
+      {
+        harness: { autoSync: false, approvedHooks: ['flow@abc'] },
+      },
+      '0.74.0',
+      '0.75.0'
+    );
+    expect(onDisk.harness.refusedHooks).toEqual([]);
+    // The upgrade adds a leaf; it changes nothing the person had set.
+    expect(onDisk.harness.autoSync).toBe(false);
+    expect(onDisk.harness.approvedHooks).toEqual(['flow@abc']);
+    expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
   });
 });
 
@@ -359,45 +328,20 @@ describe('seedHarnessGlobal migration (DOR-1924, case 9)', () => {
     // thing that puts the leaf on the file: suppress it and this goes red while
     // `store.get('harness').global` still answers the default from Ajv's
     // discarded copy.
-    //
-    // `projectVersion` is stated explicitly because `SERVER_VERSION` resolves to
-    // `0.0.0` in a dev tree, which runs no migration at all.
-    const dir = path.join(os.tmpdir(), 'test-dork-harness-global-mig-' + Date.now());
-    const cfgPath = path.join(dir, 'config.json');
-    fs.mkdirSync(dir, { recursive: true });
-    try {
-      fs.writeFileSync(
-        cfgPath,
-        JSON.stringify({
-          version: 1,
-          harness: { autoSync: false, approvedHooks: ['flow@abc'], refusedHooks: [] },
-          __internal__: { migrations: { version: '0.76.0' } },
-        }),
-        'utf-8'
-      );
-
-      new Conf({
-        configName: 'config',
-        cwd: dir,
-        // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
-        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
-        defaults: USER_CONFIG_DEFAULTS,
-        clearInvalidConfig: false,
-        projectVersion: '0.77.0',
-        migrations: CONFIG_MIGRATIONS,
-      });
-
-      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
-        harness: Record<string, unknown>;
-      };
-      expect(onDisk.harness.global).toEqual({ harnesses: [], askedAt: null });
-      // The upgrade adds a leaf; it changes nothing the person had set.
-      expect(onDisk.harness.autoSync).toBe(false);
-      expect(onDisk.harness.approvedHooks).toEqual(['flow@abc']);
-      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    const onDisk = upgradeConfigFile<{
+      harness: Record<string, unknown>;
+    }>(
+      {
+        harness: { autoSync: false, approvedHooks: ['flow@abc'], refusedHooks: [] },
+      },
+      '0.76.0',
+      '0.77.0'
+    );
+    expect(onDisk.harness.global).toEqual({ harnesses: [], askedAt: null });
+    // The upgrade adds a leaf; it changes nothing the person had set.
+    expect(onDisk.harness.autoSync).toBe(false);
+    expect(onDisk.harness.approvedHooks).toEqual(['flow@abc']);
+    expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
   });
 });
 
@@ -463,49 +407,24 @@ describe('seedHarnessAutoAdopt migration (DOR-1853, case 25)', () => {
     // thing that puts the leaf on the file: suppress it and this goes red while
     // `store.get('harness').autoAdopt` still answers `false` from Ajv's
     // discarded copy.
-    //
-    // `projectVersion` is stated explicitly because `SERVER_VERSION` resolves to
-    // `0.0.0` in a dev tree, which runs no migration at all.
-    const dir = path.join(os.tmpdir(), 'test-dork-auto-adopt-mig-' + Date.now());
-    const cfgPath = path.join(dir, 'config.json');
-    fs.mkdirSync(dir, { recursive: true });
-    try {
-      fs.writeFileSync(
-        cfgPath,
-        JSON.stringify({
-          version: 1,
-          harness: {
-            autoSync: false,
-            approvedHooks: ['flow@abc'],
-            refusedHooks: [],
-            global: { harnesses: [], askedAt: null },
-          },
-          __internal__: { migrations: { version: '0.77.0' } },
-        }),
-        'utf-8'
-      );
-
-      new Conf({
-        configName: 'config',
-        cwd: dir,
-        // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
-        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
-        defaults: USER_CONFIG_DEFAULTS,
-        clearInvalidConfig: false,
-        projectVersion: '0.78.0',
-        migrations: CONFIG_MIGRATIONS,
-      });
-
-      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
-        harness: Record<string, unknown>;
-      };
-      expect(onDisk.harness.autoAdopt).toBe(false);
-      // The upgrade adds a leaf; it changes nothing the person had set.
-      expect(onDisk.harness.autoSync).toBe(false);
-      expect(onDisk.harness.approvedHooks).toEqual(['flow@abc']);
-      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    const onDisk = upgradeConfigFile<{
+      harness: Record<string, unknown>;
+    }>(
+      {
+        harness: {
+          autoSync: false,
+          approvedHooks: ['flow@abc'],
+          refusedHooks: [],
+          global: { harnesses: [], askedAt: null },
+        },
+      },
+      '0.77.0',
+      '0.78.0'
+    );
+    expect(onDisk.harness.autoAdopt).toBe(false);
+    // The upgrade adds a leaf; it changes nothing the person had set.
+    expect(onDisk.harness.autoSync).toBe(false);
+    expect(onDisk.harness.approvedHooks).toEqual(['flow@abc']);
+    expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
   });
 });

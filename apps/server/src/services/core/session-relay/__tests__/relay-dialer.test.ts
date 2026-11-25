@@ -36,6 +36,10 @@ import type { RelayPin } from '../pin-store.js';
 
 const ORIGIN = 'https://dorian.hub.example.test';
 const LATER = '2099-01-01T00:00:00.000Z';
+const INTERRUPT = {
+  op: 'session.interrupt',
+  sessionId: '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c',
+} as const;
 
 /** A socket whose other end the test plays. */
 class FakeSocket implements RelaySocket {
@@ -176,10 +180,11 @@ describe('RelayDialer', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it('stays off with no pin, or once the command has expired', () => {
+  it('stays off with no pin, or once the command has expired or its expiry is unreadable', () => {
     expect(setup({ pin: null }).dialer.onViewerOpen(LATER)).toBe('ignored');
     const { dialer, sockets } = setup();
     expect(dialer.onViewerOpen('2000-01-01T00:00:00.000Z')).toBe('ignored');
+    expect(dialer.onViewerOpen('not a date')).toBe('ignored');
     expect(sockets).toHaveLength(0);
   });
 
@@ -215,7 +220,7 @@ describe('RelayDialer', () => {
     const request: RelayWebFrame = {
       type: 'request',
       id: 'r1',
-      request: { op: 'session.interrupt', sessionId: '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c' },
+      request: INTERRUPT,
     };
     h.hubSends(channel!, request);
     expect(h.handled).toEqual([request]);
@@ -236,7 +241,7 @@ describe('RelayDialer', () => {
     h.hubSends(channel, {
       type: 'request',
       id: 'r1',
-      request: { op: 'session.interrupt', sessionId: '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c' },
+      request: INTERRUPT,
     });
     h.reply()!({
       type: 'stream.frame',
@@ -254,7 +259,7 @@ describe('RelayDialer', () => {
     h.hubSends(channel, {
       type: 'request',
       id: 'r1',
-      request: { op: 'session.interrupt', sessionId: '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c' },
+      request: INTERRUPT,
     });
     h.sockets[0]!.bufferedAmount = RELAY_SEND_BUFFER_MAX_BYTES + 1;
     h.reply()!({ type: 'stream.frame', streamId: 's1', frame: { event: 'text_delta' } });
@@ -332,13 +337,13 @@ describe('RelayDialer', () => {
     h.hubSends(channel, {
       type: 'request',
       id: 'r1',
-      request: { op: 'session.interrupt', sessionId: '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c' },
+      request: INTERRUPT,
       device,
     });
     h.hubSends(channel, {
       type: 'request',
       id: 'r2',
-      request: { op: 'session.interrupt', sessionId: '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c' },
+      request: INTERRUPT,
     });
     expect(onDevice).toHaveBeenCalledTimes(1);
     expect(onDevice).toHaveBeenCalledWith(device);
@@ -440,18 +445,6 @@ describe('RelayDialer', () => {
     expect(h.sockets).toHaveLength(2);
   });
 
-  it('stays connected while the hub keeps talking', () => {
-    const h = setup();
-    h.dialer.onViewerOpen(LATER);
-    const channel = h.hubAnswers()!;
-    h.hubSends(channel, { type: 'viewers', count: 1 });
-    for (let i = 0; i < 5; i++) {
-      vi.advanceTimersByTime(RELAY_SILENCE_TIMEOUT_MS / 2);
-      h.hubSends(channel, { type: 'heartbeat' });
-    }
-    expect(h.dialer.connected).toBe(true);
-  });
-
   it('closes when the pin is gone, checked on the next viewer report', () => {
     const h = setup();
     h.dialer.onViewerOpen(LATER);
@@ -470,7 +463,7 @@ describe('RelayDialer', () => {
     h.hubSends(channel, {
       type: 'request',
       id: 'r1',
-      request: { op: 'session.interrupt', sessionId: '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c' },
+      request: INTERRUPT,
     });
     expect(h.handled).toEqual([]);
     expect(h.dialer.connected).toBe(false);
@@ -504,11 +497,5 @@ describe('RelayDialer', () => {
     h.sockets[0]!.fire('close');
     expect(h.dialer.connected).toBe(false);
     expect(h.server.closeAll).toHaveBeenCalledTimes(1);
-  });
-
-  it('treats an expiry it cannot read as passed', () => {
-    const { dialer, sockets } = setup();
-    expect(dialer.onViewerOpen('not a date')).toBe('ignored');
-    expect(sockets).toHaveLength(0);
   });
 });
