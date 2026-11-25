@@ -5,8 +5,9 @@
  * When its message starts a chat, the server works out where that chat opens
  * (the sessions route's own rule) and seals it into the carried limits for
  * that sender and that chat. The handler stands the turn there and runs it as
- * that agent, and ignores a place nobody sealed, one sealed for someone else
- * or another chat, and any place on a conversation that has already run.
+ * that agent. It refuses a new chat whose place nobody sealed for its sender,
+ * and ignores a place sealed for another chat and any place on a conversation
+ * that has already run.
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
@@ -15,6 +16,7 @@ import { handleAgentMessage } from '../agent-handler.js';
 import type { AgentRuntimeLike, ExecutionSettingsResolver } from '../types.js';
 import type { AdapterContext, RelayPublisher } from '../../../types.js';
 import { CARRIED_TURN_LIMITS_FIELD, sealTurnLimits } from '../../../lib/carried-turn-limits.js';
+import { NEW_CHAT_PLACE_UNCHECKED } from '../turn-place.js';
 
 const EPOCH = Date.UTC(2026, 10, 24, 10, 0, 0);
 const now = (): number => EPOCH;
@@ -71,16 +73,15 @@ interface Turn {
   agentDirectory?: string;
 }
 
-/** Deliver one message and read where its turn ran, and as whom. */
-async function turnOf(
-  carried: unknown,
-  opts: {
-    from?: string;
-    persisted?: string;
-    context?: AdapterContext;
-    extra?: Record<string, unknown>;
-  } = {}
-): Promise<Turn> {
+interface DeliverOpts {
+  from?: string;
+  persisted?: string;
+  context?: AdapterContext;
+  extra?: Record<string, unknown>;
+}
+
+/** Deliver one message carrying these limits. */
+async function deliver(carried: unknown, opts: DeliverOpts = {}) {
   const agentManager = runtime();
   const resolveExecutionSettings = vi.fn().mockResolvedValue({});
   const payload = {
@@ -88,7 +89,7 @@ async function turnOf(
     ...opts.extra,
     ...(carried !== undefined ? { [CARRIED_TURN_LIMITS_FIELD]: carried } : {}),
   };
-  await handleAgentMessage(
+  const result = await handleAgentMessage(
     SUBJECT,
     envelope(payload, opts.from),
     opts.context,
@@ -104,6 +105,12 @@ async function turnOf(
     },
     relay()
   );
+  return { result, agentManager, resolveExecutionSettings };
+}
+
+/** Deliver one message and read where its turn ran, and as whom. */
+async function turnOf(carried: unknown, opts: DeliverOpts = {}): Promise<Turn> {
+  const { agentManager, resolveExecutionSettings } = await deliver(carried, opts);
   const sent = vi.mocked(agentManager.sendMessage).mock.calls[0]![2] as Turn;
   const ensured = vi.mocked(agentManager.ensureSession).mock.calls[0]![1] as { cwd?: string };
   const settings = resolveExecutionSettings.mock.calls[0]![0] as { agentDirectory?: string };
@@ -130,13 +137,29 @@ describe('a new chat the server placed', () => {
     expect((await turnOf(carried)).cwd).toBe(HOME);
   });
 
-  it('ignores a place nobody sealed', async () => {
-    expect(await turnOf({ newChat: PLACE })).toEqual({});
+  it.each([
+    ['nobody sealed', { newChat: PLACE }],
+    [
+      'sealed for another sender',
+      sealTurnLimits('relay.agent.claude-code.ori-id', { newChat: PLACE }),
+    ],
+    [
+      'changed after it was sealed',
+      {
+        ...sealTurnLimits(SENDER, { newChat: PLACE }),
+        newChat: { ...PLACE, cwd: '/made-up/elsewhere' },
+      },
+    ],
+  ])('refuses a new chat whose place %s, and never starts it', async (_label, carried) => {
+    const { result, agentManager } = await deliver(carried);
+    expect(result).toMatchObject({ success: false, error: NEW_CHAT_PLACE_UNCHECKED });
+    expect(agentManager.ensureSession).not.toHaveBeenCalled();
+    expect(agentManager.sendMessage).not.toHaveBeenCalled();
   });
 
-  it('ignores a place sealed for another sender', async () => {
-    const carried = sealTurnLimits('relay.agent.claude-code.ori-id', { newChat: PLACE });
-    expect(await turnOf(carried)).toEqual({});
+  it('runs a chat that has run before, whatever place it carries', async () => {
+    const carried = { newChat: { ...PLACE, sessionKey: 'sdk-session-1' } };
+    expect(await turnOf(carried, { persisted: 'sdk-session-1' })).toEqual({});
   });
 
   it('ignores a place sealed for another chat', async () => {

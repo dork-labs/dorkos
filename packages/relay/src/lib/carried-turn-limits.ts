@@ -130,3 +130,19 @@ export function sealedNewChatPlace(
     ...(typeof forAgent === 'string' && forAgent !== '' ? { forAgent } : {}),
   };
 }
+
+/**
+ * Whether this message carries a new chat's place that the server did not seal
+ * for this sender: one anyone else wrote, one changed on the way, or one sealed
+ * before a restart. A place sealed for this sender but another chat is not
+ * counted here; {@link sealedNewChatPlace} ignores it.
+ *
+ * @param payload - A relay envelope's payload.
+ * @param from - The envelope's sender.
+ */
+export function carriesUnsealedNewChat(payload: unknown, from: string): boolean {
+  if (typeof payload !== 'object' || payload === null) return false;
+  const carried = (payload as Record<string, unknown>)[CARRIED_TURN_LIMITS_FIELD];
+  if (typeof carried !== 'object' || carried === null || !('newChat' in carried)) return false;
+  return !isSealedTurnLimits(from, carried as Record<string, unknown>);
+}

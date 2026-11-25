@@ -870,6 +870,10 @@ export class ClaudeCodeAdapter implements RelayAdapter {
             ...(this.isAgentScopedSubject(subject) && this.deps.bindSessionRuntime
               ? { bindSessionRuntime: this.deps.bindSessionRuntime }
               : {}),
+            // A new chat the server placed has nobody else to record it either,
+            // whatever the subject's shape, and its later turns read it back.
+            ...(this.deps.bindSessionRuntime ? { bindNewChat: this.deps.bindSessionRuntime } : {}),
+            ...(this.deps.recallChatPlace ? { recallChatPlace: this.deps.recallChatPlace } : {}),
             ...(this.deps.noteTurnStart ? { noteTurnStart: this.deps.noteTurnStart } : {}),
             ...(this.deps.markStrangerTurns ? { markStrangerTurns: true } : {}),
             turnController,

@@ -198,6 +198,8 @@ export type {
   TurnDeskCheck,
   TurnRuntimeTypeResolver,
   SessionRuntimeBinder,
+  ChatPlaceRecall,
+  RecalledChatPlace,
   TurnStartNote,
   TurnExecutionSettings,
 } from './adapters/claude-code/index.js';

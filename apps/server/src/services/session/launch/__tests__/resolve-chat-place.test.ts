@@ -4,9 +4,16 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { sessionMetadata } from '@dorkos/db';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 
-import { resolveChatPlace, type ResolveChatPlaceDeps } from '../resolve-chat-place.js';
+import { runtimeRegistry } from '../../../core/runtime-registry.js';
+import {
+  heldChatPlace,
+  resolveChatPlace,
+  type ResolveChatPlaceDeps,
+} from '../resolve-chat-place.js';
 
 const SESSION = 'chat-place-session';
 const AGENT = '/agents/beta';
@@ -109,5 +116,49 @@ describe('resolveChatPlace cwd precedence', () => {
 
     expect(result).toMatchObject({ cwd: '/source' });
     expect(deps.resolveWithRoom).not.toHaveBeenCalled();
+  });
+});
+
+describe('heldChatPlace', () => {
+  beforeEach(() => {
+    const db = createTestDb();
+    runtimeRegistry.setDb(db);
+    db.insert(sessionMetadata)
+      .values({
+        sessionId: SESSION,
+        runtime: 'place-test',
+        agentPath: AGENT,
+        createdAt: new Date().toISOString(),
+      })
+      .run();
+  });
+
+  it('reads a held chat’s folder and its recorded agent', async () => {
+    runtime.getSessionCwd = vi.fn(() => '/runtime');
+
+    expect(await heldChatPlace(SESSION, deps)).toEqual({ cwd: '/runtime', forAgent: AGENT });
+  });
+
+  it('falls back to the recorded agent’s home when no runtime knows the folder', async () => {
+    expect(await heldChatPlace(SESSION, deps)).toEqual({ cwd: AGENT, forAgent: AGENT });
+  });
+
+  it('answers null for a chat nothing holds yet', async () => {
+    vi.mocked(deps.resolveSession).mockResolvedValue({ runtime, bound: false });
+
+    expect(await heldChatPlace(SESSION, deps)).toBeNull();
+    expect(deps.resolveWithRoom).not.toHaveBeenCalled();
+  });
+
+  it('keeps the folder when the recorded agent cannot be read', async () => {
+    runtime.getSessionCwd = vi.fn(() => '/runtime');
+    const read = vi
+      .spyOn(runtimeRegistry, 'getSessionAgentPath')
+      .mockRejectedValue(new Error('database is locked'));
+    try {
+      expect(await heldChatPlace(SESSION, deps)).toEqual({ cwd: '/runtime' });
+    } finally {
+      read.mockRestore();
+    }
   });
 });
