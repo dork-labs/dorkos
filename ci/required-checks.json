@@ -15,7 +15,8 @@
     "not-held",
     "release-window",
     "pr-gates",
-    "codex-sandbox-macos"
+    "codex-sandbox-macos",
+    "harness"
   ],
   "workflows": [
     {
