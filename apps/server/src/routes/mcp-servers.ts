@@ -1,6 +1,13 @@
 /**
- * `/api/mcp-servers`: the MCP servers a person adds once for every agent, in
- * Connections → MCP servers (DOR-3213).
+ * `/api/mcp-servers`: adding, replacing and widening the MCP servers a person
+ * adds once for every agent, in Connections → MCP servers (DOR-3213).
+ *
+ * The arguments check, removing a server, its tool check and an Undo of a
+ * standing yes are person-only capabilities the mount serves
+ * (`services/mesh/global-mcp/global-mcp-person-capabilities.ts`, DOR-4978).
+ * The two lists here stay hand routes until they page by cursor; adding,
+ * replacing and widening until the capability confirm-first hold can build its
+ * sheet from the server's own state.
  *
  * **Person-only, every route.** These are not capabilities, so no agent tool,
  * capability call or approval token reaches them. Reading takes a person
@@ -17,17 +24,16 @@
  * that sets what a server runs (POST, PUT) or lets more agents run it (a PATCH
  * that turns it on or takes an agent off its exclusions) is held until the owner
  * confirms with their password. Nothing is written before that, and what the
- * sheet says comes from `routes/mcp-server-step-up.ts`. Turning a server off,
- * keeping an agent from it and removing it only take power away, so they ask for
- * nothing. A held write keeps its secrets in memory only, in its commit, for at
- * most `STEP_UP_TTL_MS`.
+ * sheet says comes from `routes/mcp-server-step-up.ts`. Turning a server off
+ * and keeping an agent from it only take power away, so they ask for nothing.
+ * A held write keeps its secrets in memory only, in its commit, for at most
+ * `STEP_UP_TTL_MS`.
  *
  * @module routes/mcp-servers
  */
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
-  GlobalMcpArgsCheckSchema,
   GlobalMcpServerInputSchema,
   GlobalMcpServerPatchSchema,
   type GlobalMcpServerInput,
@@ -46,13 +52,16 @@ import type { Problem, ProblemCode } from '@dorkos/shared/problem';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { clearsTheAgentBar, refuseFrontDoorChange } from '../lib/caller-authority.js';
 import { logger } from '../lib/logger.js';
+import {
+  readServerStandingAllows,
+  type StandingAllowAgent,
+} from '../services/mesh/global-mcp/global-mcp-standing-allows.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import {
   GlobalMcpStoreError,
   GlobalMcpWidensError,
   type GlobalMcpStore,
 } from '../services/mesh/global-mcp/global-mcp-store.js';
-import { argsLookSecret } from '../services/mesh/global-mcp/global-mcp-mask.js';
 import {
   boundServerInput,
   agentLabel,
@@ -63,7 +72,6 @@ import {
   type AgentNames,
   type ServerChange,
 } from './mcp-server-step-up.js';
-import { addMcpServerSheetRoutes, type McpServerSheetDeps } from './mcp-server-sheet.js';
 import { noOwnerRefusal } from './relay-adapter-http.js';
 import { holdForStepUp } from './step-up-guard.js';
 
@@ -127,7 +135,7 @@ interface HeldWrite {
   warnings: readonly string[];
 }
 
-/** The bar for reading the list: a person, never an agent. */
+/** The bar for reading the lists: a person, never an agent. */
 function refuseRead(c: Context<ApiEnv>): Response | undefined {
   if (clearsTheAgentBar(honoRequestFacts(c))) return undefined;
   return problem(c, 'person_only', { detail: 'Only a person can see these servers, in the app.' });
@@ -166,13 +174,13 @@ async function writeResult(run: () => Promise<WriteResult>): Promise<WriteResult
  * @param store - The person's global MCP servers.
  * @param agentNames - What an agent is called, for the sheet; nothing by default.
  * @param ownerExists - Whether this install has an owner yet; the owner account by default.
- * @param sheet - What the server sheet's tools and standing-yes routes need; without it they are not mounted.
+ * @param agents - Every registered agent with its folder, for who holds a standing yes; none by default.
  */
 export function createMcpServerRoutes(
   store: GlobalMcpStore,
   agentNames: (agentId: string) => AgentNames | undefined = () => undefined,
   ownerExists: () => boolean = () => readOwnerAccount() !== null,
-  sheet?: McpServerSheetDeps
+  agents: () => readonly StandingAllowAgent[] = () => []
 ): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
 
@@ -267,17 +275,15 @@ export function createMcpServerRoutes(
   /** GET /api/mcp-servers — every server, secrets by name only. */
   router.get('/', (c) => refuseRead(c) ?? c.json({ servers: store.list() }));
 
-  /**
-   * POST /api/mcp-servers/check-args — whether typed arguments look like a secret, so the server
-   * holds the one rule. It answers a yes or a no, keeps nothing and logs nothing it was sent.
-   */
-  router.post('/check-args', (c) => {
+  /** GET /api/mcp-servers/:name/allows — who may use it without asking. */
+  router.get('/:name/allows', async (c) => {
     const refusal = refuseRead(c);
     if (refusal) return refusal;
-    const parsed = GlobalMcpArgsCheckSchema.safeParse(readJsonBody(c));
-    if (!parsed.success)
-      return validationProblem(c, parsed.error, { detail: 'Send the arguments to check.' });
-    return c.json({ looksSecret: argsLookSecret(parsed.data.args) });
+    const name = c.req.param('name');
+    if (!store.has(name)) {
+      return problem(c, 'not_found', { detail: 'There is no MCP server by that name.' });
+    }
+    return c.json({ allows: await readServerStandingAllows(store, name, agents()) });
   });
 
   /** POST /api/mcp-servers — add a server for every agent. */
@@ -348,24 +354,6 @@ export function createMcpServerRoutes(
       return storeRefusal(c, err);
     }
   });
-
-  /** DELETE /api/mcp-servers/:name — remove a server and its stored secrets. */
-  router.delete('/:name', async (c) => {
-    const refusal = refuseWrite(c);
-    if (refusal) return refusal;
-    try {
-      await store.remove(c.req.param('name'));
-      logger.info('[mcp-servers] removed a server for every agent', {
-        name: c.req.param('name'),
-      });
-      return c.body(null, 204);
-    } catch (err) {
-      return storeRefusal(c, err);
-    }
-  });
-
-  if (sheet)
-    addMcpServerSheetRoutes(router, store, { read: refuseRead, write: refuseWrite }, sheet);
 
   return router;
 }

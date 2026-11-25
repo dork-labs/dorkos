@@ -54,9 +54,10 @@ import { problem, sendProblem, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import {
   clearsTheAgentBar,
+  frontDoorRefusal,
+  presentsProgramCredential,
   readCallerAuthority,
   refuseUnlessAccountOwner,
-  presentsProgramCredential,
 } from '../lib/caller-authority.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import { heldWifiOwner, personProof } from '../services/todos/caller.js';
@@ -269,6 +270,9 @@ export function capabilityRequestFacts(facts: RequestFacts): CapabilityRequestFa
   let ownerProven: boolean | undefined;
   let local: boolean | undefined;
   let held: boolean | undefined;
+  let frontDoor: ReturnType<typeof frontDoorRefusal> | null = null;
+  const frontDoorAnswer = () =>
+    frontDoor === null ? (frontDoor = frontDoorRefusal(facts)) : frontDoor;
   return {
     get clearsAgentBar() {
       return (agentBar ??= clearsTheAgentBar(facts));
@@ -284,6 +288,12 @@ export function capabilityRequestFacts(facts: RequestFacts): CapabilityRequestFa
     },
     get heldWifiOwner() {
       return (held ??= heldWifiOwner(facts));
+    },
+    get frontDoorOwner() {
+      return frontDoorAnswer() === undefined;
+    },
+    get frontDoorElsewhere() {
+      return frontDoorAnswer() === 'not-at-this-computer';
     },
   };
 }

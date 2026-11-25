@@ -42,4 +42,15 @@ export interface CapabilityRequestFacts {
    * allowance (ADR 261125-114705, decision 3).
    */
   readonly heldWifiOwner: boolean;
+  /**
+   * Whether the caller clears the front-door bar (`refuseFrontDoorChange`):
+   * the owner, at this computer or over their own encrypted connection, the
+   * bar for settings that decide what code DorkOS runs.
+   */
+  readonly frontDoorOwner: boolean;
+  /**
+   * Whether that bar refused the request for where it came from rather than
+   * who sent it, so the answer can say to make the change on this computer.
+   */
+  readonly frontDoorElsewhere: boolean;
 }
