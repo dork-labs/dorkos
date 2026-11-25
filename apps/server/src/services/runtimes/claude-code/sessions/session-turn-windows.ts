@@ -951,7 +951,7 @@ function userMessageCarriesToolResult(message: SDKMessage): boolean {
 
 /**
  * Whether this frame carries something a person can see: the question the
- * empty-stream guard (`messaging/empty-stream-guard.ts`) asks of the MAPPED
+ * empty-stream guard (`shared/empty-stream-guard.ts`) asks of the MAPPED
  * events, asked here of the raw frame so the two layers agree (DOR-2064).
  * `session-turn-windows-content-parity.test.ts` pushes every shape through the
  * production mapper and fails the moment the two answers part.

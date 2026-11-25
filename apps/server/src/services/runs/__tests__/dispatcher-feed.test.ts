@@ -726,7 +726,10 @@ describe('a stop request (F6)', () => {
     await vi.waitFor(() => expect(runs.listForChat(sessionId)[0]?.status).toBe('started'));
     const [run] = runs.listForChat(sessionId);
 
-    recordStopReceipt(recordStopRequest(sessionId, { via: 'stop' }), { outcome: 'closed' });
+    // The Stop door's order: the request on the run, then the runtime asked.
+    const request = recordStopRequest(sessionId, { via: 'stop' });
+    await runtimeRegistry.get(inner.type).interruptQuery(sessionId);
+    recordStopReceipt(request, { outcome: 'closed' });
     turn.open();
     await vi.waitFor(() => expect(runs.get(run!.id)?.status).toBe('ended'));
 
@@ -824,6 +827,9 @@ describe('the ending at turn_end, the status at settle (F9)', () => {
             type: 'session_status',
             data: { sessionId: 'x', model: 'claude-made-up' },
           } as never;
+          // The operator's own hook failing, which fails nothing: without it this
+          // turn would be an empty reply, which says so and fails (DOR-3606).
+          yield { type: 'error', data: { message: 'Stop hook exited 1', code: 'hook_failure' } };
           yield { type: 'done', data: {} };
           await drain.wait;
         },
@@ -911,6 +917,8 @@ describe('every queue-row deletion cancels its run in the same transaction (§4.
     expect(clearQueuedMessages(sessionId)).toEqual([]);
     expect(cancelQueuedMessage(sessionId, run!.queueMessageId!)).toBeUndefined();
     expect(runs.get(run!.id)?.status).toBe('started');
+    // Then the Stop reaches the runtime, as the Stop door does after its clear.
+    await runtimeRegistry.get(inner.type).interruptQuery(sessionId);
     turn.open();
     await vi.waitFor(() => expect(runs.get(run!.id)?.status).toBe('ended'));
     // Ended before the runtime said a word: nobody knows if it read them.

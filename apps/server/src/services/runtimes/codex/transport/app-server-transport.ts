@@ -86,9 +86,7 @@ import { prepareCodexFilePolicy } from './prepare-file-policy.js';
 import { acquireCodexProcess } from './acquire-codex-process.js';
 import { failedCompaction, failedSetup, failedStart } from './app-server-turn-failures.js';
 import { threadKeyTurn } from './thread-key-turn.js';
-
-/** The shared bound on a stop's acknowledgement (claude-code's `STOP_ACK_TIMEOUT_MS`). */
-export const APP_SERVER_STOP_ACK_MS = 3_000;
+import { RUNTIME_STOP_ACK_TIMEOUT_MS } from '../../shared/timing/stop-ack.js';
 
 /**
  * How long a compaction may take to open its turn once Codex accepted it.
@@ -273,7 +271,7 @@ export class AppServerCodexTransport implements CodexTransport {
    */
   constructor(private readonly options: AppServerTransportOptions) {
     this.pool = options.pool ?? codexAppServerPool;
-    this.stopAckMs = options.stopAckMs ?? APP_SERVER_STOP_ACK_MS;
+    this.stopAckMs = options.stopAckMs ?? RUNTIME_STOP_ACK_TIMEOUT_MS;
     this.compactionStartMs = options.compactionStartMs ?? APP_SERVER_COMPACTION_START_MS;
     this.requests = new CodexServerRequestBroker({
       ...(options.interactionCountdownMs !== undefined

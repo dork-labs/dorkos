@@ -1,18 +1,25 @@
 /**
- * The empty-stream guard: the single place that decides whether a claude-code
- * turn produced anything a person can see, and the error surfaced when it did
- * not.
+ * The empty-stream guard: the single place that decides whether a turn produced
+ * anything a person can see, and the error surfaced when it did not.
  *
- * Both dispatch paths ask the same question — `executeSdkQuery`'s loop
- * (`message-sender.ts`) on the resume-per-message path, and `streamTurnWindow`
- * (`sessions/pump-turn-stream.ts`) on the persistent pump. They used to answer
- * it from two hand-kept copies of the same literal set, and the copies are
- * exactly what a fix has to change in lockstep: a turn that the pump forgives
- * and the sender calls a crash is a bug an operator meets at random. One
- * module, one answer.
+ * Every runtime is held to it once, at the registry's registration seam
+ * (`core/runtime-seam/report-empty-turns.ts`, DOR-3606): a Codex, OpenCode or
+ * Doe turn that ends with nothing to show says so, in the same words Claude
+ * Code always used.
  *
- * @module services/runtimes/claude-code/messaging/empty-stream-guard
+ * Claude Code also asks it from inside its two dispatch paths —
+ * `executeSdkQuery`'s loop (`claude-code/messaging/message-sender.ts`) on the
+ * resume-per-message path, and `streamTurnWindow`
+ * (`claude-code/sessions/pump-turn-stream.ts`) on the persistent pump — because
+ * the answer feeds latches only it holds (the tool turn's retirement reason, the
+ * interrupted settle). Its error is a reported failure to the seam, so the seam
+ * never adds a second one. They used to answer from two hand-kept copies of the
+ * same literal set, and a turn that the pump forgives and the sender calls a
+ * crash is a bug an operator meets at random. One module, one answer.
+ *
+ * @module services/runtimes/shared/empty-stream-guard
  */
+import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
 import { isBlockingInteractionEventType } from '@dorkos/shared/session-stream';
 import type {
   CompactBoundaryEvent,
@@ -146,4 +153,90 @@ export function isReportedFailure(event: StreamEvent): boolean {
     return (event.data as OperationProgressEvent).state === 'failed';
   }
   return false;
+}
+
+/**
+ * Whether this event shows the person something: {@link isContentEvent}, less a
+ * text chunk that is only whitespace.
+ *
+ * A reply of nothing but spaces and line breaks is an empty reply to the person
+ * reading it, so it does not count. Each chunk is judged on its own, which is
+ * enough: one chunk with a single visible character anywhere in the turn makes
+ * it a reply. Kept apart from {@link isContentEvent} because the relay's and
+ * Claude Code's windowing rules mirror that one event type for event type.
+ *
+ * @param event - A mapped stream event, before it leaves the server.
+ */
+export function isVisibleContent(event: StreamEvent): boolean {
+  if (event.type !== 'text_delta') return isContentEvent(event);
+  const text = (event.data as { text?: unknown } | undefined)?.text;
+  return typeof text === 'string' && text.trim() !== '';
+}
+
+/**
+ * Whether this event says the turn was stopped, so its silence is not a fault.
+ *
+ * A runtime that names an interrupted ending (`interrupted`, `aborted_streaming`,
+ * `aborted_tools`) or says a stop was asked for has stopped, unless it says in
+ * the same breath that nobody asked: an abort nobody requested is a turn that
+ * broke, and still owes the person the error.
+ *
+ * @param event - A mapped stream event, before it leaves the server.
+ */
+export function isStopEvent(event: StreamEvent): boolean {
+  const data = event.data as { terminalReason?: unknown; stopWasRequested?: unknown } | undefined;
+  if (data?.stopWasRequested === true) return true;
+  if (data?.stopWasRequested === false) return false;
+  return (
+    typeof data?.terminalReason === 'string' && isInterruptedTerminalReason(data.terminalReason)
+  );
+}
+
+/**
+ * What the seam yields for an empty turn: {@link emptyStreamError}, then a
+ * status naming `error` as the turn's ending.
+ *
+ * The status is not decoration. A runtime that closes every turn with
+ * `terminalReason: 'completed'` (Codex does) would otherwise have that reason
+ * absolve the error, and the chat would settle idle under an error card
+ * (`@dorkos/shared/run-outcome`). The last reason wins, so this one does.
+ *
+ * @param sessionId - The session the turn ran in.
+ */
+export function* emptyTurnFailure(sessionId: string): Generator<StreamEvent> {
+  yield emptyStreamError();
+  yield { type: 'session_status', data: { sessionId, terminalReason: 'error' } };
+}
+
+/** One turn's answer to "did it show the person anything?", folded event by event. */
+export interface EmptyTurnWatch {
+  /** Fold in one event the turn yielded. */
+  observe(event: StreamEvent): void;
+  /** Record that somebody asked the turn to stop. */
+  noteStop(): void;
+  /** Whether the turn, as seen so far, ended with nothing and owes the person the error. */
+  isEmpty(): boolean;
+}
+
+/**
+ * Start watching one turn. It is empty until it shows something
+ * ({@link isVisibleContent}), waits on a person ({@link isInteractiveEvent}),
+ * reports its own failure ({@link isReportedFailure}) or is stopped
+ * ({@link isStopEvent}, or {@link EmptyTurnWatch.noteStop}).
+ */
+export function watchForEmptyTurn(): EmptyTurnWatch {
+  let answered = false;
+  return {
+    observe(event) {
+      answered ||=
+        isVisibleContent(event) ||
+        isInteractiveEvent(event) ||
+        isReportedFailure(event) ||
+        isStopEvent(event);
+    },
+    noteStop() {
+      answered = true;
+    },
+    isEmpty: () => !answered,
+  };
 }

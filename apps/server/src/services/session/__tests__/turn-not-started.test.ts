@@ -180,7 +180,8 @@ describe('spin-off first-turn deadline through the real dispatcher (DOR-3351)', 
           ? REFUSAL
           : mode === 'throws'
             ? 'The runtime failed before reading the message.'
-            : 'The runtime did not start its first turn within five minutes.';
+            : // A turn that showed nothing says so on every runtime (DOR-3606).
+              'The agent did not respond. The service may be temporarily unavailable.';
       expect(report).toHaveBeenCalledWith(
         expect.objectContaining({ sessionId: SESSION }),
         expect.objectContaining({

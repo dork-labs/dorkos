@@ -359,7 +359,7 @@ function report(event: RuntimeSigninEvent): boolean {
  * standing, which is self-correcting the moment any real content arrives. The
  * opposite mistake is a silent all-clear on a sign-in that is still broken.
  *
- * The nearest sibling is `runtimes/claude-code/messaging/empty-stream-guard.ts`'s
+ * The nearest sibling is `runtimes/shared/empty-stream-guard.ts`'s
  * `CONTENT_EVENT_TYPES`, which asks a related but different question — "did this
  * turn produce anything for the person who asked?". Not imported from there:
  * that one is claude-code's own, and this observer is deliberately runtime-

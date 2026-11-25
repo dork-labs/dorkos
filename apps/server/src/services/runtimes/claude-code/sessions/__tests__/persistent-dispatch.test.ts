@@ -1919,7 +1919,7 @@ describe('Add context starts nothing while the opt-in is off (DOR-1307)', () => 
 // a compaction that visibly worked reported "stopped unexpectedly". The verdict
 // has to be the same one the resume path reaches (that half is pinned in
 // `claude-code-runtime.test.ts`), which is why both paths now ask the same
-// `messaging/empty-stream-guard.ts`.
+// `shared/empty-stream-guard.ts`.
 describe('a compaction is not a silent turn (DOR-1235)', () => {
   beforeEach(() => {
     optIn.persistentSession = true;
