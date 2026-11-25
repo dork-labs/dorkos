@@ -33,7 +33,19 @@
 # Usage (settings.json):
 #   "${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}/.claude/hooks/in-project.sh" <command...>
 # Fixtures: scripts/test-in-project-hook.sh
+#
+# RETIRED HOOKS. A running session keeps the hook list it read from settings.json
+# at its start, so removing a hook there does not stop it in live sessions, and a
+# worktree that has not taken main still has the script itself. This wrapper is
+# read from the session's project root on every call, so a hook listed here stops
+# everywhere as soon as that checkout has this file:
+#   typecheck-changed.sh: a whole-package tsc after every edit, outside the load
+#     gate. On apps/server it ran out of memory at Node's default heap every time
+#     (4.5 GB, ~30 s, Nov 25), so it never wrote its incremental cache.
 set -u
+case " $* " in
+  *" .claude/hooks/typecheck-changed.sh "*) exit 0 ;;
+esac
 top=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 root=${CLAUDE_PROJECT_DIR:-}
 if [ -n "$root" ] && [ -d "$root" ]; then

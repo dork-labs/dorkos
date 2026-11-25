@@ -516,9 +516,6 @@ gates:
   - id: claude.PreToolUse.heavy-command-guard
     source: .claude/settings.json
     purpose: Refuses a raw heavy command (a whole vitest suite, playwright test, a heavy turbo task) in a bare session and points to pnpm heavy, which waits in the DorkOS load gate.
-  - id: claude.PostToolUse.typecheck-changed
-    source: .claude/settings.json
-    purpose: Typechecks the edited file's workspace after every edit and blocks on type errors.
   - id: claude.PostToolUse.lint-changed
     source: .claude/settings.json
     purpose: Lints the edited file after every edit and blocks on lint errors.

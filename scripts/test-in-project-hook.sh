@@ -89,6 +89,14 @@ check "CLAUDE_PROJECT_DIR unset: a checkout without .claude/hooks is skipped, no
 check "CLAUDE_PROJECT_DIR pointing at a non-directory: falls back like unset" \
   "exit=0 out=$(real "$project")" "$(run "$project" "$tmp/does-not-exist" sh -c 'pwd -P')"
 
+# --- a retired hook never runs, even from a worktree that still has the script
+printf '#!/bin/sh\necho ran\n' >"$tmp/project-wt/.claude/hooks/typecheck-changed.sh"
+chmod +x "$tmp/project-wt/.claude/hooks/typecheck-changed.sh"
+check "a retired hook (typecheck-changed.sh) is skipped even where the script still exists" \
+  "exit=0 out=" "$(run "$tmp/project-wt" "$project" .claude/hooks/typecheck-changed.sh)"
+check "a hook that is not retired still runs from the worktree" \
+  "exit=0 out=ran" "$(cp "$tmp/project-wt/.claude/hooks/typecheck-changed.sh" "$tmp/project-wt/.claude/hooks/other.sh" && run "$tmp/project-wt" "$project" .claude/hooks/other.sh)"
+
 # --- the anchoring rule in settings.json
 settings=$repo_root/.claude/settings.json
 anchor='"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}"'
