@@ -2615,251 +2615,6 @@
         },
         "additionalProperties": false
       },
-      "WorkQueue": {
-        "type": "object",
-        "properties": {
-          "agentId": {
-            "type": "string"
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "target": {
-            "type": "integer"
-          },
-          "dailyStartCap": {
-            "type": "integer"
-          },
-          "startsToday": {
-            "type": "integer"
-          },
-          "allStopped": {
-            "type": "boolean"
-          },
-          "hold": {
-            "$ref": "#/components/schemas/WorkQueueHold"
-          },
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/WorkItem"
-            }
-          },
-          "recent": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/WorkItem"
-            }
-          }
-        },
-        "required": [
-          "agentId",
-          "enabled",
-          "target",
-          "dailyStartCap",
-          "startsToday",
-          "allStopped",
-          "hold",
-          "items",
-          "recent"
-        ]
-      },
-      "WorkQueueHold": {
-        "type": [
-          "string",
-          "null"
-        ],
-        "enum": [
-          "stopped",
-          "daily-cap",
-          "disk",
-          "load",
-          "accounts",
-          "signed-out",
-          "chat-cap",
-          "permission",
-          "agent-paused",
-          "agent-missing",
-          null
-        ]
-      },
-      "WorkItem": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "agentId": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          },
-          "prompt": {
-            "type": "string"
-          },
-          "cwd": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "state": {
-            "$ref": "#/components/schemas/WorkItemState"
-          },
-          "outcome": {
-            "$ref": "#/components/schemas/WorkItemOutcome"
-          },
-          "note": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "sessionId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "accountId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "addedBy": {
-            "type": "string",
-            "enum": [
-              "person",
-              "agent"
-            ]
-          },
-          "createdAt": {
-            "type": "string"
-          },
-          "startedAt": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "endedAt": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "id",
-          "agentId",
-          "title",
-          "prompt",
-          "cwd",
-          "state",
-          "outcome",
-          "note",
-          "sessionId",
-          "accountId",
-          "addedBy",
-          "createdAt",
-          "startedAt",
-          "endedAt"
-        ]
-      },
-      "WorkItemState": {
-        "type": "string",
-        "enum": [
-          "queued",
-          "starting",
-          "running",
-          "ended"
-        ]
-      },
-      "WorkItemOutcome": {
-        "type": [
-          "string",
-          "null"
-        ],
-        "enum": [
-          "finished",
-          "failed",
-          "stopped",
-          "limit",
-          "interrupted",
-          null
-        ]
-      },
-      "UpdateWorkQueueRequest": {
-        "type": "object",
-        "properties": {
-          "enabled": {
-            "type": "boolean"
-          },
-          "target": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 64
-          },
-          "dailyStartCap": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 500
-          }
-        }
-      },
-      "SetWorkQueuesStoppedRequest": {
-        "type": "object",
-        "properties": {
-          "stopped": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "stopped"
-        ]
-      },
-      "ReorderWorkQueueRequest": {
-        "type": "object",
-        "properties": {
-          "itemIds": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            },
-            "minItems": 1,
-            "maxItems": 200
-          }
-        },
-        "required": [
-          "itemIds"
-        ]
-      },
-      "AddWorkItemRequest": {
-        "type": "object",
-        "properties": {
-          "title": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 80
-          },
-          "prompt": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 20000
-          },
-          "cwd": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "title",
-          "prompt"
-        ]
-      },
       "HeartbeatStatus": {
         "type": "object",
         "properties": {
@@ -21517,6 +21272,193 @@
           }
         ]
       },
+      "WorkQueue": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "integer"
+          },
+          "dailyStartCap": {
+            "type": "integer"
+          },
+          "startsToday": {
+            "type": "integer"
+          },
+          "allStopped": {
+            "type": "boolean"
+          },
+          "hold": {
+            "$ref": "#/components/schemas/WorkQueueHold"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkItem"
+            }
+          },
+          "recent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkItem"
+            }
+          }
+        },
+        "required": [
+          "agentId",
+          "enabled",
+          "target",
+          "dailyStartCap",
+          "startsToday",
+          "allStopped",
+          "hold",
+          "items",
+          "recent"
+        ]
+      },
+      "WorkQueueHold": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "stopped",
+          "daily-cap",
+          "disk",
+          "load",
+          "accounts",
+          "signed-out",
+          "chat-cap",
+          "permission",
+          "agent-paused",
+          "agent-missing",
+          null
+        ]
+      },
+      "WorkItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/WorkItemState"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/WorkItemOutcome"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "addedBy": {
+            "type": "string",
+            "enum": [
+              "person",
+              "agent"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "title",
+          "prompt",
+          "cwd",
+          "state",
+          "outcome",
+          "note",
+          "sessionId",
+          "accountId",
+          "addedBy",
+          "createdAt",
+          "startedAt",
+          "endedAt"
+        ]
+      },
+      "WorkItemState": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "starting",
+          "running",
+          "ended"
+        ]
+      },
+      "WorkItemOutcome": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "finished",
+          "failed",
+          "stopped",
+          "limit",
+          "interrupted",
+          null
+        ]
+      },
+      "SetWorkQueuesStoppedRequest": {
+        "type": "object",
+        "properties": {
+          "stopped": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "stopped"
+        ]
+      },
       "AuditVerifyResult": {
         "type": "object",
         "properties": {
@@ -27292,423 +27234,6 @@
           }
         },
         "operationId": "todos.update"
-      }
-    },
-    "/api/agents/{id}/work-queue": {
-      "get": {
-        "tags": [
-          "Work queue"
-        ],
-        "summary": "An agent's work queue",
-        "description": "What waits in order, what is running, what recently ended, whether it is on, the target and daily cap, and what is stopping the next start.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The queue",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkQueue"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is an agent (`person_only`), or not the owner (`owner_only`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No such agent or item (`not_found`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "agents.getWorkQueue"
-      },
-      "patch": {
-        "tags": [
-          "Work queue"
-        ],
-        "summary": "Turn a queue on or off, or set its target or daily cap",
-        "description": "A queue is off until a person turns it on. Only a person can change these.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateWorkQueueRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The queue, changed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkQueue"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is an agent (`person_only`), or not the owner (`owner_only`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No such agent or item (`not_found`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "agents.updateWorkQueue"
-      }
-    },
-    "/api/work-queues/stop": {
-      "put": {
-        "tags": [
-          "Work queue"
-        ],
-        "summary": "Stop every queue, or lift the stop",
-        "description": "Only a person can do this. Chats already running keep going.",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetWorkQueuesStoppedRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The stop, as set",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SetWorkQueuesStoppedRequest"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is an agent (`person_only`), or not the owner (`owner_only`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "workQueues.stop"
-      }
-    },
-    "/api/agents/{id}/work-queue/order": {
-      "put": {
-        "tags": [
-          "Work queue"
-        ],
-        "summary": "Set the order of what is waiting",
-        "description": "An item that started meanwhile is left out of the change.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ReorderWorkQueueRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The queue, in order",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkQueue"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is an agent (`person_only`), or not the owner (`owner_only`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No such agent or item (`not_found`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "agents.updateWorkQueueOrder"
-      }
-    },
-    "/api/agents/{id}/work-queue/items": {
-      "post": {
-        "tags": [
-          "Work queue"
-        ],
-        "summary": "Add an item",
-        "description": "A person adds work to the back of an agent's queue.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AddWorkItemRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "The new item",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkItem"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is an agent (`person_only`), or not the owner (`owner_only`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No such agent or item (`not_found`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "The queue is full (`conflict`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "agents.createWorkQueueItems"
-      }
-    },
-    "/api/agents/{id}/work-queue/items/{itemId}": {
-      "delete": {
-        "tags": [
-          "Work queue"
-        ],
-        "summary": "Remove a waiting item",
-        "description": "A running item is its chat's to end, so it is refused.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "itemId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Removed"
-          },
-          "403": {
-            "description": "The caller is an agent (`person_only`), or not the owner (`owner_only`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No such agent or item (`not_found`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "It already started (`conflict`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "agents.deleteWorkQueueItems"
-      }
-    },
-    "/api/agents/{id}/work-queue/items/{itemId}/requeue": {
-      "post": {
-        "tags": [
-          "Work queue"
-        ],
-        "summary": "Queue an ended item again",
-        "description": "It goes to the back of the queue and starts a new chat.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "itemId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The item, waiting again",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkItem"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is an agent (`person_only`), or not the owner (`owner_only`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No such agent or item (`not_found`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "It has not ended (`conflict`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "agents.requeueWorkQueueItems"
       }
     },
     "/api/agents/{id}/heartbeat": {
@@ -104911,6 +104436,1036 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/work-queue": {
+      "get": {
+        "operationId": "workqueue.get",
+        "tags": [
+          "Workqueue"
+        ],
+        "summary": "Open an agent’s work queue",
+        "description": "What waits in order, what is running, what recently ended, whether the queue is on, its target and daily cap, and what is stopping the next start.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The Mesh id of the agent whose queue this is."
+            },
+            "required": true,
+            "description": "The Mesh id of the agent whose queue this is.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Open an agent’s work queue result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueue"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "workqueue.update",
+        "tags": [
+          "Workqueue"
+        ],
+        "summary": "Change how an agent’s work queue runs",
+        "description": "Turn a queue on or off, or set its target or daily cap. A queue is off until a person turns it on.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The Mesh id of the agent whose queue this is."
+            },
+            "required": true,
+            "description": "The Mesh id of the agent whose queue this is.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "target": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 64
+                  },
+                  "dailyStartCap": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 500
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Change how an agent’s work queue runs result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueue"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/work-queues/stop": {
+      "put": {
+        "operationId": "workqueue.stop_all",
+        "tags": [
+          "Workqueue"
+        ],
+        "summary": "Stop every work queue",
+        "description": "Stop every queue (`stopped: true`) or lift the stop. Chats already running keep going.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetWorkQueuesStoppedRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stop every work queue result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetWorkQueuesStoppedRequest"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/work-queue/order": {
+      "put": {
+        "operationId": "workqueue.set_order",
+        "tags": [
+          "Workqueue"
+        ],
+        "summary": "Set the order of waiting work",
+        "description": "Set the order of what waits. An item that started meanwhile is left out.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The Mesh id of the agent whose queue this is."
+            },
+            "required": true,
+            "description": "The Mesh id of the agent whose queue this is.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "itemIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1,
+                    "maxItems": 200
+                  }
+                },
+                "required": [
+                  "itemIds"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Set the order of waiting work result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueue"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/work-queue/items": {
+      "post": {
+        "operationId": "workqueue.add_item",
+        "tags": [
+          "Workqueue"
+        ],
+        "summary": "Add work to an agent’s queue",
+        "description": "Add one item to the back of an agent’s queue: a title, a prompt and a folder.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The Mesh id of the agent whose queue this is."
+            },
+            "required": true,
+            "description": "The Mesh id of the agent whose queue this is.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "prompt": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 20000
+                  },
+                  "cwd": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "title",
+                  "prompt"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Add work to an agent’s queue result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItem"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/work-queue/items/{itemId}": {
+      "delete": {
+        "operationId": "workqueue.remove_item",
+        "tags": [
+          "Workqueue"
+        ],
+        "summary": "Remove waiting work",
+        "description": "Remove an item that has not started. A running item is its chat’s to end.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The Mesh id of the agent whose queue this is."
+            },
+            "required": true,
+            "description": "The Mesh id of the agent whose queue this is.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The work item."
+            },
+            "required": true,
+            "description": "The work item.",
+            "name": "itemId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Remove waiting work result"
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/work-queue/items/{itemId}/requeue": {
+      "post": {
+        "operationId": "workqueue.requeue_item",
+        "tags": [
+          "Workqueue"
+        ],
+        "summary": "Queue ended work again",
+        "description": "Put an ended item at the back of the queue. It starts a new chat.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The Mesh id of the agent whose queue this is."
+            },
+            "required": true,
+            "description": "The Mesh id of the agent whose queue this is.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The work item."
+            },
+            "required": true,
+            "description": "The work item.",
+            "name": "itemId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Queue ended work again result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItem"
+                }
               }
             }
           },

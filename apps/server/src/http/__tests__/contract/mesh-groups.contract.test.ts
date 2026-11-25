@@ -570,7 +570,7 @@ contractSuite('mesh, agent and discovery groups', [
     headers: AGENT,
     expect: {
       status: 403,
-      body: problemBody('person_only', { detail: 'Agents use their own work queue tools.' }),
+      body: problemBody('person_only', { detail: 'Only a person can do that, not an agent.' }),
     },
   },
   {
@@ -581,7 +581,7 @@ contractSuite('mesh, agent and discovery groups', [
     body: { enabled: true },
     expect: {
       status: 403,
-      body: problemBody('person_only', { detail: 'Agents use their own work queue tools.' }),
+      body: problemBody('person_only', { detail: 'Only a person can do that, not an agent.' }),
     },
   },
   {
@@ -600,7 +600,7 @@ contractSuite('mesh, agent and discovery groups', [
     body: { stopped: false },
     expect: {
       status: 403,
-      body: problemBody('owner_only', { detail: 'Only the owner can stop every queue.' }),
+      body: problemBody('person_only', { detail: 'Only a person can do that, not an agent.' }),
     },
   },
   {

@@ -17,6 +17,7 @@
 import type { Context } from 'hono';
 import { problemBody, sendProblem } from '@dorkos/http-kit';
 import { PROBLEM_CODES, type Problem, type ProblemCode } from '@dorkos/shared/problem';
+import { WORK_QUEUE_MAX_QUEUED } from '@dorkos/shared/work-queue-schemas';
 
 import type {
   TierDeniedPayload,
@@ -214,6 +215,21 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
   },
   DIFF_WRITE_NOT_ALLOWED: { code: 'forbidden', detail: 'DorkOS isn’t allowed to write this file.' },
   WORKSPACE_NOT_FOUND: { code: 'not_found', detail: 'No workspace with that id.' },
+  // A person's work queue doors kept the hand routes' sentences when they moved
+  // onto the mount (`services/work-queue/work-queue-person-capabilities.ts`).
+  WORK_QUEUE_AGENT_NOT_FOUND: { code: 'not_found', detail: 'No agent on the team has that id.' },
+  WORK_ITEM_NOT_FOUND: { code: 'not_found', detail: 'No item in a work queue has that id.' },
+  WORK_ITEM_STARTED: { code: 'conflict', detail: 'That item has already started.' },
+  WORK_ITEM_NOT_ENDED: { code: 'conflict', detail: 'That item has not ended.' },
+  WORK_QUEUE_FULL: {
+    code: 'conflict',
+    detail: `This queue already has ${WORK_QUEUE_MAX_QUEUED} items waiting.`,
+  },
+  WORK_ITEM_BAD_CWD: { code: 'invalid_request', detail: 'The folder must be an absolute path.' },
+  WORK_QUEUE_CAP_CEILING: {
+    code: 'conflict',
+    detail: 'Daily cap exceeds the Settings limit. Lower it first.',
+  },
 };
 
 /** How a tool code ends or starts, and the family that spelling means. */

@@ -127,6 +127,7 @@ const { registerCapabilitiesAsMcpTools } =
 const { READ_ONLY_MCP_TOOL_NAMES } = await import('../../external-mcp/tool-security.js');
 const { createDorkLinkLookups } = await import('../../links/link-lookups.js');
 const { callerAuthor } = await import('../../../rooms/service/room-caller-author.js');
+import type { CapabilityDeps } from '../capability-definition.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 import { AgentRegistry } from '@dorkos/mesh';
@@ -376,6 +377,12 @@ const registry = composeDorkOsCapabilityRegistry({
       resume: () => ({ agentId: 'a', paused: false, changed: true }),
       list: () => [],
     },
+  },
+  // The person's work queue domain serves its doors (`/api/agents/{id}/work-queue/*`,
+  // `/api/work-queues/stop`, DOR-4978); no agent is on this team.
+  workQueuePersonDeps: {
+    service: {} as NonNullable<CapabilityDeps['workQueuePersonDeps']>['service'],
+    agentExists: () => false,
   },
   // The link domain serves `GET /api/links/target` (DOR-5046), over the
   // harness's real rooms; it holds no chats and no agents.

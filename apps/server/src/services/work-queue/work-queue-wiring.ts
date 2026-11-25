@@ -20,9 +20,7 @@ import {
 import { chatlessCallerStop } from '../runtimes/claude-code/mcp-tools/session-start-permission.js';
 import { queuedWorkLevel } from './work-queue-authority.js';
 import type { MeshCore } from '@dorkos/mesh';
-import { refuseUnlessAccountOwner } from '../../lib/caller-authority.js';
 import { logError, logger } from '../../lib/logger.js';
-import type { WorkQueueRouterDeps } from '../../routes/work-queue.js';
 import type { ActivityService } from '../activity/activity-service.js';
 import type { CapabilityDeps } from '../core/capabilities/index.js';
 import { resolveCallPermission } from '../core/capabilities/permission-enforcement.js';
@@ -82,8 +80,8 @@ export interface WorkQueueWiringDeps {
 export interface WorkQueueWiring {
   /** The `work-queue` capability domain's deps. */
   capabilityDeps: NonNullable<CapabilityDeps['workQueueDeps']>;
-  /** What the routes read, for boot to hand the Hono `/api` app. */
-  routeDeps: WorkQueueRouterDeps;
+  /** The `workqueue` domain's deps: a person's queue doors. */
+  personDeps: NonNullable<CapabilityDeps['workQueuePersonDeps']>;
   /** Stop the timers, stop listening, and give up the lock. */
   stop(): void;
 }
@@ -263,12 +261,9 @@ export function wireWorkQueue(deps: WorkQueueWiringDeps): WorkQueueWiring {
   const agentIdForPath = (agentPath: string) => deps.meshCore()?.getByPath(agentPath)?.id;
   return {
     capabilityDeps: { service, agentIdForPath, agentName: (id) => agentOf(id)?.label },
-    routeDeps: {
+    personDeps: {
       service,
       agentExists: (agentId) => deps.meshCore()?.get(agentId) !== undefined,
-      // The same owner bar the account routes use: a person, never an agent,
-      // and with login on, the install's owner.
-      isOwner: (facts) => refuseUnlessAccountOwner(facts) === undefined,
     },
     stop() {
       clearInterval(passTimer);

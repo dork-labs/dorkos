@@ -52,7 +52,7 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
         topDefaultFields: topDefaults.reduce((a, b) => a + b, 0),
         topDefaultCapabilities: topDefaults.filter(Boolean).length,
       }).toEqual({
-        total: 144,
+        total: 151,
         relevant: 132,
         ordinary: 120,
         inSession: 119,

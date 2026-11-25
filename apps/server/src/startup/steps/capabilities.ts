@@ -285,6 +285,8 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       // To-dos (DOR-3088), behind their flag until v1 is complete.
       ...(env.DORKOS_TODOS_ENABLED ? { todoDeps: todoPromises.todoCapabilityDeps } : {}),
       workQueueDeps: workQueue.capabilityDeps,
+      // A person's queue doors, served on the REST paths (DOR-4978).
+      workQueuePersonDeps: workQueue.personDeps,
       workClaimDeps: workClaims.capabilityDeps,
       sessionCompactionDeps: {
         compaction: new AgentCompactionService({

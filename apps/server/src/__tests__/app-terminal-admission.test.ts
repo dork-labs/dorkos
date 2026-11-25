@@ -320,8 +320,8 @@ describe('main HTTP admission through the real app', () => {
     // 82 -> 83: the step-up before a task change, on the bare path (DOR-3330).
     expect(mounts).toContain('/api/tasks');
     // 83 -> 84: every chat running now, ahead of `/api/sessions` (DOR-3460).
-    // 84 -> 86: an agent's work queue, and the stop on every queue (DOR-3462).
-    expect(mounts).toContain('/api/work-queues');
+    // 84 -> 86: an agent's work queue, and the stop on every queue (DOR-3462);
+    // both are capabilities the mount serves now (DOR-4978).
     // 86 -> 87: to-dos (DOR-3088), mounted only behind `DORKOS_TODOS_ENABLED`.
     expect(mounts).toContain('/api/todos');
     // The off-by-default discovery route remains mounted and must meet admission too.
@@ -338,8 +338,8 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/config/backups');
     // 93 -> 90: the activity feed, the audit reads and every chat running now
     // are capabilities the mount serves (DOR-4978), so they are asked for by
-    // hand below.
-    expect(mounts).toHaveLength(90);
+    // hand below. 90 -> 88: a person's work queue doors moved there too.
+    expect(mounts).toHaveLength(88);
     const byHand = [
       '/',
       '/x/fixture',
@@ -354,6 +354,8 @@ describe('main HTTP admission through the real app', () => {
       '/api/activity',
       '/api/audit',
       '/api/sessions/running',
+      '/api/agents/admission-fixture/work-queue',
+      '/api/work-queues/stop',
     ];
     for (const mount of [...mounts, ...byHand, '/unknown']) {
       expectTerminal(

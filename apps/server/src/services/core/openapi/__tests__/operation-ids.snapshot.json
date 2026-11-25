@@ -1,6 +1,6 @@
 {
   "DELETE /api/agents/{agentId}/mcp-servers/{name}": "mcp.remove",
-  "DELETE /api/agents/{id}/work-queue/items/{itemId}": "agents.deleteWorkQueueItems",
+  "DELETE /api/agents/{id}/work-queue/items/{itemId}": "workqueue.remove_item",
   "DELETE /api/computers/control": "computers.deleteControl",
   "DELETE /api/config/backups/{name}": "config.deleteBackups",
   "DELETE /api/connectors/connections/{connectionId}": "connectors.deleteConnections",
@@ -42,7 +42,7 @@
   "GET /api/agents/{id}/heartbeat": "agents.getHeartbeat",
   "GET /api/agents/{id}/level": "agents.getLevel",
   "GET /api/agents/{id}/permissions": "agents.getPermissions",
-  "GET /api/agents/{id}/work-queue": "agents.getWorkQueue",
+  "GET /api/agents/{id}/work-queue": "workqueue.get",
   "GET /api/approvals/declined-hooks": "approvals.getDeclinedHooks",
   "GET /api/approvals/pending": "approvals.getPending",
   "GET /api/approvals/{id}/full-detail": "approvals.getFullDetail",
@@ -212,7 +212,7 @@
   "GET /api/workspaces/scan": "workspaces.scan",
   "PATCH /api/agents/{agentId}/mcp-servers/{name}": "mcp.update",
   "PATCH /api/agents/{id}/permissions": "agents.updatePermissions",
-  "PATCH /api/agents/{id}/work-queue": "agents.updateWorkQueue",
+  "PATCH /api/agents/{id}/work-queue": "workqueue.update",
   "PATCH /api/config": "config.update",
   "PATCH /api/connectors/connections/{connectionId}": "connectors.updateConnections",
   "PATCH /api/mesh/agents/{id}": "mesh.updateAgents",
@@ -241,8 +241,8 @@
   "POST /api/agents/{agentId}/pause": "agent.pause",
   "POST /api/agents/{agentId}/resume": "agent.resume",
   "POST /api/agents/{id}/todo-promises": "agents.createTodoPromises",
-  "POST /api/agents/{id}/work-queue/items": "agents.createWorkQueueItems",
-  "POST /api/agents/{id}/work-queue/items/{itemId}/requeue": "agents.requeueWorkQueueItems",
+  "POST /api/agents/{id}/work-queue/items": "workqueue.add_item",
+  "POST /api/agents/{id}/work-queue/items/{itemId}/requeue": "workqueue.requeue_item",
   "POST /api/approvals/{id}/ask-again": "approvals.createAskAgain",
   "POST /api/approvals/{id}/deny": "approvals.deny",
   "POST /api/approvals/{id}/dismiss-suggestion": "approvals.createDismissSuggestion",
@@ -462,7 +462,7 @@
   "POST /api/workspaces/{id}/pin": "workspaces.pin",
   "POST /api/your-browser/scan": "yourBrowser.scan",
   "PUT /api/agents/{agentId}/mcp-servers/{name}/client": "mcp.set_client",
-  "PUT /api/agents/{id}/work-queue/order": "agents.updateWorkQueueOrder",
+  "PUT /api/agents/{id}/work-queue/order": "workqueue.set_order",
   "PUT /api/cloud/credits/default": "cloud.updateCreditsDefault",
   "PUT /api/community-connections/{ref}/answer-in": "communityConnections.updateAnswerIn",
   "PUT /api/community-connections/{ref}/teammate-spend": "communityConnections.updateTeammateSpend",
@@ -489,5 +489,5 @@
   "PUT /api/runtimes/claude-code/accounts/{id}/no-auto-move": "runtimes.updateClaudeCodeAccountsNoAutoMove",
   "PUT /api/runtimes/claude-code/accounts/{id}/only-projects": "runtimes.updateClaudeCodeAccountsOnlyProjects",
   "PUT /api/runtimes/claude-code/project-accounts": "runtimes.updateClaudeCodeProjectAccounts",
-  "PUT /api/work-queues/stop": "workQueues.stop"
+  "PUT /api/work-queues/stop": "workqueue.stop_all"
 }

@@ -113,7 +113,6 @@ export interface MountCoreRoutesInput {
   roomAuthors: WireRoomsResult['roomAuthors'];
   notifyDm: WireTeamRoomAndRelayAdaptersResult['notifyDm'];
   todoPromises: WireSessionServicesResult['todoPromises'];
-  workQueue: WireSessionServicesResult['workQueue'];
   auditAccounts: WireCoreStoresResult['auditAccounts'];
   dorkHome: ClaimDataDirectoryResult['dorkHome'];
   roomWorktrees: WireRoomsResult['roomWorktrees'];
@@ -163,7 +162,6 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     roomAuthors,
     notifyDm,
     todoPromises,
-    workQueue,
     auditAccounts,
     dorkHome,
     roomWorktrees,
@@ -704,8 +702,6 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   deps.todoPromises = todoPromises.routeDeps;
   // To-dos (DOR-3088) at `/api/todos`, behind their flag until v1 is complete.
   if (env.DORKOS_TODOS_ENABLED) deps.todos = todoPromises.todoRouteDeps;
-  // An agent's work queue, for a person (DOR-3462).
-  deps.workQueue = workQueue.routeDeps;
   // What every agent is told, and what one agent will be told, for a person
   // (spec `context-viewer` phase 3). Read only.
   deps.agentInstructions = {

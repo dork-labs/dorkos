@@ -72,11 +72,6 @@ import {
   type TodoPromiseRouterDeps,
 } from '../routes/todo-promises.js';
 import { createTodosRoutes, type TodoRouterDeps } from '../routes/todos.js';
-import {
-  createWorkQueueRoutes,
-  createWorkQueuesStopRoutes,
-  type WorkQueueRouterDeps,
-} from '../routes/work-queue.js';
 import { createDebugRoutes, type DebugDeps } from '../routes/debug.js';
 import diffRoutes from '../routes/diff.js';
 import directoryRoutes from '../routes/directory.js';
@@ -257,8 +252,6 @@ export interface ComposedGroupDeps {
   todoPromises?: TodoPromiseRouterDeps;
   /** To-dos (`/api/todos`), present only behind `DORKOS_TODOS_ENABLED` (DOR-3088). */
   todos?: TodoRouterDeps;
-  /** An agent's work queue, for a person (`/api/agents/:id/work-queue`). */
-  workQueue?: WorkQueueRouterDeps;
   /**
    * Scheduled tasks and their runs (`/api/tasks`). Only handed over when Tasks
    * started (`startup/tasks.ts`).
@@ -565,10 +558,6 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.todoPromises) {
     app.route('/api/todo-promises', createTodoPromisesRoutes(deps.todoPromises));
     app.route('/api/agents/:id/todo-promises', createAgentTodoPromisesRoutes(deps.todoPromises));
-  }
-  if (deps.workQueue) {
-    app.route('/api/agents/:id/work-queue', createWorkQueueRoutes(deps.workQueue));
-    app.route('/api/work-queues', createWorkQueuesStopRoutes(deps.workQueue));
   }
   if (deps.heartbeat) {
     app.route('/api/agents/:id/heartbeat', createHeartbeatRoutes(deps.heartbeat));
