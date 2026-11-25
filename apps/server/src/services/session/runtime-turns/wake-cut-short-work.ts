@@ -126,6 +126,8 @@ export async function wakeCutShortChat(
     projector.cwd = cwd;
     const result = await dispatchMessage({
       turnStarter: 'agent',
+      // Nobody asked: DorkOS carries the bound chat on after a restart.
+      origin: { kind: 'resume' },
       sessionId,
       clientId: 'background-work-wake',
       content: CUT_SHORT_WAKE_MESSAGE,

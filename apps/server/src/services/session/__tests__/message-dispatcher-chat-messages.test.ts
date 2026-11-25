@@ -79,6 +79,7 @@ function gate(): { wait: Promise<void>; open: () => void } {
 
 function send(content: string, clientId: string, extra: Record<string, unknown> = {}) {
   return dispatchMessage({
+    origin: { kind: 'interactive' },
     sessionId: session,
     clientId,
     content,
@@ -330,6 +331,7 @@ describe('a chat that took in a stranger’s words', () => {
     runtime.withScenarios([quickTurn(), quickTurn(), quickTurn()]);
     const through = (content: string, extra: Record<string, unknown> = {}) =>
       dispatchMessage({
+        origin: { kind: 'interactive' },
         sessionId: session,
         clientId: PERSON,
         content,

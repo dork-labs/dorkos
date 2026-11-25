@@ -73,6 +73,7 @@ async function startAgentTurn(): Promise<() => void> {
   const turn = gate();
   runtime.withScenarios([heldTurn(turn.wait)]);
   await dispatchMessage({
+    origin: { kind: 'interactive' },
     sessionId: session,
     clientId: 'window-a',
     content: 'keep going',
@@ -195,6 +196,7 @@ describe('compact_my_session — after the turn, never during it', () => {
 
     await service().request({ sessionId: session });
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId: session,
       clientId: 'window-a',
       content: 'and then this',
@@ -336,6 +338,7 @@ describe('compact_my_session — the gates the queue head respects (review, DOR-
       releaseAt: Date.now() + 60 * 60_000,
     });
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId: session,
       clientId: 'window-a',
       content: 'move to the other folder',
@@ -462,6 +465,7 @@ describe('compact_my_session — the percent on a first turn (live proof, DOR-27
       },
     ]);
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId: session,
       clientId: 'window-a',
       content: 'first message',

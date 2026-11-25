@@ -69,6 +69,7 @@ beforeEach(() => {
     isBusy: async () => busy,
     dispatch: async (opts) =>
       dispatchMessage({
+        origin: { kind: 'interactive' },
         sessionId: opts.sessionId,
         clientId: opts.clientId,
         content: opts.request.content,
@@ -149,6 +150,7 @@ describe('a restart leaves another chat’s message queued for an idle chat', ()
     const { sent } = leftoverChatRow('the answer its next check needs');
     const timer = () =>
       dispatchMessage({
+        origin: { kind: 'interactive' },
         sessionId: session,
         projector: getOrCreateProjector(session),
         runtime,
@@ -171,6 +173,7 @@ describe('a restart leaves another chat’s message queued for an idle chat', ()
   it('lets a person act immediately while an older peer message waits', async () => {
     leftoverChatRow('peer message');
     const result = await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId: session,
       projector: getOrCreateProjector(session),
       runtime,

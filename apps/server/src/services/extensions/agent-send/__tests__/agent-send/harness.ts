@@ -139,6 +139,7 @@ export async function fakeDispatch(
     );
   }
   const result = await dispatchMessage({
+    origin: { kind: 'interactive' },
     sessionId: opts.sessionId,
     clientId: opts.clientId,
     content: opts.request.content,
@@ -156,6 +157,7 @@ export async function fakeDispatch(
 export async function personTurn(hold: Promise<void>, extra: Record<string, unknown> = {}) {
   h.runtime.withScenarios([heldTurn(hold), quickTurn(), quickTurn()]);
   await dispatchMessage({
+    origin: { kind: 'interactive' },
     sessionId: h.session,
     clientId: PERSON,
     content: 'the person is working',

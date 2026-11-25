@@ -156,6 +156,7 @@ it('has no hold limit: a message queued for 30 minutes still runs', async () => 
   const first = gate();
   h.runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
   await dispatchMessage({
+    origin: { kind: 'interactive' },
     sessionId: h.session,
     clientId: PERSON,
     content: 'a long turn',

@@ -57,6 +57,7 @@ it('preserves an accepted receipt across a real capacity race, canonical move, f
     raced = true;
     // Capacity became busy after the pump's atomic admission gate, before async protected adoption.
     dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId: 'session-1',
       clientId: 'person',
       content: 'Person won capacity race',
@@ -83,7 +84,12 @@ it('preserves an accepted receipt across a real capacity race, canonical move, f
   await originalRunner.flush();
   expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
   const originalReceipt = f.db.select().from(sessionMessageAcceptanceReceipts).all()[0]!;
-  const queue = f.db.select().from(sessionMessageQueue).all()[0]!;
+  // Waiting rows: the running turn's own row is kept out of line (spec `turns-survive-restarts` §4.3).
+  const queue = f.db
+    .select()
+    .from(sessionMessageQueue)
+    .all()
+    .filter((row) => row.state === 'waiting')[0]!;
   expect(originalReceipt).toMatchObject({
     state: 'accepted',
     sourceId: batch.batchId,
@@ -112,9 +118,14 @@ it('preserves an accepted receipt across a real capacity race, canonical move, f
     state: 'accepted',
   });
   expect(moved.originAuthorityDigest).not.toBe(originalReceipt.originAuthorityDigest);
-  expect(f.db.select().from(sessionMessageQueue).all()).toEqual([
-    { ...queue, sessionId: 'canonical' },
-  ]);
+  // Waiting rows: the running turn's own row is kept out of line (spec `turns-survive-restarts` §4.3).
+  expect(
+    f.db
+      .select()
+      .from(sessionMessageQueue)
+      .all()
+      .filter((row) => row.state === 'waiting')
+  ).toEqual([{ ...queue, sessionId: 'canonical' }]);
   await originalRunner.service.stop();
   removeMove();
   // Process disposal removes the pending in-memory adoption before the person's turn finishes.

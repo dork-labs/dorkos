@@ -56,6 +56,7 @@ import { auditTrail, recordAudit } from '../../audit/audit-trail.js';
 import { UNIDENTIFIED_ACCOUNT_ID } from '../../audit/account-ids.js';
 import { logger } from '../../../lib/logger.js';
 import { recordPausedQueueActivity } from './paused-queue-activity.js';
+import { recordStopReceipt, recordStopRequest } from '../../runs/index.js';
 
 /** An agent as a pause names it. */
 export interface PausedAgentRef {
@@ -503,7 +504,9 @@ export class AgentPauseService {
     agent: PausedAgentRef
   ): Promise<void> {
     try {
-      await runtime.interruptQuery(sessionId);
+      // On the turn's run before the runtime is asked (spec `turns-survive-restarts` §4.4).
+      const stoppedRun = recordStopRequest(sessionId, { via: 'pause' });
+      recordStopReceipt(stoppedRun, await runtime.interruptQuery(sessionId));
       await runtime.endSessionsWhere((session) => session.sessionId === sessionId);
     } catch (err) {
       logger.warn('[agent-pause] could not stop a turn the agent started', {
@@ -592,7 +595,9 @@ export class AgentPauseService {
     await Promise.all(
       mine.map(async (turn) => {
         try {
+          const stoppedRun = recordStopRequest(turn.sessionId, { via: 'pause' });
           const receipt = await turn.interrupt();
+          recordStopReceipt(stoppedRun, receipt);
           if (receipt.outcome === 'acked' || receipt.outcome === 'closed') {
             stopped.add(turn.sessionId);
           }

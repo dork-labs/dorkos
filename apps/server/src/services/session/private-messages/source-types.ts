@@ -2,6 +2,7 @@
 import type { DbTransaction, SessionMessageAcceptanceReceipt } from '@dorkos/db';
 import type { CanvasChannelDocEventsContext } from '@dorkos/shared/canvas-channel-schemas';
 import type { QueuedMessageRecord } from '../message-queue-store.js';
+import type { TurnOrigin } from '@dorkos/shared/turn-port';
 /** A protected source that may create one private session follow-up. */
 export type PrivateSessionMessageSourceRef =
   | {
@@ -162,4 +163,48 @@ export function privateSourceIdOf(ref: PrivateSessionMessageSourceRef): string {
   if (ref.kind === 'document_event_batch') return ref.batchId;
   if (ref.kind === 'room_handoff_terminal') return ref.handoffId;
   return ref.kind === 'connector_agent_request' ? ref.requestId : ref.inboxId;
+}
+
+/**
+ * The origin of each protected source's turn:
+ *
+ * - `connector_event`: a connector event woke an agent up.
+ * - `connector_agent_request`: a person decided an agent's connection request,
+ *   and DorkOS carries the asking chat on with the answer.
+ * - `room_handoff_terminal`: a room hand-off ended, and DorkOS carries the
+ *   chat that handed it off on with the result.
+ * - `document_event_batch`: a page's events on a canvas document, which are
+ *   app data like a mini app's message (DOR-4603), never a person's words.
+ *
+ * Exhaustive: a new source kind does not compile until it is decided here.
+ *
+ * @param kind - The source's kind.
+ */
+export function privateSourceOrigin(kind: PrivateSessionMessageSourceRef['kind']): TurnOrigin {
+  switch (kind) {
+    case 'connector_event':
+      return { kind: 'connector-event' };
+    case 'connector_agent_request':
+    case 'room_handoff_terminal':
+      return { kind: 'resume' };
+    case 'document_event_batch':
+      return { kind: 'extension-message' };
+    default: {
+      const unhandled: never = kind;
+      throw new Error(`unhandled private source: ${String(unhandled)}`);
+    }
+  }
+}
+
+/**
+ * The queue row fields a protected source's message is enqueued with: who
+ * queued it, and the origin its run is written with.
+ *
+ * @param kind - The source's kind.
+ */
+export function privateQueueRowOf(kind: PrivateSessionMessageSourceRef['kind']): {
+  clientId: string;
+  origin: TurnOrigin;
+} {
+  return { clientId: `system:${kind}`, origin: privateSourceOrigin(kind) };
 }

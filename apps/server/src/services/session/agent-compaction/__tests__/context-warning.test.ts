@@ -123,6 +123,7 @@ describe('context warning — rides the next turn', () => {
       },
     ]);
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId: session,
       clientId: 'window-a',
       content: `turn at ${percent}%`,
@@ -201,6 +202,7 @@ describe('context warning — rides the next turn', () => {
       throw new Error('the runtime refused to start');
     });
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId: session,
       clientId: 'window-a',
       content: 'this one never starts',

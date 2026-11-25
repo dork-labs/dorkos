@@ -40,6 +40,7 @@ async function turn(content: string): Promise<void> {
     },
   ]);
   await dispatchMessage({
+    origin: { kind: 'interactive' },
     sessionId: session,
     clientId: 'window-a',
     content,

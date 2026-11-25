@@ -56,6 +56,7 @@ it('waits without admission while busy, rekeys and restarts, then dispatches one
   const boot = install(f, initial);
   const currentRuntime = boot.registry.get('claude-code');
   dispatchMessage({
+    origin: { kind: 'interactive' },
     sessionId: 'session-1',
     clientId: 'person',
     content: 'Initial person turn',
@@ -91,7 +92,14 @@ it('waits without admission while busy, rekeys and restarts, then dispatches one
     inputEventIds: [eventId],
   });
   expect(f.db.select().from(sessionMessageAcceptanceReceipts).all()).toEqual([]);
-  expect(f.db.select().from(sessionMessageQueue).all()).toEqual([]);
+  // Waiting rows: the running turn's own row is kept out of line (spec `turns-survive-restarts` §4.3).
+  expect(
+    f.db
+      .select()
+      .from(sessionMessageQueue)
+      .all()
+      .filter((row) => row.state === 'waiting')
+  ).toEqual([]);
   expect(beforeRunner.nudges).toEqual([]);
   expect(initial.sendMessage).toHaveBeenCalledTimes(1);
   const stopMove = onDurableSessionRekey((from, to) => {

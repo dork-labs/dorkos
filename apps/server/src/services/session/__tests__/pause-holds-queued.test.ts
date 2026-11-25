@@ -96,6 +96,7 @@ async function queueThenPause(): Promise<string> {
   const runtime = runtimeRegistry.get(inner.type);
   const projector = getOrCreateProjector(sessionId, BETA.home);
   await dispatchMessage({
+    origin: { kind: 'interactive' },
     sessionId,
     clientId: 'person-window',
     content: 'start the census',
@@ -105,6 +106,7 @@ async function queueThenPause(): Promise<string> {
   });
   await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(true));
   await dispatchMessage({
+    origin: { kind: 'interactive' },
     sessionId,
     clientId: chatClientId('chat-alpha'),
     content: 'from A: add the totals',
@@ -235,6 +237,7 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
   it('holds a message sent to an agent that is already paused and idle', async () => {
     await pauses.pause(BETA.id, PERSON);
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId,
       clientId: chatClientId('chat-alpha'),
       content: 'from A: are you there?',
@@ -258,6 +261,7 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
       const projector = getOrCreateProjector(sessionId, BETA.home);
       await pauses.pause(BETA.id, PERSON);
       await dispatchMessage({
+        origin: { kind: 'interactive' },
         sessionId,
         clientId: 'web-person-window',
         content: 'My held words',
@@ -275,6 +279,7 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
       await settle();
       expect(isQueuedMessageArmed(held!.id)).toBe(false);
       await dispatchMessage({
+        origin: { kind: 'interactive' },
         sessionId,
         clientId,
         content: 'A background check',
@@ -303,6 +308,7 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
       context: null,
     });
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId,
       clientId: 'heartbeat',
       content: 'A background check',
@@ -327,6 +333,7 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
       .mockImplementationOnce(() => undefined)
       .mockImplementation(real);
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId,
       clientId: chatClientId('chat-alpha'),
       content: 'from A: mid-launch',
@@ -365,6 +372,7 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
     const runtime = runtimeRegistry.get(inner.type);
     const projector = getOrCreateProjector(sessionId, BETA.home);
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId,
       clientId: 'person-window',
       content: 'start the census',
@@ -377,7 +385,15 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
       ['person-window', 'person: one more thing'],
       [chatClientId('chat-alpha'), 'from A: add the totals'],
     ] as const) {
-      await dispatchMessage({ sessionId, clientId, content, projector, runtime, cwd: BETA.home });
+      await dispatchMessage({
+        origin: { kind: 'interactive' },
+        sessionId,
+        clientId,
+        content,
+        projector,
+        runtime,
+        cwd: BETA.home,
+      });
     }
     await pauses.pause(BETA.id, PERSON);
     await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(false));
@@ -397,6 +413,7 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
 
     // A new message from another chat cannot press Send for the person.
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId,
       clientId: chatClientId('chat-gamma'),
       content: 'from C: check the totals',
@@ -416,6 +433,7 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
 
     // Pressing send runs it, then what they just sent.
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId,
       clientId: 'person-window',
       content: 'person: and this',
@@ -475,6 +493,7 @@ describe('a pause between a queued turn’s start and its first model request (D
     const runtime = runtimeRegistry.get(inner.type);
     const projector = getOrCreateProjector(sessionId, BETA.home);
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId,
       clientId: 'person-window',
       content: 'start the census',
@@ -484,6 +503,7 @@ describe('a pause between a queued turn’s start and its first model request (D
     });
     await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(true));
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId,
       clientId: chatClientId('chat-alpha'),
       content: 'from A: add the totals',
@@ -547,6 +567,7 @@ describe('a pause between a queued turn’s start and its first model request (D
     const runtime = runtimeRegistry.get(inner.type);
     const projector = getOrCreateProjector(sessionId, BETA.home);
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId,
       clientId: 'person-window',
       content: 'start the census',
@@ -556,6 +577,7 @@ describe('a pause between a queued turn’s start and its first model request (D
     });
     await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(true));
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId,
       clientId: chatClientId('chat-alpha'),
       content: 'from A: add the totals',
@@ -600,6 +622,7 @@ describe('a pause between a queued turn’s start and its first model request (D
     const runtime = runtimeRegistry.get(inner.type);
     const projector = getOrCreateProjector(sessionId, BETA.home);
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId,
       clientId: 'person-window',
       content: 'start the census',
@@ -609,6 +632,7 @@ describe('a pause between a queued turn’s start and its first model request (D
     });
     await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(true));
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId,
       clientId: chatClientId('chat-alpha'),
       content: 'from A: add the totals',
@@ -781,6 +805,7 @@ describe('a held message never loses the limits its plan carried (DOR-4327, Secu
     const runtime = runtimeRegistry.get(inner.type);
     const projector = getOrCreateProjector(sessionId, BETA.home);
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId,
       clientId: 'person-window',
       content: 'start',
@@ -790,6 +815,7 @@ describe('a held message never loses the limits its plan carried (DOR-4327, Secu
     });
     await vi.waitFor(() => expect(inner.isTurnOpen(sessionId)).toBe(true));
     await dispatchMessage({
+      origin: { kind: 'interactive' },
       sessionId,
       clientId: 'chat:spoofed-by-agent-a',
       content: 'marked words',

@@ -106,6 +106,7 @@ function build(overrides: Partial<ChatMessageServiceDeps> = {}): ChatMessageServ
     // The service's launch, handed to the real dispatcher as `dispatchSessionMessage` hands it.
     dispatch: async (opts) =>
       dispatchMessage({
+        origin: { kind: 'interactive' },
         sessionId: opts.sessionId,
         clientId: opts.clientId,
         content: opts.request.content,

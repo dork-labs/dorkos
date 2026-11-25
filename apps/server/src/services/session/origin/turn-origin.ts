@@ -166,7 +166,10 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     // on top of what the session already had.
     //
     // A resume after an account's reset goes to a session that is already
-    // bound: its row is its power, and the origin must not add to it.
+    // bound: its row is its power, and the origin must not add to it. So does
+    // DorkOS carrying on in a bound chat (a verdict, a finished sign-in, work a
+    // restart cut short): some of those chats are an agent's or a room's,
+    // seeded nothing, and the carry-on must not seed the operator's stop there.
     //
     // An extension's message to an agent is app data. No extension turns the
     // operator's stop into a grant of its own, so the chat it opens is born
@@ -182,6 +185,7 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     case 'agent-launch':
     case 'account-handoff':
     case 'account-resume':
+    case 'resume':
     case 'test-harness':
       return 'none';
     default: {
@@ -241,6 +245,7 @@ export function sessionVisibilityForOrigin(kind: TurnOrigin['kind']): 'space' | 
     // is the private one.
     case 'account-handoff':
     case 'account-resume':
+    case 'resume':
     case 'test-harness':
       return 'participants';
     default: {
