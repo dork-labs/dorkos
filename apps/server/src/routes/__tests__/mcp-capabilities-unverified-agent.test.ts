@@ -112,6 +112,9 @@ const INACTIVE_TOKEN_STATES: DeadTokenState[] = ['revoked', 'expired'];
 /** The code every seam that names a caller now answers an unverifiable token with. */
 const REFUSAL_CODE = 'AGENT_IDENTITY_UNVERIFIED';
 
+/** The problem code the HTTP doors answer that refusal with. */
+const PROBLEM_CODE = 'agent_identity_unverified';
+
 const ANA_PATH = '/agents/ana';
 const AGENT_ID = 'agent-ana';
 
@@ -254,8 +257,8 @@ describe('an unverifiable agent token on the mcp.* capability surfaces', () => {
       async (state) => {
         const res = await askGrantRetry(await deadToken(state));
 
-        expect(res.status).toBe(400);
-        expect(res.body.code).toBe(REFUSAL_CODE);
+        expect(res.status).toBe(401);
+        expect(res.body.code).toBe(PROBLEM_CODE);
         // The half that matters: the manifest field was never written, and above
         // all it does not say `operator` — or the dead token's own path — for a
         // call no live principal made.
@@ -275,8 +278,8 @@ describe('an unverifiable agent token on the mcp.* capability surfaces', () => {
           .set('X-DorkOS-Agent', await deadToken(state))
           .send(SERVER);
 
-        expect(res.status).not.toBe(200);
-        expect(res.body.reason).toBe('permission_blocked');
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('forbidden');
         expect(res.body.approvable).toBe(false);
         expect(approvals.listPending()).toEqual([]);
         expect(recordedAddedBy).toEqual([]);

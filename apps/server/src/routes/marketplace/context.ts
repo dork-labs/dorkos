@@ -31,6 +31,7 @@ import {
 import { resolveDecisionAuthority } from '../../services/core/approvals/index.js';
 import { readCallerAuthority } from '../../lib/caller-authority.js';
 import { problem } from '@dorkos/http-kit';
+import { gateResponse } from '../capability-refusals.js';
 import { isAtThisComputer, personSessionRequired } from '../../services/core/auth/gate-policy.js';
 import { notePersonSessionMissing } from '../../lib/person-without-session.js';
 import { presentsAgentIdentity } from '../../middleware/agent-identity.js';
@@ -131,16 +132,6 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
       change !== undefined ? { change } : {}
     );
   };
-
-  /**
-   * Turn a non-`allowed` gate decision into this router's HTTP answer: `202` when
-   * a person has been asked and the caller should come back with the token, `403`
-   * when no retry can change the answer.
-   */
-  const gateResponse = (
-    c: MarketplaceContext,
-    decision: Exclude<TierEnforcementDecision, { outcome: 'allowed' }>
-  ): Response => c.json(decision.payload, decision.outcome === 'approval_required' ? 202 : 403);
 
   /**
    * Confine a body-supplied `projectPath` to the directory boundary, answering

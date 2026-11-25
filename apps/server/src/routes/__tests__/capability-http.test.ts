@@ -41,7 +41,6 @@ import { mcpDomain } from '../../services/mesh/mcp-capabilities.js';
 import { AgentMcpServerService } from '../../services/mesh/agent-mcp-server-service.js';
 import { composeCapabilityRegistryForDocs } from '../../services/core/self-description/dorkos-registry.js';
 import { markIngress } from '../../services/core/remote/ingress-mark.js';
-import { NOT_FROM_WIFI } from '../../services/core/auth/sessions/wifi-level.js';
 import type { ApiEnv } from '../../http/api-chain.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import {
@@ -141,10 +140,8 @@ describe('the mount', () => {
       '/api/agents/pauses'
     );
     expect(res.status).toBe(404);
-    expect(res.body).toEqual({
-      error: NOT_ON_THIS_COMPUTER,
-      code: 'UNKNOWN_CAPABILITY',
-    });
+    expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(res.body).toMatchObject({ code: 'unknown_capability', detail: NOT_ON_THIS_COMPUTER });
     expect(NOT_ON_THIS_COMPUTER).toBe("This isn't available on this computer.");
   });
 
@@ -153,7 +150,7 @@ describe('the mount', () => {
       '/api/agents/pauses'
     );
     expect(res.status).toBe(503);
-    expect(res.body.code).toBe('NOT_READY');
+    expect(res.body.code).toBe('temporarily_unavailable');
   });
 
   it('refuses two surfaces on one path, whatever their parameters are called', () => {
@@ -304,7 +301,7 @@ describe('turning a request into input', () => {
       );
       const res = await request(listener).post('/api/demo/a1').send({});
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe(NOT_FROM_WIFI);
+      expect(res.body.code).toBe('not_from_wifi');
     });
   });
 });
@@ -362,7 +359,7 @@ describe('agent pause, served by the mount', () => {
     const res = await request(mount(registry, agentPauseDomain.capabilities))
       .post('/api/agents/nobody/pause')
       .expect(404);
-    expect(res.body.code).toBe('AGENT_NOT_FOUND');
+    expect(res.body.code).toBe('not_found');
   });
 
   it('answers 403 when the paused agent tries to resume itself', async () => {
@@ -373,7 +370,10 @@ describe('agent pause, served by the mount', () => {
       mount(registry, agentPauseDomain.capabilities, presenting(AS_SCOUT))
     ).post(`/api/agents/${SCOUT.id}/resume`);
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('CANNOT_RESUME_SELF');
+    expect(res.body).toMatchObject({
+      code: 'forbidden',
+      detail: 'An agent can’t lift its own pause. A person has to.',
+    });
   });
 });
 
@@ -449,7 +449,7 @@ describe('agent pause from a Wi-Fi sign-in, through both doors', () => {
     expect(pauses.isPaused(SCOUT.id)).toBeDefined();
     const resume = await request(target.server).post(`/api/agents/${SCOUT.id}/resume`).send({});
     expect(resume.status).toBe(403);
-    expect(resume.body.code).toBe(NOT_FROM_WIFI);
+    expect(resume.body.code).toBe('not_from_wifi');
     expect(pauses.isPaused(SCOUT.id)).toBeDefined();
   });
 
@@ -464,7 +464,7 @@ describe('agent pause from a Wi-Fi sign-in, through both doors', () => {
       .post('/api/capabilities/agent.resume/invoke')
       .send({ agentId: SCOUT.id });
     expect(resume.status).toBe(403);
-    expect(resume.body.code).toBe(NOT_FROM_WIFI);
+    expect(resume.body.code).toBe('not_from_wifi');
     expect(pauses.isPaused(SCOUT.id)).toBeDefined();
   });
 });
@@ -530,6 +530,6 @@ describe('an agent’s MCP servers, served by the mount', () => {
       '/api/agents/nobody/mcp-servers'
     );
     expect(res.status).toBe(404);
-    expect(res.body.code).toBe('AGENT_NOT_FOUND');
+    expect(res.body.code).toBe('not_found');
   });
 });

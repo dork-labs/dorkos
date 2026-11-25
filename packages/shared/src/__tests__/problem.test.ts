@@ -45,6 +45,10 @@ describe('PROBLEM_CODE_LIST', () => {
     ['secret_left', 500],
     ['signing_in', 409],
     ['history_refused', 409],
+    ['signin_no_app_registration', 409],
+    ['signin_no_signin_support', 409],
+    ['signin_unreachable', 502],
+    ['spend_limit_reached', 409],
   ] as const)('sends %s with status %i by default', (code, status) => {
     expect(PROBLEM_CODES[code].status).toBe(status);
   });

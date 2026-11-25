@@ -271,12 +271,21 @@ describe('POST /updates and the tier gate', () => {
       .mockImplementationOnce(vi.mocked(authorizeCapability).getMockImplementation()!)
       .mockReturnValueOnce({
         outcome: 'denied',
-        payload: { error: 'no' },
+        payload: {
+          status: 'denied',
+          capabilityId: 'marketplace.install',
+          capabilityTitle: 'Install a package',
+          tier: 'act',
+          reason: 'permission_blocked',
+          approvable: false,
+          message: 'no',
+        },
       } as unknown as ReturnType<typeof authorizeCapability>);
 
     const res = await applyShown(globalRoot(), agentRoot());
 
     expect(res.status).toBe(403);
+    expect(res.body.code).toBe('forbidden');
     expect(installGateInputs()).toHaveLength(2);
     expect(h.updateFlow.planInstallations).not.toHaveBeenCalled();
   });

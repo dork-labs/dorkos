@@ -43,7 +43,7 @@ import type {
 import { composeCapabilityRegistryForDocs } from '../services/core/self-description/dorkos-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { dispatchCapability } from './capability-dispatch.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 
 /**
@@ -177,7 +177,7 @@ export function createCapabilityHttpRoutes(deps: CapabilityHttpDeps): Hono<ApiEn
       // The path is declared on every server, but its domain may not have
       // started on this one (no mesh, say): not here, rather than "unknown".
       if (registry && !registry.get(served.id)) {
-        return c.json({ error: NOT_ON_THIS_COMPUTER, code: 'UNKNOWN_CAPABILITY' }, 404);
+        return problem(c, 'unknown_capability', { detail: NOT_ON_THIS_COMPUTER });
       }
       return dispatchCapability(c, {
         registry,

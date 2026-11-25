@@ -20,7 +20,6 @@ import { readableSessionIds } from '../services/audit/session-visibility.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import type { Context } from 'hono';
 import { problem } from '@dorkos/http-kit';
-import { errorBody } from '../lib/route-utils.js';
 import type { RequestFacts } from '../http/request-facts.js';
 
 /** What {@link readerOfRequest} reads: the raw agent header and the resolved identity. */
@@ -56,12 +55,6 @@ export function readerOfRequest(
 export function canReadSession(request: ReaderFacts, sessionId: string): boolean {
   return readableSessionIds(readerOfRequest(request), [sessionId]).has(sessionId);
 }
-
-/**
- * The old-shape 404 for a session a caller may not read, kept only while
- * `debug.ts` still sends it (DOR-4979).
- */
-export const SESSION_NOT_FOUND_BODY = errorBody('Session not found', 'SESSION_NOT_FOUND');
 
 /**
  * The 404 a caller gets for a session it may not read: the same answer as an

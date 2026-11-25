@@ -32,6 +32,7 @@ import { readCallerAuthority } from '../lib/caller-authority.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
+import { gateResponse } from './capability-refusals.js';
 import { APPROVAL_TOKEN_HEADER, trustedCaller } from '../services/core/capabilities/index.js';
 import {
   enforceCapabilityTier,
@@ -199,20 +200,6 @@ export function createShapesRoutes(deps: ShapesRouterDeps): Hono<ApiEnv> {
       retryChannel: 'http-header',
     });
   };
-
-  /**
-   * Turn a non-`allowed` gate decision into this router's HTTP answer: `202` when
-   * a person has been asked and the caller should retry with the token, `403`
-   * when no retry can change the answer.
-   *
-   * @param c - The request being answered.
-   * @param decision - The refusing decision to render.
-   * @returns The response.
-   */
-  const gateResponse = (
-    c: Context<ApiEnv>,
-    decision: Exclude<TierEnforcementDecision, { outcome: 'allowed' }>
-  ): Response => c.json(decision.payload, decision.outcome === 'approval_required' ? 202 : 403);
 
   // GET /api/shapes — installed Shapes, active flag resolved from config.
   router.get('/', async (c) => {

@@ -6,7 +6,7 @@ import {
   ConnectorExecutionTargetSchema,
 } from '@dorkos/shared/connector-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, sendProblem, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
@@ -42,6 +42,7 @@ import {
   EVENT_ACCESS_PROBLEM,
   sendConnectorProblem,
 } from './connector-problems.js';
+import { gateResponse, toolRefusalProblem } from './capability-refusals.js';
 import { PROGRAM_KEY_ROUTES as KEY } from '../services/connectors/principal/program-key-routes.js';
 
 const AgentQuerySchema = z.object({ agentId: z.string().min(1) }).strict();
@@ -138,12 +139,7 @@ function programErrorResponse(c: Context<ApiEnv>, error: unknown): Response {
   if (error instanceof ConnectorEventAccessError) {
     return sendConnectorProblem(c, EVENT_ACCESS_PROBLEM[error.code], error);
   }
-  if (error instanceof CapabilityGateRefusal) {
-    return c.json(
-      error.decision.payload,
-      error.decision.outcome === 'approval_required' ? 202 : 403
-    );
-  }
+  if (error instanceof CapabilityGateRefusal) return gateResponse(c, error.decision);
   if (error instanceof ConnectorAccessQueryError) {
     return sendConnectorProblem(c, ACCESS_QUERY_PROBLEM[error.code], error);
   }
@@ -152,22 +148,7 @@ function programErrorResponse(c: Context<ApiEnv>, error: unknown): Response {
     return validationProblem(c, error);
   }
   if (error instanceof CapabilityToolError) {
-    const payload = error.payload;
-    const code =
-      payload && typeof payload === 'object' && 'code' in payload
-        ? String((payload as { code?: unknown }).code ?? '')
-        : '';
-    if (['CONNECTOR_TARGET_NOT_FOUND', 'CONNECTOR_OWNER_MISMATCH'].includes(code)) {
-      return c.json(
-        {
-          error:
-            'The selected connection was not found. Choose a connection this agent can use and try again.',
-          code: 'CONNECTOR_TARGET_NOT_FOUND',
-        },
-        404
-      );
-    }
-    return c.json(payload as object, code === 'CONNECTOR_GRANT_REQUIRED' ? 403 : 409);
+    return sendProblem(c, toolRefusalProblem(error.payload));
   }
   const managed = managedCloudErrorResponse(c, error);
   if (managed) return managed;

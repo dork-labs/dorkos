@@ -654,7 +654,7 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     method: 'POST',
     path: '/api/agents/no-such-agent/pause',
     body: { reason: 'Contract check' },
-    expect: { status: 404, schema: z.object({ code: z.literal('AGENT_NOT_FOUND') }).loose() },
+    expect: { status: 404, schema: z.object({ code: z.literal('not_found') }).loose() },
   },
   {
     name: 'POST /api/agents/:id/pause refuses a reason that is not text',
@@ -667,7 +667,7 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     name: 'POST /api/agents/:id/resume answers 404 for an unknown agent with no body',
     method: 'POST',
     path: '/api/agents/no-such-agent/resume',
-    expect: { status: 404, schema: z.object({ code: z.literal('AGENT_NOT_FOUND') }).loose() },
+    expect: { status: 404, schema: z.object({ code: z.literal('not_found') }).loose() },
   },
 ]);
 
@@ -915,7 +915,7 @@ describe('contract: approvals, permissions and pause, with a registered agent (l
       method: 'POST',
       path: `/api/agents/${agent.agentId}/resume`,
       headers: { 'X-DorkOS-Agent': agent.token },
-      expect: { status: 403, schema: z.object({ code: z.literal('CANNOT_RESUME_SELF') }).loose() },
+      expect: { status: 403, schema: z.object({ code: z.literal('forbidden') }).loose() },
     });
     await check(server, {
       method: 'POST',
