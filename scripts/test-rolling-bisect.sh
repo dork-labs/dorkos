@@ -26,8 +26,10 @@ check() {
   fi
 }
 
-# Facts for a range of N merges (PR 100+i), H = the last one, failed twice in
-# browser-shard; then jq edits. Points are added with pt.
+# Facts for a range of N merges (PR 100+i), H = the last one, whose push run
+# failed once in browser-shard (auto-revert never re-runs a rolling run); then
+# jq edits. Points are added with pt. reset adds the probe of H (a bisect run
+# at H that failed in browser-shard: H's second failure) unless told not to.
 N=8
 POINTS='[]'
 pt() { # sha kind status conclusion attempt [families-json] [id]
@@ -42,25 +44,25 @@ d() {
   done
   jq -n --arg h "$(c $((N - 1)))" --arg g "$G" --argjson range "$range" --argjson pts "$POINTS" \
     '{origin: 77, workflow: "browser-test", workflowFile: "browser-test.yml", url: "u", event: "push",
-      branch: "main", sha: $h, conclusion: "failure", attempt: 2, good: $g, newerGreen: false,
+      branch: "main", sha: $h, conclusion: "failure", attempt: 1, good: $g, newerGreen: false,
       workflowChanged: false, originFamilies: ["browser-shard"], range: $range,
-      points: ([{sha: $h, kind: "push", id: 77, status: "completed", conclusion: "failure", attempt: 2,
-        families: ["browser-shard"]}] + $pts)}' |
+      points: ([{sha: $h, kind: "push", id: 77, status: "completed", conclusion: "failure", attempt: 1}] + $pts)}' |
     jq "${1:-.}" >"$tmp/f.json"
   out=$("$SCRIPT" decide "$tmp/f.json" 2>&1)
   rc=$?
 }
-reset() {
+reset() { # [N] [noprobe]
   N=${1:-8}
   POINTS='[]'
+  [ "${2:-}" = noprobe ] || pt "$(c $((N - 1)))" bisect completed failure 1 '["browser-shard"]' 590
 }
 
 # --- the gates before any bisecting ---
 reset
 d
 check 'eight merges, nothing tested yet: the midpoint' "dispatch $(c 3)" "$out"
-d '.attempt = 1'
-check 'not before auto-revert has re-run it once' 'skip not-yet-re-run' "$out"
+d '.attempt = 2'
+check 'a push run someone re-ran by hand is bisected the same' "dispatch $(c 3)" "$out"
 d '.conclusion = "success"'
 check 'a pass is nothing to bisect' 'skip not-a-failure' "$out"
 d '.conclusion = "timed_out"'
@@ -79,9 +81,43 @@ d '.range |= .[:-1]'
 check 'a range that does not end at H' 'inconclusive range-unreadable' "$out"
 d '.workflowChanged = true'
 check 'the workflow file changed since G' 'inconclusive workflow-changed' "$out"
+
+# --- the probe of H: the first failure starts it, H is re-tested first ---
+reset 8 noprobe
+d
+check 'first failure, nothing tested: re-test H itself, in a dispatched run' "dispatch $(c 7)" "$out"
+pt "$(c 7)" bisect in_progress null 1 '[]' 590
+d
+check 'the probe of H in flight: wait' wait "$out"
+reset 8 noprobe
+pt "$(c 7)" bisect completed success 1 '[]' 590
+d
+check 'H passes on re-test: a flake, no culprit, no bisect' 'inconclusive head-passed-on-re-test' "$out"
+reset 8 noprobe
+pt "$(c 7)" bisect completed failure 1 '["first-run"]' 590
+d
+check 'H fails the re-test in another job: not the same break' 'inconclusive different-failure' "$out"
+reset 8
+d
+check 'H fails the re-test in the same job: the bisect proceeds' "dispatch $(c 3)" "$out"
+check 'the probe of H is never re-run (it is the second try)' no "$(grep -q '^rerun' <<<"$out" && echo yes || echo no)"
+reset 8 noprobe
+pt "$(c 7)" bisect completed cancelled 1 '[]' 590
+d
+check 'a cancelled probe of H' 'inconclusive bisect-run-cancelled' "$out"
+reset 8 noprobe
+d '.points[0].attempt = 2 | .points[0].families = ["browser-shard"]'
+check 'a push run already failed twice needs no probe' "dispatch $(c 3)" "$out"
+reset 1 noprobe
+d
+check 'one merge: re-test it' "dispatch $(c 0)" "$out"
 reset 1
 d
-check 'one merge: auto-revert.sh already decides it' 'skip single-merge' "$out"
+check 'one merge, failed again, G passed: it is the culprit' "culprit $(c 0) 100" "$out"
+reset 1 noprobe
+pt "$(c 0)" bisect completed success 1 '[]' 590
+d
+check 'one merge passing on re-test: a flake' 'inconclusive head-passed-on-re-test' "$out"
 reset 17
 d
 check 'more than 16 merges: stop' 'inconclusive too-many-merges' "$out"
@@ -115,7 +151,7 @@ check 'bad at 5 after its re-run: look at 4' "dispatch $(c 4)" "$out"
 pt "$(c 4)" bisect completed success 1
 d
 check 'good at 4, bad at 5: the culprit' "culprit $(c 5) 105" "$out"
-check 'three dispatches for eight merges' 3 "$(jq '[.points[] | select(.kind == "bisect") | .sha] | unique | length' "$tmp/f.json")"
+check 'the probe of H plus three dispatches for eight merges' 4 "$(jq '[.points[] | select(.kind == "bisect") | .sha] | unique | length' "$tmp/f.json")"
 
 # H itself is the culprit: its parent passed.
 reset 8
@@ -149,9 +185,10 @@ pt "$(c 5)" bisect completed success 1
 d
 check 'a pass after a failure: flaky, never a revert' 'inconclusive flaky' "$out"
 reset 8
-pt "$(c 7)" bisect completed success 1
+pt "$(c 3)" bisect completed success 1
+pt "$(c 7)" bisect completed success 1 '[]' 591
 d
-check 'H itself passing on a bisect: flaky' 'inconclusive flaky' "$out"
+check 'H passing on any bisect run: a flake' 'inconclusive head-passed-on-re-test' "$out"
 reset 8
 pt "$(c 3)" bisect completed failure 2 '["first-run"]'
 d
@@ -173,7 +210,8 @@ check 'a revert is never blamed' 'inconclusive culprit-is-a-revert' "$out"
 d '.range[0].pr = 0'
 check 'no merged PR behind the culprit' 'inconclusive no-merged-pr' "$out"
 
-# Budget: ceil(log2(5)) = 3. Points from an earlier bisect count against it.
+# Budget: ceil(log2(5)) = 3 below H; the probe of H does not count against
+# it. Points from an earlier bisect count against it.
 reset 5
 pt "$(c 0)" bisect completed success 1
 pt "$(c 1)" bisect completed success 1
@@ -258,6 +296,19 @@ check 'no newer green run' false "$(jq .newerGreen "$tmp/facts.json")"
 out=$("$SCRIPT" decide "$tmp/facts.json")
 check 'facts feed decide end to end' "dispatch $(c 1)" "$out"
 check 'facts makes no write call' no "$(grep -qE -- '--method|-X ' "$GH_LOG" && echo yes || echo no)"
+
+# The first failure (attempt 1, never re-run): H is re-tested first, and the
+# probe's failure is read as a bad point without a re-run.
+run_json 77 push "$H" 1 failure 'feat: merge 102 (#102)' >"$fx/run-77"
+jq '.workflow_runs |= map(if .id == 77 then .run_attempt = 1 else . end)' "$fx/pushes" >"$fx/p2" && mv "$fx/p2" "$fx/pushes"
+"$SCRIPT" facts 77 >"$tmp/facts.json" 2>/dev/null
+check 'first failure, end to end: re-test H' "dispatch $H" "$("$SCRIPT" decide "$tmp/facts.json")"
+jq --arg h "$H" '.workflow_runs += [{id: 602, display_title: "bisect \($h) for run 77", status: "completed", conclusion: "failure", run_attempt: 1}]' \
+  "$fx/bisects" >"$fx/b2" && mv "$fx/b2" "$fx/bisects"
+echo '{"jobs":[{"name":"browser-shard (2/6)","conclusion":"failure"},{"name":"browser-test","conclusion":"failure"}]}' >"$fx/jobs-602"
+"$SCRIPT" facts 77 >"$tmp/facts.json" 2>/dev/null
+check 'the probe of H carries its failed families at attempt 1' '["browser-shard"]' "$(jq -c '[.points[] | select(.id == 602) | .families[]]' "$tmp/facts.json")"
+check 'H failed again, end to end: the bisect proceeds' "dispatch $(c 1)" "$("$SCRIPT" decide "$tmp/facts.json")"
 
 "$SCRIPT" facts 601 >"$tmp/facts2.json" 2>/dev/null
 check 'a bisect run resolves to the run it bisects' 77 "$(jq .origin "$tmp/facts2.json")"

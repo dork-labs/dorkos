@@ -16,10 +16,15 @@ name: auto-revert
 # GITHUB_TOKEN push starts no workflows and the revert's required checks would
 # never run. Until AUTO_REVERT is on, the decision still runs and is logged.
 #
-# A rolling run (browser-test's push run, one run for several merges) almost
-# never has a green run on its parent, so its failures go to rolling-bisect.yml,
-# which finds the first bad merge and reverts it through the same
-# `scripts/auto-revert.sh revert` path, under the same AUTO_REVERT switch.
+# A rolling run (browser-test's push run, one run for several merges) is
+# skipped here at every attempt, never re-run: a re-run of an old push run joins
+# browser-test's `gate` concurrency group, where it would cancel the pending
+# newest-main run or be cancelled by the next merge. rolling-bisect.yml takes it
+# from its first failure, re-tests the failing head in a dispatched run of its
+# own, finds the first bad merge, and reverts it through the same
+# `scripts/auto-revert.sh revert` path, under the same AUTO_REVERT switch. The
+# full order, and the rolling list that must match rolling-bisect.yml's
+# `workflows:`, are in the header of scripts/auto-revert.sh.
 #
 # A `workflow_run` workflow runs the default branch's copy, and both jobs check
 # out main, so a PR cannot change it. Nothing from the reverted commit runs.

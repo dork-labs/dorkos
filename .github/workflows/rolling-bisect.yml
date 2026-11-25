@@ -6,17 +6,22 @@ name: rolling-bisect
 # blame a merge only when its parent had its own green run, which a rolling run
 # almost never has. scripts/rolling-bisect.sh has the rules.
 #
-# When the push run fails at H and still fails after auto-revert's one re-run
-# (attempt 2), this binary-searches the merges since the last green push run
-# (G): it dispatches the same workflow on main with `bisect_sha=<merge>`, which
-# checks that merge out and runs the full suite on it, titled
-# "bisect <sha> for run <id>". Each bisect run's completion wakes this
-# workflow again, which reads every run so far and dispatches the next
-# midpoint. At most ceil(log2(N)) dispatches for N merges (N <= 16, so at
-# most 4), plus one re-run of the failed jobs of a bisect run that fails, so
-# a flake never blames anyone. The suite is not narrowed to the failed specs:
-# the balanced-shard reporter and the fan-in's every-spec-ran check need the
-# whole spec set.
+# When the push run fails at H, this starts on that FIRST failure. auto-revert
+# never re-runs a rolling workflow: a re-run of an old push run joins
+# browser-test's `gate` concurrency group, where it would cancel the pending
+# newest-main run or be cancelled by the next merge (Nov 25, 7878dda: the
+# bisect waited for an attempt 2 that never came). Instead the first probe
+# re-tests H itself: it dispatches the same workflow on main with
+# `bisect_sha=<sha>`, which checks that merge out and runs the full suite on
+# it, titled "bisect <sha> for run <id>", in a concurrency group of its own.
+# H passing there is a flake: said once, no culprit. H failing again starts a
+# binary search of the merges since the last green push run (G). Each bisect
+# run's completion wakes this workflow again, which reads every run so far and
+# dispatches the next midpoint. One probe of H plus at most ceil(log2(N))
+# dispatches for N merges (N <= 16, so at most 5 in all), plus one re-run of
+# the failed jobs of a bisect run below H that fails, so a flake never blames
+# anyone. The suite is not narrowed to the failed specs: the balanced-shard
+# reporter and the fan-in's every-spec-ran check need the whole spec set.
 #
 # The verdict:
 #   - culprit: the merge failed twice in the same job as H and the merge before
@@ -30,7 +35,10 @@ name: rolling-bisect
 # Bisecting and reporting run whatever AUTO_REVERT says.
 #
 # Add a workflow to `workflows:` below when its push run becomes rolling AND it
-# takes the `bisect_sha` / `bisect_of` dispatch inputs (see browser-test.yml).
+# takes the `bisect_sha` / `bisect_of` dispatch inputs (see browser-test.yml),
+# and add it to ROLLING_WORKFLOWS in scripts/auto-revert.sh in the same PR
+# (test-auto-revert.sh fails until both lists match), or auto-revert re-runs
+# it into the rolling concurrency group.
 #
 # If a wake-up is ever lost, the next rolling failure (or a dispatch of this
 # workflow with the run id) resumes: every decision is rebuilt from the runs.
@@ -58,13 +66,12 @@ env:
 
 jobs:
   next:
-    # A push run on main that failed after its re-run, or a bisect run.
+    # A push run on main that failed (from its first attempt), or a bisect run.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.head_branch == github.event.repository.default_branch &&
       ((github.event.workflow_run.event == 'push' &&
-      contains(fromJSON('["failure","timed_out"]'), github.event.workflow_run.conclusion) &&
-      github.event.workflow_run.run_attempt >= 2) ||
+      contains(fromJSON('["failure","timed_out"]'), github.event.workflow_run.conclusion)) ||
       (github.event.workflow_run.event == 'workflow_dispatch' &&
       startsWith(github.event.workflow_run.display_title, 'bisect '))))
     # One decision at a time per workflow, so two wake-ups never dispatch the
