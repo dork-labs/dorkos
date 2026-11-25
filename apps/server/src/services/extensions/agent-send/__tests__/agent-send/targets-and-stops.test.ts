@@ -15,6 +15,8 @@ import { resetMessageDispatcher } from '../../../../session/message-dispatcher.j
 import { getRunRecord, uninstallRunRecord } from '../../../../runs/index.js';
 import { RUN_LEASE_MS } from '../../../../runs/run-store.js';
 import { EFFECT_LEASE_MS } from '../../../../runs/effects/worker.js';
+import { rekeyProjector } from '../../../../session/session-state-projector.js';
+import { resetSessionKeys } from '../../../../session/resolution/session-key-registry.js';
 
 /** A made-up agent's Mesh id and home. */
 const AGENT = '01KJXYKJYW4N8QGQ5W4GB6YM9J';
@@ -56,6 +58,21 @@ describe('ctx.agent.send — capacity', () => {
       { messageId: receipt.messageId, status: 'started', sessionId: h.session }
     );
     expect(h.runtime.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers a resend with why the message waits now, not why it waited at first', async () => {
+    h.capFull = true;
+    const receipt = await h.service.send(EXT, { to: h.session, text: 'soon', idempotencyKey: 'k' });
+    expect(receipt).toMatchObject({ status: 'queued', reason: 'at_capacity' });
+    // A person's turn takes the chat while it waits for room.
+    const first = gate();
+    await personTurn(first.wait);
+    expect(
+      await h.service.send(EXT, { to: h.session, text: 'soon', idempotencyKey: 'k' })
+    ).toMatchObject({ messageId: receipt.messageId, status: 'queued', reason: 'busy' });
+    h.capFull = false;
+    first.open();
+    await settle();
   });
 
   it('holds a message whose new chat the extension’s own start limits refuse, then sends it', async () => {
@@ -262,7 +279,7 @@ describe('ctx.agent.send — the extension stops', () => {
     await settle();
     expect(h.queue.list(h.session).map((row) => row.id)).toEqual([receipt.messageId]);
 
-    h.service.extensionStopped(EXT);
+    h.service.extensionStopped(EXT, { takeBack: true });
     first.open();
     await settle();
 
@@ -276,6 +293,25 @@ describe('ctx.agent.send — the extension stops', () => {
         reason: 'stopped',
       }),
     ]);
+  });
+
+  it('leaves its messages in a chat’s queue when its child crashed, and runs them', async () => {
+    const first = gate();
+    await personTurn(first.wait);
+    const receipt = await h.service.send(EXT, {
+      to: h.session,
+      text: 'later',
+      idempotencyKey: 'q',
+    });
+    await settle();
+    // Nobody asked for this stop: the queue row stays where the person sees it.
+    h.service.extensionStopped(EXT);
+    expect(h.queue.list(h.session).map((row) => row.id)).toEqual([receipt.messageId]);
+    first.open();
+    await vi.waitFor(() =>
+      expect(h.events.map((e) => e.kind)).toEqual(['turn.started', 'turn.done'])
+    );
+    expect(runOfMessage(receipt.messageId)?.status).toMatch(/ended|settled/u);
   });
 
   it('leaves held messages alone when the whole server shuts down', async () => {
@@ -365,6 +401,50 @@ describe('ctx.agent.send — across a restart', () => {
   });
 });
 
+describe('ctx.agent.send — a moved chat across a restart (DOR-5232)', () => {
+  it('finds a queued message whose chat the runtime moved, after a restart forgot the move', async () => {
+    let clock = Date.now();
+    uninstallRunRecord();
+    bootTurnPort({ now: () => clock });
+    h.service.stop();
+    h.service = build();
+    await h.service.start();
+    const first = gate();
+    await personTurn(first.wait);
+    const waiting = await h.service.send(EXT, {
+      to: h.session,
+      text: 'moved',
+      idempotencyKey: 'm',
+    });
+    await settle();
+    // The runtime settles on another id: rows and runs move to it.
+    const canonical = `sdk-${h.session}`;
+    rekeyProjector(h.session, canonical);
+    expect(h.queue.list(canonical).map((row) => row.id)).toEqual([waiting.messageId]);
+
+    // The process dies; the next boot knows nothing of the move.
+    first.open();
+    h.service.stop();
+    resetMessageDispatcher();
+    resetSessionKeys();
+    uninstallRunRecord();
+    clock += Math.max(RUN_LEASE_MS, EFFECT_LEASE_MS) + 10_000;
+    h.events = [];
+    bootTurnPort({ now: () => clock });
+    h.runtime.withScenarios([quickTurn()]);
+    h.service = build();
+    h.service.subscribe(EXT, (event) => h.events.push(event));
+    await h.service.start();
+    // Never called interrupted: it runs, reported under the id the app was given.
+    await vi.waitFor(() => expect(h.events).toHaveLength(2), { timeout: 3_000 });
+    expect(h.events).toEqual([
+      { kind: 'turn.started', messageId: waiting.messageId, sessionId: h.session },
+      { kind: 'turn.done', messageId: waiting.messageId, sessionId: h.session, outcome: 'ok' },
+    ]);
+    h.projectors.push(canonical);
+  });
+});
+
 describe('ctx.agent.send — opening and upgrading (DOR-5232)', () => {
   it('opens ONE chat for two first messages sent close together, before either is handed over', async () => {
     h.agents.set(AGENT, HOME);
@@ -377,6 +457,23 @@ describe('ctx.agent.send — opening and upgrading (DOR-5232)', () => {
     await settle();
     expect(h.events.filter((e) => e.kind === 'turn.done')).toHaveLength(2);
     h.projectors.push(first.sessionId!);
+  });
+
+  it('keeps a sent message whose chat could not be kept: its run runs and the app hears it', async () => {
+    h.agents.set(AGENT, HOME);
+    h.runtime.withScenarios([quickTurn()]);
+    vi.spyOn(h.store, 'keepChat').mockImplementationOnce(() => {
+      throw new Error('disk full');
+    });
+    const receipt = await h.service.send(EXT, { to: AGENT, text: 'one', idempotencyKey: 'k' });
+    expect(receipt.status).toBe('queued');
+    await settle();
+    expect(h.events.map((e) => [e.kind, e.messageId])).toEqual([
+      ['turn.started', receipt.messageId],
+      ['turn.done', receipt.messageId],
+    ]);
+    expect(h.store.get(receipt.messageId)?.status).toBe('done');
+    h.projectors.push(receipt.sessionId!);
   });
 
   it('sends a held message an earlier version saved under a UUID, on a run id of its own', async () => {

@@ -108,7 +108,14 @@ import {
   resumeChatQueueFor,
   type SessionFacts,
 } from './agent-send-defaults.js';
-import { messageOfRun, SEND_SOURCE, sendSourceRef, stepOf } from './agent-send-runs.js';
+import {
+  messageOfRun,
+  runOfRow,
+  SEND_SOURCE,
+  sendSourceRef,
+  stepOf,
+  waitOf,
+} from './agent-send-runs.js';
 import { DeliveryListeners } from './agent-send-listeners.js';
 
 export type { SessionFacts } from './agent-send-defaults.js';
@@ -259,10 +266,7 @@ export class AgentSendService {
     const resumed = new Set<string>();
     for (const row of this.deps.store.listByStatus(['queued', 'started'])) {
       if (this.createdHere.has(row.id)) continue;
-      const ref = sendSourceRef(row.id);
-      const run = row.sessionId
-        ? port?.list(row.sessionId).find((each) => each.sourceRef === ref)
-        : undefined;
+      const run = port ? runOfRow(port, row) : undefined;
       if (run) this.onRun(run);
       // An earlier version queued it in the chat itself: still there, the
       // queue still runs it, and its run (once adopted) is heard by its row's id.
@@ -272,12 +276,14 @@ export class AgentSendService {
       }
       // Waiting in a chat's queue: re-armed now, so an idle chat runs it
       // without waiting for the next message there.
+      // By the chat its run is kept under now: a moved chat's rows moved with it.
+      const chat = run?.sessionId ?? row.sessionId;
       const waiting = this.deps.store.get(row.id)?.status === 'queued';
-      if (!waiting || !row.sessionId || resumed.has(row.sessionId)) continue;
-      resumed.add(row.sessionId);
-      await this.resumeQueue(row.sessionId, row.cwd ?? undefined).catch((err: unknown) =>
+      if (!waiting || !chat || resumed.has(chat)) continue;
+      resumed.add(chat);
+      await this.resumeQueue(chat, row.cwd ?? undefined).catch((err: unknown) =>
         logger.warn('[agent-send] could not re-arm a chat’s queued messages', {
-          sessionId: row.sessionId,
+          sessionId: chat,
           ...logError(err),
         })
       );
@@ -320,7 +326,7 @@ export class AgentSendService {
     const inflight = this.inflight.get(key);
     if (inflight) return inflight;
     const stored = this.deps.store.findByKey(extensionId, request.idempotencyKey);
-    if (stored) return receiptOf(stored);
+    if (stored) return this.receiptNow(stored);
     const pending = this.sendOnce(extensionId, request).finally(() => {
       this.inflight.delete(key);
     });
@@ -343,20 +349,30 @@ export class AgentSendService {
   /**
    * An extension stopped, reloaded, was turned off or removed: nothing it sent
    * goes out after it is gone. Its held messages (waiting for its start limits)
-   * and its messages still waiting to start (their run queued, in a chat's
-   * queue or not handed over yet) are failed with `stopped`, and their runs
-   * taken back. A message whose turn already started runs to its end. A server
-   * shutting down is not an extension stopping: after {@link stop}, this does
-   * nothing, so waiting messages survive a restart.
+   * are failed with `stopped`. When the stop was asked for (`takeBack`), its
+   * messages still waiting to start (their run queued, in a chat's queue or
+   * not handed over yet) are failed too, and their runs taken back; a message
+   * whose launch has begun runs to its end. A child that crashed is not a
+   * stop anyone asked for: what it sent stays where the person can see it. A
+   * server shutting down is not an extension stopping either: after
+   * {@link stop}, this does nothing, so waiting messages survive a restart.
    *
    * @param extensionId - The extension that stopped.
+   * @param opts.takeBack - A person or DorkOS asked for the stop (a turn-off,
+   *   a removal, a reload): take back its messages still waiting to start.
    */
-  extensionStopped(extensionId: string): void {
+  extensionStopped(extensionId: string, opts: { takeBack?: boolean } = {}): void {
     if (this.stopped) return;
     this.stoppedExtensions.add(extensionId);
+    const port = this.attach();
     for (const row of this.deps.store.listByStatus(['held', 'queued'])) {
       if (row.extensionId !== extensionId) continue;
-      if (row.status === 'queued') this.attach()?.withdraw(row.id, 'stopped');
+      if (row.status === 'queued') {
+        if (!opts.takeBack) continue;
+        const run = port ? runOfRow(port, row) : undefined;
+        // Its launch has begun: it runs, or fails, and its row says which.
+        if (run && !port?.withdraw(run.id, 'stopped')) continue;
+      }
       this.fail(row, 'stopped');
     }
   }
@@ -588,15 +604,29 @@ export class AgentSendService {
       return { kind: 'refused', code, message: err.message };
     }
     if (reservation) this.reservations.set(row.id, reservation);
-    if (target.agent) this.deps.store.keepChat(row.extensionId, target.agent.id, sessionId);
-    // Why it waits, when there is a reason: a turn holds the chat, or admission
-    // held the run for room. A message only not handed over yet has none.
-    const busy = door
-      .list(sessionId)
-      .some((run) => run.id !== runId && ['starting', 'started', 'running'].includes(run.status));
-    const held = stepOf(door.get(runId)!);
-    const reason = busy ? 'busy' : held.kind === 'waiting' ? held.reason : null;
-    return { kind: 'sent', sessionId, reason };
+    // Its run is saved and will run: nothing after this may undo the send,
+    // so a failure keeping the chat or reading why it waits only loses that.
+    try {
+      if (target.agent) this.deps.store.keepChat(row.extensionId, target.agent.id, sessionId);
+      return { kind: 'sent', sessionId, reason: waitOf(door, sessionId, runId) };
+    } catch (err) {
+      logger.warn('[agent-send] a sent message’s chat could not be kept', {
+        messageId: row.id,
+        ...logError(err),
+      });
+      return { kind: 'sent', sessionId, reason: null };
+    }
+  }
+
+  /**
+   * A resend's answer: where the message is now, and, while it waits, why it
+   * waits now (a chat that was busy at the first answer may be free).
+   */
+  private receiptNow(row: AgentSendRecord): AgentSendReceipt {
+    const port = this.attach();
+    const run = port && row.status === 'queued' ? runOfRow(port, row) : undefined;
+    if (!port || run?.status !== 'queued') return receiptOf(row);
+    return receiptOf({ ...row, receiptReason: waitOf(port, run.sessionId, run.id) });
   }
 
   /** Try every held message again, oldest first. One drain at a time. */

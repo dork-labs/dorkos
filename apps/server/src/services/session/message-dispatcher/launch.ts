@@ -181,7 +181,9 @@ export function launchDispatchInner(
     return Promise.resolve({ accepted: false, suspended: true });
   if (giveUpIfSpent(plan)) return Promise.resolve({ accepted: false });
   // Its agent is paused: keep the row and start nothing, rather than feed it to
-  // a turn the pause refuses and lose it at that turn's start (DOR-4327).
+  // a turn the pause refuses and lose it at that turn's start (DOR-4327). Only
+  // a plan with a queue row is held (`pausedAgentOfPlan`): words at their
+  // source never are, so their turn's refusal (`agent_paused`) ends the run.
   const paused = pausedAgentOfPlan(plan);
   if (paused) {
     feedRun(plan, 'pause hold', (feed, runId) => feed.waiting(runId, 'paused'));
@@ -206,6 +208,8 @@ export function launchDispatchInner(
       runId: plan.runId,
     });
     plan.turn.onSettled?.('failed');
+    // The messages behind it are not held up by a launch that never happened.
+    schedulePump(plan.sessionKey);
     return Promise.resolve({ accepted: false });
   }
   if (verdict.kind === 'busy') {

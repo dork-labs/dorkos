@@ -100,9 +100,10 @@ export function acceptRun(
  *
  * @param runId - The run the port saved.
  * @param queueMessageId - Its queue row.
+ * @returns False when the run was taken back meanwhile: the row must not stay.
  */
-export function recordRunRow(runId: string, queueMessageId: string): void {
-  toRuns('row taken', (feed) => feed.queueRowTaken(runId, queueMessageId), undefined);
+export function recordRunRow(runId: string, queueMessageId: string): boolean {
+  return toRuns('row taken', (feed) => feed.queueRowTaken(runId, queueMessageId), true);
 }
 
 /**

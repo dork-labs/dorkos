@@ -97,8 +97,10 @@ export interface DispatcherRunFeed {
    *
    * @param runId - The run the port saved.
    * @param queueMessageId - Its queue row.
+   * @returns False when the run no longer waits (it was taken back while its
+   *   hand-over was under way): the row must not stay.
    */
-  queueRowTaken(runId: string, queueMessageId: string): void;
+  queueRowTaken(runId: string, queueMessageId: string): boolean;
   /**
    * The turn port's run whose words stay at their source started no turn and
    * goes back to the space side: `queued` again (transition 8 from

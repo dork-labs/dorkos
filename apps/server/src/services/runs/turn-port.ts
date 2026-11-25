@@ -247,22 +247,27 @@ export class SpaceTurnPort {
   /**
    * Take back a run that has not started, because its caller is gone (a mini
    * app stopped or was removed): its queue row leaves the chat's queue, or a
-   * run still waiting here is cancelled. A launch already under way is left
-   * to end as it ends.
+   * run with no row is cancelled, even while its hand-over is under way (the
+   * row that hand-over writes is not kept, and its launch finds the run gone).
+   * A run whose launch has begun is left to end as it ends.
    *
    * @param runId - The run.
    * @param why - Kept on the run when it is cancelled here.
+   * @returns Whether it was taken back: false when it had already begun, or ended.
    */
-  withdraw(runId: string, why: string): void {
+  withdraw(runId: string, why: string): boolean {
     const run = this.deps.runs.get(runId);
-    if (run?.status !== 'queued') return;
+    if (run?.status !== 'queued') return false;
     const computer = this.deps.computer?.();
     if (run.queueMessageId !== null) {
       computer?.removeQueued(run.sessionId, run.queueMessageId);
-      return;
+      return this.deps.runs.get(runId)?.status === 'cancelled';
     }
-    if (computer?.withdraw(run.id) === false) return;
+    // A plan waiting in the dispatcher is dropped; one still being handed
+    // over meets the cancelled run.
+    computer?.withdraw(run.id);
     this.deps.starts?.()?.cancel(run.id, why);
+    return this.deps.runs.get(runId)?.status === 'cancelled';
   }
 
   /**

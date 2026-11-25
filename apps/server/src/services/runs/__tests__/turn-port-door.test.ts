@@ -25,7 +25,12 @@ import {
 } from '../../session/message-dispatcher.js';
 import { inFlight, pending } from '../../session/message-dispatcher/state.js';
 import { schedulePump } from '../../session/message-dispatcher/pump.js';
-import { MessageQueueStore, setMessageQueueStore } from '../../session/message-queue-store.js';
+import { runtimeMessageIdFor } from '../../session/message-dispatcher/pause-hold.js';
+import {
+  getMessageQueueStore,
+  MessageQueueStore,
+  setMessageQueueStore,
+} from '../../session/message-queue-store.js';
 import { disposeProjector, getOrCreateProjector } from '../../session/session-state-projector.js';
 import {
   dispatchSessionMessage,
@@ -830,6 +835,65 @@ describe('what the review found (T5)', () => {
     const cancelled = startFromApp('from the app: too late').runId;
     record.starts.cancel(cancelled, 'expired');
     expect(turnFacts()!.dispatcher.launchBegins(cancelled)).toEqual({ kind: 'gone' });
+  });
+
+  it('takes back a run whose hand-over is under way: nothing runs, and no row is left', async () => {
+    let open!: () => void;
+    launchGate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    // A mini app's message (its words become a row) and a run with no row.
+    const composer = record.port.start({
+      sessionId,
+      cwd: AGENT.home,
+      content: 'from the app: withdrawn on its way',
+      origin: { kind: 'extension-message' },
+      tier: 'owner',
+    }).runId;
+    const rowless = startFromApp('from the app: also withdrawn').runId;
+    const handing = record.worker.runOnce();
+    await vi.waitFor(() => expect(handed).toEqual([composer]));
+    // Its app stops: taken back while the launch path still has it.
+    expect(record.port.withdraw(composer, 'stopped')).toBe(true);
+    expect(record.port.withdraw(rowless, 'stopped')).toBe(true);
+    open();
+    await handing;
+    await settle();
+    expect(record.store.get(composer)).toMatchObject({
+      status: 'cancelled',
+      endingDetail: { cancelledBecause: 'stopped' },
+    });
+    expect(record.store.get(rowless)?.status).toBe('cancelled');
+    expect(getMessageQueueStore()!.list(sessionId)).toEqual([]);
+    expect(answered).toEqual([]);
+  });
+
+  it('sends a run-named message to the runtime under a UUID derived from its id', async () => {
+    const { runId } = record.port.start({
+      sessionId,
+      cwd: AGENT.home,
+      content: 'from the app: a runtime id',
+      origin: { kind: 'extension-message' },
+      tier: 'owner',
+    });
+    await pass();
+    expect(answered).toEqual(['from the app: a runtime id']);
+    const sent = (
+      inner.sendMessage.mock.calls[0] as unknown as [string, string, { messageId?: string }]
+    )[2].messageId!;
+    // Claude Code types a user message's id as a UUID; the run's id is a ULID.
+    expect(sent).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
+    expect(sent).not.toBe(runId);
+    expect(runtimeMessageIdFor(runId)).toBe(sent);
+  });
+
+  it('does not take back a run whose launch has begun', async () => {
+    const { runId } = startFromApp('from the app: already begun');
+    const { store: runs } = record;
+    runs.move(runs.get(runId)!, 'starting', runs.lease());
+    expect(record.port.withdraw(runId, 'stopped')).toBe(false);
+    expect(runs.get(runId)?.status).toBe('starting');
+    runs.move(runs.get(runId)!, 'queued', { ownerEpoch: null, leaseUntil: null });
   });
 
   it('hands over again, in the same process, a run whose dispatcher plan was lost', async () => {

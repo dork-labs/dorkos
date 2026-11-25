@@ -13,7 +13,9 @@
  * @module services/extensions/agent-send/agent-send-runs
  */
 import type { AgentDeliveryFailureReason, AgentSendWaitReason } from '@dorkos/extension-api/server';
-import type { TurnRun } from '../../runs/index.js';
+import { RunIdSchema } from '@dorkos/shared/turn-port';
+import type { SpaceTurnPort, TurnRun } from '../../runs/index.js';
+import type { AgentSendRecord } from './agent-send-store.js';
 
 /** The source kind a mini app's message keeps its words under. */
 export const SEND_SOURCE = 'extension-send';
@@ -105,4 +107,46 @@ export function stepOf(run: TurnRun): SendStep {
       // Its words joined another turn, which ran them.
       return { kind: 'done', outcome: 'ok' };
   }
+}
+
+/**
+ * A message's run. Named by the message's own id since runs were (so a chat
+ * the runtime moved to another id, which a restart no longer knows as an
+ * alias, still finds it); a message an earlier version saved under a UUID is
+ * looked for by its source in the chat it was sent to.
+ *
+ * @param port - The space face.
+ * @param row - The message.
+ */
+export function runOfRow(
+  port: Pick<SpaceTurnPort, 'get' | 'list'>,
+  row: Pick<AgentSendRecord, 'id' | 'sessionId'>
+): TurnRun | undefined {
+  const own = RunIdSchema.safeParse(row.id).success ? port.get(row.id) : undefined;
+  if (own) return own;
+  const ref = sendSourceRef(row.id);
+  return row.sessionId
+    ? port.list(row.sessionId).find((each) => each.sourceRef === ref)
+    : undefined;
+}
+
+/**
+ * Why a message waits, when there is a reason: a turn holds the chat, or
+ * admission held the run for room. A message only not handed over yet has none.
+ *
+ * @param port - The space face.
+ * @param sessionId - The chat.
+ * @param runId - The message's run.
+ */
+export function waitOf(
+  port: Pick<SpaceTurnPort, 'get' | 'list'>,
+  sessionId: string,
+  runId: string
+): AgentSendWaitReason | null {
+  const busy = port
+    .list(sessionId)
+    .some((run) => run.id !== runId && ['starting', 'started', 'running'].includes(run.status));
+  const run = port.get(runId);
+  const held = run ? stepOf(run) : undefined;
+  return busy ? 'busy' : held?.kind === 'waiting' ? held.reason : null;
 }

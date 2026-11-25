@@ -253,9 +253,13 @@ function dispatcherFeed(
 
     queueRowTaken: (runId, queueMessageId) =>
       store.transaction(() => {
-        if (store.get(runId)?.status !== 'queued') return;
+        const status = store.get(runId)?.status;
+        // Taken back while its hand-over was under way: the row goes too.
+        if (status === 'cancelled' || status === 'superseded') return false;
+        if (status !== 'queued') return true;
         store.annotate(runId, { queueMessageId });
         starts?.rowTaken(store.get(runId)!);
+        return true;
       }),
 
     handBack: (runId) =>

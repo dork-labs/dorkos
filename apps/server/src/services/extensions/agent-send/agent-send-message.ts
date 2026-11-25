@@ -153,8 +153,8 @@ export function receiptOf(row: AgentSendRecord): AgentSendReceipt {
       sessionId: row.sessionId,
     };
   }
-  // A resend answers with where the message is now: running (or done) once
-  // its turn started, else waiting, with the reason it was given.
+  // Where the message is now: running (or done) once its turn started, else
+  // waiting, with the reason on the row (a resend passes the current one).
   const status = row.status === 'started' || row.status === 'done' ? 'started' : 'queued';
   return {
     messageId: row.id,

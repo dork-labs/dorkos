@@ -10,6 +10,7 @@ import {
   personTurn,
   runOfMessage,
 } from './harness.js';
+import { runtimeMessageIdFor } from '../../../../session/message-dispatcher/pause-hold.js';
 import { describe, expect, it, vi } from 'vitest';
 import { renderAppMessage } from '../../agent-send-message.js';
 import { dispatchMessage } from '../../../../session/message-dispatcher.js';
@@ -39,11 +40,12 @@ describe('ctx.agent.send — an idle chat', () => {
     await settle();
 
     expect(h.runtime.sendMessage).toHaveBeenCalledTimes(1);
-    // The id on the receipt is the id the runtime ran, and the run's.
+    // The id on the receipt is the run's; the runtime ran it under the UUID
+    // derived from it, since a runtime's message ids are UUIDs.
     expect(h.runtime.sendMessage).toHaveBeenCalledWith(
       h.session,
       renderAppMessage('Flow Dashboard', EXT, 'hello', undefined, 'abcd1234'),
-      expect.objectContaining({ messageId: receipt.messageId })
+      expect.objectContaining({ messageId: runtimeMessageIdFor(receipt.messageId) })
     );
     expect(runOfMessage(receipt.messageId)?.id).toBe(receipt.messageId);
     // A mini app's turn carries the outsider mark (DOR-4594).
@@ -343,6 +345,25 @@ describe('ctx.agent.send — it cannot shape the turn', () => {
       expect(h.store.findByKey(EXT, 'k')).toBeNull();
     }
   );
+
+  it('carries the outsider mark on a message that waited in the queue and launched later', async () => {
+    const first = gate();
+    await personTurn(first.wait);
+    await h.service.send(EXT, { to: h.session, text: 'behind the person', idempotencyKey: 'q' });
+    await settle();
+    first.open();
+    await vi.waitFor(() =>
+      expect(
+        h.runtime.sendMessage.mock.calls.some((call) =>
+          String(call[1]).includes('behind the person')
+        )
+      ).toBe(true)
+    );
+    const launched = h.runtime.sendMessage.mock.calls.find((call) =>
+      String(call[1]).includes('behind the person')
+    );
+    expect(launched?.[2]).toMatchObject({ carriedMarks: { outsider: true } });
+  });
 
   it('starts as an extension message, with no agent or power of its own', async () => {
     h.runtime.withScenarios([quickTurn()]);

@@ -144,7 +144,7 @@ import type {
   MessageDisposition,
 } from '@dorkos/shared/schemas';
 import { COMMAND_INTENT_QUEUE_WAIT_MS } from '@dorkos/shared/command-intents';
-import { getMessageQueueStore } from './message-queue-store.js';
+import { getMessageQueueStore, type QueuedMessageRecord } from './message-queue-store.js';
 import { queuedLimitsOf } from './message-dispatcher/carried-limits.js';
 import { onProjectorRekey, onProjectorTurnBoundary } from './session-state-projector.js';
 import {
@@ -570,7 +570,7 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
   const queueStore =
     whenBusy === 'queue' && !opts.wordsAtSource ? getMessageQueueStore() : undefined;
   let runId = opts.runId;
-  const record = queueStore?.atomically(() => {
+  const record = queueStore?.atomically((): QueuedMessageRecord | undefined => {
     const row = queueStore.enqueue({
       ...(opts.messageId !== undefined ? { id: opts.messageId } : {}),
       sessionId: queueKey,
@@ -584,8 +584,13 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
       carriedLimits: queuedLimitsOf(opts),
     });
     // A run the turn port saved gets its row; any other caller's run is written now.
-    if (runId !== undefined) recordRunRow(runId, row.id);
-    else runId = acceptRun({ sessionId, turn: opts }, row.id);
+    if (runId === undefined) runId = acceptRun({ sessionId, turn: opts }, row.id);
+    else if (!recordRunRow(runId, row.id)) {
+      // Taken back while it was being handed over (its app stopped): no row
+      // stays, and its launch finds the run gone.
+      queueStore.remove(row.id);
+      return undefined;
+    }
     return row;
   });
   runId ??= acceptRun({ sessionId, turn: opts }, undefined);
