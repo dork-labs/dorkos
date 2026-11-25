@@ -237,6 +237,7 @@
           "signing_in",
           "history_refused",
           "agent_paused",
+          "connection_not_ready",
           "room_session_moved",
           "desk_not_own",
           "protected_folder",
@@ -314,6 +315,27 @@
           "signin_no_signin_support",
           "signin_unreachable",
           "spend_limit_reached",
+          "wrong_password",
+          "too_many_tries",
+          "password_too_short",
+          "no_password",
+          "no_owner",
+          "insecure_connection",
+          "extension_risk",
+          "stale_sign_in",
+          "stale_page",
+          "passkey_needed",
+          "passkey_on_other_address",
+          "passkey_refused",
+          "auth_required_for_exposure",
+          "lan_access_unsupported",
+          "set_by_environment",
+          "remote_access_unavailable",
+          "remote_access_already_set_up",
+          "remote_access_not_set_up",
+          "held_by_another_browser",
+          "signin_no_retry",
+          "sign_in_needs_https",
           "schedule_package_owned",
           "past_due",
           "owner_changed",
@@ -345,7 +367,6 @@
           "length_required",
           "disk_full",
           "disk_space_unknown",
-          "auth_required_for_exposure",
           "tunnel_running",
           "tunnel_token_missing",
           "tunnel_port_mismatch",
@@ -41937,45 +41958,21 @@
             }
           },
           "401": {
-            "description": "Not signed in",
+            "description": "Not signed in (`unauthenticated`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that needs it, not the owner at the computer DorkOS runs on or signed in over https (`NEEDS_PERSON_AT_THIS_COMPUTER`)",
+            "description": "An agent, a per-user API key or the relay (`person_only`); for a write, not from the app’s own page (`origin_not_allowed`), or not the owner at the computer DorkOS runs on or signed in over https (`operator_only`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -42006,67 +42003,31 @@
             "description": "Signed out"
           },
           "401": {
-            "description": "Not signed in",
+            "description": "Not signed in (`unauthenticated`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that needs it, not the owner at the computer DorkOS runs on or signed in over https (`NEEDS_PERSON_AT_THIS_COMPUTER`)",
+            "description": "An agent, a per-user API key or the relay (`person_only`); for a write, not from the app’s own page (`origin_not_allowed`), or not the owner at the computer DorkOS runs on or signed in over https (`operator_only`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No live sign-in of yours has that id",
+            "description": "No live sign-in of yours has that id (`not_found`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -42124,45 +42085,21 @@
             }
           },
           "401": {
-            "description": "Not signed in",
+            "description": "Not signed in (`unauthenticated`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that needs it, not the owner at the computer DorkOS runs on or signed in over https (`NEEDS_PERSON_AT_THIS_COMPUTER`)",
+            "description": "An agent, a per-user API key or the relay (`person_only`); for a write, not from the app’s own page (`origin_not_allowed`), or not the owner at the computer DorkOS runs on or signed in over https (`operator_only`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -42231,90 +42168,52 @@
           "204": {
             "description": "Changed"
           },
-          "401": {
-            "description": "Not signed in, or the passkey check did not pass",
+          "400": {
+            "description": "`on` is missing or not a boolean (`invalid_request`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in (`unauthenticated`), or the passkey check did not pass (`passkey_refused`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that needs it, not the owner at the computer DorkOS runs on or signed in over https (`NEEDS_PERSON_AT_THIS_COMPUTER`)",
+            "description": "An agent, a per-user API key or the relay (`person_only`); for a write, not from the app’s own page (`origin_not_allowed`), or not the owner at the computer DorkOS runs on or signed in over https (`operator_only`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "No live network sign-in of yours has that id",
+            "description": "No live network sign-in of yours has that id (`not_found`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Add a passkey on this computer first",
+            "description": "No passkey on this computer (`passkey_needed`), or it belongs to another of its addresses (`passkey_on_other_address`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -42395,45 +42294,21 @@
             }
           },
           "401": {
-            "description": "Not signed in",
+            "description": "Not signed in (`unauthenticated`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that needs it, not the owner at the computer DorkOS runs on or signed in over https (`NEEDS_PERSON_AT_THIS_COMPUTER`)",
+            "description": "An agent, a per-user API key or the relay (`person_only`); for a write, not from the app’s own page (`origin_not_allowed`), or not the owner at the computer DorkOS runs on or signed in over https (`operator_only`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -42448,7 +42323,7 @@
           "Devices"
         ],
         "summary": "Approve a network sign-in",
-        "description": "Approves one waiting device and answers a one-time code to type on it. The first call answers `428` with a passkey check (`PASSKEY_CHECK_REQUIRED`); the second sends `{ passkey }`, the browser’s response to it. Each check approves one request once. With no passkey on this computer it answers `409` (`PASSKEY_NEEDED`). Only for the owner at the computer DorkOS runs on, from the app’s own page.",
+        "description": "Approves one waiting device and answers a one-time code to type on it. The first call answers `428` with a passkey check (`PASSKEY_CHECK_REQUIRED`); the second sends `{ passkey }`, the browser’s response to it. Each check approves one request once. With no passkey on this computer it answers `409` (`passkey_needed`). Only for the owner at the computer DorkOS runs on, from the app’s own page.",
         "parameters": [
           {
             "schema": {
@@ -42495,89 +42370,41 @@
             }
           },
           "401": {
-            "description": "The passkey check did not pass",
+            "description": "The passkey check did not pass (`passkey_refused`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that needs it, not the owner at the computer DorkOS runs on or signed in over https (`NEEDS_PERSON_AT_THIS_COMPUTER`)",
+            "description": "An agent, a per-user API key or the relay (`person_only`); for a write, not from the app’s own page (`origin_not_allowed`), or not the owner at the computer DorkOS runs on or signed in over https (`operator_only`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "That request has ended",
+            "description": "That request has ended (`not_found`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "409": {
-            "description": "Add a passkey on this computer first",
+            "description": "No passkey on this computer (`passkey_needed`), or it belongs to another of its addresses (`passkey_on_other_address`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -42618,45 +42445,21 @@
             "description": "Declined"
           },
           "401": {
-            "description": "Not signed in",
+            "description": "Not signed in (`unauthenticated`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that needs it, not the owner at the computer DorkOS runs on or signed in over https (`NEEDS_PERSON_AT_THIS_COMPUTER`)",
+            "description": "An agent, a per-user API key or the relay (`person_only`); for a write, not from the app’s own page (`origin_not_allowed`), or not the owner at the computer DorkOS runs on or signed in over https (`operator_only`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "code"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -42733,22 +42536,11 @@
             }
           },
           "403": {
-            "description": "Not the owner, in the app, at the computer DorkOS runs on or signed in over https",
+            "description": "Not the owner, in the app, at the computer DorkOS runs on or signed in over https (`operator_only`), or not signed in as the owner (`owner_only`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -42792,23 +42584,32 @@
               }
             }
           },
-          "403": {
-            "description": "Not the owner, in the app, at the computer DorkOS runs on. Never another device.",
+          "401": {
+            "description": "The passkey check did not pass (`passkey_refused`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner, in the app, at the computer DorkOS runs on, never another device (`operator_only`, `owner_only`), or not from the app’s own page (`origin_not_allowed`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The check needs a passkey on this computer (`passkey_needed`), or one made at another of its addresses (`passkey_on_other_address`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -42881,43 +42682,31 @@
             }
           },
           "400": {
-            "description": "The passkey was not added",
+            "description": "No passkey sent, or it was not added (`invalid_request`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Not the owner, in the app, at the computer DorkOS runs on. Never another device.",
+            "description": "Not the owner, in the app, at the computer DorkOS runs on, never another device (`operator_only`, `owner_only`), or not from the app’s own page (`origin_not_allowed`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Other devices could not be signed out, so nothing was added (`internal_error`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -42974,23 +42763,32 @@
               }
             }
           },
-          "403": {
-            "description": "Not the owner, in the app, at the computer DorkOS runs on. Never another device.",
+          "401": {
+            "description": "The passkey check did not pass (`passkey_refused`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner, in the app, at the computer DorkOS runs on, never another device (`operator_only`, `owner_only`), or not from the app’s own page (`origin_not_allowed`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The check needs a passkey on this computer (`passkey_needed`), or one made at another of its addresses (`passkey_on_other_address`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -43068,64 +42866,41 @@
             }
           },
           "400": {
-            "description": "The code did not match",
+            "description": "The code did not match (`invalid_request`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "403": {
-            "description": "Not the owner, in the app, at the computer DorkOS runs on. Never another device.",
+            "description": "Not the owner, in the app, at the computer DorkOS runs on, never another device (`operator_only`, `owner_only`), or not from the app’s own page (`origin_not_allowed`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Nothing waiting to confirm",
+            "description": "Nothing waiting to confirm (`not_found`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Other devices could not be signed out, so nothing was added (`internal_error`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -43155,44 +42930,42 @@
           "204": {
             "description": "Removed"
           },
-          "403": {
-            "description": "Not the owner, in the app, at the computer DorkOS runs on. Never another device.",
+          "401": {
+            "description": "The passkey check did not pass (`passkey_refused`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner, in the app, at the computer DorkOS runs on, never another device (`operator_only`, `owner_only`), or not from the app’s own page (`origin_not_allowed`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "Already gone",
+            "description": "Already gone (`not_found`)",
             "content": {
-              "application/json": {
+              "application/problem+json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The check needs a passkey on this computer (`passkey_needed`), or one made at another of its addresses (`passkey_on_other_address`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -106724,6 +106497,12 @@
                               "summary": {
                                 "type": "string"
                               },
+                              "audience": {
+                                "type": "string",
+                                "enum": [
+                                  "person"
+                                ]
+                              },
                               "source": {
                                 "type": "object",
                                 "properties": {
@@ -106897,6 +106676,12 @@
                                       },
                                       "path": {
                                         "type": "string"
+                                      },
+                                      "audience": {
+                                        "type": "string",
+                                        "enum": [
+                                          "person"
+                                        ]
                                       }
                                     },
                                     "required": [
@@ -108935,10 +108720,62 @@
             }
           },
           "403": {
-            "description": "This browser cannot confirm the action"
+            "description": "Not the app’s own page or a program (`person_only`), or another browser held it (`held_by_another_browser`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "404": {
-            "description": "The action expired or was already completed"
+            "description": "The action expired, was cancelled or already ran (`expired`, answered as `404`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A page from before 0.141.0 (no page stamp) that is too old to confirm from. The one body that page reads.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "extension-risk"
+                      ]
+                    },
+                    "blockedBy": {
+                      "type": "array",
+                      "items": {},
+                      "maxItems": 0
+                    },
+                    "stale": {
+                      "type": "string",
+                      "enum": [
+                        "stale-sign-in",
+                        "stale-page"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "stale"
+                  ]
+                }
+              }
+            }
           }
         },
         "operationId": "stepUp.get"
@@ -108964,10 +108801,24 @@
             "description": "The action was cancelled without running"
           },
           "403": {
-            "description": "This browser cannot cancel the action"
+            "description": "Not the app’s own page or a program (`person_only`), or another browser held it (`held_by_another_browser`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "404": {
-            "description": "The action expired or was already completed"
+            "description": "The action expired, was cancelled or already ran (`expired`, answered as `404`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         },
         "operationId": "stepUp.delete"
@@ -109039,14 +108890,75 @@
               }
             }
           },
+          "400": {
+            "description": "No password sent, or a new password too short or too long, with `minLength` (`invalid_request`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Confirmation was refused"
+            "description": "Refused: a wrong password with `triesLeft` (`wrong_password`), the last one (`too_many_tries`), a connection a password may not cross (`insecure_connection`), or not this browser (`person_only`, `held_by_another_browser`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "404": {
-            "description": "The action expired or was already completed"
+            "description": "The action expired, was cancelled or already ran (`expired`, answered as `404`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Can’t confirm now: a matched password too short, with `minLength` (`password_too_short`), no owner password (`no_password`), a mini app an agent can edit, with `blockedBy` (`extension_risk`), or a sign-in or page from before a change, with `stale` (`stale_sign_in`, `stale_page`). A page from before 0.141.0 gets `{ error, code: \"extension-risk\", blockedBy, stale }` instead",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The stored request changed after it was held (`precondition_failed`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "429": {
-            "description": "Too many failed confirmation attempts"
+            "description": "Too many wrong passwords lately; `retryAfterMs` and `Retry-After` say when (`rate_limited`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The confirmed action failed to run (`internal_error`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         },
         "operationId": "stepUp.createPassword"
@@ -109124,14 +109036,75 @@
               }
             }
           },
+          "400": {
+            "description": "No password sent, or a new password too short or too long, with `minLength` (`invalid_request`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Confirmation was refused"
+            "description": "Refused: a wrong password with `triesLeft` (`wrong_password`), the last one (`too_many_tries`), a connection a password may not cross (`insecure_connection`), or not this browser (`person_only`, `held_by_another_browser`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "404": {
-            "description": "The action expired or was already completed"
+            "description": "The action expired, was cancelled or already ran (`expired`, answered as `404`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Can’t confirm now: a matched password too short, with `minLength` (`password_too_short`), no owner password (`no_password`), a mini app an agent can edit, with `blockedBy` (`extension_risk`), or a sign-in or page from before a change, with `stale` (`stale_sign_in`, `stale_page`). A page from before 0.141.0 gets `{ error, code: \"extension-risk\", blockedBy, stale }` instead",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The stored request changed after it was held (`precondition_failed`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "429": {
-            "description": "Too many failed confirmation attempts"
+            "description": "Too many wrong passwords lately; `retryAfterMs` and `Retry-After` say when (`rate_limited`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The confirmed action failed to run (`internal_error`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         },
         "operationId": "stepUp.createChangePassword"
@@ -109466,7 +109439,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -109532,7 +109512,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
@@ -109654,7 +109641,14 @@
             }
           },
           "403": {
-            "description": "This caller cannot change access here"
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           },
           "428": {
             "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",

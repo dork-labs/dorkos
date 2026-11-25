@@ -16,7 +16,7 @@ import { errorName } from './managed-remote-support.js';
 export interface CoordinatorRefusal {
   ok: false;
   status: number;
-  code: string;
+  code: ManagedRemoteRefusalCode;
   error: string;
 }
 
@@ -32,6 +32,13 @@ export const MANAGED_REMOTE_NOT_SET_UP = 'MANAGED_REMOTE_NOT_SET_UP';
 /** Refusal code: Cloud could not start setup. */
 export const MANAGED_REMOTE_SETUP_FAILED = 'MANAGED_REMOTE_SETUP_FAILED';
 
+/** Every code the coordinator refuses with; the remote access route maps each to a problem code. */
+export type ManagedRemoteRefusalCode =
+  | typeof MANAGED_REMOTE_UNAVAILABLE
+  | typeof MANAGED_REMOTE_ALREADY_SET_UP
+  | typeof MANAGED_REMOTE_NOT_SET_UP
+  | typeof MANAGED_REMOTE_SETUP_FAILED;
+
 /** The note shown once a withdrawal could not reach Cloud. */
 export const CLOUD_MAY_REMAIN_NOTE =
   'Turned off here. DorkOS Cloud may still have a record of this computer.';
@@ -43,7 +50,11 @@ export const CLOUD_MAY_REMAIN_NOTE =
  * @param code - One of the codes above.
  * @param error - What a person reads.
  */
-export function refusal(status: number, code: string, error: string): CoordinatorRefusal {
+export function refusal(
+  status: number,
+  code: ManagedRemoteRefusalCode,
+  error: string
+): CoordinatorRefusal {
   return { ok: false, status, code, error };
 }
 

@@ -17,7 +17,7 @@
  */
 import type { MainMoved, RoomContextFiles } from '@dorkos/shared/additional-context';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
-import { defuseUntrustedText } from './untrusted-fence.js';
+import { defuseUntrustedText } from '../../core/untrusted-text/untrusted-fence.js';
 
 /**
  * The nonced heading over what moved on the room's `main` since the agent's

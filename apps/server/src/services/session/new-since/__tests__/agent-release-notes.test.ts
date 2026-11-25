@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { valid } from 'semver';
 import { PERMISSION_AREA_IDS } from '@dorkos/shared/permissions';
-import { composeCapabilityRegistryForDocs } from '../../../../core/self-description/dorkos-registry.js';
-import { MCP_TOOL_TIERS } from '../../../../core/mcp-tool-tiers.js';
+import { composeCapabilityRegistryForDocs } from '../../../core/self-description/dorkos-registry.js';
+import { MCP_TOOL_TIERS } from '../../../core/mcp-tool-tiers.js';
 import {
   AGENT_RELEASE_NOTES,
   notesSince,
@@ -26,6 +26,17 @@ describe('release selection', () => {
     expect(notesSince('0.10.0', '0.10.0', notes)).toEqual([]);
     expect(notesSince('0.11.0', '0.10.0', notes)).toEqual([]);
     expect(notesSince('invalid', '0.10.0', notes)).toEqual([]);
+  });
+
+  // DOR-5123: a daily release can't edit code, so `next` takes the version
+  // the build was made as, and stays silent in a build that has none.
+  it('reads next as the version the build was made as', () => {
+    const notes = ['0.10.0', 'next'].map(note);
+    expect(notesSince('0.10.0', '0.11.0', notes, '0.11.0')).toEqual([notes[1]]);
+    expect(notesSince('0.9.0', '0.11.0', notes, '0.11.0')).toEqual(notes);
+    expect(notesSince('0.11.0', '0.12.0', notes, '0.11.0')).toEqual([]);
+    expect(notesSince('0.10.0', '0.11.0', notes, null)).toEqual([]);
+    expect(notesSince('0.10.0', '0.11.0', notes, 'not-a-version')).toEqual([]);
   });
 
   it('formats permission names and static gates without claiming a live level', () => {

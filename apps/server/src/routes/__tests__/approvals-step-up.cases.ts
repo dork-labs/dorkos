@@ -427,8 +427,8 @@ export function registerApprovalStepUpCases(): void {
         .where(eq(approvalRows.id, ticket.approvalId))
         .run();
       const res = await confirm(held.body.heldActionId);
-      expect(res.status).toBe(409);
-      expect(res.body.code).toBe('different-request');
+      expect(res.status).toBe(412);
+      expect(res.body.code).toBe('precondition_failed');
       expect(approvals.answerScope(ticket.approvalId)?.state).toBe('pending');
     });
 
@@ -436,7 +436,7 @@ export function registerApprovalStepUpCases(): void {
       const held = await grant(ask().approvalId, 'own-tunnel');
       expect(held.status).toBe(428);
       expect((await confirm(held.body.heldActionId, 'own-tunnel', 'browser-b')).body.code).toBe(
-        'not-your-action'
+        'held_by_another_browser'
       );
     });
 
@@ -471,7 +471,7 @@ export function registerApprovalStepUpCases(): void {
       // Refused by the sheet (no password over plain Wi-Fi) or by the commit's own Wi-Fi rule.
       const finished = await confirm(held.body.heldActionId, 'wifi');
       expect(finished.body.ok === true ? finished.body.result.code : finished.body.code).toMatch(
-        /^(NOT_FROM_WIFI|insecure-connection)$/
+        /^(NOT_FROM_WIFI|insecure_connection)$/
       );
       expect(approvals.answerScope(ticket.approvalId)?.state).toBe('pending');
     });

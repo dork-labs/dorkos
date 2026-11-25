@@ -31,7 +31,7 @@ function treeOfP(): TreeEntry[] {
   return [
     { path: 'README.md', mode: '100644', type: 'blob', sha: gitBlobSha('hello\n') },
     { path: 'changelog', mode: '040000', type: 'tree', sha: '5'.repeat(40) },
-    ...plan.changes.flatMap((change) =>
+    ...[...plan.changes, ...plan.inputs].flatMap((change) =>
       change.before === undefined
         ? []
         : [{ path: change.path, mode: '100644', type: 'blob', sha: gitBlobSha(change.before) }]
@@ -184,6 +184,16 @@ describe('commitViaGitData', () => {
       /not built from 111111111111: CHANGELOG.md differs there/
     );
     expect(calls.some((call) => call.method === 'POST')).toBe(false);
+  });
+
+  it("refuses a plan whose migrations table, which can raise the version, is not P's", async () => {
+    const table = plan.inputs[0]!.path;
+    const newer = treeOfP().map((entry) =>
+      entry.path === table ? { ...entry, sha: gitBlobSha('a newer table\n') } : entry
+    );
+    await expect(
+      commitViaGitData(plan, fakeGh(undefined, newer).gh, { repo: 'a/b', parent: P })
+    ).rejects.toThrow(`${table} differs there`);
   });
 
   it('refuses when P already has a file the plan adds, or lacks one it changes', async () => {

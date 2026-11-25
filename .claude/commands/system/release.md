@@ -95,6 +95,8 @@ If backfilling: write one fragment per missing change under `changelog/unrelease
 
 Verify that any changes to the user-config schema since the last release have a paired `conf` migration. Missing migrations silently break upgrades for existing users, so catch it here before the tag is cut.
 
+Two parts of this are now code (DOR-5123), so this check is a second look rather than the only one: every PR runs `scripts/config-migration/check-config-migration.ts` in the required `typecheck` job, and `scripts/release/release-commit.ts` raises the version to the newest `CONFIG_MIGRATIONS` key above the last release (and refuses one that is neither the next patch nor the next minor). Still make sure the version you pick here is at or above that newest key.
+
 **Do this check inline in the main context (no subagent).** The diff is small (usually <500 lines) and the judgment calls ("is this an added field with a default? a rename? a type change?") benefit from full project knowledge.
 
 **Ordering with auto-detect mode:** Steps 1 and 2 below (detect drift, classify changes) can run here regardless of bump mode. Steps 3 and 4 (check for a matching migration at the target version, present findings, scaffold) require `NEXT_VERSION` — computed in Phase 1 for explicit bumps, in Phase 3 for auto-detect. **If auto-detect is in play, run Steps 1-2 here and defer Steps 3-4 until immediately after Phase 3, before Phase 4 confirmation.**
@@ -380,7 +382,7 @@ Bumping the desktop app keeps its artifact version (`DorkOS-X.Y.Z-arm64.dmg`) an
 
 ### 6.3a: Stamp agent release facts
 
-In `apps/server/src/services/runtimes/shared/awareness/agent-release-notes.ts`,
+In `apps/server/src/services/session/new-since/agent-release-notes.ts`,
 replace every note's `version: 'next'` with the exact release version `X.Y.Z`.
 Only stamp features included in this release; remove a note if its feature was removed.
 Never derive this prose from fragments at runtime. Unstamped notes stay silent.

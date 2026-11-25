@@ -9,7 +9,7 @@ import type { Session } from '@dorkos/shared/types';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: vi.fn(), renameSession: vi.fn() }));
 
-import { TranscriptReader } from '../../../session/index.js';
+import { TranscriptReader } from '../sessions/transcript-reader.js';
 import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
 
 function session(contextTokens?: number): Session {

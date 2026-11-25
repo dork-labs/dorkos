@@ -86,7 +86,7 @@ describe('hub auth keeps its existing owner ceremony', () => {
       .set('x-api-key', 'made-up-program-key')
       .send({ name: 'Other' });
     expect(response.status).toBe(403);
-    expect(response.body.code).toBe('not-a-person');
+    expect(response.body.code).toBe('person_only');
   });
   it('holds a tunnel key write on a computer despite hub-looking headers', async () => {
     env.DORKOS_SERVER_ROLE = 'computer';

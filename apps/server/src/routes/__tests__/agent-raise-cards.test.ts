@@ -468,7 +468,7 @@ describe('an agent raising a chat route', () => {
       .send({ canInitiate: true });
     await store.update(routeId, { chatId: '555' });
     const done = await yesWithStepUp(asked.body.approvalId);
-    expect(done.body).toMatchObject({ status: 409, result: { code: 'BINDING_CHANGED' } });
+    expect(done.body).toMatchObject({ status: 412, result: { code: 'precondition_failed' } });
     expect(store.getById(routeId)?.canInitiate).toBe(false);
   });
 

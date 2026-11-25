@@ -170,7 +170,7 @@ describe('adding a server', () => {
 
   it('a wrong password and a cancel write nothing', async () => {
     const id = heldId(await post());
-    expect((await confirm(id, 'nope-nope')).body.code).toBe('wrong-password');
+    expect((await confirm(id, 'nope-nope')).body.code).toBe('wrong_password');
     expect(store.list()).toEqual([]);
     const gone = await request(app()).delete(`/api/step-up/${id}`).set('Origin', OWN_ORIGIN);
     expect(gone.status).toBe(204);
@@ -456,7 +456,7 @@ describe('secrets', () => {
       .set('Origin', OWN_ORIGIN)
       .send(SERVER);
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('not-a-person');
+    expect(res.body.code).toBe('person_only');
     expect(store.list()).toEqual([]);
   });
 

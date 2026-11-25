@@ -25,7 +25,7 @@ describe('Wi-Fi access confirmation', () => {
       expect(held.status).toBe(428);
       expect(writeSetting).not.toHaveBeenCalled();
       const other = await owner.confirm(held.body.heldActionId, via, true);
-      expect(other.body.code).toBe('not-your-action');
+      expect(other.body.code).toBe('held_by_another_browser');
       expect(writeSetting).not.toHaveBeenCalled();
       const confirmed = await owner.confirm(held.body.heldActionId, via);
       expect(confirmed.body).toMatchObject({ ok: true, status: 200 });

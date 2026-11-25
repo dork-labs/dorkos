@@ -52,7 +52,7 @@ import {
 import type { SessionLockManager } from '../../../session/session-lock.js';
 import { RoomStore } from '../../../rooms/room-store.js';
 import { SessionEventStore } from '../../../session/session-event-store.js';
-import { claudeTranscriptPath } from '../../../session/fleet/carry-over-summary.js';
+import { claudeTranscriptPath } from '../sessions/project-slug.js';
 import { TaskStore } from '../../../tasks/task-store.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({

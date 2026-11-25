@@ -1,8 +1,9 @@
 /** Per-action confirmation for writes that leave lasting access or move account data. */
 import type { Context } from 'hono';
+import { problem, problemBody, type ProblemStatus } from '@dorkos/http-kit';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
-import { refuseFrontDoorChange } from '../lib/caller-authority.js';
+import { refuseFrontDoorChange, type OperatorCookieRefusal } from '../lib/caller-authority.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import type {
   StepUpActionInput,
@@ -28,6 +29,18 @@ export interface FrontDoorWrite extends Omit<StepUpActionInput, 'commit'> {
   agentCard?: () => Pick<AgentRaiseWrite, 'effect' | 'run'>;
 }
 
+/**
+ * The front-door bar's refusal (`refuseFrontDoorChange`) as a problem document:
+ * `operator_only`, its sentence as the detail.
+ *
+ * @param c - The request's context.
+ * @param refusal - What the bar decided.
+ * @returns The 403.
+ */
+export function frontDoorProblem(c: Context, refusal: OperatorCookieRefusal): Response {
+  return problem(c, 'operator_only', { detail: refusal.error });
+}
+
 /** The JSON response a held write returns through the confirmation route. */
 async function resultOf(response: Response): Promise<StepUpCommitResult> {
   const text = await response.text();
@@ -36,7 +49,10 @@ async function resultOf(response: Response): Promise<StepUpCommitResult> {
     try {
       body = JSON.parse(text);
     } catch {
-      body = { error: 'The request could not be completed.' };
+      body = problemBody('internal_error', {
+        detail: 'The request could not be completed.',
+        ...(response.status >= 400 ? { status: response.status as ProblemStatus } : {}),
+      });
     }
   }
   return { status: response.status, body };
@@ -64,7 +80,7 @@ export async function runFrontDoorWrite(
     );
     return c.json(card.body, card.status);
   }
-  if (refusal) return c.json({ error: refusal.error, code: refusal.code }, 403);
+  if (refusal) return frontDoorProblem(c, refusal);
   if (readOwnerAccount() === null) return run(facts);
   return holdForStepUp(c, {
     ...held,
@@ -73,7 +89,7 @@ export async function runFrontDoorWrite(
         const stale = refuseFrontDoorChange(confirming, subject);
         if (stale) {
           held.onDiscard?.();
-          return { status: 403, body: { error: stale.error, code: stale.code } };
+          return { status: 403, body: problemBody('operator_only', { detail: stale.error }) };
         }
         const result = await resultOf(await run(confirming));
         if (result.status >= 400) held.onDiscard?.();

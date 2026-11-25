@@ -176,6 +176,7 @@ import {
   isProtectedLaunchFolder,
   NOT_THE_CALLER_MESSAGE,
   OTHER_AGENTS_HOME_MESSAGE,
+  PROTECTED_CHAT_MESSAGE,
   PROTECTED_DEFAULT_FOLDER_MESSAGE,
   PROTECTED_FOLDER_MESSAGE,
 } from '../../../../session/launch/launch-caller.js';
@@ -209,6 +210,11 @@ import {
   UNKNOWN_CALLER_MESSAGE,
   createSessionStartHandler,
 } from '../session-tools.js';
+import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 /**
  * The ladder's folder for a launch in no project (where no account rule
@@ -2125,9 +2131,26 @@ describe('session_start refuses a protected folder (DOR-4060, QA row A)', () => 
     );
   });
 
-  it('a message into a chat that already stands there still reaches it', () => {
-    const place = { cwd: DORK, chatAgent: null };
+  it("a message into the agent's own chat that already stands there still reaches it", () => {
+    const place = { cwd: DORK, chatAgent: AGENT_HOME };
     expect(launchPlaceRefusal(mesh, { kind: 'agent', agentPath: AGENT_HOME }, place)).toBeNull();
+  });
+
+  it('a message into a chat there that no agent runs is refused for every caller but the person', () => {
+    const place = { cwd: DORK, chatAgent: null };
+    const refused = { code: 'PROTECTED_FOLDER', message: PROTECTED_CHAT_MESSAGE };
+    expect(launchPlaceRefusal(mesh, { kind: 'agent', agentPath: AGENT_HOME }, place)).toEqual(
+      refused
+    );
+    expect(launchPlaceRefusal(mesh, { kind: 'unidentified' }, place)).toEqual(refused);
+    expect(
+      launchPlaceRefusal(
+        mesh,
+        { kind: 'agent', agentPath: AGENT_HOME },
+        { ...place, defaulted: true }
+      )
+    ).toEqual(refused);
+    expect(launchPlaceRefusal(mesh, { kind: 'person' }, place)).toBeNull();
   });
 
   describe('controls', () => {

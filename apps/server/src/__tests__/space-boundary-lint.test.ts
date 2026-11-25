@@ -33,7 +33,9 @@ describe('the space server boundary', () => {
         "import { createHash } from 'node:crypto';",
         "import type { C } from '../../lib/logger.js';",
         "export { d } from '../../lib/version.js';",
-        'export const e = [a, b, Database, Pool, createHash];',
+        "import required = require('../../lib/logger.js');",
+        "export type Inline = import('../../lib/logger.js').Logger;",
+        'export const e = [a, b, Database, Pool, createHash, required];',
         'export type { C };',
       ].join('\n')
     );
@@ -44,6 +46,8 @@ describe('the space server boundary', () => {
         /^spaces\/stay-inside: '@dorkos\/shared\/node-pty-spawn-helper' is not a package/u
       ),
       expect.stringMatching(/^spaces\/stay-inside: '\.\.\/\.\.\/lib\/version\.js' is outside/u),
+      // `import = require` carries code; an inline `import('…')` type does not, so it may.
+      expect.stringMatching(/^spaces\/stay-inside: '\.\.\/\.\.\/lib\/logger\.js' is outside/u),
     ]);
   });
 
@@ -55,7 +59,9 @@ describe('the space server boundary', () => {
       [
         "import { a } from '../spaces/config.js';",
         "import type { B } from '../spaces/app.js';",
-        'export const c = a;',
+        "import required = require('../spaces/main.js');",
+        "export type Inline = import('../spaces/app.js').App;",
+        'export const c = [a, required];',
         'export type { B };',
       ].join('\n')
     );
@@ -63,6 +69,7 @@ describe('the space server boundary', () => {
       expect.stringMatching(
         /^spaces\/no-reach-in: '\.\.\/spaces\/config\.js' is the space server/u
       ),
+      expect.stringMatching(/^spaces\/no-reach-in: '\.\.\/spaces\/main\.js' is the space server/u),
     ]);
   });
 });

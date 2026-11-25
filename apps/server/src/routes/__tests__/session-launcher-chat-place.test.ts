@@ -13,6 +13,10 @@ import {
 } from '../../services/core/agent-identity/__tests__/agent-home-fixture.js';
 import { setSessionAgentSources } from '../../services/core/agent-identity/session-agent.js';
 import { chatPlaceRefusal } from '../session-launcher.js';
+import { registerClaudeCodeFacts } from '../../startup/register-claude-code-facts.js';
+
+// The protected-path roots fail closed until the startup registers them (DOR-4928).
+registerClaudeCodeFacts();
 
 const JUNO = '/agents/juno';
 const RIO = '/agents/rio';

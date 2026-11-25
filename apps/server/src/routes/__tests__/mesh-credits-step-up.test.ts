@@ -59,7 +59,7 @@ describe('agent credits confirmation', () => {
     expect(readFileSync(file).equals(before)).toBe(true);
     expect(creditsAllowedForAgent(agent.id)).toBe(false);
     expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
-      'not-your-action'
+      'held_by_another_browser'
     );
     expect(update).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, via)).body).toMatchObject({

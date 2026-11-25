@@ -62,7 +62,7 @@ describe('PersonStepUpHost', () => {
   });
 
   it('says so and stays open on a wrong password', async () => {
-    answer(403, { error: 'No.', code: 'wrong-password' });
+    answer(403, { title: 'x', status: 403, detail: 'No.', code: 'wrong_password' });
     render(<PersonStepUpHost />);
     ask();
 
@@ -89,7 +89,7 @@ describe('PersonStepUpHost', () => {
     });
 
     it('cancels with Esc too, even after a wrong password', async () => {
-      answer(403, { error: 'No.', code: 'wrong-password' });
+      answer(403, { title: 'x', status: 403, detail: 'No.', code: 'wrong_password' });
       render(<PersonStepUpHost />);
       const result = ask(true);
       await confirmWith('wrong');
@@ -150,7 +150,13 @@ describe('PersonStepUpHost', () => {
     });
 
     it('counts down after too many tries, with the field off until then', async () => {
-      answer(429, { error: 'Too many.', code: 'too-many-attempts', retryAfterSeconds: 32 });
+      answer(429, {
+        title: 'x',
+        status: 429,
+        detail: 'Too many.',
+        code: 'rate_limited',
+        retryAfterMs: 32_000,
+      });
       render(<PersonStepUpHost />);
       ask(false);
 
@@ -163,7 +169,7 @@ describe('PersonStepUpHost', () => {
     });
 
     it('shows how to set a password when this computer has none, with nothing to type', async () => {
-      answer(409, { error: 'No password.', code: 'no-password' });
+      answer(409, { title: 'x', status: 409, detail: 'No password.', code: 'no_password' });
       render(<PersonStepUpHost />);
       ask(false);
 

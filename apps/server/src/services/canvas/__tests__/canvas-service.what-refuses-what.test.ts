@@ -9,6 +9,11 @@ import {
   NO_DEFAULT_DOCUMENT_MESSAGE,
 } from '../../rooms/canvas/room-canvas-service.js';
 import { roomScope } from '../scopes.js';
+import { registerClaudeCodeFacts } from '../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 describe('RoomCanvasService.apply', () => {
   describe('what it refuses, and in what order', () => {

@@ -9,7 +9,22 @@ import type {
   TurnPermissionBound,
   TurnPermissionCeiling,
 } from '@dorkos/shared/agent-runtime';
+import { UNPROVEN_TEAMMATE_ORIGIN } from '@dorkos/shared/permission-semantics';
 import { CARRIED_TURN_LIMITS_FIELD, isSealedTurnLimits } from '../../lib/carried-turn-limits.js';
+
+/**
+ * The sender of a relay message from a caller DorkOS cannot name, sent over
+ * HTTP (`POST /api/relay/messages`). One of the outside senders
+ * ({@link OUTSIDE_SENDER_PREFIX}).
+ */
+export const HTTP_RELAY_SENDER = 'relay.external.http';
+
+/**
+ * The family every sender from outside DorkOS's own principals is under: an
+ * HTTP caller, an external MCP client. A turn from one of them always carries
+ * the outsider mark, whatever its payload holds.
+ */
+const OUTSIDE_SENDER_PREFIX = 'relay.external.';
 
 /**
  * Senders whose payload may shape a turn — its folder, the agent it acts as and
@@ -54,9 +69,10 @@ const REACH = new Set(['read', 'edit', 'workspace', 'everything']);
 /**
  * One carried bound as written, or the runtime's default when it can't be read.
  * A teammate's chain counts a turn against a space's monthly limit by the rooms
- * it names, so those rooms are kept only from limits the server sealed
- * (DOR-5201). An unsealed chain still marks the turn, as an empty chain: a
- * mark only ever adds, and a stamp from before a restart no longer verifies.
+ * it names, so those rooms are kept only from limits the server sealed. An
+ * unsealed chain (a stamp from before a restart no longer verifies) names
+ * {@link UNPROVEN_TEAMMATE_ORIGIN} instead: the turn still reads as a
+ * teammate's, and is held to and counted against every space's limit.
  */
 function readBound(value: unknown, sealed: boolean): TurnPermissionBound {
   if (value === 'runtime-default' || typeof value !== 'object' || value === null) {
@@ -72,7 +88,7 @@ function readBound(value: unknown, sealed: boolean): TurnPermissionBound {
     return 'runtime-default';
   }
   if (sealed || teammate === undefined) return value as TurnPermissionBound;
-  return { ...level, teammate: [] } as unknown as TurnPermissionBound;
+  return { ...level, teammate: [UNPROVEN_TEAMMATE_ORIGIN] } as unknown as TurnPermissionBound;
 }
 
 /**
@@ -130,7 +146,9 @@ function boundsOf(ceiling: TurnPermissionCeiling | undefined): TurnPermissionBou
  * bounds above and never lift one. A teammate's chain among them counts the
  * turn against a space's monthly limit, so it is read only from limits the
  * server sealed for this sender ({@link isSealedTurnLimits}); anyone else's
- * copy keeps its bounds and its mark, and names no room (DOR-5201).
+ * copy keeps its bounds and its mark, and names no room of its own (DOR-5201).
+ * A message from an outside sender ({@link OUTSIDE_SENDER_PREFIX}) always
+ * carries the outsider mark.
  *
  * @param trustedShaper - Whether the sender may shape the turn ({@link isTurnShapingSender}).
  * @param markStrangers - Whether DOR-3858's flag is on, so a sender the host found unproven
@@ -146,12 +164,13 @@ export function turnPowerOptions(
   from?: string
 ): CarriedTurnLimits {
   const stranger = markStrangers && trustedShaper && payload?.__untrustedWords === true;
+  const outside = from?.startsWith(OUTSIDE_SENDER_PREFIX) === true;
   const carried = carriedTurnLimitsOf(payload, from);
   const bounds: TurnPermissionBound[] = [
     ...(trustedShaper ? [] : ['runtime-default' as const]),
     ...boundsOf(carried.permissionCeiling),
   ];
-  const marked = stranger || carried.carriedMarks !== undefined;
+  const marked = stranger || outside || carried.carriedMarks !== undefined;
   return {
     ...(bounds.length > 0 ? { permissionCeiling: bounds.length === 1 ? bounds[0]! : bounds } : {}),
     ...(marked ? { carriedMarks: { outsider: true as const } } : {}),

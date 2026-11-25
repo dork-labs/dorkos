@@ -43,7 +43,7 @@ const CENTRAL_READERS = ['packages/skills/src/scanner.ts', 'packages/harness/src
 
 /** Files the heuristic flags that do not read installs, and why. */
 const NOT_READING_INSTALLS: Record<string, string> = {
-  'apps/server/src/services/runtimes/shared/policy/protected-path-check.ts':
+  'apps/server/src/services/core/protected-paths/protected-path-check.ts':
     'protection walk: skipping a sibling would leave it unprotected, and a name could hide a file from it',
   // The OpenCode project-plugin guard (DOR-4394, Security's ruling on #3764):
   // it refuses a turn when a project ships plugin code, so it must see every

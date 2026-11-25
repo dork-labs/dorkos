@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { CodexFilePolicy } from '../../../policy/protected-profile.js';
-import { PROTECTED_PATHS } from '../../../../shared/policy/protected-paths.js';
+import { PROTECTED_PATHS } from '../../../../../core/protected-paths/protected-paths.js';
 
 /** The made-up name of the sign-in backup Claude Code writes into each `backups` folder. */
 export const FIXTURE_BACKUP_NAME = '.claude.json.backup.1794126006599';

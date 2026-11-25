@@ -1,4 +1,5 @@
 import { runtimeApprovalConformance } from './runtime-conformance-approval.js';
+import { runtimeRestartConformance, type RestartCaseOpts } from './runtime-conformance-restart.js';
 import { assertRuntimeTimingEvents } from './runtime-timing-conformance.js';
 /**
  * Shared AgentRuntime conformance suite — the behavioral gate every runtime
@@ -64,9 +65,10 @@ import { InterruptReceiptSchema } from '@dorkos/shared/schemas';
 /**
  * Tuning knobs for legitimate cross-runtime differences. Defaults describe
  * the strictest portable expectations; loosen only what a runtime genuinely
- * cannot satisfy (e.g. a stateless adapter with no native history).
+ * cannot satisfy (e.g. a stateless adapter with no native history). The
+ * restart options are {@link RestartCaseOpts}.
  */
-export interface RuntimeConformanceOpts {
+export interface RuntimeConformanceOpts extends RestartCaseOpts {
   /** Label for the registered describe block. Defaults to `'AgentRuntime conformance'`. */
   name?: string;
   /** Working/project directory for cwd-scoped calls. Defaults to `'/projects/conformance'`. */
@@ -1297,7 +1299,6 @@ export function runtimeConformance(
     expiredQuestionHistory,
     presenceTurn,
     warmSession,
-    approvalTurn,
     dispositionTurn,
     terminalOnce,
     queueDurability,
@@ -2408,12 +2409,10 @@ export function runtimeConformance(
       }
     });
 
-    runtimeApprovalConformance(makeRuntime, {
-      approvalTurn,
-      nextSessionId,
-      sessionOpts,
-      messageContent,
-    });
+    // The driver options plus this suite's session helpers, for the cases kept in their own files.
+    const wiring = { ...opts, nextSessionId, sessionOpts, messageContent };
+    runtimeApprovalConformance(makeRuntime, wiring);
+    runtimeRestartConformance(makeRuntime, wiring);
 
     describe('presence truthfulness (the strip omits rather than lies)', () => {
       it('RT-STR-06: a session that has never run a turn reports idle, and shows no turn', async () => {

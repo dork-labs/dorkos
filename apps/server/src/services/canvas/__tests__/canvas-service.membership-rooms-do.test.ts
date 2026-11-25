@@ -13,6 +13,11 @@ import type { UiCommand } from '@dorkos/shared/schemas';
 import { RoomError } from '../../rooms/room-errors.js';
 import { createRoomHarness, scriptedRunner } from '../../rooms/__tests__/room-test-harness.js';
 import { canvasChangeSentence } from '../../rooms/canvas/room-canvas-service.js';
+import { registerClaudeCodeFacts } from '../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 describe('RoomCanvasService.apply', () => {
   describe('membership and rooms that do not exist', () => {

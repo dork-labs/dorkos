@@ -28,9 +28,8 @@ import {
   personSessionWasMissing,
 } from '../lib/person-without-session.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
-import { errorBody } from '../lib/route-utils.js';
 import type { ApiEnv } from './api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from './request-facts.js';
 
 /**
@@ -63,7 +62,7 @@ export function personSessionRefusal(): MiddlewareHandler<ApiEnv> {
     const facts = honoRequestFacts(c);
     if (!fromTheApp(facts) || !personSessionWasMissing(facts)) return;
     if (!isPersonWithoutSession(facts)) return;
-    c.res = c.json(errorBody(PERSON_SESSION_REQUIRED_MESSAGE, PERSON_SESSION_REQUIRED_CODE), 401);
+    c.res = personSessionRequired(c);
   };
 }
 
@@ -90,7 +89,12 @@ export function askForPersonBeforeChat(): MiddlewareHandler<ApiEnv> {
 /** The step-up answer, for a caller that is the person missing only their session. */
 function stepUpAnswer(c: Context<ApiEnv>, facts: RequestFacts): Response {
   notePersonSessionMissing(facts);
-  return c.json(errorBody(PERSON_SESSION_REQUIRED_MESSAGE, PERSON_SESSION_REQUIRED_CODE), 401);
+  return personSessionRequired(c);
+}
+
+/** The `401 person_session_required` problem the app answers with the owner's password. */
+function personSessionRequired(c: Context<ApiEnv>): Response {
+  return problem(c, PERSON_SESSION_REQUIRED_CODE, { detail: PERSON_SESSION_REQUIRED_MESSAGE });
 }
 
 /**
@@ -119,10 +123,7 @@ export function personOnlyModeChange(): MiddlewareHandler<ApiEnv> {
     const facts = honoRequestFacts(c);
     if (body?.permissionMode !== undefined && !clearsTheAgentBar(facts)) {
       if (fromTheApp(facts) && isPersonWithoutSession(facts)) return stepUpAnswer(c, facts);
-      return c.json(
-        errorBody('Only you can change what this chat may do.', 'person_required'),
-        403
-      );
+      return problem(c, 'person_only', { detail: 'Only you can change what this chat may do.' });
     }
     await next();
   };

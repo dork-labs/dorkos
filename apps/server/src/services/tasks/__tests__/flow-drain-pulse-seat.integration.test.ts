@@ -19,6 +19,11 @@ import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { Db } from '@dorkos/db';
 import type { MeshCore } from '@dorkos/mesh';
 import type { Task } from '@dorkos/shared/types';
+import { registerClaudeCodeFacts } from '../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 /**
  * Pulse seat for the `/flow` autonomous loop (spec §10, task 2.5): real

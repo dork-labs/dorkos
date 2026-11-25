@@ -11,6 +11,14 @@ name: Release Publish
 # prepare: only after that passes, installs the release checkout, builds and
 #          packs the three packages with main's release-cli (which proves again).
 #          No npm or deploy rights.
+# gate:    after both, right before npm (DOR-5123, ADR clause 6): main's
+#          scripts/release-gate.sh must answer exactly SHIP for P, the release
+#          point prove verified (the branch's merge-base with main). REFUSE
+#          fails the job, so publish never starts. Read-only token, no secrets.
+# smoke:   after prepare, on ubuntu and macOS: installs the exact packed
+#          tarballs into a clean prefix and runs main's smoke test, one browser
+#          check that a chat gets a reply, and an import of the two libraries.
+#          Read-only, no secrets, no environment (DOR-5123, design §6).
 # publish: waits for a person's approval on npm-release, checks that approval
 #          inside the job, re-checks the tip, then publishes the exact packed
 #          tarballs with npm trusted publishing (OIDC, no npm token).
@@ -56,6 +64,10 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+    outputs:
+      # P, the release point: set only after proof.ts has shown it is the
+      # branch's merge-base with main (routine mode). The gate job reads it.
+      p: ${{ steps.proven.outputs.p }}
     steps:
       - name: Refuse anything but main's copy and strict inputs
         run: |
@@ -94,6 +106,14 @@ jobs:
           node --experimental-strip-types trusted/packages/cli/scripts/release-branch/proof.ts \
             release "$GITHUB_REPOSITORY" "$RELEASE_VERSION" "$RELEASE_EXPECTED_SHA" \
             "release/v$RELEASE_VERSION" "$RELEASE_MODE" "$RELEASE_BASE" "$RELEASE_EXPECTED_SHA"
+      - name: Name the proven release point P
+        id: proven
+        run: |
+          set -euo pipefail
+          # Reached only when the proof passed: in routine mode proof.ts asserts
+          # that the merge-base of the tip and main equals this base.
+          [[ "$RELEASE_MODE" == routine && "$RELEASE_BASE" =~ ^[0-9a-f]{40}$ ]]
+          echo "p=$RELEASE_BASE" >>"$GITHUB_OUTPUT"
 
   prepare:
     needs: prove
@@ -196,8 +216,204 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  publish:
+  gate:
+    # Right before npm (DOR-5123; ADR 261118-135124 clause 6): main's
+    # scripts/release-gate.sh must print exactly SHIP for P. It re-proves at
+    # publish time what made P worth releasing: on main's first-parent history,
+    # not reverted, no open auto-revert PR, its full run on main green, and
+    # every required check green in its merge-queue build. Anything else is
+    # REFUSE <reason>: this job fails, so publish never starts. After prepare,
+    # so the answer is as fresh as it can be before npm.
+    needs: [prove, prepare]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Read-only, no secrets, no environment: only the reads release-gate.sh makes.
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
+    env:
+      P: ${{ needs.prove.outputs.p }}
+      # The workflows whose newest completed push/schedule run on P must have
+      # passed. test.yml joins when the full unit sweep moves to a rolling run
+      # on main (PR #4257); until then the queue runs it, and check 3 covers it.
+      FULL_RUN_WORKFLOWS: browser-test.yml
+    steps:
+      - name: Refuse anything but main's copy, routine mode and a proven P
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$GITHUB_WORKFLOW_REF" == "$GITHUB_REPOSITORY/.github/workflows/release-publish.yml@refs/heads/main" ]]
+          [[ "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          # Hotfix mode is refused (ADR clause 6) and prove already stopped it;
+          # the gate refuses it again rather than trust job order alone.
+          if [[ "$RELEASE_MODE" != routine ]]; then
+            echo "::error::release-gate: mode $RELEASE_MODE is not gated for npm; only routine publishes."
+            exit 1
+          fi
+          [[ "$P" =~ ^[0-9a-f]{40}$ && "$P" == "$RELEASE_BASE" ]]
+      - name: Check out main's gate script only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # github.sha is main's commit this run's own file came from (the job
+          # runs only on refs/heads/main). Never the release branch.
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/release-gate.sh
+          sparse-checkout-cone-mode: false
+      - name: Ship only on the exact answer SHIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          facts="$RUNNER_TEMP/release-gate-facts.json"
+          bash scripts/release-gate.sh facts "$RELEASE_VERSION" "$P" >"$facts"
+          echo "::group::facts"
+          cat "$facts"
+          echo "::endgroup::"
+          decision=$(bash scripts/release-gate.sh decide "$facts")
+          echo "Decision: $decision"
+          {
+            echo "### Release gate: v$RELEASE_VERSION from P \`${P:0:12}\`"
+            echo
+            echo "\`${decision//\`/}\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+          if [[ "$decision" != SHIP ]]; then
+            echo "::error title=release-gate refused v$RELEASE_VERSION::${decision//$'\n'/ }"
+            exit 1
+          fi
+
+  smoke:
+    # The exact tarballs prepare packed, installed and run before npm sees them
+    # (DOR-5123, design §6): their sha256 again, `npm i -g` into a clean prefix,
+    # main's scripts/smoke-test.sh, one browser check that a chat gets a reply,
+    # and an import of the two libraries. Everything the job runs beyond the
+    # tarballs is main's own copy. Read-only, no secrets, no environment, no
+    # id-token: the server runs the built-in test runtime on a throwaway home,
+    # so no model is reached.
     needs: prepare
+    if: github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    env:
+      SHA_DORKOS: ${{ needs.prepare.outputs.dorkos_sha256 }}
+      SHA_CLOUD_API: ${{ needs.prepare.outputs.cloud_api_sha256 }}
+      SHA_CONNECTOR_PROVIDERS: ${{ needs.prepare.outputs.connector_providers_sha256 }}
+    steps:
+      - name: Refuse anything but main's copy and strict inputs
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$GITHUB_WORKFLOW_REF" == "$GITHUB_REPOSITORY/.github/workflows/release-publish.yml@refs/heads/main" ]]
+          [[ "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          for sha in "$SHA_DORKOS" "$SHA_CLOUD_API" "$SHA_CONNECTOR_PROVIDERS"; do
+            [[ "$sha" =~ ^[0-9a-f]{64}$ ]]
+          done
+      - name: Check out main's smoke test and browser check
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Main's commit this run's own file came from. Never the release branch.
+          ref: ${{ github.sha }}
+          path: trusted
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          package_json_file: trusted/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-tarballs-${{ github.run_id }}
+          path: ${{ runner.temp }}/packed
+      - name: Check the tarballs are the ones prepare packed
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/packed"
+          printf '%s  %s\n' \
+            "$SHA_DORKOS" dorkos.tgz \
+            "$SHA_CLOUD_API" "dork-labs-cloud-api-$RELEASE_VERSION.tgz" \
+            "$SHA_CONNECTOR_PROVIDERS" "dork-labs-connector-providers-$RELEASE_VERSION.tgz" \
+            | shasum -a 256 --check
+      - name: Install dorkos into a clean prefix and a throwaway home
+        run: |
+          set -euo pipefail
+          prefix="$RUNNER_TEMP/prefix"
+          npm install -g --prefix "$prefix" "$RUNNER_TEMP/packed/dorkos.tgz"
+          echo "$prefix/bin" >> "$GITHUB_PATH"
+          home="$RUNNER_TEMP/home"
+          mkdir -m 700 -p "$home/.dork" "$home/.claude"
+          {
+            echo "HOME=$home"
+            echo "DORK_HOME=$home/.dork"
+            echo "CLAUDE_CONFIG_DIR=$home/.claude"
+            echo "DORKOS_TEST_RUNTIME=true"
+          } >> "$GITHUB_ENV"
+          version=$("$prefix/bin/dorkos" --version)
+          if [[ "$version" != *"$RELEASE_VERSION"* ]]; then
+            echo "::error::dorkos --version printed '$version', not $RELEASE_VERSION."
+            exit 1
+          fi
+      - name: Run main's smoke test against the installed dorkos
+        working-directory: trusted
+        run: bash scripts/smoke-test.sh --port 4242 --timeout 60
+      - name: Install Playwright from main's lockfile
+        working-directory: trusted
+        env:
+          # pnpm and Playwright cache under HOME; keep them off the throwaway one.
+          HOME: ${{ runner.temp }}/tools
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/tools/browsers
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile --filter @dorkos/e2e --ignore-scripts
+          pnpm --filter @dorkos/e2e exec playwright install --with-deps chromium
+      - name: A chat on the installed release gets a reply
+        working-directory: trusted/apps/e2e
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/tools/browsers
+          RELEASE_SMOKE_URL: http://localhost:4243
+          RELEASE_SMOKE_VERSION: ${{ env.RELEASE_VERSION }}
+        run: |
+          set -euo pipefail
+          dorkos --port 4243 > "$RUNNER_TEMP/dorkos.log" 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 60); do
+            curl -sf http://localhost:4243/api/health > /dev/null && break
+            sleep 1
+          done
+          status=0
+          HOME="$RUNNER_TEMP/tools" pnpm exec playwright test -c playwright.release-smoke.config.ts || status=$?
+          if [[ "$status" != 0 ]]; then
+            echo "::group::dorkos log"
+            tail -n 200 "$RUNNER_TEMP/dorkos.log"
+            echo "::endgroup::"
+          fi
+          exit "$status"
+      - name: Import the cloud contract and connector providers
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/libraries"
+          mkdir -p "$dir"
+          cd "$dir"
+          npm init -y > /dev/null
+          npm install "zod@^4.6.6" \
+            "$RUNNER_TEMP/packed/dork-labs-cloud-api-$RELEASE_VERSION.tgz" \
+            "$RUNNER_TEMP/packed/dork-labs-connector-providers-$RELEASE_VERSION.tgz"
+          node --input-type=module -e "await import('@dork-labs/cloud-api'); await import('@dork-labs/connector-providers'); console.log('both import');"
+
+  publish:
+    needs: [prepare, gate, smoke]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20

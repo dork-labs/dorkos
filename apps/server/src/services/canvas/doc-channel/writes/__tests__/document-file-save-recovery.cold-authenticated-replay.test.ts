@@ -26,6 +26,11 @@ import {
 } from '../installation-file-writes.js';
 import { validateFileSaveIntent } from '../file-save-intents.js';
 import { saved } from './saved-outcome.js';
+import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 it('cold authenticated replay carries the original saved frame birth before receipt discovery', async () => {
   const f = await setup(),

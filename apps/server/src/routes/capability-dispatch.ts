@@ -14,6 +14,7 @@
  * | --- | --- |
  * | The capability ran | the route's success status (`200` unless declared) |
  * | A person must approve first | `202`, the approval payload (not an error) |
+ * | A caller that is not a person called a person-only capability (`http.audience: 'person'`) | `403` problem, `person_only` (from `registry.invoke`) |
  * | The gate refused for good | `403` problem, {@link gateRefusalProblem} |
  * | A network sign-in asked for an `act` or `destructive` one without `allowFromWifi` | `403` problem, `not_from_wifi` |
  * | The input failed the capability's schema | `400` problem, `invalid_request` |
@@ -39,8 +40,10 @@ import {
   APPROVAL_TOKEN_HEADER,
   CapabilityGateRefusal,
   CapabilityToolError,
+  personCaller,
   type CapabilityRegistry,
 } from '../services/core/capabilities/index.js';
+import { readCallerAuthority } from '../lib/caller-authority.js';
 import { isFromWifi, WIFI_ACTION_REFUSAL } from '../services/core/auth/sessions/wifi-level.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { logger } from '../lib/logger.js';
@@ -121,6 +124,16 @@ export async function dispatchCapability(
   // approval is bound to a hash of that input.
   const header = facts.headers[APPROVAL_TOKEN_HEADER];
   const approvalToken = (Array.isArray(header) ? header[0] : header)?.trim();
+  // Proof of a person, asked only by a person-only capability, which
+  // `registry.invoke` refuses without it (ADR 261123-170830). The same bar the
+  // decide endpoint and the hand person-only routes use, plus no bearer.
+  const person =
+    capability.surfaces.http?.audience === 'person'
+      ? personCaller({
+          ...readCallerAuthority(facts),
+          authorizationPresented: facts.headers.authorization !== undefined,
+        })
+      : undefined;
 
   try {
     const result = await registry.invoke(id, input, {
@@ -128,6 +141,7 @@ export async function dispatchCapability(
       ...(agentIdentityPresented ? { agentIdentityPresented } : {}),
       ...(user ? { userId: user.userId } : {}),
       ...(approvalToken ? { approvalToken } : {}),
+      ...(person ? { person } : {}),
       retryChannel: 'http-header',
     });
     const success = dispatch.success ?? 200;

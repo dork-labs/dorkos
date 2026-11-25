@@ -10,6 +10,7 @@
  * @module http/desktop-sign-in
  */
 import type { Hono } from 'hono';
+import { problem } from '@dorkos/http-kit';
 
 import { env } from '../env.js';
 import { classifyRequest } from '../lib/request-classifier.js';
@@ -20,6 +21,7 @@ import { personProofFor } from '../services/core/auth/person-proof.js';
 import { withRegistrationCaller } from '../services/core/auth/registration-policy.js';
 import type { ApiEnv } from './api-chain.js';
 import { honoRequestFacts } from './request-facts.js';
+import { apiNotFound } from './unclaimed.js';
 
 /** What `Sec-Fetch-Site` may say: the window's own page, or no page at all. */
 const OWN_PAGE_OR_NONE = new Set(['same-origin', 'none']);
@@ -32,7 +34,7 @@ const OWN_PAGE_OR_NONE = new Set(['same-origin', 'none']);
  */
 export function mountDesktopSignIn(app: Hono<ApiEnv>, auth: Auth): void {
   app.post('/api/desktop/sign-in', async (c) => {
-    if (env.DORKOS_MANAGED_BY !== 'desktop') return c.json({ error: 'Not found' }, 404);
+    if (env.DORKOS_MANAGED_BY !== 'desktop') return apiNotFound(c);
     const facts = honoRequestFacts(c);
     const site = facts.headers['sec-fetch-site'];
     const requestClass = classifyRequest(facts, currentServerRole());
@@ -40,11 +42,15 @@ export function mountDesktopSignIn(app: Hono<ApiEnv>, auth: Auth): void {
       requestClass.kind !== 'this-computer' ||
       (site !== undefined && !OWN_PAGE_OR_NONE.has(String(site)))
     ) {
-      return c.json({ error: 'Only this computer’s DorkOS window can do this.' }, 403);
+      return problem(c, 'operator_only', {
+        detail: 'Only this computer’s DorkOS window can do this.',
+      });
     }
     const body = (await c.req.json().catch(() => null)) as { code?: unknown } | null;
     const userId = typeof body?.code === 'string' ? takeDesktopSignInCode(body.code) : null;
-    if (!userId) return c.json({ error: 'This sign-in has expired. Restart DorkOS.' }, 401);
+    if (!userId) {
+      return problem(c, 'unauthenticated', { detail: 'This sign-in has expired. Restart DorkOS.' });
+    }
     // Inside the request's class, so the session is stamped `local` like any
     // other sign-in made at this computer (`session-route.ts`, DOR-2969).
     const { headers, response } = await withRegistrationCaller(requestClass, () =>

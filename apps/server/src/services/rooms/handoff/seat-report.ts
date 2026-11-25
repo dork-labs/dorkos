@@ -34,7 +34,7 @@
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
 import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
-import { fenceUntrustedBlock } from '../../runtimes/shared/untrusted-fence.js';
+import { fenceUntrustedBlock } from '../../core/untrusted-text/untrusted-fence.js';
 import { defuseMarkers } from '../../session/chat-messages/chat-message-fence.js';
 import { agentKey } from '../room-claims.js';
 import type { AsideResult } from '../room-trigger/aside.js';

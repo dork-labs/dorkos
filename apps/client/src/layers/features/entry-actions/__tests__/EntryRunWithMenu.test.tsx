@@ -159,6 +159,8 @@ function makeCaps(...types: string[]): CapabilitiesMap {
     supportsPersistentSession: false,
     supportsSteer: false,
     supportsContextStaging: false,
+    wakesForLostBackgroundWork: false,
+    continuesInterruptedTurn: false,
     mediaOutput: 'none',
     nativeContext: [],
     permissionModes: { supported: false, values: [] },

@@ -43,7 +43,8 @@ import {
   createToolResultImageState,
 } from '../tool-result-images.js';
 import { attachTranscriptImages, mapSdkMessageWithMedia } from '../media-capture.js';
-import { parseTranscript, type TranscriptImageRef } from '../sessions/transcript-parser.js';
+import { type TranscriptImageRef } from '../sessions/transcript-parser.js';
+import { parseTranscript } from '../sessions/__tests__/parse-transcript.js';
 import { TINY_PNG_BASE64, imageTranscriptLines } from './sdk-scenarios.js';
 
 const TOOL_ID = 'toolu_017pyTSTTbL2ih7UE7Nd3AX9';

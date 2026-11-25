@@ -1,0 +1,15 @@
+/** A two-key table in the real file's shape. */
+export const CONFIG_MIGRATIONS = {
+  '1.0.0': (store: { has: (key: string) => boolean; set: (key: string, value: unknown) => void }) => {
+    if (!store.has('version')) {
+      store.set('version', 1);
+    }
+  },
+  // v0.19.0 is the newest tag, so this opens 0.20.0.
+  '0.20.0': seedComposer,
+  // v0.20.0 is the newest tag, so this opens 0.21.0.
+  '0.21.0': (store: { get: (key: string) => unknown }) => {
+    // Seeds the theme.
+    store.get('ui');
+  },
+} as const;

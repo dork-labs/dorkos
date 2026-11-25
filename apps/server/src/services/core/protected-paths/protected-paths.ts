@@ -26,7 +26,7 @@
  *
  * Changing an entry changes what every runtime holds, so the tests pin the list.
  *
- * @module services/runtimes/shared/policy/protected-paths
+ * @module services/core/protected-paths/protected-paths
  */
 
 /**

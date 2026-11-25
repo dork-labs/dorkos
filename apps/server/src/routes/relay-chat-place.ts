@@ -14,9 +14,9 @@
  *
  * So an agent whose token verified meets the sessions route's own place rule
  * ({@link chatPlaceRefusal}) for each such chat and gets its answer: its own
- * chat, or a chat about a folder no agent owns, goes through; a chat that is
- * another agent's, or whose record cannot be read, is refused with
- * `DESK_NOT_OWN`.
+ * chat, or a chat about a folder no agent owns outside the protected folders,
+ * goes through; a chat that is another agent's, whose record cannot be read, or
+ * that no agent runs in a protected folder is refused with `DESK_NOT_OWN`.
  *
  * Everything else is left as it was. The person is never asked. An id Mesh
  * knows as an agent is a message to that agent, unless a chat held under that

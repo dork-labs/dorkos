@@ -49,6 +49,11 @@ import {
 import { createProtectedFileHook } from '../../runtimes/claude-code/tool-gate/protected-file-hook.js';
 // Registers the `session_start` early check, as the server's boot does.
 import '../../runtimes/claude-code/mcp-tools/session-tools.js';
+import { registerClaudeCodeFacts } from '../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 const CANARY = 'TOKEN=dor-4060-dummy-canary';
 const SESSION = 'sess-4060-gate';

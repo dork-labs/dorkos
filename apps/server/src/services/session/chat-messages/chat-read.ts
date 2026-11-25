@@ -15,7 +15,7 @@ import type { SessionStatus } from '@dorkos/shared/session-stream';
 import { dorkReferenceOrNull } from '@dorkos/shared/dork-ref';
 import { chatRefMarkdownLink } from '@dorkos/shared/session-link';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
-import { defuseUntrustedText } from '../../runtimes/shared/untrusted-fence.js';
+import { defuseUntrustedText } from '../../core/untrusted-text/untrusted-fence.js';
 import type { ChatCaller } from './chat-message-service.js';
 import { ChatMessageError } from './chat-message-service.js';
 import type { ChatMessageStore } from './chat-message-store.js';

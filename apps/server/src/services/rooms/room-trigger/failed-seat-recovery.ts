@@ -5,7 +5,7 @@ import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import type { AsideCarry } from './aside.js';
 import { logRecoveredHandoff } from '../handoff/failure-trace.js';
 import { stat } from 'node:fs/promises';
-import { claudeTranscriptPath } from '../../session/fleet/carry-over-summary.js';
+import { claudeCodeFacts } from '../../session/resolution/claude-code-facts.js';
 import type { RecoveryAuthority } from '../reseat/required-launch-store.js';
 import type { SeatMove } from '../reseat/seat-mover.js';
 import { getRoomSeatMover } from '../reseat/create-seat-mover.js';
@@ -123,7 +123,7 @@ export async function endFailedHandoffAttempt(
       };
       const observed = reader.readObservedBilling?.(sessionId);
       const nativePath = observed?.cwd
-        ? claudeTranscriptPath(observed.root, observed.cwd, observed.sessionId)
+        ? claudeCodeFacts().transcriptPath(observed.root, observed.cwd, observed.sessionId)
         : null;
       const file = nativePath ? await stat(nativePath) : null;
       if (observed && file?.isFile() && file.size > 0) {

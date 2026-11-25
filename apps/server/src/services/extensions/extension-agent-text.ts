@@ -21,7 +21,7 @@ import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { defuseMarkers } from '../session/chat-messages/chat-message-fence.js';
-import { defuseUntrustedText } from '../runtimes/shared/untrusted-fence.js';
+import { defuseUntrustedText } from '../core/untrusted-text/untrusted-fence.js';
 
 /** The standing line on both results. A DorkOS constant. */
 export const EXTENSION_TEXT_NOTE =

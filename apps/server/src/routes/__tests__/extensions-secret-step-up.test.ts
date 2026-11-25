@@ -63,7 +63,7 @@ describe('extension secret confirmation', () => {
       expect(JSON.stringify(held.body)).not.toContain(SECRET);
       expect(await secrets().has('api_key')).toBe(false);
       expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
-        'not-your-action'
+        'held_by_another_browser'
       );
       expect(await secrets().has('api_key')).toBe(false);
       expect((await owner.confirm(held.body.heldActionId, via)).body).toMatchObject({

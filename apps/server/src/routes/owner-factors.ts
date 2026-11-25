@@ -24,13 +24,12 @@ import type { RegistrationResponseJSON } from '@simplewebauthn/server';
 import { Hono, type Context } from 'hono';
 
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
-import { NEEDS_PERSON_AT_THIS_COMPUTER, refuseFrontDoorChange } from '../lib/caller-authority.js';
+import { refuseFrontDoorChange } from '../lib/caller-authority.js';
 import { classifyRequest } from '../lib/request-classifier.js';
 import { currentServerRole } from '../lib/server-role.js';
-import { isOwnOriginJsonWrite, NOT_FROM_OWN_PAGE } from '../lib/http/own-origin-write.js';
-import { errorBody } from '../lib/route-utils.js';
+import { isOwnOriginJsonWrite } from '../lib/http/own-origin-write.js';
 import { passkeyChecked } from '../http/sign-in/passkey-check.js';
 import { getAuth, getUserById, readOwnerAccount } from '../services/core/auth/index.js';
 import { recordSignInTrustChange } from '../services/core/auth/auth-audit.js';
@@ -52,7 +51,7 @@ import {
 import { signOutSessionsAway } from '../services/core/auth/sessions/signed-in-devices.js';
 import { newTotpSecret, totpUri, verifyTotp } from '../services/core/auth/factors/totp.js';
 import { notify } from '../services/notifications/notification-service.js';
-import { runFrontDoorWrite } from './front-door-step-up.js';
+import { frontDoorProblem, runFrontDoorWrite } from './front-door-step-up.js';
 
 /** What these routes are called in a refusal. */
 const SUBJECT = 'sign-in checks';
@@ -70,20 +69,16 @@ function ownerOf(
   facts: RequestFacts = honoRequestFacts(c)
 ): { userId: string; sessionId: string } | Response {
   const refusal = refuseFrontDoorChange(facts, SUBJECT);
-  if (refusal) return c.json(errorBody(refusal.error, refusal.code), 403);
+  if (refusal) return frontDoorProblem(c, refusal);
   if (change && classifyRequest(facts, currentServerRole()).kind !== 'this-computer') {
-    return c.json(
-      errorBody(
-        'Change sign-in checks on the computer DorkOS runs on.',
-        NEEDS_PERSON_AT_THIS_COMPUTER
-      ),
-      403
-    );
+    return problem(c, 'operator_only', {
+      detail: 'Change sign-in checks on the computer DorkOS runs on.',
+    });
   }
   const owner = readOwnerAccount();
   const sessionId = facts.user?.sessionId;
   if (!owner || facts.user?.userId !== owner.id || !sessionId) {
-    return c.json(errorBody('Sign in to change sign-in checks.', 'SIGN_IN_FIRST'), 403);
+    return problem(c, 'owner_only', { detail: 'Sign in to change sign-in checks.' });
   }
   return { userId: owner.id, sessionId };
 }
@@ -109,13 +104,9 @@ async function endSignInsFromBefore(
 
 /** The answer when the earlier sign-ins could not be ended, so nothing was added. */
 function notSignedOut(c: Context<ApiEnv>): Response {
-  return c.json(
-    errorBody(
-      'Other devices couldn’t be signed out, so this wasn’t added. Try again.',
-      'SIGN_OUT_FAILED'
-    ),
-    500
-  );
+  return problem(c, 'internal_error', {
+    detail: 'Other devices couldn’t be signed out, so this wasn’t added. Try again.',
+  });
 }
 
 /**
@@ -162,7 +153,7 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
         c.req.method === 'DELETE' &&
         isOwnOriginJsonWrite({ ...facts.headers, 'content-type': 'application/json' });
       if (!deleteFromOwnPage) {
-        return c.json(errorBody('Change this in the DorkOS app.', NOT_FROM_OWN_PAGE), 403);
+        return problem(c, 'origin_not_allowed', { detail: 'Change this in the DorkOS app.' });
       }
     }
     await next();
@@ -206,10 +197,9 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
           label,
         });
         if (typeof options === 'string') {
-          return c.json(
-            errorBody('Add a passkey in the DorkOS app on this computer.', 'PASSKEY_ORIGIN'),
-            403
-          );
+          return problem(c, 'origin_not_allowed', {
+            detail: 'Add a passkey in the DorkOS app on this computer.',
+          });
         }
         return c.json({ options });
       },
@@ -221,7 +211,7 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
     if (owner instanceof Response) return owner;
     const body = (readJsonBody(c) ?? null) as { response?: unknown } | null;
     if (!body?.response || typeof body.response !== 'object') {
-      return c.json(errorBody('Send the new passkey.', 'INVALID_BODY'), 400);
+      return problem(c, 'invalid_request', { detail: 'Send the new passkey.' });
     }
     const first = !everHadRemoteFactor(owner.userId);
     const since = Date.now();
@@ -231,7 +221,7 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
       response: body.response as RegistrationResponseJSON,
     });
     if (typeof added === 'string') {
-      return c.json(errorBody('That passkey wasn’t added. Try again.', 'PASSKEY_REFUSED'), 400);
+      return problem(c, 'invalid_request', { detail: 'That passkey wasn’t added. Try again.' });
     }
     // The sign-in step's own rule: a passkey made for this computer works only here.
     const saved = findOwnerFactor(owner.userId, added.factorId);
@@ -288,13 +278,15 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
     const factor =
       typeof body?.id === 'string' ? findOwnerFactor(owner.userId, body.id) : undefined;
     if (!factor || factor.kind !== 'totp' || factor.confirmedAt !== null || !factor.sealedSecret) {
-      return c.json(errorBody('Start again to add an authenticator app.', 'NOT_FOUND'), 404);
+      return problem(c, 'not_found', { detail: 'Start again to add an authenticator app.' });
     }
     const secret = await openSecret(factor.sealedSecret);
     const step =
       secret && typeof body?.code === 'string' ? verifyTotp(secret, body.code, null) : null;
     if (step === null) {
-      return c.json(errorBody('That code didn’t match. Try the newest one.', 'CODE_REFUSED'), 400);
+      return problem(c, 'invalid_request', {
+        detail: 'That code didn’t match. Try the newest one.',
+      });
     }
     const first = !everHadRemoteFactor(owner.userId);
     const since = Date.now();
@@ -318,7 +310,7 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
     const id = c.req.param('id');
     const factor = findOwnerFactor(owner.userId, id);
     if (!factor) {
-      return c.json(errorBody('That sign-in check is already gone.', 'NOT_FOUND'), 404);
+      return problem(c, 'not_found', { detail: 'That sign-in check is already gone.' });
     }
     const body = (readJsonBody(c) ?? null) as { passkey?: unknown } | null;
     const checked = await passkeyChecked(c, owner, `owner-factor-remove:${id}`, body?.passkey, {
@@ -335,7 +327,7 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
         const who = ownerOf(c, true, confirming);
         if (who instanceof Response) return who;
         if (!removeOwnerFactor(who.userId, id)) {
-          return c.json(errorBody('That sign-in check is already gone.', 'NOT_FOUND'), 404);
+          return problem(c, 'not_found', { detail: 'That sign-in check is already gone.' });
         }
         recordSignInTrustChange(who.userId, 'factor-removed');
         // A pending authenticator was never a sign-in check: nothing to tell.

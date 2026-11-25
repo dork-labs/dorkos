@@ -12,8 +12,7 @@ import type { RuntimeConformanceOpts } from './runtime-conformance.js';
  */
 export function runtimeApprovalConformance(
   makeRuntime: () => AgentRuntime,
-  wiring: {
-    approvalTurn: RuntimeConformanceOpts['approvalTurn'];
+  wiring: Pick<RuntimeConformanceOpts, 'approvalTurn'> & {
     nextSessionId: () => string;
     sessionOpts: (runtime: AgentRuntime) => SessionOpts;
     messageContent: string;

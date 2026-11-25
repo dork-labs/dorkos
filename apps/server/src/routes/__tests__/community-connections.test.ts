@@ -340,7 +340,7 @@ describe('local connection route authority and public projection', () => {
         .set('x-test-author', 'author-a')
         .send({ url: 'https://community.example', installName: 'Desktop' });
       expect(response.status).toBe(403);
-      expect(response.body.code).toBe('not-a-person');
+      expect(response.body.code).toBe('person_only');
       expect(start).not.toHaveBeenCalled();
     } finally {
       await routes.close();
@@ -1013,7 +1013,7 @@ describe('who may wake agents in a space is the owner’s call', () => {
       .set('x-test-author', 'author-a')
       .send({ wakeAgentsFrom: 'members' });
     expect(widened.status).toBe(403);
-    expect(widened.body.code).toBe('not-a-person');
+    expect(widened.body.code).toBe('person_only');
     expect(await policy.get(wakeRef, 'author-a')).toBe('me');
   });
 
@@ -1081,7 +1081,7 @@ describe('where agents answer without a mention is the owner’s call', () => {
       .set('x-test-author', 'author-a')
       .send({ answerIn: ['#Welcome', 'help'] });
     expect(added.status).toBe(403);
-    expect(added.body.code).toBe('not-a-person');
+    expect(added.body.code).toBe('person_only');
     expect(await policy.getAnswerIn(answerRef, 'author-a')).toEqual([]);
 
     // Narrowing it is immediate, and the live answer follows at once.
@@ -1197,7 +1197,7 @@ describe('the teammates’ monthly limit is the owner’s call', () => {
       .set('x-test-author', 'author-a')
       .send({ monthlyLimitUsd: null });
     expect(cleared.status).toBe(403);
-    expect(cleared.body.code).toBe('not-a-person');
+    expect(cleared.body.code).toBe('person_only');
     expect(spend.allows(spendRef, 'author-a')).toBe(false);
     await spend.setLimit(spendRef, 'author-a', null);
     expect(spend.allows(spendRef, 'author-a')).toBe(true);

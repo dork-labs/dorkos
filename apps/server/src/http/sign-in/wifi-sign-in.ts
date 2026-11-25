@@ -15,7 +15,10 @@
  *
  * @module http/sign-in/wifi-sign-in
  */
-import type { Hono } from 'hono';
+import type { Context, Hono } from 'hono';
+import { apiNotFound } from '../unclaimed.js';
+import { problem } from '@dorkos/http-kit';
+import type { ProblemCode } from '@dorkos/shared/problem';
 
 import { describeUserAgent } from '../../lib/http/user-agent.js';
 import { isOwnOriginJsonWrite } from '../../lib/http/own-origin-write.js';
@@ -42,27 +45,34 @@ const MAX_FIELD = 128;
  * @param auth - Better Auth, for the server-only sign-in.
  */
 export function mountWifiSignIn(app: Hono<ApiEnv>, auth: Auth): void {
-  const refused = { error: 'That didn’t work. Ask for a new code on the computer DorkOS runs on.' };
+  // The same sentence whatever the reason; only the code differs, and it names the request's
+  // fault, never whether a sign-in code exists or was right.
+  const refused = (c: Context, code: ProblemCode): Response =>
+    problem(c, code, {
+      detail: 'That didn’t work. Ask for a new code on the computer DorkOS runs on.',
+    });
 
   app.post('/api/wifi-sign-in/start', async (c) => {
-    if (ingressOf(c.env.incoming) !== 'wifi') return c.json({ error: 'Not found' }, 404);
+    if (ingressOf(c.env.incoming) !== 'wifi') return apiNotFound(c);
     const facts = honoRequestFacts(c);
-    if (!isOwnOriginJsonWrite(facts.headers)) return c.json(refused, 403);
+    if (!isOwnOriginJsonWrite(facts.headers)) return refused(c, 'origin_not_allowed');
     const deviceName = describeUserAgent(facts.headers['user-agent']);
     const started = startWifiSignIn({ deviceName, address: facts.peerAddress ?? 'unknown' });
     c.header('Cache-Control', 'no-store');
     if (!started) {
-      return c.json({ error: 'Too many sign-in requests. Try again in a few minutes.' }, 429);
+      return problem(c, 'rate_limited', {
+        detail: 'Too many sign-in requests. Try again in a few minutes.',
+      });
     }
     // What this device is called at the computer, so the person can find it there.
     return c.json({ ...started, deviceName });
   });
 
   app.post('/api/wifi-sign-in/finish', async (c) => {
-    if (ingressOf(c.env.incoming) !== 'wifi') return c.json({ error: 'Not found' }, 404);
+    if (ingressOf(c.env.incoming) !== 'wifi') return apiNotFound(c);
     const facts = honoRequestFacts(c);
     c.header('Cache-Control', 'no-store');
-    if (!isOwnOriginJsonWrite(facts.headers)) return c.json(refused, 403);
+    if (!isOwnOriginJsonWrite(facts.headers)) return refused(c, 'origin_not_allowed');
     const body = (await c.req.json().catch(() => null)) as {
       requestId?: unknown;
       code?: unknown;
@@ -74,13 +84,13 @@ export function mountWifiSignIn(app: Hono<ApiEnv>, auth: Auth): void {
       requestId.length > MAX_FIELD ||
       code.length > MAX_FIELD
     ) {
-      return c.json(refused, 400);
+      return refused(c, 'invalid_request');
     }
     const redeemed = redeemWifiSignIn(requestId, code);
     if ('refusal' in redeemed) {
       return redeemed.refusal === 'too-many-tries'
-        ? c.json({ error: 'Too many tries. Ask for a new code.' }, 429)
-        : c.json(refused, 401);
+        ? problem(c, 'rate_limited', { detail: 'Too many tries. Ask for a new code.' })
+        : refused(c, 'unauthenticated');
     }
     // Inside the request's class, so the session is stamped `wifi`.
     const requestClass = classifyRequest(facts, currentServerRole());

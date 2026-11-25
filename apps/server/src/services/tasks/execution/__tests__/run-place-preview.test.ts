@@ -23,6 +23,11 @@ import {
 import { SCHEDULED_RUNS_DIR, guardRunPlacement } from '../run-place-guard.js';
 import { chainRunPlacement } from '../run-placement.js';
 import { previewRunPlace, withTaskRunPlace } from '../run-place-preview.js';
+import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 let above: string;
 let home: string;

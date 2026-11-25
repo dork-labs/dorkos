@@ -90,7 +90,7 @@ describe('adding a source (DOR-3330)', () => {
       source: 'https://example.com/from-app',
     });
     expect(added.status).toBe(403);
-    expect(added.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+    expect(added.body.code).toBe('operator_only');
     expect(await listSourceNames(h)).not.toContain('from-app');
 
     await h.sourceManager.add({ name: 'from-app', source: 'https://example.com/from-app' });
@@ -123,7 +123,7 @@ describe('deciding a held-back package (I-4)', () => {
     h.signedInUser = COOKIE;
     const bySession = await decide();
     expect(bySession.status).toBe(403);
-    expect(bySession.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+    expect(bySession.body.code).toBe('operator_only');
     expect((await h.get('/held-back')).body.packages).toEqual([
       expect.objectContaining({ name: 'held' }),
     ]);
@@ -146,7 +146,7 @@ describe('keeping files (DOR-2341)', () => {
     h.signedInUser = COOKIE;
     const bySession = await keep();
     expect(bySession.status).toBe(403);
-    expect(bySession.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+    expect(bySession.body.code).toBe('operator_only');
     expect(await unprovenOnDisk(root)).toBeDefined();
   });
 });

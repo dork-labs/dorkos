@@ -28,7 +28,7 @@ import {
   SHELL_UNREADABLE_DENY_REASON,
   SHELL_WRITE_DENY_REASON,
 } from '../shell-path-guard.js';
-import { AGENT_HOME_SELF_GRANT_PATHS } from '../../../shared/policy/protected-paths.js';
+import { AGENT_HOME_SELF_GRANT_PATHS } from '../../../../core/protected-paths/protected-paths.js';
 import { expandVariables, parseShell } from '../shell-words.js';
 
 /** The check in this process, reading the agent list first as the host does. */

@@ -284,6 +284,8 @@ function makeCaps(type: string): RuntimeCapabilities {
     supportsPersistentSession: false,
     supportsSteer: false,
     supportsContextStaging: false,
+    wakesForLostBackgroundWork: false,
+    continuesInterruptedTurn: false,
     mediaOutput: 'none',
     nativeContext: [],
     permissionModes: { supported: false, values: [] },

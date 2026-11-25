@@ -84,6 +84,20 @@ const TUNNEL_PERSON_ONLY = z
 const TUNNEL_NEEDS_LOGIN = z
   .object({ status: z.literal(409), code: z.literal('auth_required_for_exposure') })
   .loose();
+/** Remote access's refusals, as problem documents. */
+const PERSON_ONLY_PROBLEM = z
+  .object({ status: z.literal(403), code: z.literal('person_only'), detail: z.string() })
+  .loose();
+const EXPOSURE_NEEDS_LOGIN_PROBLEM = z
+  .object({
+    status: z.literal(409),
+    code: z.literal('auth_required_for_exposure'),
+    detail: z.string(),
+  })
+  .loose();
+const CHOOSE_A_MODE = z
+  .object({ code: z.literal('invalid_request'), detail: z.literal('Choose off, byo or managed.') })
+  .loose();
 const UNLINKED_SUMMARY = z.object({ linked: z.literal(false) }).loose();
 const LINK_IDLE = z.object({ state: z.literal('idle') }).loose();
 const CREDITS = z
@@ -553,33 +567,33 @@ contractSuite(
       path: `/api/remote-access/${action}`,
       headers: AGENT,
       body: { mode: 'off' },
-      expect: { status: 403, schema: OPERATOR_ONLY },
+      expect: { status: 403, headers: PROBLEM_TYPE, schema: PERSON_ONLY_PROBLEM },
     })),
     {
       name: 'POST /api/remote-access/enrolment refuses while login is off',
       method: 'POST',
       path: '/api/remote-access/enrolment',
-      expect: { status: 409, schema: EXPOSURE_NEEDS_LOGIN },
+      expect: { status: 409, headers: PROBLEM_TYPE, schema: EXPOSURE_NEEDS_LOGIN_PROBLEM },
     },
     {
       name: 'POST /api/remote-access/mode refuses an unknown mode',
       method: 'POST',
       path: '/api/remote-access/mode',
       body: { mode: 'both' },
-      expect: { status: 400, body: { error: 'Choose off, byo or managed.', code: 'INVALID_MODE' } },
+      expect: { status: 400, headers: PROBLEM_TYPE, schema: CHOOSE_A_MODE },
     },
     {
       name: 'POST /api/remote-access/mode refuses no body',
       method: 'POST',
       path: '/api/remote-access/mode',
-      expect: { status: 400, body: { error: 'Choose off, byo or managed.', code: 'INVALID_MODE' } },
+      expect: { status: 400, headers: PROBLEM_TYPE, schema: CHOOSE_A_MODE },
     },
     {
       name: 'POST /api/remote-access/mode refuses managed while login is off',
       method: 'POST',
       path: '/api/remote-access/mode',
       body: { mode: 'managed' },
-      expect: { status: 409, schema: EXPOSURE_NEEDS_LOGIN },
+      expect: { status: 409, headers: PROBLEM_TYPE, schema: EXPOSURE_NEEDS_LOGIN_PROBLEM },
     },
     {
       name: 'POST /api/remote-access/mode turns remote access off',
@@ -944,10 +958,9 @@ describe('contract: remote access, reached by a name that is not this computer',
   const remote = { host: PROXIED_HOST };
   const signedInRemote = () => ({ ...cookie, ...remote, origin: `http://${PROXIED_HOST}` });
   const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
-  const NEEDS_THIS_COMPUTER = {
-    error: 'Remote access can only be changed on the computer DorkOS runs on.',
-    code: 'REMOTE_SETUP_NEEDS_THIS_COMPUTER',
-  };
+  const NEEDS_THIS_COMPUTER = problemBody('operator_only', {
+    detail: 'Remote access can only be changed on the computer DorkOS runs on.',
+  });
 
   it('asks another device with no session to sign in, with the this-computer password off', async () => {
     // ADR 261015-125850 rule 3: other devices always need a person session.
@@ -979,7 +992,7 @@ describe('contract: remote access, reached by a name that is not this computer',
         path: `/api/remote-access/${action}`,
         headers: signedInRemote(),
         body: { mode: 'off' },
-        expect: { status: 403, headers: JSON_TYPE, body: NEEDS_THIS_COMPUTER },
+        expect: { status: 403, headers: PROBLEM_TYPE, body: NEEDS_THIS_COMPUTER },
       });
     }
     await check(server, {
@@ -1121,7 +1134,13 @@ describe('contract: the same groups with login on', () => {
         path: `/api/remote-access/${action}`,
         headers: apiKey,
         body: { mode: 'off' },
-        expect: { status: 403, body: COOKIE_REQUIRED('remote access') },
+        expect: {
+          status: 403,
+          headers: PROBLEM_TYPE,
+          body: problemBody('person_only', {
+            detail: 'Only a person signed in to DorkOS can change remote access.',
+          }),
+        },
       });
     }
     await check(server, {

@@ -57,7 +57,10 @@
 import type { ApprovalVerdictData } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { sanitizeContextScalar } from '@dorkos/shared/ui-widget';
-import { defuseUntrustedText, fenceUntrustedBlock } from './untrusted-fence.js';
+import {
+  defuseUntrustedText,
+  fenceUntrustedBlock,
+} from '../../core/untrusted-text/untrusted-fence.js';
 
 /** The tag this block is wrapped in, and the one every scalar is neutralized against. */
 const TAG = CONTEXT_TAG.approval_verdict;

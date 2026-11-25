@@ -109,6 +109,11 @@ import {
   setDeclaredReaders,
 } from '../../services/core/turn-power/declared-readers.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
+import { registerClaudeCodeFacts } from '../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 taskRuntimeCapabilitiesFixture();
 
@@ -586,7 +591,7 @@ describe('operator-only task fields on the REST routes', () => {
 
       expect(res.status).toBe(403);
       // The front-door hold's own refusal (`front-door-step-up.ts`), still in its old spelling.
-      expect(res.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+      expect(res.body.code).toBe('operator_only');
       expect(res.body.heldActionId).toBeUndefined();
       expect(store.getTask(existing.id)!.permissionMode).toBe('acceptEdits');
     });

@@ -1,0 +1,14 @@
+{
+  "pins": "array",
+  "pins[]": "object",
+  "pins[].kind": "\"agent\" | \"room\"",
+  "pins[].path": "string",
+  "pins[].roomId": "string",
+  "projects": "object | undefined",
+  "projects.*": "integer | null | undefined",
+  "ui": "object (default)",
+  "ui.color": "null | string where {\"pattern\":\"^#\"} (default)",
+  "ui.extra": "any | undefined",
+  "ui.note": "string | undefined where {\"maxLength\":40}",
+  "ui.theme": "\"dark\" | \"light\" | \"system\" (default)"
+}

@@ -45,12 +45,12 @@ import {
 } from '@dorkos/shared/convention-files';
 import { memoryProviderStatus } from '../../memory/registry.js';
 import { logger } from '../../../lib/logger.js';
-import { fenceUntrustedBlock } from './untrusted-fence.js';
+import { fenceUntrustedBlock } from '../../core/untrusted-text/untrusted-fence.js';
 import { env } from '../../../env.js';
 import { currentCliInvocation } from './cli-invocation.js';
 import { agentBrowserGap, agentBrowserNotice } from '../../mesh/agent-browser-preset.js';
 import { buildDorkosAreasBlock } from './awareness/dorkos-areas.js';
-import type { ContextPart } from './window/context-fit.js';
+import type { ContextPart } from '../../session/context-window/context-fit.js';
 import { diskContextSource, type AgentContextSource } from './source/agent-context-source.js';
 
 /**

@@ -12,15 +12,15 @@
  * nothing it can act on. The tool names are qualified per runtime, because a
  * bare name in a prompt block is a name the model cannot call (DOR-1292).
  *
- * @module services/session/agent-compaction/context-warning-block
+ * @module services/runtimes/shared/prose/context-warning-block
  */
 import type { ContextWarningData } from '@dorkos/shared/additional-context';
-import { dorkosToolNameFor } from '../../runtimes/shared/dorkos-tool-names.js';
+import { dorkosToolNameFor } from '../dorkos-tool-names.js';
 // Both names come from where each tool is registered, never spelled here: this
 // module is read by three runtimes, and a bare name in it would be one none of
 // them can call (DOR-1292).
-import { MEMORY_WRITE_TOOL_NAME } from '../../memory/memory-capabilities.js';
-import { COMPACT_MY_SESSION_TOOL_NAME } from './compaction-capabilities.js';
+import { MEMORY_WRITE_TOOL_NAME } from '../../../memory/memory-capabilities.js';
+import { COMPACT_MY_SESSION_TOOL_NAME } from '../../../session/agent-compaction/compaction-capabilities.js';
 
 /**
  * Render the warning for one runtime.

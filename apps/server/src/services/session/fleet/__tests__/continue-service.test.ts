@@ -69,6 +69,8 @@ import {
   type ContinueLaunchDeps,
 } from '../continue-service.js';
 import { CARRY_OVER_PROMPT } from '../carry-over.js';
+import { claudeTranscriptPath } from '../../../runtimes/claude-code/sessions/project-slug.js';
+import { claudeCodeFacts, setClaudeCodeFacts } from '../../resolution/claude-code-facts.js';
 import { setSessionAgentSources } from '../../../core/agent-identity/session-agent.js';
 import {
   clearTestHomes,
@@ -273,6 +275,8 @@ function advise(advisor: Partial<AccountAdvisor>, owner = 'flow'): () => void {
 }
 
 beforeEach(() => {
+  // What the startup hands turn code (DOR-4928): where a Claude transcript lives.
+  setClaudeCodeFacts({ ...claudeCodeFacts(), transcriptPath: claudeTranscriptPath });
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
   vi.setSystemTime(NOW);
   db = createTestDb();

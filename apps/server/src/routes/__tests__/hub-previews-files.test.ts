@@ -48,6 +48,11 @@ import workbenchRoutes from '../workbench-serve.js';
 import { createFileRoutes } from '../files.js';
 import uploadRoutes from '../uploads.js';
 import { servesInlineHere } from '../../lib/file-route-guards.js';
+import { registerClaudeCodeFacts } from '../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 const server = listeningServer(
   honoGroupListener([

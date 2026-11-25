@@ -21,14 +21,10 @@ import { useRemoteAccessStore } from './remote-access-store';
 import { isManagedReport, remoteAccessKeys, startTarget } from './remote-access-report';
 
 /**
- * The exposure guard's codes: the problem code, and the old spelling
- * `/api/remote-access` still answers on this branch until its own move lands
- * (DOR-4979). Drop the old spelling once both have.
+ * The exposure guard's code: remote access and the tunnel both answer the
+ * problem code `auth_required_for_exposure` (DOR-4979).
  */
-const EXPOSURE_REFUSAL_CODES = new Set([
-  'auth_required_for_exposure',
-  'AUTH_REQUIRED_FOR_EXPOSURE',
-]);
+const EXPOSURE_REFUSAL_CODES = new Set(['auth_required_for_exposure']);
 
 /** Whether a refusal is the exposure guard's: remote access needs a login first. */
 function isExposureRefusal(err: unknown): boolean {

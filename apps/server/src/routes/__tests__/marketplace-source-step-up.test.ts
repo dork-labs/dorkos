@@ -51,7 +51,7 @@ describe('package source confirmation', () => {
     expect(held.status).toBe(428);
     expect(add).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'direct', true)).body.code).toBe(
-      'not-your-action'
+      'held_by_another_browser'
     );
     expect(add).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId)).body).toMatchObject({

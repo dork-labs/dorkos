@@ -18,7 +18,11 @@ import type {
   AgentCancelReason,
   RelayEnvelope,
 } from '@dorkos/shared/relay-schemas';
-import { AGENT_CANCEL_SUBJECT_PREFIX, A2A_GATEWAY_PRINCIPAL } from '@dorkos/shared/relay-schemas';
+import {
+  AGENT_CANCEL_SUBJECT_PREFIX,
+  A2A_GATEWAY_PRINCIPAL,
+  A2A_GATEWAY_SENDER,
+} from '@dorkos/shared/relay-schemas';
 import type { ExecutorDeps } from './types.js';
 import { a2aMessageToRelayPayload } from './schema-translator.js';
 import { parseReplyEvent } from './reply-events.js';
@@ -42,9 +46,6 @@ const AGENT_SUBJECT_PREFIX = 'relay.agent';
 
 /** Relay subject prefix for A2A reply subscriptions. */
 const REPLY_SUBJECT_PREFIX = 'relay.a2a.reply';
-
-/** Sender identity used in Relay publish options. */
-const A2A_GATEWAY_SENDER = 'a2a-gateway';
 
 /**
  * Resolve the target agent ID from the A2A request context.

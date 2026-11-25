@@ -33,6 +33,11 @@ import {
   clearTestHomes,
   registerEveryFolderAsHome,
 } from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
+import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 // Careful, so an agent's schedule parks and its edits re-ask: the guard and
 // the parked nudge are what this file pins. Trusted arming is covered in

@@ -72,7 +72,11 @@ import { resolveSubjectLabel } from '../relay/subject-resolver.js';
 import { _resolveRuntimeTypeForNewSession } from '../session/launch/launch-session.js';
 import { RuntimeRegistry, runtimeRegistry } from '../core/runtime-registry.js';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { recordFolderConfigApproval } from '../runtimes/claude-code/folder-settings/folder-config-consent.js';
+import {
+  recordFolderConfigApproval,
+  runtimeUnlessHeld,
+} from '../runtimes/claude-code/folder-settings/folder-config-consent.js';
+import { claudeCodeFacts, setClaudeCodeFacts } from '../session/resolution/claude-code-facts.js';
 import { readFolderConfigParts } from '../runtimes/claude-code/folder-settings/folder-config-pin.js';
 
 /** One side of the fixture: what `.dork/` says. */
@@ -111,6 +115,8 @@ let home: string;
 let tree: string;
 
 beforeAll(async () => {
+  // The startup hands turn code the agent-file pin (DOR-4928); row 6 needs it.
+  setClaudeCodeFacts({ ...claudeCodeFacts(), runtimeUnlessHeld });
   scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'identity-from-home-')));
   home = path.join(scratch, 'ana');
   tree = path.join(scratch, 'trees', 'ana-feature');

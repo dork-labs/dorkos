@@ -171,7 +171,7 @@ export async function* mapSdkMessageWithMedia(
 /**
  * Put the pictures a transcript read found back into the history it produced.
  *
- * `parseTranscript` is synchronous, so it records where each image belongs — the
+ * `createTranscriptParser` is synchronous, so it records where each image belongs — the
  * `ToolCallPart` whose result carried it — and this inserts the resolved part
  * directly after that tool call. Object identity is what makes it work:
  * `mergeConsecutiveAssistantMessages` rebuilds the parts ARRAYS but carries the
@@ -202,7 +202,7 @@ export async function* mapSdkMessageWithMedia(
  * @param store - The attachment store, or `null` when none was wired.
  * @param sessionId - The DorkOS session whose history is being read.
  * @param messages - The parsed history, mutated in place.
- * @param refs - What `parseTranscript` recorded, in transcript order.
+ * @param refs - What `createTranscriptParser` recorded, in transcript order.
  */
 export async function attachTranscriptImages(
   store: SessionAttachmentStore | null,

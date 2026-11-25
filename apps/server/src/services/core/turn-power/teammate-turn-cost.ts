@@ -18,6 +18,7 @@
  * @module services/core/turn-power/teammate-turn-cost
  */
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
+import { UNPROVEN_TEAMMATE_ORIGIN } from '@dorkos/shared/permission-semantics';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../lib/logger.js';
 import { turnCostReader } from '../../observability/ai-metadata.js';
@@ -91,7 +92,18 @@ export function meterTeammateTurns(runtime: AgentRuntime): AgentRuntime {
 
 /** The space rooms a session's latest recorded turn carried a teammate's mark from. */
 function sessionTeammateRooms(sessionId: string): string[] {
-  const rooms = teammateOrigins(marksOfLevel(lastTurnLevelOf(sessionId))).map((o) => o.roomId);
+  return countedRooms(
+    teammateOrigins(marksOfLevel(lastTurnLevelOf(sessionId))).map((o) => o.roomId)
+  );
+}
+
+/**
+ * The rooms a turn is counted against, once each. A chain naming the unproven origin is counted
+ * against it alone: that counts the turn against every space with a limit, which already holds
+ * each named room's space that has one, so naming them too would count those spaces twice.
+ */
+function countedRooms(rooms: readonly string[]): string[] {
+  if (rooms.includes(UNPROVEN_TEAMMATE_ORIGIN.roomId)) return [UNPROVEN_TEAMMATE_ORIGIN.roomId];
   return [...new Set(rooms)];
 }
 
@@ -104,7 +116,7 @@ async function* toGenerator(events: AsyncIterable<StreamEvent>): AsyncGenerator<
 function teammateRoomsOf(opts: MessageOpts | undefined): string[] {
   const rooms = teammateOrigins(marksForTurn(opts)).map((origin) => origin.roomId);
   if (opts?.roomTurn?.teammate === true) rooms.push(opts.roomTurn.roomId);
-  return [...new Set(rooms)];
+  return countedRooms(rooms);
 }
 
 /** Whether an event shows a model answered: it wrote, called a tool, or its usage was reported. */

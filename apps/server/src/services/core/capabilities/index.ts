@@ -23,7 +23,14 @@ export {
   type CapabilityInvocationObserver,
   type CapabilityPreflightResult,
 } from './registry.js';
-export { isTrustedCaller, trustedCaller, type TrustedCaller } from './trusted-caller.js';
+export {
+  isPersonCaller,
+  isTrustedCaller,
+  personCaller,
+  trustedCaller,
+  type PersonCaller,
+  type TrustedCaller,
+} from './trusted-caller.js';
 // What a running extension hands `registry.contribute` (DOR-2685). The builder
 // and its constants stay off the barrel: only the registry builds definitions.
 export type { ExtensionContribution, ExtensionToolSpec } from './extension-contribution.js';

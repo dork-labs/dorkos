@@ -4,7 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
 import { buildLoadOverrides } from '../app-server/thread-loader.js';
-import { PROTECTED_PATHS } from '../../shared/policy/protected-paths.js';
+import { PROTECTED_PATHS } from '../../../core/protected-paths/protected-paths.js';
 import { MARKETPLACE_INSTALL_SIBLING_MARKERS } from '@dorkos/shared/marketplace-schemas';
 
 // This matrix pins rendering when all literal components exist. Missing-path

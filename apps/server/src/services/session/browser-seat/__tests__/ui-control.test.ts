@@ -8,6 +8,11 @@ import { logger } from '../../../../lib/logger.js';
 import { roomErrorStatus } from '../../../../routes/room-error-response.js';
 import { controlUi, getUiState, type UiCallerContext } from '../ui-control.js';
 import { uiTurnFacts } from '../ui-turn-facts.js';
+import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
 
 // The window these verbs reach is a session's durable stream. Captured rather
 // than stood up: what every assertion below is about is WHICH event the handler

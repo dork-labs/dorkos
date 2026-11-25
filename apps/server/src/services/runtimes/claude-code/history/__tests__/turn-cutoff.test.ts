@@ -18,7 +18,7 @@ import {
 import { withStallGuard } from '../../../../session/stall-guard.js';
 import { resetTurnCutoffs, takeTurnCutoff } from '../../../../session/turn-cutoff/turn-cutoff.js';
 import type { RecordedTurnCutoff } from '../../../../session/session-event-store.js';
-import { parseTranscript } from '../../sessions/transcript-parser.js';
+import { parseTranscript } from '../../sessions/__tests__/parse-transcript.js';
 import { renderContextEntry } from '../../messaging/context-builder.js';
 import { applyTurnCutoffs, overlayTurnCutoffs } from '../turn-cutoff-overlay.js';
 

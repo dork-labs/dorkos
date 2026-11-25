@@ -604,6 +604,9 @@ runtimeConformance(
         ? 'OpenCodeRuntime (LIVE sidecar + local model) — AgentRuntime conformance'
         : 'OpenCodeRuntime (mocked sidecar) — AgentRuntime conformance',
     projectDir: PROJECT_DIR,
+    // Spec `turns-survive-restarts` §7.2: declared `false` until T19b's measured run.
+    restartContinueUnprovenReason:
+      'the sidecar is killed at shutdown, and an assistant message cut mid-turn is unmeasured; T19b flips this with a measured run',
     messageContent: CONFORMANCE_PROMPT,
     // OpenCode owns a durable native store (unlike stateless Codex), so a
     // completed turn MUST surface real history: scripted session.messages in
