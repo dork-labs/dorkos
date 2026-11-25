@@ -109,7 +109,7 @@ describe('composeCapabilityRegistryForDocs', () => {
 });
 
 describe('composeDorkOsCapabilityRegistry', () => {
-  it('serves the folder picker, the diff review, the workspace reads and the templates on a bare server', () => {
+  it('serves the folder picker, the diff review and the workspace reads on a bare server', () => {
     // These paths were hand routes mounted on every server, so their
     // capabilities must not wait on any service handle: a server that started
     // nothing else still answers them (DOR-4978).
@@ -124,9 +124,21 @@ describe('composeDorkOsCapabilityRegistry', () => {
       'workspaces.list',
       'workspaces.scan',
       'workspaces.pin',
-      'templates.list',
     ]) {
       expect(bare.get(id), `${id} is missing from a bare server`).toBeDefined();
     }
+  });
+
+  it('serves the template list only where the template routes are mounted', () => {
+    // The template routes are mounted with the data directory they write to;
+    // the list reads the same one, so it starts with them and not before.
+    expect(composeDorkOsCapabilityRegistry({ logger: noopLogger }).get('templates.list')).toBe(
+      undefined
+    );
+    const wired = composeDorkOsCapabilityRegistry({
+      logger: noopLogger,
+      templateDeps: { dorkHome: '/tmp/dork-home' },
+    });
+    expect(wired.get('templates.list')).toBeDefined();
   });
 });

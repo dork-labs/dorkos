@@ -87,6 +87,25 @@ describe('Diff routes — real boundary + symlink escapes', () => {
     expect(res.body.code).toBe('outside_boundary');
   });
 
+  it('POST /baseline/advance is a person’s mark: an agent is refused person_only', async () => {
+    await fs.writeFile(path.join(cwd, 'reviewed.txt'), 'v1\n');
+    const res = await request(testServer)
+      .post('/api/diff/baseline/advance')
+      .set('X-DorkOS-Agent', 'not-a-real-token')
+      .send({ cwd, path: 'reviewed.txt', sessionId: SESSION });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('person_only');
+  });
+
+  it('POST /baseline/advance marks a file reviewed for the person', async () => {
+    await fs.writeFile(path.join(cwd, 'reviewed.txt'), 'v1\n');
+    const res = await request(testServer)
+      .post('/api/diff/baseline/advance')
+      .send({ cwd, path: 'reviewed.txt', sessionId: SESSION });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+  });
+
   it('GET /pending rejects a cwd outside the boundary (403)', async () => {
     const res = await request(testServer)
       .get('/api/diff/pending')

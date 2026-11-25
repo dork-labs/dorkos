@@ -119,13 +119,17 @@ export const diffAdvanceBaselineCapability = defineCapability({
     'Move a file’s diff base to what is on disk now, so the chat’s later edits diff from ' +
     'the reviewed state. Changes no file. Does nothing when the chat has no base for it.',
   // A review mark that changes no file and no power, so it is allowed from
-  // Wi-Fi like a read cursor (`wifi-level-census.test.ts`).
+  // Wi-Fi like a read cursor (`wifi-level-census.test.ts`). Only a person
+  // reviews: an agent marking its own edits reviewed would clear the badges
+  // that tell the person what changed.
   tier: 'observe',
   area: null,
-  areaNote: 'a review mark that changes no file',
+  areaNote: 'a person’s review mark; agents are refused',
   input: AdvanceDiffBaselineRequestSchema,
   output: DiffOkSchema,
-  surfaces: { http: { method: 'post', path: '/api/diff/baseline/advance' } },
+  surfaces: {
+    http: { method: 'post', path: '/api/diff/baseline/advance', audience: 'person' },
+  },
   invoke: async (_deps, input, context) => {
     assertCanReadSession(context, input.sessionId);
     const { resolved } = await confined(input.cwd, input.path, 'advance');
@@ -182,7 +186,9 @@ export const diffRevertCapability = defineCapability({
   // server's snapshot or git HEAD: no caller-supplied content, so nothing to
   // switch beyond the act tier.
   area: null,
-  areaNote: 'restores a file’s own earlier bytes, never new content',
+  areaNote:
+    'restores a file’s own earlier bytes, never new content; an agent can revert a work ' +
+    'chat it can read, and only to the bytes the server kept',
   input: RevertDiffBaselineRequestSchema,
   output: DiffOkSchema,
   surfaces: { http: { method: 'post', path: '/api/diff/revert' } },

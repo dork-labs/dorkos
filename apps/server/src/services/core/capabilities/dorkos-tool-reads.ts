@@ -215,11 +215,12 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'permissions.change': 'local',
   'heartbeat.end_beat': 'local',
   'heartbeat.status': 'local',
-  // Folder names, diffs of files in the chat's own folder, workspaces and the
-  // template catalog: what is on this computer, written by the team.
+  // Folder names, workspaces and the template catalog: what is on this
+  // computer, written by the team.
   'directory.browse': 'local',
   'directory.default': 'local',
-  'diff.baseline': 'local',
+  // Any file's text inside a folder the caller names, a cloned repo's included.
+  'diff.baseline': 'outside',
   'diff.advance_baseline': 'local',
   'diff.pending': 'local',
   'diff.revert': 'local',

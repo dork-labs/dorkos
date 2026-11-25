@@ -243,7 +243,6 @@ describe('debug lists an agent reads', () => {
 /** The diff routes, each naming its session in the query or body. */
 const diffRoutes = [
   ['get', '/baseline', { path: 'a.ts' }],
-  ['post', '/baseline/advance', { path: 'a.ts' }],
   ['get', '/pending', {}],
   ['get', '/baseline/raw', { path: 'a.png' }],
   ['post', '/revert', { path: 'a.ts' }],
@@ -269,6 +268,17 @@ describe('the diff routes', () => {
     const res = await call(verb, tail, extra, WORK);
     expect(res.body.code).not.toBe('session_not_found');
   });
+
+  // Marking a file reviewed is a person's mark on any chat, so an agent is
+  // refused before the chat is even looked up.
+  it.each([PRIVATE, WORK])(
+    'post /baseline/advance on %s is person-only to an agent',
+    async (id) => {
+      const res = await call('post', '/baseline/advance', { path: 'a.ts' }, id);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('person_only');
+    }
+  );
 });
 
 /** Every other `/:id` route, reached by the router-level guard. */

@@ -3,7 +3,8 @@
  * added, kept in `{dorkHome}/agent-templates.json`.
  *
  * Reading it is the capability `templates.list` (ADR 261123-170830), served by
- * the capability mount at `GET /api/templates`. Adding and removing a template
+ * the capability mount at `GET /api/templates` from the same data directory the
+ * routes write (`templateDeps`). Adding and removing a template
  * are still hand routes (`routes/templates.ts`), which share the file helpers
  * here.
  *
@@ -19,9 +20,34 @@ import {
   type TemplateEntry,
 } from '@dorkos/shared/template-catalog';
 
-import { resolveDorkHome } from '../../../lib/dork-home.js';
 import { logger } from '../../../lib/logger.js';
-import { defineCapability, type CapabilityDomain } from '../capabilities/index.js';
+import {
+  defineCapability,
+  type CapabilityDeps,
+  type CapabilityDomain,
+} from '../capabilities/index.js';
+
+declare module '../capabilities/capability-definition.js' {
+  interface CapabilityDeps {
+    /** Present where the template routes are mounted; gates the `templates` domain. */
+    templateDeps?: {
+      /** The data directory the user templates live in, the one the template routes write. */
+      dorkHome: string;
+    };
+  }
+}
+
+/**
+ * The data directory the template routes write to.
+ *
+ * @param deps - The capability bag.
+ */
+function templateHomeOf(deps: CapabilityDeps): string {
+  if (!deps.templateDeps) {
+    throw new Error('templates.list invoked without templateDeps in the registry bag.');
+  }
+  return deps.templateDeps.dorkHome;
+}
 
 /** Filename for user-defined templates within the dorkHome directory. */
 const USER_CATALOG_FILENAME = 'agent-templates.json';
@@ -102,14 +128,15 @@ export const templatesListCapability = defineCapability({
   // Documented as unknown until the list pages by cursor (the API lint's list rule).
   output: z.unknown(),
   surfaces: { http: { method: 'get', path: '/api/templates' } },
-  invoke: async (): Promise<TemplateCatalog> => {
-    const userTemplates = await readUserTemplates(userTemplateCatalogPath(resolveDorkHome()));
+  invoke: async (deps): Promise<TemplateCatalog> => {
+    const userTemplates = await readUserTemplates(userTemplateCatalogPath(templateHomeOf(deps)));
     return { version: 1, templates: [...DEFAULT_TEMPLATES, ...userTemplates] };
   },
 });
 
-/** The template catalog's reads; on every server. */
+/** The template catalog's reads; where the template routes are mounted. */
 export const templatesDomain: CapabilityDomain = {
   name: 'templates',
+  assertDeps: templateHomeOf,
   capabilities: [templatesListCapability],
 };

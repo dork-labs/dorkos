@@ -333,6 +333,8 @@ const roomMerges = new RoomMergeService({
 
 const registry = composeDorkOsCapabilityRegistry({
   logger: noopLogger,
+  // A data directory with no user templates, so the list is the built-in ones.
+  templateDeps: { dorkHome: '/conformance-no-such-dork-home' },
   operatorDeps,
   marketplaceDeps,
   connectorDeps,

@@ -119,10 +119,12 @@ export function composeDorkOsCapabilityRegistry(
   // Unconditional too: `end_beat` needs no service handle, and outside a beat
   // it refuses on its own (`NOT_A_BEAT`), so there is nothing to switch off.
   domains.push(heartbeatDomain);
-  // Unconditional too: the folder picker, the diff review, the workspace reads
-  // and the template catalog read the filesystem and process-wide stores every
-  // server has, so their paths answer wherever the hand routes used to.
-  domains.push(directoryDomain, diffDomain, workspacesDomain, templatesDomain);
+  // Unconditional too: the folder picker, the diff review and the workspace
+  // reads read the filesystem and process-wide stores every server has, so
+  // their paths answer wherever the hand routes used to.
+  domains.push(directoryDomain, diffDomain, workspacesDomain);
+  // The template list reads the data directory the template routes write.
+  if (deps.templateDeps) domains.push(templatesDomain);
 
   const registry = composeRegistry(domains, deps, onInvocation);
   // Back-write the composed registry so `capabilities.list` can serialize it.
@@ -213,6 +215,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     agentPauseDeps: {} as CapabilityDeps['agentPauseDeps'],
     approvalWithdrawDeps: {} as CapabilityDeps['approvalWithdrawDeps'],
     linkDeps: {} as CapabilityDeps['linkDeps'],
+    templateDeps: {} as CapabilityDeps['templateDeps'],
   };
   return composeRegistry(domains, deps);
 }

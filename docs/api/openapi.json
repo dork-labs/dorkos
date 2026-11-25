@@ -107773,7 +107773,7 @@
           "Workspaces"
         ],
         "summary": "List workspaces",
-        "description": "Every workspace DorkOS made (a checkout of a project kept apart for one piece of work), with the chats attached to each. Pass `projectKey` to list one project’s.",
+        "description": "Every workspace DorkOS made (a checkout of a project kept apart for one piece of work), with the chats attached to each that the caller may read. Pass `projectKey` to list one project’s.",
         "parameters": [
           {
             "schema": {

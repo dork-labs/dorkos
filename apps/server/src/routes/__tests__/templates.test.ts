@@ -35,12 +35,11 @@ let DORK_HOME: string;
 
 /**
  * The read is the capability `templates.list`, served by the mount from the
- * data directory in `DORK_HOME`; the writes are the hand routes.
+ * same data directory the hand routes write.
  */
 function createApp(): RequestListener {
-  vi.stubEnv('DORK_HOME', DORK_HOME);
   return honoGroupListener([
-    capabilityGroup(templatesDomain),
+    capabilityGroup(templatesDomain, { templateDeps: { dorkHome: DORK_HOME } }),
     { path: '/api/templates', routes: createTemplateRoutes(DORK_HOME) },
   ]);
 }
@@ -83,7 +82,6 @@ describe('Template Routes', () => {
   });
 
   afterEach(async () => {
-    vi.unstubAllEnvs();
     await fs.rm(DORK_HOME, { recursive: true, force: true });
   });
 
