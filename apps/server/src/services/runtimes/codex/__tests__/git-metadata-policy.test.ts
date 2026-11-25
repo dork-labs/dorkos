@@ -6,6 +6,7 @@ import path from 'node:path';
 import { minimalGitEnv } from '@dorkos/shared/safe-git';
 import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
 import { gitMetadataReadRules } from '../policy/git-metadata.js';
+import { codexGlobLiteral } from '../policy/codex-path-keys.js';
 
 const MODES = ['default', 'acceptEdits', 'bypassPermissions'];
 const INSIDE_GIT = 'Codex can’t work inside a Git folder. Choose the project folder instead.';
@@ -181,6 +182,11 @@ describe('Codex git metadata below Full (DOR-4485)', () => {
     // Every glob character becomes a one-character class; a lone `]` is plain.
     const escaped = key(cwd).replace(/[*?[{}]/g, (char) => `[${char}]`);
     for (const mode of MODES) {
+      // Linux below Full can't match an escaped glob as written, so it refuses there (DOR-4542).
+      if (process.platform === 'linux' && mode !== 'bypassPermissions') {
+        expect(() => render(cwd, mode)).toThrow(/needs Full/);
+        continue;
+      }
       const files = render(cwd, mode);
       // An exact path with glob characters takes the scoped spelling Codex reads as written.
       expect(files[key(path.join(cwd, '.git'))]).toEqual(
@@ -190,6 +196,13 @@ describe('Codex git metadata below Full (DOR-4485)', () => {
       expect(files[`${escaped}/.git/**/.credentials*`]).toBe('deny');
       expect(files[`${key(cwd)}/**/.credentials*`]).toBeUndefined();
     }
+  });
+
+  // Pinned on every platform, so a Mac run covers the Linux rule too.
+  it('refuses a glob over a pattern-character path only for Linux below Full', () => {
+    expect(() => codexGlobLiteral('/x/site [old]', true)).toThrow(/needs Full/);
+    expect(codexGlobLiteral('/x/site [old]', false)).toBe('/x/site [[]old]');
+    expect(codexGlobLiteral('/x/site', true)).toBe('/x/site');
   });
 
   it.skipIf(process.platform === 'win32')(
