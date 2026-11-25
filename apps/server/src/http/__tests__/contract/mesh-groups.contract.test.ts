@@ -518,7 +518,7 @@ contractSuite('mesh, agent and discovery groups', [
     path: '/api/sign-in-landings/nobody',
     expect: {
       status: 404,
-      body: { error: 'This sign-in page expired.', code: 'SIGNIN_LANDING_GONE' },
+      body: problemBody('expired', { detail: 'This sign-in page expired.', status: 404 }),
     },
   },
   {
@@ -528,7 +528,7 @@ contractSuite('mesh, agent and discovery groups', [
     body: {},
     expect: {
       status: 404,
-      body: { error: 'This sign-in page expired.', code: 'SIGNIN_LANDING_GONE' },
+      body: problemBody('expired', { detail: 'This sign-in page expired.', status: 404 }),
     },
   },
   {

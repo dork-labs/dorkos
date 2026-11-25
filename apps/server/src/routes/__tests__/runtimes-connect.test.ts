@@ -1075,7 +1075,7 @@ describe('runtime connect endpoints', () => {
       // confirm it's them (DOR-4355), and with no browser session here the hold
       // answers `not-a-person`, which only a request past the gate can reach.
       expect(res.body?.code).not.toBe('operator_only');
-      if (res.status === 403) expect(res.body.code).toBe('not-a-person');
+      if (res.status === 403) expect(res.body.code).toBe('person_only');
     });
   });
 });

@@ -513,7 +513,7 @@ describe('the owner’s password, for every change that opens access wider', () 
 
     const wrongConfirmation = await complete(send(PASSWORD), 'guess');
     expect(wrongConfirmation.status).toBe(403);
-    expect(wrongConfirmation.body.code).toBe('wrong-password');
+    expect(wrongConfirmation.body.code).toBe('wrong_password');
     expect(readRelayPin(home)).toEqual(before);
     expect((await complete(send(PASSWORD))).status).toBe(200);
   });
@@ -535,7 +535,7 @@ describe('the owner’s password, for every change that opens access wider', () 
     deps.checkPassword.mockResolvedValueOnce('no-password');
     const none = await complete(request(app()).post('/api/session-relay/link').send(CODE));
     expect(none.status).toBe(409);
-    expect(none.body.error).toBe('Set a password for this computer’s owner first.');
+    expect(none.body.detail).toBe('Set a password for this computer’s owner first.');
     expect(deps.link).not.toHaveBeenCalled();
   });
 

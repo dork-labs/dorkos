@@ -16,10 +16,10 @@ export type ConfirmItsYouResult =
   | {
       ok: false;
       /** Why, as the dialog shows it. `offline`: DorkOS could not be reached. */
-      reason: 'wrong-password' | 'too-many-attempts' | 'no-password' | 'offline' | 'other';
+      reason: 'wrong_password' | 'rate_limited' | 'no_password' | 'offline' | 'other';
       /** The server's own words, for `other`. */
       message: string;
-      /** For `too-many-attempts`: how long until it is checked again. */
+      /** For `rate_limited`: how long until it is checked again, in seconds. */
       retryAfterSeconds?: number;
     };
 
@@ -61,15 +61,10 @@ export async function confirmItsYou(
     writePersonProof(answer.data.proof);
     return { ok: true };
   }
-  const body = (await res.json().catch(() => null)) as {
-    error?: unknown;
-    code?: unknown;
-    retryAfterSeconds?: unknown;
-  } | null;
-  const { message } = readErrorBody(body, 'That didn’t work. Try again.');
-  const known = ['wrong-password', 'too-many-attempts', 'no-password'] as const;
-  const reason = known.find((code) => code === body?.code) ?? 'other';
-  const retryAfterSeconds =
-    typeof body?.retryAfterSeconds === 'number' ? body.retryAfterSeconds : undefined;
+  const body: unknown = await res.json().catch(() => null);
+  const { message, code, retryAfterMs } = readErrorBody(body, 'That didn’t work. Try again.');
+  const known = ['wrong_password', 'rate_limited', 'no_password'] as const;
+  const reason = known.find((name) => name === code) ?? 'other';
+  const retryAfterSeconds = retryAfterMs === undefined ? undefined : Math.ceil(retryAfterMs / 1000);
   return { ok: false, reason, message, ...(retryAfterSeconds ? { retryAfterSeconds } : {}) };
 }

@@ -219,7 +219,7 @@ describe('a sign-in works only on the route it was made on', () => {
       });
       // The route-bound cookie proves nobody, so no action can be held.
       expect(created.status).toBe(401);
-      expect(created.body.code).toBe('not-a-person');
+      expect(created.body.code).toBe('unauthenticated');
       expect(keys()).toBe(before);
       const listed = await authCall('get', 'list-sessions', elsewhere, cookie);
       expect(listed.status).toBe(401);
@@ -295,7 +295,7 @@ describe('a sign-in works only on the route it was made on', () => {
         });
         if (ingress === 'wifi') {
           expect(refused.status).toBe(403);
-          expect(refused.body.code).toBe(NOT_FROM_WIFI);
+          expect(refused.body.code).toBe('not_from_wifi');
         } else {
           expect(refused.status).toBe(428);
           expect(refused.body.code).toBe('step_up_required');

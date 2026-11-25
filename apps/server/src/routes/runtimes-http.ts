@@ -12,10 +12,10 @@ import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { logger } from '../lib/logger.js';
 import { problem, type ProblemStatus } from '@dorkos/http-kit';
-import { refuseFrontDoorChange, type OperatorCookieRefusal } from '../lib/caller-authority.js';
+import { refuseFrontDoorChange } from '../lib/caller-authority.js';
 import type { ConnectError } from '../services/runtimes/connect/connect-error.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
-import { runFrontDoorWrite } from './front-door-step-up.js';
+import { frontDoorProblem, runFrontDoorWrite } from './front-door-step-up.js';
 
 /** What a refused runtime credential change names, as the front-door bar words it. */
 const RUNTIME_SIGN_IN = "a runtime's sign-in";
@@ -55,18 +55,6 @@ export function refuseCredentialChange(c: Context<ApiEnv>): Response | undefined
   if (notLocal) return notLocal;
   const refusal = refuseFrontDoorChange(honoRequestFacts(c), RUNTIME_SIGN_IN);
   return refusal ? frontDoorProblem(c, refusal) : undefined;
-}
-
-/**
- * The front-door bar's refusal (`refuseFrontDoorChange`) as a problem document:
- * `operator_only`, its sentence as the detail.
- *
- * @param c - The request's context.
- * @param refusal - What the bar decided.
- * @returns The 403.
- */
-export function frontDoorProblem(c: Context, refusal: OperatorCookieRefusal): Response {
-  return problem(c, 'operator_only', { detail: refusal.error });
 }
 
 /**

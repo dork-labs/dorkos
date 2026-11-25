@@ -52,7 +52,7 @@ describe('mini app access confirmation', () => {
     expect(held.status).toBe(428);
     expect(access.approve).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel', true)).body.code).toBe(
-      'not-your-action'
+      'held_by_another_browser'
     );
     expect(access.approve).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({
@@ -84,14 +84,14 @@ describe('mini app access confirmation', () => {
     expect(held.status).toBe(428);
     // The same owner, signed in from another browser, follows `/?confirm=<id>`.
     const confirmed = await owner.confirm(held.body.heldActionId, 'own-tunnel', true);
-    expect(confirmed.body.code).toBe('not-your-action');
+    expect(confirmed.body.code).toBe('held_by_another_browser');
     const view = await owner.call(
       'get',
       `/api/step-up/${held.body.heldActionId}`,
       'own-tunnel',
       true
     );
-    expect(view.body.code).toBe('not-your-action');
+    expect(view.body.code).toBe('held_by_another_browser');
     expect(view.body.requestCode).toBeUndefined();
     expect(access.approve).not.toHaveBeenCalled();
   });

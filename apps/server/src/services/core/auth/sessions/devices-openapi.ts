@@ -13,26 +13,28 @@ import {
   WifiSignInApprovalSchema,
   WifiSignInRequestListSchema,
 } from '@dorkos/shared/signed-in-devices';
+import { problemResponse } from '../../openapi/problem-openapi.js';
 
 const TAGS = ['Devices'];
-
-const ErrorSchema = z.object({ error: z.string(), code: z.string() });
 
 const json = (schema: z.ZodType, description: string) => ({
   description,
   content: { 'application/json': { schema } },
 });
 
-const PEOPLE_ONLY = json(
-  ErrorSchema,
-  'An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that ' +
-    'needs it, not the owner at the computer DorkOS runs on or signed in over https ' +
-    '(`NEEDS_PERSON_AT_THIS_COMPUTER`)'
+const PEOPLE_ONLY = problemResponse(
+  'An agent, a per-user API key or the relay (`person_only`); for a write, not from the ' +
+    'app’s own page (`origin_not_allowed`), or not the owner at the computer DorkOS runs on ' +
+    'or signed in over https (`operator_only`)'
 );
-const SIGNED_OUT = json(ErrorSchema, 'Not signed in');
+const SIGNED_OUT = problemResponse('Not signed in (`unauthenticated`)');
+const PASSKEY_CONFLICT = problemResponse(
+  'No passkey on this computer (`passkey_needed`), or it belongs to another of its ' +
+    'addresses (`passkey_on_other_address`)'
+);
 
 /** The passkey check a 428 hands back: one named component for both routes that send it. */
-const PasskeyCheckRequiredSchema = z
+export const PasskeyCheckRequiredSchema = z
   .object({ code: z.string(), options: z.unknown() })
   .openapi('PasskeyCheckRequired');
 
@@ -73,7 +75,7 @@ export function registerDevicesOpenApi(registry: OpenAPIRegistry): void {
       204: { description: 'Signed out' },
       401: SIGNED_OUT,
       403: PEOPLE_ONLY,
-      404: json(ErrorSchema, 'No live sign-in of yours has that id'),
+      404: problemResponse('No live sign-in of yours has that id (`not_found`)'),
     },
   });
 
@@ -117,10 +119,13 @@ export function registerDevicesOpenApi(registry: OpenAPIRegistry): void {
     },
     responses: {
       204: { description: 'Changed' },
-      401: json(ErrorSchema, 'Not signed in, or the passkey check did not pass'),
+      400: problemResponse('`on` is missing or not a boolean (`invalid_request`)'),
+      401: problemResponse(
+        'Not signed in (`unauthenticated`), or the passkey check did not pass (`passkey_refused`)'
+      ),
       403: PEOPLE_ONLY,
-      404: json(ErrorSchema, 'No live network sign-in of yours has that id'),
-      409: json(ErrorSchema, 'Add a passkey on this computer first'),
+      404: problemResponse('No live network sign-in of yours has that id (`not_found`)'),
+      409: PASSKEY_CONFLICT,
       428: json(
         PasskeyCheckRequiredSchema,
         'Run this passkey check, then call again with its response'
@@ -152,7 +157,7 @@ export function registerDevicesOpenApi(registry: OpenAPIRegistry): void {
       'Approves one waiting device and answers a one-time code to type on it. The first ' +
       'call answers `428` with a passkey check (`PASSKEY_CHECK_REQUIRED`); the second ' +
       'sends `{ passkey }`, the browser’s response to it. Each check approves one request ' +
-      'once. With no passkey on this computer it answers `409` (`PASSKEY_NEEDED`). Only for ' +
+      'once. With no passkey on this computer it answers `409` (`passkey_needed`). Only for ' +
       'the owner at the computer DorkOS runs on, from the app’s own page.',
     request: {
       params: z.object({ id: z.string() }),
@@ -162,10 +167,10 @@ export function registerDevicesOpenApi(registry: OpenAPIRegistry): void {
     },
     responses: {
       200: json(WifiSignInApprovalSchema, 'Approved: the code to type on the device'),
-      401: json(ErrorSchema, 'The passkey check did not pass'),
+      401: problemResponse('The passkey check did not pass (`passkey_refused`)'),
       403: PEOPLE_ONLY,
-      404: json(ErrorSchema, 'That request has ended'),
-      409: json(ErrorSchema, 'Add a passkey on this computer first'),
+      404: problemResponse('That request has ended (`not_found`)'),
+      409: PASSKEY_CONFLICT,
       428: json(
         PasskeyCheckRequiredSchema,
         'Run this passkey check, then call again with its response'

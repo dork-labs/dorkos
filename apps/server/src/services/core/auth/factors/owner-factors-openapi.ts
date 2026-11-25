@@ -7,30 +7,44 @@
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 
-const TAGS = ['Auth'];
+import { problemResponse } from '../../openapi/problem-openapi.js';
+import { PasskeyCheckRequiredSchema } from '../sessions/devices-openapi.js';
 
-const ErrorSchema = z.object({ error: z.string(), code: z.string().optional() });
+const TAGS = ['Auth'];
 
 const json = (schema: z.ZodType, description: string) => ({
   description,
   content: { 'application/json': { schema } },
 });
 
-const OWNER_ONLY = json(
-  ErrorSchema,
-  'Not the owner, in the app, at the computer DorkOS runs on or signed in over https'
+const OWNER_ONLY = problemResponse(
+  'Not the owner, in the app, at the computer DorkOS runs on or signed in over https ' +
+    '(`operator_only`), or not signed in as the owner (`owner_only`)'
 );
 
 /** A change, refused anywhere but the computer DorkOS runs on. */
-const AT_THIS_COMPUTER = json(
-  ErrorSchema,
-  'Not the owner, in the app, at the computer DorkOS runs on. Never another device.'
+const AT_THIS_COMPUTER = problemResponse(
+  'Not the owner, in the app, at the computer DorkOS runs on, never another device ' +
+    '(`operator_only`, `owner_only`), or not from the app’s own page (`origin_not_allowed`)'
 );
 
 /** A fresh passkey check, when this computer has a passkey. */
 const PASSKEY_CHECK = json(
-  z.object({ code: z.literal('PASSKEY_CHECK_REQUIRED'), options: z.unknown() }),
+  PasskeyCheckRequiredSchema,
   'This computer has a passkey: run this check, then send its response as passkey'
+);
+
+/** The passkey check can't run here. */
+const PASSKEY_CONFLICT = problemResponse(
+  'The check needs a passkey on this computer (`passkey_needed`), or one made at another of ' +
+    'its addresses (`passkey_on_other_address`)'
+);
+
+const PASSKEY_REFUSED = problemResponse('The passkey check did not pass (`passkey_refused`)');
+
+/** The first check that works from another device ends earlier sign-ins first. */
+const NOT_SIGNED_OUT = problemResponse(
+  'Other devices could not be signed out, so nothing was added (`internal_error`)'
 );
 
 const FactorSchema = z.object({
@@ -82,7 +96,9 @@ export function registerOwnerFactorsOpenApi(registry: OpenAPIRegistry): void {
     request: { body: LabelBody },
     responses: {
       200: json(z.object({ options: z.unknown() }), 'The options to hand the browser'),
+      401: PASSKEY_REFUSED,
       403: AT_THIS_COMPUTER,
+      409: PASSKEY_CONFLICT,
       428: PASSKEY_CHECK,
     },
   });
@@ -100,8 +116,9 @@ export function registerOwnerFactorsOpenApi(registry: OpenAPIRegistry): void {
     },
     responses: {
       200: json(z.object({ id: z.string(), host: z.string() }), 'Added'),
-      400: json(ErrorSchema, 'The passkey was not added'),
+      400: problemResponse('No passkey sent, or it was not added (`invalid_request`)'),
       403: AT_THIS_COMPUTER,
+      500: NOT_SIGNED_OUT,
     },
   });
 
@@ -120,7 +137,9 @@ export function registerOwnerFactorsOpenApi(registry: OpenAPIRegistry): void {
         z.object({ id: z.string(), secret: z.string(), uri: z.string() }),
         'The new secret to scan'
       ),
+      401: PASSKEY_REFUSED,
       403: AT_THIS_COMPUTER,
+      409: PASSKEY_CONFLICT,
       428: PASSKEY_CHECK,
     },
   });
@@ -140,9 +159,10 @@ export function registerOwnerFactorsOpenApi(registry: OpenAPIRegistry): void {
     },
     responses: {
       200: json(z.object({ id: z.string() }), 'Confirmed'),
-      400: json(ErrorSchema, 'The code did not match'),
+      400: problemResponse('The code did not match (`invalid_request`)'),
       403: AT_THIS_COMPUTER,
-      404: json(ErrorSchema, 'Nothing waiting to confirm'),
+      404: problemResponse('Nothing waiting to confirm (`not_found`)'),
+      500: NOT_SIGNED_OUT,
     },
   });
 
@@ -158,9 +178,11 @@ export function registerOwnerFactorsOpenApi(registry: OpenAPIRegistry): void {
     request: { params: z.object({ id: z.string() }) },
     responses: {
       204: { description: 'Removed' },
+      401: PASSKEY_REFUSED,
       403: AT_THIS_COMPUTER,
+      404: problemResponse('Already gone (`not_found`)'),
+      409: PASSKEY_CONFLICT,
       428: PASSKEY_CHECK,
-      404: json(ErrorSchema, 'Already gone'),
     },
   });
 }

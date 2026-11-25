@@ -202,7 +202,7 @@ describe('Confirm this setting, with "Confirm it’s you"', () => {
 
   it('wrong password: no record, and the row stays paused', async () => {
     const id = await heldId();
-    expect((await confirmWith(id, 'nope')).body.code).toBe('wrong-password');
+    expect((await confirmWith(id, 'nope')).body.code).toBe('wrong_password');
     expect(confirmReferences).not.toHaveBeenCalled();
     expect(connection.paused).toBe(true);
   });

@@ -47,7 +47,7 @@ import {
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody, type ProblemStatus } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { raiseRemoteStepUpFailure } from '../services/notifications/emitters/remote-step-up.js';
 import { logger } from '../lib/logger.js';
@@ -56,7 +56,6 @@ import {
   noteRemotePasswordFailure,
 } from '../services/core/auth/step-up/remote-password-failures.js';
 import { requestCodeForHash } from '../services/core/auth/step-up/request-code.js';
-import { errorBody } from '../lib/route-utils.js';
 import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { presentsProgramCredential } from '../lib/caller-authority.js';
@@ -156,42 +155,41 @@ function passwordMayCross(facts: RequestFacts): boolean {
   return isAtThisComputer(facts) || isOnEncryptedConnection(facts);
 }
 
-/** The sentence and status for each refusal. */
-const REFUSALS: Record<StepUpRefusalCode, { status: 400 | 403 | 404 | 409 | 429; error: string }> =
-  {
-    expired: { status: 404, error: 'That took too long. Nothing changed.' },
-    'wrong-password': { status: 403, error: 'That’s not your DorkOS password.' },
-    'too-many-tries': { status: 403, error: 'Too many wrong passwords. Nothing changed.' },
-    'too-many-attempts': {
-      status: 429,
-      error: 'Too many wrong passwords. Try again in a few minutes.',
-    },
-    'password-too-short': {
-      status: 409,
-      error: 'Your password is too short. Choose a longer one to go on.',
-    },
-    'new-password-invalid': { status: 400, error: 'Choose a longer password.' },
-    'no-password': { status: 409, error: 'Set a password for this computer’s owner first.' },
-    'insecure-connection': { status: 403, error: 'Confirm this on the computer running DorkOS.' },
-    'extension-risk': {
-      status: 409,
-      error: 'Confirming is off while a mini app can be edited by an agent. Nothing changed.',
-    },
-    'stale-sign-in': {
-      status: 409,
-      error: 'Something changed after you signed in. Sign in again, then try once more.',
-    },
-    'stale-page': {
-      status: 409,
-      error: 'This page opened before a change. Reload it, then try again.',
-    },
-    'not-a-person': { status: 403, error: 'Only you can confirm this, in the DorkOS app.' },
-    'not-your-action': { status: 403, error: 'Confirm this in the window that asked.' },
-    'different-request': {
-      status: 409,
-      error: 'That confirmation was for a different request. Confirm this one.',
-    },
-  };
+/**
+ * The sentence for each refusal, and its status where it differs from the
+ * code's own: an unknown or spent held action is `404`.
+ */
+const REFUSALS: Record<StepUpRefusalCode, { detail: string; status?: ProblemStatus }> = {
+  expired: { detail: 'That took too long. Nothing changed.', status: 404 },
+  wrong_password: { detail: 'That’s not your DorkOS password.' },
+  too_many_tries: { detail: 'Too many wrong passwords. Nothing changed.' },
+  rate_limited: { detail: 'Too many wrong passwords. Try again in a few minutes.' },
+  password_too_short: { detail: 'Your password is too short. Choose a longer one to go on.' },
+  invalid_request: { detail: 'Choose a longer password.' },
+  no_password: { detail: 'Set a password for this computer’s owner first.' },
+  insecure_connection: { detail: 'Confirm this on the computer running DorkOS.' },
+  extension_risk: {
+    detail: 'Confirming is off while a mini app can be edited by an agent. Nothing changed.',
+  },
+  stale_sign_in: {
+    detail: 'Something changed after you signed in. Sign in again, then try once more.',
+  },
+  stale_page: { detail: 'This page opened before a change. Reload it, then try again.' },
+  person_only: { detail: 'Only you can confirm this, in the DorkOS app.' },
+  held_by_another_browser: { detail: 'Confirm this in the window that asked.' },
+  precondition_failed: {
+    detail: 'That confirmation was for a different request. Confirm this one.',
+  },
+};
+
+/** The refusal code for each reason the password can't be used here. */
+const UNAVAILABLE_CODE = {
+  'insecure-connection': 'insecure_connection',
+  'no-password': 'no_password',
+  'extension-risk': 'extension_risk',
+  'stale-sign-in': 'stale_sign_in',
+  'stale-page': 'stale_page',
+} as const satisfies Record<StepUpPasswordUnavailable, StepUpRefusalCode>;
 
 /**
  * Why confirming is off, naming the mini app and the way out (DOR-4906).
@@ -202,7 +200,7 @@ const REFUSALS: Record<StepUpRefusalCode, { status: 400 | 403 | 404 | 409 | 429;
  */
 export function extensionRiskError(risks: readonly StepUpExtensionRisk[]): string {
   const [risk] = risks;
-  if (!risk) return REFUSALS['extension-risk'].error;
+  if (!risk) return REFUSALS.extension_risk.detail;
   const name = quoted(risk.name) ?? quoted(risk.id) ?? 'A mini app';
   if (risks.length > 1) {
     return `${name} and ${risks.length - 1} more need review. Open Settings → Extensions.`;
@@ -229,10 +227,17 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
   function refuse(
     c: Context<ApiEnv>,
     code: StepUpRefusalCode,
-    extra: Record<string, unknown> = {}
+    extensions: Readonly<Record<string, unknown>> = {},
+    retryAfterMs?: number,
+    detail: string = REFUSALS[code].detail
   ): Response {
-    const { status, error } = REFUSALS[code];
-    return c.json({ ...errorBody(error, code), ...extra }, status);
+    const { status } = REFUSALS[code];
+    return problem(c, code, {
+      detail,
+      ...(status === undefined ? {} : { status }),
+      ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
+      extensions,
+    });
   }
 
   /** Record one confirm, never with the password. */
@@ -292,7 +297,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     const ownPage =
       (origin === undefined ? !write : deps.trustedOrigins().includes(origin)) &&
       (site === undefined || site === 'same-origin');
-    if (program || !ownPage) return refuse(c, 'not-a-person');
+    if (program || !ownPage) return refuse(c, 'person_only');
     return undefined;
   }
 
@@ -301,7 +306,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     const entry = peekHeldStepUp(c.req.param('heldActionId') ?? '');
     if (!entry) return refuse(c, 'expired');
     const sessionId = honoRequestFacts(c).user?.sessionId ?? null;
-    if (entry.sessionId !== sessionId) return refuse(c, 'not-your-action');
+    if (entry.sessionId !== sessionId) return refuse(c, 'held_by_another_browser');
     return entry;
   }
 
@@ -373,26 +378,39 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     return honoRequestFacts(c).headers[PAGE_STAMP_HEADER] === undefined;
   }
 
+  /**
+   * The refusal a page from before 0.141.0 reads ({@link fromOlderPage}): the
+   * old `{ error, code: 'extension-risk' }` body, the only one its code ends
+   * the sheet on, with `stale` beside it. Deliberately not a problem document,
+   * which that page can't read; every other caller gets one.
+   *
+   * Since 0.141, remove in 0.143 with `fromOlderPage` (DOR-5089).
+   */
+  function olderPageRefusal(
+    c: Context<ApiEnv>,
+    error: string,
+    stale: StepUpStaleConfirm,
+    withBlockedBy: boolean
+  ): Response {
+    return c.json(
+      { error, code: 'extension-risk', ...(withBlockedBy ? { blockedBy: [] } : {}), stale },
+      409
+    );
+  }
+
   /** The refusal for `unavailable`, naming the extensions when they are why. */
   function refuseUnavailable(
     c: Context<ApiEnv>,
     unavailable: StepUpPasswordUnavailable,
     risks: readonly StepUpExtensionRisk[]
   ): Response {
+    const code = UNAVAILABLE_CODE[unavailable];
     if (unavailable === 'stale-sign-in' || unavailable === 'stale-page') {
-      const { status, error } = REFUSALS[unavailable];
-      return c.json(
-        fromOlderPage(c)
-          ? { ...errorBody(error, 'extension-risk'), blockedBy: [], stale: unavailable }
-          : { ...errorBody(error, unavailable), stale: unavailable },
-        status
-      );
+      if (fromOlderPage(c)) return olderPageRefusal(c, REFUSALS[code].detail, unavailable, true);
+      return refuse(c, code, { stale: unavailable });
     }
-    if (unavailable !== 'extension-risk') return refuse(c, unavailable);
-    return c.json(
-      { ...errorBody(extensionRiskError(risks), 'extension-risk'), blockedBy: risks },
-      REFUSALS['extension-risk'].status
-    );
+    if (unavailable !== 'extension-risk') return refuse(c, code);
+    return refuse(c, code, { blockedBy: risks }, undefined, extensionRiskError(risks));
   }
 
   /**
@@ -411,14 +429,13 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
       return undefined;
     }
     if (check === 'too-many-attempts') {
-      const retryAfterSeconds = Math.ceil(ownerPasswordRetryAfterMs() / 1000);
-      c.header('Retry-After', String(retryAfterSeconds));
       await audit(c, entry, 'refused', check);
-      return refuse(c, 'too-many-attempts', { retryAfterSeconds });
+      // `retryAfterMs` also sets the `Retry-After` header.
+      return refuse(c, 'rate_limited', {}, ownerPasswordRetryAfterMs());
     }
-    if (check === 'no-owner' || check === 'no-password') return refuse(c, 'no-password');
+    if (check === 'no-owner' || check === 'no-password') return refuse(c, 'no_password');
     if (check === 'required') {
-      return c.json(errorBody('Enter your password.', 'wrong-password'), 400);
+      return refuse(c, 'invalid_request', {}, undefined, 'Enter your password.');
     }
     // Count before re-reading the hold: cancelling it during a password check
     // cannot hide an actual wrong attempt or reset this device's notice count.
@@ -430,8 +447,8 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     if (peekHeldStepUp(entry.statement.heldActionId) !== entry) return refuse(c, 'expired');
     const triesLeft = spendStepUpTry(entry.statement.heldActionId);
     await audit(c, entry, 'refused', triesLeft === 0 ? 'too-many-tries' : 'wrong-password');
-    if (triesLeft === 0) return refuse(c, 'too-many-tries');
-    return refuse(c, 'wrong-password', { triesLeft });
+    if (triesLeft === 0) return refuse(c, 'too_many_tries');
+    return refuse(c, 'wrong_password', { triesLeft });
   }
 
   /** Take the held action and run it: the one place a held action commits. */
@@ -442,12 +459,15 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     try {
       if (taken.binding && taken.binding.currentHash() !== taken.statement.inputSha256) {
         await audit(c, taken, 'refused', 'different-request');
-        return refuse(c, 'different-request');
+        return refuse(c, 'precondition_failed');
       }
       const { status, body } = await taken.commit(honoRequestFacts(c));
+      // The approvals, tool-approval and extension-decision commits still say
+      // a changed request in their own old body (`409 different-request`);
+      // it is answered here as every other changed request is (DOR-4979).
       if (status === 409 && (body as { code?: string } | null)?.code === 'different-request') {
         await audit(c, taken, 'refused', 'different-request');
-        return refuse(c, 'different-request');
+        return refuse(c, 'precondition_failed');
       }
       // The password matched, but a commit that answers 4xx or 5xx wrote nothing,
       // so the row says so rather than "Confirmed" (DOR-3836).
@@ -461,7 +481,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
         error: (error as Error).name,
       });
       await audit(c, taken, 'failed', 'commit-failed');
-      return c.json(errorBody('That didn’t work. Try again.', 'STEP_UP_COMMIT_FAILED'), 500);
+      return problem(c, 'internal_error', { detail: 'That didn’t work. Try again.' });
     }
   }
 
@@ -482,10 +502,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     // refused read's own words with only Close. A 200 view would show its "Sign in again",
     // which signs in without reloading and lands here again (DOR-5086).
     if (stale === 'stale-page' && fromOlderPage(c)) {
-      return c.json(
-        { ...errorBody(OLDER_PAGE_RELOAD_ERROR, 'extension-risk'), stale },
-        REFUSALS['extension-risk'].status
-      );
+      return olderPageRefusal(c, OLDER_PAGE_RELOAD_ERROR, stale, false);
     }
     // A page from before the named reasons reads only `extension-risk` (see fromOlderPage);
     // only its `stale-sign-in` read gets here.
@@ -524,7 +541,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     const minLength = await deps.minPasswordLength();
     if ((password ?? '').length < minLength) {
       await audit(c, entry, 'refused', 'password-too-short');
-      return refuse(c, 'password-too-short', { minLength });
+      return refuse(c, 'password_too_short', { minLength });
     }
     return commit(c, entry);
   });
@@ -538,22 +555,22 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     if (unavailable) return refuseUnavailable(c, unavailable, risks);
     const parsed = StepUpChangePasswordBodySchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
-      return c.json(errorBody('Enter your password.', 'wrong-password'), 400);
+      return refuse(c, 'invalid_request', {}, undefined, 'Enter your password.');
     }
     const { currentPassword, newPassword } = parsed.data;
     const passwordRefusal = await refusePassword(c, entry, currentPassword);
     if (passwordRefusal) return passwordRefusal;
     const minLength = await deps.minPasswordLength();
     if (newPassword.length < minLength || newPassword.length > MAX_PASSWORD_LENGTH) {
-      return refuse(c, 'new-password-invalid', { minLength });
+      return refuse(c, 'invalid_request', { minLength });
     }
     const ownerId = deps.ownerId();
-    if (!ownerId) return refuse(c, 'no-password');
+    if (!ownerId) return refuse(c, 'no_password');
     if (peekHeldStepUp(entry.statement.heldActionId) !== entry) return refuse(c, 'expired');
     if (entry.binding && entry.binding.currentHash() !== entry.statement.inputSha256) {
       cancelHeldStepUp(entry.statement.heldActionId);
       await audit(c, entry, 'refused', 'different-request');
-      return refuse(c, 'different-request');
+      return refuse(c, 'precondition_failed');
     }
     await deps.setOwnerPassword(ownerId, newPassword);
     logger.info('[StepUp] The owner chose a longer password before confirming');

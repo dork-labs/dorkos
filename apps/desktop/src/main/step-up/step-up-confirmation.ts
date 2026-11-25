@@ -78,7 +78,7 @@ function blockedLineOf(entry: unknown): string[] {
 interface ServerFailure {
   code?: unknown;
   error?: unknown;
-  retryAfterSeconds?: unknown;
+  retryAfterMs?: unknown;
   minLength?: unknown;
 }
 
@@ -215,23 +215,23 @@ export class StepUpConfirmation {
   private answerFor(failure: ServerFailure): StepUpWindowAnswer {
     const { message } = readErrorBody(failure, 'That didn’t work. Try again.');
     switch (failure.code) {
-      case 'password-too-short':
+      case 'password_too_short':
         return {
           kind: 'too-short',
           minLength: typeof failure.minLength === 'number' ? failure.minLength : 8,
         };
-      case 'too-many-attempts':
+      case 'rate_limited':
         return {
           kind: 'retry',
           message,
-          ...(typeof failure.retryAfterSeconds === 'number'
-            ? { retryAfterSeconds: failure.retryAfterSeconds }
+          ...(typeof failure.retryAfterMs === 'number'
+            ? { retryAfterSeconds: Math.ceil(failure.retryAfterMs / 1000) }
             : {}),
         };
-      case 'wrong-password':
-      case 'new-password-invalid':
+      case 'wrong_password':
+      case 'invalid_request':
         return { kind: 'retry', message };
-      case 'different-request':
+      case 'precondition_failed':
         this.outcome = { kind: 'ask-again', reason: 'different-request' };
         return { kind: 'ended', message };
       case 'expired':

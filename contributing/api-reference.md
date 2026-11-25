@@ -152,6 +152,23 @@ Relay (`/api/relay/*`: messages, mailboxes, chat connections, chat routes, deliv
 - **The webhook receiver** (`POST /api/relay/webhooks/:id`) answers every refusal before a verified signature with the one flat `401 invalid_signature`: an unknown or stopped connection, one aimed at an address DorkOS keeps, a request with no content type (it was 400) and a bad signature all look the same. After the signature checks out, a body that isn't JSON is `400 malformed_request` (it was the flat 401), a connection that isn't running or a refused delivery is `503 temporarily_unavailable`, and a failed delivery is `500 internal_error`.
 - **Kept as they were:** the `401` `AUTH_REQUIRED` body a delivery-status read or send gets before it is signed in (the same one the login gate sends), the `428` "Confirm it's you" body, and the capability gate's answers on `POST /api/connectors/executions` (moved with the capability doors).
 
+### Codes that changed: sign-in, step-up and devices
+
+The routes for confirming it's you, signed-in devices, sign-in checks, network and remote access, the sign-in landing page and the sign-in wrappers moved to problem documents together (DOR-4979). For a script written against the old answers:
+
+- **Same meaning, new spelling:** `wrong-password` → `wrong_password`, `too-many-tries` → `too_many_tries`, `password-too-short` → `password_too_short`, `no-password` → `no_password`, `no-owner` → `no_owner`, `insecure-connection` → `insecure_connection`, `extension-risk` → `extension_risk`, `stale-sign-in` → `stale_sign_in`, `stale-page` → `stale_page`, `not-your-action` → `held_by_another_browser`, `PASSKEY_NEEDED` → `passkey_needed`, `PASSKEY_ON_OTHER_ADDRESS` → `passkey_on_other_address`, `PASSKEY_REFUSED` (a passkey check) → `passkey_refused`, `AUTH_REQUIRED_FOR_EXPOSURE` (network and remote access) → `auth_required_for_exposure`, `SIGN_IN_NEEDS_HTTPS` → `sign_in_needs_https`, `LAN_ACCESS_UNSUPPORTED` → `lan_access_unsupported`, `LAN_ACCESS_SET_BY_ENVIRONMENT` → `set_by_environment`, `SIGNIN_NO_RETRY` → `signin_no_retry`, `MANAGED_REMOTE_UNAVAILABLE` → `remote_access_unavailable`, `MANAGED_REMOTE_ALREADY_SET_UP` → `remote_access_already_set_up`, `MANAGED_REMOTE_NOT_SET_UP` → `remote_access_not_set_up`.
+- **Folded into a shared code** (`detail` still says which):
+  - `person_only` (403): `not-a-person`, `person_required`, `DEVICES_PEOPLE_ONLY`, `operator_cookie_required`, `operator_only_config`.
+  - `operator_only` (403): `NEEDS_PERSON_AT_THIS_COMPUTER`, `REMOTE_SETUP_NEEDS_THIS_COMPUTER`, `API_KEY_NEEDS_THIS_COMPUTER`, `NOT_AT_THIS_COMPUTER`, `not-at-this-computer`.
+  - `not_from_wifi` (403): `NOT_FROM_WIFI` from the network level, `WIFI_SIGN_IN_NEEDS_CODE`.
+  - `origin_not_allowed` (403): `NOT_FROM_OWN_PAGE`, `PASSKEY_ORIGIN`. `owner_only` (403): `SIGN_IN_FIRST`.
+  - `rate_limited` (429): `too-many-attempts` (now with `retryAfterMs`), `too-many-actions`, too many network sign-in requests or tries.
+  - `invalid_request` (400): `new-password-invalid`, a missing password (was `wrong-password`), `INVALID_BODY`, `INVALID_MODE`, `NOT_BINDABLE`, `CODE_REFUSED`, `PASSKEY_REFUSED` when adding a passkey.
+  - `not_found` (404): `DEVICE_NOT_FOUND`, `REQUEST_ENDED`, `NOT_FOUND`. `expired` (404): `SIGNIN_LANDING_GONE`.
+  - `upstream_unavailable` (502): `MANAGED_REMOTE_SETUP_FAILED`, `SIGNIN_RETRY_FAILED`. `internal_error` (500): `STEP_UP_COMMIT_FAILED`, `SIGN_OUT_FAILED`.
+  - `precondition_failed` (412, was 409): `different-request`, `BINDING_CHANGED`.
+- **Kept as they were:** the `428` `StepUpRequired` and `PasskeyCheckRequired` bodies, and, until 0.143 (DOR-5089), the old `{ error, code: 'extension-risk', stale }` refusal a page from before 0.141.0 reads.
+
 ### Codes that changed: spaces, the DorkOS account, the tunnel, hubs and the agent computer
 
 The space connections (`/api/community-connections/*`), the spaces they reach (`/api/communities/*`), the DorkOS account and its hosted spaces (`/api/cloud/*`), your own tunnel (`/api/tunnel/*`), hubs and their linked computers (`/api/hub/*`) and the agent computer (`/api/computers/*`) moved to problem documents together (DOR-4979). No `detail` carries a space's or a linked computer's own words, an error's message or an address: the cause is in the server log. A space server's own answers are unchanged (ADR 261018-124422); these routes read them and answer in their own words. For a script written against the old answers:

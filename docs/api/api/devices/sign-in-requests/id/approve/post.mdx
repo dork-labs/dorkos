@@ -14,7 +14,7 @@ _openapi:
           The first call answers `428` with a passkey check
           (`PASSKEY_CHECK_REQUIRED`); the second sends `{ passkey }`, the
           browser’s response to it. Each check approves one request once. With
-          no passkey on this computer it answers `409` (`PASSKEY_NEEDED`). Only
+          no passkey on this computer it answers `409` (`passkey_needed`). Only
           for the owner at the computer DorkOS runs on, from the app’s own page.
 ---
 

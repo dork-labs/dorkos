@@ -180,7 +180,7 @@ describe('the person bar at this computer, with an owner and no password asked',
         .set(appHeaders())
         .send({ password: 'not-it' });
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('wrong-password');
+      expect(res.body.code).toBe('wrong_password');
       expect(cookiesOf(res)).toBe('');
     });
 
@@ -196,9 +196,9 @@ describe('the person bar at this computer, with an owner and no password asked',
         .set(appHeaders())
         .send({ password: PASSWORD });
       expect(res.status).toBe(429);
-      expect(res.body.code).toBe('too-many-attempts');
-      expect(res.body.retryAfterSeconds).toBeGreaterThan(0);
-      expect(Number(res.headers['retry-after'])).toBe(res.body.retryAfterSeconds);
+      expect(res.body.code).toBe('rate_limited');
+      expect(res.body.retryAfterMs).toBeGreaterThan(0);
+      expect(Number(res.headers['retry-after'])).toBe(Math.ceil(res.body.retryAfterMs / 1000));
     });
 
     it.each([
@@ -211,7 +211,7 @@ describe('the person bar at this computer, with an owner and no password asked',
         .set(appHeaders(extra))
         .send({ password: PASSWORD });
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('not-a-person');
+      expect(res.body.code).toBe('person_only');
       expect(cookiesOf(res)).toBe('');
     });
 

@@ -1,5 +1,6 @@
 /** Route-bound confirmation for account credentials and signing out other devices. */
 import type { Context } from 'hono';
+import { problem } from '@dorkos/http-kit';
 import type { StepUpActionKind } from '@dorkos/shared/step-up';
 import type { ApiEnv } from './api-chain.js';
 import { honoRequestFacts, type RequestFacts } from './request-facts.js';
@@ -8,7 +9,7 @@ import { fromNodeHeaders } from '../services/core/auth/index.js';
 import { recordApiKeyCreationRoute } from '../services/core/auth/remote-mcp-audit.js';
 import { refuseFrontDoorChange, presentsProgramCredential } from '../lib/caller-authority.js';
 import { currentServerRole } from '../lib/server-role.js';
-import { runFrontDoorWrite } from '../routes/front-door-step-up.js';
+import { frontDoorProblem, runFrontDoorWrite } from '../routes/front-door-step-up.js';
 
 /** Hold a fixed auth write; the hub keeps its existing OAuth owner ceremony. */
 export async function confirmAuthWrite(options: {
@@ -25,20 +26,17 @@ export async function confirmAuthWrite(options: {
   // Auth routes run before the session gate. Resolve a real, route-bound
   // browser session here; a key can never be used to make another key.
   if (presentsProgramCredential(facts)) {
-    return c.json(
-      { error: 'Only the owner can change access, in the app.', code: 'not-a-person' },
-      403
-    );
+    return problem(c, 'person_only', { detail: 'Only the owner can change access, in the app.' });
   }
   const found = await auth.api.getSession({
     headers: fromNodeHeaders(headers),
     query: { disableCookieCache: true, disableRefresh: true },
   });
-  if (!found) return c.json({ error: 'Sign in to change access.', code: 'not-a-person' }, 401);
+  if (!found) return problem(c, 'unauthenticated', { detail: 'Sign in to change access.' });
   c.set('user', { userId: found.user.id, credential: 'cookie', sessionId: found.session.id });
   const input: unknown = await forHandler.json().catch(() => (signOutKind ? {} : null));
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    return c.json({ error: 'Send the action as an object.' }, 400);
+    return problem(c, 'invalid_request', { detail: 'Send the action as an object.' });
   }
   const updating = authPath.endsWith('/update');
   const body = JSON.stringify(input);
@@ -61,7 +59,7 @@ export async function confirmAuthWrite(options: {
     return run(honoRequestFacts(c));
   const subject = apiKeyWrite ? 'API keys' : 'signed-in devices';
   const refusal = refuseFrontDoorChange(honoRequestFacts(c), subject);
-  if (refusal) return c.json({ error: refusal.error, code: refusal.code }, 403);
+  if (refusal) return frontDoorProblem(c, refusal);
   // M2 preserves the hub's existing key flow. A hub has its own owner
   // bar and no local password ceremony; its classifier is never an
   // encrypted computer route (`passwordMayCross` excludes hubs).

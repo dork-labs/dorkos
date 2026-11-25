@@ -29,7 +29,8 @@ import { storeDoeCredential } from '../services/runtimes/connect/doe-credentials
 import { ConnectError } from '../services/runtimes/connect/connect-error.js';
 import { doeCreditsInUse, peekDoeCreditsPick } from '../services/runtimes/doe/auto-model.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
-import { connectErrorProblem, frontDoorProblem } from './runtimes-http.js';
+import { frontDoorProblem } from './front-door-step-up.js';
+import { connectErrorProblem } from './runtimes-http.js';
 
 // Preserve the persisted schema's validations while keeping key references server-owned.
 const inferenceMetadataSchema = DoeInferenceConfigSchema.safeExtend({

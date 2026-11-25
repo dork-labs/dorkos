@@ -91,7 +91,7 @@ function PersonStepUpDialog({ dismissible }: { dismissible: boolean }) {
       return;
     }
     setFailure(result);
-    if (result.reason === 'too-many-attempts') {
+    if (result.reason === 'rate_limited') {
       setWaitUntil(Date.now() + (result.retryAfterSeconds ?? 60) * 1000);
     }
   }
@@ -104,8 +104,8 @@ function PersonStepUpDialog({ dismissible }: { dismissible: boolean }) {
   const waiting = waitUntil !== null;
   const offline = failure?.reason === 'offline';
   // Nothing to type until a password is set, and nothing to forget.
-  const noPassword = failure?.reason === 'no-password';
-  const wrong = failure?.reason === 'wrong-password';
+  const noPassword = failure?.reason === 'no_password';
+  const wrong = failure?.reason === 'wrong_password';
   const primaryLabel = pending ? 'Checking…' : offline ? 'Try again' : 'Confirm';
 
   function checkAgain() {
@@ -202,9 +202,9 @@ function FailureLine({
 }) {
   // The wait grows with each wrong password but never passes a minute, so it reads in seconds.
   const text = {
-    'wrong-password': 'That’s not your DorkOS password. Try again.',
-    'too-many-attempts': `Too many tries. Try again in ${Math.max(1, secondsLeft)} sec.`,
-    'no-password': 'This computer has no DorkOS password yet.',
+    wrong_password: 'That’s not your DorkOS password. Try again.',
+    rate_limited: `Too many tries. Try again in ${Math.max(1, secondsLeft)} sec.`,
+    no_password: 'This computer has no DorkOS password yet.',
     offline: 'Can’t reach DorkOS on this computer.',
     other: failure.message,
   }[failure.reason];

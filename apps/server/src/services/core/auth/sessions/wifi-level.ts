@@ -47,6 +47,7 @@
  */
 import type { IncomingMessage } from 'node:http';
 import type { MiddlewareHandler } from 'hono';
+import { problem } from '@dorkos/http-kit';
 import type { ApiEnv } from '../../../../http/api-chain.js';
 import { honoRequestFacts } from '../../../../http/request-facts.js';
 import { classifyRequest, type ClassifierFacts } from '../../../../lib/request-classifier.js';
@@ -486,7 +487,8 @@ export function wifiLevelMiddleware(): MiddlewareHandler<ApiEnv> {
       paths: pathSpellings(raw, c.req.path),
       facts: honoRequestFacts(c),
     });
-    if (refusal) return c.json({ error: refusal.error, code: refusal.code }, 403);
+    // The problem code; `refusal.code` keeps the spelling its other senders share.
+    if (refusal) return problem(c, 'not_from_wifi', { detail: refusal.error });
     await next();
   };
 }

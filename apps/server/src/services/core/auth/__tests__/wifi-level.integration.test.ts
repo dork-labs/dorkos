@@ -199,8 +199,8 @@ describe('the Wi-Fi level, end to end', () => {
   it.each(REFUSED)('refuses %s to a Wi-Fi sign-in, in a plain sentence', async (_l, method, at) => {
     const res = await call(method, at, 'wifi', wifi);
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe(NOT_FROM_WIFI);
-    expect(res.body.error).toMatch(/^[A-Z].*\.$/);
+    expect(res.body.code).toBe('not_from_wifi');
+    expect(res.body.detail).toMatch(/^[A-Z].*\.$/);
   });
 
   it.each(REFUSED)('lets a sign-in at this computer reach %s', async (_l, method, at) => {
@@ -218,17 +218,17 @@ describe('the Wi-Fi level, end to end', () => {
   it('refuses API keys over Wi-Fi, reads included, before Better Auth sees them', async () => {
     const list = await call('get', '/api/auth/api-key/list', 'wifi', wifi);
     expect(list.status).toBe(403);
-    expect(list.body.code).toBe(NOT_FROM_WIFI);
+    expect(list.body.code).toBe('not_from_wifi');
     const create = await call('post', '/api/auth/api-key/create', 'wifi', wifi);
     expect(create.status).toBe(403);
-    expect(create.body.code).toBe(NOT_FROM_WIFI);
+    expect(create.body.code).toBe('not_from_wifi');
     expect((await call('get', '/api/auth/api-key/list', 'direct', local)).status).toBe(200);
   });
 
   it('refuses signing out everywhere through Better Auth, and keeps signing out yourself', async () => {
     const all = await call('post', '/api/auth/revoke-other-sessions', 'wifi', wifi);
     expect(all.status).toBe(403);
-    expect(all.body.code).toBe(NOT_FROM_WIFI);
+    expect(all.body.code).toBe('not_from_wifi');
     const who = await call('get', '/api/auth/get-session', 'wifi', wifi);
     expect(who.status).toBe(200);
     expect(who.body.session.route).toBe('wifi');
@@ -240,7 +240,7 @@ describe('the Wi-Fi level, end to end', () => {
       .set({ ...headersVia('wifi', wifi), authorization: 'Bearer not-a-real-key' })
       .send({});
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe(NOT_FROM_WIFI);
+    expect(res.body.code).toBe('not_from_wifi');
   });
 
   it('never takes a Wi-Fi cookie as the identity at /mcp or A2A, only a valid key', async () => {
