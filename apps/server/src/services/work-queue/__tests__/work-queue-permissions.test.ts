@@ -6,7 +6,10 @@ import { AccountIds } from '../../audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../audit/audit-trail.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { noopLogger } from '@dorkos/shared/logger';
-import { composeRegistry } from '../../core/capabilities/index.js';
+import {
+  composeRegistry,
+  type CapabilityInvocationContext,
+} from '../../core/capabilities/index.js';
 import {
   initPermissionGate,
   resetPermissionGate,
@@ -97,6 +100,30 @@ async function allow(id: string, input: unknown) {
   approvals.grant(card.approvalId);
   return registry.invoke(id, input, { ...context, approvalToken: card.approvalToken });
 }
+
+it('refuses an unidentified or revoked caller with NO_AGENT before any approval card', async () => {
+  const item = service.add({ kind: 'person' }, 'scout', { title: 'A', prompt: 'A' });
+  const calls: Array<[string, unknown]> = [
+    ['work-queue.add', { title: 'Read the brief', prompt: 'Read the brief.' }],
+    [
+      'work-queue.configure',
+      { before: { enabled: false, target: 1, dailyStartCap: 20 }, changes: { enabled: true } },
+    ],
+    ['work-queue.requeue', { id: item.id }],
+  ];
+  const callers: CapabilityInvocationContext[] = [
+    {},
+    { identity: { ...identity, inactive: 'revoked' } },
+  ];
+  for (const caller of callers) {
+    for (const [id, input] of calls) {
+      await expect(registry.invoke(id, input, caller)).rejects.toMatchObject({
+        payload: { code: 'NO_AGENT' },
+      });
+    }
+  }
+  expect(approvals.listPending()).toHaveLength(0);
+});
 
 it('Careful queues for Full only after Ask, retaining the requester’s level, author and marks', async () => {
   preset = 'careful';

@@ -213,9 +213,11 @@ export interface ConformanceRegistry {
    *
    * @param id - The capability id to invoke.
    * @param input - Raw input; parsed against the capability's input schema.
+   * @param context - Optional invocation context (the caller), as the gate probe
+   *   passes from {@link CapabilityConformanceFixtures.sampleContexts}.
    * @returns The capability's plain output.
    */
-  invoke(id: string, input: unknown): Promise<unknown>;
+  invoke(id: string, input: unknown, context?: unknown): Promise<unknown>;
 }
 
 /**
@@ -234,6 +236,13 @@ export interface CapabilityConformanceFixtures {
    * schema has required fields.
    */
   sampleInputs?: Record<string, unknown>;
+  /**
+   * Per-capability invocation context for the destructive-gate probe (keyed by
+   * capability id). For a capability that refuses an unidentified caller before
+   * the gate, as it should, pass an active agent identity so the probe reaches
+   * the gate. A capability with no entry is probed with no context.
+   */
+  sampleContexts?: Record<string, unknown>;
   /** Exact capability-specific typed refusals expected from a valid anonymous fixture invocation. */
   expectedInvokeRefusal?: Record<string, (error: Error) => boolean>;
   /**
@@ -679,11 +688,13 @@ function isApprovalRequiredPayload(payload: unknown): boolean {
  *
  * @param registry - The composed registry under test.
  * @param sampleInputs - Per-capability sample input, keyed by capability id.
+ * @param sampleContexts - Per-capability invocation context, keyed by capability id.
  * @returns Every violation found.
  */
 export async function checkRegistryGateConformance(
   registry: ConformanceRegistry,
-  sampleInputs: Record<string, unknown> = {}
+  sampleInputs: Record<string, unknown> = {},
+  sampleContexts: Record<string, unknown> = {}
 ): Promise<ConformanceViolation[]> {
   const violations: ConformanceViolation[] = [];
   const add = (detail: string): void => void violations.push({ check: 'destructive-gate', detail });
@@ -700,7 +711,10 @@ export async function checkRegistryGateConformance(
     let refused = false;
     let thrown: unknown;
     try {
-      await registry.invoke(cap.id, sampleInputs[cap.id] ?? {});
+      const context = sampleContexts[cap.id];
+      await (context === undefined
+        ? registry.invoke(cap.id, sampleInputs[cap.id] ?? {})
+        : registry.invoke(cap.id, sampleInputs[cap.id] ?? {}, context));
     } catch (err) {
       thrown = err;
       refused = true;
@@ -838,7 +852,11 @@ export function capabilityConformance(
     describe('tier enforcement at every adapter path', () => {
       it('destructive-gate: registry.invoke refuses every destructive capability', async () => {
         const details = (
-          await checkRegistryGateConformance(registry, fixtures.sampleInputs ?? {})
+          await checkRegistryGateConformance(
+            registry,
+            fixtures.sampleInputs ?? {},
+            fixtures.sampleContexts ?? {}
+          )
         ).map((v) => v.detail);
         expect(details, details.join('\n')).toEqual([]);
       });

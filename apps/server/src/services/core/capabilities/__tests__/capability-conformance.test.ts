@@ -381,11 +381,16 @@ const registry = composeDorkOsCapabilityRegistry({
   // The person's work queue domain serves its doors (`/api/agents/{id}/work-queue/*`,
   // `/api/work-queues/stop`, DOR-4978); no agent is on this team.
   // The agents' own work queue tools (`work-queue.*`, DOR-3462), checked
-  // beside the person's doors; no agent is on this team.
+  // beside the person's doors. The prober is the one agent on this team, with
+  // an empty queue and one ended item, so its destructive calls reach the gate
+  // (and an anonymous call meets the tool's own NO_AGENT first).
   workQueueDeps: {
-    service: {} as NonNullable<CapabilityDeps['workQueueDeps']>['service'],
-    agentIdForPath: () => undefined,
-    agentName: () => undefined,
+    service: {
+      read: () => ({ enabled: false, target: 1, dailyStartCap: 1, items: [] }),
+      item: () => ({ agentId: 'prober', title: 'Probe', prompt: 'A probe.', state: 'done' }),
+    } as unknown as NonNullable<CapabilityDeps['workQueueDeps']>['service'],
+    agentIdForPath: () => 'prober',
+    agentName: (id: string) => (id === 'prober' ? 'Prober' : undefined),
   },
   workQueuePersonDeps: {
     service: {} as NonNullable<CapabilityDeps['workQueuePersonDeps']>['service'],
@@ -635,6 +640,13 @@ capabilityConformance(registry, {
     // No workspace subsystem starts in this suite; the real server sets it up at boot.
     'workspaces.list': (error) => error.message === 'WorkspaceManager not initialized',
     'workspaces.scan': (error) => error.message === 'Workspace root not initialized',
+  },
+  // The agents' destructive queue tools refuse an unidentified caller before
+  // the gate (NO_AGENT, no card), so the gate probe calls them as an agent.
+  sampleContexts: {
+    'work-queue.add': { identity: PROBE_IDENTITY },
+    'work-queue.configure': { identity: PROBE_IDENTITY },
+    'work-queue.requeue': { identity: PROBE_IDENTITY },
   },
   sampleInputs: {
     'operator.update_agent': { cwd: SANDBOX_CWD, displayName: 'Conformance' },

@@ -107,15 +107,6 @@ function targetOf(
   return { queue, requester, target, name, identity };
 }
 
-/**
- * A call with no active agent: the card's description is left out, so the tier
- * gate (not this description's `NO_AGENT`) answers first, and the handler
- * refuses after it. The gate decides on the tier, never on identity.
- */
-function unidentified(context: CapabilityInvocationContext | CapabilityHandlerContext): boolean {
-  return !context.identity || Boolean(context.identity.inactive);
-}
-
 function answer<T>(run: () => T) {
   try {
     return run();
@@ -203,7 +194,6 @@ export const workQueueDomain: CapabilityDomain = {
       output: ItemResult,
       surfaces: mcp('work_queue_add'),
       describeApprovalChange: async (deps, input, context) => {
-        if (unidentified(context)) return undefined;
         const { identity, name, queue, target } = targetOf(deps, input, context);
         return `${identity.displayName} wants ${name} to do: ${input.title}\n${input.prompt}\nBefore: ${JSON.stringify(queue.service.read(target).items.map(({ title, prompt, cwd, state }) => ({ title, prompt, cwd, state })))}\nAfter: add this work`;
       },
@@ -309,7 +299,6 @@ export const workQueueDomain: CapabilityDomain = {
       output: QueueResult,
       surfaces: mcp('work_queue_configure'),
       describeApprovalChange: async (deps, input, context) => {
-        if (unidentified(context)) return undefined;
         const { name } = configureTarget(deps, input, context);
         return `${name}\n${Object.entries(input.changes)
           .map(
@@ -365,7 +354,6 @@ export const workQueueDomain: CapabilityDomain = {
       output: ItemResult,
       surfaces: mcp('work_queue_requeue'),
       describeApprovalChange: async (deps, input, context) => {
-        if (unidentified(context)) return undefined;
         const { item, name } = boundItem(deps, input, context);
         return `${name}\n${item.title}\n${item.prompt}\nFolder: ${item.cwd ?? name}\nBefore: ${item.state}\nAfter: queued for a new start`;
       },

@@ -442,6 +442,31 @@ describe('checkRegistryGateConformance', () => {
     expect(violations.some((v) => v.detail.includes('RAN a destructive capability'))).toBe(true);
   });
 
+  it('seeded drift: a pre-gate NO_AGENT fails the probe unless an identity is supplied', async () => {
+    // A handler that refuses an unidentified caller before the gate (as the
+    // agents' work queue tools do) answers the gate only when the probe calls
+    // it as an active agent.
+    const identity = { agentPath: '/agents/probe' };
+    const caps = [observeCapability(), destructiveCapability()];
+    const registry: ConformanceRegistry = {
+      capabilities: caps,
+      invoke: async (_id, _input, context) => {
+        if (!(context as { identity?: unknown } | undefined)?.identity) {
+          throw Object.assign(new Error('This chat needs an active agent.'), {
+            name: 'CapabilityToolError',
+          });
+        }
+        throw gateRefusal();
+      },
+    };
+    const destroyId = destructiveCapability().id;
+    const bare = await checkRegistryGateConformance(registry);
+    expect(bare.some((v) => v.detail.includes('not with a gate refusal'))).toBe(true);
+    expect(await checkRegistryGateConformance(registry, {}, { [destroyId]: { identity } })).toEqual(
+      []
+    );
+  });
+
   it('seeded drift: invoke rejects, but not with a gate refusal', async () => {
     const violations = await checkRegistryGateConformance(
       gatingRegistry(() => new TypeError('deps missing'))
