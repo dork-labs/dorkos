@@ -330,10 +330,13 @@ gates:
     purpose: Never gates a merge. Lets the 15:07 UTC cron or the after-push backstop go on only once today's slot has passed and no run has done it yet (timed-slot.sh), so the slot runs once a day even when GitHub drops the cron.
   - id: wf.daily-release.plan
     source: .github/workflows/daily-release.yml
-    purpose: Never gates a merge. Once a day (and by hand), reads the release state with daily-release.sh, picks P (newest main commit of 48 h with a green full run that release-gate.sh ships), plans the version with release-commit.ts, and writes what it would do to the step summary (DOR-5123).
+    purpose: Never gates a merge. Once a day (and by hand), reads the release state with daily-release.sh, picks P (newest main commit of 48 h with a green full run that release-gate.sh ships; for a rollback, P_prev, which the gate must still ship), plans the version with release-commit.ts, and writes what it would do to the step summary (DOR-5123).
+  - id: wf.daily-release.hold
+    source: .github/workflows/daily-release.yml
+    purpose: Never gates a merge. On a rollback dispatch (action=rollback), opens an issue labelled release-hold with GITHUB_TOKEN (issues write only), which holds every new daily cut until a person closes it once the fix is on main; only while DAILY_RELEASE_LIVE is on (DOR-5123, design §6).
   - id: wf.daily-release.cut
     source: .github/workflows/daily-release.yml
-    purpose: Never gates a merge. Cuts release/vX.Y.Z at P and opens the release PR with the merge-tail app token, only while DAILY_RELEASE_LIVE is on (DOR-5123).
+    purpose: Never gates a merge. Cuts release/vX.Y.Z at P and opens the release PR with the merge-tail app token, only while DAILY_RELEASE_LIVE is on; a rollback cuts release/vX.Y.(Z+1) at P_prev the same way, after its hold (DOR-5123).
   - id: wf.daily-release.advance
     source: .github/workflows/daily-release.yml
     purpose: Never gates a merge. Tags a merged release PR and dispatches the native artifact, or dispatches release-publish.yml once that is green, only while DAILY_RELEASE_LIVE is on (DOR-5123).

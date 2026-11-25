@@ -110,6 +110,41 @@ describe('the version bump', () => {
   });
 });
 
+describe('a rollback (design §6)', () => {
+  // The fixture stands in for P_prev: the commit the release before the bad
+  // one was cut at, so its fragments are that release's.
+  it('ships as the next patch after the bad version, whatever the fragments call for', () => {
+    repo.write('changelog/unreleased/261102-000000-todos.md', ADDED);
+    const plan = repo.plan({ rollback: '0.22.0' });
+    expect(plan.version).toBe('0.22.1');
+    expect(plan.rollbackOf).toBe('0.22.0');
+    expect(plan.decision).toMatchObject({ bump: 'override', version: '0.22.1' });
+    expect(plan.decision.reason).toContain('rolls back 0.22.0');
+    expect(after(plan, 'VERSION')).toBe('0.22.1');
+  });
+
+  it("opens the section with the rollback line, then the release's own notes byte for byte", () => {
+    const plain = repo.plan({ version: '0.22.1' });
+    const plan = repo.plan({ rollback: '0.22.0' });
+    expect(plan.section.body).toEqual(['Rolled back 0.22.0.', '', ...plain.section.body]);
+    expect(sectionBody(after(plan, 'CHANGELOG.md'), '0.22.1')).toEqual(plan.section.body);
+    expect(plan.notes.startsWith('Rolled back 0.22.0.\n\n')).toBe(true);
+    expect(plan.prBody).toContain('**Rollback of v0.22.0.**');
+    expect(JSON.parse(planJson(plan))).toMatchObject({ version: '0.22.1', rollbackOf: '0.22.0' });
+    expect(JSON.parse(planJson(plain))).toMatchObject({ rollbackOf: null });
+  });
+
+  it('passes release-branch-contents like any release commit', () => {
+    expect(selfCheck(repo.plan({ rollback: '0.22.0' }))).toEqual([]);
+  });
+
+  it('refuses --version alongside it, and a bad version that is not after the release point', () => {
+    expect(() => repo.plan({ rollback: '0.22.0', version: '0.22.1' })).toThrow(/drop --version/);
+    expect(() => repo.plan({ rollback: '0.20.0' })).toThrow(/not newer than/);
+    expect(() => repo.plan({ rollback: 'latest' })).toThrow(/--rollback must be a plain X.Y.Z/);
+  });
+});
+
 describe('the config migration floor', () => {
   const withKey = (key: string, table = FIXTURE_MIGRATIONS) =>
     repo.write(MIGRATIONS_FILE, table.replace('} as const;', `  '${key}': later,\n} as const;`));

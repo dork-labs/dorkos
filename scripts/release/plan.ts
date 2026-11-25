@@ -25,7 +25,13 @@ import {
 } from './changelog.ts';
 import { DOCS_ARCHIVE, DOCS_CHANGELOG, syncDocsChangelog } from './docs-changelog.ts';
 import { ReleaseCommitError } from './errors.ts';
-import { decideBump, parseFragments, parseVersion, type BumpDecision } from './fragments.ts';
+import {
+  compareVersions,
+  decideBump,
+  parseFragments,
+  parseVersion,
+  type BumpDecision,
+} from './fragments.ts';
 import { findMentions } from './markdown.ts';
 import { MIGRATIONS_FILE } from './migration-table.ts';
 import { applyMigrationFloor, newestPendingKey } from './migration-floor.ts';
@@ -88,6 +94,8 @@ export interface ReleasePlan {
   prBody: string;
   /** `feat`/`fix` commits since the last release with no fragment. */
   unfragmented: ListedCommit[];
+  /** The version this release rolls back, when it is a rollback. */
+  rollbackOf?: string;
 }
 
 /** What a release plan is built from. */
@@ -102,6 +110,25 @@ export interface PlanInput {
   version?: string;
   /** The `--commits` file's text: `<sha> <subject>` for each commit since the last tag. */
   commits?: string;
+  /**
+   * A rollback (design §6): the published version this release rolls back.
+   * The release point is then the one the release before it was cut at, so
+   * its fragments are that release's; the plan ships them again as the next
+   * patch after the bad version, under a first line saying what it rolled
+   * back. Cannot be combined with `version`.
+   */
+  rollback?: string;
+}
+
+/** The version a rollback of `bad` ships as: the next patch after it. */
+function rollbackVersion(bad: string): string {
+  const [major, minor, patch] = parseVersion(bad, '--rollback');
+  return `${major}.${minor}.${patch + 1}`;
+}
+
+/** The line a rollback's changelog section opens with. */
+function rollbackLine(bad: string): string {
+  return `Rolled back ${bad}.`;
 }
 
 /** The release commit's subject, which the cherry-pick rule pins. */
@@ -124,8 +151,30 @@ export function buildReleasePlan(input: PlanInput): ReleasePlan {
   // The table decides the version too, so it is read like every other input:
   // as P's text, kept in the plan so the commit can check P still has it.
   const migrations = reader.read(MIGRATIONS_FILE);
+  if (input.rollback !== undefined && input.version !== undefined)
+    throw new ReleaseCommitError(
+      '--rollback names the version itself (the next patch after it); drop --version.'
+    );
+  const rollback = input.rollback;
+  if (
+    rollback !== undefined &&
+    compareVersions(parseVersion(rollback, '--rollback'), parseVersion(previous, '--previous')) <= 0
+  )
+    throw new ReleaseCommitError(
+      `--rollback ${rollback} is not newer than the release point's version, ${previous}; a rollback is cut before the version it rolls back.`
+    );
+  const bump = decideBump(
+    fragments,
+    previous,
+    rollback === undefined ? input.version : rollbackVersion(rollback)
+  );
   const decision = applyMigrationFloor(
-    decideBump(fragments, previous, input.version),
+    rollback === undefined
+      ? bump
+      : {
+          ...bump,
+          reason: `rolls back ${rollback}: the next patch after it, from the release point of the release before it`,
+        },
     previous,
     newestPendingKey(migrations, previous)
   );
@@ -141,7 +190,11 @@ export function buildReleasePlan(input: PlanInput): ReleasePlan {
     modify(path, (text) => bumpPackageJson(path, text, previous, version));
   modify(API_DOCUMENT, (text) => bumpApiDocument(text, previous, version));
 
-  const section = compileSection(fragments, version, date, decision.breaking);
+  const compiled = compileSection(fragments, version, date, decision.breaking);
+  const section =
+    rollback === undefined
+      ? compiled
+      : { ...compiled, body: [rollbackLine(rollback), '', ...compiled.body] };
   const archives = reader.list('changelog/archive').filter((name) => ARCHIVE_FILE.test(name));
   if (archives.length !== 1)
     throw new ReleaseCommitError(
@@ -204,8 +257,15 @@ export function buildReleasePlan(input: PlanInput): ReleasePlan {
     inputs: [{ path: MIGRATIONS_FILE, before: migrations }],
     section,
     notes: renderNotes(section, previous, version),
-    prBody: renderPrBody({ decision, previous, fragments, unfragmented }),
+    prBody: renderPrBody({
+      decision,
+      previous,
+      fragments,
+      unfragmented,
+      ...(rollback === undefined ? {} : { rollback }),
+    }),
     unfragmented,
+    ...(rollback === undefined ? {} : { rollbackOf: rollback }),
   };
   // The compile already backticked every handle; this guards the guard, since
   // GitHub pings a bare one the moment the notes or the PR body are posted.
@@ -273,6 +333,7 @@ export function planJson(plan: ReleasePlan): string {
         fragments: plan.fragments,
         files: plan.changes.map((change) => ({ path: change.path, status: change.status })),
         unfragmentedCommits: plan.unfragmented.map(({ sha, subject }) => ({ sha, subject })),
+        rollbackOf: plan.rollbackOf ?? null,
       },
       null,
       2

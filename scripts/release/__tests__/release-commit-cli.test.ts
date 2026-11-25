@@ -126,6 +126,26 @@ describe('release-commit --dry-run', () => {
   });
 });
 
+describe('release-commit --rollback', () => {
+  it('plans the next patch after the rolled-back version, opening its notes with the rollback line', () => {
+    const out = path.join(scratch, 'out');
+    expect(main(args(out, '--rollback', '0.21.0', '--json'))).toBe(0);
+    const plan = JSON.parse(readFileSync(path.join(out, 'plan.json'), 'utf8'));
+    expect(plan).toMatchObject({ version: '0.21.1', previous: '0.20.0', rollbackOf: '0.21.0' });
+    expect(readFileSync(path.join(out, 'notes.md'), 'utf8').split('\n')[0]).toBe(
+      'Rolled back 0.21.0.'
+    );
+    expect(readFileSync(path.join(out, 'tree/VERSION'), 'utf8')).toBe('0.21.1');
+  });
+
+  it('exits 1 when --version is given too', () => {
+    expect(
+      main(args(path.join(scratch, 'out'), '--rollback', '0.21.0', '--version', '0.21.1'))
+    ).toBe(1);
+    expect(errors.join('\n')).toMatch(/drop --version/);
+  });
+});
+
 describe('release-commit refusals', () => {
   it('refuses --commit, which is not wired until go-live', () => {
     expect(main([...args(path.join(scratch, 'out')), '--commit'])).toBe(2);

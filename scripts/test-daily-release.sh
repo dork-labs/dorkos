@@ -57,8 +57,10 @@ check 'a hold stops the cut' 'WAIT DAILY_RELEASE_HOLD is set: fixing the login b
 d '.mainVersion = "0.142.0"'
 check 'main VERSION ahead of the latest release: a hand release is running' \
   'WAIT main VERSION 0.142.0 is not the latest release v0.141.0 (a release by hand is in progress)' "$out"
-d '.action = "rollback"'
-check 'rollback is refused until it is built' 'REFUSE rollback is not built yet (design build order row 10)' "$out"
+d '.holdIssue = {number: 77, title: "Release hold: v0.142.0 was rolled back"}'
+check 'an open release-hold issue stops the cut' 'WAIT the release-hold issue #77 is open: Release hold: v0.142.0 was rolled back' "$out"
+d '.holdIssue = null'
+check 'hold cleared (no open release-hold issue): the cut proceeds' CUT "$out"
 d '.action = "merge"'
 check 'an unknown action is refused' 'REFUSE unknown action merge' "$out"
 d '.action = "advance"'
@@ -69,6 +71,41 @@ d 'del(.unreadable)'
 check 'no unreadable list refuses' 'REFUSE unreadable: facts' "$out"
 d '.action = "rollback" | .unreadable = ["x"]'
 check 'unreadable comes before anything else' 'REFUSE unreadable: x' "$out"
+
+# --- decide: rollback (design §6). 0.142.0 is the newest on npm; 0.141.0, the
+# release before it, is one release commit on top of P_prev = $A. ---
+r() {
+  d ".action = \"rollback\" | .mainVersion = \"0.142.0\" | .previous = \"0.142.0\"
+    | .rollback = {bad: \"0.142.0\", newest: \"0.142.0\", prev: \"0.141.0\", pPrev: \"$A\", aheadBy: 1} | ${1:-.}"
+}
+r
+check 'rollback of the newest version: cut at P_prev' "ROLLBACK 0.142.0 0.141.0 $A" "$out"
+r '.hold = "x" | .holdIssue = {number: 1, title: "t"}'
+check 'a hold never stops the rollback itself' "ROLLBACK 0.142.0 0.141.0 $A" "$out"
+r '.rollback.bad = "0.141.0"'
+check 'bad_version not the newest: refuse' \
+  'REFUSE 0.141.0 is not the newest published version (npm has 0.142.0); only the newest can be rolled back' "$out"
+r '.rollback.bad = "" | .rollback.newest = "0.142.0"'
+check 'no bad_version: refuse' 'REFUSE a rollback needs bad_version as X.Y.Z; got ""' "$out"
+r '.rollback.bad = "v0.142.0"'
+check 'bad_version must be plain X.Y.Z' 'REFUSE a rollback needs bad_version as X.Y.Z; got "v0.142.0"' "$out"
+r '.rollback.prev = ""'
+check 'nothing published before it: refuse' 'REFUSE npm has no version before 0.142.0 to roll back to' "$out"
+r '.rollback.pPrev = ""'
+check 'unknown P_prev: refuse' \
+  'REFUSE the commit v0.141.0 was cut at is unknown (no tag v0.141.0, or GitHub could not compare it with main)' "$out"
+r '.rollback.aheadBy = 3'
+check 'v<prev> is not one release commit on main (a hand hotfix): refuse' \
+  'REFUSE v0.141.0 is 3 commits ahead of main, not one release commit on top of it, so main cannot rebuild it; roll back by hand' "$out"
+r ".inflight = {version: \"0.142.0\", branchSha: \"$B\", base: \"$C\", pr: \"merged\", prNumber: 9, tag: true,
+  artifact: \"success\", onNpm: true, ghRelease: false, backmerge: \"none\", publishInFlight: false}"
+check 'the bad release still in flight (no back-merge yet): roll back anyway' "ROLLBACK 0.142.0 0.141.0 $A" "$out"
+r ".inflight = {version: \"0.142.1\", branchSha: \"$B\", base: \"$A\", pr: \"open\", prNumber: 10, tag: false,
+  artifact: \"none\", onNpm: false, ghRelease: false, backmerge: \"none\", publishInFlight: false}"
+check 'a newer release in flight (this rollback, cut already): refuse a second cut' \
+  'REFUSE release v0.142.1 is in flight; a rollback cuts only when nothing newer than v0.142.0 is (if it is this rollback, it advances on its own)' "$out"
+r 'del(.rollback)'
+check 'rollback with no rollback facts: refuse' 'REFUSE a rollback needs bad_version as X.Y.Z; got ""' "$out"
 
 i '.pr = "open"'
 check 'release PR open: wait' 'WAIT the release PR #9 for v0.142.0 is open' "$out"
@@ -114,7 +151,9 @@ case "$*" in
   *"/releases/latest"*) f=latest ;;
   *"/matching-refs/heads/release/v"*) f=branches ;;
   *"/matching-refs/tags/"*) f=tags ;;
+  *"/compare/main...v"*) f=comparetag ;;
   *"/compare/main..."*) f=compare ;;
+  *"/issues?"*) f=holds ;;
   *"/pulls?state=all&base="*) f=releaseprs ;;
   *"/pulls?state=all&head="*) f=backmerge ;;
   *"browser-native-release-artifact.yml/runs"*) f=artifact ;;
@@ -130,6 +169,11 @@ EOF
 cat >"$tmp/npm" <<'EOF'
 #!/usr/bin/env bash
 printf 'npm %s\n' "$*" >>"$GH_LOG"
+if [ "$*" = 'view dorkos versions --json' ]; then
+  [ -f "$FX/npmversions" ] || exit 1
+  cat "$FX/npmversions"
+  exit 0
+fi
 case "${NPM_ANSWER:-missing}" in
   missing) echo 'npm error code E404' >&2; exit 1 ;;
   broken) echo 'npm error code ECONNRESET' >&2; exit 1 ;;
@@ -144,6 +188,7 @@ fx_base() {
   rm -f "$tmp/fx"/*
   echo "{\"content\":\"$(b64 $'0.141.0\n')\"}" >"$tmp/fx/version"
   echo '{"tag_name":"v0.141.0"}' >"$tmp/fx/latest"
+  echo '[]' >"$tmp/fx/holds"
   echo "[{\"ref\":\"refs/heads/release/v0.140.1\",\"object\":{\"sha\":\"$C\"}},{\"ref\":\"refs/heads/release/v0.141.0\",\"object\":{\"sha\":\"$D\"}}]" >"$tmp/fx/branches"
 }
 facts() {
@@ -212,6 +257,49 @@ check 'a VERSION that is not semver is unreadable' '["main VERSION"]' "$(jq -c .
 ACTION=advance DAILY_RELEASE_HOLD='bad day' facts
 check 'ACTION and DAILY_RELEASE_HOLD come from the env' 'advance bad day' "$(jq -r '"\(.action) \(.hold)"' "$tmp/facts.json")"
 
+# The hold a rollback opens: an open issue labelled release-hold.
+fx_base
+check 'no open release-hold issue: no hold' null "$(facts; jq -c .holdIssue "$tmp/facts.json")"
+check 'the hold is read by label, open only' yes "$(grep -qF 'issues?labels=release-hold&state=open' "$GH_LOG" && echo yes || echo no)"
+echo '[{"number":77,"title":"Release hold: v0.142.0 was rolled back","body":"x"}]' >"$tmp/fx/holds"
+facts
+check 'an open release-hold issue is the hold' '{"number":77,"title":"Release hold: v0.142.0 was rolled back"}' "$(jq -c .holdIssue "$tmp/facts.json")"
+check 'hold set: the next daily cut waits' 'WAIT the release-hold issue #77 is open: Release hold: v0.142.0 was rolled back' "$("$SCRIPT" decide "$tmp/facts.json")"
+echo '[]' >"$tmp/fx/holds"
+facts
+check 'hold cleared (issue closed): the cut proceeds' CUT "$("$SCRIPT" decide "$tmp/facts.json")"
+rm "$tmp/fx/holds"
+facts
+check 'an unreadable hold refuses rather than cut past it' '["release-hold issues"]' "$(jq -c .unreadable "$tmp/facts.json")"
+echo '[]' >"$tmp/fx/holds"
+check 'a cut makes no rollback reads' no "$(grep -qE 'versions|compare/main...v' "$GH_LOG" && echo yes || echo no)"
+
+# Rollback facts: npm's versions and the commit the release before was cut at.
+echo '["0.140.0","0.141.0-rc.1","0.142.0","0.141.0"]' >"$tmp/fx/npmversions"
+echo "{\"merge_base_commit\":{\"sha\":\"$A\"},\"ahead_by\":1}" >"$tmp/fx/comparetag"
+echo "{\"content\":\"$(b64 $'0.142.0\n')\"}" >"$tmp/fx/version"
+echo '{"tag_name":"v0.142.0"}' >"$tmp/fx/latest"
+ACTION=rollback BAD_VERSION=0.142.0 facts
+check 'rollback facts: newest and the version before, prereleases skipped' \
+  "{\"bad\":\"0.142.0\",\"newest\":\"0.142.0\",\"prev\":\"0.141.0\",\"pPrev\":\"$A\",\"aheadBy\":1}" "$(jq -c .rollback "$tmp/facts.json")"
+check 'P_prev is the merge base of tag v<prev> with main' yes "$(grep -qF 'compare/main...v0.141.0' "$GH_LOG" && echo yes || echo no)"
+check 'rollback of the newest, end to end: cut at P_prev' "ROLLBACK 0.142.0 0.141.0 $A" "$("$SCRIPT" decide "$tmp/facts.json")"
+check 'rollback facts make no write call' no "$(grep -qE -- '--method|-X |-f ' "$GH_LOG" && echo yes || echo no)"
+ACTION=rollback BAD_VERSION=0.141.0 facts
+check 'bad_version not the newest, end to end: refuse' \
+  'REFUSE 0.141.0 is not the newest published version (npm has 0.142.0); only the newest can be rolled back' "$("$SCRIPT" decide "$tmp/facts.json")"
+rm "$tmp/fx/comparetag"
+ACTION=rollback BAD_VERSION=0.142.0 facts
+check 'no tag for the release before (unknown P_prev), end to end: refuse' \
+  'REFUSE the commit v0.141.0 was cut at is unknown (no tag v0.141.0, or GitHub could not compare it with main)' "$("$SCRIPT" decide "$tmp/facts.json")"
+echo '"0.142.0"' >"$tmp/fx/npmversions"
+ACTION=rollback BAD_VERSION=0.142.0 facts
+check 'a package with one version has nothing to roll back to' 'REFUSE npm has no version before 0.142.0 to roll back to' "$("$SCRIPT" decide "$tmp/facts.json")"
+rm "$tmp/fx/npmversions"
+ACTION=rollback BAD_VERSION=0.142.0 facts
+check 'npm versions unreadable: refuse' 'REFUSE unreadable: npm versions' "$("$SCRIPT" decide "$tmp/facts.json")"
+fx_base
+
 # --- pick, through the stubbed gh and a stub gate ---
 cat >"$tmp/gate" <<'EOF'
 #!/usr/bin/env bash
@@ -266,6 +354,20 @@ out=$(GATE="$tmp/no-such-gate" "$SCRIPT" pick 0.141.0)
 check 'no gate script: no pick' 'NONE scripts/release-gate.sh is not on main yet (#4209), so no commit can be proved' "$out"
 check 'pick makes no write call' no "$(grep -qE -- '--method|-X ' "$GH_LOG" && echo yes || echo no)"
 
+# pin: the gate on one named commit (a rollback's P_prev), with no window.
+printf '%s\n' "$C" >"$tmp/fx/ship"
+: >"$GH_LOG"
+out=$("$SCRIPT" pin 0.142.1 "$C")
+check 'pin: the gate ships P_prev' "P $C" "$out"
+check 'pin asks the gate about that commit with the rollback version' yes "$(grep -qF "gate facts 0.142.1 $C" "$GH_LOG" && echo yes || echo no)"
+check 'pin reads no commit window and no full-run list' no "$(grep -qE 'commits\?sha=main|browser-test.yml/runs' "$GH_LOG" && echo yes || echo no)"
+out=$("$SCRIPT" pin 0.142.1 "$D")
+check 'pin: the gate refuses P_prev, with its reason' "NONE the gate refuses ${D:0:12}: required check typecheck has no merge-queue run on P ${D:0:12}" "$out"
+out=$(GATE_UNREADABLE=$C "$SCRIPT" pin 0.142.1 "$C")
+check 'pin: a gate that cannot read is a refusal' "NONE the gate refuses ${C:0:12}: the gate could not read its facts" "$out"
+"$SCRIPT" pin 0.142.1 abc >/dev/null 2>&1
+check 'pin needs a full sha' 2 "$?"
+
 # --- commits, on a throwaway repo ---
 g() { git -C "$tmp/repo" -c user.name=t -c user.email=t@t -c commit.gpgsign=false -c tag.gpgsign=false "$@"; }
 mkdir -p "$tmp/repo" && git -C "$tmp/repo" init -q
@@ -319,9 +421,45 @@ s '.decision = "PUBLISH 0.142.0" | .pick = "" | .plan = null'
 contains 'publish step names the dispatch' 'dispatch `release-publish.yml` on main with `version=0.142.0`' "$out"
 s '.decision = "WAIT DAILY_RELEASE_HOLD is set: x" | .pick = "" | .plan = null'
 contains 'wait says why' 'Decision: **wait**. DAILY_RELEASE_HOLD is set: x' "$out"
+rb='.decision = "ROLLBACK 0.142.0 0.141.0 '"$A"'" | .plan.version = "0.142.1" | .plan.previous = "0.140.0"
+  | .plan.bump = "override" | .plan.bumpReason = "rolls back 0.142.0" | .plan.subject = "chore(release): v0.142.1"'
+s "$rb"
+contains 'rollback dry run says nothing was written' '## Daily release (DRY RUN: nothing was written)' "$out"
+contains 'rollback decision names both versions and the rollback line' \
+  'Decision: **roll back v0.142.0**: cut v0.142.1 at P, the commit v0.141.0 was cut at, with the notes of v0.141.0 under `Rolled back 0.142.0.`.' "$out"
+contains 'rollback P is P_prev' "| Release point P | \`$A\` |" "$out"
+contains 'rollback opens the hold first' '1. Open an issue labelled `release-hold` (unless one is open): no daily cut runs while it is open.' "$out"
+contains 'then the same cut path' '2. Create branch `release/v0.142.1` at P.' "$out"
+contains 'and the same publish, based on P_prev' "\`version=0.142.1\`, \`expected_sha=<the merged tip>\`, \`mode=routine\`, \`base=$A\`" "$out"
+contains 'rollback dry run: how to go live' 'Writes are off until the repository variable `DAILY_RELEASE_LIVE` is `on`' "$out"
+s "$rb"' | .pick = "NONE the gate refuses aaaaaaaaaaaa: x" | .plan = null | .planExit = null'
+contains 'gate refuses P_prev: no rollback, with why' 'Decision: **no rollback**. the gate refuses aaaaaaaaaaaa: x.' "$out"
+s "$rb"' | .plan = null | .planExit = 1 | .planError = "--rollback 0.142.0 is not newer"'
+contains 'a refused rollback commit says why' 'Decision: **no rollback**. The release commit for P' "$out"
+s '.decision = "REFUSE 0.141.0 is not the newest published version (npm has 0.142.0); only the newest can be rolled back" | .pick = "" | .plan = null'
+contains 'a refused rollback says why' 'Decision: **refuse**. 0.141.0 is not the newest published version' "$out"
+s '.decision = "WAIT the release-hold issue #77 is open: x" | .pick = "" | .plan = null'
+contains 'a held cut says which issue' 'Decision: **wait**. the release-hold issue #77 is open: x' "$out"
+
 echo nope >"$tmp/s.json"
 "$SCRIPT" summary "$tmp/s.json" >/dev/null 2>&1
 check 'unreadable state: exit 2' 2 "$?"
+
+# --- the workflow: a dry run writes nothing ---
+# Every job that can write (the app token, issues: write, actions: write) runs
+# only when the plan says live, and the rollback's cut only after its hold.
+wf=$repo_root/.github/workflows/daily-release.yml
+job() { awk -v j="  $1:" '$0 == j {on = 1; print; next} on && /^  [a-z-]+:$/ {exit} on' "$wf"; }
+for j in hold cut advance; do
+  contains "$j runs only when live" "needs.plan.outputs.live == 'true'" "$(job "$j")"
+done
+contains 'hold runs for a rollback only' "needs.plan.outputs.step == 'rollback'" "$(job hold)"
+contains 'hold writes issues and nothing else' $'    permissions:\n      issues: write\n    env:' "$(job hold)"
+contains 'a rollback cuts only once its hold is set' "needs.plan.outputs.step == 'rollback' && needs.hold.result == 'success'" "$(job cut)"
+contains 'the cut passes the rollback to release-commit.ts' '--commit ${rollback[@]+"${rollback[@]}"}' "$(job cut)"
+check 'the plan job writes nothing' no "$(job plan | grep -qE ': write$|create-github-app-token|--method' && echo yes || echo no)"
+contains 'bad_version reaches the script through the env only' 'BAD_VERSION: ${{ inputs.bad_version }}' "$(job plan)"
+check 'bad_version is read in that one env line and nowhere else' 1 "$(grep -c 'inputs\.bad_version' "$wf")"
 
 # --- usage ---
 "$SCRIPT" >/dev/null 2>&1
