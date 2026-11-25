@@ -7,9 +7,11 @@
  *
  * It reads the committed route census, which `route-census.test.ts` proves
  * equals what the real server serves, so it needs no server of its own.
- * `ALL` entries are left out: Hono records middleware as `ALL` too, so the
- * census cannot tell a gate from a handler there. The `/api/test` control
- * routes are left out because only a test server mounts them.
+ * Hono records middleware as `ALL` too, so the census cannot tell a gate from
+ * a handler there: every `ALL` entry must be allowlisted or named in
+ * {@link KNOWN_ALL}, which says what each one is, so a new `.all()` handler
+ * cannot slip past unclassified. The `/api/test` control routes are left out
+ * because only a test server mounts them.
  *
  * After moving routes onto capabilities or deleting them, drop their entries:
  *
@@ -33,10 +35,51 @@ const CENSUS = path.join(HERE, 'route-census.baseline.json');
 const PENDING = path.join(HERE, '..', 'hand-routes', 'pending.json');
 
 /**
- * How many routes may still wait to move. Lower it whenever the list shrinks;
- * never raise it. A route added to the pending list fails here.
+ * How many routes may still wait to move. It may only fall: lower it in every
+ * change that shrinks the pending list. A route added to the pending list fails
+ * here, and a PR that raises this number needs the API lead's OK first.
  */
 const PENDING_CEILING = 670;
+
+/**
+ * The census's `ALL` entries that are neither allowlisted nor capabilities, each
+ * with what it is. Add one only for middleware (a gate that calls `next`); a
+ * new `.all()` handler is a capability or an allowlisted shape instead.
+ */
+// Every entry comes from a `use(...)` call (a gate or a body reader that calls
+// `next`) but three kinds of `.all()` handler: the two `/api/ext` routers, and
+// the catch-all 404s of canvas docs and feedback. The other `.all()` handlers
+// (`/api/auth/*`, `/api/docs`, the media route) are allowlisted.
+const KNOWN_ALL: Readonly<Record<string, string>> = {
+  'ALL /api/admin/*': 'middleware (`use`) in front of the group',
+  'ALL /api/browser-viewers/*': 'middleware (`use`) in front of the group',
+  'ALL /api/canvas/docs/*': "the group's catch-all 404 (`all('*')`), plus its body rule",
+  'ALL /api/cloud/communities/*': 'middleware (`use`) in front of the group',
+  'ALL /api/communities/*': "middleware: the remote spaces' experiment gate",
+  'ALL /api/community-connections/*': "middleware: the space connections' experiment gate",
+  'ALL /api/connectors/*': 'middleware (`use`) in front of the group',
+  'ALL /api/connectors/connections/:connectionId/events':
+    'middleware (`use`) in front of the group',
+  'ALL /api/connectors/connections/:connectionId/events/*':
+    'middleware (`use`) in front of the group',
+  'ALL /api/connectors/providers/*': 'middleware (`use`) in front of the group',
+  'ALL /api/devices/*': 'middleware (`use`) in front of the group',
+  'ALL /api/ext/:id': "an app's own server routes, which the app declares and serves",
+  'ALL /api/ext/:id/*': "an app's own server routes, which the app declares and serves",
+  'ALL /api/feedback/*': "the group's catch-all 404 (`all('*')`), plus its body rule",
+  'ALL /api/hub/computers/*': 'middleware (`use`) in front of the group',
+  'ALL /api/local-browser/*': 'middleware (`use`) in front of the group',
+  'ALL /api/owner-factors/*': 'middleware (`use`) in front of the group',
+  'ALL /api/person-session/*': 'middleware (`use`) in front of the group',
+  'ALL /api/runtimes/claude-code/signins/*': 'middleware (`use`) in front of the group',
+  'ALL /api/session-locations/*': 'middleware (`use`) in front of the group',
+  'ALL /api/session-relay/*': 'middleware (`use`) in front of the group',
+  'ALL /api/sessions/:id/*': 'middleware (`use`) in front of the group',
+  'ALL /api/sign-in-landings/*': 'middleware (`use`) in front of the group',
+  'ALL /api/step-up/*': 'middleware (`use`) in front of the group',
+  'ALL /api/tasks': 'middleware: asks for the person before a task write',
+  'ALL /api/tasks/*': 'middleware: asks for the person before a task write',
+};
 
 interface PendingFile {
   readonly $comment: string;
@@ -47,10 +90,10 @@ const census = (JSON.parse(readFileSync(CENSUS, 'utf8')) as RouteCensus).routes;
 const pendingFile = JSON.parse(readFileSync(PENDING, 'utf8')) as PendingFile;
 const pending = pendingFile.routes;
 
-/** The `/api` routes this census classifies: no middleware, no test-only routes. */
+/** The `/api` routes this census classifies: everything but test-only routes and known `ALL` entries. */
 const served = census.filter((entry) => {
-  const [method, route] = entry.split(' ') as [string, string];
-  return method !== 'ALL' && route.startsWith('/api/') && !route.startsWith('/api/test/');
+  const route = entry.split(' ')[1]!;
+  return route.startsWith('/api/') && !route.startsWith('/api/test/') && !(entry in KNOWN_ALL);
 });
 
 const capabilityShapes = new Set(
@@ -101,6 +144,12 @@ describe('hand route census', () => {
       pending.filter((entry) => allowlisted.has(entry)),
       'now allowlisted'
     ).toEqual([]);
+  });
+
+  it('names only ALL entries the census still has', () => {
+    const censusSet = new Set(census);
+    expect(Object.keys(KNOWN_ALL).filter((entry) => !censusSet.has(entry))).toEqual([]);
+    expect(Object.keys(KNOWN_ALL).filter((entry) => allowlisted.has(entry))).toEqual([]);
   });
 
   it('only shrinks the pending list', () => {

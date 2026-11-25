@@ -68,7 +68,7 @@
       "apps/server/src/services/core/usage/account-eligibility-openapi.ts": 5,
       "apps/server/src/services/docs/links/doc-links-openapi.ts": 2,
       "apps/server/src/services/extensions/groups/extension-approval-set-openapi.ts": 2,
-      "apps/server/src/services/extensions/http/media-openapi.ts": 2,
+      "apps/server/src/services/extensions/http/media-openapi.ts": 1,
       "apps/server/src/services/extensions/inbox/extension-decisions-openapi.ts": 8,
       "apps/server/src/services/extensions/removal/extension-removal-openapi.ts": 3,
       "apps/server/src/services/health/account-signin-openapi.ts": 3,

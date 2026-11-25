@@ -226,11 +226,29 @@ describe('mount order', () => {
     );
   });
 
+  it('reads a regex splat param (`:path{.+}`) as spanning segments', () => {
+    const spanned = app([running()], {
+      before: (hand) => hand.get('/api/:rest{.+}', (c) => c.text('hand')),
+    });
+    expect(() => assertNoCapabilityRouteCollisions(spanned, [running()])).toThrow(
+      /is shadowed by GET \/api\/:rest\{\.\+\}/
+    );
+    const oneSegment = app([running()], {
+      before: (hand) => hand.get('/api/:id{[0-9]+}', (c) => c.text('hand')),
+    });
+    expect(() => assertNoCapabilityRouteCollisions(oneSegment, [running()])).not.toThrow();
+  });
+
   it('registers its own routes static before param, whatever order they were declared in', () => {
     const routes = createCapabilityHttpRoutes({
       registry: () => undefined,
       capabilities: [
         demo('demo.any', { method: 'get', path: '/api/demo/{agentId}' }),
+        // No http surface: never routed, never compared.
+        defineCapability({
+          ...demo('demo.none', { method: 'get', path: '/unused' }),
+          surfaces: {},
+        }) as CapabilityDefinition,
         demo('demo.rest', { method: 'get', path: '/api/demo/{agentId}/items' }),
         demo('demo.fixed', { method: 'get', path: '/api/demo/fixed' }),
       ],
@@ -249,12 +267,12 @@ describe('mount order', () => {
 describe('a person-only capability (audience: person)', () => {
   const ran = vi.fn();
   afterEach(() => ran.mockClear());
-  const personOnly = (): CapabilityDefinition =>
+  const personOnly = (tier: 'observe' | 'act' = 'act'): CapabilityDefinition =>
     defineCapability({
       ...demo(
         'demo.mine',
         { method: 'post', path: '/api/demo/{agentId}', audience: 'person' },
-        'act'
+        tier
       ),
       invoke: async (_deps: unknown, input: unknown) => {
         ran();
@@ -262,8 +280,8 @@ describe('a person-only capability (audience: person)', () => {
       },
     }) as CapabilityDefinition;
   /** Serve the capability over a registry of it, through the mount and the invoke endpoint. */
-  function serve(before?: MiddlewareHandler<ApiEnv>) {
-    const capability = personOnly();
+  function serve(before?: MiddlewareHandler<ApiEnv>, tier: 'observe' | 'act' = 'act') {
+    const capability = personOnly(tier);
     const registry = composeRegistry([{ name: 'demo', capabilities: [capability] }], {
       logger: noopLogger,
     });
@@ -296,6 +314,67 @@ describe('a person-only capability (audience: person)', () => {
       .send({});
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('person_only');
+  });
+
+  it('refuses a caller holding an approval token, as the decide endpoint does', async () => {
+    const res = await request(serve())
+      .post('/api/demo/a1')
+      .set('X-DorkOS-Approval', 'some-token')
+      .send({});
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('person_only');
+    expect(ran).not.toHaveBeenCalled();
+  });
+
+  it('refuses an Authorization bearer that sent no agent header: a program, not a person', async () => {
+    const res = await request(serve())
+      .post('/api/demo/a1')
+      .set('Authorization', 'Bearer a-key')
+      .send({});
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('person_only');
+    expect(ran).not.toHaveBeenCalled();
+  });
+
+  describe('where a person must prove a session (a credential-gated request)', () => {
+    /** Mark the request as one the gate asked for a credential, with this caller. */
+    function gated(user?: { credential: 'cookie' | 'api-key' }): MiddlewareHandler<ApiEnv> {
+      return async (c, next) => {
+        markIngress(c.env.incoming, 'wifi');
+        if (user) {
+          c.set('user', {
+            userId: 'owner',
+            credential: user.credential,
+            sessionId: 'sess-1',
+            route: 'wifi',
+          });
+        }
+        await next();
+      };
+    }
+
+    it('refuses a caller with no person session', async () => {
+      const res = await request(serve(gated(), 'observe')).post('/api/demo/a1').send({});
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('person_only');
+    });
+
+    it('refuses a per-user API key', async () => {
+      const res = await request(serve(gated({ credential: 'api-key' }), 'observe'))
+        .post('/api/demo/a1')
+        .send({});
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('person_only');
+      expect(ran).not.toHaveBeenCalled();
+    });
+
+    it('runs for a person signed in with a browser session', async () => {
+      const res = await request(serve(gated({ credential: 'cookie' }), 'observe'))
+        .post('/api/demo/a1')
+        .send({});
+      expect(res.status).toBe(200);
+      expect(ran).toHaveBeenCalledOnce();
+    });
   });
 
   it('runs for a person', async () => {

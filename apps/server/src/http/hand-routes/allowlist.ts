@@ -227,6 +227,12 @@ export const HAND_ROUTE_ALLOWLIST: readonly HandRouteAllowlistEntry[] = [
     category: 'bytes',
     reason: 'A multipart file handed to a viewed browser.',
   },
+  {
+    method: 'ALL',
+    path: '/api/extensions/media/:ticket',
+    category: 'bytes',
+    reason: "Video for an app's frame, by a one-time ticket (GET and HEAD).",
+  },
 
   // Callbacks: another site or service calls these, in its own shape.
   {
@@ -271,7 +277,7 @@ export const HAND_ROUTE_ALLOWLIST: readonly HandRouteAllowlistEntry[] = [
     method: 'POST',
     path: '/api/wifi-sign-in/start',
     category: 'sign-in-handshake',
-    reason: 'The first step of signing in from Wi-Fi.',
+    reason: 'The first step of signing in from Wi-Fi, answered before the session gate.',
   },
   {
     method: 'POST',
@@ -283,7 +289,7 @@ export const HAND_ROUTE_ALLOWLIST: readonly HandRouteAllowlistEntry[] = [
     method: 'POST',
     path: '/api/owner-sign-in/passkey/options',
     category: 'sign-in-handshake',
-    reason: "The first step of the owner's passkey sign-in.",
+    reason: "The first step of the owner's passkey sign-in, answered before the session gate.",
   },
   {
     method: 'POST',

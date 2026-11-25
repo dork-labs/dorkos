@@ -168,14 +168,14 @@ export function createCapabilityHttpRoutes(deps: CapabilityHttpDeps): Hono<ApiEn
   const router = new Hono<ApiEnv>();
   const claimed = new Map<string, string>();
   // Static before param, so a fixed path is never answered by a sibling's `:id`.
-  const ordered = [...deps.capabilities].sort((a, b) =>
-    a.surfaces.http && b.surfaces.http
-      ? compareRouteSpecificity(honoPath(a.surfaces.http.path), honoPath(b.surfaces.http.path))
-      : 0
-  );
+  // Only the served ones are sorted, so the comparator sees no surface-less entry.
+  const ordered = deps.capabilities
+    .filter((capability): capability is ServedCapability => capability.surfaces.http !== undefined)
+    .sort((a, b) =>
+      compareRouteSpecificity(honoPath(a.surfaces.http.path), honoPath(b.surfaces.http.path))
+    );
   for (const capability of ordered) {
     const surface = capability.surfaces.http;
-    if (!surface) continue;
     const path = honoPath(surface.path);
     const key = routeKey(surface.method, path);
     const other = claimed.get(key);
@@ -207,13 +207,19 @@ export function createCapabilityHttpRoutes(deps: CapabilityHttpDeps): Hono<ApiEn
 /** One segment of a route pattern, by what it matches. */
 type PatternSegment = { kind: 'static'; value: string } | { kind: 'param' } | { kind: 'rest' };
 
-/** A Hono path's segments: `:name` (with any `{regex}`) is a param, `*` the rest. */
+/** A `:name{regex}` whose pattern can match a `/` (`{.+}`, `{.*}`), so it spans segments. */
+const SPLAT_PARAM = /^:[^{]*\{.*(?<!\\)\.[+*].*\}$/;
+
+/**
+ * A Hono path's segments: `*` and a splat param (`:path{.+}`) match the rest,
+ * any other `:name` (with any `{regex}`) one segment.
+ */
 function patternSegments(path: string): PatternSegment[] {
   return path
     .split('/')
     .filter(Boolean)
     .map((segment): PatternSegment =>
-      segment === '*'
+      segment === '*' || SPLAT_PARAM.test(segment)
         ? { kind: 'rest' }
         : segment.startsWith(':')
           ? { kind: 'param' }

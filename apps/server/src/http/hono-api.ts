@@ -562,8 +562,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   }
   if (deps.mesh) app.route('/api/mesh', createMeshRoutes(deps.mesh));
   if (deps.discovery) app.route('/api/discovery', createDiscoveryRoutes(deps.discovery));
-  // Six groups answer under `/api/agents`: the capability mount, agent instructions
-  // and these four. Each registers only its own concrete paths, and no two share one: the
+  // Seven groups answer under `/api/agents`: the capability mount, agent instructions
+  // and these five. Each registers only its own concrete paths, and no two share one: the
   // agents group's paths are all fixed words (`/current`, `/resolve`,
   // `/create`), never an `:id`, so no order between them changes an answer.
   if (deps.mcpOAuth) app.route('/api/agents/mcp-oauth', createMcpOAuthRoutes(deps.mcpOAuth));

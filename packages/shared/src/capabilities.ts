@@ -131,10 +131,17 @@ export type HttpSuccessStatus = 200 | 201 | 202 | 204;
 
 /**
  * Who may call a capability. `person` means only a person: an agent caller is
- * refused with `person_only` before the handler runs, and the capability may
- * not declare an MCP surface. Absent means anyone the tier gate lets through.
+ * refused with `person_only` before the handler runs, inside
+ * `registry.invoke` whatever door it came through, and the capability may not
+ * declare an MCP surface. Absent means anyone the tier gate lets through.
  */
 export type HttpAudience = 'person';
+
+/** The refusal code a person-only capability answers an agent or program with (`403 person_only` over HTTP). */
+export const PERSON_ONLY_CODE = 'PERSON_ONLY';
+
+/** The sentence a person-only capability refuses an agent or program with. */
+export const PERSON_ONLY_MESSAGE = 'Only a person can do this, not an agent.';
 
 /**
  * The HTTP projection of a capability: a route the server serves (the generic

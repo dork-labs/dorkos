@@ -501,7 +501,9 @@ export function isKeptRoute(kept: readonly KeptRoute[], method: string, path: st
 /**
  * The 1-based line of every `registerPath(` call in one file's text, once
  * per call, skipping comment lines and any call whose literal `method` and
- * `path` name a kept route (the permanent hand-route allowlist).
+ * `path` name a kept route (the permanent hand-route allowlist). It fails
+ * toward counting: a call whose method or path is not a plain literal within
+ * a few lines (a template with `${…}`, a variable) is counted.
  *
  * @param text - The file's source.
  * @param kept - The routes the hand registry may keep documenting.
