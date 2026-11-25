@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261123-010539",
+ "file": "ci/ledger/261123-010539-credential-free-two-at-a-time-duration.md",
+ "pr": 4151,
+ "merged_at": "2026-11-23T02:22:13Z",
+ "sha": "fc54df26e243c07aa16129153650b840926eed26",
+ "resolved_at": "2026-11-25T15:25:27.387Z"
+}

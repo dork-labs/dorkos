@@ -386,7 +386,7 @@
       <h2>What to work on</h2>
       <div class="panel">
         <p><strong class="mono">collector-health</strong></p>
-        <p>The collector&#39;s own health failed (2 problems); no other number can be trusted until it is fixed. First: The local export from clone clone-71ebf1f648 is 7 days old (last 2026-11-17) and no clone exported in the last 3 days; local-commit and local-push are going stale. Approve or re-run the ci-local-export scheduled skill on that machine (Schedules page, Full autonomy).</p>
+        <p>The collector&#39;s own health failed (4 problems); no other number can be trusted until it is fixed. First: The local export from clone clone-71ebf1f648 is 7 days old (last 2026-11-17) and no clone exported in the last 3 days; local-commit and local-push are going stale. Approve or re-run the ci-local-export scheduled skill on that machine (Schedules page, Full autonomy).</p>
         <p class="note">Tripwires outrank everything: nothing else is trustworthy while this is true.</p>
       </div>
 
@@ -903,7 +903,7 @@
           <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
           <div class="trigger-meta mono">stale-ledger:261022-084338 · since 2026-11-22</div>
         </div>
-      <p class="note">Computed from the data, never written by a model. Nothing here opens a pull request or changes anything; a person or an agent decides, and proposes the narrowest change that could move the number.</p><p class="note">Cleared: machine-saturated, main-red:a1d8eaa7ce2f, main-red:c1bd9ecc9984, main-red:d92fbe274aa9, main-red:f0bbc056a22e, slo-floor:local-commit, slo-floor:pr-feedback, gate-failure-spike:wf.lint.lint, gate-failure-spike:wf.site-build.site-build, stale-ledger:260923-095512.</p></div>
+      <p class="note">Computed from the data, never written by a model. Nothing here opens a pull request or changes anything; a person or an agent decides, and proposes the narrowest change that could move the number.</p></div>
       </div>
 
       <h2>That day (2026-11-23)</h2>
@@ -1029,12 +1029,12 @@
             <td data-label="Why">The after-window runs to 2026-11-25T14:18:12Z; the verdict is computed on 2026-11-26.</td>
           </tr><tr>
             <td class="measure name"><div>the merge queue takes out an entry whose head lacks Security&#39;s label or a verify proof, whoever queued it</div><div class="note mono">261118-183332 · reverted</div></td>
-            <td data-label="Result"><span class="tag pending">no verdict</span></td>
-            <td data-label="Why">No hypothesis, or its PR has not merged.</td>
+            <td data-label="Result"><span class="tag pending">pending</span></td>
+            <td data-label="Why">The after-window runs to 2026-12-03T00:19:05Z; the verdict is computed on 2026-12-04.</td>
           </tr><tr>
             <td class="measure name"><div>the merge queue takes out a config or migration head queued without QA&#39;s real-data label after it</div><div class="note mono">261121-191243 · reverted</div></td>
-            <td data-label="Result"><span class="tag pending">no verdict</span></td>
-            <td data-label="Why">No hypothesis, or its PR has not merged.</td>
+            <td data-label="Result"><span class="tag pending">pending</span></td>
+            <td data-label="Why">The after-window runs to 2026-12-06T01:32:28Z; the verdict is computed on 2026-12-07.</td>
           </tr></tbody>
       </table></div>
       <p class="note">Pending means the wait after the change is not over; the reason says when it will be judged. Computed from the recorded data, never written by hand.</p></div>
@@ -1043,18 +1043,18 @@
       <div class="panel">
         <p>The collector found a problem with its own numbers. Treat everything above with suspicion until it is fixed.</p>
         <ul class="plain">
-          <li><strong>534</strong> of 700 GitHub requests used (GitHub allows 1,000 an hour).</li>
+          <li><strong>700</strong> of 700 GitHub requests used (GitHub allows 1,000 an hour).</li>
           <li><strong>7</strong> of 7 days recorded.</li>
           <li>Machines sending hook timings: clone-040654d45a (retired, 2026-10-26), clone-2c3dde293a (retired, 2026-10-25), clone-71ebf1f648 (stale, 2026-11-17), clone-b07d4e241e (retired, 2026-10-31), clone-f76554a380 (stale, 2026-11-17).</li>
           <li>Data-branch protections: in place.</li>
         </ul>
-        <p><strong>Problems:</strong></p><ul class="plain"><li>The local export from clone clone-71ebf1f648 is 7 days old (last 2026-11-17) and no clone exported in the last 3 days;…</li><li>The local export from clone clone-f76554a380 is 7 days old (last 2026-11-17) and no clone exported in the last 3 days;…</li></ul>
+        <p><strong>Problems:</strong></p><ul class="plain"><li>The local export from clone clone-71ebf1f648 is 7 days old (last 2026-11-17) and no clone exported in the last 3 days;…</li><li>The local export from clone clone-f76554a380 is 7 days old (last 2026-11-17) and no clone exported in the last 3 days;…</li><li>The local export from clone clone-71ebf1f648 is 8 days old (last 2026-11-17) and no clone exported in the last 3 days;…</li><li>The local export from clone clone-f76554a380 is 8 days old (last 2026-11-17) and no clone exported in the last 3 days;…</li></ul>
         <p class="note">Also: Required workflow live comparison failed: Command failed: gh api orgs/dork-labs/rulesets?per_page=100&amp;page=1
 gh:… Thin sample: review-recovery (n=1 &lt; 5); those SLOs read as insufficient, not as a breach or a win.</p>
         <p class="note">Blind spot: <span class="mono">--no-verify</span> commits and pushes skip the local timer, so they never show up here.</p>
       </div>
 
-      <footer>Rendered 2026-11-24T15:47:21.180Z by ci-steward from the ci-steward-data branch. Machine-readable: latest.json, triggers.json, verdicts/*.json, and the Monday deep summary reports/YYYY-Www.md.</footer>
+      <footer>Rendered 2026-11-25T15:25:27.387Z by ci-steward from the ci-steward-data branch. Machine-readable: latest.json, triggers.json, verdicts/*.json, and the Monday deep summary reports/YYYY-Www.md.</footer>
     </main>
   </body>
 </html>

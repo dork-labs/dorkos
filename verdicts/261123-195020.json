@@ -1,0 +1,40 @@
+{
+ "schema": 1,
+ "id": "261123-195020",
+ "verdict": "pending",
+ "reason": "The after-window runs to 2026-12-07T22:29:09Z; the verdict is computed on 2026-12-08.",
+ "computed_at": "2026-11-25T15:25:27.387Z",
+ "hypothesis_hash": "c41d156b41662e72",
+ "metric": "tracked.canary-minutes",
+ "anchor": "2026-11-23T22:29:09Z",
+ "prs": [
+  4168
+ ],
+ "baseline": {
+  "value": 642,
+  "source": "ledger"
+ },
+ "target": 360,
+ "min_n": 10,
+ "before": {
+  "from": "2026-11-16T22:29:09Z",
+  "to": "2026-11-23T22:29:09Z",
+  "n": 6,
+  "value": 641.4
+ },
+ "after": {
+  "from": "2026-11-23T22:29:09Z",
+  "to": "2026-12-07T22:29:09Z",
+  "n": 1,
+  "value": 301.3
+ },
+ "confounders": [
+  "261122-032540",
+  "261123-194400",
+  "261123-194610",
+  "261123-194934",
+  "261123-195117",
+  "261123-220533"
+ ],
+ "slo": null
+}

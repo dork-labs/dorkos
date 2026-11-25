@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261122-133015",
+ "file": "ci/ledger/261122-133015-release-qa-go-gate.md",
+ "pr": 4127,
+ "merged_at": "2026-11-22T15:43:07Z",
+ "sha": "88796c39f2311a404667b2d5e6fd3be8c1bced7a",
+ "resolved_at": "2026-11-25T15:25:27.387Z"
+}

@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261120-144920",
+ "file": "ci/ledger/261120-144920-janitor-no-store-prune.md",
+ "pr": 4064,
+ "merged_at": "2026-11-20T18:52:06Z",
+ "sha": "2cdc274316f8be10a2b8bc4c54a2b6f3383be476",
+ "resolved_at": "2026-11-25T15:25:27.387Z"
+}

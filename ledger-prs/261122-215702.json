@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261122-215702",
+ "file": "ci/ledger/261122-215702-heavy-order-second-in-line.md",
+ "pr": 4146,
+ "merged_at": "2026-11-22T23:39:36Z",
+ "sha": "574c7c3fca5911c2f01a9d5b516fc85bad045b4a",
+ "resolved_at": "2026-11-25T15:25:27.387Z"
+}

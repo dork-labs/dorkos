@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261123-214759",
+ "file": "ci/ledger/261123-214759-require-not-held-release-window.md",
+ "pr": 4172,
+ "merged_at": "2026-11-23T22:28:59Z",
+ "sha": "79c234fdb020fc7ae03af76c70ab82f00915cbc1",
+ "resolved_at": "2026-11-25T15:25:27.387Z"
+}

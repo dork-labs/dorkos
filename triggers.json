@@ -1,7 +1,7 @@
 {
  "schema": 1,
  "date": "2026-11-23",
- "computed_at": "2026-11-24T15:47:21.180Z",
+ "computed_at": "2026-11-25T15:25:27.387Z",
  "constraint": "collector-health",
  "canary_since": "2026-09-21T05:17:15Z",
  "open": [
@@ -1018,116 +1018,5 @@
    "last_fired": "2026-11-23"
   }
  ],
- "cleared": [
-  {
-   "id": "machine-saturated",
-   "rule": "machine-saturated",
-   "severity": "red",
-   "scope": "",
-   "what": "2 machines running the hooks is saturated — RAM: 193 MB free p10; swap: 10796 MB in use p50.",
-   "action": "Run fewer suites at once (ci/config.yaml local.heavy_run_slots), or close what is holding the memory. No pipeline change helps.",
-   "ledger_entry": null,
-   "first_fired": "2026-09-21",
-   "last_fired": "2026-11-22"
-  },
-  {
-   "id": "main-red:a1d8eaa7ce2f",
-   "rule": "main-red",
-   "severity": "amber",
-   "scope": "main-green",
-   "what": "main red 22 min (a1d8eaa).",
-   "action": "Why did the queue miss it? If nothing did, this one is history.",
-   "ledger_entry": "260919-175509",
-   "first_fired": "2026-11-16",
-   "last_fired": "2026-11-22"
-  },
-  {
-   "id": "main-red:c1bd9ecc9984",
-   "rule": "main-red",
-   "severity": "amber",
-   "scope": "main-green",
-   "what": "main red 30 min (c1bd9ec).",
-   "action": "Why did the queue miss it? If nothing did, this one is history.",
-   "ledger_entry": "260919-175509",
-   "first_fired": "2026-11-16",
-   "last_fired": "2026-11-22"
-  },
-  {
-   "id": "main-red:d92fbe274aa9",
-   "rule": "main-red",
-   "severity": "amber",
-   "scope": "main-green",
-   "what": "main red -3 min (d92fbe2).",
-   "action": "Why did the queue miss it? If nothing did, this one is history.",
-   "ledger_entry": "260919-175509",
-   "first_fired": "2026-11-16",
-   "last_fired": "2026-11-22"
-  },
-  {
-   "id": "main-red:f0bbc056a22e",
-   "rule": "main-red",
-   "severity": "amber",
-   "scope": "main-green",
-   "what": "main red 19 min (f0bbc05).",
-   "action": "Why did the queue miss it? If nothing did, this one is history.",
-   "ledger_entry": "260919-175509",
-   "first_fired": "2026-11-16",
-   "last_fired": "2026-11-22"
-  },
-  {
-   "id": "slo-floor:local-commit",
-   "rule": "slo-floor",
-   "severity": "amber",
-   "scope": "local-commit",
-   "what": "local-commit under floor: p90 203, 0.6% (n=326, 2026-11-16 to 2026-11-22).",
-   "action": "Take its path from ci/slos.yaml.",
-   "ledger_entry": "261116-024324",
-   "first_fired": "2026-11-15",
-   "last_fired": "2026-11-22"
-  },
-  {
-   "id": "slo-floor:pr-feedback",
-   "rule": "slo-floor",
-   "severity": "amber",
-   "scope": "pr-feedback",
-   "what": "pr-feedback under floor: p50 24.4, p90 26.4 (n=286, 2026-11-16 to 2026-11-22).",
-   "action": "Take its path from ci/slos.yaml.",
-   "ledger_entry": "260919-175502",
-   "first_fired": "2026-10-29",
-   "last_fired": "2026-11-22"
-  },
-  {
-   "id": "gate-failure-spike:wf.lint.lint",
-   "rule": "gate-failure-spike",
-   "severity": "amber",
-   "scope": "wf.lint.lint",
-   "what": "wf.lint.lint failed 0.4%, was 0.2% (1.96x). 7d vs 7d, n=1124/879.",
-   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
-   "ledger_entry": null,
-   "first_fired": "2026-11-22",
-   "last_fired": "2026-11-22"
-  },
-  {
-   "id": "gate-failure-spike:wf.site-build.site-build",
-   "rule": "gate-failure-spike",
-   "severity": "amber",
-   "scope": "wf.site-build.site-build",
-   "what": "wf.site-build.site-build failed 0.2%, was 0.2% (1.57x). 7d vs 7d, n=807/634.",
-   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
-   "ledger_entry": null,
-   "first_fired": "2026-11-22",
-   "last_fired": "2026-11-22"
-  },
-  {
-   "id": "stale-ledger:260923-095512",
-   "rule": "stale-ledger",
-   "severity": "amber",
-   "scope": "wasted-queue-builds",
-   "what": "260923-095512 proposed 30+ days ago, untouched: merge-tail stops re-arming a PR the queue rejected twice for the same check",
-   "action": "Do it, or withdraw it. A proposal nobody will do is noise in every report.",
-   "ledger_entry": "260923-095512",
-   "first_fired": "2026-10-24",
-   "last_fired": "2026-11-22"
-  }
- ]
+ "cleared": []
 }

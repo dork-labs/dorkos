@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261109-033332",
+ "file": "ci/ledger/261109-033332-release-secrets-need-main-and-environment.md",
+ "pr": 4030,
+ "merged_at": "2026-11-25T02:37:36Z",
+ "sha": "7fd85a769c5e6f464c4d49c58a078101ce264a4d",
+ "resolved_at": "2026-11-25T15:25:27.387Z"
+}

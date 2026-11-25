@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261122-034215",
+ "file": "ci/ledger/261122-034215-honor-lower-local-vitest-workers.md",
+ "pr": 4122,
+ "merged_at": "2026-11-23T17:07:52Z",
+ "sha": "1ba6bd079d949615106b0bc787157075d3a9aed2",
+ "resolved_at": "2026-11-25T15:25:27.387Z"
+}

@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261118-140000",
+ "file": "ci/ledger/261118-140000-build-once-test-only.md",
+ "pr": 3941,
+ "merged_at": "2026-11-18T15:15:42Z",
+ "sha": "50e2d76f9c17b713de5aeea28a80c108ac3fdedd",
+ "resolved_at": "2026-11-25T15:25:27.387Z"
+}

@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261118-142611",
+ "file": "ci/ledger/261118-142611-release-publish-from-release-branch.md",
+ "pr": 4024,
+ "merged_at": "2026-11-19T16:32:36Z",
+ "sha": "5998b118f3887c3bf7ca4e52d157edec73129a14",
+ "resolved_at": "2026-11-25T15:25:27.387Z"
+}

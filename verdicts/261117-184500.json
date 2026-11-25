@@ -3,7 +3,7 @@
  "id": "261117-184500",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-11-25T07:08:06Z; the verdict is computed on 2026-11-26.",
- "computed_at": "2026-11-24T15:47:21.180Z",
+ "computed_at": "2026-11-25T15:25:27.387Z",
  "hypothesis_hash": "ac1aaa17915f53ed",
  "metric": "tracked.cache-hit-rate",
  "anchor": "2026-11-18T07:08:06Z",
@@ -28,6 +28,13 @@
   "n": 0,
   "value": null
  },
- "confounders": [],
+ "confounders": [
+  "261118-141016",
+  "261120-043306",
+  "261120-223425",
+  "261123-194610",
+  "261123-194934",
+  "261123-195020"
+ ],
  "slo": null
 }
