@@ -144,15 +144,15 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
   // The account is paused, signed out or waiting on its owner: not the caller's input.
   CONNECTOR_NOT_EXECUTABLE: {
     code: 'connection_not_ready',
-    detail: 'This connection isn’t ready. Check it on the Connections page.',
+    detail: 'This app isn’t ready to use. Check it in Connections.',
   },
   CONNECTOR_SIGN_IN_ENDED: {
     code: 'connection_not_ready',
-    detail: 'This connection’s sign-in ended. Reconnect it on the Connections page.',
+    detail: 'This app’s sign-in ended. Sign in again in Connections.',
   },
   CONNECTOR_MANAGED_AUTHORITY_PENDING: {
     code: 'connection_not_ready',
-    detail: 'This connection is waiting on its owner. Nothing ran.',
+    detail: 'This app is waiting on its owner. Nothing ran.',
   },
   CONNECTOR_OWNER_MISMATCH: {
     code: 'not_found',

@@ -161,7 +161,7 @@ export const PROBLEM_CODE_LIST = [
   // Chats: messages, questions, recordings and the chat's canvas.
   { code: 'agent_paused', status: 409, title: 'This agent is paused.' },
   /** A connected account that is paused, signed out or waiting on its owner: nothing ran. */
-  { code: 'connection_not_ready', status: 409, title: 'This connection isn’t ready to use.' },
+  { code: 'connection_not_ready', status: 409, title: 'This app isn’t ready to use.' },
   {
     code: 'room_session_moved',
     status: 409,
