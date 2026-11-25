@@ -10560,39 +10560,6 @@
           "description"
         ]
       },
-      "FoundClaudeFolder": {
-        "type": "object",
-        "properties": {
-          "path": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "lastUsedAt": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "orgManaged": {
-            "type": "boolean"
-          },
-          "orgMarker": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "path",
-          "name",
-          "lastUsedAt",
-          "orgManaged",
-          "orgMarker"
-        ]
-      },
       "DismissFoundFolderRequest": {
         "type": "object",
         "properties": {
@@ -22187,6 +22154,194 @@
           "reason"
         ]
       },
+      "FoundClaudeFolder": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "orgManaged": {
+            "type": "boolean"
+          },
+          "orgMarker": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "path",
+          "name",
+          "lastUsedAt",
+          "orgManaged",
+          "orgMarker"
+        ]
+      },
+      "RuntimeKeyStatus": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/SavedKeyState"
+          }
+        },
+        "required": [
+          "key"
+        ]
+      },
+      "SavedKeyState": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "saved": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ]
+              }
+            },
+            "required": [
+              "saved"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "saved": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              },
+              "last4": {
+                "type": "string",
+                "maxLength": 4
+              }
+            },
+            "required": [
+              "saved",
+              "last4"
+            ]
+          }
+        ]
+      },
+      "OpenCodeDirectSetup": {
+        "type": "object",
+        "properties": {
+          "providerId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "baseURL": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "key": {
+            "$ref": "#/components/schemas/SavedKeyState"
+          }
+        },
+        "required": [
+          "providerId",
+          "baseURL",
+          "key"
+        ]
+      },
+      "DoeInferenceStatus": {
+        "type": "object",
+        "properties": {
+          "inference": {
+            "$ref": "#/components/schemas/DoeInferenceMetadata"
+          },
+          "hasKey": {
+            "type": "boolean"
+          },
+          "autoProtocol": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "anthropic-messages",
+              "openai-chat-completions",
+              "openai-responses",
+              null
+            ]
+          }
+        },
+        "required": [
+          "inference",
+          "hasKey",
+          "autoProtocol"
+        ]
+      },
+      "DoeInferenceMetadata": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "api-key",
+              "local",
+              "dorkos-credits"
+            ]
+          },
+          "provider": {
+            "type": "string",
+            "minLength": 1
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "anthropic-messages",
+              "openai-chat-completions",
+              "openai-responses"
+            ]
+          },
+          "endpoint": {
+            "type": "string",
+            "format": "uri"
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1
+          },
+          "contextWindow": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "maxOutputTokens": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "source",
+          "provider",
+          "protocol",
+          "endpoint",
+          "model",
+          "contextWindow",
+          "maxOutputTokens"
+        ],
+        "additionalProperties": false
+      },
       "BrowseDirectoryResponse": {
         "type": "object",
         "properties": {
@@ -26205,69 +26360,6 @@
           }
         },
         "operationId": "projects.resolve"
-      }
-    },
-    "/api/runtimes/claude-code/account-eligibility": {
-      "get": {
-        "tags": [
-          "Runtimes"
-        ],
-        "summary": "Which Claude accounts may work in a project",
-        "description": "Every Claude account (Main is `default`) as the project a folder belongs to sees it. An account may work in a project only when both rules allow it: its own (`onlyProjects`, null for any project; a list never allows a folder in no project) and the project’s (`allow`, null when the project has no list). Leave out `project` for a folder in no project.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": false,
-            "name": "project",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The project and every account",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccountEligibilityResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The query is not valid",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The folder, or its repository, is outside the server's directory boundary",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "The rules could not be read",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "runtimes.getClaudeCodeAccountEligibility"
       }
     },
     "/api/runtimes/claude-code/project-accounts": {
@@ -46955,77 +47047,6 @@
         "operationId": "models.get"
       }
     },
-    "/api/runtimes/{runtime}/accounts/usage": {
-      "get": {
-        "tags": [
-          "Runtimes"
-        ],
-        "summary": "List how much of each of a runtime's accounts is used",
-        "description": "Every account of the runtime with its usage windows, from the server's memory: registered accounts in registry order, the machine-wide `default` account when it is not another name for a registered one, then folders that are neither (with a null `accountId`). A window with no current reading is left out, and an account with nothing to go on reads `state: \"unknown\"`, never zero.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "enum": [
-                "claude-code",
-                "codex",
-                "opencode",
-                "doe"
-              ],
-              "description": "The runtime slug."
-            },
-            "required": true,
-            "description": "The runtime slug.",
-            "name": "runtime",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The runtime's accounts and their usage",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "accounts": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/AccountUsage"
-                      }
-                    }
-                  },
-                  "required": [
-                    "accounts"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "`invalid_request`: an unknown runtime slug",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "`temporarily_unavailable`: the usage store is not running yet",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "runtimes.getAccountsUsage"
-      }
-    },
     "/api/runtimes/claude-code/accounts/{id}/probe": {
       "post": {
         "tags": [
@@ -47099,42 +47120,6 @@
           }
         },
         "operationId": "runtimes.probeClaudeCodeAccounts"
-      }
-    },
-    "/api/runtimes/claude-code/accounts/found": {
-      "get": {
-        "tags": [
-          "Runtimes"
-        ],
-        "summary": "List the Claude account folders found on this computer",
-        "description": "Every `.claude*` folder in the home folder that holds a `projects/` folder and is not a registered account, the machine default or a dismissed folder, sorted by name. Read-only: folders are listed and statted, and no file is ever opened. Settings offers each one with an Add button; nothing is registered until a person clicks it.",
-        "responses": {
-          "200": {
-            "description": "The folders to offer, possibly none",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "folders": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/FoundClaudeFolder"
-                      }
-                    }
-                  },
-                  "required": [
-                    "folders"
-                  ]
-                }
-              }
-            }
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalErrorProblem"
-          }
-        },
-        "operationId": "runtimes.getClaudeCodeAccountsFound"
       }
     },
     "/api/runtimes/claude-code/accounts/found/dismiss": {
@@ -112434,6 +112419,874 @@
         }
       }
     },
+    "/api/runtimes/{runtime}/accounts/usage": {
+      "get": {
+        "operationId": "runtimes.account_usage",
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Read account usage",
+        "description": "Every account of the runtime with its usage windows, from the server's memory: registered accounts in registry order, the machine-wide `default` account when it is not another name for a registered one, then folders that are neither (with a null `accountId`). An account with nothing to go on reads `state: \"unknown\"`, never zero.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "claude-code",
+                "codex",
+                "opencode",
+                "doe"
+              ],
+              "description": "The runtime slug."
+            },
+            "required": true,
+            "description": "The runtime slug.",
+            "name": "runtime",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read account usage result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accounts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AccountUsage"
+                      }
+                    }
+                  },
+                  "required": [
+                    "accounts"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runtimes/claude-code/accounts/found": {
+      "get": {
+        "operationId": "runtimes.found_accounts",
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "List the Claude account folders found on this computer",
+        "description": "Every `.claude*` folder in the home folder that holds a `projects/` folder and is not a registered account, the machine default or a hidden folder, sorted by name. Folders are listed and statted; no file is opened. Nothing is registered until a person adds one.",
+        "responses": {
+          "200": {
+            "description": "List the Claude account folders found on this computer result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "folders": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/FoundClaudeFolder"
+                      }
+                    }
+                  },
+                  "required": [
+                    "folders"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runtimes/claude-code/account-eligibility": {
+      "get": {
+        "operationId": "runtimes.account_eligibility",
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Read which Claude accounts may work in a project",
+        "description": "Every Claude account (Main is `default`) as the project a folder belongs to sees it. An account may work in a project only when both rules allow it: its own (`onlyProjects`) and the project’s (`allow`). `launch` is what a new chat in the folder would run on. Leave out `project` for a folder in no project. Records nothing.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "project",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read which Claude accounts may work in a project result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountEligibilityResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runtimes/{type}/credential": {
+      "get": {
+        "operationId": "runtimes.key_status",
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Read whether a runtime’s key is saved",
+        "description": "Whether Claude Code’s or Codex’s own pasted key is saved, and its last four characters when it is; never more of the key. Codex always reads not saved: its key lives in Codex’s own login store. Only at this computer.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "claude-code",
+                "codex"
+              ],
+              "description": "The runtime."
+            },
+            "required": true,
+            "description": "The runtime.",
+            "name": "type",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read whether a runtime’s key is saved result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeKeyStatus"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Access"
+        ],
+        "summary": "Confirm a lasting access or account change",
+        "description": "The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "type",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The action completed",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "403": {
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Always `no-store`: the held action is for this request only.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpRequired"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "runtimes.createCredential"
+      }
+    },
+    "/api/runtimes/opencode/provider": {
+      "get": {
+        "operationId": "runtimes.opencode_key_setup",
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Read the OpenCode key setup",
+        "description": "The service OpenCode was pointed at with your own key, its address, and whether a key is saved (its last four characters only). Only at this computer.",
+        "responses": {
+          "200": {
+            "description": "Read the OpenCode key setup result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenCodeDirectSetup"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/runtimes/doe/inference": {
+      "get": {
+        "operationId": "runtimes.doe_model_setup",
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Read the DorkOS model setup",
+        "description": "The saved DorkOS model setup without its key reference, whether a key is saved, and the format DorkOS picks a credits model in when nothing is set. Only at this computer.",
+        "responses": {
+          "200": {
+            "description": "Read the DorkOS model setup result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DoeInferenceStatus"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/directory": {
       "get": {
         "operationId": "directory.browse",
@@ -118236,77 +119089,6 @@
           }
         },
         "operationId": "runtimes.createOpencodeProviderCredential"
-      }
-    },
-    "/api/runtimes/{type}/credential": {
-      "post": {
-        "tags": [
-          "Access"
-        ],
-        "summary": "Confirm a lasting access or account change",
-        "description": "The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "type",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {}
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The action completed",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "403": {
-            "description": "This caller cannot change access here",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
-            "headers": {
-              "Cache-Control": {
-                "description": "Always `no-store`: the held action is for this request only.",
-                "schema": {
-                  "type": "string",
-                  "enum": [
-                    "no-store"
-                  ]
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StepUpRequired"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "runtimes.createCredential"
       }
     },
     "/api/community-connections": {
