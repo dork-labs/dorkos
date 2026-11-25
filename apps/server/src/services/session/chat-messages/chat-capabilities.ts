@@ -33,7 +33,7 @@ import {
   ChatMessageStatusSchema,
 } from '@dorkos/shared/chat-messages';
 import { dorkReferenceOrNull } from '@dorkos/shared/dork-ref';
-import { chatMarkdownLink } from '@dorkos/shared/session-link';
+import { chatRefMarkdownLink } from '@dorkos/shared/session-link';
 import {
   defineCapability,
   type CapabilityDeps,
@@ -215,7 +215,7 @@ export const chatDomain: CapabilityDomain = {
             ok: true as const,
             ...sent,
             chatTitle,
-            link: chatMarkdownLink(sent.chatId, chatTitle),
+            link: chatRefMarkdownLink(sent.chatId, chatTitle),
             chatRef: dorkReferenceOrNull('chat', sent.chatId),
           };
         });

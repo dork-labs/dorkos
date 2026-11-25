@@ -300,6 +300,18 @@ describe('buildDorkosContextBlock documentation links', () => {
   });
 });
 
+describe('buildDorkosContextBlock chat links (DOR-5202)', () => {
+  it('teaches the /r/ chat link the tools hand back, and keeps the raw-id rule', async () => {
+    // Purpose: agents copy the shape this line shows, so it must be the shape
+    // `chatRefMarkdownLink` builds (pinned in its own tests).
+    const { _buildDorkosContextBlock } = await import('../agent-context.js');
+    const block = _buildDorkosContextBlock();
+    expect(block).toContain('Never show a raw id.');
+    expect(block).toContain('A chat link is [Chat title](/r/dork:chat:<full id>).');
+    expect(block).not.toContain('/session?session=');
+  });
+});
+
 describe('<session_model>', () => {
   beforeEach(() => {
     vi.mocked(readConventionFile).mockResolvedValue(null);

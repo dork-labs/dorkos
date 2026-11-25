@@ -70,7 +70,7 @@ describe('readChat — include status', () => {
       chat: {
         id: TARGET,
         title: 'Build',
-        link: `[Build](/session?session=${TARGET})`,
+        link: `[Build](/r/dork:chat:${TARGET})`,
         ref: `dork:chat:${TARGET}`,
         agent: 'Bo',
         state: 'running',
@@ -82,6 +82,18 @@ describe('readChat — include status', () => {
     // And the next default read still sees everything.
     const next = await readChat(deps, CALLER, { chat: TARGET });
     expect(next.messages.map((m) => m.id)).toEqual(['m1', 'm2']);
+  });
+});
+
+describe('readChat — the link names the chat as it is called now (DOR-5202)', () => {
+  it('links the id a re-key moved the chat to, and keeps the id it was asked by', async () => {
+    deps.currentId = vi.fn((id: string) => (id === TARGET ? 'target-now' : id));
+
+    const { chat } = await readChat(deps, CALLER, { chat: TARGET, include: 'status' });
+
+    expect(chat.id).toBe(TARGET);
+    expect(chat.link).toBe('[Build](/r/dork:chat:target-now)');
+    expect(chat.ref).toBe('dork:chat:target-now');
   });
 });
 

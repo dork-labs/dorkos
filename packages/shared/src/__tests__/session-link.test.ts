@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SESSION_ROUTE, chatMarkdownLink, sessionPath } from '../session-link.js';
+import { SESSION_ROUTE, chatRefMarkdownLink, sessionPath } from '../session-link.js';
 
 describe('sessionPath', () => {
   it('puts the route path in front of the session id', () => {
@@ -47,24 +47,36 @@ describe('sessionPath', () => {
   });
 });
 
-describe('chatMarkdownLink (DOR-2824)', () => {
+describe('chatRefMarkdownLink (DOR-2824, DOR-5202)', () => {
   const id = '6572731c-1111-4222-8333-444455556666';
 
-  it('names the chat by its title and links it', () => {
-    expect(chatMarkdownLink(id, 'Rooms: always answer people')).toBe(
-      `[Rooms: always answer people](/session?session=${id})`
+  it('names the chat by its title and links its /r/ reference', () => {
+    expect(chatRefMarkdownLink(id, 'Rooms: always answer people')).toBe(
+      `[Rooms: always answer people](/r/dork:chat:${id})`
     );
   });
 
   it('calls a chat with no title what the app calls it', () => {
-    expect(chatMarkdownLink(id, null)).toBe(`[New chat](/session?session=${id})`);
-    expect(chatMarkdownLink(id, '   ')).toBe(`[New chat](/session?session=${id})`);
+    expect(chatRefMarkdownLink(id, null)).toBe(`[New chat](/r/dork:chat:${id})`);
+    expect(chatRefMarkdownLink(id, undefined)).toBe(`[New chat](/r/dork:chat:${id})`);
+    expect(chatRefMarkdownLink(id, '   ')).toBe(`[New chat](/r/dork:chat:${id})`);
   });
 
   it('keeps a title from breaking out of the link text', () => {
-    expect(chatMarkdownLink(id, 'a ] b [c](https://evil.example) \\')).toBe(
-      `[a \\] b \\[c\\](https://evil.example) \\\\](/session?session=${id})`
+    expect(chatRefMarkdownLink(id, 'a ] b [c](https://evil.example) \\')).toBe(
+      `[a \\] b \\[c\\](https://evil.example) \\\\](/r/dork:chat:${id})`
     );
-    expect(chatMarkdownLink(id, 'one\n\n# two')).toBe(`[one # two](/session?session=${id})`);
+    expect(chatRefMarkdownLink(id, 'one\n\n# two')).toBe(`[one # two](/r/dork:chat:${id})`);
+  });
+
+  it.each([
+    ['a dot', 'abc.def'],
+    ['a slash', 'abc/def'],
+    ['more than 64 characters', 'a'.repeat(65)],
+  ])('falls back to the /session link for an id with %s', (_why, odd) => {
+    // Purpose: a chat whose id cannot be a `dork:` reference still links, and
+    // never as a `/r/` link the route would refuse.
+    expect(chatRefMarkdownLink(odd, 'Build')).toBe(`[Build](${sessionPath({ session: odd })})`);
+    expect(chatRefMarkdownLink(odd, 'Build')).not.toContain('/r/');
   });
 });

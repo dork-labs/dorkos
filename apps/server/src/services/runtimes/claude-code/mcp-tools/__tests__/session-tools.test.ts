@@ -861,7 +861,7 @@ describe('session_start', () => {
 
       const body = payloadOf(result);
       expect(body.title).toBe('Rooms: always answer people');
-      expect(body.link).toBe(`[Rooms: always answer people](/session?session=${body.sessionId})`);
+      expect(body.link).toBe(`[Rooms: always answer people](/r/dork:chat:${body.sessionId})`);
       // Its reference too, the target of a `/r/` link (DOR-5046).
       expect(body.ref).toBe(`dork:chat:${body.sessionId}`);
       expect(claude.renameSession).toHaveBeenCalledWith(
@@ -2349,9 +2349,9 @@ describe('session_start hands back the chat already on the work (DOR-3690)', () 
       sessionId: 'other-chat',
       claim: 'DOR-10',
     });
-    expect(payload.link).toContain('other-chat');
+    expect(payload.link).toMatch(/\]\(\/r\/dork:chat:other-chat\)$/);
     expect(payload.ref).toBe('dork:chat:other-chat');
-    expect(payload.note).toMatch(/^Already running: \[/);
+    expect(payload.note).toContain(`Already running: ${payload.link},`);
     expect(payload.note).toMatch(/startAnyway: true/);
     expect(dispatchMessage).not.toHaveBeenCalled();
     expect(runtimeRegistry.saveSessionSettings).not.toHaveBeenCalled();

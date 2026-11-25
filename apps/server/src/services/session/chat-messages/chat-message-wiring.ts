@@ -43,6 +43,7 @@ import {
 } from '../../audit/session-visibility.js';
 import type { AuditReader } from '../../audit/visibility.js';
 import { resolveSessionCwdOrNull } from '../resolution/resolve-read-cwd.js';
+import { followChatRekey } from '../turn-identity/follow-chat-rekey.js';
 import {
   onProjectorInteractionChange,
   onProjectorStatusChange,
@@ -329,6 +330,7 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
     mayRead: async (caller, target) => mayReadChat(deps.store, caller, target),
     maySeeTitle: async (caller, target) => maySeeChat(caller, target),
     history: chatHistoryOf,
+    currentId: followChatRekey,
     startupFailure: (sessionId) => getSpinOffStartup()?.failureOf(sessionId) ?? null,
     status: (sessionId) => {
       const projector = peekProjector(sessionId);

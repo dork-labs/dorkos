@@ -27,7 +27,7 @@
  * @module services/session/claims/work-claim-start
  */
 import { dorkReferenceOrNull } from '@dorkos/shared/dork-ref';
-import { chatMarkdownLink } from '@dorkos/shared/session-link';
+import { chatRefMarkdownLink } from '@dorkos/shared/session-link';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { chatTitleOf, maySeeChat } from '../chat-messages/chat-message-wiring.js';
 import { normaliseClaimKey } from './work-claim-service.js';
@@ -117,7 +117,7 @@ export async function claimForStart(input: ClaimForStartInput): Promise<ClaimFor
   }
   const stored = await chatTitleOf(holder);
   const title = stored ? (sanitizeIdentity(stored) ?? null) : null;
-  const link = chatMarkdownLink(holder, title);
+  const link = chatRefMarkdownLink(holder, title);
   return {
     running: {
       sessionId: holder,
