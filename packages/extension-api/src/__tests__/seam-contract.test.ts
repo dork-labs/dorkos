@@ -98,7 +98,7 @@ describe('extension seam contract', () => {
     expectTypeOf<StartWorkInput>().toEqualTypeOf<Contract.StartWorkInput>();
     expectTypeOf<StartWorkError>().toEqualTypeOf<Contract.StartWorkError>();
     expectTypeOf<StartWorkError['code']>().toEqualTypeOf<
-      'not_a_project' | 'account_not_allowed_here' | 'start_limit'
+      'not_a_project' | 'account_not_allowed_here' | 'start_limit' | 'agent_paused'
     >();
     expectTypeOf<SessionsApi>().toEqualTypeOf<Contract.SessionsApi>();
   });

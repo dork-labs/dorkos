@@ -70,10 +70,21 @@ let record: RunRecord;
 let launches: StartTurnInput[];
 let signedInUser: { userId: string; credential: 'cookie' } | undefined;
 let statusOf: Record<string, string>;
+/** The folder whose agent is paused, when one is (what the pause service would say). */
+let pausedFolder: string | undefined;
 
 beforeEach(() => {
   const db = createTestDb();
-  record = createRunRecord(db, { epoch: '01BOOTEPOCHROUTESTART00000' });
+  pausedFolder = undefined;
+  record = createRunRecord(db, {
+    epoch: '01BOOTEPOCHROUTESTART00000',
+    admission: {
+      admission: {
+        pausedAgent: (_agentId, cwd) => (cwd === pausedFolder ? { name: 'Ana' } : undefined),
+        machineFull: () => false,
+      },
+    },
+  });
   launches = [];
   const start = record.port.start.bind(record.port);
   vi.spyOn(record.port, 'start').mockImplementation((input) => {
@@ -246,6 +257,23 @@ describe('POST /api/extensions/:id/start-work', () => {
     expect(res.status).toBe(429);
     expect(res.body).toMatchObject({ code: 'rate_limited' });
     expect(launches).toHaveLength(0);
+  });
+
+  it('answers agent_paused with 409 for a paused agent, and keeps nothing for later', async () => {
+    pausedFolder = DORKOS.root;
+    const res = await request(server).post('/api/extensions/hello/start-work').send(BODY);
+
+    expect(res.status).toBe(409);
+    expect(res.headers['content-type']).toBe('application/problem+json');
+    expect(res.body).toMatchObject({
+      code: 'agent_paused',
+      detail: 'The agent is paused. Resume it, then try again.',
+    });
+    // Refused at the door: the spy records the one attempt, but no run is saved
+    // for the chat, and no start row is left to count or hand over.
+    expect(launches).toHaveLength(1);
+    expect(record.port.list(launches[0]!.sessionId)).toEqual([]);
+    expect(store.countSince('hello', '1970-01-01T00:00:00.000Z')).toBe(0);
   });
 
   it('answers 400 for a body that breaks a length rule', async () => {
