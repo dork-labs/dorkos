@@ -59,6 +59,9 @@ import type {
 } from '../session/origin/session-started-by-store.js';
 import { checkStartWorkEligibility, type StartWorkEligibility } from './start-work-eligibility.js';
 
+/** The source kind a start keeps its words under: its `session_started_by` row. */
+const START_SOURCE = 'start-work';
+
 /** How long the hourly limit looks back. */
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -121,6 +124,8 @@ type Launching = Map<string, string>;
 /** The start-work seam. See the module documentation. */
 export class StartWorkService {
   private readonly launching: Launching = new Map();
+  /** The turn port this seam reads its starts from, once it has heard of one. */
+  private attachedTo: SpaceTurnPort | undefined;
   private readonly now: () => number;
   private readonly eligibility: StartWorkEligibility;
   private readonly runningSessionIds: () => string[];
@@ -152,6 +157,37 @@ export class StartWorkService {
           cwd
         );
       });
+    this.attach();
+  }
+
+  /**
+   * The turn port, with this seam reading its starts' words for it and
+   * letting them go once their turn has them. Attached once, the first time
+   * there is a port; a restart attaches again at boot, before the outbox runs,
+   * so a start saved before it is handed over again.
+   */
+  private attach(): SpaceTurnPort | undefined {
+    const port = (this.deps.port ?? turnPort)();
+    if (!port || port === this.attachedTo) return port;
+    this.attachedTo = port;
+    port.registerSource(START_SOURCE, {
+      read: (id) => this.deps.store.get(id)?.prompt ?? undefined,
+      app: (id) => {
+        const extensionId = this.deps.store.get(id)?.originExtensionId;
+        return extensionId
+          ? { extensionId, name: this.deps.extensionName(extensionId) }
+          : undefined;
+      },
+    });
+    port.watch((run) => {
+      const prefix = `${START_SOURCE}:`;
+      if (!run.sourceRef?.startsWith(prefix)) return;
+      // Kept until the runtime has the words, or the start will never run.
+      if (run.status === 'queued' || run.status === 'starting' || run.status === 'started') return;
+      this.deps.store.clearPrompt(run.sourceRef.slice(prefix.length));
+      this.deps.store.clearPrompt(run.sessionId);
+    });
+    return port;
   }
 
   /**
@@ -197,11 +233,13 @@ export class StartWorkService {
       startedBySessionId: null,
       originExtensionId: extensionId,
       reason: request.reason,
+      // Saved with the start, so a restart before its turn hands it over again.
+      prompt: request.prompt,
     });
     if (!claimed.ok) throw claimed.error;
     const reservation = claimed.reservation;
 
-    const door = (this.deps.port ?? turnPort)();
+    const door = this.attach();
     if (!door) {
       reservation.cancel();
       throw new Error('DorkOS is still starting. Try again in a moment.');
@@ -214,6 +252,7 @@ export class StartWorkService {
         content: request.prompt,
         origin: { kind: 'extension-start' },
         tier: 'owner',
+        sourceRef: `${START_SOURCE}:${sessionId}`,
         // One honest line for the model, so it does not take the prompt for
         // the person's own words. It rides the context bag and is never drawn.
         seedContext: `This chat was started by the ${name} extension: ${request.reason}`,
@@ -229,7 +268,28 @@ export class StartWorkService {
     // The title goes on now when the chat can take it, else once its first
     // turn ends (a runtime whose transcript does not exist until then).
     let titled = false;
+    let warned = false;
     let chatId: string = sessionId;
+    const emit = (eventType: string, note?: string) =>
+      void this.deps.activity
+        ?.emit({
+          actorType: 'system',
+          actorLabel: name,
+          actorId: extensionId,
+          category: 'agent',
+          eventType,
+          resourceType: 'session',
+          resourceId: chatId,
+          resourceLabel: request.title,
+          summary: note
+            ? `${name}'s chat ${request.title}: ${note}`
+            : `${name} started a chat in ${project.name}: ${request.title}`,
+          linkPath: sessionPath({ session: chatId }),
+          metadata: { extensionId, project: project.root, via, reason: request.reason },
+        })
+        .catch((err: unknown) =>
+          logger.warn('[start-work] could not record a started chat', logError(err))
+        );
     const title = (id: string, runtime: string) =>
       this.rename(runtime, id, request.title, project.root).then(() => {
         titled = true;
@@ -242,7 +302,15 @@ export class StartWorkService {
           reservation.rekey(run.sessionId);
           chatId = run.sessionId;
         }
-        if (run.status === 'started' || run.status === 'running') return;
+        if (run.status === 'started' || run.status === 'running') {
+          // A warning the launch owes the person rides the start's history
+          // until every device shows the run's own (T3).
+          if (!warned && run.warnings.length > 0) {
+            warned = true;
+            emit('extension.session_warning', run.warnings.map((w) => w.message).join(' '));
+          }
+          return;
+        }
         stop();
         // A start that never reached its turn counts against no limit.
         if (run.startedAt === null) {
@@ -266,23 +334,7 @@ export class StartWorkService {
         ...logError(err),
       })
     );
-    void this.deps.activity
-      ?.emit({
-        actorType: 'system',
-        actorLabel: name,
-        actorId: extensionId,
-        category: 'agent',
-        eventType: 'extension.session_started',
-        resourceType: 'session',
-        resourceId: sessionId,
-        resourceLabel: request.title,
-        summary: `${name} started a chat in ${project.name}: ${request.title}`,
-        linkPath: sessionPath({ session: sessionId }),
-        metadata: { extensionId, project: project.root, via, reason: request.reason },
-      })
-      .catch((err: unknown) =>
-        logger.warn('[start-work] could not record a started chat', logError(err))
-      );
+    emit('extension.session_started');
 
     return { sessionId };
   }

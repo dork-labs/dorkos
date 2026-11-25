@@ -26,6 +26,7 @@ import type { RunStore, TurnRun } from '../run-store.js';
 import type { SpaceTurnPort } from '../turn-port.js';
 import type { EffectStore, TurnEffect } from './effect-store.js';
 import { retryDelayMs } from './worker.js';
+import { workNotStartedNotice } from './work-not-started.js';
 
 const LIVE: ReadonlySet<RunStatus> = new Set(['starting', 'started', 'running']);
 
@@ -62,6 +63,12 @@ export class StartTurns implements HandedStarts {
     const to = run.status;
     if (to === 'started' || to === 'superseded' || to === 'cancelled') {
       this.effects.endStartOf(run.id, 'done', { runStatus: to });
+    }
+    // A mini app's start was answered and will never run: its owner hears
+    // once, in the same write, with the app's name and why (§3.1).
+    if (to === 'cancelled' && run.origin?.kind === 'extension-start') {
+      const app = this.port()?.appOf(run);
+      if (app) this.effects.insert(workNotStartedNotice(run, app, this.now()));
     }
     // The others first: the run that let go waits out its own backoff.
     if (LIVE.has(from) && !LIVE.has(to)) this.effects.wakeAllStarts();

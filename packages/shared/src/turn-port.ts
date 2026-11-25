@@ -45,6 +45,7 @@ import {
   AgentComputerTurnOriginSchema,
   AgentComputerTurnTierSchema,
 } from './session-relay-agent-computer.js';
+import { SessionLaunchWarningSchema } from './session-launch-schemas.js';
 import {
   BackgroundTaskTypeSchema,
   InterruptReceiptSchema,
@@ -804,6 +805,12 @@ export const RunFactSchema = z.discriminatedUnion('kind', [
     runtime: z.string().min(1),
     runtimeTurnRef: z.number().int().nonnegative(),
     turnBindingId: z.string().min(1).optional(),
+    /**
+     * What the launch owes a person to know about this chat, in plain words
+     * (`SessionLaunchWarning`): today only that an agentless Codex chat has no
+     * DorkOS tools. The run keeps them, for every device to show (T3).
+     */
+    warnings: z.array(z.strictObject(SessionLaunchWarningSchema.shape)).readonly().optional(),
   }),
   z.strictObject({ kind: z.literal('delivered'), runId: RunIdSchema }),
   z.strictObject({ kind: z.literal('waiting_on_person'), runId: RunIdSchema }),

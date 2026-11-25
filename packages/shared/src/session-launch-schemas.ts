@@ -33,11 +33,15 @@ export const SessionDorkosToolsSchema = z
 /** Whether a chat lost its DorkOS tools, or got them back. */
 export type SessionDorkosTools = z.infer<typeof SessionDorkosToolsSchema>;
 
-/** The new chat and any warning the extension should show with its Watch link. */
+/**
+ * The new chat, answered when the start is saved, before its turn starts. A
+ * warning the launch owes (an agentless Codex chat with no DorkOS tools) is
+ * known only once the turn starts: it is kept on the chat's run, and the
+ * start's history line carries it (spec `turns-survive-restarts`, DOR-5232).
+ */
 export const StartWorkResponseSchema = z
   .object({
     sessionId: z.string(),
-    ...SessionLaunchWarningShape,
   })
   .openapi('StartWorkResponse');
 

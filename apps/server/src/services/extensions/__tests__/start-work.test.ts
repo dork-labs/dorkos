@@ -26,7 +26,31 @@ import { createMockSession } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { StartTurnInput } from '@dorkos/shared/turn-port';
-import { createRunRecord, type RunRecord } from '../../runs/index.js';
+import {
+  createRunFactsSink,
+  createRunRecord,
+  getRunRecord,
+  installRunRecord,
+  uninstallRunRecord,
+  type RunRecord,
+} from '../../runs/index.js';
+import { eq, notifications as notificationsTable } from '@dorkos/db';
+import { NotificationStore } from '../../notifications/notification-store.js';
+import {
+  NotificationService,
+  setNotificationService,
+} from '../../notifications/notification-service.js';
+import { MessageQueueStore, setMessageQueueStore } from '../../session/message-queue-store.js';
+// Wires the projector's rekey hooks (the queue and its runs follow a moved chat).
+import '../../session/message-dispatcher.js';
+import {
+  disposeProjector,
+  getOrCreateProjector,
+  peekProjector,
+  rekeyProjector,
+} from '../../session/session-state-projector.js';
+import { queueKeyOf } from '../../session/resolution/session-key-registry.js';
+import { holdRun, releaseRun } from '../../session/turn-port/facts.js';
 
 import { applySessionOriginOverlays } from '../../session/origin/session-origin-overlays.js';
 import { _forgetTitles } from '../../session/origin/started-by-origin-overlay.js';
@@ -522,6 +546,148 @@ describe('a watch on an inbox row (§7.3)', () => {
     } finally {
       fx.inbox.stop();
       fx.close();
+    }
+  });
+});
+
+describe('a start through the turn port (DOR-5232)', () => {
+  it('saves its words with the start, hands them over again after a restart, and lets them go once used', async () => {
+    const { sessionId } = await service.start('flow', INPUT, 'ctx');
+    const run = record.store.get(launches[0]!.runId)!;
+    expect(run.sourceRef).toBe(`start-work:${sessionId}`);
+    expect(store.get(sessionId)?.prompt).toBe(INPUT.prompt);
+
+    // A restart: a new run record and seam over the same database. The words
+    // are no longer in any process, only in the start's own row.
+    record = createRunRecord(db, { epoch: '01BOOTEPOCHSTARTWORK000001' });
+    service = build();
+    expect(record.port.wordsOf(run)).toBe(INPUT.prompt);
+
+    // Once its turn has them, the row lets them go.
+    launches[0] = { ...launches[0]!, runId: run.id };
+    await finish(0);
+    expect(store.get(sessionId)?.prompt).toBeNull();
+  });
+
+  it('tells the owner once, naming the app and why, when a start it answered never runs', async () => {
+    const notifications = new NotificationStore(db);
+    setNotificationService(new NotificationService(notifications));
+    try {
+      await service.start('flow', INPUT, 'ctx');
+      const { runId } = launches[0]!;
+      // The door refused it after the answer: the account rule.
+      record.starts.cancel(runId, 'account_not_allowed');
+      expect(record.effects.listForRun(runId).filter((e) => e.kind === 'notify_person')).toEqual([
+        expect.objectContaining({
+          key: `notify:${runId}:not_started`,
+          payload: expect.objectContaining({ name: 'Flow', reason: 'account_not_allowed' }),
+        }),
+      ]);
+      await record.worker.runOnce();
+      const rows = db
+        .select()
+        .from(notificationsTable)
+        .where(eq(notificationsTable.kind, 'extension.work_not_started'))
+        .all();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        title: 'The Flow app couldn’t start its chat',
+        body: 'No account may work in that project.',
+      });
+      // Told once: a second pass writes nothing.
+      await record.worker.runOnce();
+      expect(
+        db
+          .select()
+          .from(notificationsTable)
+          .where(eq(notificationsTable.kind, 'extension.work_not_started'))
+          .all()
+      ).toHaveLength(1);
+    } finally {
+      setNotificationService(null);
+    }
+  });
+
+  it('carries a launch warning on its history until the chat shows its run (T3)', async () => {
+    const emit = vi.fn(async () => undefined);
+    service = build({ activity: { emit } as never });
+    await service.start('flow', INPUT, 'ctx');
+    const { runId } = launches[0]!;
+    const { store: runs } = record;
+    // This process holds the launch, as the dispatcher does while it runs.
+    holdRun(runId);
+    runs.move(runs.get(runId)!, 'starting', runs.lease());
+    createRunFactsSink(runs, record.notices, record.starts).report({
+      kind: 'started',
+      runId,
+      sessionId: launches[0]!.sessionId,
+      openedBy: 'caller',
+      runtime: 'codex',
+      runtimeTurnRef: 1,
+      warnings: [{ code: 'NO_DORKOS_TOOLS', message: 'This chat has no DorkOS tools.' }],
+    });
+    releaseRun(runId);
+    await flush();
+    expect(runs.get(runId)?.warnings).toEqual([
+      { code: 'NO_DORKOS_TOOLS', message: 'This chat has no DorkOS tools.' },
+    ]);
+    expect(
+      emit.mock.calls.map(
+        (call) => (call as unknown as [{ eventType: string; summary: string }])[0]
+      )
+    ).toEqual([
+      expect.objectContaining({ eventType: 'extension.session_started' }),
+      expect.objectContaining({
+        eventType: 'extension.session_warning',
+        summary: `Flow's chat ${INPUT.title}: This chat has no DorkOS tools.`,
+      }),
+    ]);
+  });
+
+  it('keeps opening the chat by the id it answered, after the runtime moves the chat', async () => {
+    // The server's own wiring: the run record as the facts sink, and the queue
+    // whose rekey moves a chat's runs.
+    uninstallRunRecord();
+    installRunRecord(db, { epoch: '01BOOTEPOCHSTARTWORK000002' });
+    record = getRunRecord()!;
+    setMessageQueueStore(new MessageQueueStore(db));
+    try {
+      const { sessionId } = await service.start('flow', INPUT, 'ctx');
+      getOrCreateProjector(sessionId, DORKOS.root);
+      const canonical = `sdk-${sessionId}`;
+      rekeyProjector(sessionId, canonical);
+
+      // The id the app was given still reaches the chat, its projector and its run.
+      expect(queueKeyOf(sessionId)).toBe(queueKeyOf(canonical));
+      expect(peekProjector(sessionId)).toBe(peekProjector(canonical));
+      expect(record.port.list(sessionId).map((run) => run.id)).toEqual([
+        record.port.list(canonical)[0]!.id,
+      ]);
+
+      // Its first turn runs: who started it moves with it, and the title is set.
+      const { store: runs } = record;
+      const run = runs.listForChat(canonical)[0]!;
+      holdRun(run.id);
+      runs.move(run, 'starting', runs.lease());
+      createRunFactsSink(runs).report({
+        kind: 'started',
+        runId: run.id,
+        sessionId: canonical,
+        openedBy: 'caller',
+        runtime: 'test-mode',
+        runtimeTurnRef: 1,
+      });
+      releaseRun(run.id);
+      await flush();
+      expect(store.get(canonical)?.extensionId).toBe('flow');
+      expect(store.get(sessionId)).toBeNull();
+      expect(renamed).toEqual([
+        { runtime: 'test-mode', sessionId, title: INPUT.title, cwd: DORKOS.root },
+      ]);
+      disposeProjector(canonical);
+    } finally {
+      uninstallRunRecord();
+      setMessageQueueStore(undefined);
     }
   });
 });

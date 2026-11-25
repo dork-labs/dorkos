@@ -21,6 +21,7 @@ import type {
 } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { TurnOrigin } from '@dorkos/shared/turn-port';
+import type { SessionLaunchWarning } from '@dorkos/shared/schemas';
 import type { SessionStateProjector } from '../session-state-projector.js';
 import type { TriggerTurnOpts, TriggerTurnResult } from '../trigger-turn.js';
 import type { CompactionBoundaryTag } from '../trigger-command-intent.js';
@@ -195,6 +196,11 @@ export interface DispatchMessageOpts {
    * Otherwise it waits as a queued message does.
    */
   wordsAtSource?: true;
+  /**
+   * What the launch path found a person is owed to know about this chat
+   * (`sessionToolWarnings`), reported on the run's `started` fact.
+   */
+  launchWarnings?: SessionLaunchWarning[];
   /** Lock identity of whoever is sending; a message waits only behind its own client. */
   clientId: string;
   /** The person's words, passed through pristine. */
@@ -534,6 +540,7 @@ export interface DispatchPlan {
     | 'privateReceiptId'
     | 'privateDispatchSignal'
     | 'unattended'
+    | 'launchWarnings'
   > & {
     /** What started it; absent for a row adopted after a restart, whose run already has it. */
     origin?: TurnOrigin;

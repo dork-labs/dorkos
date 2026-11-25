@@ -50,7 +50,7 @@ import {
   type TurnOrigin,
   type WaitReason,
 } from '@dorkos/shared/turn-port';
-import type { InterruptReceipt } from '@dorkos/shared/schemas';
+import type { InterruptReceipt, SessionLaunchWarning } from '@dorkos/shared/schemas';
 import { chatKeyOf } from '../session/turn-port/index.js';
 import { patchColumns, toRun } from './run-rows.js';
 
@@ -111,6 +111,8 @@ export interface TurnRun {
   sourceRef: string | null;
   /** Epoch ms: a run still waiting past this is cancelled as `expired`. */
   notAfter: number | null;
+  /** What the launch owed a person to know, from its `started` fact (T3 shows them). */
+  warnings: SessionLaunchWarning[];
   runtime: string | null;
   runtimeTurnRef: number | null;
   turnBindingId: string | null;
@@ -197,6 +199,7 @@ export type RunPatch = Partial<
     | 'settledAt'
     | 'agentId'
     | 'queueMessageId'
+    | 'warningsJson'
   >
 > & { endingDetail?: RunEndingDetail };
 

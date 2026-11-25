@@ -65,6 +65,12 @@ export interface StartedByRecord {
    * `agent-mode-run-origin.ts`, which takes any other value as a run.
    */
   scheduledOrigin: string | null;
+  /**
+   * The words a start asked of the new chat, kept until its turn has them,
+   * then cleared (spec `turns-survive-restarts` §3.2, DOR-5232): what a
+   * restart in between hands over again. Null otherwise.
+   */
+  prompt: string | null;
   /** When it was started (ISO 8601). */
   createdAt: string;
 }
@@ -76,7 +82,8 @@ type DefaultedField =
   | 'starterPermissionMode'
   | 'permissionSameAsStarter'
   | 'reportBack'
-  | 'scheduledOrigin';
+  | 'scheduledOrigin'
+  | 'prompt';
 
 /**
  * A start as a writer hands it in: `carried` defaults to false, the
@@ -107,6 +114,19 @@ export class SessionStartedByStore {
   insert(record: StartedByInsert): boolean {
     const result = this.db.insert(sessionStartedBy).values(record).onConflictDoNothing().run();
     return result.changes > 0;
+  }
+
+  /**
+   * Let a start's words go: its turn has them (or will never run).
+   *
+   * @param sessionId - The chat.
+   */
+  clearPrompt(sessionId: string): void {
+    this.db
+      .update(sessionStartedBy)
+      .set({ prompt: null })
+      .where(eq(sessionStartedBy.sessionId, sessionId))
+      .run();
   }
 
   /**

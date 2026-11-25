@@ -93,10 +93,9 @@ export interface StartWorkInput {
   reason: string;
 }
 
-/** A new chat, including tool warnings the extension should show. */
+/** A new chat, answered when the start is saved. */
 export interface StartWorkResponse {
   sessionId: string;
-  warnings?: Array<{ code: 'NO_DORKOS_TOOLS'; message: string }> | undefined;
 }
 
 /** Codes: 'not_a_project' | 'account_not_allowed_here' | 'start_limit'. `message` is plain words. */

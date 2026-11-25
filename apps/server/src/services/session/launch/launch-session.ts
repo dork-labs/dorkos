@@ -716,6 +716,9 @@ async function launchSessionMessage(
   // expire at the 202 and correlate nothing; see
   // `routes/__tests__/sessions-dispatch-correlation.test.ts`, which fails if it
   // moves.
+  // Known before the turn starts, so its `started` fact carries them (DOR-5232).
+  const tools = { cwd: effectiveCwd ?? DEFAULT_CWD, sessionId, agentPath: forAgent };
+  const { warnings } = await sessionToolWarnings(runtimeType, runtime, tools);
   const result = await runInDispatch({ dispatchId, origin: 'session' }, () =>
     dispatchMessage({
       turnStarter: personTyped
@@ -730,6 +733,7 @@ async function launchSessionMessage(
       messageId,
       ...(opts.runId !== undefined ? { runId: opts.runId } : {}),
       ...(opts.wordsAtSource ? { wordsAtSource: true as const } : {}),
+      ...(warnings ? { launchWarnings: warnings } : {}),
       cwd: effectiveCwd,
       context,
       // Background this turn's opener attached to it. It rides the neutral
@@ -783,8 +787,7 @@ async function launchSessionMessage(
     });
   }
 
-  const tools = { cwd: effectiveCwd ?? DEFAULT_CWD, sessionId, agentPath: forAgent };
-  return { ...result, ...(await sessionToolWarnings(runtimeType, runtime, tools)) };
+  return { ...result, ...(warnings ? { warnings } : {}) };
 }
 
 /** @internal Exported for testing only. */

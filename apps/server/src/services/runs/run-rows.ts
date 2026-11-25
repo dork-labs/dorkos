@@ -48,6 +48,17 @@ function parseDetail(json: string | null): RunEndingDetail {
   }
 }
 
+/** Read stored launch warnings, degrading an unreadable value to none. */
+function parseWarnings(json: string | null): TurnRun['warnings'] {
+  if (json === null) return [];
+  try {
+    const parsed: unknown = JSON.parse(json);
+    return Array.isArray(parsed) ? (parsed as TurnRun['warnings']) : [];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * A stored row as the store answers it.
  *
@@ -69,6 +80,7 @@ export function toRun(row: TurnRunRow): TurnRun {
     queueMessageId: row.queueMessageId,
     sourceRef: row.sourceRef,
     notAfter: row.notAfter,
+    warnings: parseWarnings(row.warningsJson),
     runtime: row.runtime,
     runtimeTurnRef: row.runtimeTurnRef,
     turnBindingId: row.turnBindingId,

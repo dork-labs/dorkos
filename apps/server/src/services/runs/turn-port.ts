@@ -77,6 +77,13 @@ export interface WordSource {
    * @param id - The source's own id: what follows `<kind>:` in the run's `sourceRef`.
    */
   read(id: string): string | undefined;
+  /**
+   * The app that asked, when the source is a mini app's: named in the owner's
+   * notice when a start it was answered never runs (§3.1).
+   *
+   * @param id - The source's own id.
+   */
+  app?(id: string): { extensionId: string; name: string } | undefined;
 }
 
 /** Which runs a watcher hears. */
@@ -285,6 +292,17 @@ export class SpaceTurnPort {
     if (held !== undefined || run.sourceRef === null) return held;
     const colon = run.sourceRef.indexOf(':');
     return this.sources.get(run.sourceRef.slice(0, colon))?.read(run.sourceRef.slice(colon + 1));
+  }
+
+  /**
+   * The mini app a run's source names, when it has one.
+   *
+   * @param run - The run.
+   */
+  appOf(run: Pick<TurnRun, 'sourceRef'>): { extensionId: string; name: string } | undefined {
+    if (run.sourceRef === null) return undefined;
+    const colon = run.sourceRef.indexOf(':');
+    return this.sources.get(run.sourceRef.slice(0, colon))?.app?.(run.sourceRef.slice(colon + 1));
   }
 
   /**

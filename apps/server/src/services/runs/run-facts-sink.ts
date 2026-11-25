@@ -116,6 +116,7 @@ function recordStarted(store: RunStore, fact: Extract<RunFact, { kind: 'started'
       runtime: fact.runtime,
       runtimeTurnRef: fact.runtimeTurnRef,
       turnBindingId: fact.turnBindingId ?? null,
+      ...(fact.warnings?.length ? { warningsJson: JSON.stringify(fact.warnings) } : {}),
       startedAt: store.stamp(),
       ...store.lease(),
       ...(fact.agentId !== undefined ? { agentId: fact.agentId } : {}),
