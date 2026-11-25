@@ -268,9 +268,12 @@ gates:
   - id: wf.release-publish.prepare
     source: .github/workflows/release-publish.yml
     purpose: After the proof passes, installs and builds the release commit with main's release-cli (which proves again) and packs the three packages.
+  - id: wf.release-publish.gate
+    source: .github/workflows/release-publish.yml
+    purpose: Right before npm, refuses the publish unless main's release-gate.sh answers exactly SHIP for P, the proven release point (on main's first-parent history and not reverted, its full run on main green, every required check green in its merge-queue build); read-only, no secrets (DOR-5123).
   - id: wf.release-publish.publish
     source: .github/workflows/release-publish.yml
-    purpose: Publishes the packed tarballs to npm by trusted publishing only after the named approver, not the dispatcher, approved npm-release and the tip is unchanged.
+    purpose: Publishes the packed tarballs to npm by trusted publishing only after the gate shipped P, the named approver, not the dispatcher, approved npm-release, and the tip is unchanged.
 
   # --- queue-repeat-guard.yml ---
   - id: wf.queue-repeat-guard.door
