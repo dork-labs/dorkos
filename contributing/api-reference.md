@@ -182,6 +182,7 @@ The space connections (`/api/community-connections/*`), the spaces they reach (`
   - `rate_limited` (429): `COMMUNITY_RATE_LIMITED` (with `retryAfterMs`, was `retryAfterSeconds`), `TOO_MANY_ATTEMPTS`, a busy space, a hub with too many requests open to one computer.
   - `temporarily_unavailable` (503): `HUB_NOT_READY`, `HUB_NOT_SERVING`, an agent computer not ready or unavailable. `upstream_unavailable` (502): a space or the DorkOS account that can't be reached (was `{ error }` only), a linked computer's own failure, and an answer from it the hub couldn't read. `internal_error` (500): any other failure, which used to echo the error's message on `/api/tunnel/start` and `/api/tunnel/stop`.
 - **Kept as they were:** the DorkOS account writes' `200` refusal envelopes (`{ ok: false, problem }` with the service's own problem, or `{ ok: false, message }`), which are answers, not errors, and the `428` "Confirm it's you" body.
+
 ### Codes that changed: the last route groups
 
 Approvals, permissions, to-do promises, onboarding, the harness, feedback, push, admin, commands, models, docs links, the browser viewer, the system load gate and shell check, the address and remote-access checks, and the test-only routes moved to problem documents together (DOR-4979). No `detail` carries an error's own text, a path or a field value: the cause is in the server log.
