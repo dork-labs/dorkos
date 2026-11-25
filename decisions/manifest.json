@@ -8260,6 +8260,18 @@
         "apps/server/src/services/core/capabilities/**",
         "packages/cloud-api/**"
       ]
+    },
+    {
+      "id": "261125-191001",
+      "slug": "a-mini-apps-message-to-an-agent-is-not-a-wake",
+      "title": "A mini app's message to an agent is not a wake; an outside event's words reach a chat only through the one wake",
+      "status": "proposed",
+      "created": "2026-11-25",
+      "extractedFrom": null,
+      "specSlug": "one-wake-and-watchers",
+      "supersedes": null,
+      "amends": ["261124-150519"],
+      "affects": ["apps/server/src/services/extensions/**", "packages/extension-api/**"]
     }
   ]
 }

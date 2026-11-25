@@ -19,6 +19,8 @@ Accepted (operator decision, 2026-11-24: "I don't want to keep adding features t
 
 **Builds on:** [261006-235242](261006-235242-everything-is-a-plugin.md) (everything is a plugin) and ADR-0271 and ADR-0272 (first-party features built on the public author API, which a person can turn off).
 
+**Read with** [261125-191001](261125-191001-a-mini-apps-message-to-an-agent-is-not-a-wake.md) (proposed 2026-11-25): a mini app's message to an agent is not a wake and keeps its path; the words of an outside event reach a chat only through the one wake. Nothing in this record changes.
+
 ## Context
 
 The DorkOS server has 38 service domains and grows by adding more. Useful things that are not the product's core keep arriving: a watcher that tells agents when a pull request changes, a steward for the pipeline, trackers and dashboards. Built as server domains, each one makes every install heavier and every change riskier. DorkOS already has a second home for them: a mini app can run its server half as its own limited process, on a timer, with network access, and can start a turn. What is missing is a rule for which home a thing belongs in, and one shared way for a watcher to wake an agent. Today a mini app can wake only its own chat with an agent, not the chat that asked, and a connected app's events reach one chat per subscription and no mini app.

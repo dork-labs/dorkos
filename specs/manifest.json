@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "261125-180652",
+      "slug": "one-wake-and-watchers",
+      "title": "One wake, and watchers as mini apps: the registration, the watcher's wake, the author API's gaps and the pull request watcher",
+      "created": "2026-11-25",
+      "status": "specified",
+      "linearIssue": "DOR-5154"
+    },
+    {
       "id": "261125-151223",
       "slug": "computer-side-starts-alone",
       "title": "A computer side that starts alone: one tools port, the computer wall and the computer entry",
