@@ -96,10 +96,12 @@ describe('only the main canary saves, and only build entries', () => {
   });
 
   // Not on a push run (DOR-5130): build-cache.yml saves the same key after every merge.
-  it("trims to the build step's entries on refs/heads/main, shard 1, off push, before the save", () => {
+  // Never on a rolling-bisect run (DOR-5254): it tests an older merge, so it
+  // must not save under main head's sha.
+  it("trims to the build step's entries on refs/heads/main, shard 1, off push, never on a bisect, before the save", () => {
     const trim = stepText(shard, "Keep only this run's build entries in the turbo cache");
     expect(trim).toContain(
-      "if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'push' && matrix.shard == 1 }}"
+      "if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'push' && matrix.shard == 1 && !inputs.bisect_sha }}"
     );
     expect(trim).toContain('BUILD_SUMMARY: ${{ steps.deps.outputs.summary }}');
     expect(trim).toContain('bash scripts/keep-build-cache-only.sh "$BUILD_SUMMARY"');

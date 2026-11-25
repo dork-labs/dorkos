@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fixture suite for scripts/rolling-bisect.sh (DOR-5122). `decide` is pure and
+# Fixture suite for scripts/rolling-bisect.sh (DOR-5122; test.yml, DOR-5254). `decide` is pure and
 # is walked through whole bisections; `facts` runs against a stubbed `gh`
 # (GH=...) that answers from fixture files and logs every call. Needs bash and jq.
 #
@@ -260,10 +260,10 @@ chmod +x "$tmp/gh"
 fx=$tmp/fx
 mkdir -p "$fx"
 export GH="$tmp/gh" GH_LOG="$tmp/gh.log" REPO=made-up/repo FX=$fx
-run_json() { # id event sha attempt conclusion title
-  jq -n --argjson id "$1" --arg e "$2" --arg s "$3" --argjson a "$4" --arg co "$5" --arg t "$6" \
+run_json() { # id event sha attempt conclusion title (WF names the workflow; browser-test by default)
+  jq -n --argjson id "$1" --arg e "$2" --arg s "$3" --argjson a "$4" --arg co "$5" --arg t "$6" --arg wf "${WF:-browser-test}" \
     '{id: $id, run_attempt: $a, status: "completed", conclusion: $co, event: $e, head_branch: "main", head_sha: $s,
-      workflow_id: 9, name: "browser-test", path: ".github/workflows/browser-test.yml",
+      workflow_id: 9, name: $wf, path: ".github/workflows/\($wf).yml",
       html_url: "https://example.invalid/run/\($id)", display_title: $t, created_at: "2026-11-24T05:00:00Z"}'
 }
 run_json 77 push "$H" 2 failure 'feat: merge 102 (#102)' >"$fx/run-77"
@@ -327,6 +327,69 @@ echo '{"files":[]}' >"$fx/compare-main"
 jq '.commits |= map(select(.sha != "'"$(c 1)"'"))' "$fx/compare" >"$fx/c2" && mv "$fx/c2" "$fx/compare"
 "$SCRIPT" facts 77 >"$tmp/facts.json" 2>/dev/null
 check 'a broken chain is no range' null "$(jq -c .range "$tmp/facts.json")"
+
+# --- test.yml's rolling run (DOR-5254): the unit suite is bisected the same ---
+# Nothing in the script names a workflow: the file comes from the run's path,
+# a family is a failed job of that run (test-shard (i/10) -> test-shard), and
+# the fan-in dropped is the job named after the workflow (`test`).
+reset 8
+d '.workflow = "test" | .workflowFile = "test.yml" | .originFamilies = ["test-shard"] | .points[1].families = ["test-shard"]'
+check 'test.yml: H fails the re-test in the same job: the bisect proceeds' "dispatch $(c 3)" "$out"
+d '.workflow = "test" | .workflowFile = "test.yml" | .originFamilies = ["test-shard"] | .points[1].families = ["community-pg"]'
+check 'test.yml: H fails the re-test in another job: not the same break' 'inconclusive different-failure' "$out"
+
+jq -n --arg g "$G" --arg a "$(c 0)" --arg b "$(c 1)" --arg h "$H" '{status: "ahead", commits: [
+  {sha: $a, parents: [{sha: $g}], commit: {message: "feat: merge 100 (#100)"}},
+  {sha: $b, parents: [{sha: $a}], commit: {message: "feat: merge 101 (#101)"}},
+  {sha: $h, parents: [{sha: $b}], commit: {message: "feat: merge 102 (#102)"}}]}' >"$fx/compare"
+WF='test' run_json 77 push "$H" 1 failure 'feat: merge 102 (#102)' >"$fx/run-77"
+WF='test' run_json 603 workflow_dispatch "$H" 1 failure "bisect $H for run 77" >"$fx/run-603"
+jq -n --arg h "$H" '{workflow_runs: [{id: 603, display_title: "bisect \($h) for run 77", status: "completed", conclusion: "failure", run_attempt: 1}]}' >"$fx/bisects"
+echo '{"jobs":[{"name":"test-shard (3/10)","conclusion":"failure"},{"name":"test-shard (1/10)","conclusion":"success"},{"name":"test-binary","conclusion":"success"},{"name":"test","conclusion":"failure"}]}' >"$fx/jobs-77"
+echo '{"jobs":[{"name":"test-shard (7/10)","conclusion":"failure"},{"name":"test","conclusion":"failure"}]}' >"$fx/jobs-603"
+"$SCRIPT" facts 77 >"$tmp/facts.json" 2>"$tmp/err"
+check 'test.yml facts exits 0' 0 "$?"
+cat "$tmp/err" >&2
+check 'test.yml: the workflow is test' test "$(jq -r .workflow "$tmp/facts.json")"
+check 'test.yml: the file to dispatch is test.yml' test.yml "$(jq -r .workflowFile "$tmp/facts.json")"
+check 'test.yml: shard suffix and the test fan-in dropped' '["test-shard"]' "$(jq -c .originFamilies "$tmp/facts.json")"
+check 'test.yml: the probe of H is a bad point in test-shard' '["test-shard"]' "$(jq -c '[.points[] | select(.id == 603) | .families[]]' "$tmp/facts.json")"
+check 'test.yml: a failure is bisected end to end' "dispatch $(c 0)" "$("$SCRIPT" decide "$tmp/facts.json")"
+"$SCRIPT" facts 603 >"$tmp/facts2.json" 2>/dev/null
+check 'test.yml: a bisect run resolves to the run it bisects' 77 "$(jq .origin "$tmp/facts2.json")"
+echo '{"files":[{"filename":".github/workflows/browser-test.yml"}]}' >"$fx/compare-main"
+"$SCRIPT" facts 77 >"$tmp/facts.json" 2>/dev/null
+check 'test.yml: a change to browser-test.yml is not its change' false "$(jq .workflowChanged "$tmp/facts.json")"
+echo '{"files":[{"filename":".github/workflows/test.yml"}]}' >"$fx/compare-main"
+"$SCRIPT" facts 77 >"$tmp/facts.json" 2>/dev/null
+check 'test.yml: a change to test.yml is seen' true "$(jq .workflowChanged "$tmp/facts.json")"
+echo '{"files":[]}' >"$fx/compare-main"
+
+# rolling-bisect.yml's own decide step, read from the workflow and run with gh
+# stubbed on PATH: it dispatches the failed run's workflow file, on main, with
+# the bisect inputs.
+step=$(awk '/- name: Decide, and dispatch or re-run/ { s = 1 }
+  s && /^        run: [|]$/ { r = 1; next }
+  r && !/^          / && !/^$/ { exit }
+  r' "$repo_root/.github/workflows/rolling-bisect.yml" | sed 's/^          //')
+check 'the decide step was read from rolling-bisect.yml' yes "$(grep -q 'gh workflow run' <<<"$step" && echo yes || echo no)"
+mkdir -p "$tmp/bin" "$tmp/ws/scripts"
+cp "$SCRIPT" "$tmp/ws/scripts/rolling-bisect.sh"
+cat >"$tmp/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+case "$1 $2" in
+  'workflow run' | 'run rerun') printf '%s\n' "$*" >>"$WRITES" ;;
+  *) exec "$STUB" "$@" ;;
+esac
+EOF
+chmod +x "$tmp/bin/gh"
+: >"$tmp/writes"
+(cd "$tmp/ws" && PATH="$tmp/bin:$PATH" GH=gh STUB="$tmp/gh" WRITES="$tmp/writes" RUN_ID=77 \
+  GITHUB_OUTPUT="$tmp/ws/out" bash -c "$step") >/dev/null 2>&1
+check 'the workflow step exits 0' 0 "$?"
+check 'test.yml: the step dispatches test.yml on main with the bisect inputs' \
+  "workflow run test.yml --repo made-up/repo --ref main -f bisect_sha=$(c 0) -f bisect_of=77" "$(cat "$tmp/writes")"
+check 'test.yml: the step names the workflow for the report' 'workflow=test' "$(grep '^workflow=' "$tmp/ws/out")"
 
 rm "$fx/pushes"
 "$SCRIPT" facts 77 >/dev/null 2>&1
