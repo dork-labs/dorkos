@@ -42,9 +42,9 @@ Either way you get the same card, and it holds everything you need to decide:
   </Step>
   <Step>
     **Click Allow** to let it through. While the agent is still waiting on your answer, the same
-    request also shows up as a card right inside that conversation — clicking Allow there, in the
-    top bar, or on Home all finish the exact action the agent already asked for, so you never have
-    to repeat yourself. If the agent stopped waiting before you answered, the card stays in your
+    request also shows up as a card right inside that conversation. Clicking Allow there, in the top
+    bar, or on Home all finish the exact action the agent already asked for, so you never have to
+    repeat yourself. If the agent stopped waiting before you answered, the card stays in your
     conversation as a reminder and the agent tries again once you say yes.
   </Step>
   <Step>
@@ -113,16 +113,16 @@ The two below are about something else. They are not protecting anything; they d
 - How far agents may keep replying to each other in a room, how many turns an hour that may take, and how long an agent stays in the conversation after you talk to it
 - Whether agents greet you when you come back, after how long away, and how many may speak
 
-The last group is different again. These are the dials you turn **down** to give yourself room — less memory in use, fewer things running at once, smaller uploads, fewer tool groups in play. When DorkOS has to rebuild your settings file after a problem, it already refuses to undo a choice like that; an agent should not be able to undo it on purpose either. Each one says where you change it yourself:
+The last group is different again. These are the dials you turn **down** to give yourself room: less memory in use, fewer things running at once, smaller uploads, fewer tool groups in play. When DorkOS has to rebuild your settings file after a problem, it already refuses to undo a choice like that; an agent should not be able to undo it on purpose either. Each one says where you change it yourself:
 
-- Whether your Claude Code chats keep an agent awake between messages, which costs memory — **Control Center**, under _Warm agents_
-- How many scheduled runs may go at once — **Control Center**, or Settings → Advanced → Tools
-- Which sets of DorkOS tools your agents are told about — **Settings → Advanced → Tools**
-- How large an upload may be, and how many files it may carry — no screen yet; `dorkos config set uploads.maxFileSize`
-- Whether DorkOS updates the agent files inside your projects on its own — no screen yet; `dorkos config set harness.autoSync`
-- Whether DorkOS may move a skill into the folder every one of your tools reads, inside the folders it owns — no screen yet; `dorkos config set harness.autoAdopt`
+- Whether your Claude Code chats keep an agent awake between messages, which costs memory: **Control Center**, under _Warm agents_
+- How many scheduled runs may go at once: **Control Center**, or Settings → Advanced → Tools
+- Which sets of DorkOS tools your agents are told about: **Settings → Advanced → Tools**
+- How large an upload may be, and how many files it may carry: no screen yet; `dorkos config set uploads.maxFileSize`
+- Whether DorkOS updates the agent files inside your projects on its own: no screen yet; `dorkos config set harness.autoSync`
+- Whether DorkOS may move a skill into the folder every one of your tools reads, inside the folders it owns: no screen yet; `dorkos config set harness.autoAdopt`
 
-The Control Center opens with `⌘⇧L` (`Ctrl+Shift+L` on Windows and Linux). The last three have no switch anywhere in the app, so the command line is the way to them — and once you set one there, it stays set.
+The Control Center opens with `⌘⇧L` (`Ctrl+Shift+L` on Windows and Linux). The last three have no switch anywhere in the app, so the command line is the way to them, and once you set one there, it stays set.
 
 An agent can't change these settings on its own. Below Full it needs your yes on a card; at Full it's refused. These settings do not follow the ordinary preference rule. Through DorkOS's action tools, a change that needs your decision asks below Full, or is refused when its area is Blocked. In a chat set to Full autonomy, or on the older Full power preset, it is refused instead. The refusal names the setting and records an Activity entry. You can change it yourself in Settings, the Control Center, or from the command line.
 
@@ -142,12 +142,12 @@ Settings, and with no password anywhere, DorkOS has nothing left to tell the two
 same gap as the one below, and turning on **Ask for a password on this computer too** is what closes it.
 
 The same is true of `dorkos config set` on your command line. That command is you, at your own
-computer, so it changes any of these settings — and anything else running as you can type it. What
+computer, so it changes any of these settings, and anything else running as you can type it. What
 it cannot do is do it quietly: every change **that command** makes is written to your log at
 `~/.dork/logs/dorkos.log` by name.
 
 Read that as being about `dorkos config set` and nothing wider. DorkOS's other commands still change
-settings without writing a line — `dorkos telemetry`, `dorkos auth`, `dorkos cloud`, `dorkos init`
+settings without writing a line: `dorkos telemetry`, `dorkos auth`, `dorkos cloud`, `dorkos init`
 and `dorkos config reset` each change the one thing their name says, and none of them records it. So
 a quiet log is not proof a setting never moved.
 
@@ -159,8 +159,8 @@ One more thing works the same way, though it is not a setting: **where your pack
   **Not every one of these settings is guarded everywhere yet, and the unguarded paths are wide
   open.** Three of them have their own separate buttons that write the same setting by another path:
   connecting an AI service, starting your public web address, and linking this instance to a DorkOS
-  account. Those paths have **no agent check at all**. Not "they accept an API key" — they do not
-  ask who is calling in the first place, so an agent that says plainly who it is can use them, with
+  account. Those paths have **no agent check at all**. Not "they accept an API key": they do not ask
+  who is calling in the first place, so an agent that says plainly who it is can use them, with
   **Ask for a password on this computer too** on or off. Reaching them still takes a terminal or the
   ability to make web requests to DorkOS, which is the same access the gap further down describes.
   So read this as: the settings screen is guarded, those three buttons are not yet. We are closing

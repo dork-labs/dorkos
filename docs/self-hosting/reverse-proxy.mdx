@@ -12,7 +12,7 @@ You only need this page if you're self-hosting on your own domain, or running Do
 DorkOS streams agent output live as it works. Your proxy has to let that through, and default settings get it wrong in two different ways:
 
 - **Buffering.** Proxies hold a response until they have "enough" of it, which turns live output into one delayed dump at the end.
-- **Upgrades.** The DorkOS app opens its live streams as WebSockets, and most proxies do not forward a WebSocket upgrade unless you tell them to. Get this wrong and the failure is nasty and quiet: the app loads, buttons work, your agent really does run — and nothing it says ever appears on screen.
+- **Upgrades.** The DorkOS app opens its live streams as WebSockets, and most proxies do not forward a WebSocket upgrade unless you tell them to. Get this wrong and the failure is nasty and quiet: the app loads, buttons work, your agent really does run, and nothing it says ever appears on screen.
 
 The configs below handle both. Don't trim them down.
 
@@ -26,7 +26,7 @@ The configs below handle both. Don't trim them down.
 <Tabs items={["Caddy (Recommended)", "nginx"]}>
 
 <Tab value="Caddy (Recommended)">
-Caddy handles HTTPS certificates automatically, and forwards WebSocket upgrades on its own — there is nothing to add for that.
+Caddy handles HTTPS certificates automatically, and forwards WebSocket upgrades on its own. There is nothing to add for that.
 
 ```
 dorkos.example.com {
@@ -103,7 +103,7 @@ DORKOS_TRUSTED_HOSTS=dorkos.example.com
 Separate several names with commas and leave the port off. Turning on login covers most of it the
 other way: DorkOS trusts your sign-in instead of the address for ordinary requests and for live
 streams. **Set this anyway.** The embedded terminal is authorized by holding a hard-to-guess id
-rather than by your sign-in, so it always checks the address — with login on and this unset, the app
+rather than by your sign-in, so it always checks the address. With login on and this unset, the app
 works and the terminal will not open.
 See [Securing Your Instance](/docs/self-hosting/securing-your-instance).
 
@@ -169,7 +169,7 @@ Most people never touch these once the config above is working. Here's what each
 <Callout type="warn">
   **The app loads but no reply ever appears?** Your proxy is not forwarding WebSocket upgrades.
   Check the two `Upgrade`/`Connection` lines above, including the `map` block. A `403` in the
-  browser console instead means DorkOS does not trust the address you are reaching it on — set
+  browser console instead means DorkOS does not trust the address you are reaching it on. Set
   `DORKOS_TRUSTED_HOSTS` to your domain, as described above.
 </Callout>
 

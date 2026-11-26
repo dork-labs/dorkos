@@ -139,7 +139,7 @@ Your answers are injected into the tool's input. Claude continues with your sele
 
 ## The Trust Dial
 
-Each session has a trust setting — one dial with three stops — that decides how much Claude may do before it checks with you. You can change it at any time from the session's permission picker:
+Each session has a trust setting (one dial with three stops) that decides how much Claude may do before it checks with you. You can change it at any time from the session's permission picker:
 
 - **Ask first**: Claude prompts before it edits a file or runs a command. Read-only and agent tools are still auto-approved. This is where a new chat starts on the **Careful** preset.
 - **Act**: Claude edits files and runs routine commands on its own, and only stops to ask about the risky ones.
@@ -147,17 +147,17 @@ Each session has a trust setting — one dial with three stops — that decides 
 
 <Callout type="warn">
   Full autonomy turns off the approval prompts inside the session, so the agent edits files and runs
-  commands without stopping for your OK each time. Nothing waits on an approval tap — the agent
-  still asks when something genuinely needs your call, but it will not halt each action for you to
+  commands without stopping for your OK each time. Nothing waits on an approval tap: the agent still
+  asks when something genuinely needs your call, but it will not halt each action for you to
   confirm. Everything it does is still written to the [audit trail](/docs/guides/audit-trail), so
   you can check afterwards. Switch to Ask first for work you want to approve step by step.
 </Callout>
 
-Plan mode is a separate toggle next to the composer, not a stop on the dial: it puts the session in read-only planning — Claude can investigate and propose a plan but cannot execute tools — and you switch it on for a stretch of work rather than leaving a session parked at it.
+Plan mode is a separate toggle next to the composer, not a stop on the dial: it puts the session in read-only planning (Claude can investigate and propose a plan but cannot execute tools), and you switch it on for a stretch of work rather than leaving a session parked at it.
 
 ### Where a new conversation starts
 
-This dial is what an agent's **Files & commands** setting decides for a new conversation before you touch it. DorkOS works out the starting stop in order: a session, task, or room turn you set yourself always wins; failing that, the agent's own Files & commands setting on its Permissions page; failing that, the setting for its runtime in **Settings → Runtimes**, if you set one; and otherwise the setting everyone has. Moving the dial here only ever changes this one conversation — to change where this agent's next conversation starts, set its Files & commands row on its Permissions page. See [Permissions](/docs/guides/permissions).
+This dial is what an agent's **Files & commands** setting decides for a new conversation before you touch it. DorkOS works out the starting stop in order: a session, task, or room turn you set yourself always wins; failing that, the agent's own Files & commands setting on its Permissions page; failing that, the setting for its runtime in **Settings → Runtimes**, if you set one; and otherwise the setting everyone has. Moving the dial here only ever changes this one conversation. To change where this agent's next conversation starts, set its Files & commands row on its Permissions page. See [Permissions](/docs/guides/permissions).
 
 A chat an agent starts with the `session_start` tool runs at the same setting as the chat that started it, or a lower one if the agent asks for that. It can never be higher, and the new chat's first lines say which it got. Full autonomy is the one setting an agent has to ask for by name, so you see it on the approval card.
 
@@ -195,7 +195,7 @@ Only you can turn it on: no DorkOS tool lets an agent switch a chat to Never ask
   experience may change as it evolves.
 </Callout>
 
-Auto mode trades constant approvals for autonomy on long-running work. Instead of pausing on every tool call, a safety classifier evaluates each one, auto-approving routine actions and stopping only for risky ones, like deleting files or running unfamiliar commands. It's designed for autonomous runs where approving each step yourself would slow Claude down. It's a toggle that lives inside the **Act** stop, not a fourth stop of its own — turning it off returns the session to plain Act.
+Auto mode trades constant approvals for autonomy on long-running work. Instead of pausing on every tool call, a safety classifier evaluates each one, auto-approving routine actions and stopping only for risky ones, like deleting files or running unfamiliar commands. It's designed for autonomous runs where approving each step yourself would slow Claude down. It's a toggle that lives inside the **Act** stop, not a fourth stop of its own. Turning it off returns the session to plain Act.
 
 **Availability is model-gated.** The Auto toggle only appears when the model you've selected supports it. If you switch to a model that doesn't, the session falls back to Ask first automatically. Claude never enters auto mode on a model that can't run it.
 

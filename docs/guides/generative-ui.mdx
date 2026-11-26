@@ -41,7 +41,7 @@ DorkOS never shows you that raw code. It reads the JSON and renders a real card 
   and the agent can both see what went wrong.
 </Callout>
 
-Every runtime you can pick in DorkOS (Claude Code, Codex, or OpenCode) renders widgets the same way, so switching runtimes never changes what you see. Putting one on the canvas is the same set of tools on all three, too — nothing to turn on.
+Every runtime you can pick in DorkOS (Claude Code, Codex, or OpenCode) renders widgets the same way, so switching runtimes never changes what you see. Putting one on the canvas is the same set of tools on all three, too. There is nothing to turn on.
 
 Widgets show up in [rooms](/docs/concepts/rooms) too. Post the same block in a channel or a direct
 message and everyone there sees the finished widget, not the raw code. One difference: a room
@@ -83,7 +83,7 @@ too: ask what's open and it gets the real list, and it can read one of those doc
 
 In a [room](/docs/concepts/rooms), the canvas is the room's rather than yours: a widget an agent
 opens there lands in front of every member at once, with the face of whoever opened it on its tab,
-and it's still there after a reload. That's a different thing from a widget in a room **message** —
+and it's still there after a reload. That's a different thing from a widget in a room **message**:
 that one renders where it was posted, read-only, because a message isn't a chat for a button to
 answer into.
 
@@ -115,7 +115,7 @@ A `<node>` is `{ "type": "<type>", ...props }`. Every node type is part of a fix
 | --------- | ----------------------------------------------------------- | ------------------------------------------------- |
 | `stack`   | `direction: "vertical" \| "horizontal"`, `gap?`, `children` | A flex container of child nodes                   |
 | `card`    | `title?`, `description?`, `children`, `footer?`             | A card with header, body, and optional footer row |
-| `divider` | —                                                           | A horizontal rule                                 |
+| `divider` | None                                                        | A horizontal rule                                 |
 
 **Text**
 
@@ -254,11 +254,11 @@ An agent can call `control_ui` with `open_canvas` (or `update_canvas`) and a `wi
 
 The canvas is a tabbed, multi-document surface (each `open_canvas` call appends a tab and activates it, deduping by source so reopening the same file re-activates its existing tab instead of duplicating it), and `widget` is one of fourteen content types it can render: `widget`, `image`, `pdf`, `file` (CodeMirror, for arbitrary text/code), `markdown` (the rich Blintz editor), `diff` (a hunk-by-hunk review of what changed in a file; `open_diff` is the easier way to open one), `model3d` (glTF/GLB/STL/OBJ/3MF/PLY/FBX/DAE), `audio` (HTML5 player), `video` (HTML5 player), `csv`, `browser` (an embedded, sandboxed page), `mcp_app` (a UI resource an MCP server hosts), `url`, and `json`.
 
-Two of those fourteen — `url` and `browser` — are pages, and pages live one tab along, in **Browser**: those two are exactly what that tab renders. The other twelve open in **Canvas**. `mcp_app` stays in Canvas despite being served over HTTP: it's an app, not a page.
+Two of those fourteen (`url` and `browser`) are pages, and pages live one tab along, in **Browser**: those two are exactly what that tab renders. The other twelve open in **Canvas**. `mcp_app` stays in Canvas despite being served over HTTP: it's an app, not a page.
 
-`update_canvas` and `close_canvas` also take an optional `documentId`. Leave it out in a one-on-one chat and the call acts on the active document, exactly as it always has. Leave it out in a **room**, where there is no shared active document on purpose, and it means "the last document you opened in this room" — so acting on a document somebody else put up takes naming it.
+`update_canvas` and `close_canvas` also take an optional `documentId`. Leave it out in a one-on-one chat and the call acts on the active document, exactly as it always has. Leave it out in a **room**, where there is no shared active document on purpose, and it means "the last document you opened in this room." So acting on a document somebody else put up takes naming it.
 
-Where that id comes from is the same on both surfaces. Every verb that opens something (`open_canvas`, `open_file`, `open_diff`, `browser_navigate`) returns the new document's id, its revision number, and how many windows are watching — in a room and in a one-on-one chat alike, because both canvases are the server's and the row exists before the call answers. Hand that id straight back to `update_canvas`, `close_canvas` or `read_canvas_document`.
+Where that id comes from is the same on both surfaces. Every verb that opens something (`open_canvas`, `open_file`, `open_diff`, `browser_navigate`) returns the new document's id, its revision number, and how many windows are watching, in a room and in a one-on-one chat alike, because both canvases are the server's and the row exists before the call answers. Hand that id straight back to `update_canvas`, `close_canvas` or `read_canvas_document`.
 
 The two content-heavy types worth knowing up front:
 

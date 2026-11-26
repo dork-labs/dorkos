@@ -145,8 +145,9 @@
  * the positioning lines the 2026-10 vision reset retired, "operating system
  * for AI agents", "one place for every agent", the equal-accounts claims and
  * Discord invite links; Wave 7: "session" and "conversation", which
- * "chat" replaced in everything people read, DOR-2789; Waves 9-11, DOR-4943:
- * the app-copy voice words and the five banned button labels). Wave 4 is also the wave that
+ * "chat" replaced in everything people read, DOR-2789; Waves 9-12, DOR-4943:
+ * the app-copy voice words, the five banned button labels, and the em dash in
+ * docs prose). Wave 4 is also the wave that
  * shows what the allowlist is FOR: all four words keep legitimate technical
  * senses this repo uses daily — `RelayAdapter`, `ConnectorProvider`, the
  * marketplace package types an author writes, OpenCode's model providers — and
@@ -212,7 +213,7 @@ export interface BannedTerm {
   /**
    * Repo-relative path prefixes the term applies to. Absent means every file
    * either scan reads. Set by a wave's `"roots"` (DOR-4943): the app-copy voice
-   * rules hold for `apps/client/src` only.
+   * rules hold for `apps/client/src` only, and the em dash for `docs/` only.
    */
   roots?: string[];
   /**
@@ -973,10 +974,13 @@ export function scanMdx(filePath: string, text: string, terms: BannedTerm[]): Vi
  * reaches wired computers and VPNs such as Tailscale, so a docs page that
  * says "Wi-Fi" for it gives a reader the same wrong advice the app used to.
  *
- * Waves 9-11 (the app-copy voice words and button labels, DOR-4943) are not
+ * Wave 12 (the em dash, DOR-4943) is docs-only: its `roots` keep it out of the
+ * source scan. Docs prose uses no em dashes (`.claude/rules/user-facing-writing.md`);
+ * one inside inline code or a fenced block is code, which {@link stripNonProse}
+ * blanks. Waves 9-11 (the app-copy voice words and button labels) are not
  * here: they are rules for what the app renders, and docs may say "we".
  */
-const MDX_SCANNED_WAVES = new Set(['wave-4', 'wave-5', 'wave-7', 'wave-8']);
+const MDX_SCANNED_WAVES = new Set(['wave-4', 'wave-5', 'wave-7', 'wave-8', 'wave-12']);
 
 /**
  * Run the gate against a repo checkout: TypeScript/TSX source through
@@ -1057,6 +1061,12 @@ if (isMain) {
         '\nA wave-9, 10 or 11 hit is app-copy voice (DOR-4943): the app has no speaker, so ' +
           'no "we", "I", "please", "sorry" or "oops", and a button names its action, never ' +
           'OK, Yes, No, Submit or Confirm. See the writing-app-copy skill.'
+      );
+    }
+    if (violations.some((v) => v.wave === 'wave-12')) {
+      console.error(
+        '\nA wave-12 hit is an em dash in docs prose (DOR-4943). Use a colon, a comma, ' +
+          'parentheses or two sentences instead (.claude/rules/user-facing-writing.md).'
       );
     }
     if (violations.some((v) => v.wave === 'docs-marker-ban')) {
