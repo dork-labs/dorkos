@@ -364,4 +364,40 @@ describe('runCopySpecGuard — through a real git checkout', () => {
 
     expect(runCopySpecGuard(repo, base)).toHaveLength(1);
   });
+
+  // DOR-4009, the shape of #3559: the change deleted `ExtensionCard.tsx`, and
+  // its strings still render from files the change did not touch.
+  describe('a deleted file', () => {
+    const CARD = 'apps/client/src/ExtensionCard.tsx';
+    const LIST = 'apps/client/src/ExtensionApprovalList.tsx';
+    const CARD_SPEC = 'apps/e2e/tests/extensions.spec.ts';
+
+    /** A base where the card and the list both render the button a spec clicks. */
+    function seedDeletion(listLabel: string): { repo: string; base: string } {
+      const repo = makeTempDir();
+      git(repo, 'init', '-b', 'main');
+      write(repo, CARD, 'export const Card = () => <button>Turn it on</button>;\n');
+      write(repo, LIST, `export const List = () => <button>${listLabel}</button>;\n`);
+      write(repo, CARD_SPEC, "await page.getByRole('button', { name: 'Turn it on' }).click();\n");
+      git(repo, 'add', '-A');
+      git(repo, 'commit', '-m', 'base');
+      const base = git(repo, 'rev-parse', 'HEAD').trim();
+      git(repo, 'rm', '-q', CARD);
+      git(repo, 'commit', '-m', 'compact extension rows');
+      return { repo, base };
+    }
+
+    it('clears a finding whose copy still renders from an untouched file', () => {
+      const { repo, base } = seedDeletion('Turn it on');
+      expect(runCopySpecGuard(repo, base)).toEqual([]);
+    });
+
+    it('still reds when the copy is gone from the whole app', () => {
+      const { repo, base } = seedDeletion('Switch it off');
+      const findings = runCopySpecGuard(repo, base);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]?.copyFile).toBe(CARD);
+      expect(findings[0]?.removed).toBe('Turn it on');
+    });
+  });
 });
