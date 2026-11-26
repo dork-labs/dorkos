@@ -8,6 +8,7 @@ import {
   TOKEN_ABSOLUTE_TTL_MS,
   TOKEN_IDLE_TTL_MS,
 } from '../agent-identity-service.js';
+import { TokenChats } from '../token-chats.js';
 
 const AGENT_PATH = '/projects/researcher';
 
@@ -18,6 +19,66 @@ describe('AgentIdentityService', () => {
   beforeEach(() => {
     db = createTestDb();
     service = new AgentIdentityService(db);
+  });
+
+  describe('the chat a held token names (DOR-5264)', () => {
+    /** Mint a token, and say a process holding it started for `chatId`. */
+    const heldFor = async (chatId: string) => {
+      const token = await service.mint({ agentPath: AGENT_PATH, displayName: 'R' });
+      service.chats.hold(createHash('sha256').update(token, 'utf8').digest('hex'), chatId);
+      return token;
+    };
+
+    it('names it on a live token a process holds, and only for that token', async () => {
+      const bound = await heldFor('chat-a');
+      const unbound = await service.mint({ agentPath: AGENT_PATH, displayName: 'R' });
+      expect((await service.resolve(bound))?.chatId).toBe('chat-a');
+      expect((await service.resolve(unbound))?.chatId).toBeUndefined();
+      // Memory only: nothing about the chat reaches the stored row.
+      expect(JSON.stringify(db.select().from(agentIdentityTokens).all())).not.toContain('chat-a');
+    });
+
+    it('forgets it when the agent is revoked, and never names it on a revoked token', async () => {
+      const token = await heldFor('chat-a');
+      await service.revoke(AGENT_PATH);
+      expect(await service.resolve(token)).toMatchObject({ inactive: 'revoked' });
+      expect((await service.resolve(token))?.chatId).toBeUndefined();
+    });
+
+    it('lets the least recently read entry go first when full', () => {
+      const chats = new TokenChats(2);
+      chats.hold('a', 'chat-a');
+      chats.hold('b', 'chat-b');
+      expect(chats.chatOf('a')).toBe('chat-a');
+      chats.hold('c', 'chat-c');
+      expect([chats.chatOf('a'), chats.chatOf('b'), chats.chatOf('c')]).toEqual([
+        'chat-a',
+        undefined,
+        'chat-c',
+      ]);
+    });
+
+    it('names no chat once a token is held for a second chat, until every holder lets go', () => {
+      const chats = new TokenChats();
+      chats.hold('t', 'chat-a');
+      chats.hold('t', 'chat-a');
+      expect(chats.chatOf('t')).toBe('chat-a');
+      chats.hold('t', 'chat-b');
+      // Neither chat: a process of chat A must never record to B, nor B to A.
+      expect(chats.chatOf('t')).toBeUndefined();
+      chats.release(['t']);
+      chats.release(['t']);
+      expect(chats.chatOf('t')).toBeUndefined();
+      chats.release(['t']);
+      // Every holder has gone, so the token starts clean.
+      chats.hold('t', 'chat-b');
+      expect(chats.chatOf('t')).toBe('chat-b');
+    });
+
+    it('is gone in a fresh process', async () => {
+      const token = await heldFor('chat-a');
+      expect((await new AgentIdentityService(db).resolve(token))?.chatId).toBeUndefined();
+    });
   });
 
   describe('mint()', () => {

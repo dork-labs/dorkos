@@ -10,12 +10,11 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import { forwardRef } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import type { PromoDefinition, PromoContext, PromoContent } from '../model/promo-types';
 
 /** Minimal stub that satisfies the LucideIcon (ForwardRefExoticComponent) shape for tests. */
-const StubIcon = forwardRef<SVGSVGElement>(() => null) as unknown as LucideIcon;
+const StubIcon = (() => null) as unknown as LucideIcon;
 
 const mockRegistry: PromoDefinition[] = [];
 vi.mock('../model/promo-registry', () => ({

@@ -28,6 +28,10 @@ export interface SchemaNode {
   anyOf?: SchemaNode[];
   /** All of these. */
   allOf?: SchemaNode[];
+  /** An array's item schema. */
+  items?: SchemaNode;
+  /** The only values allowed. */
+  enum?: unknown[];
 }
 
 /** A parameter on an operation. */

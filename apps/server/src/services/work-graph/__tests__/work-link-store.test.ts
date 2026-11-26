@@ -89,7 +89,7 @@ describe('WorkLinkStore', () => {
     for (const kind of ENTITY_KINDS) {
       const result = store.record({
         from: subject,
-        relation: 'works_on',
+        relation: 'produced',
         to: ref(kind),
         source: 'server',
       });
@@ -99,8 +99,8 @@ describe('WorkLinkStore', () => {
       ENTITY_KINDS.map((kind) => ({ kind, id: SAMPLE_IDS[kind] }))
     );
     for (const kind of ENTITY_KINDS) {
-      expect(store.to(ref(kind), 'works_on')).toEqual([
-        expect.objectContaining({ from: { kind: 'chat', id: 'chat-a' }, relation: 'works_on' }),
+      expect(store.to(ref(kind), 'produced')).toEqual([
+        expect.objectContaining({ from: { kind: 'chat', id: 'chat-a' }, relation: 'produced' }),
       ]);
     }
   });
@@ -112,12 +112,29 @@ describe('WorkLinkStore', () => {
       to: ref('pr'),
       source: 'open-pr',
       recordingChatId: 'chat-a',
+      turnMarks: { outsider: true },
     });
     expect(result.ok && result.link).toMatchObject({
       recordedAt: '2026-11-24T12:00:00.000Z',
       recordingChatId: 'chat-a',
       source: 'open-pr',
+      turnMarks: { outsider: true },
     });
+    const unmarked = store.record({
+      from: chat('chat-a'),
+      relation: 'works_on',
+      to: ref('ticket'),
+      source: 'open-pr',
+      turnMarks: {},
+    });
+    expect(unmarked.ok && unmarked.link.turnMarks).toEqual({});
+    const bookkeeping = store.record({
+      from: chat('chat-b'),
+      relation: 'forked_from',
+      to: chat('chat-a'),
+      source: 'server',
+    });
+    expect(bookkeeping.ok && bookkeeping.link.turnMarks).toBeNull();
   });
 
   it('filters by relation', () => {
@@ -169,6 +186,12 @@ describe('WorkLinkStore', () => {
     [{ relation: 'mentions' }, 'bad-relation'],
     [{ relation: 'rekeyed_from', to: { kind: 'pr', id: '#4' } }, 'bad-kinds'],
     [{ relation: 'started', to: { kind: 'pr', id: '#4' } }, 'bad-kinds'],
+    [{ relation: 'opened', to: { kind: 'ticket', id: 'DOR-4' } }, 'bad-kinds'],
+    [{ relation: 'works_on', to: { kind: 'chat', id: 'chat-b' } }, 'bad-kinds'],
+    [
+      { relation: 'works_on', from: { kind: 'pr', id: '#4' }, to: { kind: 'ticket', id: 'DOR-4' } },
+      'bad-kinds',
+    ],
     [{ to: { kind: 'chat', id: 'chat-a' } }, 'self-link'],
     [{ source: 'Open PR' }, 'bad-source'],
     [{ recordingChatId: 'not an id' }, 'bad-recording-chat'],

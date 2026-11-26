@@ -51,6 +51,7 @@ import { workQueuePersonDomain } from '../../work-queue/work-queue-person-capabi
 import { meshDomain } from '../../mesh/doors/mesh-capabilities.js';
 import { globalMcpPersonDomain } from '../../mesh/global-mcp/global-mcp-person-capabilities.js';
 import { workClaimDomain } from '../../session/claims/work-claim-capabilities.js';
+import { workGraphDomain } from '../../work-graph/work-graph-capabilities.js';
 import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
 import { runsDomain } from '../../runs/run-capabilities.js';
 import { taskViewDomain } from '../../tasks/view/task-view-capabilities.js';
@@ -135,6 +136,7 @@ export function composeDorkOsCapabilityRegistry(
   // The agent registry's doors on `/api/mesh/*`, when the mesh started (DOR-4978).
   if (deps.meshDeps) domains.push(meshDomain);
   if (deps.workClaimDeps) domains.push(workClaimDomain);
+  if (deps.workGraphDeps) domains.push(workGraphDomain);
   if (deps.auditDeps) domains.push(auditDomain);
   // The work graph's reads take their reader and roster from the audit deps (DOR-4970).
   if (deps.auditDeps) domains.push(workGraphReadDomain);
@@ -239,6 +241,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     workQueuePersonDomain,
     meshDomain,
     workClaimDomain,
+    workGraphDomain,
     auditDomain,
     workGraphReadDomain,
     agentPauseDomain,
@@ -281,6 +284,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     workQueuePersonDeps: {} as CapabilityDeps['workQueuePersonDeps'],
     meshDeps: {} as CapabilityDeps['meshDeps'],
     workClaimDeps: {} as CapabilityDeps['workClaimDeps'],
+    workGraphDeps: {} as CapabilityDeps['workGraphDeps'],
     auditDeps: {} as CapabilityDeps['auditDeps'],
     agentPauseDeps: {} as CapabilityDeps['agentPauseDeps'],
     approvalWithdrawDeps: {} as CapabilityDeps['approvalWithdrawDeps'],

@@ -237,10 +237,7 @@ export function IntegrationBindingCard({
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onEdit}>Edit</DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => setShowRemoveConfirm(true)}
-              className="text-destructive focus:text-destructive"
-            >
+            <DropdownMenuItem variant="destructive" onClick={() => setShowRemoveConfirm(true)}>
               Remove
             </DropdownMenuItem>
           </DropdownMenuContent>

@@ -207,7 +207,7 @@ export function ProfileActionsMenu({ member, relationship }: ProfileActionsMenuP
                 Unregister
               </ResponsiveDropdownMenuItem>
               <ResponsiveDropdownMenuItem
-                className="text-destructive focus:text-destructive"
+                className="text-destructive"
                 onSelect={() => setStep('delete')}
               >
                 Delete agent and data

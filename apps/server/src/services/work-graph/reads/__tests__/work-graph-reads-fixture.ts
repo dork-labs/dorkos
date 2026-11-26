@@ -236,12 +236,13 @@ function roomFor(chatId: string): void {
     .run();
 }
 
-/** Record that a chat is `relation` to a pull request or ticket, through the store. */
+/** Record that a chat is `relation` to a pull request or ticket, through the store, with the recording turn's marks if given. */
 export function link(
   chatId: string,
   relation: WorkLinkRelation,
   kind: Extract<EntityKind, 'pr' | 'ticket'>,
-  id: string
+  id: string,
+  turnMarks?: { outsider?: boolean }
 ): void {
   const from = entityRef('chat', chatId);
   const to = entityRef(kind, id);
@@ -252,6 +253,7 @@ export function link(
     to: to.value,
     source: 'open-pr',
     recordingChatId: chatId,
+    ...(turnMarks ? { turnMarks } : {}),
   });
   if (!result.ok) throw new Error(`link refused: ${result.reason}`);
 }

@@ -6,13 +6,11 @@ import {
   RULES,
   RULE_HELPERS,
   SCRIPT_PATH,
-  compare,
   countIn,
   lowered,
-  raisedAgainst,
-  seedableRules,
   type Rule,
 } from '../check-design-tokens.ts';
+import { compare, raisedAgainst, seedableRules } from '../design-tokens/compare.ts';
 import {
   fingerprint,
   overrideCovers,
@@ -48,6 +46,14 @@ describe('countIn', () => {
 
   it('counts the pure hexes in both lengths', () => {
     expect(countIn(CLIENT, `'#fff #000000 #FFF'`)).toEqual({ 'pure-white-black': 3 });
+  });
+
+  it('refuses a bare focus: variant, alone or chained, but not its look-alikes', () => {
+    expect(countIn(CLIENT, `'focus:outline-none md:focus:shadow-md focus:!ring-0'`)).toEqual({
+      'bare-focus': 3,
+    });
+    const clean = `focus: () => void; { focus: id } 'focus-visible:shadow-md group-focus:flex peer-focus:hidden'`;
+    expect(countIn(CLIENT, clean)).toEqual({});
   });
 });
 
@@ -95,8 +101,10 @@ describe('the overlay rules (Phase 2 Overlay A)', () => {
   });
 
   it('refuses the old menu highlight, in the menus only', () => {
-    expect(countIn(DROPDOWN, `'focus:bg-dui-accent'`)).toEqual({ 'menu-focus-accent': 1 });
-    expect(countIn('packages/ui/src/command.tsx', `'focus:bg-dui-accent'`)).toEqual({});
+    // `bare-focus` refuses the same text everywhere; this pins the menu rule's own reach.
+    const menu = RULES.filter((r) => r.id === 'menu-focus-accent');
+    expect(countIn(DROPDOWN, `'focus:bg-dui-accent'`, menu)).toEqual({ 'menu-focus-accent': 1 });
+    expect(countIn('packages/ui/src/command.tsx', `'focus:bg-dui-accent'`, menu)).toEqual({});
   });
 
   it('refuses a tooltip with no delay, as a prop or a default', () => {
@@ -416,11 +424,11 @@ describe('a base rule may not be removed or changed (DOR-3557)', () => {
     expect(ruleChanges(HEAD, { ...HEAD, rules: counted })).toEqual([
       'rule overshoot-bezier changed',
     ]);
+    // A helper is read as part of every rule with a count.
+    const counting = RULES.filter((r) => r.count).map((r) => `rule ${r.id} changed`);
     const helpers = { ...RULE_HELPERS, overshoots: () => false };
-    expect(ruleChanges(HEAD, { ...HEAD, helpers })).toEqual(['rule overshoot-bezier changed']);
-    expect(ruleChanges({ ...HEAD, helpers: undefined }, HEAD)).toEqual([
-      'rule overshoot-bezier changed',
-    ]);
+    expect(ruleChanges(HEAD, { ...HEAD, helpers })).toEqual(counting);
+    expect(ruleChanges({ ...HEAD, helpers: undefined }, HEAD)).toEqual(counting);
   });
 
   it('refuses a narrowed coverage, and a base with none to compare', () => {

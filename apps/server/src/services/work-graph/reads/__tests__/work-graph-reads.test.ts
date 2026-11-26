@@ -296,6 +296,22 @@ describe('chat_work', () => {
     ]);
   });
 
+  it('returns no turn marks, source or recording chat on any link', async () => {
+    plant();
+    link('hidden', 'opened', 'pr', 'acme/app#8', { outsider: true });
+    link('root', 'works_on', 'ticket', 'DOR-8', { outsider: true });
+    const asAgent = await get('/api/sessions/root/work', 'ranger');
+    const pr8 = asAgent.body.items.find((i: { text: string }) => i.text === 'acme/app#8');
+    expect(pr8.links).toEqual([
+      { relation: 'opened', chatId: null, recordedOn: expect.any(String) },
+    ]);
+    const asOwner = await get('/api/sessions/root/work');
+    for (const item of asOwner.body.items as { links: Record<string, unknown>[] }[]) {
+      for (const each of item.links)
+        expect(Object.keys(each).sort()).toEqual(['chatId', 'recordedAt', 'relation']);
+    }
+  });
+
   it('reads two private links of one relation on one day as one', async () => {
     plant();
     link('hidden', 'works_on', 'ticket', 'DOR-3');

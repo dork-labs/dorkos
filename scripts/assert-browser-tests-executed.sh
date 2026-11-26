@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 # Prove that a Playwright run actually executed browser tests.
 #
+# --help
+# Purpose: prove a Playwright run executed the browser tests it should have, not
+#          a run that exited 0 having dropped or skipped specs.
+# Runs in: the required `browser-test` job, and test.yml's merge-group fan-in.
+# To fix:  read the spec it names: a filter (testIgnore, testMatch, grep) dropped
+#          it, or it skipped. A quarantined test that did not run fails too.
+# Usage:   scripts/assert-browser-tests-executed.sh [--quarantined <file>] [<results.json>...]
+# --help end
+#
 # WHY THIS EXISTS. This is scripts/assert-tests-executed.sh's argument applied to
 # a different runner. That script exists because `turbo test` can replay a cache
 # hit in 280ms and print "successful"; read its header for the reasoning, which
@@ -140,6 +149,11 @@
 # scripts/test-assert-browser-tests-executed.sh can drive this against synthetic
 # trees in a temp dir; keeping the fixtures off this repo's real state is what
 # stops them red-lighting unrelated PRs.
+
+# --help (DOR-4950). A gate checked out alone, as the PR-side gates are, runs without it.
+gate_help="$(dirname "$0")/lib/gate-help.sh"
+# shellcheck source=lib/gate-help.sh
+[ ! -r "$gate_help" ] || . "$gate_help"
 
 set -uo pipefail
 

@@ -29,6 +29,13 @@
  *   announced, so it records nothing new. The link stays even when the start
  *   is cancelled before its chat launches, so read starts through the lineage
  *   query (W3, DOR-4969), not this table alone.
+ * - **A pull request a chat opened** (DOR-5264): `scripts/open-pr.sh` calls
+ *   `work-graph.record-pr` (`work-graph-capabilities.ts`) from the chat's own
+ *   shell once the pull request exists, which records the chat `opened` it
+ *   and `works_on` each ticket the body names for sure. The chat comes from
+ *   the caller's identity token, never from the call, and the link carries
+ *   the turn's marks. Unlike the others, this one refuses: it is a capability
+ *   call, and its caller is told when nothing was recorded.
  *
  * Two read sites:
  *

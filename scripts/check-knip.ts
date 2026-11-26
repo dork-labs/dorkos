@@ -2,6 +2,15 @@
  * Production knip ratchet. Existing findings are debt, never permission for new ones.
  * Build workspace package outputs first. CI activation is staged during the workflow freeze.
  *
+ * --help
+ * Purpose: production knip ratchet: today's unused files, exports and
+ *          dependencies are debt, never permission for new ones.
+ * Runs in: by hand; not in CI yet. Build the workspace packages first.
+ * To fix:  delete what it names as unused. After a cleanup, `--update` lowers the
+ *          allowances; it never raises them.
+ * Usage:   pnpm check:knip [-- --base <commit> | --update | --init | --report <path>]
+ * --help end
+ *
  * node scripts/check-knip.ts [--base <commit>]
  * node scripts/check-knip.ts --update [--base <commit>]  lower allowances only
  * node scripts/check-knip.ts --init                      first baseline only
@@ -21,6 +30,7 @@ import {
   readKnip,
   type IssueCounts,
 } from './knip/ratchet.ts';
+import { exitOnHelp } from './lib/gate-help.mjs';
 
 const BASELINE = 'scripts/knip/baseline.json';
 
@@ -119,6 +129,7 @@ function main(args: string[]): number {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  exitOnHelp(import.meta.url);
   try {
     process.exitCode = main(process.argv.slice(2));
   } catch (error) {

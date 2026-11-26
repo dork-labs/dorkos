@@ -41,6 +41,7 @@ export const REPO_WIDE_SUITES = [
   // Reads apps/server/src/services, the side map and the computer wall's baseline (DOR-5158).
   '__tests__/check-computer-wall.test.ts',
   '__tests__/check-design-tokens.test.ts',
+  '__tests__/check-design-tokens-floors.test.ts',
   // Reads apps/server/src/services and the services import boundary's baseline (DOR-4924).
   '__tests__/check-import-boundary.test.ts',
   '__tests__/check-own-mocks.test.ts',
@@ -70,6 +71,7 @@ export const REPO_WIDE_SUITES = [
   '__tests__/dependabot-lockstep-families.test.ts',
   '__tests__/deprecated-removal.test.ts',
   '__tests__/extension-child-build-entry.test.ts',
+  '__tests__/gate-help.test.ts',
   '__tests__/gray-matter-import-boundary.test.ts',
   // Reads apps/server/eslint.config.js, server source and .claude/rules/dork-home.md (DOR-4940).
   '__tests__/homedir-carve-out-census.test.ts',
@@ -131,6 +133,7 @@ export const REPO_WIDE_SUITES = [
 export const HERMETIC_SUITES = [
   '__tests__/adr-corpus-checks.test.ts',
   '__tests__/agent-hours.test.ts',
+  '__tests__/check-api-lint-list-paging.test.ts',
   '__tests__/check-copy-length.test.ts',
   '__tests__/check-copy-spec-drift-replay.test.ts',
   '__tests__/check-copy-spec-drift.test.ts',
@@ -150,6 +153,7 @@ export const HERMETIC_SUITES = [
   '__tests__/neon-preview-sweep.test.ts',
   '__tests__/no-code-scope-step.test.ts',
   '__tests__/origin-branch-janitor.test.ts',
+  '__tests__/pr-test-plan-scriptless.test.ts',
   '__tests__/pr-test-plan.test.ts',
   '__tests__/pre-push-format-gate.test.ts',
   '__tests__/pre-push-midrun-check.test.ts',

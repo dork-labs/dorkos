@@ -2,6 +2,15 @@
 # Prove that a sharded `turbo test` sweep collected test files from EVERY
 # package — i.e. that the union of the shards is not quietly missing a suite.
 #
+# --help
+# Purpose: prove a sharded test sweep collected test files from every package,
+#          across the union of its shards.
+# Runs in: the required `test` job's fan-in; the `site-build` job.
+# To fix:  the package it names collected no test files: fix its vitest include
+#          glob or its emptied __tests__ folder.
+# Usage:   scripts/assert-shard-union.sh [--quarantined <f>] [--require-files <f>] [--packages <f>] <dir>
+# --help end
+#
 # WHY THIS EXISTS. The merge-queue test sweep runs vitest with `--shard=N/4
 # --passWithNoTests`. The flag is necessary (a package with three test files
 # legitimately contributes zero files to one of four shards) but it removes
@@ -76,6 +85,11 @@
 # hard-coded for the same bash+jq-only reason assert-tests-executed.sh gives:
 # a third workspace glob added later leaves its packages uncounted here, and
 # the count check in assert-tests-executed.sh fails loudly first.
+
+# --help (DOR-4950). A gate checked out alone, as the PR-side gates are, runs without it.
+gate_help="$(dirname "$0")/lib/gate-help.sh"
+# shellcheck source=lib/gate-help.sh
+[ ! -r "$gate_help" ] || . "$gate_help"
 
 set -uo pipefail
 
