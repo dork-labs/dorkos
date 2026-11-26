@@ -8,57 +8,24 @@
  * @module services/core/approvals/approval-storable
  */
 import {
-  APPROVAL_DETAIL_MAX_LENGTH,
   APPROVAL_FULL_DETAIL_MAX_LENGTH,
   APPROVAL_REQUEST_REASON_MAX_LENGTH,
-  APPROVAL_SUMMARY_MAX_LENGTH,
   ApprovalServiceActionSchema,
   inertRecipientText,
   MarketplaceApprovalSummarySchema,
   type ApprovalServiceAction,
   type MarketplaceApprovalSummary,
 } from '@dorkos/shared/approval-schemas';
-import { redactSecretsInText } from './approval-summary.js';
+import {
+  clampForStorage,
+  redactSecretsInText,
+  storableDetail,
+  storableSummary,
+} from '@dorkos/shared/approval-text';
 
-/**
- * Make a summary safe to store: strip anything token-shaped, then shorten it to
- * what a card can hold.
- *
- * Both happen on the way IN rather than at render time. The length cap is because
- * the cockpit parses stored rows against a schema that caps it, so a long sentence
- * has to become a short one here or the card would be dropped instead of shown.
- * The redaction is because this string is broadcast on the global event stream and
- * returned by `GET /api/approvals/pending`, which agents can read — so it is the
- * one place every producer of a summary passes through, including the marketplace
- * confirmation provider, which writes its own sentences.
- */
-export function storableSummary(summary: string): string {
-  return clampForStorage(redactSecretsInText(summary), APPROVAL_SUMMARY_MAX_LENGTH);
-}
-
-/**
- * Make a detail safe to store: the same sweep the summary gets, against the
- * detail's own, much larger bound.
- *
- * Same two reasons, in the same order. The sweep is because this string is
- * broadcast on the global event stream and returned by
- * `GET /api/approvals/pending`, which agents can read. The cap is because the
- * cockpit parses stored rows against a schema that caps it, so an over-long
- * value has to shorten here or the whole card is dropped rather than shown —
- * and a dropped card is worse than a shortened one for exactly the reason this
- * field exists.
- *
- * The bound is the card builders' own unless a caller passes the stored
- * ceiling: only a capability's `approvalDetailField` may use it (DOR-4266).
- * Package cards and the "is this whole?" checks keep the smaller one.
- *
- * @param detail - The verbatim argument the capability declared.
- * @param max - The bound to cap at.
- * @returns The swept, capped value to store.
- */
-export function storableDetail(detail: string, max = APPROVAL_DETAIL_MAX_LENGTH): string {
-  return clampForStorage(redactSecretsInText(detail), max);
-}
+// The summary and detail rules a card shares with the computer side's checks
+// (spec `computer-side-starts-alone` §5.7) live in `@dorkos/shared/approval-text`.
+export { clampForStorage, storableDetail, storableSummary };
 
 /**
  * Make a blocked request's reason safe to store: the agent's own words, swept
@@ -69,18 +36,6 @@ export function storableDetail(detail: string, max = APPROVAL_DETAIL_MAX_LENGTH)
  */
 export function storableReason(reason: string): string {
   return clampForStorage(redactSecretsInText(reason), APPROVAL_REQUEST_REASON_MAX_LENGTH);
-}
-
-/**
- * Shorten a value to what its column's schema will parse, marking the cut.
- *
- * @param value - The already-swept string.
- * @param max - The schema's bound for that field.
- * @returns The value, at most `max` characters.
- */
-export function clampForStorage(value: string, max: number): string {
-  if (value.length <= max) return value;
-  return `${value.slice(0, max - 1).trimEnd()}…`;
 }
 
 /**

@@ -7,7 +7,7 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 import { ApprovalService } from '../approval-service.js';
 import { eventFanOut } from '../../event-fan-out.js';
-import { hookProjectionBinding } from '../../../harness/hook-approval.js';
+import { hookProjectionBinding } from '../computer-asks/index.js';
 import {
   HOOK_CARD_PRESENTATION,
   describeHookProjection,

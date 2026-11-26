@@ -19,7 +19,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import type { AddressInfo } from 'node:net';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, beforeAll } from 'vitest';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { resolveBundledClaudeBinary } from '../../sdk/sdk-utils.js';
 
@@ -41,8 +41,12 @@ import {
   applyFolderConfigToLaunch,
   resolveFolderConfigForLaunch,
 } from '../launch-folder-config.js';
-import { recordFolderConfigApproval } from '../folder-config-consent.js';
 import { readFolderConfigParts } from '../folder-config-pin.js';
+import { recordFolderConfigApproval } from '../../../../core/approvals/computer-asks/index.js';
+import { wireTestConsent } from '../../../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The space side's consent writes reach a config store, as at startup.
+beforeAll(() => wireTestConsent());
 
 const BINARY = resolveBundledClaudeBinary();
 const AGENT = { id: '01AGENT', name: 'Ops' };

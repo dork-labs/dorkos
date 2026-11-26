@@ -14,15 +14,14 @@ import type { AgentSession } from '../../agent-types.js';
 import { resolveLaunch } from '../launch-resolver.js';
 import { pinRegisteredFolderConfigsOnce } from '../../folder-settings/pin-folder-configs.js';
 import { resolveLaunchAccountRoot } from '../../claude-config-dir.js';
-import {
-  _internal,
-  setFolderAllowApprovalGateway,
-  type FolderAllowApprovalGateway,
-} from '../../folder-settings/folder-allow-approval.js';
+import { _internal } from '../../folder-settings/folder-allow-approval.js';
 import { _internal as configCards } from '../../folder-settings/folder-config-approval.js';
+import { _internal as cardWait } from '../../../../core/approvals/computer-asks/folder-config-card-ask.js';
 import { setMarkedFullActivity } from '../../../../core/turn-power/full-autonomy.js';
 import { DEV_LINKS_FILE } from '@dorkos/shared/marketplace-schemas';
 import { writeDenyRules } from '../directory-grants.js';
+import { type FolderAllowApprovalGateway } from '../../../../core/approvals/computer-asks/index.js';
+import { wireTestAsks } from '../../../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
 
 const requiredLaunches = isolatedRequiredLaunchOwner();
 
@@ -168,16 +167,16 @@ beforeEach(async () => {
     // left running in the background.
     consume: () => (open ? { outcome: 'pending' } : { outcome: 'expired' }) as never,
   };
-  setFolderAllowApprovalGateway(gateway);
+  wireTestAsks(gateway);
   _internal.forgetOpenCards();
   configCards.forgetOpenCards();
-  configCards.sleep = () => new Promise((resolve) => setTimeout(resolve, 1));
+  cardWait.sleep = () => new Promise((resolve) => setTimeout(resolve, 1));
 });
 
 afterEach(() => {
   closeCards();
   setMarkedFullActivity(undefined);
-  setFolderAllowApprovalGateway(null);
+  wireTestAsks(null);
   setAgentHomeRegistry(undefined);
   rmSync(root, { recursive: true, force: true });
 });

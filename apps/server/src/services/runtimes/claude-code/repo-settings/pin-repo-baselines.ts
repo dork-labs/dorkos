@@ -6,7 +6,8 @@
  * (`repo-baseline.ts`).
  *
  * It runs once (`harness.repoBaselinesPinned`, operator-only, carried across
- * a config wipe), so an agent can't make DorkOS pin a repo it made later by
+ * a config wipe, and written by the space side like every pin here: this
+ * reports each through the asks port), so an agent can't make DorkOS pin a repo it made later by
  * registering it, or by wiping the config. **Residual:** anything planted in
  * those repos before the upgrade was pinned with them.
  *
@@ -15,7 +16,8 @@
 import { logger } from '../../../../lib/logger.js';
 import { firstBootSeedsMayRun } from '../accounts/first-boot-seed-guard.js';
 import { pinRepoBaseline } from './repo-baseline.js';
-import { markRepoBaselinesPinned, repoBaselinesPinned } from './repo-config-consent.js';
+import { runtimeAsks } from '../../computer-asks.js';
+import { repoBaselinesPinned } from './repo-config-consent.js';
 import { GitMissingError } from './repo-git.js';
 
 /** The most folders pinned in one start; repos past it wait for a person. */
@@ -41,7 +43,7 @@ export async function pinKnownRepoBaselinesOnce(
     logger.warn('[RepoConfig] Could not list the repos to pin; each will wait for a person', {
       error: err instanceof Error ? err.message : String(err),
     });
-    markRepoBaselinesPinned();
+    runtimeAsks().record({ kind: 'repo_baselines_pinned' });
     return 0;
   }
   let pinned = 0;
@@ -53,7 +55,7 @@ export async function pinKnownRepoBaselinesOnce(
       // Gone, or not a repo: its repo waits for a person like any new one.
     }
   }
-  markRepoBaselinesPinned();
+  runtimeAsks().record({ kind: 'repo_baselines_pinned' });
   logger.info('[RepoConfig] Pinned the repos DorkOS already knew', { pinned });
   return pinned;
 }

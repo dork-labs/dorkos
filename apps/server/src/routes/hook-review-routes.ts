@@ -5,7 +5,10 @@ import type { ApiEnv } from '../http/api-chain.js';
 import type { DecisionAuthorityResult } from '../services/core/approvals/decision-authority.js';
 import type { ApprovalService } from '../services/core/approvals/approval-service.js';
 import { scanHookRequests } from '../services/harness/project-with-consent.js';
-import { hookProjectionBinding } from '../services/harness/hook-approval.js';
+import {
+  createComputerAsks,
+  hookProjectionBinding,
+} from '../services/core/approvals/computer-asks/index.js';
 import {
   describeHookProjection,
   HOOK_CARD_PRESENTATION,
@@ -62,7 +65,7 @@ export function registerHookReviewRoutes(
       });
     followReaskedHookRow(request, {
       projectPath: request.projectPath,
-      approvals,
+      asks: createComputerAsks(approvals),
       dorkHome,
       reproject: () =>
         projectAgainAfterYes(

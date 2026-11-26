@@ -24,7 +24,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { Server } from 'node:http';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, beforeAll } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -58,12 +58,18 @@ import { createPermissionWorld } from '../../../../core/permissions/__tests__/pe
 import { createApprovalsRoutes } from '../../../../../routes/approvals.js';
 import { honoGroupListener } from '../../../../../http/__tests__/hono-group-listener.js';
 import { resolveFolderAllows } from '../apply-folder-allows.js';
-import { folderAllowEntry, recordFolderAllowApproval } from '../folder-allow-consent.js';
+import { folderAllowEntry } from '../folder-allow-consent.js';
+import { _internal, askForFolderAllows } from '../folder-allow-approval.js';
+import { _internal as cardWait } from '../../../../core/approvals/computer-asks/folder-allows-card-ask.js';
 import {
-  _internal,
-  askForFolderAllows,
   describeFolderAllowCapability,
-} from '../folder-allow-approval.js';
+  recordFolderAllowApproval,
+  createComputerAsks,
+} from '../../../../core/approvals/computer-asks/index.js';
+import { wireTestConsent } from '../../../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The space side's consent writes reach a config store, as at startup.
+beforeAll(() => wireTestConsent());
 
 const AGENT = { id: '01MARKETING', name: 'Marketing' };
 let home: string;
@@ -118,7 +124,7 @@ describe('an agent cannot grant itself its folder allow list', () => {
   async function raiseCard(): Promise<{ answered: Promise<boolean>; approvalId: string }> {
     const decision = await nextLaunch();
     if (decision.kind !== 'waiting') throw new Error(`expected waiting, got ${decision.kind}`);
-    const answered = askForFolderAllows(approvals, decision.request);
+    const answered = askForFolderAllows(createComputerAsks(approvals), decision.request);
     const [card] = approvals.listPending();
     if (!card) throw new Error('no card was raised');
     return { answered, approvalId: card.approvalId };
@@ -128,7 +134,7 @@ describe('an agent cannot grant itself its folder allow list', () => {
     home = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'no-self-grant-')));
     store.permissions = {};
     _internal.forgetOpenCards();
-    _internal.sleep = () => new Promise((resolve) => setTimeout(resolve, 1));
+    cardWait.sleep = () => new Promise((resolve) => setTimeout(resolve, 1));
     approvals = new ApprovalService(createTestDb(), {
       describeCapability: describeFolderAllowCapability,
     });

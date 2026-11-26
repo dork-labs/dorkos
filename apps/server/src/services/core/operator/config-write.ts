@@ -15,7 +15,7 @@
  *
  * A **purpose-built writer** writes one known setting as part of doing
  * something else: the tunnel route recording that a tunnel is now running,
- * `hook-approval.ts` recording a package hook a person just approved. It cannot
+ * the consent door recording a package hook a person just approved. It cannot
  * be pointed at another setting, and it sits behind whatever gate its own
  * feature needs — which is often stricter than this one (starting a tunnel
  * requires login AND an owner account). Re-asking the path questions there

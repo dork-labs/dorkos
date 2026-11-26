@@ -1,5 +1,5 @@
 /** @vitest-environment node */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, beforeAll } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { approvals } from '@dorkos/db';
 import request from '@dorkos/test-utils/supertest';
@@ -7,13 +7,17 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { ApprovalService } from '../../services/core/approvals/approval-service.js';
 import { createApprovalsRoutes } from '../approvals.js';
-import { hookProjectionBinding } from '../../services/harness/hook-approval.js';
+import { hookProjectionBinding } from '../../services/core/approvals/computer-asks/index.js';
 import {
   describeHookProjection,
   HOOK_CARD_PRESENTATION,
   summariseHookProjection,
 } from '../../services/harness/hook-card.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
+import { wireTestConsent } from '../../services/core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The space side's consent writes reach a config store, as at startup.
+beforeAll(() => wireTestConsent());
 
 const harnessConfig = vi.hoisted(() => ({
   value: { autoSync: true, approvedHooks: [] as string[], refusedHooks: [] as string[] },

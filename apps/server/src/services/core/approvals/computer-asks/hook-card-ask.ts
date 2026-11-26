@@ -1,6 +1,9 @@
 /**
  * Ask before an installed package writes shell commands into the files a coding
- * agent runs on your behalf (DOR-522).
+ * agent runs on your behalf (DOR-522): the card, its wait, and the decision it
+ * records, on the space side (spec `computer-side-starts-alone` §5.7). The
+ * computer side raises it through the asks port
+ * (`harness/ask-withheld-hooks.ts`) and hears only the answer.
  *
  * ## What was wrong
  *
@@ -35,9 +38,9 @@
  * ## What a person is agreeing to
  *
  * One package's exact hooks, in one project: each command, the event that fires
- * it, and the matcher that narrows it. Both the yes and the no are recorded in
- * `hook-consent.ts`, which owns the stored form and states what the digest binds
- * and what it cannot.
+ * it, and the matcher that narrows it. Both the yes and the no are recorded here
+ * (`hook-decisions.ts`) before the computer hears the answer;
+ * `harness/hook-consent.ts` states what the digest binds and what it cannot.
  *
  * ## Every way in is gated now
  *
@@ -57,34 +60,33 @@
  * sits AFTER both, on the projection, so it fires the same way whichever surface
  * installed the package. Converging the two install surfaces is a separate change.
  *
- * @module services/harness/hook-approval
+ * @module services/core/approvals/computer-asks/hook-card-ask
  */
 import { resolve } from 'node:path';
 import type { ProjectedHook } from '@dorkos/harness';
+import type { CapabilityTier } from '@dorkos/shared/capabilities';
+import type { AskAnswer, AskRequest, HookProjectionRequest } from '@dorkos/shared/computer-asks';
 import type {
   ApprovalBinding,
   ApprovalConsumeResult,
   ApprovalRequestInput,
   ApprovalTicket,
-} from '../core/approvals/approval-service.js';
-import { PASSIVE_APPROVAL_EXPIRES_AT } from '../core/approvals/passive-approval.js';
-import { familyInputHash } from '../core/approvals/approval-retirement.js';
-import type { CapabilityTier } from '@dorkos/shared/capabilities';
-import {
-  hookApprovalEntry,
-  isHookProjectionRefused,
-  recordHookRefusal,
-  type HookProjectionRequest,
-} from './hook-consent.js';
+} from '../approval-service.js';
+import { PASSIVE_APPROVAL_EXPIRES_AT } from '../passive-approval.js';
+import { familyInputHash } from '../approval-retirement.js';
 import {
   HOOK_CARD_PRESENTATION,
   describeHookProjection,
-  summariseHookProjection,
-  hookRequestInputHash,
   hookRequestFamily,
-} from './hook-card.js';
-export { summariseHookProjection, hookCardIsComplete } from './hook-card.js';
-import { logger } from '../../lib/logger.js';
+  hookRequestInputHash,
+  summariseHookProjection,
+  type HookCardOptions,
+} from '../../../harness/hook-card.js';
+import { logger } from '../../../../lib/logger.js';
+import { isHookRefusedOnRecord, recordHookApproval, recordHookRefusal } from './hook-decisions.js';
+
+/** An ask about one package's hooks. */
+export type HookProjectionAsk = Extract<AskRequest, { kind: 'hook_projection' }>;
 
 /**
  * What an approval card calls this, and how loudly.
@@ -162,7 +164,7 @@ function passiveRowFamily(projectPath: string, packageName: string): string {
  *
  * `path.resolve` is the whole of it, and it is not cosmetic: `/x/proj` and
  * `/x/proj/` are one directory, and the app is not the only caller. The stored
- * entry canonicalizes the same way (`hook-consent.ts`), so the token a card is
+ * entry canonicalizes the same way (`@dorkos/shared/consent-entries`), so the token a card is
  * granted for and the record it writes describe one thing.
  */
 function canonical(request: HookProjectionRequest): {
@@ -177,53 +179,6 @@ function canonical(request: HookProjectionRequest): {
   };
 }
 
-/** How a hook card is worded. */
-export interface HookCardOptions {
-  /**
-   * The package is in the project but DorkOS did not install it (or its files
-   * changed since); on Full this is the only package hook that asks. Its card
-   * is passive (DOR-3427): it never expires and never escalates, an open one is
-   * reused rather than raised twice, and the wait for it has no deadline.
-   */
-  notInstalledByDorkos?: boolean;
-  /**
-   * Pick up an open passive ticket after a restart and never raise a new one
-   * (`resumePassiveHookRows`). With no open ticket for exactly this request,
-   * the answer is no at once and nothing is put in front of anybody.
-   */
-  resumeOnly?: boolean;
-}
-
-/**
- * Entries with a card open right now, so a concurrent projection does not raise
- * a second for the same package.
- *
- * This is all that is left of the process-scoped memory. A refusal used to live
- * here too, because a durable "no" would have been a decision with no way back:
- * nothing listed the stored decisions and nothing revoked one, so a misclick
- * would have disabled a package's hooks for ever, recoverable only by
- * hand-editing `~/.dork/config.json`. `dorkos harness hooks --list` and
- * `--revoke <package>` are that way back, so the refusal now goes in the file
- * (`hook-consent.ts`) where every trigger can read it — including the CLI, which
- * could not see this set at all and installed refused hooks because of it.
- *
- * An EXPIRED card is still deliberately not remembered anywhere: nobody decided,
- * so nobody said no, and the person who missed it should be asked again. This
- * set is what keeps that from stacking two open cards for one package meanwhile.
- */
-const askingNow = new Map<string, symbol>();
-
-/**
- * Whether this projection may be put in front of a person, or has already been
- * answered "no" (or is on screen right now).
- *
- * @param request - The projection about to be asked about.
- * @returns True when a card would be new information.
- */
-export function mayAskAboutHooks(request: HookProjectionRequest): boolean {
-  return !askingNow.has(hookApprovalEntry(request)) && !isHookProjectionRefused(request);
-}
-
 /** Seams the wait loop uses, injectable so tests do not sleep in real time. */
 export const _internal = {
   /** Pause between presentations of a pending token. */
@@ -235,53 +190,56 @@ export const _internal = {
     }),
   /** How long to wait between presentations. */
   pollIntervalMs: 5_000,
-  /** Drop the open-card memory, so one test cannot answer for the next. */
-  forgetDecisions: (): void => {
-    askingNow.clear();
-  },
 };
 
 /**
- * Ask a person whether this package may install these commands, and wait for the
- * answer.
+ * Ask a person whether this package may install these commands, wait for the
+ * answer, and record it.
  *
  * The token is presented on a slow loop rather than awaited on an event, because
  * `ApprovalService` is a token-and-retry primitive with no server-side
  * subscription: `consume` reports `pending` without spending, and reports
  * `expired` on its own once the decision window closes, so the loop always ends.
- * It runs inside auto-projection, which is already fire-and-forget from the
- * install route, so nothing is blocked while it waits.
  *
  * Fails CLOSED on every path that is not an explicit yes: denied, expired,
  * mismatched, or nobody deciding before the window shuts. A store that throws
- * propagates, and the caller's own catch withholds the hooks the same way.
+ * propagates, and the caller's own catch withholds the hooks the same way. A
+ * yes is recorded before the answer goes back, so it is what stops the next
+ * projection asking again; only an explicit no is recorded the other way, and
+ * an expired card is asked about again. On a passive card, a no on record for
+ * these commands wins over a yes on an old ticket, unless a person asked to
+ * review it again.
  *
  * @param gateway - The approval primitive.
- * @param request - The package, project, and hooks to ask about.
- * @param options - How the card is worded.
- * @returns True only when a person granted it.
+ * @param ask - The package, project and hooks, and how the card is worded.
+ * @returns The answer; only `granted` allows anything.
  */
-export async function askForHookProjection(
+export async function raiseHookCard(
   gateway: HookApprovalGateway,
-  request: HookProjectionRequest,
-  options: HookCardOptions = {}
-): Promise<boolean> {
+  ask: HookProjectionAsk
+): Promise<AskAnswer> {
+  const { request } = ask;
+  const options: HookCardOptions = {
+    ...(ask.notInstalledByDorkos !== undefined && {
+      notInstalledByDorkos: ask.notInstalledByDorkos,
+    }),
+    ...(ask.resumeOnly !== undefined && { resumeOnly: ask.resumeOnly }),
+  };
   const { projectPath, packageName } = canonical(request);
   const passive = options.notInstalledByDorkos === true;
   const family = passive ? passiveRowFamily(projectPath, packageName) : undefined;
   const binding = hookProjectionBinding(request, passive);
+  // Read before the wait, as the row it follows was raised: a person's request
+  // to review a refusal again is what lets a yes stand over the no on record.
+  const reasked = passive && gateway.isReaskedHook?.(binding) === true;
 
-  const entry = hookApprovalEntry(request);
-  const lease = Symbol();
-  askingNow.set(entry, lease);
   // The row for files the package has since moved on from is closed, with no
   // refusal recorded; an open one for these very files, even from before a
   // restart, is picked up again rather than raised twice.
   const retired = family === undefined ? 0 : (gateway.retireSuperseded?.(binding, family) ?? 0);
   const reused = passive ? gateway.reissue?.(binding) : undefined;
   if (options.resumeOnly === true && reused === undefined && retired === 0) {
-    if (askingNow.get(entry) === lease) askingNow.delete(entry);
-    return false;
+    return { outcome: 'nothing_open' };
   }
   const ticket = reused
     ? { ...reused, expiresAt: PASSIVE_APPROVAL_EXPIRES_AT }
@@ -305,32 +263,35 @@ export async function askForHookProjection(
   });
 
   const deadline = new Date(ticket.expiresAt).getTime();
-  try {
-    for (;;) {
-      const result = gateway.consume(ticket.token, binding);
-      if (result.outcome === 'granted') return true;
-      if (result.outcome !== 'pending') {
-        // Only an explicit no is recorded. Expiry means nobody decided, and
-        // the person who missed the card is asked again.
-        if (result.outcome === 'denied') recordHookRefusal(request);
-        logger.info('[HarnessSync] Package hooks were not allowed', {
-          packageName: request.packageName,
-          projectPath: request.projectPath,
-          outcome: result.outcome,
-        });
-        return false;
+  for (;;) {
+    const result = gateway.consume(ticket.token, binding);
+    if (result.outcome === 'granted') {
+      // A no on record for these commands wins over a yes on an old ticket.
+      if (passive && !reasked && isHookRefusedOnRecord(request)) {
+        return { outcome: 'refused_on_record' };
       }
-      // A finite deadline as well as the primitive's own expiry check: a clock the
-      // store disagrees with must not turn this into a loop that never ends. A
-      // passive card has none: it waits as long as the person does, and its
-      // callers run it outside any project lock (`ask-withheld-hooks.ts`).
-      if (!passive && Number.isFinite(deadline) && Date.now() > deadline) return false;
-      await _internal.sleep(_internal.pollIntervalMs);
+      recordHookApproval(request);
+      return { outcome: 'granted' };
     }
-  } finally {
-    // Whatever happened, including a throw out of the store, this card is no
-    // longer on screen.
-    if (askingNow.get(entry) === lease) askingNow.delete(entry);
+    if (result.outcome !== 'pending') {
+      // Only an explicit no is recorded. Expiry means nobody decided, and
+      // the person who missed the card is asked again.
+      if (result.outcome === 'denied') recordHookRefusal(request);
+      logger.info('[HarnessSync] Package hooks were not allowed', {
+        packageName: request.packageName,
+        projectPath: request.projectPath,
+        outcome: result.outcome,
+      });
+      return { outcome: result.outcome };
+    }
+    // A finite deadline as well as the primitive's own expiry check: a clock the
+    // store disagrees with must not turn this into a loop that never ends. A
+    // passive card has none: it waits as long as the person does, and its
+    // callers run it outside any project lock (`ask-withheld-hooks.ts`).
+    if (!passive && Number.isFinite(deadline) && Date.now() > deadline) {
+      return { outcome: 'timed_out' };
+    }
+    await _internal.sleep(_internal.pollIntervalMs);
   }
 }
 

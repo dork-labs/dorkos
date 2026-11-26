@@ -42,11 +42,8 @@ import {
   withPersonRepin,
   withPersonRepinAtHome,
 } from '../folder-config-consent.js';
-import { _internal, askForFolderConfig, summariseFolderConfig } from '../folder-config-approval.js';
-import {
-  setFolderAllowApprovalGateway,
-  type FolderAllowApprovalGateway,
-} from '../folder-allow-approval.js';
+import { _internal, askForFolderConfig } from '../folder-config-approval.js';
+import { _internal as cardWait } from '../../../../core/approvals/computer-asks/folder-config-card-ask.js';
 import { readFolderConfigParts } from '../folder-config-pin.js';
 import { pinRegisteredFolderConfigsOnce } from '../pin-folder-configs.js';
 
@@ -81,8 +78,8 @@ beforeEach(async () => {
   const current: typeof answer = { outcome: 'pending' };
   answer = current;
   _internal.forgetOpenCards();
-  _internal.sleep = () => new Promise((resolve) => setTimeout(resolve, 1));
-  const gateway: FolderAllowApprovalGateway = {
+  cardWait.sleep = () => new Promise((resolve) => setTimeout(resolve, 1));
+  const gateway: TestGateway = {
     request: (input) => {
       requests.push(input);
       // Short-lived, so a card nobody answers stops waiting soon after its test.
@@ -94,7 +91,7 @@ beforeEach(async () => {
     },
     consume: () => ({ outcome: current.outcome }) as never,
   };
-  setFolderAllowApprovalGateway(gateway);
+  wireTestAsks(gateway);
   // Most cases are about an agent DorkOS already had: the upgrade pinned it.
   await pinnedAtUpgrade();
   store.harness = { ...store.harness, folderConfigPinned: false };
@@ -105,8 +102,11 @@ function pinnedAtUpgrade(): Promise<number> {
   return pinRegisteredFolderConfigsOnce(async () => [{ id: AGENT.id, projectPath: home }]);
 }
 
+/** The approval primitive the cards here are raised through. */
+type TestGateway = NonNullable<Parameters<typeof wireTestAsks>[0]>;
+
 afterEach(() => {
-  setFolderAllowApprovalGateway(null);
+  wireTestAsks(null);
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -254,11 +254,11 @@ describe('a change since the yes', () => {
       digests: readFolderConfigParts(home).digests,
       changed: ['hooks' as const],
     };
-    const gateway: FolderAllowApprovalGateway = {
+    const gateway: TestGateway = {
       request: () => ({ approvalId: 'x', token: 't', expiresAt: new Date(0).toISOString() }),
       consume: () => ({ outcome: 'expired' }) as never,
     };
-    expect(await askForFolderConfig(gateway, request)).toBe(false);
+    expect(await askForFolderConfig(wireTestAsks(gateway), request)).toBe(false);
     expect(isFolderConfigRefused(request)).toBe(false);
   });
 
@@ -555,7 +555,7 @@ describe("Security's conditions on the first-use pin (M4)", () => {
 
   it('shows the card what would run, and withdraws it when the folder changes again', async () => {
     const denied: string[] = [];
-    setFolderAllowApprovalGateway({
+    wireTestAsks({
       request: (input: unknown) => {
         requests.push(input as never);
         return {
@@ -586,6 +586,8 @@ import {
   registerTestHomes,
   clearTestHomes,
 } from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
+import { summariseFolderConfig } from '../../../../core/approvals/computer-asks/folder-config-card-ask.js';
+import { wireTestAsks } from '../../../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
 describe('managed-server launches on the other engines', () => {
   const mesh = { getByPath: () => AGENT, listWithPaths: () => [], updateLastSeen: () => {} };
   it('requires a registered home before reading a manifest without a mesh match', async () => {

@@ -249,6 +249,32 @@ for (const [match, miss] of [
     'apps/server/src/services/session/chat-rows/chat-rows-port.ts',
     'apps/server/src/services/session/chat-rowsx/chat-rows-port.ts',
   ],
+  // C14 (DOR-5459): the asks port. What a consent card asks and how a yes is
+  // keyed and bound, and the slots the computer side asks through.
+  ['packages/shared/src/computer-asks.ts', 'packages/shared/src/computer-asks-old.ts'],
+  ['packages/shared/src/approval-text.ts', 'packages/shared/src/approval-texts.ts'],
+  ['packages/shared/src/consent-entries.ts', 'packages/shared/src/consent-entries-old.ts'],
+  ['packages/shared/src/folder-allows-card.ts', 'packages/shared/src/folder-allows-cards.ts'],
+  ['apps/server/src/startup/computer-asks.ts', 'apps/server/src/startup/computer-asks-old.ts'],
+  [
+    'apps/server/src/services/runtimes/computer-asks.ts',
+    'apps/server/src/services/runtimesx/computer-asks.ts',
+  ],
+  [
+    'apps/server/src/services/harness/computer-asks.ts',
+    'apps/server/src/services/harnessx/computer-asks.ts',
+  ],
+  [
+    'apps/server/src/services/core/approvals/computer-asks/consent-config.ts',
+    'apps/server/src/services/core/approvalsx/computer-asks/consent-config.ts',
+  ],
+  // C14 (DOR-5459): the CLI verbs that write or show consent, and the store they write through.
+  ['packages/cli/src/consent-config-store.ts', 'packages/cli/src/consent-config-stores.ts'],
+  ['packages/cli/src/harness-consent.ts', 'packages/cli/src/harness-consent.test.ts'],
+  ['packages/cli/src/harness-sync-command.ts', 'packages/cli/src/harnessx-sync-command.ts'],
+  ['packages/cli/src/harness-global-command.ts', 'packages/cli/src/lib/harness-global-command.ts'],
+  ['packages/cli/src/harness-adopt-command.ts', 'packages/cli/src/harness_adopt-command.ts'],
+  ['packages/cli/src/harness-hooks-command.ts', 'packages/cli/src/harness-hooks-command.tsx'],
   // The bars in lib/ every door asks (DOR-4978, Security t1j): who the caller is, and who may
   // make an account decision. Each file by name; a look-alike stays off.
   ['apps/server/src/lib/caller-authority.ts', 'apps/server/src/lib/caller-authority-extra.ts'],

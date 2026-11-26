@@ -24,7 +24,8 @@ import {
   type WorkspaceGate,
   type WorktreeHookMemory,
 } from './workspace-gate.js';
-import { recordApprovedEntry, storedHookDecisions } from '../harness/hook-consent.js';
+import { storedHookDecisions } from '../harness/hook-consent.js';
+import { workspaceAsks } from './computer-asks.js';
 import { choseFullAutonomy } from '../core/turn-power/full-autonomy.js';
 import { WorkspaceStore } from './workspace-store.js';
 import { PortAllocator } from './port-allocator.js';
@@ -122,11 +123,12 @@ export function getWorkspaceManager(): GatedWorkspaceManager {
 /**
  * A person's remembered decisions about their own worktrees' hooks, in the
  * operator-only hook decision store (DOR-2335): listed by
- * `dorkos harness hooks --list`, forgotten by `--revoke <source path>`.
+ * `dorkos harness hooks --list`, forgotten by `--revoke <source path>`. The
+ * space side writes them, from a decision reported through the asks port.
  */
 const worktreeHookMemory: WorktreeHookMemory = {
   has: (entry) => storedHookDecisions().approved.includes(entry),
-  record: (entry) => recordApprovedEntry(entry, "approving a worktree's workspace hooks"),
+  record: (entry) => workspaceAsks().record({ kind: 'workspace_hooks_approved', entry }),
 };
 
 let approvals: () => ConfirmationProvider | undefined = () => undefined;

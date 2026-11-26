@@ -18,11 +18,8 @@ import {
   selfGrantDenyRules,
   type FolderAllowsTurn,
 } from './apply-folder-allows.js';
-import {
-  askForFolderAllows,
-  folderAllowApprovalGateway,
-  mayAskAboutFolderAllows,
-} from './folder-allow-approval.js';
+import { runtimeAsks } from '../../computer-asks.js';
+import { askForFolderAllows, mayAskAboutFolderAllows } from './folder-allow-approval.js';
 
 /** What {@link applyFolderAllowsToLaunch} needs beyond the turn itself. */
 export interface FolderAllowsLaunch extends FolderAllowsTurn {
@@ -141,9 +138,8 @@ export async function applyFolderAllowsToLaunch(
     return undefined;
   }
   if (decision.kind !== 'waiting') return undefined;
-  const gateway = folderAllowApprovalGateway();
-  if (gateway && mayAskAboutFolderAllows(decision.request)) {
-    void askForFolderAllows(gateway, decision.request).catch((err: unknown) => {
+  if (mayAskAboutFolderAllows(decision.request)) {
+    void askForFolderAllows(runtimeAsks(), decision.request).catch((err: unknown) => {
       logger.warn('[FolderAllows] Could not ask about an agent folder allow list', {
         agentId,
         error: err instanceof Error ? err.message : String(err),

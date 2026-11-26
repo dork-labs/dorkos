@@ -8,7 +8,7 @@
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, beforeAll } from 'vitest';
 
 vi.mock('../../../../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -36,6 +36,10 @@ import { packageContentHash } from '../../content-hash.js';
 import { computeInstalledFiles, writeInstalledFiles } from '../../records/installed-files.js';
 import { migrateSavedCopies } from '../migrate-saved-copies.js';
 import { globalApprovalCarryOver } from '../saved-copies-consent.js';
+import { wireTestConsent } from '../../../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The space side's consent writes reach a config store, as at startup.
+beforeAll(() => wireTestConsent());
 
 let dorkHome: string;
 let root: string;

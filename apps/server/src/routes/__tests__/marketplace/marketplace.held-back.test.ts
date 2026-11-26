@@ -5,7 +5,7 @@
  * I2), and keeping the files an update could not sort (DOR-2341). Login is
  * off here; the signed-in bars are in `marketplace.signed-in.test.ts`.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -16,6 +16,10 @@ import {
   unprovenOnDisk,
   useMarketplaceRoutes,
 } from './marketplace.fixtures.js';
+import { wireTestConsent } from '../../../services/core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The space side's consent writes reach a config store, as at startup.
+beforeAll(() => wireTestConsent());
 
 const h = useMarketplaceRoutes();
 

@@ -44,12 +44,11 @@ import {
   type DevLinkRecord,
 } from '@dorkos/shared/marketplace-schemas';
 import {
-  forgetApprovedEntries,
   hookApprovalEntry,
-  recordApprovedEntry,
   sameHookCommands,
   storedHookDecisions,
 } from '../../harness/hook-consent.js';
+import { hookEntryWriters } from '../consent/hook-entry-writers.js';
 import {
   activationEffectsOf,
   bindingOf,
@@ -75,8 +74,8 @@ export interface DevLinkConsentStore {
 export const hookDecisionConsentStore: DevLinkConsentStore = {
   approved: () => storedHookDecisions().approved,
   approve: (entry, replacing) =>
-    recordApprovedEntry(entry, 'linking a folder a person approved', replacing),
-  forget: (matches) => forgetApprovedEntries(matches, 'unlinking a folder'),
+    hookEntryWriters().recordApproved(entry, 'linking a folder a person approved', replacing),
+  forget: (matches) => hookEntryWriters().forgetApproved(matches, 'unlinking a folder'),
 };
 
 /** What a link will record, worked out before anything is written. */

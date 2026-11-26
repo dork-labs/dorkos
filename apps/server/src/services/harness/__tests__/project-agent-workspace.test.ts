@@ -204,7 +204,7 @@ describe('projectAgentWorkspace', () => {
     // The regression guard for the gate. `project()` with no `allowPluginHooks`
     // lets EVERY installed package contribute hooks, and this pass runs
     // unattended (agent creation, server boot) with nobody to approve them —
-    // marketplace installs earn that right through `hook-approval.ts` (DOR-522).
+    // marketplace installs earn that right through `core/approvals/computer-asks/hook-card-ask.ts` (DOR-522).
     const agentDir = buildAgentWorkspace('agent-with-plugin');
     installPluginWithHook(agentDir);
 

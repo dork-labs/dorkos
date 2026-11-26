@@ -72,12 +72,14 @@ import { resolveSubjectLabel } from '../relay/subject-resolver.js';
 import { _resolveRuntimeTypeForNewSession } from '../session/launch/launch-session.js';
 import { RuntimeRegistry, runtimeRegistry } from '../core/runtime-registry.js';
 import { createTestDb } from '@dorkos/test-utils/db';
-import {
-  recordFolderConfigApproval,
-  runtimeUnlessHeld,
-} from '../runtimes/claude-code/folder-settings/folder-config-consent.js';
+import { runtimeUnlessHeld } from '../runtimes/claude-code/folder-settings/folder-config-consent.js';
 import { claudeCodeFacts, setClaudeCodeFacts } from '../session/resolution/claude-code-facts.js';
 import { readFolderConfigParts } from '../runtimes/claude-code/folder-settings/folder-config-pin.js';
+import { recordFolderConfigApproval } from '../core/approvals/computer-asks/index.js';
+import { wireTestConsent } from '../core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The space side's consent writes reach a config store, as at startup.
+beforeAll(() => wireTestConsent());
 
 /** One side of the fixture: what `.dork/` says. */
 interface Identity {

@@ -11,8 +11,10 @@
  * `syncWithConsent` beside it would either duplicate the seam or route around
  * it.
  *
- * This half is not projection. It raises cards, records answers and calls back;
- * it builds no plan and touches no target. So extracting it moves nothing across
+ * This half is not projection. It raises cards through the asks port and calls
+ * back; it builds no plan and touches no target. The space side builds each
+ * card, waits, and records the answer before this hears it (spec
+ * `computer-side-starts-alone` §5.7). So extracting it moves nothing across
  * the guarded line, and `__tests__/project-seam-guard.test.ts` passes with an
  * unchanged allowlist.
  *
@@ -37,15 +39,11 @@
  *
  * @module services/harness/ask-withheld-hooks
  */
+import type { ComputerAsks } from '@dorkos/shared/computer-asks';
+import type { HookCardOptions } from './hook-card.js';
 import {
-  askForHookProjection,
-  hookProjectionBinding,
-  mayAskAboutHooks,
-  type HookApprovalGateway,
-} from './hook-approval.js';
-import {
+  hookApprovalEntry,
   isHookProjectionRefused,
-  recordHookApproval,
   type HookProjectionRequest,
 } from './hook-consent.js';
 import {
@@ -61,8 +59,8 @@ import type { WithheldHooks } from './project-with-consent.js';
 export interface AskAboutWithheldHooksOptions {
   /** The project the cards are about — for the summary log line. */
   projectPath: string;
-  /** The approval primitive that raises the cards and reports the answers. */
-  approvals: HookApprovalGateway;
+  /** The asks port that raises the cards and reports the answers. */
+  asks: ComputerAsks;
   /**
    * Re-project once at least one card is granted. The caller owns the sweep
    * decision and the logging.
@@ -96,6 +94,73 @@ export interface AskAboutWithheldHooksResult {
 }
 
 /**
+ * Entries with a card open right now, so a concurrent projection does not raise
+ * a second for the same package.
+ *
+ * This is all that is left of the process-scoped memory. A refusal used to live
+ * here too, because a durable "no" would have been a decision with no way back:
+ * nothing listed the stored decisions and nothing revoked one, so a misclick
+ * would have disabled a package's hooks for ever, recoverable only by
+ * hand-editing `~/.dork/config.json`. `dorkos harness hooks --list` and
+ * `--revoke <package>` are that way back, so the refusal now goes in the file
+ * (`hook-consent.ts`) where every trigger can read it — including the CLI, which
+ * could not see this set at all and installed refused hooks because of it.
+ *
+ * An EXPIRED card is still deliberately not remembered anywhere: nobody decided,
+ * so nobody said no, and the person who missed it should be asked again. This
+ * set is what keeps that from stacking two open cards for one package meanwhile.
+ */
+const askingNow = new Map<string, symbol>();
+
+/** Seams the open-card memory uses, so one test cannot answer for the next. */
+export const _internal = {
+  /** Drop the open-card memory. */
+  forgetDecisions: (): void => {
+    askingNow.clear();
+  },
+};
+
+/**
+ * Whether this projection may be put in front of a person, or has already been
+ * answered "no" (or is on screen right now).
+ *
+ * @param request - The projection about to be asked about.
+ * @returns True when a card would be new information.
+ */
+export function mayAskAboutHooks(request: HookProjectionRequest): boolean {
+  return !askingNow.has(hookApprovalEntry(request)) && !isHookProjectionRefused(request);
+}
+
+/**
+ * Ask a person whether this package may install these commands, through the
+ * asks port, and wait for the answer. The space side builds the card, waits,
+ * and records the yes or the no before it answers. Fails CLOSED on every path
+ * that is not an explicit yes, including no space side to ask.
+ *
+ * @param asks - The asks port.
+ * @param request - The package, project, and hooks to ask about.
+ * @param options - How the card is worded.
+ * @returns True only when a person granted it.
+ */
+export async function askForHookProjection(
+  asks: ComputerAsks,
+  request: HookProjectionRequest,
+  options: HookCardOptions = {}
+): Promise<boolean> {
+  const entry = hookApprovalEntry(request);
+  const lease = Symbol();
+  askingNow.set(entry, lease);
+  try {
+    const answer = await asks.raise({ kind: 'hook_projection', request, ...options });
+    return answer.outcome === 'granted';
+  } finally {
+    // Whatever happened, including a throw out of the store, this card is no
+    // longer on screen.
+    if (askingNow.get(entry) === lease) askingNow.delete(entry);
+  }
+}
+
+/**
  * The packages a card would be new information about.
  *
  * A package a person has already turned down is not asked again, and one with a
@@ -122,20 +187,21 @@ export function hookPackagesToAskAbout(
 }
 
 /**
- * Raise one card per withheld package, wait for the answers, record every yes,
- * and re-project once if anybody said one.
+ * Raise one card per withheld package, wait for the answers, and re-project
+ * once if anybody said yes.
  *
  * All the cards go up before any is awaited, so a person sees everything that is
  * waiting instead of one card at a time.
  *
- * The record is written BEFORE the re-projection, because it is what stops the
- * next projection asking again and it must survive a failure in the apply. The
+ * The space side records each yes as it is given, so the record is written
+ * BEFORE the re-projection: it is what stops the next projection asking again
+ * and it must survive a failure in the apply. The
  * re-projection re-reads the packages from disk, so a package that rewrote its
  * `hooks.json` while its card was open no longer matches what was approved and
  * stays withheld.
  *
  * @param withheld - Every package the projection left hooks out for.
- * @param opts - The project, the approval primitive, and the caller's second pass.
+ * @param opts - The project, the asks port, and the caller's second pass.
  * @returns What was asked about and what was allowed.
  */
 export async function askAboutWithheldHooks(
@@ -152,11 +218,10 @@ export async function askAboutWithheldHooks(
   const askedAbout = askable.map(({ packageName }) => packageName);
   if (askable.length === 0) return { askedAbout, granted: [] };
 
-  const gateway = opts.approvals;
   const decisions = await Promise.all(
     askable.map(async (request) => ({
       request,
-      granted: await askForHookProjection(gateway, request),
+      granted: await askForHookProjection(opts.asks, request),
     }))
   );
   const allowed = decisions.filter((decision) => decision.granted).map((d) => d.request);
@@ -169,7 +234,6 @@ export async function askAboutWithheldHooks(
 
   if (allowed.length === 0) return { askedAbout, granted: [] };
 
-  for (const request of allowed) recordHookApproval(request);
   await opts.reproject();
 
   return { askedAbout, granted: allowed.map(({ packageName }) => packageName) };
@@ -186,7 +250,7 @@ function passiveRequests(withheld: readonly WithheldHooks[]): Set<HookProjection
  *
  * Nothing waits on these, and that is the whole difference from
  * {@link askAboutWithheldHooks}: this returns at once, each row's wait has no
- * deadline (the row never expires), and a yes records the decision and calls
+ * deadline (the row never expires), and a yes (recorded by the space side) calls
  * `reproject` on its own. So a caller must call it OUTSIDE any project lock and
  * hand it a `reproject` that takes the lock itself: a wait that never ends must
  * not hold a repository. One row per package: a row already open in this process
@@ -196,7 +260,7 @@ function passiveRequests(withheld: readonly WithheldHooks[]): Set<HookProjection
  * turns out stale leaves the package withheld and raises its row again, quietly.
  *
  * @param withheld - Every package the projection left hooks out for.
- * @param opts - The project, the approval primitive, and a lock-taking re-projection.
+ * @param opts - The project, the asks port, and a lock-taking re-projection.
  * @returns The package names a row was raised or picked up for.
  */
 export function raisePassiveHookRows(
@@ -219,26 +283,27 @@ export function raisePassiveHookRows(
  * the first check and spent once, like any other. A package turned down since is
  * not picked up.
  *
- * @param opts - The data directory, the approval primitive, and a lock-taking
+ * @param opts - The data directory, the asks port, and a lock-taking
  *   re-projection for the row's project.
  * @returns The package names picked up.
  */
 export function resumePassiveHookRows(opts: {
   dorkHome: string;
-  approvals: HookApprovalGateway;
+  asks: ComputerAsks;
   reproject: (request: HookProjectionRequest) => Promise<void | Reprojected>;
 }): string[] {
   const picked: string[] = [];
   const saved = new Map(
-    [...readPassiveHookRows(opts.dorkHome), ...(opts.approvals.reaskedHookRequests?.() ?? [])].map(
-      (request) => [`${request.projectPath}\0${request.packageName}`, request]
-    )
+    [...readPassiveHookRows(opts.dorkHome), ...opts.asks.reaskedHooks()].map((request) => [
+      `${request.projectPath}\0${request.packageName}`,
+      request,
+    ])
   );
   for (const request of saved.values()) {
     // One row at a time, each on its own: this runs while the server starts, so
     // a row nothing can make sense of is logged and dropped, never thrown.
     try {
-      const reasked = opts.approvals.isReaskedHook?.(hookProjectionBinding(request, true)) === true;
+      const reasked = opts.asks.isReaskedHook(request);
       if (!mayAskAboutHooks(request) && !reasked) {
         if (isHookProjectionRefused(request)) forgetPassiveHookRow(opts.dorkHome, request);
         continue;
@@ -247,7 +312,7 @@ export function resumePassiveHookRows(opts: {
         request,
         {
           projectPath: request.projectPath,
-          approvals: opts.approvals,
+          asks: opts.asks,
           dorkHome: opts.dorkHome,
           reproject: () => opts.reproject(request),
         },
@@ -277,7 +342,6 @@ function followPassiveRow(
   resumeOnly: boolean
 ): void {
   const { dorkHome } = opts;
-  const reasked = opts.approvals.isReaskedHook?.(hookProjectionBinding(request, true)) === true;
   // A failed save never stops the row: only a yes given after a restart would
   // then wait for the next sync, as it did before rows were saved.
   const saved = (write: (home: string, row: HookProjectionRequest) => void): void => {
@@ -293,13 +357,13 @@ function followPassiveRow(
     }
   };
   if (!resumeOnly) saved(rememberPassiveHookRow);
-  void askForHookProjection(opts.approvals, request, { notInstalledByDorkos: true, resumeOnly })
+  void askForHookProjection(opts.asks, request, { notInstalledByDorkos: true, resumeOnly })
     .then(async (granted) => {
       // The wait is over whatever the answer, so the saved row goes.
       saved(forgetPassiveHookRow);
-      // A no on record for these commands wins over a yes on an old ticket.
-      if (!granted || (!reasked && isHookProjectionRefused(request))) return;
-      recordHookApproval(request);
+      // The space side recorded the yes, unless a no on record for these
+      // commands won over a yes on an old ticket: then this is not granted.
+      if (!granted) return;
       const still = await opts.reproject();
       if (still) raisePassiveHookRows(still, opts);
     })
@@ -317,6 +381,6 @@ export function followReaskedHookRow(
   request: HookProjectionRequest,
   opts: AskAboutWithheldHooksOptions
 ): void {
-  if (opts.approvals.isReaskedHook?.(hookProjectionBinding(request, true)) !== true) return;
+  if (!opts.asks.isReaskedHook(request)) return;
   followPassiveRow(request, opts, true);
 }
