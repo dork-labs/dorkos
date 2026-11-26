@@ -98,7 +98,7 @@
     {
       "id": "wave-11",
       "issue": "DOR-4943",
-      "note": "A button names its exact action; only Cancel, Close and Done are generic (the writing-app-copy skill, Buttons). These five labels are banned as a button's WHOLE label, never as words: \"match\": \"button-label\" fires only on the text inside <Button>, <button>, a *Button component or an AlertDialogAction/AlertDialogCancel, when nothing but an icon sits beside it (scripts/vocab-gate/button-label.ts). \"No agents yet\" and a Yes/No filter value are not buttons and never fire. Compared without regard to case. Scoped to apps/client/src like wave 9.",
+      "note": "A button names its exact action; only Cancel, Close and Done are generic (the writing-app-copy skill, Buttons). These five labels are banned as a button's WHOLE label, never as words: \"match\": \"button-label\" fires only on the text inside <Button>, <button>, a *Button component or an AlertDialogAction/AlertDialogCancel, when nothing but an icon sits beside it (scripts/vocab-gate/button-label.mjs). \"No agents yet\" and a Yes/No filter value are not buttons and never fire. Compared without regard to case. Scoped to apps/client/src like wave 9.",
       "roots": ["apps/client/src/"],
       "match": "button-label",
       "terms": ["OK", "Yes", "No", "Submit", "Confirm"]

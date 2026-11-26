@@ -20,14 +20,22 @@ import ts from 'typescript';
 const BUTTON_TAG = /^button$|Button$|^AlertDialog(Action|Cancel)$/;
 
 /** Whether a JSX element's tag renders a button, judged by the last segment of its name. */
-function isButtonElement(node: ts.Node): node is ts.JsxElement {
+/**
+ * @param {import('typescript').Node} node
+ * @returns {node is import('typescript').JsxElement}
+ */
+function isButtonElement(node) {
   if (!ts.isJsxElement(node)) return false;
   const name = node.openingElement.tagName.getText();
   return BUTTON_TAG.test(name.slice(name.lastIndexOf('.') + 1));
 }
 
 /** Whether a button child adds nothing to the label: blank text, an empty `{}`, or an element such as an icon. */
-function addsNoText(child: ts.JsxChild): boolean {
+/**
+ * @param {import('typescript').JsxChild} child
+ * @returns {boolean}
+ */
+function addsNoText(child) {
   if (ts.isJsxText(child)) return child.text.trim().length === 0;
   if (ts.isJsxExpression(child)) return child.expression === undefined;
   return ts.isJsxElement(child) || ts.isJsxSelfClosingElement(child);
@@ -43,9 +51,10 @@ function addsNoText(child: ts.JsxChild): boolean {
  *   parentheses, a ternary or `??`/`||`/`&&`, and that `{...}` is the only
  *   child that adds text: `{busy ? 'Saving…' : 'OK'}` is a label of OK.
  *
- * @param node - A JSX text node or a string literal.
+ * @param {import('typescript').Node} node - A JSX text node or a string literal.
+ * @returns {string | undefined}
  */
-export function buttonLabel(node: ts.Node): string | undefined {
+export function buttonLabel(node) {
   if (ts.isJsxText(node)) {
     const parent = node.parent;
     if (!isButtonElement(parent)) return undefined;
@@ -54,7 +63,8 @@ export function buttonLabel(node: ts.Node): string | undefined {
   }
   if (!ts.isStringLiteralLike(node)) return undefined;
 
-  let current: ts.Node = node;
+  /** @type {import('typescript').Node} */
+  let current = node;
   for (let hop = 0; hop < 8; hop++) {
     const parent = current.parent;
     if (!parent) return undefined;

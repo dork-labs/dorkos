@@ -16,7 +16,7 @@ No, Submit or Confirm") were stated as musts and checked by nobody
 them, with three optional wave fields the gate learned for it: `roots` (path
 prefixes), `caseSensitive` (so "I" is the pronoun and "i.e." is not) and
 `"match": "button-label"` (the word must be a button's whole label,
-`scripts/vocab-gate/button-label.ts`).
+`scripts/vocab-gate/button-label.mjs`).
 
 The waves cover `apps/client/src` only. Against the base they report 14 hits
 (4 "we", 5 "I", 5 button labels), seeded as 13 `contains`-scoped allowlist

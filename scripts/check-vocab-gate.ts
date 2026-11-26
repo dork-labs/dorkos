@@ -158,7 +158,7 @@
  * how its terms fire, all data in `banned-terms.json`: `roots` (repo-relative
  * path prefixes; {@link termsForPath}), `caseSensitive` (so "I" is a pronoun
  * and "i.e." is not), and `"match": "button-label"` (the term must be a
- * button's whole label, `vocab-gate/button-label.ts`). The app-copy voice
+ * button's whole label, `vocab-gate/button-label.mjs`). The app-copy voice
  * rules (`.claude/rules/app-copy.md`) cover `apps/client/src` only: the
  * marketing site and docs may say "we", and server text reaches the screen
  * through positions this walk cannot see (a bare `throw`, see above). Their
@@ -174,7 +174,7 @@ import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { readSpaceServer } from './lib/space-server.mjs';
-import { buttonLabel } from './vocab-gate/button-label.ts';
+import { buttonLabel } from './vocab-gate/button-label.mjs';
 
 /** `relative()`'s output with OS separators normalized to `/`, for portable path matching. */
 function toPosixRelative(from: string, to: string): string {
@@ -207,7 +207,7 @@ export interface BannedTerm {
   roots?: string[];
   /**
    * `"button-label"`: the term fires only when it is a button's WHOLE label,
-   * compared without regard to case (see `vocab-gate/button-label.ts`), never
+   * compared without regard to case (see `vocab-gate/button-label.mjs`), never
    * as a word inside a sentence. Absent means the usual word match.
    */
   match?: 'button-label';
