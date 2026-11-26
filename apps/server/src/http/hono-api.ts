@@ -59,6 +59,7 @@ import { createCapabilitiesInvokeRoutes } from '../routes/capabilities-invoke.js
 import type { CapabilityDoorPorts } from '../routes/capability-dispatch.js';
 import {
   assertNoCapabilityRouteCollisions,
+  assertOwnerBarWired,
   createCapabilityHttpRoutes,
   mountedCapabilities,
 } from '../routes/capability-http.js';
@@ -542,6 +543,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   }
   app.route('/api/capabilities', capabilitiesRoutes);
   if (deps.capabilities) {
+    // A capability behind an owner bar never runs without its policy (DOR-4978).
+    assertOwnerBarWired(deps.capabilities, deps.capabilityPorts);
     app.route(
       '/api/capabilities',
       createCapabilitiesInvokeRoutes(deps.capabilities, deps.capabilityPorts)

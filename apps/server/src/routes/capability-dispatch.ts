@@ -176,8 +176,9 @@ export async function dispatchCapability(
     const outcome = accountDecisionBar(facts, policy);
     if (!outcome.ok) {
       const { code, which } = outcome.refusal;
-      // The sentence is the definition's own, never from the request.
-      const detail = accountDecisionSentence(which, http.ownerOnly ?? '');
+      // The sentence is the definition's own, never from the request; compose
+      // refuses an owner bar without one (`narrow-declarations.ts`).
+      const detail = accountDecisionSentence(which, http.ownerOnly!);
       return problem(c, code, { detail });
     }
     accountDecision = accountDecisionPassed(outcome.owner);

@@ -22,6 +22,7 @@ import { defineCapability, type CapabilityDomain } from '../capability-definitio
 import { accountDecisionPassed } from '../context/owner-authority.js';
 import { composeCapabilityRegistryForDocs } from '../../self-description/dorkos-registry.js';
 import { OWNER_BAR_CAPABILITIES } from './owner-bar-capabilities.js';
+import { assertOwnerBarWired } from '../../../../routes/capability-http.js';
 
 const OWNER = { kind: 'local_install', installationId: 'northwind-install' } as const;
 const OWNER_ONLY =
@@ -128,11 +129,36 @@ describe('compose', () => {
     ['an MCP surface', { http, mcp: { inSession: true } }, {}],
     ['a network mode', { http }, { wifi: 'person-held' }],
     ['an owner sentence with no bar', { http: { ...http, ownerBar: undefined } }, {}],
+    [
+      'a confirm-first hold',
+      { http },
+      {
+        confirmFirst: {
+          bar: 'front-door',
+          kind: 'connection.grant',
+          subject: 'x',
+          sheet: () => ({}),
+        },
+      },
+    ],
   ])('refuses the bar with %s', (_name, surfaces, extra) => {
     const capability = { ...base, ...extra, surfaces } as typeof base;
     expect(() =>
       composeRegistry([{ name: 'testbar', capabilities: [capability] }], { logger: noopLogger })
     ).toThrow(/owner/);
+  });
+});
+
+describe('startup', () => {
+  it('refuses to start a registry with a barred capability and no policy for its bar', () => {
+    const { registry } = world();
+    expect(() => assertOwnerBarWired(registry, undefined)).toThrow(/testbar\.barred/);
+    expect(() => assertOwnerBarWired(registry, { prechecks: {} })).toThrow(/account-decision/);
+    const policy = { resolveOwner: () => OWNER, loginEnabled: () => false };
+    expect(() => assertOwnerBarWired(registry, { accountDecision: policy })).not.toThrow();
+    // A registry with nothing behind the bar needs no policy.
+    const plain = composeRegistry([], { logger: noopLogger });
+    expect(() => assertOwnerBarWired(plain, undefined)).not.toThrow();
   });
 });
 

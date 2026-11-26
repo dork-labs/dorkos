@@ -250,6 +250,32 @@ export function createCapabilityHttpRoutes(deps: CapabilityHttpDeps): Hono<ApiEn
 }
 
 /**
+ * Refuse to start when the registry holds a capability behind an owner bar
+ * (`http.ownerBar`) and the doors were given no policy to run it with. Without
+ * one the mount mints no proof and the registry refuses every such call, so
+ * this is a wiring fault, said at boot rather than as a refusal on each request.
+ *
+ * @param registry - The composed registry.
+ * @param ports - What the doors were given.
+ * @throws Naming the capabilities left without their bar.
+ */
+export function assertOwnerBarWired(
+  registry: Pick<CapabilityRegistry, 'capabilities'>,
+  ports: CapabilityDoorPorts | undefined
+): void {
+  if (ports?.accountDecision) return;
+  const barred = registry.capabilities
+    .filter((capability) => capability.surfaces.http?.ownerBar !== undefined)
+    .map((capability) => capability.id);
+  if (barred.length > 0) {
+    throw new Error(
+      `Capabilities ${barred.join(', ')} declare the account-decision bar, but the HTTP ` +
+        'doors were given no policy for it (`capabilityPorts.accountDecision`).'
+    );
+  }
+}
+
+/**
  * Every handler the mount registered, so the collision check knows the mount's
  * own routes by what they run, never by where they sit in the app.
  */

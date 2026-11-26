@@ -2,6 +2,7 @@
 covers:
   - 'feat(api): one owner check for connection decisions, and three connection doors move onto the capability mount (DOR-4978)'
   - 'feat(api): one account-decision bar for hand routes and the capability mount; three connection doors move onto it (DOR-4978)'
+  - 'fix(api): the server refuses to start when a capability behind the account-decision bar has no policy wired (DOR-4978)'
 ---
 
 ### Changed
