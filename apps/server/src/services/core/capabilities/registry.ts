@@ -37,7 +37,7 @@ import type {
   CapabilityDeps,
   CapabilityDomain,
 } from './capability-definition.js';
-import type { ApprovalServiceAction } from '@dorkos/shared/approval-schemas';
+import type { ApprovalServiceAction, ApprovalSubject } from '@dorkos/shared/approval-schemas';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import {
   CapabilityGateRefusal,
@@ -53,6 +53,7 @@ import { refuseSpend, spendPermission, type SpendPreflight } from './spend-permi
 import { agentComputerActionRefusal } from '../agent-computer/hub-owned.js';
 import { preGateRefusal } from './pre-gate-refusals.js';
 import { resolveApprovalSubject } from '../approvals/approval-subject.js';
+import { escalateCall } from './declarations/escalation.js';
 import type { ServerPrincipalProof } from '../connections-lease/index.js';
 import { isServerPrincipal } from '../../connectors/principal/server-principal.js';
 import {
@@ -344,6 +345,12 @@ export interface CapabilityHandlerContext {
    * rather than reading the state again, which could have moved since.
    */
   approvedChange?: string;
+  /**
+   * What this call acts on, as the gate named it for the card (DOR-1929). Set
+   * by the registry, never by a caller; the audit row for a capability with an
+   * `auditAction` names it, as the hand-registered gate's rows did.
+   */
+  subject?: ApprovalSubject;
   /**
    * The approval token the caller presented, handed to the handler only for a
    * capability that declares `forwardsApproval` (the request tool), which passes
@@ -912,23 +919,24 @@ export function composeRegistry(
         const personRead = personReadsPastArea(capability, supplied, resolved);
         if (personRead) invocationContext.personRead = 'rest-proof';
         const areaPermission = personRead ? null : resolved;
+        // Arguments that reach an action of their own are decided as it, exactly
+        // where the hand-registered gate asks (DOR-3703), and what would change,
+        // read from what is there now, for the card and the approval's binding
+        // (DOR-2328, `describeApprovalChange`). Both in `declarations/escalation.ts`.
+        const escalated = await escalateCall(deps, capability, parsed, areaPermission, supplied);
+        const { change } = escalated;
         // A paid run that must ask does so at every level (DOR-4204 PR 2).
-        const permission = spendAsks ? spendPermission(areaPermission) : areaPermission;
+        const permission = spendAsks ? spendPermission(escalated.permission) : escalated.permission;
         // Named here rather than in the gate, which is synchronous (DOR-1929):
         // an action that can raise a card and declares its subject gets a card
         // that says WHICH thing it is about.
         const subject = await resolveApprovalSubject(capability.approvalSubject, parsed);
-        // What would change, read from what is there now, for the card and for
-        // the approval's binding (DOR-2328, `describeApprovalChange`).
-        const change = capability.describeApprovalChange
-          ? await capability.describeApprovalChange(deps, parsed, supplied)
-          : undefined;
         const { decision, remember } = packageReviews.gate({
           // A read raises no card by its tier; a paid one that must ask does.
           action:
-            spendAsks && capability.tier === 'observe'
-              ? { ...capability, tier: 'act' }
-              : capability,
+            spendAsks && escalated.action.tier === 'observe'
+              ? { ...escalated.action, tier: 'act' }
+              : escalated.action,
           input: parsed,
           permission,
           ...(subject ? { subject } : {}),
@@ -975,8 +983,10 @@ export function composeRegistry(
             : {}),
           ...(supplied.blockedRequest ? { blockedRequest: supplied.blockedRequest } : {}),
         });
+        escalated.note(decision);
         if (decision.outcome !== 'allowed') throw new CapabilityGateRefusal(decision);
         if (decision.approval) invocationContext.approval = decision.approval;
+        if (subject) invocationContext.subject = subject;
         rememberPackageReview = remember;
         if (change !== undefined) invocationContext.approvedChange = change;
       }
