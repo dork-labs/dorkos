@@ -1,5 +1,5 @@
 {
-  "$comment": "Retired vocabulary the DOR-855+ Language & IA program has moved off of, banned wave by wave (plans/language-ia-simplification.md). Adding a wave here is the ONLY change extending the gate needs — check-vocab-gate.ts and its allowlist mechanism stay put. A term is matched literally and case-insensitively, fenced with a word boundary at each end that HAS a word character: 'connection' does not fire on 'Connections', 'ConnectionState' or 'reconnecting', while a punctuation term like '...' matches wherever it appears in a copy position.",
+  "$comment": "Retired vocabulary the DOR-855+ Language & IA program has moved off of, banned wave by wave (plans/language-ia-simplification.md). Adding a wave here is the ONLY change extending the gate needs — check-vocab-gate.ts and its allowlist mechanism stay put. A term is matched literally and case-insensitively, fenced with a word boundary at each end that HAS a word character: 'connection' does not fire on 'Connections', 'ConnectionState' or 'reconnecting', while a punctuation term like '...' matches wherever it appears in a copy position. Three optional wave fields narrow a wave (DOR-4943): `roots` (repo-relative path prefixes it applies to), `caseSensitive` (match case as written), and `\"match\": \"button-label\"` (the term must be a button's whole label).",
   "waves": [
     {
       "id": "wave-1",
@@ -79,6 +79,29 @@
       "issue": "DOR-5135",
       "note": "The switch that lets other devices open this computer's DorkOS answers on every network the computer is on: Wi-Fi, a wired (Ethernet) cable, and VPNs such as Tailscale, which can reach a device anywhere in the world. Copy that said \"Wi-Fi\" was wrong for a wired computer and gave wrong advice to a Tailscale device, so the feature says \"network\" (\"Devices on my network\") in everything people read. Identifiers and config keys (lanAccess, allowFromWifi, server.lanAccess) keep their names, and the gate never reads those positions. Docs prose is scanned for this wave too (MDX_SCANNED_WAVES). A genuine Wi-Fi reference (a phone's Wi-Fi settings, a hotel Wi-Fi example) is a scoped, reasoned allowlist entry.",
       "terms": ["wi-fi", "wifi"]
+    },
+    {
+      "id": "wave-9",
+      "issue": "DOR-4943",
+      "note": "App copy has no speaker (.claude/rules/app-copy.md, the writing-app-copy skill): never \"we\", never \"please\", \"sorry\" or \"oops\", because nobody is there to ask or apologize. Name the actor (DorkOS, your agent, Telegram) and talk to \"you\". Scoped by roots to apps/client/src, the code app-copy.md covers: the marketing site and the docs may say \"we\", and a server string reaches the screen through positions the walk cannot see. Contractions are caught too, because the apostrophe is a word boundary (\"we’ll\"). Today's hits are allowlisted line by line, so the list only shrinks.",
+      "roots": ["apps/client/src/"],
+      "terms": ["we", "please", "sorry", "oops"]
+    },
+    {
+      "id": "wave-10",
+      "issue": "DOR-4943",
+      "note": "The pronoun \"I\", for the same reason as wave 9: the app has no speaker. A wave of its own because it matches case as written (caseSensitive): a lowercase \"i\" is never the pronoun (\"i.e.\"), while every other term in this file ignores case. A button in the person's own voice (\"I’ve finished\") is still a hit: say the action instead (\"Continue\"). Scoped to apps/client/src like wave 9.",
+      "roots": ["apps/client/src/"],
+      "caseSensitive": true,
+      "terms": ["I"]
+    },
+    {
+      "id": "wave-11",
+      "issue": "DOR-4943",
+      "note": "A button names its exact action; only Cancel, Close and Done are generic (the writing-app-copy skill, Buttons). These five labels are banned as a button's WHOLE label, never as words: \"match\": \"button-label\" fires only on the text inside <Button>, <button>, a *Button component or an AlertDialogAction/AlertDialogCancel, when nothing but an icon sits beside it (scripts/vocab-gate/button-label.mjs). \"No agents yet\" and a Yes/No filter value are not buttons and never fire. Compared without regard to case. Scoped to apps/client/src like wave 9.",
+      "roots": ["apps/client/src/"],
+      "match": "button-label",
+      "terms": ["OK", "Yes", "No", "Submit", "Confirm"]
     }
   ]
 }
