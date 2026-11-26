@@ -39,7 +39,8 @@ ADR `261125-183122` settles the direction: to publish is to save a copy, with a 
 - **The store**: pages, versions and files kept by content address; the page's id, kind, owner, publisher, audience and pin; the `page` reference kind.
 - **What a copy holds** for a doc, a browser-only mini app and a folder of web files; the refusal of protected files; the file list shown before the copy; the limits.
 - **Serving apart**: the content host, an origin for each page, the sandbox and every header, the one cookie, "do not index", what a taken-down or unknown link answers, and how the owner opens a private page.
-- **The audiences and the yes**: only the owner, then anyone with the link, then a password; what widening is; the card; a turn that read words from outside; a new version of a shared page.
+- **Whose it is, and reporting**: a fixed line and a header on every answer saying it is published with DorkOS and is not DorkOS itself, and a "Report this page" route that reaches the owner.
+- **The audiences and the yes**: only the owner, then anyone with the link and a password, then anyone with the link, which opens only once "Report this page" is built; what widening is; the card; a turn that read words from outside; a new version of a shared page.
 - **The capabilities**, with a section the API lead can read alone.
 - **A browser-only mini app as a page**: the manifest line, the page runtime and its storage, and what publishing refuses.
 - **Where it runs**, by one rule: an install with the content host setting serves its own pages; else a Mac with publishing turned on pushes the copy to its owner's DorkOS in the cloud (a contract change first); else publishing says there is no home. And a home that sleeps.
