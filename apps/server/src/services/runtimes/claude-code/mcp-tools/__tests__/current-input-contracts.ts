@@ -64,9 +64,11 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
         // +3 total for the app's task list and run reads (no MCP surface, DOR-4978).
         // +4 total for a person's doors on the MCP servers every agent gets (person-only, no MCP
         // surface, DOR-4978).
+        // +4 total for one agent's heartbeat page, permissions and level, and a persona move on
+        // `/api/agents/*` (no MCP surface, DOR-4978).
         // +1 total for `work-graph.record-pr` (DOR-5264), which `dorkos call` reaches over
         // HTTP and has no MCP surface.
-        total: 181,
+        total: 185,
         relevant: 132,
         ordinary: 120,
         inSession: 119,

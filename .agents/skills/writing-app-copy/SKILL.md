@@ -155,4 +155,4 @@ The vocab gate (`pnpm check:vocab-gate`) fails the build on banned words and on 
 4. **Outcome.** Does it say what changes for the person, not how the system works?
 5. **Next step.** Does every error and empty state leave the person a clear next move?
 6. **Code names.** Would someone who never read the source understand every noun?
-7. **E2E strings.** Browser specs assert literal copy. `grep -rn "<old text>" apps/e2e` before you change a string.
+7. **E2E strings.** Browser specs assert literal copy. `pnpm check:copy-spec-drift` names any spec a copy change strands; it runs at pre-push and fails the `typecheck` CI job. Update the spec in the same change.

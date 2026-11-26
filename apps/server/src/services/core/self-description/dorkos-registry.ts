@@ -58,6 +58,7 @@ import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
 import { instructionsDomain } from '../../runtimes/context-preview/instructions-capability.js';
 import { permissionsDomain } from '../permissions/permission-capabilities.js';
+import { permissionViewsDomain } from '../permissions/agent-permission-views.js';
 import { auditDomain } from '../../audit/audit-capabilities.js';
 import { agentPauseDomain } from '../../mesh/pause/pause-capabilities.js';
 import { approvalsDomain } from '../approvals/approval-withdraw-capability.js';
@@ -136,6 +137,8 @@ export function composeDorkOsCapabilityRegistry(
   // Blocked one (spec `agent-permissions` D8, D9). The request tool reaches the
   // action it asks for through `deps.registry`, back-written below.
   domains.push(permissionsDomain);
+  // One agent's permissions and level; still starting until boot sets their reader (DOR-4978).
+  domains.push(permissionViewsDomain);
   // Unconditional too: `end_beat` needs no service handle, and outside a beat
   // it refuses on its own (`NOT_A_BEAT`), so there is nothing to switch off.
   domains.push(heartbeatDomain);
@@ -222,6 +225,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     capabilitiesDomain,
     instructionsDomain,
     permissionsDomain,
+    permissionViewsDomain,
     heartbeatDomain,
     runsDomain,
     taskViewDomain,
