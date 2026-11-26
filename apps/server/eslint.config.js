@@ -7,6 +7,21 @@ import sessionRuntimes from './eslint-rules/session-runtimes-boundary.js';
 import problemOnly from './eslint-rules/problem-only.js';
 import turnPort from './eslint-rules/turn-port-boundary.js';
 import computerWall from './eslint-rules/computer-wall.js';
+import importBoundary from './eslint-rules/import-boundary.js';
+
+// Services never import middleware (DOR-4922): a middleware step calls a service,
+// never the reverse. A service that needs a step's function declares the function
+// type it needs, and its composition root passes the step's function in; a pure
+// helper both need lives in `lib/`. The pattern sees the specifier, not the
+// resolved path, so it refuses a climb of two or more `../` into a folder named
+// `middleware`: from `services/<domain>/` that is the top-level `src/middleware/`.
+// It rides `@typescript-eslint/no-restricted-imports`, a rule no other block sets,
+// so the many blocks that restate `no-restricted-imports` need not carry it.
+const MIDDLEWARE_BAN = {
+  regex: '^(?:\\.\\./){2,}middleware(?:/|$)',
+  message:
+    "A service never imports middleware (DOR-4922). Declare the function type it needs and have its composition root pass the step's function in, or move a pure helper to lib/.",
+};
 
 // SDK confinement (Hard Rule #2): each agent SDK is importable only inside its
 // own runtime adapter directory. Flat-config rule entries REPLACE (not merge),
@@ -93,6 +108,34 @@ const GRAY_MATTER_BAN = {
     'gray-matter runs `---js` frontmatter as code. Use parseFrontmatter/stringifyFrontmatter from @dorkos/skills/frontmatter.',
 };
 
+// Services never import a route (DOR-4922): a route calls a service, never the
+// reverse. A service that needs a route's function declares the function type it
+// needs, and its composition root passes the route's function in. The pattern sees the specifier, not the resolved
+// path, so it refuses a climb of two or more `../` into a folder named `routes`:
+// from `services/<domain>/` that is the top-level `src/routes/`. The space
+// server's own `services/spaces/routes/` is reached by one `../`, and that tree
+// is not checked at all (see `SERVICES_NO_ROUTES_EXEMPT`). Middleware is not
+// covered yet. Tests are exempt: they mount routes to drive a service.
+const ROUTES_BAN = {
+  regex: '^(?:\\.\\./){2,}routes(?:/|$)',
+  message:
+    "A service never imports a route (DOR-4922). Declare the function type it needs and have its composition root pass the route's function in.",
+};
+/**
+ * Service files the routes ban does not reach.
+ *
+ * - `services/spaces/**`: frozen until the Community Space opens (AGENTS.md,
+ *   "Where the system is going", rule 4), and it imports its own `routes/`
+ *   folder, which is part of the space server.
+ * - `heartbeats/heartbeats-wiring.ts`: its one route import, a type from
+ *   `routes/heartbeats.ts`, goes with that file when the Heartbeat page moves
+ *   onto the capability mount (DOR-4978). Remove this entry then.
+ */
+const SERVICES_NO_ROUTES_EXEMPT = [
+  'src/services/spaces/**',
+  'src/services/heartbeats/heartbeats-wiring.ts',
+];
+
 // Every dependency confined to exactly one directory. DERIVED from, rather
 // than restated alongside, both the global ban list and every per-directory
 // one below: each directory owns exactly one entry and bans the rest via
@@ -110,6 +153,15 @@ const ALL_CONFINED = [
   OTEL_BAN,
   GRAY_MATTER_BAN,
   EXPRESS_BAN,
+];
+/** The directories that own one confined dependency: see `confineDirectory` below. */
+const OWNER_DIRS = [
+  'src/services/runtimes/claude-code/**',
+  'src/services/runtimes/codex/**',
+  'src/services/runtimes/opencode/**',
+  'src/services/runtimes/doe/**',
+  'src/services/terminal/**',
+  'src/services/observability/**',
 ];
 /** What stays banned in tests: everything but Express (see `EXPRESS_BAN`). */
 const TEST_CONFINED = ALL_CONFINED.filter((ban) => ban !== EXPRESS_BAN);
@@ -168,6 +220,9 @@ const HOMEDIR_MEMBER_BAN = {
  * the SDK confinement (Hard Rule #2) holds there, without the homedir `paths`
  * they are carved out from.
  *
+ * Every confined directory is under `services/`, so the source half carries the
+ * routes ban (`ROUTES_BAN`) too; the test half does not, like every test.
+ *
  * Both test spellings, so the carve-out `.claude/rules/dork-home.md` states
  * without qualification is true in these directories too — a `*.test.ts` beside
  * its source must not mean a different rule from one under `__tests__/`.
@@ -181,7 +236,12 @@ function confineDirectory(dir, patterns) {
     {
       files: [`${dir}/**/*.ts`],
       ignores: [`${dir}/**/__tests__/**`, `${dir}/**/*.test.ts`],
-      rules: { 'no-restricted-imports': ['error', { patterns, paths: HOMEDIR_BANS }] },
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          { patterns: [...patterns, ROUTES_BAN], paths: HOMEDIR_BANS },
+        ],
+      },
     },
     {
       files: [`${dir}/**/__tests__/**/*.ts`, `${dir}/**/*.test.ts`],
@@ -268,12 +328,7 @@ export default defineConfig([
   {
     files: ['src/**/*.ts'],
     ignores: [
-      'src/services/runtimes/claude-code/**',
-      'src/services/runtimes/codex/**',
-      'src/services/runtimes/opencode/**',
-      'src/services/runtimes/doe/**',
-      'src/services/terminal/**',
-      'src/services/observability/**',
+      ...OWNER_DIRS,
       'src/lib/dork-home.ts',
       ...EXPRESS_HOSTS,
       'src/**/__tests__/**',
@@ -290,13 +345,37 @@ export default defineConfig([
     },
   },
 
+  // The same bans for services, plus the routes ban (`ROUTES_BAN`). The blocks
+  // after this one that reach a service file (the Express hosts, the
+  // agents-user-home carve-out and every `confineDirectory` source half) restate
+  // it, because rule options replace rather than merge.
+  {
+    files: ['src/services/**/*.ts'],
+    ignores: [
+      ...OWNER_DIRS,
+      ...EXPRESS_HOSTS,
+      ...SERVICES_NO_ROUTES_EXEMPT,
+      'src/**/__tests__/**',
+      'src/**/*.test.ts',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [...ALL_CONFINED, ROUTES_BAN], paths: HOMEDIR_BANS },
+      ],
+    },
+  },
+
   // The extension host's Express files: every other confinement still holds.
   {
     files: EXPRESS_HOSTS,
     rules: {
       'no-restricted-imports': [
         'error',
-        { patterns: ALL_CONFINED.filter((ban) => ban !== EXPRESS_BAN), paths: HOMEDIR_BANS },
+        {
+          patterns: [...ALL_CONFINED.filter((ban) => ban !== EXPRESS_BAN), ROUTES_BAN],
+          paths: HOMEDIR_BANS,
+        },
       ],
     },
   },
@@ -357,7 +436,7 @@ export default defineConfig([
   // drops only the homedir `paths`.
   {
     files: ['src/services/harness/agents-user-home.ts'],
-    rules: { 'no-restricted-imports': ['error', { patterns: ALL_CONFINED }] },
+    rules: { 'no-restricted-imports': ['error', { patterns: [...ALL_CONFINED, ROUTES_BAN] }] },
   },
 
   // Every directory that owns one dependency: everything else in
@@ -436,6 +515,17 @@ export default defineConfig([
     rules: { 'session-runtimes/no-runtimes': 'error' },
   },
 
+  // The middleware ban (`MIDDLEWARE_BAN`) for every service. Not `services/spaces/**`: it is
+  // frozen until the Community Space opens (AGENTS.md, "Where the system is going", rule 4).
+  // Tests are exempt: they mount a chain step to drive a service.
+  {
+    files: ['src/services/**/*.{ts,tsx}'],
+    ignores: ['src/services/spaces/**', 'src/**/__tests__/**', 'src/**/*.test.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': ['error', { patterns: [MIDDLEWARE_BAN] }],
+    },
+  },
+
   // Every error answer is a problem document (ADR 261123-170831): no hand-built `{ error }`
   // body in the HTTP layer. Tests are not checked: they assert what old shapes looked like.
   {
@@ -464,6 +554,16 @@ export default defineConfig([
     ignores: ['src/**/__tests__/**', 'src/**/__fixtures__/**', 'src/**/*.{test,spec}.{ts,tsx}'],
     plugins: { 'computer-wall': computerWall },
     rules: { 'computer-wall/wall': 'error' },
+  },
+
+  // The services import boundary (DOR-4924): one domain under services/ (each folder under core/ is
+  // its own) imports another only along a pair in `import-boundary.baseline.json`. Type-only
+  // imports are allowed; tests and fixtures are not checked.
+  {
+    files: ['src/services/**/*.{ts,tsx}'],
+    ignores: ['src/**/__tests__/**', 'src/**/__fixtures__/**', 'src/**/*.{test,spec}.{ts,tsx}'],
+    plugins: { 'import-boundary': importBoundary },
+    rules: { 'import-boundary/boundary': 'error' },
   },
 
   ...testConfig,

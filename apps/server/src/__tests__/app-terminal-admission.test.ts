@@ -290,9 +290,8 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/ext');
     // 69 -> 71: the last Express mounts move to Hono (DOR-2818): the Heartbeat
     // page and the credits answer join the Hono app as two mounts of their own,
-    // and the terminal's `/api/terminal` stays one. The credits answer is a
-    // capability the mount serves now (DOR-4978).
-    expect(mounts).toContain('/api/agents/admission-fixture/heartbeat');
+    // and the terminal's `/api/terminal` stays one. The credits answer and the
+    // Heartbeat page are capabilities the mount serves now (DOR-4978).
     expect(mounts).toContain('/api/terminal');
     // 71 -> 72: `/api/lan-access`, the Wi-Fi access switch (DOR-2930).
     expect(mounts).toContain('/api/lan-access');
@@ -339,8 +338,9 @@ describe('main HTTP admission through the real app', () => {
     // 88 -> 86: what cannot wake and a person's "add a promise" moved there
     // too (DOR-4978). 86 -> 84: a person's to-do writes and promise changes
     // moved there too, so `/api/todos` and `/api/todo-promises` are asked for by hand.
-    // 84 -> 83: the credits answer moved there too (DOR-4978).
-    expect(mounts).toHaveLength(83);
+    // 84 -> 83: the credits answer moved there too (DOR-4978). 83 -> 82: the
+    // Heartbeat page moved there too, so it is asked for by hand.
+    expect(mounts).toHaveLength(82);
     const byHand = [
       '/',
       '/x/fixture',
@@ -362,6 +362,7 @@ describe('main HTTP admission through the real app', () => {
       '/api/todos',
       '/api/todo-promises',
       '/api/heartbeats/triage-credits',
+      '/api/agents/admission-fixture/heartbeat',
     ];
     for (const mount of [...mounts, ...byHand, '/unknown']) {
       expectTerminal(

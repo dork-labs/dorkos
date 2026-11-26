@@ -57,7 +57,7 @@ import {
 } from '../services/core/auth/step-up/remote-password-failures.js';
 import { requestCodeForHash } from '../services/core/auth/step-up/request-code.js';
 import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import { presentsProgramCredential } from '../lib/caller-authority.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import { currentStepUpExtensionRisks } from '../services/extensions/step-up/step-up-extension-risk.js';

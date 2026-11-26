@@ -41,6 +41,7 @@ import {
 } from './services/workspace/index.js';
 import { terminalUpgradeRoute } from './services/terminal/index.js';
 import { attachUpgradeRouter } from './services/core/streams/upgrade-router.js';
+import { upgradeGuards } from './startup/upgrade-guards.js';
 import { tunnelIngressesFor } from './services/core/remote/tunnel-ingresses.js';
 import { durableStreamRoutes } from './routes/stream-sockets.js';
 import {
@@ -369,14 +370,15 @@ async function start() {
         terminalUpgradeRoute(refs.terminalManager!),
         hubRelayComputerRoute(),
       ];
-      attachUpgradeRouter(server, upgradeRoutes, mainRequestAdmission);
+      attachUpgradeRouter(server, upgradeRoutes, mainRequestAdmission, upgradeGuards);
       logger.info('[DorkOS] WebSocket upgrade router attached');
       // Wi-Fi access (DOR-2930): a second listener on the network, opened and
       // closed live by its switch, into the same front door and upgrade router.
       void lanAccess.attach({
         port: PORT,
         createServer: () => createFrontDoorServer(frontDoor, { ingress: 'wifi' }),
-        attachUpgrades: (lan) => attachUpgradeRouter(lan, upgradeRoutes, mainRequestAdmission),
+        attachUpgrades: (lan) =>
+          attachUpgradeRouter(lan, upgradeRoutes, mainRequestAdmission, upgradeGuards),
       });
 
       // DorkOS's own https listener: test homes only, for now (DOR-3172).
@@ -384,7 +386,7 @@ async function start() {
         env,
         resolveDorkHome(),
         (tls) => createFrontDoorServer(frontDoor, { tls }),
-        (opened) => attachUpgradeRouter(opened, upgradeRoutes, mainRequestAdmission),
+        (opened) => attachUpgradeRouter(opened, upgradeRoutes, mainRequestAdmission, upgradeGuards),
         logger
       );
 

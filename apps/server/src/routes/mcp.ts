@@ -27,7 +27,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { closeResponseWithSignIn } from '../http/raw-node-stream.js';
 import { readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import { honoMcpAuth } from '../middleware/mcp-auth.js';
 import { requireMcpEnabled } from '../middleware/mcp-enabled.js';
 import { validateMcpOrigin } from '../middleware/mcp-origin.js';

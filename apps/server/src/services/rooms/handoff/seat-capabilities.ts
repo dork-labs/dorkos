@@ -5,7 +5,7 @@
  * @module server/services/rooms/handoff/seat-capabilities
  */
 import { z } from 'zod';
-import { defineCapability } from '../../core/capabilities/index.js';
+import { defineCapability } from '../../core/capabilities/capability-definition.js';
 import type { AuthorRecord } from '../author-registry.js';
 import { reseatCapabilities } from '../reseat/reseat-capabilities.js';
 import { callerAuthor } from '../service/room-caller-author.js';

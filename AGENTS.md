@@ -95,7 +95,7 @@ Decided, and not built unless `meta/ROADMAP.md` lists it as built. Target shape:
 
 Rules today:
 
-1. A feature goes in the server core only if the core acts on it, only the core can see it, or a mini app can't do it right. Otherwise: a mini app (`contributing/extension-authoring.md`), or a schedule with a skill (ADR `261124-150519`).
+1. A feature goes in the server core only if the core acts on it, only the core can see it, or a mini app can't do it right. Otherwise: a mini app (`contributing/extension-authoring.md`), or a schedule with a skill (ADR `261124-150519`). A pull request watcher is the example: none of the three hold, so it is a mini app that calls the core's one wake. A PR that adds a folder under `apps/server/src/services/` answers the three questions in its body; review checks it (`REVIEW.md`, "Path-specific focus").
 2. No new service or process unless its lifetime or trust level differs.
 3. Never plan, rank or write work by a date or a launch (ADR `261124-150515`).
 4. Architecture work leaves the space server's code alone (`services/spaces`, `apps/space`, the community wire, `spaces/migrate.ts`) until the Community Space has opened and its opening checks are green. Fixes the opening needs are fine.

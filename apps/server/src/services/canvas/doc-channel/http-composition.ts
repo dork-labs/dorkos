@@ -14,8 +14,7 @@ import {
   type Db,
   type DbTransaction,
 } from '@dorkos/db';
-import type { DocChannelHttp } from '../../../routes/canvas-doc-events.js';
-import { resolveCaller } from '../../../routes/room-caller.js';
+import type { RequestFacts } from '../../../http/request-facts.js';
 import { isContained } from '../../../lib/boundary.js';
 import {
   TOKEN_ABSOLUTE_TTL_MS,
@@ -36,7 +35,11 @@ import type { CanvasDocumentStore } from '../canvas-document-store.js';
 import { parseScope } from '../scopes.js';
 import { DocChannelDownstream } from './downstream/service.js';
 import { createDocDownstreamAuthority } from './downstream/authority.js';
-import { DocChannelAuthorization, DocChannelNotFoundError } from './authorization.js';
+import {
+  DocChannelAuthorization,
+  DocChannelNotFoundError,
+  type DocChannelActor,
+} from './authorization.js';
 import { DocChannelStore } from './store.js';
 import { DocChannelService } from './service.js';
 import { DocChannelGrants } from './grants.js';
@@ -56,6 +59,33 @@ export {
 } from './doc-source-policy.js';
 export type { DocSourceDescriptor, DocSourceDependencies } from './doc-source-policy.js';
 
+/** A request's caller as the HTTP chain resolved it: its raw headers, agent and account. */
+export type DocChannelCaller = Pick<RequestFacts, 'headers' | 'agentIdentity' | 'user'>;
+
+/**
+ * Who the caller is in a room, as a room author. It throws for a caller that
+ * cannot be one, such as an agent whose token does not verify. The composition
+ * root passes the room routes' own answer (`resolveCaller`).
+ */
+export type ResolveRoomCaller = (
+  caller: DocChannelCaller,
+  access: 'read' | 'write'
+) => { readonly id: string };
+
+/** What the composition hands the document channel's HTTP routes and startup. */
+export interface DocChannelHttpComposition {
+  fileWrites: InstallationFileWrites;
+  service: DocChannelService;
+  grants: DocChannelGrants;
+  downstream: DocChannelDownstream;
+  channels: DocChannelStore;
+  authorization: DocChannelAuthorization;
+  grantAuthority: DocGrantAuthority;
+  routeControls: DocRouteControls;
+  /** Who a request is to the document channel; page envelopes carry no authority. */
+  actor(caller: DocChannelCaller): DocChannelActor;
+}
+
 /** Use real server-owned instances; no independent physical document writer or transcript store. */
 export function createDocChannelHttpComposition(deps: {
   db: Db;
@@ -67,15 +97,9 @@ export function createDocChannelHttpComposition(deps: {
   installationId: string;
   runtimePrincipalCurrent?: (proof: ServerPrincipalProof) => boolean;
   revalidateRuntime?: (proof: ServerPrincipalProof) => Promise<boolean>;
-}): DocChannelHttp & {
-  fileWrites: InstallationFileWrites;
-  grants: DocChannelGrants;
-  downstream: DocChannelDownstream;
-  channels: DocChannelStore;
-  authorization: DocChannelAuthorization;
-  grantAuthority: DocGrantAuthority;
-  routeControls: DocRouteControls;
-} {
+  /** Refuses a caller that cannot be anyone in a room, before a principal is minted. */
+  resolveRoomCaller: ResolveRoomCaller;
+}): DocChannelHttpComposition {
   const channels = new DocChannelStore(deps.db);
   const tokens = new WeakMap<ServerPrincipalProof, string>();
   const currentOwner = () => docInstallationOwner(deps.installationId);
@@ -344,7 +368,7 @@ export function createDocChannelHttpComposition(deps: {
       // Only to refuse unknown/revoked agent headers before minting a principal;
       // its author is discarded. Which callers may write here as the owner is
       // the doc channel's own question, answered below.
-      resolveCaller(caller, 'read');
+      deps.resolveRoomCaller(caller, 'read');
       const identity = caller.agentIdentity;
       const owner = currentOwner();
       if (identity) {

@@ -24,7 +24,6 @@ import { eventFanOut } from '../event-fan-out.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
 import { canExpose } from '../auth/exposure-guard.js';
 import { configManager } from '../config-manager.js';
-import { remoteAccessOn } from '../../../middleware/remote-access-switch.js';
 import {
   computerSigningKey,
   readRelayPin,
@@ -51,6 +50,14 @@ let wiring: SessionRelayWiring | null = null;
  */
 export function wireSessionRelay(pieces: SessionRelayWiring): void {
   wiring = pieces;
+}
+
+/**
+ * Whether the Remote Access switch is on, as the wiring reads it. Off until the
+ * server has handed its pieces over, so nothing dials before then.
+ */
+function remoteAccessOn(): boolean {
+  return wiring?.remoteAccessOn() ?? false;
 }
 
 /**

@@ -85,6 +85,15 @@ const pairs = [
   ],
   ['apps/server/src/lib/trusted-origins.ts', 'apps/server/src/lib/trusted-originsx.ts'],
   [
+    'apps/server/src/lib/http/agent-identity-header.ts',
+    'apps/server/src/lib/http/agent-identity-headerx.ts',
+  ],
+  [
+    'apps/server/src/services/core/streams/upgrade-router.ts',
+    'apps/server/src/services/core/streamsx/upgrade-router.ts',
+  ],
+  ['apps/server/src/startup/upgrade-guards.ts', 'apps/server/src/startup/upgrade-guardsx.ts'],
+  [
     'apps/server/src/services/communities/remote/pinned-origin.ts',
     'apps/server/src/services/communities/remotex/x.ts',
   ],

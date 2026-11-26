@@ -19,7 +19,7 @@ import {
   defineCapability,
   type CapabilityDeps,
   type CapabilityDomain,
-} from '../core/capabilities/index.js';
+} from '../core/capabilities/capability-definition.js';
 import type { ActivityService } from './activity-service.js';
 
 declare module '../core/capabilities/capability-definition.js' {

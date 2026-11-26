@@ -17,7 +17,7 @@ import { ALWAYS_SUGGESTION_WINDOW_MS, PERMISSION_ANSWERED_EVENT } from '@dorkos/
 import { ApprovalService, hashApprovalInput } from '../../services/core/approvals/index.js';
 import { ActivityService } from '../../services/activity/activity-service.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
-import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
+import { AGENT_IDENTITY_HEADER } from '../../lib/http/agent-identity-header.js';
 import { createAlwaysSuggestion } from '../../services/core/permissions/always-suggestion.js';
 import { createPermissionWorld } from '../../services/core/permissions/__tests__/permission-fixtures.js';
 import {

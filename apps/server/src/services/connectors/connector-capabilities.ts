@@ -13,7 +13,10 @@
 import { z } from 'zod';
 import type { ConnectorCatalogResourcePage } from '@dorkos/shared/connector-resource-schemas';
 
-import { defineCapability, type CapabilityDomain } from '../core/capabilities/index.js';
+import {
+  defineCapability,
+  type CapabilityDomain,
+} from '../core/capabilities/capability-definition.js';
 import type { CapabilityDeps } from '../core/capabilities/index.js';
 import { CapabilityToolError } from '../core/capabilities/mcp-envelope.js';
 import { agentAppSetupNote, appReachProblem } from './app-connection-way.js';

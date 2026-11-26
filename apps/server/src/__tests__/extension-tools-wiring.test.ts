@@ -23,5 +23,6 @@ describe('extension tools startup wiring', () => {
     expect(deps).toContain(
       '...(refs.extensionManager && { extensionManager: refs.extensionManager })'
     );
+    expect(deps).toContain('announceExtensionsReloaded: broadcastExtensionReloaded,');
   });
 });

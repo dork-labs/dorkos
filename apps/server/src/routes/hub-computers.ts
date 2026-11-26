@@ -53,7 +53,7 @@ import { problem, readJsonBody } from '@dorkos/http-kit';
 import type { ProblemCode } from '@dorkos/shared/problem';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { logger } from '../lib/logger.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import { currentServerRole } from '../lib/server-role.js';
 import { describeUserAgent } from '../lib/http/user-agent.js';
 import { currentAuditActor } from '../services/audit/audit-context.js';

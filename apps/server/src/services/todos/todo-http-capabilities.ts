@@ -39,12 +39,14 @@ import {
   TodoCardSchema,
 } from '@dorkos/shared/todo-schemas';
 import {
-  defineCapability,
-  type CapabilityDeps,
-  type CapabilityDomain,
   type CapabilityHandlerContext,
   type CapabilityRequestFacts,
 } from '../core/capabilities/index.js';
+import {
+  defineCapability,
+  type CapabilityDeps,
+  type CapabilityDomain,
+} from '../core/capabilities/capability-definition.js';
 import { CapabilityToolError } from '../core/capabilities/mcp-envelope.js';
 import { TodoPromiseError, type TodoPromiseService } from './todo-promise-service.js';
 import type { TodoPromiseActor } from './todo-promise-types.js';

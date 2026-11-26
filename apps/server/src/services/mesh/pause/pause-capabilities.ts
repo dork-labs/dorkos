@@ -21,6 +21,7 @@
  *
  * @module services/mesh/pause/pause-capabilities
  */
+import { migratePersonaCapability } from '../doors/agent-persona-capability.js';
 import type { AuditActor } from '@dorkos/shared/audit-schemas';
 import {
   AgentPauseListSchema,
@@ -28,13 +29,13 @@ import {
   AgentPauseResultSchema,
 } from '@dorkos/shared/mesh-schemas';
 import { z } from 'zod';
+import { type CapabilityHandlerContext } from '../../core/capabilities/index.js';
 import {
   CapabilityToolError,
   defineCapability,
   type CapabilityDeps,
   type CapabilityDomain,
-  type CapabilityHandlerContext,
-} from '../../core/capabilities/index.js';
+} from '../../core/capabilities/capability-definition.js';
 import { auditTrail } from '../../audit/audit-trail.js';
 import { currentAuditActor } from '../../audit/audit-context.js';
 import {
@@ -193,5 +194,7 @@ export const agentPauseDomain: CapabilityDomain = {
       },
       invoke: async (deps) => ({ pauses: requirePauseDeps(deps).list() }),
     }),
+    // A person's move of an old persona into SOUL.md rides in this `agent` domain (DOR-4978).
+    migratePersonaCapability,
   ],
 };

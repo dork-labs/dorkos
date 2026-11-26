@@ -1,6 +1,6 @@
 import type { RequestFacts } from '../../../http/request-facts.js';
 import { presentsProgramCredential } from '../../../lib/caller-authority.js';
-import { presentsAgentIdentity } from '../../../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../../../lib/http/agent-identity-header.js';
 import { APPROVAL_TOKEN_HEADER } from '../../core/capabilities/approval-wording.js';
 import type { ViewerPrincipal } from './viewer-contract.js';
 

@@ -34,7 +34,10 @@
  * @module services/session/agent-compaction/compaction-capabilities
  */
 import { z } from 'zod';
-import { defineCapability, type CapabilityDeps } from '../../core/capabilities/index.js';
+import {
+  defineCapability,
+  type CapabilityDeps,
+} from '../../core/capabilities/capability-definition.js';
 import type { CapabilityDomain } from '../../core/capabilities/index.js';
 import type { AgentCompactionService } from './agent-compaction-service.js';
 

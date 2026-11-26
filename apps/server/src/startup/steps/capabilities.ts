@@ -70,6 +70,12 @@ import type { WireSessionServicesResult } from './session-services.js';
 import type { WireMcpTasksAndSkillsResult } from './mcp-tasks-skills.js';
 import type { ServerRefs } from '../server-refs.js';
 import { globalMcpPersonDepsFor } from '../../services/mesh/global-mcp/global-mcp-person-capabilities.js';
+import { enrichTopology } from '../../routes/mesh-topology.js';
+import {
+  projectComputerPlacement,
+  projectComputerPlacementById,
+} from '../../routes/computer-placement.js';
+import { agentPersonaDeps } from './agent-persona-deps.js';
 
 /** What {@link composeCapabilities} reads from the startup steps before it. */
 export interface ComposeCapabilitiesInput {
@@ -256,9 +262,6 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       // rather than supplied — a model that could name its own provenance could
       // make a poisoned note claim it came from somewhere trustworthy.
       memoryDeps: { roomLabelForSession: (id: string) => roomService.roomLabelForSession(id) },
-      // An agent asking for its own conversation to be summarized (DOR-2732).
-      // Built here, once: its once-an-hour budget must outlive the per-session
-      // tool servers that reach it.
       // `audit.verify`: anyone may check the audit log's chain (spec `audit-trail`).
       auditDeps: {
         ...auditCapabilityDeps(auditLog, auditAccounts, runtimeRegistry),
@@ -267,6 +270,7 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       },
       // `agent.pause` / `agent.resume`: anyone may stop any agent (spec `audit-trail` PR5).
       agentPauseDeps: { pauses: agentPauses },
+      agentHomeDeps: agentPersonaDeps, // a persona move finds its agent (DOR-4978)
       // `approvals.withdraw`: an agent takes back its own waiting request (DOR-4586).
       approvalWithdrawDeps: { db },
       // `link.resolve`: what a `/r/<dork-uri>` link opens, for the caller (DOR-5046).
@@ -300,6 +304,11 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
           taskStore: refs.taskStore,
           relayCore: refs.relayCore,
           activity: activityService,
+          views: {
+            enrichTopology,
+            projectPlacement: projectComputerPlacement,
+            projectPlacementById: projectComputerPlacementById,
+          },
         },
       }),
       workClaimDeps: workClaims.capabilityDeps,

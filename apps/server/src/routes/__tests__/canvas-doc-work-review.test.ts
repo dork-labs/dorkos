@@ -31,7 +31,7 @@ import {
   type RoomSubsystem,
 } from '../../services/rooms/index.js';
 import { RoomRepoStore } from '../../services/rooms/repo/room-repo-store.js';
-import { createDocChannelHttpComposition } from '../../services/canvas/doc-channel/http-composition.js';
+import { composeDocChannelHttp } from '../../services/canvas/doc-channel/__tests__/doc-channel-http.js';
 import { DocWorkReview } from '../../services/canvas/doc-channel/route-controls/work-review.js';
 import { decideAsPerson } from '../../services/canvas/doc-channel/route-controls/person-decision.js';
 import { DocChannelNotFoundError } from '../../services/canvas/doc-channel/authorization.js';
@@ -66,7 +66,7 @@ let personCookie = '';
 /** The person proof the owner's app keeps beside it. */
 let personProof = '';
 let rooms: RoomSubsystem;
-let http: ReturnType<typeof createDocChannelHttpComposition>;
+let http: ReturnType<typeof composeDocChannelHttp>;
 let review: DocWorkReview;
 let approvals: ApprovalService;
 let onChanged: ReturnType<typeof vi.fn<() => void>>;
@@ -188,7 +188,7 @@ beforeEach(() => {
   rooms = createRoomSubsystem({ db });
   setRoomService(rooms.service);
   approvals = new ApprovalService(db);
-  http = createDocChannelHttpComposition({
+  http = composeDocChannelHttp({
     db,
     documents: rooms.canvasDocuments,
     rooms: rooms.service,
