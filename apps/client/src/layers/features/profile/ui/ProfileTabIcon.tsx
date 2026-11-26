@@ -37,7 +37,7 @@ export const ProfileTabIcon = forwardRef<SVGSVGElement, LucideProps>(function Pr
         color={visual.color}
         emoji={visual.emoji}
         size="xs"
-        className="size-4 text-[10px]"
+        className="text-3xs size-4"
       />
     </span>
   );
