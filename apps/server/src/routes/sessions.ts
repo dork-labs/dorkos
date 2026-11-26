@@ -35,7 +35,7 @@ import type { MeshCore } from '@dorkos/mesh';
 import { getChatMessageService } from '../services/session/chat-messages/chat-message-current.js';
 import type { ChatActivityResponse } from '@dorkos/shared/chat-messages';
 import { stampHistory } from '../services/session/chat-messages/chat-message-stamps.js';
-import * as historyWindow from '../services/session/history/history-window.js';
+import * as historyWindow from '../services/session/chat-messages/screen/history-window.js';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import type { ApiEnv } from '../http/api-chain.js';
 import { problem, readJsonBody, sendProblem, validationProblem } from '@dorkos/http-kit';
@@ -809,7 +809,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   // through the upgrade router, and that is what the cockpit connects to (ADR
   // 260805-041016). This SSE route stays because it is the public integration
   // contract (`docs/integrations/sse-protocol.mdx`). Both share their sequencing
-  // — see `services/session/session-stream-delivery.ts`.
+  // — see `services/core/streams/screen/session-stream-delivery.ts`.
   router.get('/:id/events', sessionEventsHandler);
 
   return router;

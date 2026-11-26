@@ -96,7 +96,7 @@ export function createGetSessionCountHandler(deps: McpToolDeps) {
       // Loaded on first call: the running read reaches the runtime registry,
       // which must not become a load-time import of every tool module.
       const { countBackgroundWorkIn } =
-        await import('../../../session/running-chats/running-chats.js');
+        await import('../../../session/running-chats/background-work.js');
       return {
         content: [
           {

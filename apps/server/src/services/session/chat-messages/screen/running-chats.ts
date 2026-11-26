@@ -12,9 +12,13 @@
  * An agent reader never gets a person's own chat, not even its title (spec
  * `audit-trail` §3.4). It gets the number, as `get_session_count` already gives.
  *
- * @module services/session/running-chats
+ * Filed with the chat messages on the space side, because it decides what each
+ * reader may see; which chats still have background work is the computer
+ * side's half, `session/running-chats/background-work.ts` (spec
+ * `computer-side-starts-alone` §5.12).
+ *
+ * @module services/session/chat-messages/screen/running-chats
  */
-import path from 'node:path';
 import { dorkReferenceOrNull } from '@dorkos/shared/dork-ref';
 import { chatRefMarkdownLink } from '@dorkos/shared/session-link';
 import { isWithinDirectory } from '@dorkos/shared/paths';
@@ -27,21 +31,15 @@ import type {
 } from '@dorkos/shared/running-chats';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import type { MeshCore } from '@dorkos/mesh';
-import { readableSessionIds } from '../../audit/session-visibility.js';
-import type { AuditReader } from '../../audit/visibility.js';
-import { runtimeRegistry } from '../../core/runtime-registry.js';
-import { chatTitleOf } from '../chat-messages/chat-message-wiring.js';
-import { chatStateOf } from '../chat-messages/chat-read.js';
-import { getSessionStartedByStore } from '../origin/session-started-by-store.js';
-import { listProjectorStatuses, peekProjector } from '../session-state-projector.js';
-import { chatHoldsOutsideText } from '../../core/turn-power/chat-outside-words.js';
-
-/** A live chat as the sources report it. */
-interface LiveProjector {
-  sessionId: string;
-  cwd?: string | undefined;
-  status: SessionStatus;
-}
+import { readableSessionIds } from '../../../audit/session-visibility.js';
+import type { AuditReader } from '../../../audit/visibility.js';
+import { runtimeRegistry } from '../../../core/runtime-registry.js';
+import { chatTitleOf } from '../chat-message-wiring.js';
+import { chatStateOf } from '../chat-read.js';
+import { getSessionStartedByStore } from '../../origin/session-started-by-store.js';
+import { listProjectorStatuses, peekProjector } from '../../session-state-projector.js';
+import { backgroundWorkOf, type LiveProjector } from '../../running-chats/background-work.js';
+import { chatHoldsOutsideText } from '../../../core/turn-power/chat-outside-words.js';
 
 /** Where the read gets its facts. Replaced in tests. */
 export interface RunningChatSources {
@@ -61,26 +59,6 @@ export interface RunningChatSources {
   backgroundWork?: (sessionId: string, status: SessionStatus) => true | undefined;
 }
 
-/**
- * Whether background work a session started is still running (DOR-2065): the
- * one server answer the running read and `get_session_count` share.
- *
- * Read from the session's projected running list alone — helpers, shells,
- * Monitors and other tasks the runtime reported, the same list the strip draws.
- * Not from `AgentRuntime.holdsBackgroundWork`, which is also true for a timer
- * the agent set (`/loop`, a scheduled wake) or a report still owed: a chat
- * waiting on a timer has nothing running, so it is not `background`.
- *
- * `true` while anything is counted; otherwise absent, never `false`, because
- * not every runtime reports its background work.
- *
- * @param _sessionId - The session (kept for the sources signature)
- * @param status - Its projected status
- */
-export function backgroundWorkOf(_sessionId: string, status: SessionStatus): true | undefined {
-  return (status.runningSubagentCount ?? 0) > 0 ? true : undefined;
-}
-
 const LIVE_SOURCES: RunningChatSources = {
   capacity: () =>
     Object.keys(runtimeRegistry.getAllCapabilities()).flatMap((type) => {
@@ -97,28 +75,6 @@ const LIVE_SOURCES: RunningChatSources = {
   },
   backgroundWork: backgroundWorkOf,
 };
-
-/**
- * How many chats working in `folder` still have background work running, by
- * {@link backgroundWorkOf}: the number `get_session_count` reports beside its
- * total (DOR-2065). The same chats that total counts — the ones whose folder
- * is exactly `folder` — so it can never exceed it for a nested agent's work.
- *
- * @param folder - The agent's folder
- * @param statuses - Every live projector, replaced in tests
- */
-export function countBackgroundWorkIn(
-  folder: string,
-  statuses: () => LiveProjector[] = listProjectorStatuses
-): number {
-  const target = path.resolve(folder);
-  return statuses().filter(
-    (entry) =>
-      entry.cwd !== undefined &&
-      path.resolve(entry.cwd) === target &&
-      backgroundWorkOf(entry.sessionId, entry.status) === true
-  ).length;
-}
 
 /** The roster fields this read uses. */
 type Roster = Pick<MeshCore, 'listWithPaths'>;

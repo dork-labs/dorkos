@@ -36,6 +36,8 @@ import {
 import { disposeProjector, getOrCreateProjector, type RawSessionEvent } from '../index.js';
 import { projectRegistry } from '../../projects/project-registry.js';
 import { initSessionVisibility, resetSessionVisibility } from '../../audit/session-visibility.js';
+import { setSessionListSpaceView } from '../catalog/session-list-space-view.js';
+import { wireSessionListSpaceView } from '../../../startup/space-views.js';
 
 const TIMEOUT_MS = 10 * 60 * 1000;
 const ROOM_SESSION = 'broadcast-room-session';
@@ -61,10 +63,13 @@ beforeEach(() => {
   // projector subscriptions install regardless — which is itself the contract
   // that a failed watcher must not cost a person their prompts.
   broadcaster.start([]);
+  // What startup hands the stream: the space side's audience and project lookup.
+  wireSessionListSpaceView();
 });
 
 afterEach(async () => {
   await broadcaster.stop();
+  setSessionListSpaceView(undefined);
   vi.restoreAllMocks();
   disposeProjector(ROOM_SESSION);
   disposeProjector(LONE_SESSION);

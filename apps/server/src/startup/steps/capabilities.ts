@@ -24,7 +24,7 @@ import {
   ensureInSessionAgentIdentity,
   getAgentIdentityService,
 } from '../../services/core/agent-identity/index.js';
-import { wireCapabilitiesChangedBroadcast } from '../../services/core/streams/live-change-broadcasts.js';
+import { wireCapabilitiesChangedBroadcast } from '../../services/core/streams/screen/live-change-broadcasts.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { initApprovalSubjectResolvers } from '../../services/core/approvals/index.js';
 import { initCapabilityTierGate } from '../../services/core/capabilities/index.js';

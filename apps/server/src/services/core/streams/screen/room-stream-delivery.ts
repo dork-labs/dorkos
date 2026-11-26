@@ -14,17 +14,17 @@
  * cursor" fallback, because there is no window — an unservable cursor can only
  * come from a stale epoch, which `parseResumeCursor` already rejects.
  *
- * @module services/core/streams/room-stream-delivery
+ * @module services/core/streams/screen/room-stream-delivery
  */
 import type { RoomEntry, RoomEvent } from '@dorkos/shared/room-schemas';
-import type { DurableStreamSink } from './durable-stream-sink.js';
-import type { DocScopeNotifications } from '../../canvas/doc-channel/streams/registry.js';
+import type { DurableStreamSink } from '../durable-stream-sink.js';
+import type { DocScopeNotifications } from '../../../canvas/doc-channel/streams/registry.js';
 import { attachDocumentStream, serializedStreamSink } from './document-stream-delivery.js';
-import { getRoomService } from '../../rooms/index.js';
+import { getRoomService } from '../../../rooms/index.js';
 import { UNOWNED_STREAM_GENERATION } from '@dorkos/shared/session-stream';
-import { streamFrameId } from '../../../lib/stream-cursor.js';
-import { logger } from '../../../lib/logger.js';
-import { ROOMS } from '../../../config/constants.js';
+import { streamFrameId } from '../../../../lib/stream-cursor.js';
+import { logger } from '../../../../lib/logger.js';
+import { ROOMS } from '../../../../config/constants.js';
 
 /** Everything a caller must resolve before a room stream can be delivered. */
 export interface RoomStreamPlan {

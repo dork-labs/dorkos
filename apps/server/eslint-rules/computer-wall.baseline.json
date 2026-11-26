@@ -26,11 +26,6 @@
       "frontDoor": 0,
       "tables": 0
     },
-    "src/services/core/browser-registry/owner-scope.ts": {
-      "space": 2,
-      "frontDoor": 2,
-      "tables": 0
-    },
     "src/services/core/browser-registry/registry-store.ts": {
       "space": 0,
       "frontDoor": 0,
@@ -102,7 +97,7 @@
       "tables": 0
     },
     "src/services/core/session-relay/index.ts": {
-      "space": 3,
+      "space": 2,
       "frontDoor": 1,
       "tables": 0
     },
@@ -124,26 +119,6 @@
     "src/services/core/session-relay/relay-link.ts": {
       "space": 0,
       "frontDoor": 2,
-      "tables": 0
-    },
-    "src/services/core/streams/document-stream-delivery.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/core/streams/live-change-broadcasts.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/core/streams/room-stream-delivery.ts": {
-      "space": 2,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/core/streams/session-stream-delivery.ts": {
-      "space": 4,
-      "frontDoor": 0,
       "tables": 0
     },
     "src/services/core/streams/stream-upgrade-auth.ts": {
@@ -308,11 +283,6 @@
     },
     "src/services/runtimes/claude-code/folder-settings/own-folder-watch.ts": {
       "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/history/turn-cutoff-overlay.ts": {
-      "space": 2,
       "frontDoor": 0,
       "tables": 0
     },
@@ -906,11 +876,6 @@
       "frontDoor": 1,
       "tables": 0
     },
-    "src/services/session/catalog/session-list-broadcaster.ts": {
-      "space": 2,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/session/fleet/auto-handoff.ts": {
       "space": 2,
       "frontDoor": 1,
@@ -954,11 +919,6 @@
     "src/services/session/fleet/session-status-hydration.ts": {
       "space": 0,
       "frontDoor": 1,
-      "tables": 0
-    },
-    "src/services/session/history/history-window.ts": {
-      "space": 1,
-      "frontDoor": 0,
       "tables": 0
     },
     "src/services/session/index.ts": {
@@ -1086,16 +1046,6 @@
       "frontDoor": 0,
       "tables": 0
     },
-    "src/services/session/origin/rekey-moves.ts": {
-      "space": 2,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/session/origin/session-origin-overlays.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/session/origin/session-started-by-store.ts": {
       "space": 0,
       "frontDoor": 0,
@@ -1116,11 +1066,6 @@
       "frontDoor": 0,
       "tables": 0
     },
-    "src/services/session/running-chats/running-chats.ts": {
-      "space": 5,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/session/runtime-turns/wake-cut-short-work.ts": {
       "space": 1,
       "frontDoor": 0,
@@ -1132,7 +1077,7 @@
       "tables": 0
     },
     "src/services/session/session-state-projector.ts": {
-      "space": 3,
+      "space": 2,
       "frontDoor": 0,
       "tables": 0
     },

@@ -17,7 +17,7 @@ import { boundaryRefusal } from '../../../lib/route-utils.js';
 import { parseResumeCursor } from '../../../lib/stream-cursor.js';
 import { auditTrail, recordAudit } from '../../audit/audit-trail.js';
 import { runtimeRegistry } from '../runtime-registry.js';
-import { deliverSessionStream } from '../streams/session-stream-delivery.js';
+import type { BroadcastAudience } from '../event-fan-out.js';
 import { aggregateSessionList } from '../../session/catalog/aggregate-session-list.js';
 import { dispatchSessionMessage } from '../../session/launch/launch-session.js';
 import { sessionExists } from '../../session/launch/session-exists.js';
@@ -51,6 +51,18 @@ export interface SessionRelayWiring {
    * while it is off the relay neither dials nor stays open (DOR-3650).
    */
   remoteAccessOn: () => boolean;
+  /**
+   * Serves a chat's durable stream (the space side's
+   * `streams/screen/session-stream-delivery.ts`). Until it is handed over a
+   * relayed stream ends at once and carries nothing.
+   */
+  deliverSessionStream?: RelayRequestServerDeps['deliverSessionStream'];
+  /**
+   * Who on the global stream may hear the relay's presence: the space side's
+   * `operatorAudience`. Until it is handed over only the operator hears it
+   * (`ownerOnlyAudience` in `lib/caller-principal.ts`).
+   */
+  ownerAudience?: BroadcastAudience;
 }
 
 /** The name the audit log gives the owner when no trail is set up. */
@@ -169,7 +181,11 @@ export function liveRelayDeps(wiring: () => SessionRelayWiring | null): RelayReq
       };
     },
 
-    deliverSessionStream,
+    deliverSessionStream: async (sink, plan) => {
+      const deliver = wiring()?.deliverSessionStream;
+      if (deliver) return deliver(sink, plan);
+      sink.end();
+    },
     dispatchSessionMessage,
     meshCore: () => wiring()?.meshCore(),
     roomSessionPlace: () => wiring()?.roomSessionPlace(),

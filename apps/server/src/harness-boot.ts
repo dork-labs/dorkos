@@ -55,6 +55,7 @@ import {
   setRoomService,
 } from './services/rooms/index.js';
 import { LocalRoomAttachmentStore } from './services/rooms/attachments/local-room-attachment-store.js';
+import { wireScheduledChatMoves, wireSessionListSpaceView } from './startup/space-views.js';
 
 /** A booted in-process harness server: its routing plus a DB-closing teardown. */
 export interface InProcessTestServer {
@@ -112,6 +113,10 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   // for them is durable, so the hold behind it is (DOR-1324).
   setStagedContextStore(new StagedContextStore(db));
   runtimeRegistry.setDb(db);
+  // A scheduled chat's task run and beat rows move with its rekey, and the session-list
+  // stream reads who may hear about a session from the space side, as in `start()`.
+  wireScheduledChatMoves();
+  wireSessionListSpaceView();
   setContinuationHoldDb(db);
   // Whether each chat's latest turn read outside words, so a restart cannot clear it (DOR-4148).
   setOutsideWordsDb(db);

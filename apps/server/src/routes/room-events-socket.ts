@@ -12,7 +12,7 @@ import { upgradeCaller } from '../services/core/streams/stream-upgrade-auth.js';
  */
 import { STREAM_RESUME_PARAM } from '@dorkos/shared/stream-socket';
 import { getRoomService, RoomError } from '../services/rooms/index.js';
-import { deliverRoomStream } from '../services/core/streams/room-stream-delivery.js';
+import { deliverRoomStream } from '../services/core/streams/screen/room-stream-delivery.js';
 import { resolveCaller } from './room-caller.js';
 import { roomErrorStatus } from './room-error-response.js';
 import { DurableStreamSocket } from '../services/core/streams/stream-socket.js';

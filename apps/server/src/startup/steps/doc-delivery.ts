@@ -29,7 +29,7 @@ import { ConnectorEventNativeDestination } from '../../services/connectors/event
 import { createAgentSubjectResolver } from '../../services/relay/initiate-consent.js';
 import { ConnectorEventDeliveryService } from '../../services/connectors/events/delivery-service.js';
 import { ConnectorAgentRequestService } from '../../services/connectors/agent-request-service.js';
-import { connectorAgentRequestsChangedAnnouncer } from '../../services/core/streams/live-change-broadcasts.js';
+import { connectorAgentRequestsChangedAnnouncer } from '../../services/core/streams/screen/live-change-broadcasts.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { ConnectorAccessQueryService } from '../../services/connectors/execution/access-query-service.js';
 import { createConnectorExecution } from '../../services/connectors/execution/create-execution.js';

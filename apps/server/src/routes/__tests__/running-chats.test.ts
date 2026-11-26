@@ -18,7 +18,7 @@ import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { composeRegistry } from '../../services/core/capabilities/index.js';
 import { auditDomain } from '../../services/audit/audit-capabilities.js';
 import { AuditLog } from '../../services/audit/audit-log.js';
-import type { RunningChatSources } from '../../services/session/running-chats/running-chats.js';
+import type { RunningChatSources } from '../../services/session/chat-messages/screen/running-chats.js';
 import { createCapabilityHttpRoutes } from '../capability-http.js';
 
 /** One live chat nobody's agent is bound to. */

@@ -8,17 +8,16 @@ import {
   initSessionVisibility,
   resetSessionVisibility,
   type SessionVisibility,
-} from '../../../audit/session-visibility.js';
-import { OWNER_READER, type AuditReader } from '../../../audit/visibility.js';
+} from '../../../../audit/session-visibility.js';
+import { OWNER_READER, type AuditReader } from '../../../../audit/visibility.js';
 import {
-  backgroundWorkOf,
-  countBackgroundWorkIn,
   listRunningChats,
   runningChatsHandOutsideWords,
   type RunningChatSources,
 } from '../running-chats.js';
-import { markRunningTurnOutsider } from '../../../core/turn-power/turn-levels.js';
-import { resetLiveOutsiderTurns } from '../../../core/turn-power/live-outsider-turns.js';
+import { backgroundWorkOf, countBackgroundWorkIn } from '../../../running-chats/background-work.js';
+import { markRunningTurnOutsider } from '../../../../core/turn-power/turn-levels.js';
+import { resetLiveOutsiderTurns } from '../../../../core/turn-power/live-outsider-turns.js';
 
 const AGENT_READER: AuditReader = { kind: 'agent', accountId: 'unidentified' };
 

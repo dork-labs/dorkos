@@ -66,6 +66,7 @@
       "core/agent-observation",
       "core/agent-templates",
       "core/approvals",
+      "core/browser-registry/owner",
       "core/capabilities",
       "core/directory",
       "core/external-mcp",
@@ -82,6 +83,7 @@
       "core/read-cursor-store.ts",
       "core/safe-defaults",
       "core/self-description",
+      "core/streams/screen",
       "core/turn-power"
     ],
     "kernel": [

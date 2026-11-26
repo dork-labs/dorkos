@@ -17,11 +17,11 @@
  * to either broadcast — the audience dropped, the payload widened, the
  * subscription removed — now fails a test.
  *
- * @module services/core/streams/live-change-broadcasts
+ * @module services/core/streams/screen/live-change-broadcasts
  */
 import type { AgentIdentityChange } from '@dorkos/mesh';
-import { operatorAudience } from '../../notifications/notification-entitlement.js';
-import type { BroadcastAudience } from '../event-fan-out.js';
+import { operatorAudience } from '../../../notifications/notification-entitlement.js';
+import type { BroadcastAudience } from '../../event-fan-out.js';
 
 /** What a settings write reports — the shape `ConfigManager.onChange` hands out. */
 export interface ConfigChange {

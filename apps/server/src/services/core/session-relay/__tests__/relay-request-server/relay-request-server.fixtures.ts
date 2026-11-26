@@ -12,7 +12,7 @@ import type { Session } from '@dorkos/shared/types';
 import type { RecordAuditInput } from '../../../../audit/audit-trail.js';
 import type { DispatchSessionMessageOpts } from '../../../../session/launch/launch-session.js';
 import type { DurableStreamSink } from '../../../streams/durable-stream-sink.js';
-import type { SessionStreamPlan } from '../../../streams/session-stream-delivery.js';
+import type { SessionStreamRequest } from '../../../streams/session-stream-plan.js';
 import {
   SessionRelayRequestServer,
   type RelayRequestServerDeps,
@@ -62,7 +62,7 @@ export function facts(id: string, over: Partial<RelaySessionFacts> = {}): RelayS
 /** One stream the server opened, and how to end it from the session side. */
 export interface OpenStream {
   sink: DurableStreamSink;
-  plan: SessionStreamPlan;
+  plan: SessionStreamRequest;
   done: () => void;
 }
 
@@ -111,12 +111,12 @@ export function harness(
     listAgentSessions: vi.fn(async () => [...known.values()]),
     resolveStreamPlan: vi.fn(async (f: RelaySessionFacts, resume: string | undefined) => ({
       sessionId: f.sessionId,
-      runtime: {} as SessionStreamPlan['runtime'],
+      runtime: {} as SessionStreamRequest['runtime'],
       ctx: { cwd: f.cwd!, permissionMode: 'default' },
       resume: resume ? { seq: 7, generation: 'g1' } : undefined,
     })),
     deliverSessionStream: vi.fn(
-      (sink: DurableStreamSink, plan: SessionStreamPlan) =>
+      (sink: DurableStreamSink, plan: SessionStreamRequest) =>
         new Promise<void>((resolve) => {
           streams.push({ sink, plan, done: resolve });
           sink.signal.addEventListener('abort', () => resolve());

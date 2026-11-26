@@ -3,7 +3,7 @@
  * after it is on disk — and nothing else is.
  *
  * The announcement is what `community_connections_changed` rides on
- * (`services/core/streams/live-change-broadcasts.ts`), so a transition that
+ * (`services/core/streams/screen/live-change-broadcasts.ts`), so a transition that
  * stops announcing is a window that keeps showing a Community the person has
  * left until its 30-second poll. Each case here is a mutation probe for one
  * `announce` call in `connection-store.ts`.
