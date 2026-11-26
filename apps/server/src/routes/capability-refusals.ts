@@ -22,6 +22,7 @@ import { PERSON_ONLY_AGENT_HINTS } from '@dorkos/shared/capabilities';
 import { TODO_TOOL_REFUSALS } from '../services/todos/todo-refusals.js';
 import { MESH_TOOL_REFUSALS } from '../services/mesh/doors/mesh-refusals.js';
 import { GLOBAL_MCP_TOOL_REFUSALS } from '../services/mesh/global-mcp/global-mcp-refusals.js';
+import { MARKETPLACE_TOOL_REFUSALS } from '../services/marketplace/doors/marketplace-refusals.js';
 
 import type {
   TierDeniedPayload,
@@ -269,6 +270,17 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
   // The agent registry's doors kept the hand routes' codes, statuses and sentences
   // (`services/mesh/doors/mesh-refusals.ts`).
   ...MESH_TOOL_REFUSALS,
+  // One agent's reads on `/api/agents/*` kept the hand routes' codes and sentences (DOR-4978).
+  PERMISSIONS_UNKNOWN_AGENT: { code: 'agent_not_found', detail: 'No agent with that id.' },
+  HEARTBEAT_AGENT_NOT_FOUND: { code: 'not_found', detail: 'No agent with that id.' },
+  HEARTBEATS_UNAVAILABLE: {
+    code: 'temporarily_unavailable',
+    detail: 'Heartbeats are not running on this server yet.',
+  },
+  AGENT_FOLDER_NOT_FOUND: { code: 'not_found', detail: 'No agent is registered in that folder.' },
+  // The marketplace's reads kept the hand routes' codes and sentences
+  // (`services/marketplace/doors/marketplace-refusals.ts`).
+  ...MARKETPLACE_TOOL_REFUSALS,
 };
 
 /** How a tool code ends or starts, and the family that spelling means. */

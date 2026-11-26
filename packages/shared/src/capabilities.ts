@@ -153,6 +153,7 @@ export const PERSON_ONLY_AGENT_HINTS = [
   'Agents change their own promises with todo_promise_update.',
   'Agents scan for, register and remove agents with mesh_discover, mesh_register and mesh_unregister.',
   'Agents hide a folder from discovery with mesh_deny.',
+  'Agents read a heartbeat with heartbeat_status.',
 ] as const;
 
 /** One of {@link PERSON_ONLY_AGENT_HINTS}. */

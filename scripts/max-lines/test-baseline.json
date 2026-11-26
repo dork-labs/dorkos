@@ -126,7 +126,6 @@
     "apps/server/src/routes/__tests__/relay-delivery-receipts.test.ts": 558,
     "apps/server/src/routes/__tests__/relay-setting-step-up.test.ts": 726,
     "apps/server/src/routes/__tests__/remote-communities.test.ts": 1211,
-    "apps/server/src/routes/__tests__/room-capabilities-unverified-agent.test.ts": 506,
     "apps/server/src/routes/__tests__/rooms-files.test.ts": 912,
     "apps/server/src/routes/__tests__/rooms-repo.test.ts": 608,
     "apps/server/src/routes/__tests__/runtimes-account-eligibility.test.ts": 568,
@@ -212,14 +211,12 @@
     "apps/server/src/services/rooms/__tests__/seat-report.test.ts": 720,
     "apps/server/src/services/rooms/__tests__/team-room.test.ts": 506,
     "apps/server/src/services/rooms/__tests__/welcome-back-offers.test.ts": 587,
-    "apps/server/src/services/rooms/attachments/__tests__/agent-attachments.test.ts": 507,
     "apps/server/src/services/rooms/canvas/__tests__/room-canvas-context.test.ts": 585,
     "apps/server/src/services/rooms/canvas/__tests__/room-canvas-turn.test.ts": 525,
     "apps/server/src/services/rooms/reactions/__tests__/reactions.test.ts": 552,
     "apps/server/src/services/rooms/repo/__tests__/room-file-editor.test.ts": 559,
     "apps/server/src/services/rooms/repo/__tests__/room-file-ops.test.ts": 905,
     "apps/server/src/services/rooms/repo/__tests__/room-files.test.ts": 527,
-    "apps/server/src/services/rooms/repo/__tests__/room-merge-service.test.ts": 655,
     "apps/server/src/services/rooms/repo/__tests__/room-repo-service.test.ts": 564,
     "apps/server/src/services/rooms/repo/__tests__/room-turn-place.test.ts": 628,
     "apps/server/src/services/rooms/repo/__tests__/room-worktree-refresh.test.ts": 671,
@@ -255,7 +252,7 @@
     "apps/server/src/services/runtimes/codex/__tests__/fake-app-server.ts": 684,
     "apps/server/src/services/runtimes/codex/app-server/__tests__/app-server-transport.test.ts": 1113,
     "apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts": 2073,
-    "apps/server/src/services/runtimes/codex/app-server/__tests__/default-permissions.binary.test.ts": 908,
+    "apps/server/src/services/runtimes/codex/app-server/__tests__/default-permissions.binary.test.ts": 845,
     "apps/server/src/services/runtimes/codex/app-server/__tests__/thread-loader.test.ts": 534,
     "apps/server/src/services/runtimes/connect/__tests__/credentials.test.ts": 609,
     "apps/server/src/services/runtimes/connect/__tests__/delegated-login.test.ts": 601,
@@ -372,6 +369,6 @@
     "scripts/__tests__/check-vocab-gate.test.ts": 925,
     "scripts/__tests__/pr-test-plan.test.ts": 518,
     "scripts/__tests__/text-only-scope.test.ts": 570,
-    "scripts/__tests__/verify-proof.test.ts": 1056
+    "scripts/__tests__/verify-proof.test.ts": 1052
   }
 }

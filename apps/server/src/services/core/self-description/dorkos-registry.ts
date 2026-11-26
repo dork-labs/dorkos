@@ -32,6 +32,7 @@ import {
 import { operatorDomain } from '../operator/operator-capabilities.js';
 import { operatorActivityDomain } from '../../activity/activity-capability.js';
 import { marketplaceDomain } from '../../marketplace-mcp/marketplace-capabilities.js';
+import { marketplaceReadsDomain } from '../../marketplace/doors/marketplace-read-capabilities.js';
 import { connectorDomain } from '../../connectors/connector-capabilities.js';
 import { connectorExecutionDomain } from '../../connectors/execution/execution-capabilities.js';
 import { connectorHoldDomain } from '../../connectors/execution/hold-capabilities.js';
@@ -57,6 +58,7 @@ import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
 import { instructionsDomain } from '../../runtimes/context-preview/instructions-capability.js';
 import { permissionsDomain } from '../permissions/permission-capabilities.js';
+import { permissionViewsDomain } from '../permissions/agent-permission-views.js';
 import { auditDomain } from '../../audit/audit-capabilities.js';
 import { agentPauseDomain } from '../../mesh/pause/pause-capabilities.js';
 import { approvalsDomain } from '../approvals/approval-withdraw-capability.js';
@@ -89,7 +91,8 @@ export function composeDorkOsCapabilityRegistry(
   // The feed is on every server; `operatorDomain` carries it when it starts.
   if (deps.operatorDeps) domains.push(operatorDomain);
   else if (deps.activityDeps) domains.push(operatorActivityDomain);
-  if (deps.marketplaceDeps) domains.push(marketplaceDomain);
+  // The tools, and the reads on `/api/marketplace/*` over the same services (DOR-4978).
+  if (deps.marketplaceDeps) domains.push(marketplaceDomain, marketplaceReadsDomain);
   if (deps.connectorDeps) domains.push(connectorDomain);
   if (deps.connectorExecutionDeps) domains.push(connectorExecutionDomain, connectorHoldDomain);
   if (deps.mcpDeps) domains.push(mcpDomain);
@@ -134,6 +137,8 @@ export function composeDorkOsCapabilityRegistry(
   // Blocked one (spec `agent-permissions` D8, D9). The request tool reaches the
   // action it asks for through `deps.registry`, back-written below.
   domains.push(permissionsDomain);
+  // One agent's permissions and level; still starting until boot sets their reader (DOR-4978).
+  domains.push(permissionViewsDomain);
   // Unconditional too: `end_beat` needs no service handle, and outside a beat
   // it refuses on its own (`NOT_A_BEAT`), so there is nothing to switch off.
   domains.push(heartbeatDomain);
@@ -191,6 +196,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
   const domains: CapabilityDomain[] = [
     operatorDomain,
     marketplaceDomain,
+    marketplaceReadsDomain,
     connectorDomain,
     connectorExecutionDomain,
     connectorHoldDomain,
@@ -219,6 +225,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     capabilitiesDomain,
     instructionsDomain,
     permissionsDomain,
+    permissionViewsDomain,
     heartbeatDomain,
     runsDomain,
     taskViewDomain,

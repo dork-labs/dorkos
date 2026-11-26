@@ -101,7 +101,7 @@ export function scannedFiles(repoRoot: string): string[] {
         ['ts', 'tsx', 'js', 'mjs'].map((ext) => `${root}/*.${ext}`)
       ),
     ],
-    { cwd: repoRoot, encoding: 'utf8' }
+    { cwd: repoRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
   )
     .trim()
     .split('\n')

@@ -163,8 +163,9 @@ pre-commit:
       fail_text: 'Lint failed — see the errors above, or turbo could not resolve the diff base / is not installed.'
 
 pre-push:
-  # Push checks formatting, fragments, file size and pipeline ledger coverage,
-  # and refuses a push that would cancel CI still running from the last one.
+  # Push checks formatting, fragments, file size, copy a browser spec quotes and
+  # pipeline ledger coverage, and refuses a push that would cancel CI still
+  # running from the last one.
   # No tests or typecheck run here (DOR-2160; ledger 261101-191731).
   #
   # THE TEST GATE IS GONE. It ran `turbo test --affected` here for months, and
@@ -273,6 +274,17 @@ pre-push:
         computer_wall_base=$(git merge-base origin/main HEAD) || exit 1
         pnpm check:computer-wall -- --base "$computer_wall_base"
       fail_text: Computer wall failed — fix the files listed above.
+    copy-spec-drift:
+      # Copy a browser spec still quotes (DOR-4937), on the same branch point
+      # as max-lines above. The specs run only in the merge queue, so a copy
+      # rewrite that strands one is green until the queue ejects it; the same
+      # check runs in the required `typecheck` job. Measured 2026-11-25: about
+      # 0.5 s when the branch touches no copy, about 3 s when it does.
+      run: |
+        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push copy-spec-drift
+        copy_spec_base=$(git merge-base origin/main HEAD) || exit 1
+        pnpm check:copy-spec-drift "$copy_spec_base"
+      fail_text: Copy-spec drift — update the browser specs listed above to the new copy.
     import-boundary:
       # The services import boundary (DOR-4924), on the same branch point as
       # max-lines above. The lint rule refuses a pair the baseline does not

@@ -27,9 +27,10 @@
  * running, under a 4 s limit), on 2026-11-24 a seventh (`test-ratio`, ledger
  * `261123-220533`), on 2026-11-25 an eighth (`turn-port`, ledger
  * `261125-065516`) and a ninth (`computer-wall`, ledger `261125-191359`),
- * and a tenth (`import-boundary`, ledger `261125-233242`).
- * All ten are independent, so still no ordering.
- * The assertions below pin exactly those ten commands; `local-gate-shape.test.ts` beside this one pins that no test
+ * and a tenth (`import-boundary`, ledger `261125-233242`), and an eleventh
+ * (`copy-spec-drift`, DOR-4937).
+ * All eleven are independent, so still no ordering.
+ * The assertions below pin exactly those eleven commands; `local-gate-shape.test.ts` beside this one pins that no test
  * command has come back without a ledger entry.
  *
  * WHY A VITEST TEST RATHER THAN A SHELL FIXTURE — the same reasoning its
@@ -109,6 +110,7 @@ const priorities = commandPriorities(prePush);
 const PRE_PUSH_COMMANDS = [
   'ci-midrun',
   'computer-wall',
+  'copy-spec-drift',
   'formatting',
   'fragments',
   'import-boundary',
@@ -120,7 +122,7 @@ const PRE_PUSH_COMMANDS = [
 ];
 
 describe('the pre-push formatting check is wired beside its sibling checks', () => {
-  it('finds the pre-push hook and its ten commands at all', () => {
+  it('finds the pre-push hook and its eleven commands at all', () => {
     // Without this, every assertion below passes vacuously the day the hook is
     // renamed or the scanner stops matching — the exact way a guard dies
     // quietly. `fragments` joined on 2026-10-30
@@ -131,14 +133,15 @@ describe('the pre-push formatting check is wired beside its sibling checks', () 
     // 2026-11-24 (ci/ledger/261123-220533-test-ratio-ceiling.md); `turn-port` on
     // 2026-11-25 (ci/ledger/261125-065516-turn-port-ratchet.md); `computer-wall`
     // the same day (ci/ledger/261125-191359-computer-wall.md); `import-boundary`
-    // after it (ci/ledger/261125-233242-import-boundary.md).
+    // after it (ci/ledger/261125-233242-import-boundary.md); `copy-spec-drift`
+    // for DOR-4937, the ledger entry that moved it into `typecheck`.
     expect(prePush).not.toBe('');
     expect([...priorities.keys()].sort()).toEqual(PRE_PUSH_COMMANDS);
   });
 
-  it('declares no ordering, because the ten checks are independent', () => {
+  it('declares no ordering, because the eleven checks are independent', () => {
     // `piped` and `priority` earned their lines when a two-second check had to
-    // preempt a six-minute sweep. These ten are all quick and answer
+    // preempt a six-minute sweep. These eleven are all quick and answer
     // different questions, so each should report on the same push rather than
     // one hiding the other. Adding a slow command means deciding ordering
     // deliberately and putting them back — this is the line that makes you.

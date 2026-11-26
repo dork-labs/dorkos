@@ -138,7 +138,7 @@ case "${1:-}" in
     run_suites all
     node --experimental-strip-types --disable-warning=ExperimentalWarning --test .claude/scripts/__tests__/*.test.ts
     node .claude/scripts/docs-coverage-map.mjs --check
-    vitest run --config scripts/vitest.config.ts
+    vitest run --config scripts/vitest.config.ts --project scripts
     ;;
   *)
     echo "usage: bash scripts/run-scripts-suites.sh [--list | --suites fixtures|harness|all]" >&2

@@ -260,9 +260,7 @@ import {
   ConnectorSessionAccessUpdateSchema,
   ConnectorSessionConnectionsSchema,
 } from '@dorkos/shared/connector-resource-schemas';
-import { PackageTypeSchema } from '@dorkos/marketplace';
 import {
-  AgentLevelResponseSchema,
   AgentPermissionsResponseSchema,
   PatchAgentPermissionsBodySchema,
   PatchPermissionDefaultsBodySchema,
@@ -281,6 +279,7 @@ import {
   FoundClaudeFolderSchema,
   LEDGER_RUNTIMES,
 } from '@dorkos/shared/account-usage';
+import { PackageTypeSchema } from '@dorkos/marketplace';
 import { DisclosedEffectsSchema } from '../marketplace/preview/disclosed-effects.js';
 import { INTERNAL_ERROR_RESPONSE, problemResponse } from './openapi/problem-openapi.js';
 import { documentSpacesGate } from './openapi/spaces-gate-openapi.js';
@@ -355,39 +354,6 @@ const LocalMarketplaceJsonSchema = z
   .catchall(z.unknown());
 
 /**
- * Simplified documentation mirror of a single marketplace.json entry with the
- * discovered marketplace name tag appended. Returned by
- * `GET /api/marketplace/packages`. Keep in sync with
- * `packages/marketplace/src/marketplace-json-schema.ts` and the
- * `AggregatedPackage` type declared in `routes/marketplace.ts`.
- */
-const LocalAggregatedPackageSchema = z
-  .object({
-    name: z.string(),
-    displayName: z.string().optional(),
-    source: z.string(),
-    description: z.string().optional(),
-    version: z.string().optional(),
-    marketplace: z.string(),
-  })
-  .catchall(z.unknown());
-
-/**
- * Simplified documentation mirror of `@dorkos/marketplace`'s `MarketplacePackageManifest`.
- * Only the fields surfaced by the HTTP API are modelled. Keep in sync with
- * `packages/marketplace/src/package-manifest-schema.ts`.
- */
-const LocalMarketplacePackageManifestSchema = z
-  .object({
-    schemaVersion: z.number(),
-    name: z.string(),
-    version: z.string(),
-    type: PackageTypeSchema,
-    description: z.string().optional(),
-  })
-  .catchall(z.unknown());
-
-/**
  * Simplified documentation mirror of the server-side `InstallRequest` minus `name`
  * (the package name is taken from the URL `:name` parameter). Keep in sync
  * with `apps/server/src/services/marketplace/types.ts`.
@@ -413,6 +379,115 @@ const LocalInstallRequestBodySchema = z.object({
     .string()
     .optional()
     .describe("Install only: the token an agent's earlier 202 carried, once a person approved."),
+});
+
+// The marketplace hand routes' documentation mirrors (the reads' own schemas
+// are their capabilities', `services/marketplace/doors/`).
+/**
+ * Simplified documentation mirror of `@dorkos/marketplace`'s `MarketplacePackageManifest`.
+ * Only the fields surfaced by the HTTP API are modelled. Keep in sync with
+ * `packages/marketplace/src/package-manifest-schema.ts`.
+ */
+const MarketplacePackageManifestSchema = z
+  .object({
+    schemaVersion: z.number(),
+    name: z.string(),
+    version: z.string(),
+    type: PackageTypeSchema,
+    description: z.string().optional(),
+  })
+  .catchall(z.unknown());
+
+/**
+ * Simplified documentation mirror of {@link import('../marketplace/types.js').InstallResult}.
+ * Keep in sync with `apps/server/src/services/marketplace/types.ts`.
+ */
+const InstallResultSchema = z.object({
+  ok: z.boolean(),
+  packageName: z.string(),
+  version: z.string(),
+  type: PackageTypeSchema,
+  installPath: z.string(),
+  manifest: MarketplacePackageManifestSchema,
+  warnings: z.array(z.string()),
+  dependencyWarnings: z.array(z.string()).optional(),
+});
+
+/** Simplified documentation mirror of the update flow's per-package advisory check. */
+const UpdateCheckResultSchema = z.object({
+  packageName: z.string(),
+  installedVersion: z.string(),
+  latestVersion: z.string(),
+  hasUpdate: z.boolean(),
+  marketplace: z.string(),
+  status: z.enum(['current', 'update-available', 'unknown']),
+  installedVersionSource: z.enum(['package', 'index', 'commit']).optional(),
+  latestVersionSource: z.enum(['package', 'index', 'commit']).optional(),
+  note: z.string().optional(),
+});
+
+/**
+ * Simplified documentation mirror of the update flow's `InstallationUpdateCheck`:
+ * one installation's check, its identity in the installed list's own field names,
+ * and after an apply, its outcome. Keep in sync with
+ * `apps/server/src/services/marketplace/flows/update.ts`.
+ */
+const LocalInstallationUpdateCheckSchema = UpdateCheckResultSchema.extend({
+  installPath: z.string(),
+  type: PackageTypeSchema,
+  scope: z.enum(['global', 'agent-local', 'override']),
+  agentPath: z.string().optional(),
+  agentId: z.string().optional(),
+  agentName: z.string().optional(),
+  linked: z
+    .literal(true)
+    .optional()
+    .describe(
+      "Present only for an install linked to a developer's working copy: always unknown, never reinstalled."
+    ),
+  applied: InstallResultSchema.optional(),
+  applyError: z.string().optional(),
+  disclosed: DisclosedEffectsSchema.nullable()
+    .optional()
+    .describe(
+      'On every update-available check: what the new version runs on its own. An apply sends it back untouched.'
+    ),
+  contentHash: z
+    .string()
+    .optional()
+    .describe("The new version's staged files, hashed. An apply sends it back untouched."),
+  installedDisclosed: DisclosedEffectsSchema.nullable()
+    .optional()
+    .describe('What the installed version runs now; null when it could not be read.'),
+});
+
+/** Simplified documentation mirror of the update flow's `InstallationUpdatesResult`. */
+const InstallationUpdatesResultSchema = z.object({
+  checks: z.array(LocalInstallationUpdateCheckSchema),
+});
+
+const MarketplaceSourceSchema = z.object({
+  name: z.string(),
+  source: z.string(),
+  enabled: z.boolean(),
+  addedAt: z.string(),
+});
+
+const DevLinkStateSchema = z.enum(['active', 'folder-missing', 'link-missing', 'link-replaced']);
+
+const DevLinkStatusSchema = z.object({
+  name: z.string(),
+  type: z.enum(['plugin', 'skill-pack']),
+  scope: z.enum(['global', 'project']),
+  projectPath: z.string().optional(),
+  path: z.string().describe('The real path of the folder the package runs from.'),
+  state: DevLinkStateSchema,
+  parked: z
+    .object({ version: z.string().optional() })
+    .nullable()
+    .describe('The installed copy set aside for the link, or null.'),
+  linkedAt: z.string(),
+  lastReloadAt: z.string().optional(),
 });
 
 /**
@@ -542,85 +617,17 @@ const LocalPermissionPreviewSchema = z.object({
 });
 
 /**
- * Simplified documentation mirror of {@link import('../marketplace/types.js').InstallResult}.
- * Keep in sync with `apps/server/src/services/marketplace/types.ts`.
- */
-const LocalInstallResultSchema = z.object({
-  ok: z.boolean(),
-  packageName: z.string(),
-  version: z.string(),
-  type: PackageTypeSchema,
-  installPath: z.string(),
-  manifest: LocalMarketplacePackageManifestSchema,
-  warnings: z.array(z.string()),
-  dependencyWarnings: z.array(z.string()).optional(),
-});
-
-/** Simplified documentation mirror of the update flow's per-package advisory check. */
-const LocalUpdateCheckResultSchema = z.object({
-  packageName: z.string(),
-  installedVersion: z.string(),
-  latestVersion: z.string(),
-  hasUpdate: z.boolean(),
-  marketplace: z.string(),
-  status: z.enum(['current', 'update-available', 'unknown']),
-  installedVersionSource: z.enum(['package', 'index', 'commit']).optional(),
-  latestVersionSource: z.enum(['package', 'index', 'commit']).optional(),
-  note: z.string().optional(),
-});
-
-/**
  * Simplified documentation mirror of {@link import('../marketplace/flows/update.js').UpdateResult}.
  * Keep in sync with `apps/server/src/services/marketplace/flows/update.ts`.
  */
 const LocalUpdateResultSchema = z.object({
-  checks: z.array(LocalUpdateCheckResultSchema),
-});
-
-/**
- * Simplified documentation mirror of the update flow's `InstallationUpdateCheck`:
- * one installation's check, its identity in the installed list's own field names,
- * and after an apply, its outcome. Keep in sync with
- * `apps/server/src/services/marketplace/flows/update.ts`.
- */
-const LocalInstallationUpdateCheckSchema = LocalUpdateCheckResultSchema.extend({
-  installPath: z.string(),
-  type: PackageTypeSchema,
-  scope: z.enum(['global', 'agent-local', 'override']),
-  agentPath: z.string().optional(),
-  agentId: z.string().optional(),
-  agentName: z.string().optional(),
-  linked: z
-    .literal(true)
-    .optional()
-    .describe(
-      "Present only for an install linked to a developer's working copy: always unknown, never reinstalled."
-    ),
-  applied: LocalInstallResultSchema.optional(),
-  applyError: z.string().optional(),
-  disclosed: DisclosedEffectsSchema.nullable()
-    .optional()
-    .describe(
-      'On every update-available check: what the new version runs on its own. An apply sends it back untouched.'
-    ),
-  contentHash: z
-    .string()
-    .optional()
-    .describe("The new version's staged files, hashed. An apply sends it back untouched."),
-  installedDisclosed: DisclosedEffectsSchema.nullable()
-    .optional()
-    .describe('What the installed version runs now; null when it could not be read.'),
+  checks: z.array(UpdateCheckResultSchema),
 });
 
 /** The 404 `not_found` problem when an update names packages or installations not in view. */
 const NotInstalledForUpdateSchema = ProblemSchema.extend({
   packageNames: z.array(z.string()),
   installPaths: z.array(z.string()),
-});
-
-/** Simplified documentation mirror of the update flow's `InstallationUpdatesResult`. */
-const LocalInstallationUpdatesResultSchema = z.object({
-  checks: z.array(LocalInstallationUpdateCheckSchema),
 });
 
 /**
@@ -2363,13 +2370,6 @@ registry.registerPath({
 
 // --- Marketplace ---
 
-const MarketplaceSourceSchema = z.object({
-  name: z.string(),
-  source: z.string(),
-  enabled: z.boolean(),
-  addedAt: z.string(),
-});
-
 /**
  * How the one listing fetch `POST /api/marketplace/sources` makes after saving
  * went (DOR-2304). Hand-mirrors `SourceListingOutcome` in
@@ -2386,35 +2386,6 @@ const SourceListingOutcomeSchema = z
       'this source, never an older cached copy. `fetched: false` never undoes the add: the ' +
       'source is saved, `reason` says in plain words why the listing is not there yet (including ' +
       'a source added with `enabled: false`, which is not fetched), and a refresh tries again.'
-  );
-
-/**
- * How the most recent fetch of a source's listing went (DOR-2324). Hand-mirrors
- * `SourceLastFetch` in `@dorkos/shared/marketplace-schemas`, which is
- * interfaces-only by design.
- */
-const SourceLastFetchSchema = z
-  .discriminatedUnion('state', [
-    z.object({ state: z.literal('never') }),
-    z.object({
-      state: z.literal('fetched'),
-      checkedAt: z.string(),
-      packageCount: z.number().int().nonnegative(),
-    }),
-    z.object({ state: z.literal('failed'), checkedAt: z.string(), reason: z.string() }),
-    z.object({
-      state: z.literal('stale'),
-      checkedAt: z.string(),
-      reason: z.string(),
-      copyFetchedAt: z.string(),
-      packageCount: z.number().int().nonnegative(),
-    }),
-  ])
-  .describe(
-    'How the most recent attempt to fetch the listing went, from adding, refreshing, browsing ' +
-      'or an update check. `stale`: it failed and an older copy, fetched at `copyFetchedAt`, ' +
-      'is still listed. `failed`: it failed with no copy. Kept by the server, so it survives ' +
-      'a reload.'
   );
 
 const AddedMarketplaceSourceSchema = MarketplaceSourceSchema.extend({
@@ -2435,102 +2406,6 @@ const AddMarketplaceSourceBodySchema = z.object({
   enabled: z.boolean().optional(),
 });
 
-const PackageScopeSchema = z.enum(['global', 'agent-local', 'override']);
-
-const PackageProvidesSchema = z.object({
-  commands: z.number().int().nonnegative(),
-  skills: z.number().int().nonnegative(),
-  hooks: z.boolean(),
-});
-
-/**
- * Base installed-package shape returned by the LIST endpoint
- * (`GET /api/marketplace/installed`). One entry PER INSTALLATION — a package
- * installed globally and on two agents yields three entries, each carrying its
- * scope and (for agent scopes) the owning agent's identity. It deliberately
- * omits `provides`: the list route does not run `computeProvides`, so
- * documenting capability counts here would over-promise a field the list
- * response never populates.
- */
-const InstalledPackageSchema = z.object({
-  name: z.string(),
-  version: z.string(),
-  type: PackageTypeSchema,
-  installPath: z.string(),
-  installedFrom: z.string().optional(),
-  installedAt: z.string().optional(),
-  scope: PackageScopeSchema.optional(),
-  agentPath: z.string().optional(),
-  agentId: z.string().optional(),
-  agentName: z.string().optional(),
-  linked: z
-    .literal(true)
-    .optional()
-    .describe(
-      "Present only when the install folder is a symbolic link to a developer's working copy, which is never updated in place."
-    ),
-  heldBack: z
-    .object({
-      reason: z.enum(['unasked', 'refused', 'unrecorded', 'unreadable', 'unreadable-config']),
-      note: z.string(),
-      reviewable: z.boolean(),
-      linkedPath: z.string().optional(),
-    })
-    .optional()
-    .describe(
-      'Present only on a global installation held back from every session until a person approves the install that put it there (DOR-2306). `linkedPath` marks a linked install, whose approval covers whatever is in that folder.'
-    ),
-  integrity: z
-    .union([
-      z.object({
-        status: z.literal('clean'),
-        customized: z.array(z.string()),
-        truncated: z.literal(true).optional(),
-      }),
-      z.object({
-        status: z.literal('modified'),
-        changed: z.array(z.string()),
-        missing: z.array(z.string()),
-        added: z.array(z.string()),
-        customized: z.array(z.string()),
-        truncated: z.literal(true).optional(),
-      }),
-      z.object({
-        status: z.literal('unknown'),
-        reason: z.enum(['no-record', 'unreadable-record', 'linked']),
-      }),
-    ])
-    .optional()
-    .describe(
-      'Present only with verify=true: whether the installed files still match what was installed (DOR-2197).'
-    ),
-});
-
-/**
- * Per-installation shape returned by `GET /api/marketplace/installed/{name}`.
- * Extends the base with `provides` — the capability counts that only the
- * single-package route computes via `computeProvides`.
- */
-const InstalledPackageDetailSchema = InstalledPackageSchema.extend({
-  provides: PackageProvidesSchema.optional(),
-  dependencyWarnings: z.array(z.string()).optional(),
-});
-
-const MarketplaceCacheStatusSchema = z.object({
-  marketplaces: z.number().int().nonnegative(),
-  packages: z.number().int().nonnegative(),
-  totalSizeBytes: z.number().int().nonnegative(),
-  cleanup: z
-    .object({
-      paused: z.boolean(),
-      reason: z.string().nullable(),
-      since: z.string().nullable(),
-    })
-    .describe(
-      'Automatic cleanup of cached packages. Paused while the server cannot read every install, in which case nothing is removed; `reason` says what it could not read.'
-    ),
-});
-
 const PruneMarketplaceCacheBodySchema = z.object({}).strict();
 
 const PrunedCachedPackageSchema = z.object({
@@ -2543,26 +2418,6 @@ const PrunedCachedPackageSchema = z.object({
 const PruneMarketplaceCacheResponseSchema = z.object({
   removed: z.array(PrunedCachedPackageSchema),
   freedBytes: z.number().int().nonnegative(),
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/marketplace/sources',
-  tags: ['Marketplace'],
-  summary: 'List configured marketplace sources',
-  responses: {
-    200: {
-      description: 'Configured marketplace sources',
-      content: {
-        'application/json': {
-          schema: z.object({
-            sources: z.array(MarketplaceSourceSchema.extend({ lastFetch: SourceLastFetchSchema })),
-          }),
-        },
-      },
-    },
-    500: problemResponse('`internal_error`: the sources could not be listed'),
-  },
 });
 
 registry.registerPath({
@@ -2722,83 +2577,6 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: 'get',
-  path: '/api/marketplace/installed',
-  tags: ['Marketplace'],
-  summary: 'List installed marketplace packages',
-  description:
-    'Without projectPath: one entry per installation across all scopes (global roots plus ' +
-    "every registered agent's local installs), each tagged with scope and agent identity. " +
-    'With projectPath: the merged view for that single project — one entry per install root ' +
-    'and name — scanned at the canonical path, so its install paths match `GET /updates`.',
-  request: {
-    query: z.object({
-      projectPath: z.string().optional(),
-      verify: z
-        .enum(['true'])
-        .optional()
-        .describe("Add each installation's `integrity`. Reads every shipped file."),
-    }),
-  },
-  responses: {
-    200: {
-      description: 'Installed packages',
-      content: {
-        'application/json': {
-          schema: z.object({ packages: z.array(InstalledPackageSchema) }),
-        },
-      },
-    },
-    400: problemResponse('`invalid_request`: `projectPath` given more than once'),
-    403: problemResponse('`outside_boundary`: `projectPath` is outside the folders DorkOS may use'),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/marketplace/installed/{name}',
-  tags: ['Marketplace'],
-  summary: 'List every installation of a package',
-  description:
-    'Every installation of the named package across all scopes (global + each agent), ' +
-    'each enriched with capability counts (commands, skills, hooks).',
-  request: {
-    params: z.object({ name: z.string() }),
-    query: z.object({
-      verify: z
-        .enum(['true'])
-        .optional()
-        .describe("Add each installation's `integrity`. Reads every shipped file."),
-    }),
-  },
-  responses: {
-    200: {
-      description: 'Installations of the package',
-      content: {
-        'application/json': {
-          schema: z.object({ installations: z.array(InstalledPackageDetailSchema) }),
-        },
-      },
-    },
-    404: problemResponse('`not_found`: package not installed'),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/marketplace/cache',
-  tags: ['Marketplace'],
-  summary: 'Marketplace cache status',
-  responses: {
-    500: INTERNAL_ERROR_RESPONSE,
-    200: {
-      description: 'Cache counts, total size, and whether automatic cleanup is paused',
-      content: { 'application/json': { schema: MarketplaceCacheStatusSchema } },
-    },
-  },
-});
-
-registry.registerPath({
   method: 'delete',
   path: '/api/marketplace/cache',
   tags: ['Marketplace'],
@@ -2832,24 +2610,6 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'get',
-  path: '/api/marketplace/packages',
-  tags: ['Marketplace'],
-  summary: 'List installable packages (aggregated from every enabled source)',
-  responses: {
-    200: {
-      description: 'Aggregated package list',
-      content: {
-        'application/json': {
-          schema: z.object({ packages: z.array(LocalAggregatedPackageSchema) }),
-        },
-      },
-    },
-    500: problemResponse('`internal_error`: aggregation failure'),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
   path: '/api/marketplace/packages/{name}',
   tags: ['Marketplace'],
   summary: 'Get package details (fetches, validates, builds a preview)',
@@ -2863,7 +2623,7 @@ registry.registerPath({
       content: {
         'application/json': {
           schema: z.object({
-            manifest: LocalMarketplacePackageManifestSchema,
+            manifest: MarketplacePackageManifestSchema,
             packagePath: z.string(),
             preview: LocalPermissionPreviewSchema,
             disclosed: DisclosedEffectsSchema,
@@ -2900,7 +2660,7 @@ registry.registerPath({
         'application/json': {
           schema: z.object({
             preview: LocalPermissionPreviewSchema,
-            manifest: LocalMarketplacePackageManifestSchema,
+            manifest: MarketplacePackageManifestSchema,
             packagePath: z.string(),
             disclosed: DisclosedEffectsSchema.describe(
               'What the package runs on its own, in the form an install is held to: send it back as `approvedDisclosure`.'
@@ -2933,7 +2693,7 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Install result from the type-specific flow',
-      content: { 'application/json': { schema: LocalInstallResultSchema } },
+      content: { 'application/json': { schema: InstallResultSchema } },
     },
     202: {
       description:
@@ -3138,31 +2898,6 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: 'get',
-  path: '/api/marketplace/updates',
-  tags: ['Marketplace'],
-  summary: 'Check every installed package for updates',
-  description:
-    'Advisory: one check per installation in view. No installed package changes, though a ' +
-    'check may stage a newer version into the package cache. Without ' +
-    '`projectPath`, every installation in every scope (global, then each registered ' +
-    "agent's project); with it, that project's merged view. Each check carries the " +
-    "installation's identity (`installPath` matches the installed list's) and, for a newer " +
-    'version, `disclosed`: what it runs on its own, which an apply sends back.',
-  request: {
-    query: z.object({ projectPath: z.string().optional() }),
-  },
-  responses: {
-    200: {
-      description: 'One check per installation, in scan order',
-      content: { 'application/json': { schema: LocalInstallationUpdatesResultSchema } },
-    },
-    400: problemResponse('`invalid_request`: `projectPath` given more than once'),
-    403: problemResponse('`outside_boundary`: `projectPath` is outside the folders DorkOS may use'),
-  },
-});
-
-registry.registerPath({
   method: 'post',
   path: '/api/marketplace/updates',
   tags: ['Marketplace'],
@@ -3205,7 +2940,7 @@ registry.registerPath({
   responses: {
     200: {
       description: 'One check per installation, with `applied` or `applyError` where one ran',
-      content: { 'application/json': { schema: LocalInstallationUpdatesResultSchema } },
+      content: { 'application/json': { schema: InstallationUpdatesResultSchema } },
     },
     202: {
       description: "An agent's apply waits for a person to approve the card; nothing ran",
@@ -3242,40 +2977,6 @@ registry.registerPath({
     502: problemResponse(
       "`upstream_unavailable`: the package's git remote could not be reached, or its fetch failed"
     ),
-  },
-});
-
-const LocalHeldBackPackageSchema = z.object({
-  name: z.string(),
-  reason: z.enum(['unasked', 'refused', 'unrecorded', 'unreadable', 'unreadable-config']),
-  note: z.string(),
-  reviewable: z.boolean(),
-  linkedPath: z.string().optional(),
-  version: z.string().optional(),
-  source: z.string().optional(),
-  changedSinceApproval: z.boolean(),
-  effects: DisclosedEffectsSchema.optional(),
-  bindsTo: z.string().optional(),
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/marketplace/held-back',
-  tags: ['Marketplace'],
-  summary: 'List global packages held back from every session',
-  description:
-    'A globally installed package that runs things on its own loads into sessions only when a ' +
-    'person approved the install that put it there (the content hash recorded when it landed) ' +
-    'and what it runs. A linked install is approved by its folder instead. Each entry says why ' +
-    'it is held back, what it runs, and `bindsTo`: what a decision is bound to.',
-  responses: {
-    500: INTERNAL_ERROR_RESPONSE,
-    200: {
-      description: 'Every held-back package',
-      content: {
-        'application/json': { schema: z.object({ packages: z.array(LocalHeldBackPackageSchema) }) },
-      },
-    },
   },
 });
 
@@ -3335,52 +3036,10 @@ registry.registerPath({
 
 // --- Marketplace dev links (DOR-2696) ---
 
-const DevLinkStateSchema = z.enum(['active', 'folder-missing', 'link-missing', 'link-replaced']);
-
-const LocalDevLinkStatusSchema = z.object({
-  name: z.string(),
-  type: z.enum(['plugin', 'skill-pack']),
-  scope: z.enum(['global', 'project']),
-  projectPath: z.string().optional(),
-  path: z.string().describe('The real path of the folder the package runs from.'),
-  state: DevLinkStateSchema,
-  parked: z
-    .object({ version: z.string().optional() })
-    .nullable()
-    .describe('The installed copy set aside for the link, or null.'),
-  linkedAt: z.string(),
-  lastReloadAt: z.string().optional(),
-});
-
 const DevLinkScopeBody = {
   scope: z.enum(['global', 'project']),
   projectPath: z.string().min(1).optional().describe('Required for, and only for, scope project.'),
 };
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/marketplace/dev-links',
-  tags: ['Marketplace'],
-  summary: 'List dev links',
-  description:
-    'Every package running from a folder on this computer, and whether its link is in force. ' +
-    '`registryUnreadable` is set when the record of dev links cannot be read; no folder counts ' +
-    'as linked then.',
-  responses: {
-    500: INTERNAL_ERROR_RESPONSE,
-    200: {
-      description: 'Every dev link',
-      content: {
-        'application/json': {
-          schema: z.object({
-            links: z.array(LocalDevLinkStatusSchema),
-            registryUnreadable: z.string().optional(),
-          }),
-        },
-      },
-    },
-  },
-});
 
 registry.registerPath({
   method: 'post',
@@ -3480,7 +3139,7 @@ registry.registerPath({
   responses: {
     201: {
       description: 'Linked',
-      content: { 'application/json': { schema: LocalDevLinkStatusSchema } },
+      content: { 'application/json': { schema: DevLinkStatusSchema } },
     },
     202: {
       description: 'A person has been asked; retry with the approval token',
@@ -5159,42 +4818,6 @@ registry.registerPath({
         '`precondition_failed`, with `conflicts`: a key changed since; send `force` to set it back',
       content: { [PROBLEM_CONTENT_TYPE]: { schema: UndoConflictResponseSchema } },
     },
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/agents/{id}/permissions',
-  tags: ['Permissions'],
-  summary: "Read one agent's permissions",
-  description:
-    "The agent's resolved state per area and per action, where each came from, and what it " +
-    "would be without the agent's own settings.",
-  request: { params: z.object({ id: z.string() }) },
-  responses: {
-    200: {
-      description: "The agent's permissions",
-      content: { 'application/json': { schema: AgentPermissionsResponseSchema } },
-    },
-    404: problemResponse('`agent_not_found`: no such agent'),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/agents/{id}/level',
-  tags: ['Permissions'],
-  summary: 'Read the level an agent runs at',
-  description:
-    'The Files & commands level a new chat of this agent starts at, before any per-chat limit, ' +
-    "the level its runtime's agents get by default, and whether a person's setting holds it lower.",
-  request: { params: z.object({ id: z.string() }) },
-  responses: {
-    200: {
-      description: "The agent's level",
-      content: { 'application/json': { schema: AgentLevelResponseSchema } },
-    },
-    404: problemResponse('`agent_not_found`: no such agent'),
   },
 });
 

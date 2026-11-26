@@ -91,9 +91,6 @@ gates:
   - id: wf.browser-test.browser-test
     source: .github/workflows/browser-test.yml
     purpose: The required browser-test check; requires successful smoke shards on PRs, or the full shards and first-run journey with execution proof off PRs.
-  - id: wf.browser-test.copy-spec-drift
-    source: .github/workflows/browser-test.yml
-    purpose: Warns when a copy change will break a browser spec's expected text, so it is fixed before the queue finds it.
 
   # --- build-cache.yml ---
   - id: wf.build-cache.test-builds
@@ -434,7 +431,7 @@ gates:
   # --- typecheck.yml ---
   - id: wf.typecheck.typecheck
     source: .github/workflows/typecheck.yml
-    purpose: Full-monorepo typecheck, plus the policy gates (retired words, boundary, the 500-line ratchet, the API lint ratchet, NUL bytes, dead doc paths, one-shot browser routes) and the CI Steward census and ledger checks.
+    purpose: Full-monorepo typecheck, plus the policy gates (retired words, copy a browser spec still quotes, boundary, the 500-line ratchet, the API lint ratchet, NUL bytes, dead doc paths, one-shot browser routes) and the CI Steward census and ledger checks.
 
   # --- update-homebrew.yml ---
   - id: wf.update-homebrew.tag-is-on-main
@@ -482,6 +479,9 @@ gates:
   - id: lefthook.pre-push.computer-wall
     source: lefthook.yml
     purpose: Refuses an entry of the computer wall's baseline raised or added by hand, or a side map that places a path twice or names one that is gone, before pushing.
+  - id: lefthook.pre-push.copy-spec-drift
+    source: lefthook.yml
+    purpose: Refuses a copy change that strands a string a browser spec still asserts, before pushing.
   - id: lefthook.pre-push.import-boundary
     source: lefthook.yml
     purpose: Refuses a services/ domain-to-domain import past the import boundary's baseline, or a pair added or raised by hand, before pushing.
