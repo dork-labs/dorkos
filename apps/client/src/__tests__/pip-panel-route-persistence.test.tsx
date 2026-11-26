@@ -93,9 +93,11 @@ vi.mock('@/layers/widgets/one-bar', async () => {
   return {
     resolveRouteHeader,
     OneBarProvider: ({ children }: React.PropsWithChildren) => <>{children}</>,
-    BarFixedCluster: () => <div data-testid="bar-fixed-cluster" />,
   };
 });
+vi.mock('../app/header/BarFixedCluster', () => ({
+  BarFixedCluster: () => <div data-testid="bar-fixed-cluster" />,
+}));
 
 // ── Mock child components with identifiable test markers ──
 
@@ -128,12 +130,6 @@ vi.mock('@/layers/features/tours', () => ({
 vi.mock('@/layers/widgets/app-banner', () => ({
   AppBannerSlot: () => null,
   useAppBanners: () => [],
-}));
-
-// The Inbox bell subscribes to the global event stream, which this suite
-// mounts no provider for. Its placement is covered by app-shell-slots.test.tsx.
-vi.mock('@/layers/widgets/inbox-bell', () => ({
-  InboxBell: () => null,
 }));
 
 // Same reason: the notification center watches the global stream for arrivals

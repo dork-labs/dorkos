@@ -62,14 +62,6 @@ vi.mock('@/layers/features/top-nav', () => ({
     </button>
   ),
 }));
-// The fixed cluster OneBar renders. Both are real widgets with their own data
-// needs; this suite is about what the BAR says, so they are stubbed at the seam.
-vi.mock('@/layers/widgets/inbox-bell', () => ({
-  InboxBell: () => <button aria-label="Inbox">Inbox</button>,
-}));
-vi.mock('@/layers/features/right-panel', () => ({
-  RightPanelToggle: () => <button aria-label="Toggle right panel">Panel</button>,
-}));
 
 // ---------------------------------------------------------------------------
 // Browser API mocks

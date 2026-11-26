@@ -1,12 +1,13 @@
 /**
  * The one header row every route gets, and the per-route bars that fill it.
  *
- * A widget rather than a feature because the bar owns the fixed cluster, and
- * the inbox bell in that cluster composes three features of its own.
+ * A widget rather than a feature because its route bars compose several
+ * features each. The fixed cluster after the bar (search, the inbox bell, the
+ * right-panel toggle) is the shell's: `src/app/header/BarFixedCluster.tsx`.
  *
  * @module widgets/one-bar
  */
-export { OneBar, BarTitle, BarFixedCluster } from './ui/OneBar';
+export { OneBar, BarTitle } from './ui/OneBar';
 export { TitleBar } from './ui/TitleBar';
 export { ExtensionPageBar } from './ui/ExtensionPageBar';
 // One bar for all four home surfaces — `/`, `/activity`, `/tasks` and

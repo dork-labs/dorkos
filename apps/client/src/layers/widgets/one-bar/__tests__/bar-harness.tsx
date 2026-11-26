@@ -16,8 +16,8 @@ export const emptyBarState: OneBarRouteState = {
 };
 
 /**
- * Wraps a route bar in what the shell gives it: the tooltip provider the fixed
- * cluster needs, and the resolved route state it reads.
+ * Wraps a route bar in what the shell gives it: a tooltip provider, and the
+ * resolved route state it reads.
  *
  * @param props - Overrides for the bar state, and the bar itself.
  */

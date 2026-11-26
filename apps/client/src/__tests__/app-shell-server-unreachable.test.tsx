@@ -53,8 +53,8 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
 vi.mock('@/layers/widgets/one-bar', () => ({
   resolveRouteHeader: () => null,
   OneBarProvider: ({ children }: React.PropsWithChildren) => <>{children}</>,
-  BarFixedCluster: () => null,
 }));
+vi.mock('../app/header/BarFixedCluster', () => ({ BarFixedCluster: () => null }));
 
 // Partial, because the mobile tabs draw the panel from this module's real
 // model and sections — only the panel's own bodies are scenery here.

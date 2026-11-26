@@ -11,7 +11,6 @@ import {
   ChannelsBar,
   TitleBar,
   OneBarProvider,
-  BarFixedCluster,
   TeamHeader,
   TEAM_VIEW_TABS,
   SessionHeader,
@@ -21,6 +20,7 @@ import type { TeamViewMode } from '@/layers/shared/lib';
 import { AccountBadgeView, type SessionAccount } from '@/layers/features/status';
 import { ARCHIVED_ROOM, BRIDGED_CHANNEL_ROOM, CHANNEL_ROOM, DM_ROOM } from './rooms-showcase-data';
 import { MOCK_ACCOUNT_USAGE } from './account-mock-data';
+import { BarFixedCluster } from '../../app/header/BarFixedCluster';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';

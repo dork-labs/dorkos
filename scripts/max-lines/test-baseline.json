@@ -1,7 +1,7 @@
 {
   "$comment": "The 500-line ratchet for test files (scripts/check-max-lines.ts). Each test file here was over the limit when measured. It may shrink, never grow: split it by subject, with shared setup in one fixtures module. New pieces under 500 need no entry. A shrink or deletion is only noted until `pnpm check:max-lines -- --update` locks it in; never raise a number by hand.",
   "files": {
-    "apps/client/src/__tests__/app-shell-slots.test.tsx": 747,
+    "apps/client/src/__tests__/app-shell-slots.test.tsx": 741,
     "apps/client/src/layers/features/agent-creation/__tests__/CreateAgentDialog.test.tsx": 912,
     "apps/client/src/layers/features/agent-settings/__tests__/AgentMcpServers.test.tsx": 712,
     "apps/client/src/layers/features/agent-settings/ui/__tests__/IntegrationsTab.test.tsx": 659,
