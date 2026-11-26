@@ -377,6 +377,48 @@ export const RULES: Rule[] = [
         .filter((match) => overshoots(match[1] ?? '')).length,
     fix: 'use var(--ease-out), var(--ease-in) or var(--ease-standard)',
   },
+  // The design review's floors (design-review.md §2.2, §3.2; DOR-4944). A
+  // literal size never grows on the phone, so it is held to the phone's 12px
+  // absolute floor. `text-[0px]` hides words a screen reader still reads.
+  {
+    id: 'text-under-floor',
+    kind: 'hard',
+    pattern: /(?<![\w-])text-\[(?:0?\.\d*[1-9]\d*|[1-9](?:\.\d+)?|1[01](?:\.\d+)?)px\]/g,
+    fix: 'a literal size stays put on the phone, where 12px is the floor: use text-3xs (counts, initials), text-2xs or text-xs',
+  },
+  // An icon is an element imported from lucide-react, an <svg>, a tag named
+  // Icon or *Icon (an icon held in a variable or prop), or `x.icon`. Its size
+  // is raw when its opening tag holds a numeric size-N, an h-N and w-N in one
+  // string, or a size={N} prop. Each icon counts once. The tag is read to its
+  // `>` through three levels of braces, so an arrow in an attribute is no end.
+  {
+    id: 'raw-icon-size',
+    kind: 'ratchet',
+    pattern: /(?!)/g,
+    count: (text) => {
+      const lucide = [...text.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]lucide-react['"]/g)]
+        .flatMap((m) => (m[1] ?? '').split(','))
+        .map(
+          (name) =>
+            name
+              .trim()
+              .split(/\s+as\s+/)
+              .pop() ?? ''
+        );
+      return [
+        ...text.matchAll(
+          /<([\w.]+)(?=[\s/>])(?=((?:[^{}>]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*>))/g
+        ),
+      ]
+        .filter(([, tag = '']) => lucide.includes(tag) || /^(?:svg|\w*Icon|\w+\.icon)$/.test(tag))
+        .filter(([, , open = '']) =>
+          /(?<![\w-])size-(?:\d+(?:\.\d+)?|\[\d+(?:\.\d+)?px\])(?![\w.-])|(?<![\w-])h-\d+(?:\.\d+)?(?![\w.-])[^'"`]*(?<![\w-])w-\d|(?<![\w-])w-\d+(?:\.\d+)?(?![\w.-])[^'"`]*(?<![\w-])h-\d|\bsize=\{\d+\}/.test(
+            open
+          )
+        ).length;
+    },
+    fix: 'size it with a token: size-(--size-icon-xs|sm|md), or size-(--dui-size-icon-*) in packages/ui',
+  },
 ];
 
 /** The baseline: rule id to repo-relative path to count. */
@@ -452,81 +494,6 @@ export function measure(root: string): Counts {
 }
 
 /**
- * Compare measured counts with the baseline.
- *
- * @param counts - What {@link measure} found.
- * @param baseline - The committed baseline.
- * @param rules - The rules the counts came from.
- */
-export function compare(counts: Counts, baseline: Counts, rules: Rule[] = RULES): Finding[] {
-  const findings: Finding[] = [];
-  for (const { id: rule, kind } of rules) {
-    const now = counts[rule] ?? {};
-    if (kind === 'hard') {
-      for (const [file, count] of Object.entries(now)) {
-        findings.push({ kind: 'hard', rule, file, count });
-      }
-      continue;
-    }
-    const held = baseline[rule] ?? {};
-    for (const [file, count] of Object.entries(now)) {
-      const before = held[file] ?? 0;
-      if (count > before) findings.push({ kind: 'grew', rule, file, count, baseline: before });
-      else if (count < before)
-        findings.push({ kind: 'stale', rule, file, count, baseline: before });
-    }
-    for (const [file, before] of Object.entries(held)) {
-      if (!(file in now)) findings.push({ kind: 'stale', rule, file, count: 0, baseline: before });
-    }
-  }
-  return findings;
-}
-
-/**
- * Which rules may seed a first baseline: the ratchets whose id the base never
- * defined. None may, when a rule the base defined is gone from this tree, so a
- * rename cannot reset a count by starting a new rule at its own number.
- *
- * @param rules - The rules on this tree.
- * @param baseIds - The rule ids the base defined, or null when they are unknown.
- */
-export function seedableRules(rules: Rule[], baseIds: string[] | null): Set<string> {
-  if (!baseIds) return new Set();
-  if (baseIds.some((id) => !rules.some((r) => r.id === id))) return new Set();
-  return new Set(
-    rules.filter((r) => r.kind === 'ratchet' && !baseIds.includes(r.id)).map((r) => r.id)
-  );
-}
-
-/**
- * Entries the baseline raised against its base.
- *
- * A rule in `seedable` has no base entries to raise, so its first baseline is
- * held to what the check measures here: a number above it is a raise.
- *
- * @param current - The baseline on this tree.
- * @param base - The baseline on the base tree.
- * @param seedable - Rules that may seed a first baseline, from {@link seedableRules}.
- * @param counts - What {@link measure} found on this tree, to check a seed against.
- */
-export function raisedAgainst(
-  current: Counts,
-  base: Counts,
-  seedable: ReadonlySet<string> = new Set(),
-  counts: Counts = {}
-): Finding[] {
-  const findings: Finding[] = [];
-  for (const [rule, files] of Object.entries(current)) {
-    const seeding = seedable.has(rule) && !(rule in base);
-    for (const [file, count] of Object.entries(files)) {
-      const before = seeding ? (counts[rule]?.[file] ?? 0) : (base[rule]?.[file] ?? 0);
-      if (count > before) findings.push({ kind: 'raised', rule, file, count, baseline: before });
-    }
-  }
-  return findings;
-}
-
-/**
  * The baseline after `--update`: entries lowered or removed, nothing raised.
  *
  * @param counts - What {@link measure} found.
@@ -541,23 +508,6 @@ export function lowered(counts: Counts, baseline: Counts): Counts {
     }
   }
   return sorted(next);
-}
-
-/** One line a person can act on. */
-export function describe(f: Finding, rules: Rule[] = RULES): string {
-  const fix = rules.find((r) => r.id === f.rule)?.fix ?? '';
-  switch (f.kind) {
-    case 'hard':
-      return `${f.file}: ${f.count} of ${f.rule}, which may not exist: ${fix}.`;
-    case 'grew':
-      return `${f.file}: ${f.rule} rose to ${f.count} (baseline ${f.baseline}): ${fix}.`;
-    case 'stale':
-      return `${f.file}: ${f.rule} fell to ${f.count} (baseline ${f.baseline}). Run \`pnpm check:design-tokens -- --update\` to lock that in.`;
-    case 'raised':
-      return `${f.file}: ${f.rule} baseline raised from ${f.baseline} to ${f.count}. The baseline only goes down.`;
-    case 'rule':
-      return `${f.file}: ${f.detail}.`;
-  }
 }
 
 function sorted(counts: Counts): Counts {
@@ -620,6 +570,9 @@ async function main(argv: string[]): Promise<number> {
   };
   const root = resolve(value('--root') ?? process.cwd());
   const counts = measure(root);
+  // Loaded here, never at the top: see "imports nothing relative" above.
+  const { compare, describe, raisedAgainst, seedableRules } =
+    await import('./design-tokens/compare.ts');
 
   if (argv.includes('--init')) {
     writeBaseline(root, ratcheted(counts));

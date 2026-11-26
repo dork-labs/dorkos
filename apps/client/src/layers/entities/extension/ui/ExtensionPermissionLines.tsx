@@ -133,7 +133,7 @@ function CalledAppRows({ apps }: { apps: readonly ExtensionCalledAppEntry[] }) {
           {APP_ROW_SEPARATOR}
           {app.detail}
           {app.isNew && (
-            <span className="text-foreground ml-1.5 rounded-sm border px-1 text-[10px] font-medium">
+            <span className="text-foreground text-2xs ml-1.5 rounded-sm border px-1 font-medium">
               New
             </span>
           )}

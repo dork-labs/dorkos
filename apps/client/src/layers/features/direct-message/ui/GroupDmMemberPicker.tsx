@@ -101,7 +101,7 @@ export function GroupDmMemberPicker({ members }: GroupDmMemberPickerProps) {
             <IdentityAvatar
               aria-hidden
               size="xs"
-              className="size-4 shrink-0 text-[9px]"
+              className="text-3xs size-4 shrink-0"
               kind="agent"
               color={member.color ?? hashToHslColor(member.authorId)}
               emoji={member.emoji}

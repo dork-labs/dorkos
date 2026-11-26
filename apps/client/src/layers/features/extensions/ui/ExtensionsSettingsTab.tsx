@@ -393,7 +393,7 @@ export function ExtensionsSettingsTab() {
             <section aria-labelledby="extensions-needs-you" data-testid="needs-you-section">
               <h3
                 id="extensions-needs-you"
-                className="text-muted-foreground mb-1 px-3 text-[11px] font-medium max-sm:text-[13px]"
+                className="text-muted-foreground text-2xs mb-1 px-3 font-medium"
               >
                 Needs you
               </h3>
@@ -424,7 +424,7 @@ export function ExtensionsSettingsTab() {
               {needsYouCount > 0 && (
                 <h3
                   id="extensions-everything-else"
-                  className="text-muted-foreground mb-1 px-3 text-[11px] font-medium max-sm:text-[13px]"
+                  className="text-muted-foreground text-2xs mb-1 px-3 font-medium"
                 >
                   Everything else
                 </h3>

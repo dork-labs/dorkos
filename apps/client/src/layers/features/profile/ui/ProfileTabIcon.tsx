@@ -35,7 +35,7 @@ export function ProfileTabIcon({ className }: ProfileTabIconProps) {
         color={visual.color}
         emoji={visual.emoji}
         size="xs"
-        className="size-4 text-[10px]"
+        className="text-3xs size-4"
       />
     </span>
   );

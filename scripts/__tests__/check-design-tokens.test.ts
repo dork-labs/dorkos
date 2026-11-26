@@ -6,13 +6,11 @@ import {
   RULES,
   RULE_HELPERS,
   SCRIPT_PATH,
-  compare,
   countIn,
   lowered,
-  raisedAgainst,
-  seedableRules,
   type Rule,
 } from '../check-design-tokens.ts';
+import { compare, raisedAgainst, seedableRules } from '../design-tokens/compare.ts';
 import {
   fingerprint,
   overrideCovers,
@@ -426,11 +424,11 @@ describe('a base rule may not be removed or changed (DOR-3557)', () => {
     expect(ruleChanges(HEAD, { ...HEAD, rules: counted })).toEqual([
       'rule overshoot-bezier changed',
     ]);
+    // A helper is read as part of every rule with a count.
+    const counting = RULES.filter((r) => r.count).map((r) => `rule ${r.id} changed`);
     const helpers = { ...RULE_HELPERS, overshoots: () => false };
-    expect(ruleChanges(HEAD, { ...HEAD, helpers })).toEqual(['rule overshoot-bezier changed']);
-    expect(ruleChanges({ ...HEAD, helpers: undefined }, HEAD)).toEqual([
-      'rule overshoot-bezier changed',
-    ]);
+    expect(ruleChanges(HEAD, { ...HEAD, helpers })).toEqual(counting);
+    expect(ruleChanges({ ...HEAD, helpers: undefined }, HEAD)).toEqual(counting);
   });
 
   it('refuses a narrowed coverage, and a base with none to compare', () => {
