@@ -41,6 +41,15 @@ export function SessionsPage({ member }: ProfilePageContentProps) {
     [navigate, projectPath]
   );
 
+  // A chat another agent holds, found in a spin-off tree: opened by its id
+  // alone, so the chat page finds its own folder.
+  const openOther = useCallback(
+    (sessionId: string) => {
+      if (navigate) void navigate(toSession({ session: sessionId }));
+    },
+    [navigate]
+  );
+
   const startNew = useCallback(() => {
     if (projectPath === null) return;
     useInteractionStore.getState().recordOpened('agent', projectPath);
@@ -52,6 +61,7 @@ export function SessionsPage({ member }: ProfilePageContentProps) {
       agentPath={projectPath}
       agentName={member.displayName}
       onOpenChat={open}
+      onOpenOtherChat={openOther}
       onNewChat={startNew}
       searchable
       className="flex-1"

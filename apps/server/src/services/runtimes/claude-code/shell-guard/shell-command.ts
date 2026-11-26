@@ -405,6 +405,18 @@ export interface ReadCommand {
   resolve: (word: string, options: ResolveOptions) => string[] | null;
 }
 
+/** A word with each plain `$NAME` written as `${NAME}`, which names the same variable. */
+function bracedVariables(word: string): string {
+  // Only outside a `${…}`: inside one, a brace added would close it early (`${HOME:-$X}`).
+  let depth = 0;
+  return word.replace(/\$\{|\}|\$([A-Za-z_]\w*)/g, (whole, name: string | undefined) => {
+    if (whole === '${') depth += 1;
+    else if (whole === '}') depth = Math.max(0, depth - 1);
+    else if (depth === 0) return `\${${name}}`;
+    return whole;
+  });
+}
+
 /**
  * Parse a command, following its `cd`s, `NAME=value`s and `for` lists.
  *
@@ -430,7 +442,7 @@ export function readCommand(
   let unreadable = false;
   for (const { words } of parsed) {
     if (words[0] === 'for' && words[2] === 'in' && /^[A-Za-z_]\w*$/.test(words[1] ?? '')) {
-      lists.set(words[1]!, words.slice(3));
+      lists.set(words[1]!, words.slice(3).map(bracedVariables));
     }
     for (const word of words) {
       const assigned = /^([A-Za-z_]\w*)=(.*)$/s.exec(word);
@@ -450,12 +462,13 @@ export function readCommand(
   // Nested `for` lists multiply, so what they would build is paid for BEFORE it is built, in bytes
   // as well as strings: 700 bytes once ran the server out of memory.
   const open = (word: string): string[] | null => {
-    let opened = [word];
+    // Every `$NAME` as `${NAME}`, so a list's variable is found by its whole name only.
+    let opened = [bracedVariables(word)];
     if (word.includes('$')) {
       if (lists.size > MAX_FOR_LISTS) return null;
       for (const [name, values] of lists) {
         if (!word.includes(name)) continue;
-        const pattern = new RegExp(`\\$\\{?${name}\\}?(?!\\w)`, 'g');
+        const pattern = new RegExp(`\\$\\{${name}\\}`, 'g');
         const valueBytes = values.reduce((sum, value) => sum + value.length, 0);
         let built = 0;
         let cost = 0;

@@ -1,9 +1,10 @@
 /**
- * Which shell commands hand the turn someone else's words (DOR-5236, DOR-5240): a command that
- * fetches from the network (`shell-network-commands.ts`), a script file that does
- * (`shell-script-files.ts`), one that names a file in a folder of outside files, and a recursive
- * search that reaches one (`outside-file-places.ts`). Such a command marks the turn, as a web page
- * does.
+ * Which shell commands hand the turn someone else's words (DOR-5236, DOR-5240, DOR-5261): a command
+ * that fetches from the network (`shell-network-commands.ts`), a script file that does
+ * (`shell-script-files.ts`), a project script whose commands do (`project-scripts.ts`), one that
+ * names a file in a folder of outside files, and a recursive search that reaches one
+ * (`shell-tree-searches.ts`, `outside-file-places.ts`). Such a command marks the turn, as a web
+ * page does.
  *
  * It reads a command with the shell guard's own reader (`readCommand`), so it sees through pipes,
  * `&&`, `env` and `NAME=value` prefixes, `sudo`, `timeout`, `xargs`, an absolute program path,
@@ -22,6 +23,7 @@ import { expandTilde } from '../../../../lib/boundary.js';
 import {
   commandOf,
   readCommand,
+  scriptTexts,
   type ReadCommand,
 } from '../../claude-code/shell-guard/shell-command.js';
 import { pathPieces, type ShellSegment } from '../../claude-code/shell-guard/shell-words.js';
@@ -29,37 +31,11 @@ import { outsideFileTests, type CallPlace, type OutsideFileTests } from './outsi
 import { hasWildcard } from './outside-file-patterns.js';
 import { segmentFetches } from './shell-network-commands.js';
 import { MAX_SCRIPT_FILES, scriptFileFetches } from './shell-script-files.js';
+import { projectScriptOf } from './project-scripts.js';
+import { searchesOutsideFiles } from './shell-tree-searches.js';
 
 /** A command longer than this is not read; it marks, since what it does is unknown. */
 const MAX_COMMAND = 100_000;
-
-/** Programs that search a folder tree, and whether their first positional word is a pattern. */
-const TREE_SEARCHES: Readonly<Record<string, { patternFirst: boolean }>> = {
-  rg: { patternFirst: true },
-  ag: { patternFirst: true },
-  ack: { patternFirst: true },
-  rgrep: { patternFirst: true },
-  fd: { patternFirst: true },
-  fdfind: { patternFirst: true },
-  find: { patternFirst: false },
-};
-/** `grep` and its kin search a tree only when asked to. */
-const GREPS: ReadonlySet<string> = new Set(['grep', 'egrep', 'fgrep']);
-/** Searches that leave hidden folders out unless a flag says otherwise (`grep -r` and `find` don't). */
-const SKIPS_HIDDEN: ReadonlySet<string> = new Set(['rg', 'ag', 'ack', 'fd', 'fdfind']);
-/** The flags that make one of them search hidden folders too. */
-const SEES_HIDDEN = /^(-[A-Za-z.]*[u.aH][A-Za-z.]*|--hidden|--all-types|--unrestricted)$/;
-/** The flags that make a search follow links, per program. */
-const FOLLOWS_LINKS: Readonly<Record<string, RegExp>> = {
-  grep: /^(-[A-Za-z]*R[A-Za-z]*|--dereference-recursive)$/,
-  rg: /^(-[A-Za-z]*L[A-Za-z]*|--follow)$/,
-  fd: /^(-[A-Za-z]*L[A-Za-z]*|--follow)$/,
-  ag: /^(-[A-Za-z]*f[A-Za-z]*|--follow)$/,
-  ack: /^--follow$/,
-  find: /^(-L|-follow)$/,
-};
-/** `find`'s own flags before its folders. */
-const FIND_LEADING = /^-[HLP]$|^-O\d*$/;
 
 /** A piece spelled as a path, which is resolved and looked up on disk; a bare word is not. */
 function spelledAsPath(piece: string): boolean {
@@ -112,49 +88,6 @@ function namesOutsideFile(segment: ShellSegment, line: LineReading): boolean {
   return false;
 }
 
-/** Where `find` starts: the words before its first test, else where it stands. */
-function findRoots(args: readonly string[]): string[] {
-  let at = 0;
-  while (at < args.length && (FIND_LEADING.test(args[at]!) || args[at] === '-D')) {
-    at += args[at] === '-D' ? 2 : 1;
-  }
-  const roots: string[] = [];
-  for (; at < args.length && !/^[-(!,]/.test(args[at]!); at += 1) roots.push(args[at]!);
-  return roots.length > 0 ? roots : ['.'];
-}
-
-/** Whether one command is a recursive search starting at or above a folder of outside files. */
-function searchesOutsideFiles(segment: ShellSegment, line: LineReading): boolean {
-  const { verb, args } = commandOf(segment);
-  const recursiveGrep =
-    GREPS.has(verb) &&
-    args.some((arg) => /^-[A-Za-z]*[rR]/.test(arg) || /^--(?:dereference-)?recursive$/.test(arg));
-  const tree = TREE_SEARCHES[verb] ?? (recursiveGrep ? { patternFirst: true } : undefined);
-  if (!tree) return false;
-  let roots: string[];
-  if (verb === 'find') {
-    roots = findRoots(args);
-  } else {
-    const words = args.filter((arg) => !arg.startsWith('-'));
-    // With no folder named, a search starts where it stands.
-    roots = words.length > (tree.patternFirst ? 1 : 0) ? words : [...words, '.'];
-  }
-  const program = GREPS.has(verb) ? 'grep' : verb === 'fdfind' ? 'fd' : verb;
-  const skipsHidden = SKIPS_HIDDEN.has(verb) && !args.some((arg) => SEES_HIDDEN.test(arg));
-  const follows = args.some((arg) => FOLLOWS_LINKS[program]?.test(arg));
-  return roots.some((root) => {
-    const named = piecePaths(line, root);
-    if (named === null) return true;
-    return named.some((absolute) => {
-      if (hasWildcard(absolute)) return line.tests.patternReaches(absolute, true);
-      return (
-        line.tests.rootReaches(absolute, skipsHidden) ||
-        (follows && line.tests.linksReach(absolute))
-      );
-    });
-  });
-}
-
 /** The one path a word names where its command stands; `null` when it names no one path. */
 function onePath(read: ReadCommand, word: string, cwd: string): string | null {
   return read.resolve(word, { pieces: true, writingFrom: cwd })?.[0] ?? null;
@@ -164,6 +97,21 @@ function onePath(read: ReadCommand, word: string, cwd: string): string | null {
 const HEREDOC_WRITERS: ReadonlySet<string> = new Set(['cat', 'tee']);
 /** Programs that copy or move files to their last word. */
 const COPIERS: ReadonlySet<string> = new Set(['cp', 'mv', 'install', 'ln', 'rsync']);
+/** Interpreters whose inline code may write any file it names (`python3 -c "open('x.sh', 'w')…"`). */
+const CODE_WRITERS: ReadonlySet<string> = new Set([
+  'python',
+  'node',
+  'bun',
+  'deno',
+  'ruby',
+  'perl',
+  'php',
+]);
+
+/** A command's heredoc text, or `null` when it has none. */
+function heredocOf(segment: ShellSegment): string | null {
+  return segment.scripts.length > 0 ? segment.scripts.join('\n') : null;
+}
 
 /**
  * The paths a command line writes, with the heredoc text written there when that is what is
@@ -179,11 +127,21 @@ function writtenPaths(read: ReadCommand): Map<string, string | null> {
   };
   for (const { segment, cwd } of read.segments) {
     const { verb, args } = commandOf(segment);
-    const heredoc =
-      HEREDOC_WRITERS.has(verb) && segment.scripts.length > 0 ? segment.scripts.join('\n') : null;
+    const heredoc = HEREDOC_WRITERS.has(verb) ? heredocOf(segment) : null;
     for (const target of segment.redirects) note(target, cwd, heredoc);
     const words = args.filter((arg) => !arg.startsWith('-'));
     if (verb === 'tee') for (const target of words) note(target, cwd, heredoc);
+    if (verb === 'dd') {
+      // `dd of=x.sh <<EOF` writes its input; with `if=` it copies a file.
+      const from = args.some((arg) => arg.startsWith('if=')) ? null : heredocOf(segment);
+      for (const arg of args) if (arg.startsWith('of=')) note(arg.slice(3), cwd, from);
+    }
+    if (CODE_WRITERS.has(verb)) {
+      // What inline code writes cannot be known, so each file it names counts as written.
+      for (const piece of scriptTexts(segment).flatMap(pathPieces)) {
+        if (/[./]/.test(piece)) note(piece, cwd, null);
+      }
+    }
     if (COPIERS.has(verb) && words.length >= 2) {
       const destination = words.at(-1)!;
       note(destination, cwd, null);
@@ -272,6 +230,11 @@ function madeByLine(read: ReadCommand): (folder: string) => boolean {
  * @param place - Where it runs, so a file in the agent's own folder stays unmarked.
  */
 export function commandReadsOutsideText(command: string, place: CallPlace = {}): boolean {
+  return lineReadsOutsideText(command, place, true);
+}
+
+/** Whether a command line reads outside words; a project script it runs is read when `scripts`. */
+function lineReadsOutsideText(command: string, place: CallPlace, scripts: boolean): boolean {
   if (command.length > MAX_COMMAND) return true;
   const home = expandTilde('~');
   // With no working folder known, a relative path names nothing outside.
@@ -285,18 +248,28 @@ export function commandReadsOutsideText(command: string, place: CallPlace = {}):
     tests: outsideFileTests(place, madeByLine(read)),
   };
   const budget = { files: MAX_SCRIPT_FILES };
+  // eslint-disable-next-line no-restricted-syntax -- ripgrep's own config variable, which the shell's rg reads
+  const ripgrepConfig =
+    !!process.env.RIPGREP_CONFIG_PATH || command.includes('RIPGREP_CONFIG_PATH');
   let written: Map<string, string | null> | undefined;
   const writtenTo = (file: string) => (written ??= writtenPaths(read)).get(file);
-  return segments.some(
-    ({ segment, cwd: standing }) =>
-      scriptFileFetches(segment, {
-        pathOf: (word) => onePath(read, word, standing),
-        writtenTo,
-        budget,
-      }) ||
+  return segments.some(({ segment, cwd: standing }) => {
+    const pathOf = (word: string) => onePath(read, word, standing);
+    const fedBy = segment.pipedFrom;
+    // One level: the commands a project script runs are read, but not a script they run by name.
+    const project = scripts ? projectScriptOf(segment, standing, pathOf, budget) : undefined;
+    return (
+      (project !== undefined &&
+        lineReadsOutsideText(project.text, { ...place, cwd: project.cwd }, false)) ||
+      scriptFileFetches(segment, { pathOf, writtenTo, budget, ...(fedBy ? { fedBy } : {}) }) ||
       namesOutsideFile(segment, line) ||
-      searchesOutsideFiles(segment, line)
-  );
+      searchesOutsideFiles(segment, {
+        pathsOf: (word) => piecePaths(line, word),
+        tests: line.tests,
+        ripgrepConfig,
+      })
+    );
+  });
 }
 
 /** One argument, quoted for a shell so a list joins back into the command it was. */

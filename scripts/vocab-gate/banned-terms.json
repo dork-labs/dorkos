@@ -102,6 +102,13 @@
       "roots": ["apps/client/src/"],
       "match": "button-label",
       "terms": ["OK", "Yes", "No", "Submit", "Confirm"]
+    },
+    {
+      "id": "wave-12",
+      "issue": "DOR-4943",
+      "note": "No em dashes in docs prose (.claude/rules/user-facing-writing.md): a colon, a comma, parentheses or a second sentence reads easier. Docs only: roots keep it out of the source scan, and check-vocab-gate.ts lists it in MDX_SCANNED_WAVES, so the docs scan's stripNonProse blanks code first and an em dash inside inline code or a fenced block never fires. Punctuation, so it matches wherever it appears (termMatcher). The docs were rewritten to zero em dashes when the wave landed, so it has no allowlist entries: a docs page that needs one names a real reason.",
+      "roots": ["docs/"],
+      "terms": ["—"]
     }
   ]
 }

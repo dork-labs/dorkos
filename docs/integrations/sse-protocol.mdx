@@ -11,12 +11,12 @@ DorkOS delivers chat state over two durable streams: a per-chat event stream (`G
 
 <Callout type="info">
   **Both streams are also WebSocket endpoints, at the same URLs.** Server-Sent Events is the
-  documented contract for integrations and is not going anywhere — everything on this page keeps
+  documented contract for integrations and is not going anywhere. Everything on this page keeps
   working. The DorkOS app itself connects over WebSocket, for a browser-specific reason that
   probably does not apply to you: a browser allows only about six connections per origin, and an SSE
   stream holds one open for as long as it lasts, so a few browser windows would use them all up. A
   script, a server, or a CLI has no such limit. Use SSE unless you are writing something that runs
-  in a browser tab and needs several streams at once — in which case see [WebSocket
+  in a browser tab and needs several streams at once. In that case, see [WebSocket
   streams](#websocket-streams) below.
 </Callout>
 
@@ -56,9 +56,9 @@ The endpoint is trigger-only, and it never waits: it validates the request, give
 }
 ```
 
-**A `202` means the server has your message, not that a turn is running.** If the chat was idle, the turn started. If a turn was already in flight, your message joined the chat's queue and runs when that turn ends. `queuePosition` does not tell you which happened: `1` can mean either an immediate start or the first waiting message. If you previously treated the 202 as "the turn has begun" — starting a timer, or polling from that moment — take the real start from the `turn_start` event instead.
+**A `202` means the server has your message, not that a turn is running.** If the chat was idle, the turn started. If a turn was already in flight, your message joined the chat's queue and runs when that turn ends. `queuePosition` does not tell you which happened: `1` can mean either an immediate start or the first waiting message. If you previously treated the 202 as "the turn has begun" (starting a timer, or polling from that moment), take the real start from the `turn_start` event instead.
 
-`messageId` is the server's id for this message, and it is what the queue is keyed by. Keep it if you want to reword or withdraw the message before it runs. `outcome` reports what the server did with it: `requested` is what you asked for, `applied` is what happened, and a `degradedBecause` appears only when the two differ. Ask for `queue` and it is always what you get — the server owns the queue, so every runtime can do it. Ask for `steer` or `stage` and you may get `queue` back with a reason: `unsupported` (this runtime cannot do it at all), `not-steerable` (this runtime can steer, but the chat you asked about cannot take a message mid-task), `turn-owned-elsewhere` (a turn is running and a different client started it, so this one may not write into it), `pending-interaction` (the agent is waiting on a person), or `session-idle` (nothing was running, so your message just ran — the one reason not worth reporting to anybody).
+`messageId` is the server's id for this message, and it is what the queue is keyed by. Keep it if you want to reword or withdraw the message before it runs. `outcome` reports what the server did with it: `requested` is what you asked for, `applied` is what happened, and a `degradedBecause` appears only when the two differ. Ask for `queue` and it is always what you get: the server owns the queue, so every runtime can do it. Ask for `steer` or `stage` and you may get `queue` back with a reason: `unsupported` (this runtime cannot do it at all), `not-steerable` (this runtime can steer, but the chat you asked about cannot take a message mid-task), `turn-owned-elsewhere` (a turn is running and a different client started it, so this one may not write into it), `pending-interaction` (the agent is waiting on a person), or `session-idle` (nothing was running, so your message just ran, the one reason not worth reporting to anybody).
 
 When a `stage` does come back as `stage`, `degradedBecause` tells you where the words went. Absent, they reached the agent's own record right away. `unsupported` means this runtime keeps no such record, and `not-stageable` means it keeps one but the chat you asked about is not holding its agent open; in both of those the words are held and handed to the agent with its next reply instead. All three emit a `context_staged` event, so a stage that landed is never silent.
 
@@ -82,8 +82,8 @@ GET /api/sessions/:id/events
 The stream has three phases:
 
 1. **Snapshot.** On a cold connect the server emits a single `snapshot` event carrying the completed message history (`messages`), the in-progress turn (`inProgressTurn`, or `null` when idle), the server-held `status`, any `pendingInteractions` awaiting your response, the messages waiting to run (`queuedMessages`, empty when nothing is), and a `cursor` (the highest event sequence number the snapshot reflects). Those five fields are the whole of a chat's live state: hydrate from them and you are exactly as correct as a client that has been connected all along.
-2. **Replay.** On reconnect, the browser (or your SSE client) echoes the last received `id:` back as `Last-Event-ID`. The server skips the snapshot and replays only the events you missed, gap-free. If the cursor can no longer be served — the server restarted, or the chat's event counter was replaced while you were away — the stream falls back to a fresh snapshot: you never silently miss events.
-3. **Live.** Events stream as the turn produces them. Every event carries a per-chat monotonic `seq`, and every SSE frame carries an `id:` line of the form `<sessionId>-<epoch>-<generation>-<seq>` for resumption. Treat the whole id as opaque and send it back unchanged. The `epoch` names the server process and the `generation` names the counter inside it — a chat's counter can be replaced mid-life, and without those two parts a leftover `seq` would look like a perfectly ordinary position in the new counter and you would be resumed to the wrong place. Send back an id missing either part and you get a fresh snapshot instead.
+2. **Replay.** On reconnect, the browser (or your SSE client) echoes the last received `id:` back as `Last-Event-ID`. The server skips the snapshot and replays only the events you missed, gap-free. If the cursor can no longer be served (the server restarted, or the chat's event counter was replaced while you were away), the stream falls back to a fresh snapshot: you never silently miss events.
+3. **Live.** Events stream as the turn produces them. Every event carries a per-chat monotonic `seq`, and every SSE frame carries an `id:` line of the form `<sessionId>-<epoch>-<generation>-<seq>` for resumption. Treat the whole id as opaque and send it back unchanged. The `epoch` names the server process and the `generation` names the counter inside it. A chat's counter can be replaced mid-life, and without those two parts a leftover `seq` would look like a perfectly ordinary position in the new counter and you would be resumed to the wrong place. Send back an id missing either part and you get a fresh snapshot instead.
 
 ```
 event: snapshot
@@ -224,7 +224,7 @@ Interactive events carry server-authoritative countdown fields, `startedAt` (ms 
     queue_update: {
       type: '{ queue: QueuedMessage[], outcome?: MessageDeliveryOutcome }',
       description:
-        "The chat's message queue changed. Carries the whole queue every time, never a diff — a client that missed an update is corrected by the next one. `outcome` is present when the sender's own message caused this update. See [The Message Queue](#the-message-queue).",
+        "The chat's message queue changed. Carries the whole queue every time, never a diff: a client that missed an update is corrected by the next one. `outcome` is present when the sender's own message caused this update. See [The Message Queue](#the-message-queue).",
     },
   }}
 />
@@ -305,7 +305,7 @@ You learn the queue two ways, and they carry the same list:
 - **`queuedMessages` on the snapshot**, so a cold connect starts out knowing what is waiting.
 - **`queue_update` on the stream**, on every change: a message accepted, dispatched, reworded, moved, or removed, by any client.
 
-`queue_update` always carries the **whole** queue, head first, never a diff. Replace your copy with it rather than merging into one. That is deliberate: a client that missed an update is fully corrected by the next one, so there is no incremental state to get wrong. Like every other event it carries a `seq`, so apply it under the same watermark rule as the rest — an event at or below the highest `seq` you have already applied is a duplicate, and dropping it is correct.
+`queue_update` always carries the **whole** queue, head first, never a diff. Replace your copy with it rather than merging into one. That is deliberate: a client that missed an update is fully corrected by the next one, so there is no incremental state to get wrong. Like every other event it carries a `seq`, so apply it under the same watermark rule as the rest: an event at or below the highest `seq` you have already applied is a duplicate, and dropping it is correct.
 
 `outcome` is present when the update was caused by a message being accepted, and it is the same receipt the `202` returned. Use it to tell "my own send landed" from "someone else changed the queue".
 
@@ -316,7 +316,7 @@ Every entry in `queue` and in `queuedMessages` is a `QueuedMessage`:
     id: {
       type: 'string',
       description:
-        'Server-minted id for this message — the same id the 202 returned, and what the queue routes address it by.',
+        'Server-minted id for this message: the same id the 202 returned, and what the queue routes address it by.',
     },
     content: {
       type: 'string',
@@ -334,29 +334,29 @@ Every entry in `queue` and in `queuedMessages` is a `QueuedMessage`:
     enqueuedBy: {
       type: 'string',
       description:
-        'The `X-Client-Id` of whoever queued it. There so you can mark which entries are your own; it is not a permission — any client may edit any message on the queue.',
+        'The `X-Client-Id` of whoever queued it. There so you can mark which entries are your own; it is not a permission. Any client may edit any message on the queue.',
     },
   }}
 />
 
 Three routes read and change it. Each answers with the queue as it now stands, so you do not need to wait for the stream to catch up:
 
-| Route                                       | Body                                                                  | Answers              |
-| ------------------------------------------- | --------------------------------------------------------------------- | -------------------- |
-| `GET /api/sessions/:id/queue`               | —                                                                     | `{ queue }`          |
-| `PATCH /api/sessions/:id/queue/:messageId`  | `{ content?, move? }` — `move` is `{ before: id }` or `{ after: id }` | `{ message, queue }` |
-| `DELETE /api/sessions/:id/queue/:messageId` | —                                                                     | `{ queue }`          |
+| Route                                       | Body                                                                       | Answers              |
+| ------------------------------------------- | -------------------------------------------------------------------------- | -------------------- |
+| `GET /api/sessions/:id/queue`               | None                                                                       | `{ queue }`          |
+| `PATCH /api/sessions/:id/queue/:messageId`  | `{ content?, move? }`, where `move` is `{ before: id }` or `{ after: id }` | `{ message, queue }` |
+| `DELETE /api/sessions/:id/queue/:messageId` | None                                                                       | `{ queue }`          |
 
 `GET` is redundant with the snapshot on purpose: opening a stream to read one small list is a poor trade for a script or a quick round of debugging.
 
-A move names another message to land before or after, never an index. An index means something different to every client the moment anyone else edits the queue, and two clients editing one queue is exactly what this surface is for. A `PATCH` that names neither `content` nor `move` is refused as `400`; an id this queue does not hold — including a move anchored to one — is `404 queued_message_not_found`.
+A move names another message to land before or after, never an index. An index means something different to every client the moment anyone else edits the queue, and two clients editing one queue is exactly what this surface is for. A `PATCH` that names neither `content` nor `move` is refused as `400`; an id this queue does not hold (including a move anchored to one) is `404 queued_message_not_found`.
 
 Removing a message removes its pending run with it, so a message you withdraw does not surface later.
 
 <Callout type="warn">
   Two clients editing the same message race, and the last write wins. Both the `PATCH` response and
   the `queue_update` event carry the whole queue, so the losing client is corrected rather than
-  merged — an edit in flight can be overwritten by someone else's. Render from the last queue you
+  merged: an edit in flight can be overwritten by someone else's. Render from the last queue you
   received rather than from what you sent.
 </Callout>
 
@@ -370,22 +370,22 @@ GET /api/events
 
 This single persistent connection multiplexes all background events, distinguished by the SSE `event:` field:
 
-| Event                           | Payload                                                                                                                     | Description                                                                                                                                                                                                        |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `session_upserted`              | `{ session: Session }`                                                                                                      | A chat was created or its metadata changed                                                                                                                                                                         |
-| `session_removed`               | `{ sessionId: string }`                                                                                                     | A chat was deleted                                                                                                                                                                                                 |
-| `session_status`                | `{ sessionId: string, cwd?: string, retiredSessionId?: string, status }`                                                    | A chat's status projection changed (lifecycle, tokens, cost). `retiredSessionId` announces a first-turn rekey: drop state held under the old id                                                                    |
-| `interaction_pending`           | `{ sessionId: string, cwd: string, interaction: PendingInteraction, roomId?: string, roomAuthorId?: string }`               | An agent anywhere on this machine has stopped and is waiting on a person. Addressed — see below                                                                                                                    |
-| `interaction_resolved`          | `{ sessionId: string, interactionId: string, outcome, resolvedAt: string }`                                                 | That prompt is over: answered, cancelled, or timed out. Drop the card                                                                                                                                              |
-| `approval_pending`              | `{ approval: PendingApproval }`                                                                                             | Something needs your permission before it runs. Addressed — see below                                                                                                                                              |
-| `notification`                  | `{ notification: Notification }`                                                                                            | An inbox row appeared, or an existing one changed. Addressed — see below                                                                                                                                           |
-| `notification_read`             | `{ ids: string[], all: boolean, readAt: string, unreadCount: number }`                                                      | Notifications were marked read somewhere. Addressed — see below                                                                                                                                                    |
-| `agents_changed`                | `{ kind: 'registered' \| 'updated' \| 'removed', agentId: string, name?: string, displayName?: string, changedAt: string }` | An agent was registered, renamed or removed, by any path. Names and ids only — no directory, no manifest; read the agent back for the rest. Sent only when the write changed something                             |
-| `config_changed`                | `{ sections: string[], changedAt: string }`                                                                                 | Settings were written. Section names only, never a value. Sent for every write, including one that stored the same value, except one that only saved where you last were in a space. Addressed — see below         |
-| `community_connections_changed` | `{ changedAt: string }`                                                                                                     | A space connection was added, connected, needs reconnecting, or was removed — for example because you left the space. Nothing else: read `GET /api/community-connections` for your own list. Addressed — see below |
-| `relay_*`                       | varies                                                                                                                      | Relay adapter activity, message delivery                                                                                                                                                                           |
-| `tunnel_*`                      | varies                                                                                                                      | Tunnel start/stop, URL changes                                                                                                                                                                                     |
-| `ext:{id}:*`                    | varies                                                                                                                      | Extension-emitted events (namespaced per extension ID)                                                                                                                                                             |
+| Event                           | Payload                                                                                                                     | Description                                                                                                                                                                                                       |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_upserted`              | `{ session: Session }`                                                                                                      | A chat was created or its metadata changed                                                                                                                                                                        |
+| `session_removed`               | `{ sessionId: string }`                                                                                                     | A chat was deleted                                                                                                                                                                                                |
+| `session_status`                | `{ sessionId: string, cwd?: string, retiredSessionId?: string, status }`                                                    | A chat's status projection changed (lifecycle, tokens, cost). `retiredSessionId` announces a first-turn rekey: drop state held under the old id                                                                   |
+| `interaction_pending`           | `{ sessionId: string, cwd: string, interaction: PendingInteraction, roomId?: string, roomAuthorId?: string }`               | An agent anywhere on this machine has stopped and is waiting on a person. Addressed (see below)                                                                                                                   |
+| `interaction_resolved`          | `{ sessionId: string, interactionId: string, outcome, resolvedAt: string }`                                                 | That prompt is over: answered, cancelled, or timed out. Drop the card                                                                                                                                             |
+| `approval_pending`              | `{ approval: PendingApproval }`                                                                                             | Something needs your permission before it runs. Addressed (see below)                                                                                                                                             |
+| `notification`                  | `{ notification: Notification }`                                                                                            | An inbox row appeared, or an existing one changed. Addressed (see below)                                                                                                                                          |
+| `notification_read`             | `{ ids: string[], all: boolean, readAt: string, unreadCount: number }`                                                      | Notifications were marked read somewhere. Addressed (see below)                                                                                                                                                   |
+| `agents_changed`                | `{ kind: 'registered' \| 'updated' \| 'removed', agentId: string, name?: string, displayName?: string, changedAt: string }` | An agent was registered, renamed or removed, by any path. Names and ids only: no directory, no manifest; read the agent back for the rest. Sent only when the write changed something                             |
+| `config_changed`                | `{ sections: string[], changedAt: string }`                                                                                 | Settings were written. Section names only, never a value. Sent for every write, including one that stored the same value, except one that only saved where you last were in a space. Addressed (see below)        |
+| `community_connections_changed` | `{ changedAt: string }`                                                                                                     | A space connection was added, connected, needs reconnecting, or was removed, for example because you left the space. Nothing else: read `GET /api/community-connections` for your own list. Addressed (see below) |
+| `relay_*`                       | varies                                                                                                                      | Relay adapter activity, message delivery                                                                                                                                                                          |
+| `tunnel_*`                      | varies                                                                                                                      | Tunnel start/stop, URL changes                                                                                                                                                                                    |
+| `ext:{id}:*`                    | varies                                                                                                                      | Extension-emitted events (namespaced per extension ID)                                                                                                                                                            |
 
 These chat-list events keep sidebars and dashboards live without polling `GET /api/sessions`.
 
@@ -396,11 +396,11 @@ Most events on this stream are written to every connection. Six are not:
 `config_changed` and `community_connections_changed`. Each carries something about what your agents are doing, what is waiting on
 you, or what you have set up, so each goes only to a connection that could act on it.
 
-`interaction_pending` carries what an agent is waiting for — the tool it wants to run, the
+`interaction_pending` carries what an agent is waiting for: the tool it wants to run, the
 command or path it would run it against, and the chat's working directory.
 `approval_pending` carries the capability being asked for and a sentence describing what would
 happen. The two `notification` events carry the titles and bodies of your inbox.
-`config_changed` says which sections of your settings were just written — it never carries a
+`config_changed` says which sections of your settings were just written. It never carries a
 value, because settings hold credentials, but which settings you are editing is still yours.
 `community_connections_changed` says only that a space connection changed. It names no
 space, no connection and no person, because this stream cannot tell which of this machine's
@@ -413,7 +413,7 @@ want, you go and ask for.
 
 In practice that means one thing: **a connection presenting an `X-DorkOS-Agent` header never
 receives it.** The same connection also stops receiving `activity` on a `session_status` frame
-whose `lifecycle` is `blocked` — that field names the tool and the command a chat is parked
+whose `lifecycle` is `blocked`. That field names the tool and the command a chat is parked
 on, which is the same detail by another route. The `lifecycle` itself is still sent, so a
 reader still knows the chat is waiting; it just does not learn what for. And on a chat's
 own stream (`GET /api/sessions/:id/events`) the snapshot's `pendingInteractions` comes back
@@ -422,7 +422,7 @@ sent. An agent could never answer a prompt (`POST /api/sessions/:id/approve` ref
 every one of them), so it no longer sees them either. A connection holding one of your per-user
 API keys still receives them, because it can already read the same detail on that chat's own
 stream. `GET /api/sessions/pending-interactions`, which is what a page reads on load, filters
-the same way — and answers `200` with an empty list rather than an error, so a caller cannot
+the same way, and answers `200` with an empty list rather than an error, so a caller cannot
 tell "you may not see this" from "there is nothing waiting".
 
 `interaction_resolved` is deliberately NOT filtered. It carries a chat ID, an interaction id
@@ -439,7 +439,7 @@ seen this" is a claim only a person looking at a screen can make.
 Shortly after connecting you receive one `session_status` event for every chat the server
 currently sees as working, waiting on a person, or stopped with an error. Chats that are idle
 send nothing, because there is nothing to say about them. Treat these as ordinary `session_status`
-events — same shape, same handler, no special ordering to wait for.
+events: same shape, same handler, no special ordering to wait for.
 
 This is what lets a page that opened five minutes late still know that a chat is stuck: the
 transitions themselves happened while you were not connected, so only the state they left behind
@@ -448,7 +448,7 @@ can tell you. The next real transition replaces whatever these told you.
 They are read from what the server is holding in memory right now, so they are a picture of the
 live fleet rather than of all history: a restart clears it, and Claude Code chats are also
 forgotten after about half an hour of quiet. Nothing else expires on a timer today, so a chat
-left waiting on a person — or one whose turn never finished — keeps being announced on every
+left waiting on a person (or one whose turn never finished) keeps being announced on every
 connect until it moves again. Reconnecting is not what clears it.
 
 <Callout type="info">
@@ -536,8 +536,8 @@ GET /api/events
 
 ## WebSocket streams
 
-Every durable stream on this page — `GET /api/events`, `GET /api/sessions/:id/events`, and
-`GET /api/rooms/:id/events` — also answers a WebSocket upgrade **at the same URL**. Same three
+Every durable stream on this page (`GET /api/events`, `GET /api/sessions/:id/events`, and
+`GET /api/rooms/:id/events`) also answers a WebSocket upgrade **at the same URL**. Same three
 phases, same snapshot, same replay, same ordering guarantees. Only the packaging differs.
 
 Reach for this only if your client runs inside a browser tab and needs several streams open at once.
@@ -559,17 +559,17 @@ socket.onmessage = (message) => {
 
 Each message is one JSON text frame carrying the same three things an SSE frame carries:
 
-| Field   | Meaning                                                                                                                                                 |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `event` | The event name — what `event:` carried.                                                                                                                 |
-| `data`  | The payload — what `data:` carried, already parsed.                                                                                                     |
-| `id`    | The resume cursor, `<resourceId>-<epoch>-<generation>-<seq>` — what the `id:` line carried. Present only on frames that occupy a place in the sequence. |
+| Field   | Meaning                                                                                                                                                         |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `event` | The event name: what `event:` carried.                                                                                                                          |
+| `data`  | The payload: what `data:` carried, already parsed.                                                                                                              |
+| `id`    | The resume cursor, `<resourceId>-<epoch>-<generation>-<seq>`, which is what the `id:` line carried. Present only on frames that occupy a place in the sequence. |
 
 Four differences to know about:
 
 - **Resuming uses a query parameter, not a header.** A browser `WebSocket` takes a URL and nothing
   else, so send the last `id` you saw as `?resume=<id>` rather than as `Last-Event-ID`. Send the
-  whole id, not just the trailing number — the middle parts identify the server process and its
+  whole id, not just the trailing number. The middle parts identify the server process and its
   event counter, and they are what stops an old cursor from replaying the wrong events.
 - **Heartbeats are frames.** SSE keeps a connection alive with a comment your parser ignores. A
   WebSocket has no comment, and its built-in ping is invisible to browser JavaScript, so the server
@@ -577,9 +577,9 @@ Four differences to know about:
   that one before handling it.
 - **Refusals arrive as a close code, not an HTTP status.** A browser cannot see the status of a
   handshake that failed, so the server accepts the connection and immediately closes it with
-  `4000 + status` — `4401` for "sign in", `4403` for "not allowed", `4404` for "no such thing". Read
+  `4000 + status`: `4401` for "sign in", `4403` for "not allowed", `4404` for "no such thing". Read
   `event.code` in `onclose` and subtract 4000. This is how these three streams refuse a request they
-  understood — a missing credential, an unknown room, a bad id — for browser and non-browser clients
+  understood (a missing credential, an unknown room, a bad id) for browser and non-browser clients
   alike: the handshake completes and the socket closes immediately, so do not wait for an HTTP status
   that will not come. Two cases still answer at the handshake instead: an unexpected server-side
   error is a real `500`, and a path no endpoint claims is closed with no response at all.
@@ -587,5 +587,5 @@ Four differences to know about:
   Reconnect with backoff, and pass `?resume=` so you pick up exactly where you left off.
 
 If you are behind a reverse proxy or a dev server, make sure it forwards WebSocket upgrades as well
-as ordinary requests — most need to be told explicitly, and the symptom is a stream that connects to
+as ordinary requests. Most need to be told explicitly, and the symptom is a stream that connects to
 nothing while every other request works fine.

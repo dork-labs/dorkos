@@ -8,8 +8,11 @@
  * mark when that folder sits below one of these (a throwaway project under the temp folder stays
  * clean), but a Downloads folder inside a working folder of the whole home still marks. Room
  * attachments copied into an agent's tree (`PROJECTED_ATTACHMENTS_ROOT`) always mark: they are a
- * room's files wherever they land. On Claude Code, the CLI's own temp folder for the project
- * (`claude-code-scratch.ts`) does not mark.
+ * room's files wherever they land, and a search marks when such a folder is on disk below its root:
+ * in the root, in the tree whose `.dork` the root is, or in an own folder. A search by `rg`,
+ * Claude Code's `Grep` or OpenCode's `grep` that keeps its ignore files in force leaves them out
+ * while the ignore file the projection writes beside them holds exactly its one line. On Claude
+ * Code, the CLI's own temp folder for the project (`claude-code-scratch.ts`) does not mark.
  *
  * A path is compared after `~` is expanded, as written and, when it exists, as the filesystem
  * resolves it, against both spellings of each folder (`/tmp` and macOS's `/private/tmp`).
@@ -19,13 +22,18 @@
 import { realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { PROJECTED_ATTACHMENTS_ROOT } from '@dorkos/shared/room-attachment-paths';
+import {
+  PROJECTED_ATTACHMENTS_IGNORE,
+  PROJECTED_ATTACHMENTS_IGNORE_LINE,
+  PROJECTED_ATTACHMENTS_ROOT,
+} from '@dorkos/shared/room-attachment-paths';
 import { expandTilde } from '../../../../lib/boundary.js';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
 import { claudeCodeScratchFolders } from './claude-code-scratch.js';
 import { hasWildcard, patternReachesFolder } from './outside-file-patterns.js';
 import { linksReach, newLinkWalk } from './outside-file-links.js';
 import { pathExists } from '../../claude-code/shell-guard/shell-command.js';
+import { readScript } from './shell-script-files.js';
 
 /** Where a call runs: the turn's working folder and the agent's own folder, when known. */
 export interface CallPlace {
@@ -43,9 +51,12 @@ export interface OutsideFileTests {
   holds: (target: string) => boolean;
   /**
    * Whether a search rooted here reaches outside words: it holds them, or a folder of them is
-   * below, past no hidden folder.
+   * below that the search enters.
+   *
+   * @param root - The root, as the call names it.
+   * @param walk - How the search walks the tree; a search tool enters hidden folders by default.
    */
-  searchReaches: (root: string) => boolean;
+  searchReaches: (root: string, walk?: SearchWalk) => boolean;
   /**
    * Whether an absolute path lies in a folder of outside files.
    *
@@ -57,23 +68,63 @@ export interface OutsideFileTests {
    * Whether a search rooted at an absolute path reaches outside words.
    *
    * @param absolute - The root, already resolved against its working folder.
-   * @param skipsHidden - Whether the search leaves hidden folders out, as `rg` does.
+   * @param walk - How the search walks the tree.
    */
-  rootReaches: (absolute: string, skipsHidden: boolean) => boolean;
+  rootReaches: (absolute: string, walk: SearchWalk) => boolean;
   /**
    * Whether an absolute wildcard pattern (`~/Down*` opened) could name a path in a folder of
    * outside files, or, for a search, a folder above one. Read against the folders' names, not
    * the disk.
    *
+   * As a search's root, only a folder that is on disk (or that the line makes) counts, a wildcard
+   * opens no hidden name it does not spell, and a search that leaves hidden folders out reaches
+   * none below.
+   *
    * @param pattern - The pattern, already resolved against its working folder.
    * @param asRoot - Whether it is a search's root, which also reaches the folders below it.
+   * @param walk - For a root: how the search walks the tree.
    */
-  patternReaches: (pattern: string, asRoot: boolean) => boolean;
+  patternReaches: (pattern: string, asRoot: boolean, walk?: SearchWalk) => boolean;
   /**
    * Whether a search that follows links from this root reaches a folder of outside files
    * through one (`outside-file-links.ts`).
    */
   linksReach: (root: string) => boolean;
+}
+
+/** How a search walks the tree below its root. */
+export interface SearchWalk {
+  /** Whether it leaves hidden folders out, as `rg` does. */
+  skipsHidden: boolean;
+  /** Whether it honours ripgrep's ignore files, as `rg` and the search tools built on it do. */
+  ignoreFiles: boolean;
+}
+
+/** A search that enters every folder: `grep -r`, `find`. */
+const ENTERS_ALL: SearchWalk = { skipsHidden: false, ignoreFiles: false };
+
+/**
+ * Whether the room attachments copied into `tree` are left out by the ignore file the projection
+ * writes beside them: it holds exactly {@link PROJECTED_ATTACHMENTS_IGNORE_LINE}.
+ */
+function projectionIgnored(tree: string): boolean {
+  const read = readScript(path.join(tree, PROJECTED_ATTACHMENTS_IGNORE));
+  return (
+    read.kind === 'text' && read.text.replace(/\r?\n$/, '') === PROJECTED_ATTACHMENTS_IGNORE_LINE
+  );
+}
+
+/** A glob that leaves rg's ignore files in force: a negation, or one that names a file extension. */
+const IGNORE_KEEPING_GLOB = /^!|(?:^|\/)\*\.(?:[\w.-]+|\{[\w.,-]+\})$/;
+
+/**
+ * Whether every glob a search is given leaves its ignore files in force. A glob that includes
+ * paths (`*`, `**`, `src/**`) makes ripgrep read files its ignore files leave out.
+ *
+ * @param globs - The globs, as the search is given them.
+ */
+export function globsKeepIgnores(globs: readonly string[]): boolean {
+  return globs.every((glob) => IGNORE_KEEPING_GLOB.test(glob));
 }
 
 /** The fixed temp folders on a Unix-like system, in both spellings macOS uses. */
@@ -126,6 +177,24 @@ function hiddenBetween(root: string, folder: string): boolean {
     .relative(root, folder)
     .split(path.sep)
     .some((part) => part.startsWith('.') && part !== '..');
+}
+
+/**
+ * Whether a search rooted at a wildcard reaches a folder past its hidden names: the shell opens a
+ * wildcard into a hidden name only when the pattern spells its dot, and below the pattern a search
+ * that leaves hidden folders out skips them.
+ */
+function shownToSearch(
+  pattern: readonly string[],
+  below: readonly string[],
+  skipsHidden: boolean
+): boolean {
+  const aligned = !pattern.includes('**');
+  return below.every((part, depth) => {
+    if (!part.startsWith('.')) return true;
+    if (aligned && depth < pattern.length) return pattern[depth]!.startsWith('.');
+    return !skipsHidden;
+  });
 }
 
 /** The download folder a Linux desktop names (`XDG_DOWNLOAD_DIR`), when it is not the home itself. */
@@ -193,7 +262,7 @@ export function outsideFileTests(
     }
     return found;
   };
-  const walk = newLinkWalk();
+  const linkWalk = newLinkWalk();
 
   /** An absolute path as written and, when asked, as the filesystem resolves it; `null` past the cap. */
   const looked = new Map<string, string[]>();
@@ -231,39 +300,70 @@ export function outsideFileTests(
     );
   };
 
+  /**
+   * The folders a search rooted at `root` may find below it: the folders of outside files, and
+   * room attachments copied into the root, into the tree whose `.dork` or `.dork/.temp` the root
+   * is, or into an own folder, with the tree each copy sits in.
+   */
+  const foldersBelow = (root: string): Array<{ folder: string; tree?: string }> => {
+    const trees = [root, ...own];
+    if (path.basename(root) === '.dork') trees.push(path.dirname(root));
+    if (path.basename(root) === '.temp' && path.basename(path.dirname(root)) === '.dork') {
+      trees.push(path.dirname(path.dirname(root)));
+    }
+    return [
+      ...folders.map((folder) => ({ folder })),
+      ...[...new Set(trees)].map((tree) => ({
+        folder: path.join(tree, PROJECTED_ATTACHMENTS_ROOT),
+        tree,
+      })),
+    ];
+  };
+
+  /** Whether a folder below a root is there for the search to find. */
+  const found = (entry: { folder: string; tree?: string }, walk: SearchWalk): boolean =>
+    exists(entry.folder) &&
+    // Read only once the copied attachments are there: one small file.
+    !(walk.ignoreFiles && entry.tree !== undefined && projectionIgnored(entry.tree));
+
   /** Whether any spelling holds outside words, or, for a search, has a folder of them below. */
-  const reaches = (spelled: string[] | null, asRoot: boolean, skipsHidden: boolean): boolean =>
+  const reaches = (spelled: string[] | null, asRoot: boolean, walk: SearchWalk): boolean =>
     spelled === null ||
     spelled.some(
       (absolute) =>
         spelledInside(absolute) ||
         (asRoot &&
-          folders.some(
-            (folder) =>
-              isBelow(folder, absolute) &&
-              !(skipsHidden && hiddenBetween(absolute, folder)) &&
-              exists(folder)
+          foldersBelow(absolute).some(
+            (entry) =>
+              isBelow(entry.folder, absolute) &&
+              !(walk.skipsHidden && hiddenBetween(absolute, entry.folder)) &&
+              found(entry, walk)
           ))
     );
 
   const holds = (target: string): boolean => {
     if (!target) return false;
     if (inProjectedAttachments(target)) return true;
-    return reaches(forms(target), false, true);
+    return reaches(forms(target), false, ENTERS_ALL);
   };
 
-  const searchReaches = (root: string): boolean => !!root && reaches(forms(root), true, true);
+  const searchReaches = (root: string, walk: SearchWalk = ENTERS_ALL): boolean =>
+    !!root && reaches(forms(root), true, walk);
 
   const holdsPath = (absolute: string, onDisk: boolean): boolean =>
-    reaches(spellingsOf(absolute, onDisk), false, true);
+    reaches(spellingsOf(absolute, onDisk), false, ENTERS_ALL);
 
-  const rootReaches = (absolute: string, skipsHidden: boolean): boolean =>
-    reaches(spellingsOf(absolute, true), true, skipsHidden);
+  const rootReaches = (absolute: string, walk: SearchWalk): boolean =>
+    reaches(spellingsOf(absolute, true), true, walk);
 
-  const patternReaches = (pattern: string, asRoot: boolean): boolean => {
+  const patternReaches = (
+    pattern: string,
+    asRoot: boolean,
+    walk: SearchWalk = ENTERS_ALL
+  ): boolean => {
     const parts = pattern.split(path.sep);
     const fixed = parts.findIndex(hasWildcard);
-    if (fixed === -1) return asRoot ? rootReaches(pattern, false) : holdsPath(pattern, true);
+    if (fixed === -1) return asRoot ? rootReaches(pattern, walk) : holdsPath(pattern, true);
     // The part before the first wildcard is a real folder: where it resolves counts too.
     const base = parts.slice(0, fixed).join(path.sep) || path.sep;
     if (holdsPath(base, true)) return true;
@@ -271,11 +371,12 @@ export function outsideFileTests(
     const bases = spellingsOf(base, true);
     if (bases === null) return true;
     return bases.some((spelled) =>
-      folders.some(
-        (folder) =>
-          isBelow(folder, spelled) &&
-          patternReachesFolder(rest, path.relative(spelled, folder).split(path.sep), asRoot)
-      )
+      (asRoot ? foldersBelow(spelled) : folders.map((folder) => ({ folder }))).some((entry) => {
+        if (!isBelow(entry.folder, spelled)) return false;
+        const below = path.relative(spelled, entry.folder).split(path.sep);
+        if (!patternReachesFolder(rest, below, asRoot)) return false;
+        return !asRoot || (shownToSearch(rest, below, walk.skipsHidden) && found(entry, walk));
+      })
     );
   };
 
@@ -285,6 +386,7 @@ export function outsideFileTests(
     holdsPath,
     rootReaches,
     patternReaches,
-    linksReach: (root) => linksReach(root, (absolute) => reaches([absolute], true, false), walk),
+    linksReach: (root) =>
+      linksReach(root, (absolute) => reaches([absolute], true, ENTERS_ALL), linkWalk),
   };
 }

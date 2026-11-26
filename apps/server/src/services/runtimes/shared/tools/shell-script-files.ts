@@ -1,7 +1,10 @@
 /**
- * Script files a command runs, read for the network (DOR-5240): `python3 fetch.py`, `node get.mjs`,
- * `bash pull.sh`, `deno run x.ts`, and `./x.sh` by its `#!` line. The file is read where the
- * command stands. A shell script is judged command by command, with its own variables and the
+ * Script files a command runs, read for the network (DOR-5240, DOR-5261): `python3 fetch.py`,
+ * `node get.mjs`, `bash pull.sh`, `deno run x.ts`, `tsx x.ts`, `source x.sh`, `./x.sh` by its `#!`
+ * line, and the same started by a launcher (`pnpm exec tsx x.ts`, `uv run x.py`,
+ * `script-launchers.ts`). A script read on an interpreter's input counts too: files after
+ * `bash -s`, a file `cat` pipes in and text `echo` pipes in; anything else piped in marks. The
+ * file is read where the command stands. A shell script is judged command by command, with its own variables and the
  * arguments it was given (`shell-script-variables.ts`); any other script by its web addresses and
  * its language's network calls, with its comments left out (`script-network-calls.ts`).
  *
@@ -17,6 +20,8 @@ import path from 'node:path';
 import { commandOf, SHELLS } from '../../claude-code/shell-guard/shell-command.js';
 import type { ShellSegment } from '../../claude-code/shell-guard/shell-words.js';
 import { hasWildcard } from './outside-file-patterns.js';
+import { withoutComments, type CommentStyle } from './script-comments.js';
+import { launchedCommand } from './script-launchers.js';
 import { scriptFileTextFetches, type ScriptLanguage } from './script-network-calls.js';
 import { shellFileFetches } from './shell-script-variables.js';
 
@@ -29,10 +34,14 @@ export const MAX_SCRIPT_FILES = 8;
 interface Runner {
   /** Flags that take the next word as their value. */
   values: ReadonlySet<string>;
-  /** A flag that means the script is not a file: inline code, a module, standard input. */
+  /** A flag that means the script is not a file: inline code or a module. */
   inline?: RegExp;
+  /** A flag that means the script comes in on standard input (`bash -s`). */
+  stdin?: RegExp;
   /** Its comment style, left out before the text is judged. */
-  comments: 'hash' | 'slash';
+  comments: CommentStyle;
+  /** Whether its script is shell, read command by command. */
+  shell?: boolean;
   /** The word before the file, when the program has commands of its own (`deno run`). */
   subcommand?: string;
   /** A flag whose value is the file (`php -f x.php`). */
@@ -41,8 +50,19 @@ interface Runner {
 
 const SHELL_RUNNER: Runner = {
   values: new Set(['-o', '-O', '+o', '+O']),
-  inline: /^-[A-Za-z]*[cs]/,
+  inline: /^-[A-Za-z]*c/,
+  stdin: /^-[A-Za-z]*s/,
   comments: 'hash',
+  shell: true,
+};
+/** `source x.sh` and `. x.sh` run a shell script in the shell that is running. */
+const SOURCE_RUNNER: Runner = { values: new Set(), comments: 'hash', shell: true };
+/** TypeScript runners, which take Node's inline-code flags. */
+const TS_RUNNER: Runner = {
+  values: new Set(['-r', '--require', '--import', '--tsconfig', '-P', '--project']),
+  inline: /^(-[A-Za-z]*[ep]|--eval|--print)(=|$)/,
+  comments: 'slash',
+  subcommand: 'watch',
 };
 
 /** The interpreters whose file argument is read. */
@@ -68,6 +88,11 @@ const RUNNERS: Readonly<Record<string, Runner>> = {
     comments: 'slash',
     fileFlag: '-f',
   },
+  tsx: TS_RUNNER,
+  'ts-node': TS_RUNNER,
+  'vite-node': TS_RUNNER,
+  source: SOURCE_RUNNER,
+  '.': SOURCE_RUNNER,
   ...Object.fromEntries([...SHELLS].map((shell) => [shell, SHELL_RUNNER])),
 };
 
@@ -81,33 +106,8 @@ function shebangProgram(text: string): string | undefined {
   return path.basename(rest.find((word) => !word.startsWith('-')) ?? '');
 }
 
-/** The script's text with its comments left out, in one pass. */
-function withoutComments(text: string, style: Runner['comments']): string {
-  const opener = style === 'hash' ? /(?:^|\s)#/gm : /\/[*/]/g;
-  let out = '';
-  let at = 0;
-  for (;;) {
-    opener.lastIndex = at;
-    const found = opener.exec(text);
-    if (!found) break;
-    const start = found.index + found[0].length - (style === 'hash' ? 1 : 2);
-    // `https://` is not a comment.
-    if (style === 'slash' && text[start + 1] === '/' && text[start - 1] === ':') {
-      out += text.slice(at, start + 2);
-      at = start + 2;
-      continue;
-    }
-    out += text.slice(at, start);
-    const block = style === 'slash' && text[start + 1] === '*';
-    const end = text.indexOf(block ? '*/' : '\n', start + 2);
-    if (end === -1) return out;
-    at = block ? end + 2 : end;
-  }
-  return out + text.slice(at);
-}
-
 /** What reading a script file found. */
-type ScriptRead =
+export type ScriptRead =
   | { kind: 'text'; text: string }
   /** Nothing there, a folder, or a program's binary: the shell's own error or a real program. */
   | { kind: 'none' }
@@ -117,8 +117,12 @@ type ScriptRead =
 /** How much of a file is read to tell a program's binary from a script. */
 const SNIFF_BYTES = 4_096;
 
-/** A script file's text, when it is a regular file of text no bigger than {@link MAX_SCRIPT_BYTES}. */
-function readScript(file: string): ScriptRead {
+/**
+ * A script file's text, when it is a regular file of text no bigger than {@link MAX_SCRIPT_BYTES}.
+ *
+ * @param file - The file, absolute.
+ */
+export function readScript(file: string): ScriptRead {
   let stat;
   try {
     stat = statSync(file);
@@ -145,12 +149,13 @@ function readScript(file: string): ScriptRead {
   }
 }
 
-/** Where the script an interpreter runs is named among its arguments, if it runs a file. */
+/** Where an interpreter's script is named among its arguments: `-1` for none, `-2` for its input. */
 function scriptAt(runner: Runner, args: readonly string[]): number {
   let subcommandSeen = runner.subcommand === undefined;
   for (let at = 0; at < args.length; at += 1) {
     const arg = args[at]!;
     if (runner.inline?.test(arg)) return -1;
+    if (runner.stdin?.test(arg)) return -2;
     if (runner.values.has(arg)) {
       at += 1;
       continue;
@@ -162,7 +167,7 @@ function scriptAt(runner: Runner, args: readonly string[]): number {
     if (arg === runner.subcommand) subcommandSeen = true;
     else return /\.[cm]?[jt]sx?$/.test(arg) ? at : -1;
   }
-  return -1;
+  return subcommandSeen ? -2 : -1;
 }
 
 /** The language whose network calls a program's script is read for. */
@@ -178,7 +183,7 @@ function languageOf(program: string): ScriptLanguage {
 /** Whether a script's text reaches the network, read by the rules its program gets. */
 function textFetches(text: string, program: string, args: readonly string[]): boolean {
   const runner = RUNNERS[program.replace(/^python[\d.]*$/, 'python')];
-  if (runner === SHELL_RUNNER) return shellFileFetches(text, args);
+  if (runner?.shell) return shellFileFetches(text, args);
   const language = languageOf(program);
   return scriptFileTextFetches(withoutComments(text, runner?.comments ?? 'hash'), language);
 }
@@ -201,24 +206,20 @@ export interface ScriptFileReading {
   writtenTo: (file: string) => string | null | undefined;
   /** The command line's allowance, spent here. */
   budget: ScriptFileBudget;
+  /** The command whose output is piped into this one, when one is. */
+  fedBy?: ShellSegment;
 }
 
-/**
- * Whether the script file one command runs reaches the network.
- *
- * @param segment - The command.
- * @param reading - How the command line's paths, writes and allowance are read.
- */
-export function scriptFileFetches(segment: ShellSegment, reading: ScriptFileReading): boolean {
-  const { verb, args } = commandOf(segment);
-  const program = verb.toLowerCase().replace(/\.exe$/, '');
-  const runner = RUNNERS[program];
-  // The program's own word, as written: a path to a script runs it by its `#!` line.
-  const programWord = segment.words[segment.words.length - args.length - 1] ?? '';
-  const at = runner ? scriptAt(runner, args) : /[\\/]/.test(programWord) ? -2 : -1;
-  if (at === -1) return false;
-  const word = at === -2 ? programWord : args[at]!;
-  const after = args.slice(at === -2 ? 0 : at + 1);
+/** Programs that print the text they are given. */
+const PRINTERS: ReadonlySet<string> = new Set(['echo', 'printf']);
+
+/** Whether one script file reaches the network, read by the rules `program` gets. */
+function fileFetches(
+  word: string,
+  program: string | undefined,
+  args: readonly string[],
+  reading: ScriptFileReading
+): boolean {
   if (reading.budget.files <= 0) return true;
   reading.budget.files -= 1;
   if (hasWildcard(word)) return true;
@@ -226,16 +227,70 @@ export function scriptFileFetches(segment: ShellSegment, reading: ScriptFileRead
   if (!file || file.includes('$')) return true;
   const written = reading.writtenTo(file);
   if (written === null) return true;
-  if (
-    written !== undefined &&
-    textFetches(written, runner ? program : (shebangProgram(written) ?? 'sh'), after)
-  ) {
+  if (written !== undefined && textFetches(written, program ?? shebangOf(written), args)) {
     return true;
   }
   const read = readScript(file);
   if (read.kind === 'unknown') return true;
   if (read.kind === 'none') return false;
-  if (runner) return textFetches(read.text, program, after);
   // A text file with no `#!` line runs in the shell.
-  return textFetches(read.text, shebangProgram(read.text) ?? 'sh', after);
+  return textFetches(read.text, program ?? shebangOf(read.text), args);
+}
+
+/** The program a file's `#!` line names, or the shell. */
+function shebangOf(text: string): string {
+  return shebangProgram(text) ?? 'sh';
+}
+
+/**
+ * Whether the script an interpreter reads on its input reaches the network: files named after
+ * `bash -s` (what `<` hands it), and what is piped in. Printed text is judged as the script; a
+ * file `cat` prints is read as one; anything else piped in cannot be judged.
+ */
+function inputFetches(
+  program: string,
+  args: readonly string[],
+  reading: ScriptFileReading
+): boolean {
+  const after = args.slice(args.findIndex((arg) => RUNNERS[program]?.stdin?.test(arg)) + 1);
+  const words = after.filter((arg) => !arg.startsWith('-'));
+  if (words.length > MAX_SCRIPT_FILES) return true;
+  for (const word of words) {
+    // The script's own arguments name no file; only the file `<` hands it is read.
+    const file = reading.pathOf(word);
+    if (file && readScript(file).kind === 'none') continue;
+    if (fileFetches(word, program, [], reading)) return true;
+  }
+  if (!reading.fedBy) return false;
+  const { verb, args: fed } = commandOf(reading.fedBy);
+  if (PRINTERS.has(verb)) {
+    const text = fed.slice(fed.findIndex((word) => !word.startsWith('-')));
+    return textFetches(text.join(' '), program, []);
+  }
+  if (verb !== 'cat') return true;
+  return fed.some((word) => !word.startsWith('-') && fileFetches(word, program, [], reading));
+}
+
+/**
+ * Whether the script file one command runs reaches the network: the file it names, or the script it
+ * reads on its input.
+ *
+ * @param segment - The command.
+ * @param reading - How the command line's paths, writes and allowance are read.
+ */
+export function scriptFileFetches(segment: ShellSegment, reading: ScriptFileReading): boolean {
+  const launched = launchedCommand(segment);
+  if (launched) return scriptFileFetches(launched, reading);
+  const { verb, args } = commandOf(segment);
+  const program = verb.toLowerCase().replace(/\.exe$/, '');
+  const runner = RUNNERS[program];
+  // The program's own word, as written: a path to a script runs it by its `#!` line.
+  const programWord = segment.words[segment.words.length - args.length - 1] ?? '';
+  if (!runner) {
+    return /[\\/]/.test(programWord) && fileFetches(programWord, undefined, args, reading);
+  }
+  const at = scriptAt(runner, args);
+  if (at === -1) return false;
+  if (at === -2) return segment.scripts.length === 0 && inputFetches(program, args, reading);
+  return fileFetches(args[at]!, program, args.slice(at + 1), reading);
 }

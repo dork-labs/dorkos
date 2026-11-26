@@ -80,7 +80,7 @@ const BASE = {
  * The chats the chat-list showcases run on: every case the list has to draw
  * (spec `your-activity-first` D11, D14). Two chats running, one waiting on you
  * and one whose account ran out; a chat with three spin-offs (one running, one done, one lifted because it
- * needs you); a spin-off you opened, so it is a row of its own; a spin-off whose
+ * needs you), one of which started one of its own; a spin-off you opened, so it is a row of its own; a spin-off whose
  * parent is gone; chats you used yesterday and last week; one on another
  * runtime, so rows name theirs; and three automated chats from a schedule, a
  * room and Telegram.
@@ -156,6 +156,16 @@ const SWITCHER_SESSIONS: Session[] = [
     createdAt: minutesAgo(22),
     updatedAt: minutesAgo(15),
     startedBy: startedFrom('sw-plan', 'Plan the launch week'),
+  },
+  {
+    // A spin-off of a spin-off: the fold draws it a level down (DOR-4971).
+    ...BASE,
+    id: 'sw-spin-2a',
+    title: 'Fix the two broken links',
+    origin: 'agent',
+    createdAt: minutesAgo(16),
+    updatedAt: minutesAgo(14),
+    startedBy: startedFrom('sw-spin-2', 'Check every docs link'),
   },
   {
     ...BASE,

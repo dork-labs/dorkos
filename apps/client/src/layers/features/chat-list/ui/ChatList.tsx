@@ -3,10 +3,10 @@
  * draw (spec `your-activity-first` D11).
  *
  * What needs you comes first, then what is running, then the rest by when you
- * last used them. Spin-offs fold under the chat that started them, automated
- * chats fold into one group at the bottom, and nothing urgent is ever folded
- * (D14). The arrangement is `buildChatList`, a pure function; this component
- * draws it and owns the keys.
+ * last used them. Spin-offs fold under the chat that started them, as a tree
+ * at any depth (`ChatTreeFold`), automated chats fold into one group at the
+ * bottom, and nothing urgent is ever folded (D14). The arrangement is
+ * `buildChatList`, a pure function; this component draws it and owns the keys.
  *
  * @module features/chat-list/ui/ChatList
  */
@@ -37,6 +37,11 @@ export interface ChatListProps {
   onOpenChat: (sessionId: string) => void;
   /** Start a new chat with this agent: the New chat button and `⌘↵`. */
   onNewChat: () => void;
+  /**
+   * Open a chat a spin-off tree finds that this list does not hold, such as
+   * another agent's. Without it those chats are named but do not open.
+   */
+  onOpenOtherChat?: (sessionId: string) => void;
   /**
    * Show a title search above the list. Profile → Sessions turns it on: it is
    * where you arrive knowing what you are looking for. Switch session leaves it
@@ -71,6 +76,7 @@ export function ChatList({
   agentName,
   onOpenChat,
   onNewChat,
+  onOpenOtherChat,
   searchable = false,
   autoFocusRow = false,
   sessions: sessionsOverride,
@@ -143,6 +149,8 @@ export function ChatList({
     onCopyLink: copyLink,
     registerRow: keys.registerRow,
     search,
+    byId: model.byId,
+    ...(onOpenOtherChat === undefined ? {} : { onOpenOther: onOpenOtherChat }),
   };
   // The roving container's own props, spread the way every sidebar section
   // spreads them: arrow keys walk rows and toggles.
