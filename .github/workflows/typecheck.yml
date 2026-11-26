@@ -584,12 +584,13 @@ jobs:
       # THIS job for the vocab gate's reason: `typecheck` is required,
       # unfiltered and reports on `merge_group`, so a break now ejects the PR
       # that caused it. The list and its hermetic complement live in
-      # scripts/vitest.repo.config.ts; scripts/__tests__/repo-wide-suites.test.ts
+      # scripts/repo-wide-suites.ts, run as the `scripts-repo` project of
+      # scripts/vitest.config.ts; scripts/__tests__/repo-wide-suites.test.ts
       # makes every new suite pick a side. No build needed: none of these
       # suites imports a workspace dist.
       - name: Repo-wide scripts suites
         if: ${{ !cancelled() }}
-        run: pnpm exec vitest run --config scripts/vitest.repo.config.ts
+        run: pnpm exec vitest run --config scripts/vitest.config.ts --project scripts-repo
 
       # CI Steward census (plans/ci-steward-plan.md §4.2). Proves that ci/, the
       # pipeline's stated intent, matches the workflows, lefthook commands and

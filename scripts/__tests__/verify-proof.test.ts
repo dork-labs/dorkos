@@ -559,7 +559,7 @@ describe('the preopen level (DOR-4728)', () => {
     // HEAD is main itself, so nothing changed: the repo-wide scripts suites (which any
     // change can break) and the typecheck and lint step run, nothing else.
     expect(readFileSync(log, 'utf8')).toBe(
-      'exec vitest run --config scripts/vitest.repo.config.ts\nrun verify:preopen:turbo\n'
+      'exec vitest run --config scripts/vitest.config.ts --project scripts-repo\nrun verify:preopen:turbo\n'
     );
     expect(existsSync(path.join(proofs(), sha))).toBe(false);
     expect(check('--level', 'preopen').status).toBe(0);
@@ -804,13 +804,9 @@ describe('what a preopen run checks (DOR-4728)', () => {
     // them), and the required typecheck workflow runs them on every PR.
     const steps = planFor({ 'apps/server/src/services/new-domain/index.md': 'words' });
     expect(names(steps)).toEqual(['scripts-repo', 'typecheck-lint']);
-    expect(steps[0]?.args).toEqual([
-      'exec',
-      'vitest',
-      'run',
-      '--config',
-      'scripts/vitest.repo.config.ts',
-    ]);
+    expect(steps[0]?.args.join(' ')).toBe(
+      'exec vitest run --config scripts/vitest.config.ts --project scripts-repo'
+    );
   });
 
   it.each([

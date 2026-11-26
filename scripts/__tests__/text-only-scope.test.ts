@@ -10,7 +10,7 @@
  * the script as the workflows do, to show every failure answers "not text only".
  *
  * Reads .github/workflows/security-gate.yml through the classifier, so it is on
- * REPO_WIDE_SUITES (scripts/vitest.repo.config.ts).
+ * REPO_WIDE_SUITES (scripts/repo-wide-suites.ts).
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
