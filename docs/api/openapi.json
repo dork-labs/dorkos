@@ -9679,34 +9679,6 @@
           "toolName"
         ]
       },
-      "StoredSessionSettingsResponse": {
-        "type": "object",
-        "properties": {
-          "settings": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "properties": {
-              "permissionMode": {
-                "$ref": "#/components/schemas/PermissionModeId"
-              },
-              "model": {
-                "type": "string"
-              },
-              "effort": {
-                "$ref": "#/components/schemas/EffortLevel"
-              },
-              "fastMode": {
-                "type": "boolean"
-              }
-            }
-          }
-        },
-        "required": [
-          "settings"
-        ]
-      },
       "SessionUpdateResponse": {
         "allOf": [
           {
@@ -22036,6 +22008,34 @@
           "from",
           "to",
           "reason"
+        ]
+      },
+      "StoredSessionSettingsResponse": {
+        "type": "object",
+        "properties": {
+          "settings": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "permissionMode": {
+                "$ref": "#/components/schemas/PermissionModeId"
+              },
+              "model": {
+                "type": "string"
+              },
+              "effort": {
+                "$ref": "#/components/schemas/EffortLevel"
+              },
+              "fastMode": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "required": [
+          "settings"
         ]
       },
       "FoundClaudeFolder": {
@@ -45608,49 +45608,6 @@
           }
         },
         "operationId": "sessions.getEvents"
-      }
-    },
-    "/api/sessions/{id}/settings": {
-      "get": {
-        "tags": [
-          "Sessions"
-        ],
-        "summary": "Get the settings stored for a session id",
-        "description": "The row `session_metadata` holds for this id, or `null` when it holds none. This is the one read that can see a session which has NOT started: every other session endpoint resolves a session out of its runtime store (ADR-0310), so a settings change made before the first message — which creates a row with no runtime (DOR-812) — is a 404 on `GET /api/sessions/{id}` and absent from the list. Deliberately not a `Session`: there is no session yet, and one would have to invent a title and report the registry inference as its `runtime`. Never writes (DOR-2103).",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The stored settings, or null",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StoredSessionSettingsResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid session ID",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "sessions.getSettings"
       }
     },
     "/api/sessions/{id}/tasks": {
@@ -115405,6 +115362,282 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TaskRun"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/runtime-type": {
+      "get": {
+        "operationId": "sessions.get_runtime_type",
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Read which program runs a chat",
+        "description": "The runtime a chat runs on. For a chat that has not started, the one it would run on, which this read never stores. An agent reads only a chat it may read.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The chat, by its session id."
+            },
+            "required": true,
+            "description": "The chat, by its session id.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read which program runs a chat result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "runtime": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "runtime"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/settings": {
+      "get": {
+        "operationId": "sessions.get_settings",
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Read a chat’s stored settings",
+        "description": "The settings stored for a chat id, or `null` when none are, including for a chat that has not started yet. Never writes. An agent reads only a chat it may read.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The chat, by its session id."
+            },
+            "required": true,
+            "description": "The chat, by its session id.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read a chat’s stored settings result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoredSessionSettingsResponse"
                 }
               }
             }

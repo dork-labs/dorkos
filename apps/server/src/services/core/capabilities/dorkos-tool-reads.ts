@@ -311,6 +311,9 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'work-graph.chat_tree': 'local',
   'work-graph.agent_work': 'local',
   'work-graph.chat_work': 'local',
+  // A chat's runtime id and its stored settings: DorkOS's own values, never a chat's words (DOR-4978).
+  'sessions.get_runtime_type': 'local',
+  'sessions.get_settings': 'local',
   // The rest of the registry's doors: ids, health, counts, folders and a person's changes.
   'mesh.status': 'local',
   'mesh.topology': 'local',
