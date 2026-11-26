@@ -59,7 +59,7 @@ export const CONFIRM_FIRST_CAPABILITY_IDS: ReadonlyMap<string, ConfirmFirstBar> 
  *
  * @param capability - The capability being composed.
  * @throws When it declares `cancelWindow`, a `wifi` mode or `confirmFirst`
- *   without being listed for it, an owner bar it may not ({@link assertOwnerBar}), a confirm-first bar other than its listed one, or `person-held` or `confirmFirst` on a
+ *   without being listed for it, a caller bar it may not ({@link assertCallerBar}), a confirm-first bar other than its listed one, or `person-held` or `confirmFirst` on a
  *   capability any agent may call.
  */
 export function assertNarrowDeclarations(
@@ -69,7 +69,7 @@ export function assertNarrowDeclarations(
   >
 ): void {
   const { id } = capability;
-  assertOwnerBar(capability);
+  assertCallerBar(capability);
   if (capability.cancelWindow && !CANCEL_WINDOW_CAPABILITY_IDS.has(id)) {
     throw new Error(`Capability registry: "${id}" may not declare a cancel window.`);
   }
@@ -97,38 +97,40 @@ export function assertNarrowDeclarations(
 }
 
 /**
- * Refuse an owner bar (`http.ownerBar`, DOR-4978) anywhere an agent could reach
- * it or the bar would mean less: it needs `audience: 'person'` and its own
- * `owner_only` sentence, and takes no MCP surface, no network mode and no
- * confirm-first hold (a held call's confirmation does not re-run this bar yet).
+ * Refuse a caller bar (`http.callerBar`, DOR-4978) anywhere an agent could
+ * reach it or the bar would mean less: it needs `audience: 'person'` (so every
+ * list an agent reads shows it closed to agents), and takes no MCP surface, no
+ * network mode and no confirm-first hold (a held call's confirmation does not
+ * re-run the bar yet). Each bar names its own fixed words: `account-decision`
+ * its `owner_only` sentence, `person` its copy; neither takes the other's.
  *
  * @param capability - The capability being composed.
  * @throws Naming what the declaration may not have.
  */
-function assertOwnerBar(
+function assertCallerBar(
   capability: Pick<CapabilityDefinition, 'id' | 'wifi' | 'confirmFirst' | 'surfaces'>
 ): void {
   const { id, surfaces } = capability;
   const http = surfaces.http;
-  if (http?.ownerBar === undefined) {
-    if (http?.ownerOnly !== undefined) {
-      throw new Error(`Capability registry: "${id}" names an owner sentence but no owner bar.`);
-    }
-    return;
+  const bar = http?.callerBar;
+  const fail = (why: string): never => {
+    throw new Error(`Capability registry: "${id}" ${why}.`);
+  };
+  if (http?.ownerOnly !== undefined && bar !== 'account-decision') {
+    fail('names an owner sentence but not the account-decision bar');
   }
-  if (http.audience !== 'person') {
-    throw new Error(`Capability registry: "${id}" has an owner bar, so only a person may call it.`);
+  if (http?.personCopy !== undefined && bar !== 'person') {
+    fail('names person bar copy but not the person bar');
   }
-  if (http.ownerOnly === undefined) {
-    throw new Error(`Capability registry: "${id}" has an owner bar, so it names its own sentence.`);
+  if (bar === undefined) return;
+  if (http!.audience !== 'person') fail('has a caller bar, so only a person may call it');
+  if (bar === 'account-decision' && http!.ownerOnly === undefined) {
+    fail('has the account-decision bar, so it names its own sentence');
   }
-  if (surfaces.mcp !== undefined) {
-    throw new Error(`Capability registry: "${id}" has an owner bar, so it has no MCP surface.`);
+  if (bar === 'person' && http!.personCopy === undefined) {
+    fail('has the person bar, so it names its own copy');
   }
-  if (capability.wifi !== undefined) {
-    throw new Error(`Capability registry: "${id}" has an owner bar, so it has no network mode.`);
-  }
-  if (capability.confirmFirst !== undefined) {
-    throw new Error(`Capability registry: "${id}" has an owner bar, so it can't be confirm-first.`);
-  }
+  if (surfaces.mcp !== undefined) fail('has a caller bar, so it has no MCP surface');
+  if (capability.wifi !== undefined) fail('has a caller bar, so it has no network mode');
+  if (capability.confirmFirst !== undefined) fail('has a caller bar, so it can’t be confirm-first');
 }

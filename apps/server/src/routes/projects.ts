@@ -36,16 +36,13 @@ import { projectRegistry } from '../services/projects/project-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
-import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { assessPerson, PERSON_BAR_CROSS_SITE, type PersonBarCopy } from '../lib/http/person-bar.js';
 import { problem, sendProblem, validationProblem } from '@dorkos/http-kit';
 
 /** What `GET /api/projects/resolve` says when the caller is not a person. */
 const PROJECT_LOOKUP_BAR: PersonBarCopy = {
   code: 'person_only',
   subject: 'the projects DorkOS remembers',
-  crossSite: (origin) =>
-    `DorkOS looked nothing up. This request came from ${origin}, which is not DorkOS. ` +
-    `Only a person using DorkOS can look up a project.`,
   agent: 'DorkOS looked nothing up. Only a person can look up a project by folder.',
 };
 
@@ -63,8 +60,7 @@ router.get('/', async (c) => {
 router.get('/resolve', async (c) => {
   const facts = honoRequestFacts(c);
   if (facts.headers['sec-fetch-site'] === 'cross-site') {
-    const from = facts.headers.origin ?? facts.headers.referer ?? 'another site';
-    return problem(c, PROJECT_LOOKUP_BAR.code, { detail: PROJECT_LOOKUP_BAR.crossSite(from) });
+    return problem(c, PROJECT_LOOKUP_BAR.code, { detail: PERSON_BAR_CROSS_SITE });
   }
   const refusal = assessPerson(facts, PROJECT_LOOKUP_BAR);
   if (refusal) return sendProblem(c, refusal.body);

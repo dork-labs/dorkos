@@ -145,7 +145,6 @@ const EXCEPTIONS: Record<string, string> = {
   'canvas-doc-route-controls POST /:id/routes/:routeId/review':
     'Marks a page route reviewed; grants nothing.',
   'canvas-doc-route-controls POST /:id/routes/:routeId/revoke': 'Stops a page route.',
-  'extensions POST /:id/disable': 'Turns an extension off.',
   'extensions POST /:id/init-server':
     'Starts the server of an extension that is already on; turns nothing on.',
   'extensions POST /reload': 'Reloads the extensions that are already on.',
@@ -158,6 +157,7 @@ const EXCEPTIONS: Record<string, string> = {
   'relay-adapters POST /adapters/reload':
     'Re-reads the chat connections a person already saved; adds none.',
   'relay-adapters DELETE /adapters/:id': 'Removes a chat connection.',
+  'extensions POST /:id/disable': 'Turns an extension off.',
   'relay-adapters POST /adapters/:id/disable': 'Turns a chat connection off.',
   'relay-adapters DELETE /bindings/:id': 'Removes a chat route.',
   'relay-adapters POST /bindings/:id/test': 'Sends a test message on a saved chat route.',
@@ -208,7 +208,7 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
     'Delegated mesh PATCH holds credits-on and rechecks the agent and manifest; mesh-credits-step-up.test.ts covers it.',
   'front-door-step-up.ts': 'The shared helper itself rechecks the bar.',
   'capability-dispatch.ts':
-    'Reads the person bar only to open the person-only door (audience person) on a capability, and runs a confirm-first capability’s declared bar (account owner, or front door) before anything is held; it grants nothing, and the tier and permission gate still run inside registry.invoke (N). Confirm-first capabilities are checked below.',
+    'Reads the person bar only to open the person-only door (audience person, or the declared person bar) on a capability, and runs a confirm-first capability’s declared bar (account owner, or front door) before anything is held; it grants nothing, and the tier and permission gate still run inside registry.invoke (N). Confirm-first capabilities are checked below.',
   'capability-confirm-first.ts':
     'Holds a confirm-first capability call through its declared bar, runAccountWrite or runFrontDoorWrite; every such capability is checked below.',
   // Shared bars and helpers: their callers are classified here one by one.
@@ -227,9 +227,8 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
   'canvas-doc-work-review.ts': 'Replays or clears one batch of a page’s events (N).',
   'connector-execution.ts': 'Runs a call under grants already given; grants nothing (N).',
   'connector-mini-app-access.ts': 'Only revokes a mini app’s account access (N).',
-  'extensions-removal.ts': 'Only removes or forgets an extension (N).',
-  'extensions-restart.ts':
-    'Restarts one extension that is already on and approved; turns nothing on and approves nothing, like POST /reload (N).',
+  'extensions-removal.ts':
+    'Lists approvals left behind; removing and forgetting are on the mount (N).',
   'extensions-start-work.ts': 'Starts one chat, capped from Wi-Fi; grants nothing lasting (N).',
   'extensions-step-up.ts': 'Moves an extension out; the moved copy is never re-trusted (N).',
   'hook-review-routes.ts': 'Asks about a hook again; grants nothing (N).',

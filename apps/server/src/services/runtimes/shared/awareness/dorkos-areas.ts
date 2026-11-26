@@ -148,7 +148,16 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     // DOR-4978), which refuse agents.
     // `marketplace.` also covers the marketplace's reads on `/api/marketplace/*` (DOR-4978);
     // the dev links among them are a person's read.
-    covers: ['mcp.', 'marketplace.', 'create_extension', 'reload_extensions', 'test_extension'],
+    // `extensions.` covers a person's doors for mini apps on `/api/extensions` (restart,
+    // remove, forget a yes, "Not now", DOR-4978), behind the person bar, which refuse agents.
+    covers: [
+      'mcp.',
+      'marketplace.',
+      'extensions.',
+      'create_extension',
+      'reload_extensions',
+      'test_extension',
+    ],
     areas: ['packages'],
     gate: 'adding or changing an MCP server asks, and only a person adds one for all agents',
   },

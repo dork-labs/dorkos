@@ -1,18 +1,13 @@
 /**
- * OpenAPI entries for removing an extension and forgetting an approval whose
- * extension is gone (DOR-3541, DOR-3372).
+ * The OpenAPI entry for the approvals whose extension is gone (DOR-3372).
+ * Removing an extension and forgetting such an approval are capabilities the
+ * mount describes from their own declarations (DOR-4978).
  *
  * @module services/extensions/removal/extension-removal-openapi
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import { problemResponse as error } from '../../core/openapi/problem-openapi.js';
-
-/** The bar every route here carries, said once. */
-const PERSON_BAR =
-  'The same person bar as approving applies: a caller naming itself an agent is refused in every ' +
-  'posture, another site is refused, and a signed-in person is required when login is on. There ' +
-  'is no MCP tool for this.';
 
 const StaleApprovalSchema = z
   .object({
@@ -26,7 +21,7 @@ const StaleApprovalSchema = z
   .openapi('StaleExtensionApproval');
 
 /**
- * Register the remove, forget and stale-approval routes.
+ * Register the stale-approval list.
  *
  * @param registry - The OpenAPI registry.
  */
@@ -50,54 +45,6 @@ export function registerExtensionRemovalOpenApi(registry: OpenAPIRegistry): void
         },
       },
       500: error('`internal_error`: the list could not be read'),
-    },
-  });
-
-  registry.registerPath({
-    method: 'post',
-    path: '/api/extensions/{id}/remove',
-    tags: ['Extensions'],
-    summary: 'Remove an installed extension',
-    description:
-      'Forgets every approval and choice recorded for this copy, then deletes its folder and ' +
-      'rescans. Only a folder DorkOS puts extensions in is deleted (`<data dir>/extensions/<id>` ' +
-      'or `.dork/extensions/<id>`, with no symbolic link): a plugin-carried copy is removed by ' +
-      'uninstalling the plugin, a dev link by unlinking it, and a DorkOS extension not at all. ' +
-      PERSON_BAR,
-    request: { params: z.object({ id: z.string() }) },
-    responses: {
-      200: {
-        description: 'Removed',
-        content: { 'application/json': { schema: z.object({ removed: z.string() }) } },
-      },
-      400: error('`invalid_request`: an invalid extension id'),
-      401: error('`unauthenticated`: login is on and the caller is not signed in'),
-      403: error('`person_only`: an agent or another site cannot remove an extension'),
-      404: error('`not_found`: no such extension'),
-      409: error(
-        '`conflict` (`detail` says which): it ships with DorkOS, came with a plugin, runs ' +
-          'from a dev link, or its folder is not one DorkOS would delete'
-      ),
-    },
-  });
-
-  registry.registerPath({
-    method: 'post',
-    path: '/api/extensions/{id}/forget',
-    tags: ['Extensions'],
-    summary: 'Forget the approval of an extension that is gone',
-    description:
-      'Clears the run approval, approved source, permission set and "Not now" recorded for an ' +
-      'extension id that is installed nowhere, so a folder put back at that path asks again. ' +
-      PERSON_BAR,
-    request: { params: z.object({ id: z.string() }) },
-    responses: {
-      204: { description: 'Forgotten' },
-      400: error('`invalid_request`: an invalid extension id'),
-      401: error('`unauthenticated`: login is on and the caller is not signed in'),
-      403: error('`person_only`: an agent or another site cannot forget an approval'),
-      404: error('`not_found`: no approval is left for this id'),
-      409: error('`conflict`: it is still installed; stop it running or remove it instead'),
     },
   });
 }

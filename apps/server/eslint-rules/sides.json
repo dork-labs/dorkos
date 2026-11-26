@@ -37,6 +37,7 @@
       "core-extensions",
       "decisions",
       "extensions",
+      "extensions/http-capabilities",
       "heartbeats",
       "identity",
       "marketplace",

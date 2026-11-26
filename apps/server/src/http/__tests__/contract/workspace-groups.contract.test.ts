@@ -746,7 +746,7 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     headers: CROSS_SITE,
     expect: {
       status: 403,
-      body: problemBody('person_only', { detail: 'Open DorkOS to choose a chat folder.' }),
+      body: problemBody('person_only', { detail: 'Open this from the DorkOS app.' }),
     },
   },
   {

@@ -11,7 +11,7 @@
  *
  * The hand routes (`routes/connector-owner-boundary.ts`) and the capability
  * mount (`routes/capability-dispatch.ts`, for a capability that declares
- * `http.ownerBar: 'account-decision'`) both run {@link accountDecisionBar}, so
+ * `http.callerBar: 'account-decision'`) both run {@link accountDecisionBar}, so
  * the order, the codes and the step-up note cannot drift between the two.
  *
  * It is not pure: a refusal for want of the person's session records that on

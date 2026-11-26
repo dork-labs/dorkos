@@ -78,6 +78,7 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createExtensionsRoutes } from '../extensions.js';
+import { extensionDoorRoutes } from '../../services/extensions/http-capabilities/__tests__/extension-doors-fixture.js';
 import { findOperatorOnlyPaths } from '../../services/core/operator/config-write-policy.js';
 
 const fixtureTarget = swappableServer();
@@ -175,25 +176,32 @@ describe('who may turn an extension on or off', () => {
       updateCwd: vi.fn().mockResolvedValue({ added: [], removed: [] }),
     };
 
+    const activity = {
+      emit: vi.fn(async (event: { actorType: string; actorLabel: string }) => {
+        emitted.push(event);
+      }) as never,
+    };
     fixtureTarget.mount(
       honoGroupListener(
-        {
-          path: '/api/extensions',
-          routes: createExtensionsRoutes({
-            manager: manager as unknown as Parameters<typeof createExtensionsRoutes>[0]['manager'],
-            dorkHome: DORK_HOME,
-            getCwd: () => null,
-            // Wired so the refusal cases can assert what the FEED was told, not
-            // only what the config holds. A route that refused the write but
-            // still recorded "You turned this on" would pass every other
-            // assertion in this file (DOR-1801).
-            activity: {
-              emit: vi.fn(async (event: { actorType: string; actorLabel: string }) => {
-                emitted.push(event);
-              }) as never,
-            },
-          }),
-        },
+        [
+          {
+            path: '/api/extensions',
+            routes: createExtensionsRoutes({
+              manager: manager as unknown as Parameters<
+                typeof createExtensionsRoutes
+              >[0]['manager'],
+              dorkHome: DORK_HOME,
+              getCwd: () => null,
+              // Wired so the refusal cases can assert what the FEED was told, not
+              // only what the config holds. A route that refused the write but
+              // still recorded "You turned this on" would pass every other
+              // assertion in this file (DOR-1801).
+              activity,
+            }),
+          },
+          // Turning one off is on the capability mount, behind the same bar (DOR-4978).
+          { path: '/', routes: extensionDoorRoutes(manager as never, { activity }) },
+        ],
         {
           before: async (c, next) => {
             if (signedInUser) c.set('user', signedInUser as never);

@@ -83,7 +83,7 @@ import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { problem, readJsonBody, sendProblem, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
-import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { assessPerson, type PersonBarCopy } from '../lib/http/person-bar.js';
 import { writerForPosture } from './permissions.js';
 import {
   ACCOUNT_RULES_BAR,

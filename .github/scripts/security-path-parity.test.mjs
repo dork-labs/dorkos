@@ -231,6 +231,9 @@ for (const [match, miss] of [
   ['packages/shared/src/room-attachment-paths.ts', 'packages/shared/src/room-attachment-path.ts'],
   // C3 (DOR-5403): the Connections lease's plain values left services/connectors/.
   ['packages/shared/src/connections-lease.ts', 'packages/shared/src/connections-leases.ts'],
+  // The caller-bar labels (DOR-4978): who a person-bar caller is shown as, and the bars' declarations.
+  ['packages/shared/src/activity-schemas.ts', 'packages/shared/src/activity-schema.ts'],
+  ['packages/shared/src/capabilities.ts', 'packages/shared/src/capabilities-extra.ts'],
   // C4 (DOR-5444): the test-mode scenario world and its stand-in cloud link left runtimes/test-mode/.
   [
     'apps/server/src/startup/test-composition/fake-cloud-link.ts',
@@ -289,6 +292,7 @@ for (const [match, miss] of [
     'apps/server/src/lib/http/account-decision-bars.ts',
   ],
   ['apps/server/src/lib/http/own-origin-write.ts', 'apps/server/src/lib/http/own-origin-writes.ts'],
+  ['apps/server/src/lib/http/person-bar.ts', 'apps/server/src/lib/http/person-bars.ts'],
 ]) {
   test(`${match} is on the main list only`, () => {
     assert.ok(existsSync(resolve(root, match)), `${match} no longer exists`);

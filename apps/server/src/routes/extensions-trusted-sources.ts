@@ -25,7 +25,8 @@ import { configManager } from '../services/core/config-manager.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { problem, readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { refusedNotAPerson } from './extensions-person-bar.js';
+import type { PersonBarCopy } from '../lib/http/person-bar.js';
 import { refuseFrontDoorChange } from '../lib/caller-authority.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 
@@ -33,7 +34,6 @@ import { runFrontDoorWrite } from './front-door-step-up.js';
 const TRUST_BAR: PersonBarCopy = {
   code: 'person_only',
   subject: 'which code sources DorkOS trusts',
-  crossSite: (origin) => `Nothing changed. ${origin} isn’t DorkOS. Trust sources in the app.`,
   agent: 'Nothing changed. Only a person trusts a source, in the app.',
 };
 

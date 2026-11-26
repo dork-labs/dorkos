@@ -5,7 +5,7 @@
  * one sign-in. The owner's management doors (`owner-management-capabilities.ts`)
  * share these deps, this bar and these refusals.
  *
- * **Behind the account-decision bar, every door** (`http.ownerBar:
+ * **Behind the account-decision bar, every door** (`http.callerBar:
  * 'account-decision'`, `lib/http/account-decision-bar.ts`): the mount runs it before
  * the handler on the REST path and on `/invoke`, and hands the handler the
  * server-owned owner as `context.ownerAuthority`. Person-only, with no MCP
@@ -199,7 +199,7 @@ function connectionRefusal(deps: CapabilityDeps, error: unknown): never {
 /** The bar every door declares, with the connections' own `owner_only` sentence. */
 export const OWNER_BAR = {
   audience: 'person',
-  ownerBar: 'account-decision',
+  callerBar: 'account-decision',
   ownerOnly: ACCOUNT_DECISION_OWNER_ONLY[0],
   precheck: 'connector-store',
 } as const satisfies Partial<HttpSurface>;

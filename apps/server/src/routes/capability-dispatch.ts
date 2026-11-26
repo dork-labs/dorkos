@@ -16,7 +16,8 @@
  * | A person must approve first | `202`, the approval payload (not an error) |
  * | A declared precheck found its part of DorkOS not started (`http.precheck`) | `503` problem, first |
  * | A caller that is not a person called a person-only capability (`http.audience: 'person'`) | `403` problem, `person_only` (from `registry.invoke`) |
- * | The account-decision bar refused (`http.ownerBar`) | its `403`/`401` problem, before the input is read |
+ * | The account-decision bar refused (`http.callerBar: 'account-decision'`) | its `403`/`401` problem, before the input is read |
+ * | The person bar refused (`http.callerBar: 'person'`) | its `403` problem, before the input is read |
  * | The gate refused for good | `403` problem, {@link gateRefusalProblem} |
  * | A network sign-in asked for an `act` or `destructive` one that declares no network mode (`wifi`) | `403` problem, `not_from_wifi` |
  * | The input failed the capability's schema | `400` problem, `invalid_request` |
@@ -80,8 +81,11 @@ import {
 } from '../lib/http/account-decision-bar.js';
 import {
   accountDecisionPassed,
+  personBarPassed,
   type AccountDecisionPass,
+  type PersonBarPass,
 } from '../services/core/capabilities/context/owner-authority.js';
+import { assessPerson } from '../lib/http/person-bar.js';
 
 /** What a request answers while boot has not handed the registry over. */
 const STILL_STARTING = 'DorkOS is still starting. Try again in a moment.';
@@ -124,7 +128,7 @@ export interface CapabilityDispatch {
 export interface CapabilityDoorPorts {
   /**
    * The account-decision bar's policy, for a capability that declares
-   * `http.ownerBar: 'account-decision'`. Absent, no proof is minted and the
+   * `http.callerBar: 'account-decision'`. Absent, no proof is minted and the
    * registry refuses such a capability `person_only`.
    */
   accountDecision?: AccountDecisionPolicy;
@@ -172,7 +176,7 @@ export async function dispatchCapability(
   // function the hand routes run, so the order, codes and step-up note match.
   let accountDecision: AccountDecisionPass | undefined;
   const policy = dispatch.ports?.accountDecision;
-  if (http?.ownerBar === 'account-decision' && policy) {
+  if (http?.callerBar === 'account-decision' && policy) {
     const outcome = accountDecisionBar(facts, policy);
     if (!outcome.ok) {
       const { code, which } = outcome.refusal;
@@ -182,6 +186,16 @@ export async function dispatchCapability(
       return problem(c, code, { detail });
     }
     accountDecision = accountDecisionPassed(outcome.owner);
+  }
+  // The person bar, before the input is read (DOR-4978): the same function the
+  // hand routes run, with the copy the definition declares (compose requires it).
+  let personBar: PersonBarPass | undefined;
+  if (http?.callerBar === 'person') {
+    const refused = assessPerson(facts, http.personCopy!);
+    if (refused) return sendProblem(c, refused.body);
+    // Who it let through, never more: a key is a program, even with login off.
+    const program = presentsProgramCredential(facts) || facts.user?.credential === 'api-key';
+    personBar = personBarPassed(program ? 'program' : 'person');
   }
   // A front-door confirm-first capability runs its bar first, as its hand route
   // did, so a person not allowed to change it hears why before anything else.
@@ -219,6 +233,7 @@ export async function dispatchCapability(
       success: dispatch.success ?? 200,
       ...(dispatch.rest ? { rest: true } : {}),
       ...(accountDecision ? { accountDecision } : {}),
+      ...(personBar ? { personBar } : {}),
     },
     facts
   );
@@ -244,6 +259,7 @@ async function invokeAs(
     success: HttpSuccessStatus;
     rest?: boolean;
     accountDecision?: AccountDecisionPass;
+    personBar?: PersonBarPass;
   },
   facts: RequestFacts,
   confirmed?: unknown
@@ -273,9 +289,13 @@ async function invokeAs(
   // marks a missing person session, which would turn an `act` call's own
   // refusal into a password prompt that changes nothing. `/invoke` never tags it.
   // Only from the live request: a held call's replay (`confirmed`) never mints it.
-  const restRead = call.rest === true && confirmed === undefined && capability?.tier === 'observe';
+  // Behind the person bar no person proof is minted at all: its own pass
+  // stands in, so a caller it let through never holds a person's authority.
+  const barred = capability?.surfaces.http?.callerBar === 'person';
+  const restRead =
+    !barred && call.rest === true && confirmed === undefined && capability?.tier === 'observe';
   const person =
-    restRead || capability?.surfaces.http?.audience === 'person'
+    restRead || (!barred && capability?.surfaces.http?.audience === 'person')
       ? personCaller(
           {
             ...readCallerAuthority(facts),
@@ -295,6 +315,7 @@ async function invokeAs(
       ...(approvalToken ? { approvalToken } : {}),
       ...(person ? { person } : {}),
       ...(call.accountDecision ? { accountDecision: call.accountDecision } : {}),
+      ...(call.personBar ? { personBar: call.personBar } : {}),
       request: capabilityRequestFacts(facts),
       retryChannel: 'http-header',
       ...(confirmed !== undefined ? { confirmed } : {}),
