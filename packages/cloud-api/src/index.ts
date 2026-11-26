@@ -33,5 +33,6 @@ export * from './remote-enrolment.js';
 export * from './remote-paths.js';
 export * from './communities.js';
 export * from './hubs.js';
+export * from './hub-wake.js';
 export * from './directory.js';
 export * from './step-up.js';
