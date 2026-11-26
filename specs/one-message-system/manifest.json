@@ -1,0 +1,8 @@
+{
+  "id": "261126-004719",
+  "slug": "one-message-system",
+  "title": "One message system: every chat's words in one conversation log, a delivery record kept with each run, one way to start a turn, Relay carrying only outside windows, and Maildir counted down and retired",
+  "created": "2026-11-25",
+  "status": "specified",
+  "linearIssue": "DOR-2744"
+}

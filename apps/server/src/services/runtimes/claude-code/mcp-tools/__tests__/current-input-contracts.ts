@@ -64,9 +64,11 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
         // +3 total for the app's task list and run reads (no MCP surface, DOR-4978).
         // +4 total for a person's doors on the MCP servers every agent gets (person-only, no MCP
         // surface, DOR-4978).
+        // +4 total for one agent's heartbeat page, permissions and level, and a persona move on
+        // `/api/agents/*` (no MCP surface, DOR-4978).
         // +4 total/relevant/ordinary/inSession/external for the work graph's reads (DOR-4970);
         // +4 defaultNodes/topDefaultFields/topDefaultCapabilities for their page sizes.
-        total: 184,
+        total: 188,
         relevant: 136,
         ordinary: 124,
         inSession: 123,

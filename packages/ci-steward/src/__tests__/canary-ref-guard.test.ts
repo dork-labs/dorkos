@@ -41,8 +41,6 @@ const NOT_ON_THE_CANARY_PATH: Record<string, Record<string, string>> = {
   'browser-test.yml': {
     'browser-smoke':
       'Runs only on pull_request (its text-only lane, DOR-4834, too); the canary runs the full browser-shard suite instead, including the smoke specs.',
-    'copy-spec-drift':
-      'Diffs a change against its base SHA, which no scheduled run carries, so it does not run on a canary event at all.',
   },
 };
 

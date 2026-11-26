@@ -2081,463 +2081,6 @@
         ],
         "description": "Why not, when `supported` is false; null otherwise. `denied` is retried on a backoff and when the setting is switched off and on; the others last until restart."
       },
-      "HeartbeatStatus": {
-        "type": "object",
-        "properties": {
-          "enabled": {
-            "type": "boolean"
-          },
-          "wake": {
-            "$ref": "#/components/schemas/HeartbeatWake"
-          },
-          "nextBeatAt": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "skippedReason": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "fileError": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "lastBeats": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/BeatSummary"
-            }
-          },
-          "held": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/HeldRaise"
-            }
-          },
-          "report": {
-            "$ref": "#/components/schemas/HeartbeatReportStatus"
-          },
-          "checks": {
-            "$ref": "#/components/schemas/HeartbeatChecks"
-          },
-          "measures": {
-            "$ref": "#/components/schemas/HeartbeatMeasures"
-          }
-        },
-        "required": [
-          "enabled",
-          "wake",
-          "nextBeatAt",
-          "skippedReason",
-          "fileError",
-          "lastBeats",
-          "held",
-          "report",
-          "checks",
-          "measures"
-        ]
-      },
-      "HeartbeatWake": {
-        "type": "string",
-        "enum": [
-          "timed",
-          "events",
-          "off"
-        ]
-      },
-      "BeatSummary": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "startedAt": {
-            "type": "string"
-          },
-          "endedAt": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "kind": {
-            "$ref": "#/components/schemas/BeatKind"
-          },
-          "wake": {
-            "type": "string"
-          },
-          "outcome": {
-            "$ref": "#/components/schemas/BeatOutcome"
-          },
-          "summary": {
-            "type": "string"
-          },
-          "raises": {
-            "type": "integer"
-          },
-          "sessionId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "id",
-          "startedAt",
-          "endedAt",
-          "kind",
-          "wake",
-          "outcome",
-          "summary",
-          "raises",
-          "sessionId"
-        ]
-      },
-      "BeatKind": {
-        "type": "string",
-        "enum": [
-          "pulse",
-          "sweep",
-          "report"
-        ]
-      },
-      "BeatOutcome": {
-        "type": "string",
-        "enum": [
-          "quiet",
-          "queued",
-          "worked",
-          "no-end-beat",
-          "failed",
-          "refused",
-          "skipped"
-        ]
-      },
-      "HeldRaise": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "to": {
-            "type": "string"
-          },
-          "rung": {
-            "$ref": "#/components/schemas/HeartbeatRaiseRung"
-          },
-          "text": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "deliverAfter": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "to",
-          "rung",
-          "text",
-          "deliverAfter",
-          "createdAt"
-        ]
-      },
-      "HeartbeatRaiseRung": {
-        "type": "string",
-        "enum": [
-          "report",
-          "room",
-          "dm",
-          "note"
-        ]
-      },
-      "HeartbeatReportStatus": {
-        "type": "object",
-        "properties": {
-          "cadence": {
-            "$ref": "#/components/schemas/HeartbeatReport"
-          },
-          "to": {
-            "type": "string"
-          },
-          "nextReportAt": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "items": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "cadence",
-          "to",
-          "nextReportAt",
-          "items"
-        ]
-      },
-      "HeartbeatReport": {
-        "type": "string",
-        "enum": [
-          "daily",
-          "weekly",
-          "off"
-        ]
-      },
-      "HeartbeatChecks": {
-        "type": "object",
-        "properties": {
-          "runsOn": {
-            "type": "string",
-            "enum": [
-              "credits",
-              "runtime"
-            ]
-          },
-          "runtime": {
-            "type": "string"
-          },
-          "today": {
-            "type": "integer"
-          },
-          "tokens": {
-            "type": "integer"
-          },
-          "offer": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "runsOn",
-          "runtime",
-          "today",
-          "tokens",
-          "offer"
-        ]
-      },
-      "HeartbeatMeasures": {
-        "type": "object",
-        "properties": {
-          "windowDays": {
-            "type": "integer"
-          },
-          "since": {
-            "type": "string"
-          },
-          "keptRate": {
-            "$ref": "#/components/schemas/MeasureRate"
-          },
-          "usefulRaiseRate": {
-            "$ref": "#/components/schemas/MeasureRate"
-          },
-          "interruptions": {
-            "type": "object",
-            "properties": {
-              "value": {
-                "type": [
-                  "number",
-                  "null"
-                ]
-              },
-              "messages": {
-                "type": "integer"
-              },
-              "usefulOutcomes": {
-                "type": "integer"
-              },
-              "target": {
-                "type": "string"
-              },
-              "source": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "value",
-              "messages",
-              "usefulOutcomes",
-              "target",
-              "source"
-            ]
-          },
-          "surprises": {
-            "type": "object",
-            "properties": {
-              "measured": {
-                "type": "boolean",
-                "enum": [
-                  false
-                ]
-              },
-              "source": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "measured",
-              "source"
-            ]
-          },
-          "mutesAndPauses": {
-            "type": "object",
-            "properties": {
-              "total": {
-                "type": "integer"
-              },
-              "pauses": {
-                "type": "integer"
-              },
-              "wakeOff": {
-                "type": "integer"
-              },
-              "mutes": {
-                "type": "integer"
-              },
-              "target": {
-                "type": "string"
-              },
-              "source": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "total",
-              "pauses",
-              "wakeOff",
-              "mutes",
-              "target",
-              "source"
-            ]
-          },
-          "supporting": {
-            "type": "object",
-            "properties": {
-              "beats": {
-                "type": "integer"
-              },
-              "quietBeats": {
-                "$ref": "#/components/schemas/MeasureRate"
-              },
-              "todosOnTime": {
-                "$ref": "#/components/schemas/MeasureRate"
-              },
-              "todosMoved": {
-                "type": "integer"
-              },
-              "todosMissed": {
-                "type": "integer"
-              },
-              "noEndBeat": {
-                "type": "integer"
-              },
-              "triage": {
-                "type": "object",
-                "properties": {
-                  "checks": {
-                    "type": "integer"
-                  },
-                  "tokens": {
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "checks",
-                  "tokens"
-                ]
-              },
-              "turns": {
-                "type": "object",
-                "properties": {
-                  "count": {
-                    "type": "integer"
-                  },
-                  "tokensPerTurn": {
-                    "type": [
-                      "number",
-                      "null"
-                    ]
-                  }
-                },
-                "required": [
-                  "count",
-                  "tokensPerTurn"
-                ]
-              },
-              "bypass": {
-                "type": "integer"
-              },
-              "held": {
-                "type": "integer"
-              }
-            },
-            "required": [
-              "beats",
-              "quietBeats",
-              "todosOnTime",
-              "todosMoved",
-              "todosMissed",
-              "noEndBeat",
-              "triage",
-              "turns",
-              "bypass",
-              "held"
-            ]
-          }
-        },
-        "required": [
-          "windowDays",
-          "since",
-          "keptRate",
-          "usefulRaiseRate",
-          "interruptions",
-          "surprises",
-          "mutesAndPauses",
-          "supporting"
-        ]
-      },
-      "MeasureRate": {
-        "type": "object",
-        "properties": {
-          "value": {
-            "type": [
-              "number",
-              "null"
-            ]
-          },
-          "part": {
-            "type": "integer"
-          },
-          "whole": {
-            "type": "integer"
-          },
-          "target": {
-            "type": "string"
-          },
-          "source": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "value",
-          "part",
-          "whole",
-          "target",
-          "source"
-        ]
-      },
       "FileDocumentSaveReceipt": {
         "type": "object",
         "properties": {
@@ -16200,52 +15743,6 @@
           "source"
         ]
       },
-      "AgentLevelResponse": {
-        "type": "object",
-        "properties": {
-          "effective": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/PermissionStop"
-              },
-              {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              }
-            ]
-          },
-          "effectiveMode": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "declared": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/PermissionStop"
-              },
-              {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              }
-            ]
-          },
-          "cappedByPerson": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "effective",
-          "effectiveMode",
-          "declared",
-          "cappedByPerson"
-        ]
-      },
       "PatchAgentPermissionsBody": {
         "type": "object",
         "properties": {
@@ -21841,6 +21338,509 @@
           }
         ]
       },
+      "AgentLevelResponse": {
+        "type": "object",
+        "properties": {
+          "effective": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PermissionStop"
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "effectiveMode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "declared": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PermissionStop"
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "cappedByPerson": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "effective",
+          "effectiveMode",
+          "declared",
+          "cappedByPerson"
+        ]
+      },
+      "HeartbeatStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "wake": {
+            "$ref": "#/components/schemas/HeartbeatWake"
+          },
+          "nextBeatAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "skippedReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fileError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastBeats": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BeatSummary"
+            }
+          },
+          "held": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HeldRaise"
+            }
+          },
+          "report": {
+            "$ref": "#/components/schemas/HeartbeatReportStatus"
+          },
+          "checks": {
+            "$ref": "#/components/schemas/HeartbeatChecks"
+          },
+          "measures": {
+            "$ref": "#/components/schemas/HeartbeatMeasures"
+          }
+        },
+        "required": [
+          "enabled",
+          "wake",
+          "nextBeatAt",
+          "skippedReason",
+          "fileError",
+          "lastBeats",
+          "held",
+          "report",
+          "checks",
+          "measures"
+        ]
+      },
+      "HeartbeatWake": {
+        "type": "string",
+        "enum": [
+          "timed",
+          "events",
+          "off"
+        ]
+      },
+      "BeatSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "endedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/BeatKind"
+          },
+          "wake": {
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/BeatOutcome"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "raises": {
+            "type": "integer"
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "startedAt",
+          "endedAt",
+          "kind",
+          "wake",
+          "outcome",
+          "summary",
+          "raises",
+          "sessionId"
+        ]
+      },
+      "BeatKind": {
+        "type": "string",
+        "enum": [
+          "pulse",
+          "sweep",
+          "report"
+        ]
+      },
+      "BeatOutcome": {
+        "type": "string",
+        "enum": [
+          "quiet",
+          "queued",
+          "worked",
+          "no-end-beat",
+          "failed",
+          "refused",
+          "skipped"
+        ]
+      },
+      "HeldRaise": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "rung": {
+            "$ref": "#/components/schemas/HeartbeatRaiseRung"
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deliverAfter": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "to",
+          "rung",
+          "text",
+          "deliverAfter",
+          "createdAt"
+        ]
+      },
+      "HeartbeatRaiseRung": {
+        "type": "string",
+        "enum": [
+          "report",
+          "room",
+          "dm",
+          "note"
+        ]
+      },
+      "HeartbeatReportStatus": {
+        "type": "object",
+        "properties": {
+          "cadence": {
+            "$ref": "#/components/schemas/HeartbeatReport"
+          },
+          "to": {
+            "type": "string"
+          },
+          "nextReportAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "items": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cadence",
+          "to",
+          "nextReportAt",
+          "items"
+        ]
+      },
+      "HeartbeatReport": {
+        "type": "string",
+        "enum": [
+          "daily",
+          "weekly",
+          "off"
+        ]
+      },
+      "HeartbeatChecks": {
+        "type": "object",
+        "properties": {
+          "runsOn": {
+            "type": "string",
+            "enum": [
+              "credits",
+              "runtime"
+            ]
+          },
+          "runtime": {
+            "type": "string"
+          },
+          "today": {
+            "type": "integer"
+          },
+          "tokens": {
+            "type": "integer"
+          },
+          "offer": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "runsOn",
+          "runtime",
+          "today",
+          "tokens",
+          "offer"
+        ]
+      },
+      "HeartbeatMeasures": {
+        "type": "object",
+        "properties": {
+          "windowDays": {
+            "type": "integer"
+          },
+          "since": {
+            "type": "string"
+          },
+          "keptRate": {
+            "$ref": "#/components/schemas/MeasureRate"
+          },
+          "usefulRaiseRate": {
+            "$ref": "#/components/schemas/MeasureRate"
+          },
+          "interruptions": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "messages": {
+                "type": "integer"
+              },
+              "usefulOutcomes": {
+                "type": "integer"
+              },
+              "target": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "value",
+              "messages",
+              "usefulOutcomes",
+              "target",
+              "source"
+            ]
+          },
+          "surprises": {
+            "type": "object",
+            "properties": {
+              "measured": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ]
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "measured",
+              "source"
+            ]
+          },
+          "mutesAndPauses": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "pauses": {
+                "type": "integer"
+              },
+              "wakeOff": {
+                "type": "integer"
+              },
+              "mutes": {
+                "type": "integer"
+              },
+              "target": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "total",
+              "pauses",
+              "wakeOff",
+              "mutes",
+              "target",
+              "source"
+            ]
+          },
+          "supporting": {
+            "type": "object",
+            "properties": {
+              "beats": {
+                "type": "integer"
+              },
+              "quietBeats": {
+                "$ref": "#/components/schemas/MeasureRate"
+              },
+              "todosOnTime": {
+                "$ref": "#/components/schemas/MeasureRate"
+              },
+              "todosMoved": {
+                "type": "integer"
+              },
+              "todosMissed": {
+                "type": "integer"
+              },
+              "noEndBeat": {
+                "type": "integer"
+              },
+              "triage": {
+                "type": "object",
+                "properties": {
+                  "checks": {
+                    "type": "integer"
+                  },
+                  "tokens": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "checks",
+                  "tokens"
+                ]
+              },
+              "turns": {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "type": "integer"
+                  },
+                  "tokensPerTurn": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "count",
+                  "tokensPerTurn"
+                ]
+              },
+              "bypass": {
+                "type": "integer"
+              },
+              "held": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "beats",
+              "quietBeats",
+              "todosOnTime",
+              "todosMoved",
+              "todosMissed",
+              "noEndBeat",
+              "triage",
+              "turns",
+              "bypass",
+              "held"
+            ]
+          }
+        },
+        "required": [
+          "windowDays",
+          "since",
+          "keptRate",
+          "usefulRaiseRate",
+          "interruptions",
+          "surprises",
+          "mutesAndPauses",
+          "supporting"
+        ]
+      },
+      "MeasureRate": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "part": {
+            "type": "integer"
+          },
+          "whole": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "part",
+          "whole",
+          "target",
+          "source"
+        ]
+      },
       "WakersOff": {
         "type": "object",
         "properties": {
@@ -26778,70 +26778,6 @@
           }
         },
         "operationId": "keepAwake.get"
-      }
-    },
-    "/api/agents/{id}/heartbeat": {
-      "get": {
-        "tags": [
-          "Heartbeats"
-        ],
-        "summary": "An agent's heartbeat",
-        "description": "How the agent wakes on its own, when its next timed beat is due, its last 50 beats from the record, the messages to people still held for their working hours, and its measures: whether its work on its own helped, each with its source and starting target.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 90,
-              "description": "How many days the measures cover. Defaults to 7."
-            },
-            "required": false,
-            "description": "How many days the measures cover. Defaults to 7.",
-            "name": "days",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The heartbeat",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HeartbeatStatus"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "`invalid_request`: `days` is not a whole number from 1 to 90",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "`not_found`: no agent with that id",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "agents.getHeartbeat"
       }
     },
     "/api/onboarding/first-run": {
@@ -93133,46 +93069,6 @@
       }
     },
     "/api/agents/{id}/permissions": {
-      "get": {
-        "tags": [
-          "Permissions"
-        ],
-        "summary": "Read one agent's permissions",
-        "description": "The agent's resolved state per area and per action, where each came from, and what it would be without the agent's own settings.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The agent's permissions",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentPermissionsResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "`agent_not_found`: no such agent",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "agents.getPermissions"
-      },
       "patch": {
         "tags": [
           "Permissions"
@@ -93298,38 +93194,131 @@
           }
         },
         "operationId": "agents.updatePermissions"
-      }
-    },
-    "/api/agents/{id}/level": {
+      },
       "get": {
+        "operationId": "permissions.view_agent",
         "tags": [
           "Permissions"
         ],
-        "summary": "Read the level an agent runs at",
-        "description": "The Files & commands level a new chat of this agent starts at, before any per-chat limit, the level its runtime's agents get by default, and whether a person's setting holds it lower.",
+        "summary": "Read one agent’s permissions",
+        "description": "The agent’s resolved state per area and per action, where each came from, and what it would be without the agent’s own settings.",
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "The agent’s id."
             },
             "required": true,
+            "description": "The agent’s id.",
             "name": "id",
             "in": "path"
           }
         ],
         "responses": {
           "200": {
-            "description": "The agent's level",
+            "description": "Read one agent’s permissions result",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AgentLevelResponse"
+                  "$ref": "#/components/schemas/AgentPermissionsResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
           },
           "404": {
-            "description": "`agent_not_found`: no such agent",
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -93338,8 +93327,7 @@
               }
             }
           }
-        },
-        "operationId": "agents.getLevel"
+        }
       }
     },
     "/api/rooms": {
@@ -111162,6 +111150,152 @@
         }
       }
     },
+    "/api/agents/current/migrate-persona": {
+      "post": {
+        "operationId": "agent.migrate_persona",
+        "tags": [
+          "Agent"
+        ],
+        "summary": "Move an agent’s old persona into SOUL.md",
+        "description": "Write an agent’s old `persona` field into SOUL.md with its traits, and add NOPE.md if it has none. Nothing changes when SOUL.md already exists or there is no persona.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "A folder of the agent: its home, or a checkout of its repo."
+            },
+            "required": true,
+            "description": "A folder of the agent: its home, or a checkout of its repo.",
+            "name": "path",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Move an agent’s old persona into SOUL.md result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "migrated": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "migrated"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/links/target": {
       "get": {
         "operationId": "link.resolve",
@@ -111685,6 +111819,290 @@
                       ]
                     }
                   ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/level": {
+      "get": {
+        "operationId": "permissions.view_agent_level",
+        "tags": [
+          "Permissions"
+        ],
+        "summary": "Read the level an agent runs at",
+        "description": "The Files & commands level a new chat of this agent starts at, before any per-chat limit, the level its runtime’s agents get by default, and whether a person’s setting holds it lower.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "The agent’s id."
+            },
+            "required": true,
+            "description": "The agent’s id.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read the level an agent runs at result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentLevelResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/heartbeat": {
+      "get": {
+        "operationId": "heartbeat.view_page",
+        "tags": [
+          "Heartbeat"
+        ],
+        "summary": "Read an agent’s Heartbeat page",
+        "description": "How the agent wakes on its own, when its next timed beat is due, its last 50 beats from the record, the messages to people still held for their working hours, and its measures: whether its work on its own helped, each with its source and starting target. Only a person reads the page; agents read a heartbeat with heartbeat_status.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "The agent’s id."
+            },
+            "required": true,
+            "description": "The agent’s id.",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 90,
+              "description": "How many days the measures cover. Defaults to 7."
+            },
+            "required": false,
+            "description": "How many days the measures cover. Defaults to 7.",
+            "name": "days",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read an agent’s Heartbeat page result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeartbeatStatus"
                 }
               }
             }

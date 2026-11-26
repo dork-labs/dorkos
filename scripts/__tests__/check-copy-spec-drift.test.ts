@@ -394,6 +394,28 @@ describe('dropSupported', () => {
       )
     ).toHaveLength(1);
   });
+
+  // DOR-4009: a deleted file cannot answer for itself, so the corpus does.
+  describe('for a deleted file', () => {
+    const DELETED = 'apps/client/src/ApprovalSpend.tsx';
+    const deleted = new Set([DELETED]);
+
+    it('clears a spec string some other file still renders whole', () => {
+      const inside = matchSpecStrings([chunk('Allowed once ·', DELETED)], [chunk('Allowed once')]);
+      expect(inside[0]?.overlap).toBe('removed-spans-assertion');
+      expect(dropSupported(inside, ['Allowed once'], [], deleted)).toEqual([]);
+      expect(dropSupported(inside, ['Not allowed'], [], deleted)).toHaveLength(1);
+    });
+
+    it('clears a broader spec string only when the removed run lives on', () => {
+      const broader = matchSpecStrings(
+        [chunk('Compacted context —', DELETED)],
+        [chunk('Compacted context — 51.2k → 4.2k tokens')]
+      );
+      expect(dropSupported(broader, ['Compacted context —'], [], deleted)).toEqual([]);
+      expect(dropSupported(broader, ['Compacted context ·'], [], deleted)).toHaveLength(1);
+    });
+  });
 });
 
 describe('collapseByPosition', () => {

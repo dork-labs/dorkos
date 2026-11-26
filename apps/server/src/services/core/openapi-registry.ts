@@ -262,7 +262,6 @@ import {
 } from '@dorkos/shared/connector-resource-schemas';
 import { PackageTypeSchema } from '@dorkos/marketplace';
 import {
-  AgentLevelResponseSchema,
   AgentPermissionsResponseSchema,
   PatchAgentPermissionsBodySchema,
   PatchPermissionDefaultsBodySchema,
@@ -5159,42 +5158,6 @@ registry.registerPath({
         '`precondition_failed`, with `conflicts`: a key changed since; send `force` to set it back',
       content: { [PROBLEM_CONTENT_TYPE]: { schema: UndoConflictResponseSchema } },
     },
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/agents/{id}/permissions',
-  tags: ['Permissions'],
-  summary: "Read one agent's permissions",
-  description:
-    "The agent's resolved state per area and per action, where each came from, and what it " +
-    "would be without the agent's own settings.",
-  request: { params: z.object({ id: z.string() }) },
-  responses: {
-    200: {
-      description: "The agent's permissions",
-      content: { 'application/json': { schema: AgentPermissionsResponseSchema } },
-    },
-    404: problemResponse('`agent_not_found`: no such agent'),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/agents/{id}/level',
-  tags: ['Permissions'],
-  summary: 'Read the level an agent runs at',
-  description:
-    'The Files & commands level a new chat of this agent starts at, before any per-chat limit, ' +
-    "the level its runtime's agents get by default, and whether a person's setting holds it lower.",
-  request: { params: z.object({ id: z.string() }) },
-  responses: {
-    200: {
-      description: "The agent's level",
-      content: { 'application/json': { schema: AgentLevelResponseSchema } },
-    },
-    404: problemResponse('`agent_not_found`: no such agent'),
   },
 });
 

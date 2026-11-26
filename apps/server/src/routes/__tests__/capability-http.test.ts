@@ -5,6 +5,7 @@
  *
  * @vitest-environment node
  */
+import { MOUNTED_CAPABILITY_IDS } from './mounted-capability-ids.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -53,7 +54,6 @@ import {
   mountedCapabilities,
 } from '../capability-http.js';
 import { createCapabilitiesInvokeRoutes } from '../capabilities-invoke.js';
-import { AUDIT_READ_SIDE_MOUNTED } from './audit-read-side-mounted.js';
 
 // The routes are served through the `/api` chain, whose host guard and session
 // gate read the login setting: off, as on a fresh install.
@@ -94,69 +94,9 @@ const AS_SCOUT: AgentIdentity = {
 
 describe('the mount', () => {
   it('serves exactly the declared surfaces no hand route still serves', () => {
-    expect(mountedCapabilities().map((capability) => capability.id)).toEqual([
-      'operator.activity_list',
-      'mcp.list',
-      'mcp.add',
-      'mcp.import',
-      'mcp.update',
-      'mcp.remove',
-      'mcp.enable',
-      'mcp.disable',
-      'mcp.test',
-      'mcp.set_client',
-      'mcp.check_global_args',
-      'mcp.remove_global_server',
-      'mcp.check_global_tools',
-      'mcp.undo_global_allow',
-      'todos.view_promises',
-      'todos.add_promise_for_agent',
-      'todos.change_promise',
-      'todos.confirm_promise',
-      'todos.view_list',
-      'todos.view_card',
-      'todos.add_as_person',
-      'todos.change_as_person',
-      'work-queue.view_queue',
-      'work-queue.change_settings',
-      'work-queue.stop_all',
-      'work-queue.set_order',
-      'work-queue.add_item',
-      'work-queue.remove_item',
-      'work-queue.requeue_item',
-      'mesh.list_agents',
-      'mesh.status',
-      'mesh.topology',
-      'mesh.list_denied',
-      'mesh.discover',
-      'mesh.register_agent',
-      'mesh.remove_agent',
-      'mesh.delete_agent_data',
-      'mesh.deny_folder',
-      'mesh.clear_denial',
-      'mesh.set_access_rule',
-      ...AUDIT_READ_SIDE_MOUNTED,
-      'agent.pause',
-      'agent.resume',
-      'agent.list_paused',
-      'link.resolve',
-      'heartbeat.wakers_off',
-      'heartbeat.choose_triage_credits',
-      'runs.chat_runs',
-      'tasks.view_list',
-      'tasks.view_runs',
-      'tasks.view_run',
-      'directory.browse',
-      'directory.default',
-      'diff.baseline',
-      'diff.advance_baseline',
-      'diff.pending',
-      'diff.revert',
-      'workspaces.list',
-      'workspaces.scan',
-      'workspaces.pin',
-      'templates.list',
-    ]);
+    expect(mountedCapabilities().map((capability) => capability.id)).toEqual(
+      MOUNTED_CAPABILITY_IDS
+    );
   });
 
   it('keeps the hand-served list to capabilities that still declare a path', () => {

@@ -161,7 +161,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     can: 'create, change, delete schedules; read runs; end a heartbeat.',
     // Also the team page's list of what cannot wake (`heartbeat.wakers_off`, DOR-4978), and the
     // owner's answer to the credits offer (`heartbeat.choose_triage_credits`), person-only, so no
-    // agent can call it. And the app's task and run reads (`tasks.view_*`, DOR-4978).
+    // agent can call it. And the app's task and run reads (`tasks.view_*`, DOR-4978), and a
+    // person's Heartbeat page (`heartbeat.view_page`), person-only: agents use heartbeat_status.
     covers: ['tasks_', 'tasks.', 'heartbeat.'],
     areas: ['tasks'],
   },
@@ -176,6 +177,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       'mesh.',
       'create_agent',
       'get_agent',
+      // Also a person's move of an old persona into SOUL.md (`agent.migrate_persona`,
+      // person-only, DOR-4978).
       'agent.',
       'operator.update_agent',
       'operator.sidebar_',
@@ -233,6 +236,7 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       'approvals.withdraw',
       'operator.config_',
       'operator.check_update',
+      // One agent's permissions and level (`permissions.view_agent*`, DOR-4978), any agent's.
       'permissions.',
       'instructions.',
       'capabilities.list',

@@ -87,6 +87,8 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'mcp.test': 'outside',
   // A server's own tool names and descriptions, which its publisher wrote.
   'mcp.check_global_tools': 'outside',
+  // A person's Heartbeat page: each beat's summary can quote what the beat read (agents are refused).
+  'heartbeat.view_page': 'outside',
   mesh_discover: 'outside',
   test_extension: 'outside',
   // ── What other turns read or said ──────────────────────────────────────────
@@ -229,6 +231,8 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'agent.pause': 'local',
   'agent.resume': 'local',
   'agent.list_paused': 'local',
+  // A person's move of an old persona into SOUL.md (DOR-4978).
+  'agent.migrate_persona': 'local',
   'approvals.withdraw': 'local',
   'local_browser.state': 'local',
   'local_browser.ask_person': 'local',
@@ -246,6 +250,9 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'permissions.request_access': 'local',
   'permissions.list': 'local',
   'permissions.change': 'local',
+  // Settings, the same an agent reads on the permissions page (DOR-4978).
+  'permissions.view_agent': 'local',
+  'permissions.view_agent_level': 'local',
   'heartbeat.end_beat': 'local',
   'heartbeat.status': 'local',
   'heartbeat.wakers_off': 'local',

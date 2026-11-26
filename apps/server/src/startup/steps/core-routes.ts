@@ -33,6 +33,7 @@ import { roomSessionPlace } from '../../services/rooms/repo/room-turn-place.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { levelReachFor } from './level-reach.js';
 import { createAgentLevelReader } from '../../services/core/permissions/agent-level.js';
+import { setAgentPermissionViews } from '../../services/core/permissions/agent-permission-views.js';
 import { resolveAgentRuntimeType } from '../../services/runtimes/shared/resolve-agent-runtime-type.js';
 import { logger } from '../../lib/logger.js';
 import { subscribeRuntimeTurns } from '../../services/session/runtime-turns/runtime-turn.js';
@@ -326,7 +327,6 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   // Agents wake on a beat or an event (spec `heartbeats`); sets the beat-chat
   // label resolver, so it runs before the broadcaster takes its resolvers.
   heartbeats.startHeartbeats({
-    routes: deps,
     origins,
     db,
     meshCore: () => refs.meshCore,
@@ -683,19 +683,19 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     arrivalRecord.clear(agentId);
     void permissionObserver.forget(agentId);
   });
-  deps.permissions = {
+  deps.permissions = { permissions: permissionService, activity: activityService };
+  mountedRouters.push('permissions');
+  // One agent's permissions and the profile's Level row (the launch rule itself), on the mount.
+  setAgentPermissionViews({
     permissions: permissionService,
-    activity: activityService,
-    // The profile's Level row: the launch rule itself, read for one agent.
-    readAgentLevel: createAgentLevelReader({
+    readLevel: createAgentLevelReader({
       agentPath: (agentId) =>
         refs.meshCore?.listWithPaths().find((agent) => agent.id === agentId)?.projectPath,
       runtimeType: resolveAgentRuntimeType,
       capabilities: (type) =>
         runtimeRegistry.has(type) ? runtimeRegistry.get(type).getCapabilities() : undefined,
     }),
-  };
-  mountedRouters.push('permissions');
+  });
 
   // What every agent is told, and what one agent will be told, for a person
   // (spec `context-viewer` phase 3). Read only.
