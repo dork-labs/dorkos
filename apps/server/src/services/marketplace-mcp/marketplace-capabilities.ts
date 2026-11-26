@@ -267,8 +267,17 @@ export const marketplaceDomain: CapabilityDomain = {
           annotations: { idempotentHint: true, openWorldHint: true },
         },
       },
-      invoke: async (deps, input) =>
-        unwrapMcpEnvelope(await createListInstalledHandler(requireMarketplaceDeps(deps))(input)),
+      invoke: async (deps, input, context) =>
+        unwrapMcpEnvelope(
+          await createListInstalledHandler(requireMarketplaceDeps(deps))(
+            input,
+            // An agent reads no dev link's working folder, as on the REST read (DOR-4978).
+            {
+              agentAsking:
+                context.identity !== undefined || context.agentIdentityPresented === true,
+            }
+          )
+        ),
     }),
     defineCapability({
       id: 'marketplace.recommend',

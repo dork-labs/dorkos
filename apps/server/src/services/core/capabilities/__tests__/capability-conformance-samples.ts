@@ -60,6 +60,8 @@ export function conformanceSampleInputs(
     'audit.account_timeline': { accountId: 'no-such-conformance-account' },
     'audit.transcript_read': { sessionId: 'no-such-conformance-session' },
     'marketplace.get': { name: 'nonexistent-conformance-pkg' },
+    // Nothing is installed in the sandbox, so the handler answers its own `MARKETPLACE_NOT_FOUND`.
+    'marketplace.read_installed': { name: 'nonexistent-conformance-pkg' },
     'marketplace.recommend': { context: 'observability for a next.js app' },
     'marketplace.install': { name: 'nonexistent-conformance-pkg' },
     'marketplace.uninstall': { name: 'nonexistent-conformance-pkg' },

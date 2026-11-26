@@ -9,7 +9,6 @@ import { DisclosedEffectsSchema } from '../../services/marketplace/preview/discl
 import { selectInstallations } from '../../services/marketplace/flows/update-selection.js';
 import {
   applyApprovedUpdates,
-  checkInstalledUpdates,
   reinstallInputsFor,
   scanUpdateView,
   updatesNotAsShown,
@@ -79,30 +78,9 @@ export function mountUpdateRoutes(
     gateResponse,
     confineProjectPath,
     updateDeps,
-    readProjectPathQuery,
     batchNeedsApproval,
     askAboutUpdates,
   } = ctx;
-
-  // GET /updates -- advisory update check of every installation in view.
-  //
-  // One scan, handed to the flow, which answers one check per installation with
-  // that installation's identity (`installPath` joins it to `GET /installed`)
-  // and, for each newer version, what it runs (`disclosed`): what a confirm step
-  // shows and an apply sends back (DOR-2306). A read: nothing installed
-  // changes, so it is not gated, exactly like the per-package route.
-  app.get('/updates', async (c) => {
-    try {
-      const query = readProjectPathQuery(c);
-      if (query.refused) return query.refused;
-      const confined = await confineProjectPath(c, query.projectPath);
-      if (confined.refused) return confined.refused;
-      return c.json(await checkInstalledUpdates(updateDeps, confined.projectPath));
-    } catch (err) {
-      logger.error('[Marketplace] Failed to check installed packages for updates', err);
-      return errorResponse(c, err);
-    }
-  });
 
   // POST /updates -- reinstall exactly the installations a person was shown,
   // each held to the version and the disclosure they saw (DOR-2306). Each
