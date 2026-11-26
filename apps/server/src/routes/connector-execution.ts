@@ -1,4 +1,8 @@
-/** Program execution, exact granted access, and owner-scoped usage HTTP boundary. */
+/**
+ * Program execution, exact granted access, and an agent's usage HTTP boundary.
+ * The owner's usage (`GET /usage/operator`) is on the capability mount
+ * (`services/connectors/resources/owner-management-capabilities.ts`, DOR-4978).
+ */
 import { Hono, type Context, type Handler } from 'hono';
 import { z } from 'zod';
 import {
@@ -28,7 +32,6 @@ import type { ServerPrincipalProof } from '../services/core/connections-lease/in
 import {
   migrationHealthGate,
   requestUser,
-  resolveConnectorOperator,
   type ConnectorOwnerBoundaryDeps,
 } from './connector-owner-boundary.js';
 import type { ConnectorRegistry } from '../services/connectors/registry.js';
@@ -53,14 +56,6 @@ const AgentUsageQuerySchema = z
     limit: z.coerce.number().int().min(1).max(100).optional(),
   })
   .strict();
-const OperatorUsageQuerySchema = z
-  .object({
-    connectionId: z.string().min(1).optional(),
-    cursor: z.string().min(1).optional(),
-    limit: z.coerce.number().int().min(1).max(100).optional(),
-  })
-  .strict();
-
 /** Dependencies for the public connector execution and usage boundary. */
 export interface ConnectorExecutionRouterDeps extends ConnectorOwnerBoundaryDeps {
   /** Stable connector migration health. */
@@ -72,7 +67,7 @@ export interface ConnectorExecutionRouterDeps extends ConnectorOwnerBoundaryDeps
   /** Owner and agent scoped connection, operation, and usage reads. */
   readonly access: Pick<
     ConnectorAccessQueryService,
-    'listConnections' | 'listOperations' | 'listAgentUsage' | 'listOperatorUsage'
+    'listConnections' | 'listOperations' | 'listAgentUsage'
   >;
   /** API-key principal minting and credential liveness. */
   readonly programPrincipals: Pick<ConnectorProgramPrincipalService, 'mint'>;
@@ -156,9 +151,9 @@ function programErrorResponse(c: Context<ApiEnv>, error: unknown): Response {
 }
 
 /**
- * Create the program execution/access and separated operator usage routes.
+ * Create the program execution, access and agent usage routes.
  *
- * @param deps - The capability registry, the access reads and the owner boundary.
+ * @param deps - The capability registry, the access reads and the deployment owner.
  * @returns The routes, mounted at `/api/connectors`.
  */
 export function createConnectorExecutionRoutes(deps: ConnectorExecutionRouterDeps): Hono<ApiEnv> {
@@ -250,18 +245,6 @@ export function createConnectorExecutionRoutes(deps: ConnectorExecutionRouterDep
     try {
       const query = AgentUsageQuerySchema.parse(readQuery(c));
       return c.json(await deps.access.listAgentUsage(principal.claims.owner, query.agentId, query));
-    } catch (error) {
-      return programErrorResponse(c, error);
-    }
-  });
-
-  router.get('/usage/operator', (c) => {
-    const owner = resolveConnectorOperator(c, deps);
-    if (owner instanceof Response) return owner;
-    try {
-      return c.json(
-        deps.access.listOperatorUsage(owner, OperatorUsageQuerySchema.parse(readQuery(c)))
-      );
     } catch (error) {
       return programErrorResponse(c, error);
     }

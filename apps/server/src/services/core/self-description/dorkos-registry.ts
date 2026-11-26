@@ -51,6 +51,7 @@ import { workQueuePersonDomain } from '../../work-queue/work-queue-person-capabi
 import { meshDomain } from '../../mesh/doors/mesh-capabilities.js';
 import { globalMcpPersonDomain } from '../../mesh/global-mcp/global-mcp-person-capabilities.js';
 import { connectionOwnerDomain } from '../../connectors/resources/owner-capabilities.js';
+import { connectionManagementDomain } from '../../connectors/resources/owner-management-capabilities.js';
 import { workClaimDomain } from '../../session/claims/work-claim-capabilities.js';
 import { workGraphDomain } from '../../work-graph/work-graph-capabilities.js';
 import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
@@ -140,7 +141,7 @@ export function composeDorkOsCapabilityRegistry(
   // The MCP servers a person adds for every agent, on `/api/mcp-servers` (DOR-4978).
   if (deps.globalMcpPersonDeps) domains.push(globalMcpPersonDomain);
   // The owner's connection doors, on `/api/connectors` behind the account-decision bar (DOR-4978).
-  if (deps.connectionOwnerDeps) domains.push(connectionOwnerDomain);
+  if (deps.connectionOwnerDeps) domains.push(connectionOwnerDomain, connectionManagementDomain);
   // Chat from the web, on `/api/session-relay` (DOR-4978).
   if (deps.sessionRelayDeps) domains.push(sessionRelayDomain);
   if (deps.roomDeps) domains.push(roomsDomain);
@@ -256,6 +257,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     mcpDomain,
     globalMcpPersonDomain,
     connectionOwnerDomain,
+    connectionManagementDomain,
     sessionRelayDomain,
     roomsDomain,
     sessionDomain,

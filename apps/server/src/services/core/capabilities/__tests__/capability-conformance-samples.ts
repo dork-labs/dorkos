@@ -160,6 +160,15 @@ export function conformanceSampleInputs(
     'connectors.disconnect_impact': { connectionId: 'conformance-connection' },
     'connectors.rename_connection': { connectionId: 'conformance-connection', label: 'Work' },
     'connectors.remove_connection': { connectionId: 'conformance-connection' },
+    'connectors.get_sign_in': { flowId: 'conformance-flow' },
+    'connectors.get_review': { reviewRequestId: 'conformance-review' },
+    'connectors.get_agent_request_sign_in': {
+      requestId: 'conformance-request',
+      flowId: 'conformance-flow',
+    },
+    'connectors.stop_every_agent_share': { connectionId: 'conformance-connection' },
+    'connectors.leave_agent_out': { connectionId: 'conformance-connection', agentId: 'agent-a' },
+    'connectors.list_usage': {},
     'mcp.check_global_tools': { name: 'conformance-srv' },
     'mcp.undo_global_allow': {
       name: 'conformance-srv',

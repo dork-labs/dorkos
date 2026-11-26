@@ -9,4 +9,10 @@ export const OWNER_BAR_CAPABILITIES: readonly string[] = [
   'connectors.disconnect_impact',
   'connectors.rename_connection',
   'connectors.remove_connection',
+  'connectors.get_sign_in',
+  'connectors.get_review',
+  'connectors.get_agent_request_sign_in',
+  'connectors.stop_every_agent_share',
+  'connectors.leave_agent_out',
+  'connectors.list_usage',
 ];

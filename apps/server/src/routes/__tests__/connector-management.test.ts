@@ -12,6 +12,7 @@ import { initConfigManager } from '../../services/core/config-manager.js';
 import { getStaticLocalOrigins } from '../../lib/trusted-origins.js';
 import { createConnectorManagementRoutes } from '../connector-management.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { withOwnerDoors } from './connector-owner-doors.js';
 import { ConnectorSubscriptionError } from '../../services/connectors/events/subscription-store.js';
 import { ConnectorAgentRequestError } from '../../services/connectors/agent-request-service.js';
 import { ConnectorGrantExclusionError } from '../../services/connectors/access/grant-exclusions.js';
@@ -133,27 +134,24 @@ describe('connector management routes', () => {
     } = {}
   ) {
     return honoGroupListener(
-      {
-        path: '/api/connectors',
-        routes: createConnectorManagementRoutes({
-          registry: {
-            migrationHealth: () =>
-              options.migrationFailed
-                ? { status: 'migration_failed', error: 'connector migration failed' }
-                : { status: 'ready', migrated: false },
-          },
-          reviews,
-          reconciliation,
-          exclusions,
-          agentRequests,
-          ...(options.agentApprovals ? { agentApprovals: options.agentApprovals } : {}),
-          resolveOwner: () => (options.ownerUnavailable ? undefined : OWNER),
-          loginEnabled: () => options.loginEnabled ?? false,
-          trustedOrigins: () => ['http://localhost:4242'],
-          verifyUser: async () => options.verifyUser ?? null,
-          isAccountOwner: (user) => user?.userId === (options.ownerUserId ?? 'user-a'),
-        }),
-      },
+      withOwnerDoors(createConnectorManagementRoutes, {
+        registry: {
+          migrationHealth: () =>
+            options.migrationFailed
+              ? { status: 'migration_failed', error: 'connector migration failed' }
+              : { status: 'ready', migrated: false },
+        },
+        reviews,
+        reconciliation,
+        exclusions,
+        agentRequests,
+        ...(options.agentApprovals ? { agentApprovals: options.agentApprovals } : {}),
+        resolveOwner: () => (options.ownerUnavailable ? undefined : OWNER),
+        loginEnabled: () => options.loginEnabled ?? false,
+        trustedOrigins: () => ['http://localhost:4242'],
+        verifyUser: async () => options.verifyUser ?? null,
+        isAccountOwner: (user) => user?.userId === (options.ownerUserId ?? 'user-a'),
+      }),
       {
         before: async (c, next) => {
           if (options.user) c.set('user', options.user);

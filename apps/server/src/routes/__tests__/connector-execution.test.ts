@@ -6,6 +6,7 @@ import type { RequestUser } from '../../services/core/auth/session-gate.js';
 import { createServerPrincipal } from '../../services/connectors/principal/server-principal.js';
 import { createConnectorExecutionRoutes } from '../connector-execution.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { withOwnerDoors } from './connector-owner-doors.js';
 import { ManagedConnectorCloudError } from '../../services/core/auth/cloud-link-client.js';
 
 // The routes are served through the `/api` chain, whose host guard and session
@@ -49,10 +50,11 @@ describe('connector execution routes', () => {
       migrationFailed?: boolean;
     } = {}
   ) {
+    const access = { listConnections, listOperations, listAgentUsage, listOperatorUsage };
     return honoGroupListener(
-      {
-        path: '/api/connectors',
-        routes: createConnectorExecutionRoutes({
+      withOwnerDoors(
+        createConnectorExecutionRoutes,
+        {
           connectorRegistry: {
             migrationHealth: () =>
               options.migrationFailed
@@ -61,7 +63,7 @@ describe('connector execution routes', () => {
           },
           capabilities: { invoke },
           authorization: { capabilityIdForTarget },
-          access: { listConnections, listOperations, listAgentUsage, listOperatorUsage },
+          access,
           eventAccess: {
             listSubscriptions: vi.fn().mockResolvedValue({ agentId: 'agent-a', subscriptions: [] }),
           },
@@ -80,8 +82,9 @@ describe('connector execution routes', () => {
           isAccountOwner: (user) => user?.userId === 'user-a',
           verifyUser: async () => options.verifyUser ?? null,
           trustedOrigins: () => ['http://localhost:4242'],
-        }),
-      },
+        },
+        { usage: access }
+      ),
       {
         before: async (c, next) => {
           if (options.user) c.set('user', options.user);

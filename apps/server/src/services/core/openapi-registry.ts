@@ -237,7 +237,6 @@ import {
   ConnectorReconciliationApplyResponseSchema,
   ConnectorReconciliationPreviewRequestSchema,
   ConnectorReconciliationPreviewSchema,
-  ConnectorEveryAgentRevokeResponseSchema,
   ConnectorUsagePageSchema,
 } from '@dorkos/shared/connector-schemas';
 import {
@@ -3774,21 +3773,6 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'get',
-  path: '/api/connectors/authentication-flows/{flowId}',
-  tags: ['Connectors'],
-  summary: 'Poll one durable connector authentication flow',
-  request: { params: z.object({ flowId: z.string().min(1).max(200) }) },
-  responses: {
-    200: {
-      description: 'Current owner-only authentication state',
-      content: { 'application/json': { schema: ConnectorAuthenticationFlowStateSchema } },
-    },
-    404: problemResponse('Flow absent or owned by someone else'),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
   path: '/api/connectors/connections/{connectionId}',
   tags: ['Connectors'],
   summary: 'Read one stable connection and its exact grants',
@@ -4013,21 +3997,6 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: 'get',
-  path: '/api/connectors/reviews/{reviewRequestId}',
-  tags: ['Connectors'],
-  summary: 'Read one owner-visible connector review',
-  request: { params: z.object({ reviewRequestId: z.string().min(1) }) },
-  responses: {
-    200: {
-      description: 'Owner-visible review context and lifecycle',
-      content: { 'application/json': { schema: ConnectorManagementReviewItemSchema } },
-    },
-    404: problemResponse('Review absent or owned by someone else'),
-  },
-});
-
-registry.registerPath({
   method: 'post',
   path: '/api/connectors/reviews/{reviewRequestId}/decision',
   tags: ['Connectors'],
@@ -4061,23 +4030,6 @@ registry.registerPath({
       content: { 'application/json': { schema: ConnectorReconciliationPreviewSchema } },
     },
     409: problemResponse('The connection must be reconciled before it can be edited'),
-  },
-});
-
-registry.registerPath({
-  method: 'delete',
-  path: '/api/connectors/connections/{connectionId}/every-agent',
-  tags: ['Connectors'],
-  summary: 'Stop sharing one connection with every agent',
-  description:
-    'Owner only. Ends the every-agent grant at once, for every agent. Needs no permission review, so it works while the service is unavailable.',
-  request: { params: z.object({ connectionId: z.string().min(1) }) },
-  responses: {
-    200: {
-      description: 'How many shared actions ended',
-      content: { 'application/json': { schema: ConnectorEveryAgentRevokeResponseSchema } },
-    },
-    404: problemResponse('Connection absent or owned by someone else'),
   },
 });
 
@@ -4177,27 +4129,6 @@ registry.registerPath({
     500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Agent-scoped connector usage page',
-      content: { 'application/json': { schema: ConnectorUsagePageSchema } },
-    },
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/connectors/usage/operator',
-  tags: ['Connectors'],
-  summary: 'List operator-scoped connector usage',
-  request: {
-    query: z.object({
-      connectionId: z.string().min(1).optional(),
-      cursor: z.string().min(1).optional(),
-      limit: z.coerce.number().int().min(1).max(100).optional(),
-    }),
-  },
-  responses: {
-    500: INTERNAL_ERROR_RESPONSE,
-    200: {
-      description: 'Owner-scoped connector usage page',
       content: { 'application/json': { schema: ConnectorUsagePageSchema } },
     },
   },

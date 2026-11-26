@@ -15,10 +15,7 @@ export const conformancePersonDoorDeps: Pick<
 > = {
   // `/api/connectors`: behind the account-decision bar, so a call with no mount proof is
   // refused before any of these run (DOR-4978).
-  connectionOwnerDeps: {
-    query: {} as NonNullable<CapabilityDeps['connectionOwnerDeps']>['query'],
-    lifecycle: {} as NonNullable<CapabilityDeps['connectionOwnerDeps']>['lifecycle'],
-  },
+  connectionOwnerDeps: {} as NonNullable<CapabilityDeps['connectionOwnerDeps']>,
   // `GET /api/agents/current` and the persona move: no agent lives in any folder.
   agentHomeDeps: { agentAt: async () => null },
   // `/api/mcp-servers`: person-only, so the anonymous probe is refused before any of these run.
