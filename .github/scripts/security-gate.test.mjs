@@ -419,6 +419,8 @@ test('workflow path list covers Security’s complete list and both sides of ren
     'apps/server/src/services/core/session-relay/a.ts',
     'apps/server/src/http/a.ts',
     'apps/server/src/routes/a.ts',
+    'apps/server/src/middleware/mcp-auth.ts',
+    'apps/server/src/middleware/host-guard.ts',
     ...['connectors', 'relay', 'extensions', 'mesh', 'browser', 'session/local-browser'].map(
       (p) => `apps/server/src/services/${p}/a.ts`
     ),

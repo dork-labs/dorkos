@@ -89,6 +89,15 @@ tracked:
       main, read by `pnpm check:computer-wall` (DOR-5158). It only goes down; each
       seam step lowers it and `--update` locks the drop in. Read by hand from the
       baseline; not computed by the daily collector.
+  - id: tracked.import-boundary-allowance
+    unit: count
+    definition: >-
+      The services import boundary's total allowance: the sum of the counts in
+      apps/server/eslint-rules/import-boundary.baseline.json on main (import
+      statements from one services/ domain into another), read by
+      `pnpm check:import-boundary` (DOR-4924). It only goes down; `--update`
+      locks each drop in. Read by hand from the baseline; not computed by the
+      daily collector.
   - id: tracked.time-to-detect
     unit: minutes
     definition: >-
