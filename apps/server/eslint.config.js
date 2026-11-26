@@ -7,6 +7,7 @@ import sessionRuntimes from './eslint-rules/session-runtimes-boundary.js';
 import problemOnly from './eslint-rules/problem-only.js';
 import turnPort from './eslint-rules/turn-port-boundary.js';
 import computerWall from './eslint-rules/computer-wall.js';
+import importBoundary from './eslint-rules/import-boundary.js';
 
 // SDK confinement (Hard Rule #2): each agent SDK is importable only inside its
 // own runtime adapter directory. Flat-config rule entries REPLACE (not merge),
@@ -464,6 +465,16 @@ export default defineConfig([
     ignores: ['src/**/__tests__/**', 'src/**/__fixtures__/**', 'src/**/*.{test,spec}.{ts,tsx}'],
     plugins: { 'computer-wall': computerWall },
     rules: { 'computer-wall/wall': 'error' },
+  },
+
+  // The services import boundary (DOR-4924): one domain under services/ (each folder under core/ is
+  // its own) imports another only along a pair in `import-boundary.baseline.json`. Type-only
+  // imports are allowed; tests and fixtures are not checked.
+  {
+    files: ['src/services/**/*.{ts,tsx}'],
+    ignores: ['src/**/__tests__/**', 'src/**/__fixtures__/**', 'src/**/*.{test,spec}.{ts,tsx}'],
+    plugins: { 'import-boundary': importBoundary },
+    rules: { 'import-boundary/boundary': 'error' },
   },
 
   ...testConfig,

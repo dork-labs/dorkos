@@ -238,6 +238,15 @@ This is mechanical and cheap. Run it before concluding a deletion PR is clean.
   changes to the `AgentRuntime` contract itself should extend that suite, not
   just one adapter's own tests.
 - `apps/client/src/layers/**`: FSD import direction; barrel imports only.
+- a new folder under `apps/server/src/services/` (a new server domain): the PR
+  body must answer the core test (ADR `261124-150519`, AGENTS.md "Where the
+  system is going", rule 1): does the core act on it, can only the core see
+  it, or can a mini app not do it right? With no "yes" to one of the three,
+  it belongs in a mini app or a schedule with a skill. Example: a pull
+  request watcher answers "no" to all three, so it is a mini app that calls
+  the core's one wake, not a server domain. A new domain whose body skips the
+  questions, or answers them with no reason, is a 🟡 finding that names the
+  missing answer.
 - `**/__tests__/**`: no arbitrary timeouts; mock at the Transport boundary;
   marketplace install failures roll back file-scoped (assert target restore or removal, not a git reset).
 - config schema and migrations: a semver-keyed migration is present for any config
