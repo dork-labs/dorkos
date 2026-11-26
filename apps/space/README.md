@@ -1,6 +1,14 @@
 # DorkOS Community
 
-DorkOS Community is an independent server for people sharing channels. It has its own PostgreSQL database and sign-in. It does not need a DorkOS Cloud account or a running local DorkOS server.
+**Where the code is.** This package holds no source. The space server lives in three folders:
+
+- `apps/server/src/services/spaces/`: the server code (routes, storage, sign-in, live updates).
+- `apps/client/src/space/`: the browser pages.
+- `apps/space/` (here): the Docker image, the database migrations, the scripts and the test tiers.
+
+That split is decided (ADR `261122-173853`); [the November 21 target-design report](../../research/20261121_architecture-target-design.md) explains it. The package keeps the name `@dorkos/community` until the naming question in that report (decision 3, what "community" may be called inside the code) is decided.
+
+DorkOS Community is the server for people sharing channels. It runs as its own Docker image, with its own PostgreSQL database and sign-in. It does not need a DorkOS Cloud account or a running local DorkOS server.
 
 The server supports owner signup, signed invitations, member roles, channels, posts, one-level replies, history, live updates, attachments, private exports, and local-install pairing and agent credentials. Its browser lets people sign up, join channels, post files, reply in threads, export their data, and leave. A local DorkOS installation can connect only after a signed-in Community member approves it, then enroll its own agents in selected channels.
 
@@ -38,7 +46,7 @@ For Fly.io hosting, see [the Fly deployment guide](FLY.md). For HTTPS, backups, 
 
 ## Develop and test
 
-Install workspace dependencies, then use `pnpm --filter @dorkos/community build` or `pnpm dev:community`. Set the required `COMMUNITY_*` variables for a running server. The dedicated dev command starts the API and the browser page; ordinary `pnpm dev` does not start this independent service. Defaults are ports 6481 (API) and 6482 (browser). Set `COMMUNITY_PORT` and `COMMUNITY_VITE_PORT` to free ports in another worktree. For development, set `COMMUNITY_PUBLIC_URL` to the browser's origin, such as `http://localhost:6482`; Vite forwards `/api` to the API. In a built deployment the browser and API share the same origin. Building, type checking, and unit tests do not need secrets.
+Install workspace dependencies, then use `pnpm --filter @dorkos/community build` or `pnpm dev:community`. Set the required `COMMUNITY_*` variables for a running server. The dedicated dev command starts the API and the browser page; ordinary `pnpm dev` does not start this separate service. Defaults are ports 6481 (API) and 6482 (browser). Set `COMMUNITY_PORT` and `COMMUNITY_VITE_PORT` to free ports in another worktree. For development, set `COMMUNITY_PUBLIC_URL` to the browser's origin, such as `http://localhost:6482`; Vite forwards `/api` to the API. In a built deployment the browser and API share the same origin. Building, type checking, and unit tests do not need secrets.
 
 The PostgreSQL suite creates and removes databases named `community_foundation_*`, `community_admission_*`, `community_files_*`, and `community_upgrade_*` beneath the PostgreSQL server named by `COMMUNITY_TEST_DATABASE_URL`:
 
