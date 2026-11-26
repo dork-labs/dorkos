@@ -17,6 +17,8 @@ export interface ShellSegment {
   redirects: string[];
   /** Its heredoc bodies, which only mean something to a program that runs them. */
   scripts: string[];
+  /** The command whose output is its input (`a | b`, `a |& b`), when it has one. */
+  pipedFrom?: ShellSegment;
 }
 
 /** The most brace alternatives one word opens into before it counts as too much to check. */
@@ -40,6 +42,15 @@ export function parseShell(command: string): ShellSegment[] {
   let inWord = false;
   let nextIsRedirect = false;
   const heredocs: string[] = [];
+  // Where in the word the last `$` the shell expands was put, so `"$TMPDIR"page.html` keeps its
+  // variable's name apart from the text after it: the word becomes `${TMPDIR}page.html`.
+  let dollarAt = -1;
+  const keepNameApart = (next: string | undefined): void => {
+    if (dollarAt === -1 || !/\w/.test(next ?? '')) return;
+    const name = /^\$([A-Za-z_]\w*)$/.exec(word.slice(dollarAt))?.[1];
+    if (name !== undefined) word = `${word.slice(0, dollarAt)}\${${name}}`;
+    dollarAt = -1;
+  };
 
   const endWord = (): void => {
     if (inWord) {
@@ -49,12 +60,23 @@ export function parseShell(command: string): ShellSegment[] {
     }
     word = '';
     inWord = false;
+    dollarAt = -1;
   };
-  const endSegment = (): void => {
+  // What a `|` at `i` pipes from: the command before it, or, after a `)` or a backtick that
+  // closes a group or a `$(…)`, a command that cannot be read here.
+  const feeder = (): ShellSegment | undefined =>
+    /[)`]\s*$/.test(command.slice(Math.max(0, i - 64), i))
+      ? { words: [')'], redirects: [], scripts: [] }
+      : segments.at(-1);
+  const endSegment = (piped = false): void => {
     endWord();
     nextIsRedirect = false;
-    if (current.words.length > 0 || current.redirects.length > 0) segments.push(current);
-    current = { words: [], redirects: [], scripts: [] };
+    const empty = current.words.length === 0 && current.redirects.length === 0;
+    if (!empty) segments.push(current);
+    // A line break after `|`, or the `&` of `|&`, leaves the pipe open: the next command still
+    // reads its output.
+    const from = piped ? feeder() : empty ? current.pipedFrom : undefined;
+    current = { words: [], redirects: [], scripts: [], ...(from ? { pipedFrom: from } : {}) };
   };
 
   let i = 0;
@@ -64,6 +86,7 @@ export function parseShell(command: string): ShellSegment[] {
       // A line continuation: the command carries on, as if the break weren't there.
       i += 2;
     } else if (char === '\\') {
+      keepNameApart(command[i + 1]);
       word += command[i + 1] ?? '';
       inWord = true;
       i += 2;
@@ -71,6 +94,7 @@ export function parseShell(command: string): ShellSegment[] {
       // `$'it\'s'` has its own quoting: read as plain quotes, its `\'` ends the word early, and all
       // that follows looks quoted. Its other escapes aren't decoded: a path spelled in them is the
       // stated limit.
+      keepNameApart(command[i + 2]);
       i += 2;
       while (i < command.length && command[i] !== "'") {
         if (command[i] === '\\') i += 1;
@@ -80,21 +104,25 @@ export function parseShell(command: string): ShellSegment[] {
       inWord = true;
       i += 1;
     } else if (char === "'") {
+      keepNameApart(command[i + 1]);
       const close = command.indexOf(char, i + 1);
       const end = close === -1 ? command.length : close;
       word += command.slice(i + 1, end);
       inWord = true;
       i = end + 1;
     } else if (char === '"') {
+      keepNameApart(command[i + 1]);
       inWord = true;
       i += 1;
       while (i < command.length && command[i] !== '"') {
         // Inside double quotes a backslash only escapes these, so `\"` never ends the word.
         if (command[i] === '\\' && '"\\$`'.includes(command[i + 1] ?? '')) i += 1;
+        else if (command[i] === '$') dollarAt = word.length;
         word += command[i] ?? '';
         i += 1;
       }
       i += 1;
+      keepNameApart(firstAdded(command, i));
     } else if (char === '#' && !inWord) {
       const newline = command.indexOf('\n', i);
       i = newline === -1 ? command.length : newline;
@@ -144,12 +172,14 @@ export function parseShell(command: string): ShellSegment[] {
         inWord = word.length > 0;
       }
       // `&>` and `2>&1` write or copy; `&` only ends a command when no `>` leads to or from it.
+      // The `&` of `|&` ends an empty command, which hands the pipe on.
       if (char === '&' && (command[i + 1] === '>' || command[i - 1] === '>')) {
         endWord();
         i += 1;
         continue;
       }
-      endSegment();
+      // A lone `|` (or `|&`) pipes; `||` runs the next command on failure.
+      endSegment(char === '|' && command[i + 1] !== '|' && command[i - 1] !== '|');
       i += 1;
     } else if (char === '<' || char === '>') {
       endWord();
@@ -167,6 +197,7 @@ export function parseShell(command: string): ShellSegment[] {
       endWord();
       i += 1;
     } else {
+      if (char === '$') dollarAt = word.length;
       word += char;
       inWord = true;
       i += 1;
@@ -174,6 +205,14 @@ export function parseShell(command: string): ShellSegment[] {
   }
   endSegment();
   return segments;
+}
+
+/** The first character a word takes from `at` on, past the quotes that open there. */
+function firstAdded(command: string, at: number): string | undefined {
+  let next = at;
+  while (command[next] === '"' || command[next] === "'") next += 1;
+  if (command[next] === '$' && command[next + 1] === "'") return command[next + 2];
+  return command[next] === '\\' ? command[next + 1] : command[next];
 }
 
 /**

@@ -1,8 +1,9 @@
 /**
  * A shell script file read command by command for the network (DOR-5240), with its own variables:
  * `CURL=curl` then `$CURL …` runs curl, and `"$@"` or `$1` as the program runs the arguments the
- * script was given. A program named by a variable still unknown here, or by a `$(…)`, could be
- * any program, so it marks (`shell-network-commands.ts`).
+ * script was given (after any `shift`), and `eval "$1"` runs what it was given. A program named by
+ * a variable still unknown here, or by a `$(…)`, could be any program, so it marks
+ * (`shell-network-commands.ts`).
  *
  * @module services/runtimes/shared/tools/shell-script-variables
  */
@@ -68,11 +69,18 @@ function withArguments(word: string, args: readonly string[]): string[] {
 export function shellFileFetches(text: string, args: readonly string[]): boolean {
   const home = expandTilde('~');
   const vars: Record<string, string | undefined> = { HOME: home };
+  let given = [...args];
   for (const segment of withNested(parseShell(withoutTests(text)))) {
     const words: string[] = [];
     let setting = true;
+    // `shift` drops the first arguments, so `mode=$1; shift; "$@"` runs the rest.
+    const [first, count] = segment.words;
+    if (first === 'shift') {
+      given = given.slice(/^\d+$/.test(count ?? '') ? Number(count) : 1);
+      continue;
+    }
     for (const raw of segment.words) {
-      for (const opened of withArguments(raw, args)) {
+      for (const opened of withArguments(raw, given)) {
         // A word variables would grow past the limit keeps its `$`, which reads as unknown.
         const word = expandVariables(opened, home, vars) ?? opened;
         words.push(word);
@@ -84,7 +92,8 @@ export function shellFileFetches(text: string, args: readonly string[]): boolean
     }
     // A `case` pattern (`*"$x"*)`) ends where its `)` is, so it reads as a command of its own.
     if (commandOf({ ...segment, words }).verb.includes('*')) continue;
-    if (segmentFetches({ ...segment, words })) return true;
+    // Read again with the arguments put in: `eval "$1"` and `sh -c "$1"` run what they were given.
+    if (withNested([{ ...segment, words }]).some((one) => segmentFetches(one))) return true;
   }
   return false;
 }
