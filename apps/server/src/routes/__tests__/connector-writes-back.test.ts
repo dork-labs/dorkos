@@ -20,6 +20,7 @@ import {
 import { initConfigManager } from '../../services/core/config-manager.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createConnectorWritesBackRoutes } from '../connector-writes-back.js';
+import { writesBackStore } from '../../services/connectors/access/writes-back-store.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const NOW = '2026-11-19T12:00:00.000Z';
@@ -77,7 +78,7 @@ describe('writes-back routes', () => {
       honoGroupListener({
         path: '/api/connectors',
         routes: createConnectorWritesBackRoutes({
-          db,
+          store: writesBackStore(db),
           resolveOwner: () => OWNER,
           loginEnabled: () => false,
           trustedOrigins: () => ['http://localhost:4242'],

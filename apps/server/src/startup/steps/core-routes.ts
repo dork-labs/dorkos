@@ -9,7 +9,11 @@
  */
 import { setInstructionsReader } from '../../services/runtimes/context-preview/instructions-capability.js';
 import { configManager } from '../../services/core/config-manager.js';
-import { approvedByField } from '../../services/connectors/access/access-change-ledger.js';
+import {
+  accessChangeReads,
+  approvedByField,
+} from '../../services/connectors/access/access-change-ledger.js';
+import { writesBackStore } from '../../services/connectors/access/writes-back-store.js';
 import path from 'node:path';
 import { setStepUpExtensionRiskInputs } from '../../services/extensions/step-up/step-up-extension-risk.js';
 import { useStepUpRiskLedgerFile } from '../../services/extensions/step-up/step-up-risk-ledger.js';
@@ -182,6 +186,9 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   };
   // The monthly spend limit on paid app actions (DOR-4204 PR 2): one meter for the routes, the gate and the broker.
   const connectorSpending = wireConnectorSpending(db, activityService);
+  // The person's access-change list and writes-back switch, bound here so their routes never hold db.
+  const ledger = accessChangeReads(db);
+  const switchStore = writesBackStore(db);
   const connectorRoutes: ConnectorRoutesDeps = {
     providers: { bootstrapper: connectorBootstrapper, credentialStore },
     events: {
@@ -217,9 +224,9 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     },
     holds: { holds: connectorHolds },
     spending: { spending: connectorSpending, activity: activityService },
-    accessChanges: { ...connectorOwnerBoundary, narrowing: connectorAccessNarrowing, db },
+    accessChanges: { ...connectorOwnerBoundary, narrowing: connectorAccessNarrowing, ledger },
     // A person's per-app switch; never reachable by an agent (DOR-4794).
-    writesBack: { ...connectorOwnerBoundary, db, activity: activityService },
+    writesBack: { ...connectorOwnerBoundary, store: switchStore, activity: activityService },
     // Read at request time: the extension manager starts after these routes.
     miniAppAccess: {
       access: () => miniAppAccessFor(() => refs.extensionManager?.listRecords() ?? []),

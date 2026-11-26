@@ -35,6 +35,7 @@ import type { WireSessionServicesResult } from './session-services.js';
 import type { StartTelemetryExtensionsAndRuntimesResult } from './telemetry-extensions-runtimes.js';
 import type { ServerRefs } from '../server-refs.js';
 import { spendTapRefusal } from '../../services/connectors/spending/spend-gate.js';
+import { searchAnswerer } from '../../services/search/index.js';
 import { sessionLocationStore } from '../../services/core/runtime-seam/session-location-store.js';
 import {
   setSpendCardLookup,
@@ -160,7 +161,7 @@ export async function mountLateRoutes(refs: ServerRefs, built: MountLateRoutesIn
   // mounted and read-only. An install whose index is empty answers `[]`, which is
   // the honest answer and needs no flag; who may see what is resolved per request
   // through the rooms domain, never from this line.
-  deps.search = { db };
+  deps.search = { answer: searchAnswerer(db) };
 
   // Template catalog — always available, merges built-in + user templates.
   // Served from the Hono `/api` app, like the saved chat folders beside it.

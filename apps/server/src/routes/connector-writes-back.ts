@@ -11,7 +11,6 @@
  * @module routes/connector-writes-back
  */
 import { Hono, type Context } from 'hono';
-import type { Db } from '@dorkos/db';
 import {
   ConnectorWritesBackChangeRequestSchema,
   ConnectorWritesBackChangeSchema,
@@ -22,10 +21,9 @@ import { honoRequestFacts } from '../http/request-facts.js';
 import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import {
-  readWritesBack,
-  setWritesBack,
   WritesBackConnectionNotFoundError,
   WritesBackUnsupportedAppError,
+  type WritesBackStore,
 } from '../services/connectors/access/writes-back-store.js';
 import {
   everyAgentActivityLink,
@@ -45,8 +43,8 @@ export const WRITES_BACK_CHANGED_EVENT = 'connectors.writes_back_changed';
 
 /** What the writes-back routes read. */
 export interface ConnectorWritesBackRouterDeps extends ConnectorOwnerBoundaryDeps {
-  /** The connector database. */
-  readonly db: Db;
+  /** The person's writes-back switch. */
+  readonly store: WritesBackStore;
   /** The Activity trail; absent in a process that has none. */
   readonly activity?: EveryAgentActivitySink;
   /** Injectable clock. */
@@ -56,7 +54,7 @@ export interface ConnectorWritesBackRouterDeps extends ConnectorOwnerBoundaryDep
 /**
  * Build the writes-back routes, for mounting under `/api/connectors`.
  *
- * @param deps - The owner boundary, the database and the Activity trail.
+ * @param deps - The owner boundary, the switch's store and the Activity trail.
  * @returns The routes.
  */
 export function createConnectorWritesBackRoutes(deps: ConnectorWritesBackRouterDeps): Hono<ApiEnv> {
@@ -67,7 +65,9 @@ export function createConnectorWritesBackRoutes(deps: ConnectorWritesBackRouterD
     if (owner instanceof Response) return owner;
     try {
       return c.json(
-        ConnectorWritesBackSchema.parse(readWritesBack(deps.db, owner, c.req.param('connectionId')))
+        ConnectorWritesBackSchema.parse(
+          deps.store.readWritesBack(owner, c.req.param('connectionId'))
+        )
       );
     } catch (error) {
       return notFoundOr(c, error);
@@ -85,7 +85,7 @@ export function createConnectorWritesBackRoutes(deps: ConnectorWritesBackRouterD
     if (!on) return change(c, owner, connectionId, false);
     // An app whose writes can be sends is refused before anyone is asked to confirm (DOR-4794).
     try {
-      if (!readWritesBack(deps.db, owner, connectionId).supported) {
+      if (!deps.store.readWritesBack(owner, connectionId).supported) {
         return notFoundOr(c, new WritesBackUnsupportedAppError());
       }
     } catch (error) {
@@ -109,8 +109,7 @@ export function createConnectorWritesBackRoutes(deps: ConnectorWritesBackRouterD
     on: boolean
   ): Promise<Response> {
     try {
-      const { change: done, connection } = setWritesBack(
-        deps.db,
+      const { change: done, connection } = deps.store.setWritesBack(
         owner,
         connectionId,
         on,
