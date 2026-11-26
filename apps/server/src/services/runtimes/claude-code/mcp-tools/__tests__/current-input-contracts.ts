@@ -30,10 +30,12 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
 
     it('enumerates the complete current MCP declarations and every default node', () => {
       // These are measured source-census baselines, not a production allowlist.
-      // A declaration change must explain its real census drift here.
-      // +1 total/relevant/ordinary/inSession/external for
+      // An MCP declaration change must explain its real census drift here. A capability
+      // with no MCP surface is not counted: the mounted ids, conformance and the awareness
+      // lines pin those, and counting them made every parallel PR conflict on one line.
+      // +1 relevant/ordinary/inSession/external for
       // `operator.update_agent_config` (DOR-4266), which has no defaults.
-      // +1 total/relevant/ordinary/inSession/external for `link.resolve`
+      // +1 relevant/ordinary/inSession/external for `link.resolve`
       // (DOR-5046), which has no defaults.
       const topDefaults = relevant.map(
         (cap) =>
@@ -42,7 +44,6 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
           ).length
       );
       expect({
-        total: actual.capabilities.length,
         relevant: relevant.length,
         ordinary: relevant.filter((cap) => cap.surfaces.mcp?.servers.length).length,
         inSession: capabilitiesForMcpServer(actual, 'in-session').length,
@@ -52,23 +53,6 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
         topDefaultFields: topDefaults.reduce((a, b) => a + b, 0),
         topDefaultCapabilities: topDefaults.filter(Boolean).length,
       }).toEqual({
-        // +7 total for the person work-queue controls (no MCP surface, DOR-4978).
-        // +5 total for the to-do and promise doors and what cannot wake (no MCP surface, DOR-4978).
-        // +4 total for a person's to-do writes and promise changes (person-only, no MCP surface,
-        // DOR-4978).
-        // +1 total for the owner's answer to the credits offer (person-only, no MCP surface,
-        // DOR-4978).
-        // +1 total for a chat's runs list (GET /api/sessions/{id}/runs, no MCP surface, DOR-5212).
-        // +11 total for the agent registry's doors on `/api/mesh/*`: four reads and seven writes
-        // (no MCP surface, DOR-4978).
-        // +3 total for the app's task list and run reads (no MCP surface, DOR-4978).
-        // +4 total for a person's doors on the MCP servers every agent gets (person-only, no MCP
-        // surface, DOR-4978).
-        // +4 total for one agent's heartbeat page, permissions and level, and a persona move on
-        // `/api/agents/*` (no MCP surface, DOR-4978).
-        // +8 total for the marketplace's reads on `/api/marketplace/*` (no MCP surface, DOR-4978).
-        // +6 total for the app's runtime setup reads (person-only, no MCP surface, DOR-4978).
-        total: 198,
         relevant: 132,
         ordinary: 120,
         inSession: 119,
