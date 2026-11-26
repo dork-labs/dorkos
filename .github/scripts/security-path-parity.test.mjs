@@ -192,6 +192,8 @@ for (const [match, miss, deep] of [
     false,
   ],
   [`${S}/core/runtime-doors/runtime-read-capabilities.ts`, `${S}/core/runtime-door/x.ts`, false],
+  // The chat reads on the capability mount (DOR-4978): who may read a chat.
+  [`${S}/session/reads/session-read-capabilities.ts`, `${S}/session/readers/x.ts`, false],
   // C2's new kernel homes (DOR-5303): code moved out of covered folders stays covered.
   [`${S}/core/child-bundle/child-bundle.ts`, `${S}/core/child-bundles/child-bundle.ts`, false],
   [`${S}/core/room-turn-ref/room-turn-ref.ts`, `${S}/core/room-turn-refs/room-turn-ref.ts`, false],
