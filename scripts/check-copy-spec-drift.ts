@@ -1,6 +1,14 @@
 /**
  * Fail a change that rewrites user-visible copy a browser spec still asserts.
  *
+ * --help
+ * Purpose: fail a change that rewrites user-visible copy a browser spec under
+ *          apps/e2e still asserts, before the merge queue finds it.
+ * Runs in: pre-push (`copy-spec-drift`); the required `typecheck` job.
+ * To fix:  update each spec line it names to the new copy, or keep the old copy.
+ * Usage:   pnpm check:copy-spec-drift [base-ref] [repo-root]   (base: origin/main)
+ * --help end
+ *
  * WHY THIS EXISTS (DOR-1647). `browser-test` is an instant pass-through on
  * `pull_request` and only runs the Playwright shards on `merge_group` — the
  * saturation trade `.github/workflows/browser-test.yml` explains at length. The
@@ -170,6 +178,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { collectFiles } from './check-vocab-gate.ts';
+import { exitOnHelp } from './lib/gate-help.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -774,6 +783,7 @@ export function runCopySpecGuard(repoRoot: string, baseRef: string): Finding[] {
 const isMain = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1];
 
 if (isMain) {
+  exitOnHelp(import.meta.url);
   const baseRef = process.argv[2] ?? 'origin/main';
   const repoRoot = process.argv[3] ?? join(SCRIPT_DIR, '..');
   const findings = runCopySpecGuard(repoRoot, baseRef);

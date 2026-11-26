@@ -1,7 +1,20 @@
 #!/usr/bin/env node
+/**
+ * Read-only arm preflight: which security paths does a pull request touch?
+ *
+ * --help
+ * Purpose: read-only arm preflight: list the security paths a PR touches. A label
+ *          never confirms approval of an exact head.
+ * Runs in: by hand, before arming a PR.
+ * To fix:  `NO LABEL: do not arm` means ask Security to review; arm only once
+ *          Security names the PR's current head.
+ * Usage:   node scripts/security-paths-check.mjs <pr-number>
+ * --help end
+ */
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { securityPathPattern, touchesSecurity } from '../.github/scripts/security-gate.mjs';
+import { exitOnHelp } from './lib/gate-help.mjs';
 
 /** Read-only arm preflight: a label never confirms approval on an exact SHA. */
 export function checkPaths(
@@ -64,6 +77,7 @@ export function checkPaths(
   return 1;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  exitOnHelp(import.meta.url);
   try {
     if (process.argv.length !== 3) throw new Error('Expected one PR number');
     process.exitCode = checkPaths(process.argv[2]);

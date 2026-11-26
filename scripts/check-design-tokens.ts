@@ -1,6 +1,16 @@
 /**
  * Hold the client and the shared UI package to the design tokens.
  *
+ * --help
+ * Purpose: hold the client and the shared UI package to the design tokens: hard
+ *          rules fail on any match, ratchet rules on any count that grows.
+ * Runs in: the required `typecheck` job; by hand.
+ * To fix:  use the token the message names. After removing literals, run
+ *          `pnpm check:design-tokens -- --update` (it only lowers). Never raise an
+ *          entry; a changed rule needs a fresh `guard-rule-change` label.
+ * Usage:   pnpm check:design-tokens [-- --base <ref> | --update | --init | --root <dir>]
+ * --help end
+ *
  * WHY THIS EXISTS. Phase 1 of the UI overhaul turned colours, scrims and the
  * stacking order into tokens. A token only stays the one way to say something
  * if a new literal cannot land beside it, and some of the old spellings are in
@@ -593,6 +603,9 @@ function baselineAt(root: string, ref: string): Counts | null {
 }
 
 async function main(argv: string[]): Promise<number> {
+  // Loaded here, not at the top: this file imports nothing relative there.
+  const { exitOnHelp } = await import('./lib/gate-help.mjs');
+  exitOnHelp(import.meta.url, argv);
   const value = (name: string) => {
     const i = argv.indexOf(name);
     return i === -1 ? undefined : argv[i + 1];
