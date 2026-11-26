@@ -8,7 +8,7 @@ Recorded 2026-09-26 on macOS at source baseline `7168a5b7c69def16bb2cb48319b2428
 - `pnpm --filter @dorkos/server... build`: exit 0. Builds existing dependencies for local tests; no deployment or billable service.
 - First targeted run: **16 suites, 397 tests passed**, exit 0.
 - Uninstall/classification run: **3 suites, 79 tests passed**, exit 0.
-- Both diagnostic fixtures: exit 0; exact code and results are [preserved here](../../research/20260926-marketplace-retained-copy-reproduction.md). They prove local scanner/copy behavior, not native harness execution or an approval bypass.
+- Both diagnostic fixtures: exit 0; exact code and results are [preserved here](../../research/20260926_marketplace-retained-copy-reproduction.md). They prove local scanner/copy behavior, not native harness execution or an approval bypass.
 
 The first invocation also supplied two misordered uninstall paths, which selected no extra files. Those omissions were noticed and corrected in the second run below. The first command is shown with only its 16 actual selected suites so it is directly reproducible.
 

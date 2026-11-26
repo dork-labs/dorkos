@@ -53,7 +53,7 @@ That is prior proof, not a fresh kill run in this audit. Lack of a retained harn
 
 [DOR-2340](https://linear.app/dorkspace/issue/DOR-2340) - Saved copies keep execute bits and stay runnable.
 
-[Retained reproduction](20260926-marketplace-retained-copy-reproduction.md) calls the real carry, program disclosure, skill disclosure and Harness Sync scanner functions. `carry-as` and `save-new-as` preserve `0755`; harmless fixture scripts execute. `carry-dir-as` creates `skills/x.dork-old/SKILL.md`, which both skill discovery and disclosure find. Clearing execute bits alone still leaves the saved program in `readPackagePrograms().executables`. This proves local execution/discovery behavior, not an agent turn or an approval bypass.
+[Retained reproduction](20260926_marketplace-retained-copy-reproduction.md) calls the real carry, program disclosure, skill disclosure and Harness Sync scanner functions. `carry-as` and `save-new-as` preserve `0755`; harmless fixture scripts execute. `carry-dir-as` creates `skills/x.dork-old/SKILL.md`, which both skill discovery and disclosure find. Clearing execute bits alone still leaves the saved program in `readPackagePrograms().executables`. This proves local execution/discovery behavior, not an agent turn or an approval bypass.
 
 Required outcome: recovery copies preserve recoverable content but cannot become independently discovered or activated package capabilities merely because they remain on disk. A chmod-only patch is incomplete. Changing discovery/disclosure changes global approval digests (`global-plugin-consent.ts:204,457`), so an isolated reader change is not automatically compatible with DOR-2306.
 
