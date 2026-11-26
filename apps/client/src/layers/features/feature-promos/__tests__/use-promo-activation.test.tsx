@@ -12,12 +12,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { forwardRef } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import type { PromoDefinition } from '../model/promo-types';
 
 /** Minimal stub that satisfies the LucideIcon (ForwardRefExoticComponent) shape for tests. */
-const StubIcon = forwardRef<SVGSVGElement>(() => null) as unknown as LucideIcon;
+const StubIcon = (() => null) as unknown as LucideIcon;
 
 const openLink = vi.fn();
 vi.mock('@/layers/shared/lib', async (importOriginal) => {

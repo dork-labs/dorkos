@@ -8,7 +8,7 @@
  *
  * @module features/composer/ui/field/LexicalField
  */
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { ListPlugin } from '@lexical/react/LexicalListPlugin';
 import { LexicalComposer } from '@lexical/react/LexicalComposer';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
@@ -72,7 +72,7 @@ function onEditorError(error: Error): void {
 
 /** The field's own classes — the textarea's, minus the ones only it needs. */
 const EDITABLE_CLASS =
-  'block max-h-[200px] min-h-[24px] w-full overflow-y-auto bg-transparent py-0.5 text-sm focus:outline-none';
+  'block max-h-[200px] min-h-[24px] w-full overflow-y-auto bg-transparent py-0.5 text-sm outline-none';
 
 /**
  * The part that lives inside the composer context, where the editor exists.
@@ -80,116 +80,112 @@ const EDITABLE_CLASS =
  * Split out because `useLexicalComposerContext` is only callable below
  * `LexicalComposer`, and the imperative handle needs the editor.
  */
-const LexicalFieldInner = forwardRef<ComposerFieldHandle, ComposerFieldProps>(
-  function LexicalFieldInner(
-    {
-      value,
-      onChange,
-      onCursorChange,
-      onKeyDown,
-      onFocus,
-      onBlur,
-      placeholder,
-      placeholderOverlay,
-      isPaletteOpen,
-      paletteHasResults,
-      paletteListboxId,
-      activeDescendantId,
-      onSurfaceChange,
-      mentionSubjects,
-    },
-    ref
-  ) {
-    const [editor] = useLexicalComposerContext();
-    const isTouchOnly = useIsTouchOnly();
-    const { focusAt } = useLexicalValue({ value, onChange, onCursorChange });
+function LexicalFieldInner({
+  value,
+  onChange,
+  onCursorChange,
+  onKeyDown,
+  onFocus,
+  onBlur,
+  placeholder,
+  placeholderOverlay,
+  isPaletteOpen,
+  paletteHasResults,
+  paletteListboxId,
+  activeDescendantId,
+  onSurfaceChange,
+  mentionSubjects,
+  ref,
+}: ComposerFieldProps) {
+  const [editor] = useLexicalComposerContext();
+  const isTouchOnly = useIsTouchOnly();
+  const { focusAt } = useLexicalValue({ value, onChange, onCursorChange });
 
-    // Built once from the editor, which is stable for this component's life, so
-    // the ladder's callback identity never churns on it.
-    const surfaceRef = useRef<EditingSurface | null>(null);
-    const [surface, setSurface] = useState<EditingSurface | null>(null);
-    useEffect(() => {
-      surfaceRef.current ??= createLexicalSurface(editor);
-      setSurface(surfaceRef.current);
-      onSurfaceChange(surfaceRef.current);
-    }, [editor, onSurfaceChange]);
+  // Built once from the editor, which is stable for this component's life, so
+  // the ladder's callback identity never churns on it.
+  const surfaceRef = useRef<EditingSurface | null>(null);
+  const [surface, setSurface] = useState<EditingSurface | null>(null);
+  useEffect(() => {
+    surfaceRef.current ??= createLexicalSurface(editor);
+    setSurface(surfaceRef.current);
+    onSurfaceChange(surfaceRef.current);
+  }, [editor, onSurfaceChange]);
 
-    // What makes `**bold**` become bold as the closing pair lands. Registered
-    // here rather than as a plugin component so the transformer set and the
-    // node set are configured in one place.
-    useEffect(() => registerMarkdownShortcuts(editor, [...COMPOSER_TRANSFORMERS]), [editor]);
+  // What makes `**bold**` become bold as the closing pair lands. Registered
+  // here rather than as a plugin component so the transformer set and the
+  // node set are configured in one place.
+  useEffect(() => registerMarkdownShortcuts(editor, [...COMPOSER_TRANSFORMERS]), [editor]);
 
-    useLadderCommands({ onKeyDown, surface, isPaletteOpen, paletteHasResults });
-    usePastePrecedence();
-    useMentionNodes(mentionSubjects);
+  useLadderCommands({ onKeyDown, surface, isPaletteOpen, paletteHasResults });
+  usePastePrecedence();
+  useMentionNodes(mentionSubjects);
 
-    useImperativeHandle(
-      ref,
-      () => ({
-        focus: () => editor.focus(),
-        focusUnlessTouch: () => {
-          if (isTouchOnly) return;
-          editor.focus();
-        },
-        focusAt,
-      }),
-      [editor, isTouchOnly, focusAt]
-    );
+  useImperativeHandle(
+    ref,
+    () => ({
+      focus: () => editor.focus(),
+      focusUnlessTouch: () => {
+        if (isTouchOnly) return;
+        editor.focus();
+      },
+      focusAt,
+    }),
+    [editor, isTouchOnly, focusAt]
+  );
 
-    const hasText = value.trim().length > 0;
-    const showNativePlaceholder = placeholderOverlay === undefined || placeholderOverlay === null;
+  const hasText = value.trim().length > 0;
+  const showNativePlaceholder = placeholderOverlay === undefined || placeholderOverlay === null;
 
-    // Every attribute here also appears on the textarea, with the same value.
-    // A difference is an a11y regression, not a swap — the flag-on baseline
-    // review asserts the two maps match.
-    const editableProps = {
-      className: EDITABLE_CLASS,
-      role: 'combobox',
-      'aria-autocomplete': 'list' as const,
-      'aria-controls': isPaletteOpen ? paletteListboxId : undefined,
-      'aria-expanded': isPaletteOpen ?? false,
-      'aria-activedescendant': isPaletteOpen ? activeDescendantId : undefined,
-      // The visual placeholder may render as an overlay (AnimatedPlaceholder),
-      // which suppresses the placeholder element — the aria-label keeps the
-      // combobox's accessible name stable in both modes, exactly as it does on
-      // the textarea.
-      'aria-label': placeholder,
-      'aria-multiline': true,
-      // Deliberately NO React `onKeyDown`. The ladder reaches this field through
-      // Lexical's commands at critical priority (`use-ladder-commands`), and a
-      // synthetic handler here as well would run every rung a second time —
-      // one Enter, two sends.
-      onFocus,
-      onBlur,
-    };
+  // Every attribute here also appears on the textarea, with the same value.
+  // A difference is an a11y regression, not a swap — the flag-on baseline
+  // review asserts the two maps match.
+  const editableProps = {
+    className: EDITABLE_CLASS,
+    role: 'combobox',
+    'aria-autocomplete': 'list' as const,
+    'aria-controls': isPaletteOpen ? paletteListboxId : undefined,
+    'aria-expanded': isPaletteOpen ?? false,
+    'aria-activedescendant': isPaletteOpen ? activeDescendantId : undefined,
+    // The visual placeholder may render as an overlay (AnimatedPlaceholder),
+    // which suppresses the placeholder element — the aria-label keeps the
+    // combobox's accessible name stable in both modes, exactly as it does on
+    // the textarea.
+    'aria-label': placeholder,
+    'aria-multiline': true,
+    // Deliberately NO React `onKeyDown`. The ladder reaches this field through
+    // Lexical's commands at critical priority (`use-ladder-commands`), and a
+    // synthetic handler here as well would run every rung a second time —
+    // one Enter, two sends.
+    onFocus,
+    onBlur,
+  };
 
-    return (
-      <div className="relative min-h-[24px] flex-1">
-        {!hasText && placeholderOverlay}
-        <RichTextPlugin
-          contentEditable={
-            showNativePlaceholder ? (
-              <ContentEditable
-                {...editableProps}
-                aria-placeholder={placeholder}
-                placeholder={
-                  <div className="text-muted-foreground pointer-events-none absolute top-0 left-0 py-0.5 text-sm select-none">
-                    {placeholder}
-                  </div>
-                }
-              />
-            ) : (
-              <ContentEditable {...editableProps} />
-            )
-          }
-          ErrorBoundary={LexicalErrorBoundary}
-        />
-        <HistoryPlugin />
-        <ListPlugin />
-      </div>
-    );
-  }
-);
+  return (
+    <div className="relative min-h-[24px] flex-1">
+      {!hasText && placeholderOverlay}
+      <RichTextPlugin
+        contentEditable={
+          showNativePlaceholder ? (
+            <ContentEditable
+              {...editableProps}
+              aria-placeholder={placeholder}
+              placeholder={
+                <div className="text-muted-foreground pointer-events-none absolute top-0 left-0 py-0.5 text-sm select-none">
+                  {placeholder}
+                </div>
+              }
+            />
+          ) : (
+            <ContentEditable {...editableProps} />
+          )
+        }
+        ErrorBoundary={LexicalErrorBoundary}
+      />
+      <HistoryPlugin />
+      <ListPlugin />
+    </div>
+  );
+}
 
 /**
  * The composer's rich-text field.
@@ -204,22 +200,20 @@ const LexicalFieldInner = forwardRef<ComposerFieldHandle, ComposerFieldProps>(
  * emptied box is gone — that was an artifact of setting a textarea's height
  * imperatively, and a contenteditable grows on its own.
  */
-const LexicalField = forwardRef<ComposerFieldHandle, ComposerFieldProps>(
-  function LexicalField(props, ref) {
-    return (
-      <LexicalComposer
-        initialConfig={{
-          namespace: 'composer',
-          nodes: COMPOSER_NODES,
-          theme: COMPOSER_THEME,
-          onError: onEditorError,
-        }}
-      >
-        <LexicalFieldInner {...props} ref={ref} />
-      </LexicalComposer>
-    );
-  }
-);
+function LexicalField(props: ComposerFieldProps) {
+  return (
+    <LexicalComposer
+      initialConfig={{
+        namespace: 'composer',
+        nodes: COMPOSER_NODES,
+        theme: COMPOSER_THEME,
+        onError: onEditorError,
+      }}
+    >
+      <LexicalFieldInner {...props} />
+    </LexicalComposer>
+  );
+}
 
 /**
  * Default-exported because `ComposerInput` reaches it through `React.lazy`,

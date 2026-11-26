@@ -3,7 +3,7 @@ import {
   useCallback,
   useState,
   useEffect,
-  forwardRef,
+  type Ref,
   useImperativeHandle,
   lazy,
   Suspense,
@@ -218,6 +218,8 @@ export interface ComposerInputProps {
    * never reads it. Off means the plain field, byte for byte what shipped.
    */
   richText?: boolean;
+  /** The handle a host focuses the composer through. */
+  ref?: Ref<ComposerInputHandle>;
 }
 
 /**
@@ -245,316 +247,312 @@ export interface ComposerInputProps {
  * gets no clear button and no armed-clear signal at all, rather than a
  * half-opacity control wired to nothing.
  */
-export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>(
-  function ComposerInput(
-    {
-      value,
-      onChange,
-      onSubmit,
-      isStreaming,
-      isUploading = false,
-      onCancelUpload,
-      commandPending = false,
-      editingQueueItem = false,
-      editingPosition,
-      queueDepth = 0,
-      onStop,
-      stopPending = false,
-      onQueue,
-      onSteer,
-      onStage,
-      onSaveEdit,
-      onCancelEdit,
-      onEscape,
-      onClear,
-      isPaletteOpen,
-      paletteHasResults,
-      tabPicks,
-      onArrowUp,
-      onArrowDown,
-      onCommandSelect,
-      activeDescendantId,
-      paletteListboxId,
-      onCursorChange,
-      onAttach,
-      placeholder = 'Send a message…',
-      placeholderOverlay,
-      onQueueNavigateUp,
-      onQueueNavigateDown,
-      contextKey,
-      onClearArmedChange,
-      queueHasItems = false,
-      canSubmit = true,
-      canSubmitReason,
-      canSubmitAction,
-      richText = false,
-      mentionSubjects,
-    },
-    ref
-  ) {
-    const fieldRef = useRef<ComposerFieldHandle>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const [isFocused, setIsFocused] = useState(false);
-    const [tabbedIn, setTabbedIn] = useState(false);
-    // The field reports its editing surface once it has one; until then the
-    // ladder talks to the inert one, which answers exactly as it did when there
-    // was no textarea in the ref yet.
-    const [surface, setSurface] = useState<EditingSurface>(INERT_SURFACE);
-    // One signal for both questions this component asks about the device, because
-    // they are the same question: is there a software keyboard here? Enter's
-    // meaning and whether an unbidden focus is welcome both follow from it, and
-    // neither follows from viewport width.
-    const isTouchOnly = useIsTouchOnly();
+export function ComposerInput({
+  value,
+  onChange,
+  onSubmit,
+  isStreaming,
+  isUploading = false,
+  onCancelUpload,
+  commandPending = false,
+  editingQueueItem = false,
+  editingPosition,
+  queueDepth = 0,
+  onStop,
+  stopPending = false,
+  onQueue,
+  onSteer,
+  onStage,
+  onSaveEdit,
+  onCancelEdit,
+  onEscape,
+  onClear,
+  isPaletteOpen,
+  paletteHasResults,
+  tabPicks,
+  onArrowUp,
+  onArrowDown,
+  onCommandSelect,
+  activeDescendantId,
+  paletteListboxId,
+  onCursorChange,
+  onAttach,
+  placeholder = 'Send a message…',
+  placeholderOverlay,
+  onQueueNavigateUp,
+  onQueueNavigateDown,
+  contextKey,
+  onClearArmedChange,
+  queueHasItems = false,
+  canSubmit = true,
+  canSubmitReason,
+  canSubmitAction,
+  richText = false,
+  mentionSubjects,
+  ref,
+}: ComposerInputProps) {
+  const fieldRef = useRef<ComposerFieldHandle>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isFocused, setIsFocused] = useState(false);
+  const [tabbedIn, setTabbedIn] = useState(false);
+  // The field reports its editing surface once it has one; until then the
+  // ladder talks to the inert one, which answers exactly as it did when there
+  // was no textarea in the ref yet.
+  const [surface, setSurface] = useState<EditingSurface>(INERT_SURFACE);
+  // One signal for both questions this component asks about the device, because
+  // they are the same question: is there a software keyboard here? Enter's
+  // meaning and whether an unbidden focus is welcome both follow from it, and
+  // neither follows from viewport width.
+  const isTouchOnly = useIsTouchOnly();
 
-    useImperativeHandle(ref, () => ({
-      focus: () => fieldRef.current?.focus(),
-      focusUnlessTouch: () => fieldRef.current?.focusUnlessTouch(),
-      focusAt: (pos: number) => fieldRef.current?.focusAt(pos),
-    }));
+  useImperativeHandle(ref, () => ({
+    focus: () => fieldRef.current?.focus(),
+    focusUnlessTouch: () => fieldRef.current?.focusUnlessTouch(),
+    focusAt: (pos: number) => fieldRef.current?.focusAt(pos),
+  }));
 
-    // Auto-focus on mount (e.g. returning from interactive tool-approval mode),
-    // except on a touch-only device, where it pops the software keyboard and
-    // scrolls the view every time a session opens. Read through a ref snapshot so
-    // a later device change can never steal focus mid-session.
-    //
-    // Nor from a page heading that holds focus: a phone-layout context switch
-    // puts it there so a screen reader says where the person arrived, and the
-    // room this composer belongs to can mount after that, even more than once
-    // (DOR-2613). Nobody asked for this focus; the heading keeps it.
-    const isTouchOnlyOnMountRef = useRef(isTouchOnly);
-    useEffect(() => {
-      if (isTouchOnlyOnMountRef.current) return;
-      if (pageHeadingHasFocus()) return;
-      fieldRef.current?.focus();
-    }, []);
+  // Auto-focus on mount (e.g. returning from interactive tool-approval mode),
+  // except on a touch-only device, where it pops the software keyboard and
+  // scrolls the view every time a session opens. Read through a ref snapshot so
+  // a later device change can never steal focus mid-session.
+  //
+  // Nor from a page heading that holds focus: a phone-layout context switch
+  // puts it there so a screen reader says where the person arrived, and the
+  // room this composer belongs to can mount after that, even more than once
+  // (DOR-2613). Nobody asked for this focus; the heading keeps it.
+  const isTouchOnlyOnMountRef = useRef(isTouchOnly);
+  useEffect(() => {
+    if (isTouchOnlyOnMountRef.current) return;
+    if (pageHeadingHasFocus()) return;
+    fieldRef.current?.focus();
+  }, []);
 
-    // The Stop click is about to replace a focusable button with a
-    // `role="status"` progress indicator (DOR-1300) — an element that cannot
-    // hold focus. A `useEffect` reacting to the state change afterward is too
-    // late to catch this: React removes the DOM node in its mutation phase,
-    // which drops focus to `<body>` SYNCHRONOUSLY as part of that removal,
-    // before any effect (layout or passive) gets a chance to run — by the
-    // time an effect could check `document.activeElement`, the button is
-    // already gone and focus already lost (confirmed empirically: an effect
-    // keyed on the pending prop reliably saw `document.activeElement ===
-    // document.body`, never the just-removed button). So the rescue happens
-    // HERE instead, in the click itself, before `onStop` runs the state
-    // update that removes the button — clicking a button focuses it in every
-    // browser this ships to, so the field is the right next place for
-    // attention regardless, and there is nothing to lose by moving it
-    // unconditionally on this ONE specific click.
-    //
-    // Reshaping the button instead (keeping it a real, `aria-disabled` — not
-    // `disabled` — element so it stays tab-reachable) would touch the shared
-    // progress-state markup `dispatching` also draws, for a fix this task
-    // scopes to Stop alone; this is the cheaper, equally correct option.
-    //
-    // Deliberately wraps only the BUTTON click paths (`InputActionButton`'s
-    // `onStop`, both the dedicated square and the main action button), not
-    // the keyboard ladder's Escape-triggered stop below: Escape fires while
-    // focus is still in the TEXTAREA (which never disappears), and forcing
-    // the caret to the end there would be a real regression — cutting off
-    // mid-edit typing's cursor position for no reason.
-    const handleStopClick = useCallback(() => {
-      fieldRef.current?.focusAt(value.length);
-      onStop?.();
-    }, [onStop, value.length]);
+  // The Stop click is about to replace a focusable button with a
+  // `role="status"` progress indicator (DOR-1300) — an element that cannot
+  // hold focus. A `useEffect` reacting to the state change afterward is too
+  // late to catch this: React removes the DOM node in its mutation phase,
+  // which drops focus to `<body>` SYNCHRONOUSLY as part of that removal,
+  // before any effect (layout or passive) gets a chance to run — by the
+  // time an effect could check `document.activeElement`, the button is
+  // already gone and focus already lost (confirmed empirically: an effect
+  // keyed on the pending prop reliably saw `document.activeElement ===
+  // document.body`, never the just-removed button). So the rescue happens
+  // HERE instead, in the click itself, before `onStop` runs the state
+  // update that removes the button — clicking a button focuses it in every
+  // browser this ships to, so the field is the right next place for
+  // attention regardless, and there is nothing to lose by moving it
+  // unconditionally on this ONE specific click.
+  //
+  // Reshaping the button instead (keeping it a real, `aria-disabled` — not
+  // `disabled` — element so it stays tab-reachable) would touch the shared
+  // progress-state markup `dispatching` also draws, for a fix this task
+  // scopes to Stop alone; this is the cheaper, equally correct option.
+  //
+  // Deliberately wraps only the BUTTON click paths (`InputActionButton`'s
+  // `onStop`, both the dedicated square and the main action button), not
+  // the keyboard ladder's Escape-triggered stop below: Escape fires while
+  // focus is still in the TEXTAREA (which never disappears), and forcing
+  // the caret to the end there would be a real regression — cutting off
+  // mid-edit typing's cursor position for no reason.
+  const handleStopClick = useCallback(() => {
+    fieldRef.current?.focusAt(value.length);
+    onStop?.();
+  }, [onStop, value.length]);
 
-    const { handleKeyDown, clearArmed } = useInputKeyboard({
-      surface,
-      value,
-      isStreaming,
-      isTouchOnly,
-      isUploading,
-      onCancelUpload,
-      commandPending,
-      canSubmit,
-      editingQueueItem,
-      isPaletteOpen,
-      paletteHasResults,
-      tabPicks,
-      queueHasItems,
-      onSubmit,
-      onStop,
-      onEscape,
-      onClear,
-      onArrowUp,
-      onArrowDown,
-      onCommandSelect,
-      onQueue,
-      onSteer,
-      onStage,
-      onSaveEdit,
-      onCancelEdit,
-      onQueueNavigateUp,
-      onQueueNavigateDown,
-      contextKey,
-    });
+  const { handleKeyDown, clearArmed } = useInputKeyboard({
+    surface,
+    value,
+    isStreaming,
+    isTouchOnly,
+    isUploading,
+    onCancelUpload,
+    commandPending,
+    canSubmit,
+    editingQueueItem,
+    isPaletteOpen,
+    paletteHasResults,
+    tabPicks,
+    queueHasItems,
+    onSubmit,
+    onStop,
+    onEscape,
+    onClear,
+    onArrowUp,
+    onArrowDown,
+    onCommandSelect,
+    onQueue,
+    onSteer,
+    onStage,
+    onSaveEdit,
+    onCancelEdit,
+    onQueueNavigateUp,
+    onQueueNavigateDown,
+    contextKey,
+  });
 
-    const handleFocus = useCallback(() => setIsFocused(true), []);
-    const handleBlur = useCallback(() => {
-      setIsFocused(false);
-      setTabbedIn(false);
-      if (isPaletteOpen) onEscape?.();
-    }, [isPaletteOpen, onEscape]);
+  const handleFocus = useCallback(() => setIsFocused(true), []);
+  const handleBlur = useCallback(() => {
+    setIsFocused(false);
+    setTabbedIn(false);
+    if (isPaletteOpen) onEscape?.();
+  }, [isPaletteOpen, onEscape]);
 
-    // One narrowed object, so both fields are given exactly the same props and
-    // the swap cannot drift.
-    const fieldProps: ComposerFieldProps & { ref: typeof fieldRef } = {
-      ref: fieldRef,
-      value,
-      onChange,
-      onCursorChange,
-      onKeyDown: handleKeyDown,
-      onFocus: handleFocus,
-      onBlur: handleBlur,
-      placeholder,
-      placeholderOverlay,
-      isPaletteOpen,
-      paletteHasResults,
-      paletteListboxId,
-      activeDescendantId,
-      onSurfaceChange: setSurface,
-      mentionSubjects,
-    };
+  // One narrowed object, so both fields are given exactly the same props and
+  // the swap cannot drift.
+  const fieldProps: ComposerFieldProps & { ref: typeof fieldRef } = {
+    ref: fieldRef,
+    value,
+    onChange,
+    onCursorChange,
+    onKeyDown: handleKeyDown,
+    onFocus: handleFocus,
+    onBlur: handleBlur,
+    placeholder,
+    placeholderOverlay,
+    isPaletteOpen,
+    paletteHasResults,
+    paletteListboxId,
+    activeDescendantId,
+    onSurfaceChange: setSurface,
+    mentionSubjects,
+  };
 
-    const hasText = value.trim().length > 0;
-    // Whether the labelled "Clear message" button is on screen AND usable: a host
-    // has to wire `onClear` for it to render at all, and there has to be text to
-    // clear. This gates the armed readout below, because that readout is
-    // deliberately hidden from assistive tech — showing it anywhere the button is
-    // unreachable would advertise a destructive keyboard shortcut to sighted
-    // people and to nobody else.
-    const clearReachable = onClear !== undefined && hasText;
+  const hasText = value.trim().length > 0;
+  // Whether the labelled "Clear message" button is on screen AND usable: a host
+  // has to wire `onClear` for it to render at all, and there has to be text to
+  // clear. This gates the armed readout below, because that readout is
+  // deliberately hidden from assistive tech — showing it anywhere the button is
+  // unreachable would advertise a destructive keyboard shortcut to sighted
+  // people and to nobody else.
+  const clearReachable = onClear !== undefined && hasText;
 
-    useEffect(() => {
-      onClearArmedChange?.(clearArmed && clearReachable);
-    }, [clearArmed, clearReachable, onClearArmedChange]);
+  useEffect(() => {
+    onClearArmedChange?.(clearArmed && clearReachable);
+  }, [clearArmed, clearReachable, onClearArmedChange]);
 
-    return (
-      <div className="flex flex-col gap-1.5">
-        {/* A live region, not a plain line: the failure it explains is "I pressed
+  return (
+    <div className="flex flex-col gap-1.5">
+      {/* A live region, not a plain line: the failure it explains is "I pressed
           Enter and nothing happened", which a screen-reader user gets no other
           signal for at all. */}
-        {!canSubmit && canSubmitReason && (
-          <div
-            role={canSubmitAction ? undefined : 'status'}
-            className={cn(
-              'text-muted-foreground px-1 text-xs',
-              canSubmitAction && 'flex items-baseline gap-1.5'
-            )}
-          >
-            {canSubmitAction ? (
-              <>
-                <span role="status">{canSubmitReason}</span>
-                <button
-                  type="button"
-                  onClick={canSubmitAction.onClick}
-                  className="focus-ring text-foreground/80 hover:text-foreground rounded-sm underline underline-offset-4"
-                >
-                  {canSubmitAction.label}
-                </button>
-              </>
-            ) : (
-              canSubmitReason
-            )}
-          </div>
-        )}
-        {editingQueueItem && (
-          <div className="text-muted-foreground px-0.5 text-xs">
-            {editingPosition !== undefined && queueDepth > 0
-              ? `Editing message ${editingPosition} of ${queueDepth}`
-              : 'Editing message'}
-          </div>
-        )}
-        {/* Tab, not :focus-visible: a text field matches that on every click and
-          on mount, which is the orange this ring must not paint. */}
+      {!canSubmit && canSubmitReason && (
         <div
-          onKeyUp={(e) => e.key === 'Tab' && setTabbedIn(true)}
+          role={canSubmitAction ? undefined : 'status'}
           className={cn(
-            'border-input bg-background flex items-end gap-1.5 rounded-md border p-1.5 shadow-xs transition-[color,box-shadow]',
-            isFocused && (tabbedIn ? 'border-ring ring-ring ring-[1px]' : 'border-foreground/20'),
-            editingQueueItem && 'border-primary/40',
-            !onAttach && 'pl-3'
+            'text-muted-foreground px-1 text-xs',
+            canSubmitAction && 'flex items-baseline gap-1.5'
           )}
         >
-          {onAttach && (
+          {canSubmitAction ? (
             <>
-              <input
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                multiple
-                onChange={(e) => {
-                  const files = Array.from(e.target.files ?? []);
-                  if (files.length > 0) onAttach(files);
-                  e.target.value = '';
-                }}
-              />
+              <span role="status">{canSubmitReason}</span>
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="focus-ring text-muted-foreground hover:text-foreground flex shrink-0 items-center justify-center rounded-md px-1.5 py-1 transition-colors disabled:opacity-50"
-                aria-label="Attach file"
+                onClick={canSubmitAction.onClick}
+                className="focus-ring text-foreground/80 hover:text-foreground rounded-sm underline underline-offset-4"
               >
-                <Paperclip className="size-4" />
+                {canSubmitAction.label}
               </button>
             </>
-          )}
-          {richText ? (
-            // The fallback is the TEXTAREA, not a spinner: a composer that is
-            // briefly un-typeable is worse than one that is briefly plain, and
-            // the two share `value`/`onChange`, so nothing is lost when the
-            // chunk arrives.
-            <Suspense fallback={<TextareaField {...fieldProps} />}>
-              <LexicalField {...fieldProps} />
-            </Suspense>
           ) : (
-            <TextareaField {...fieldProps} />
+            canSubmitReason
           )}
-          {/* Only rendered when there is something to clear TO. Hosts that pass no
+        </div>
+      )}
+      {editingQueueItem && (
+        <div className="text-muted-foreground px-0.5 text-xs">
+          {editingPosition !== undefined && queueDepth > 0
+            ? `Editing message ${editingPosition} of ${queueDepth}`
+            : 'Editing message'}
+        </div>
+      )}
+      {/* Tab, not :focus-visible: a text field matches that on every click and
+          on mount, which is the orange this ring must not paint. */}
+      <div
+        onKeyUp={(e) => e.key === 'Tab' && setTabbedIn(true)}
+        className={cn(
+          'border-input bg-background flex items-end gap-1.5 rounded-md border p-1.5 shadow-xs transition-[color,box-shadow]',
+          isFocused && (tabbedIn ? 'border-ring ring-ring ring-[1px]' : 'border-foreground/20'),
+          editingQueueItem && 'border-primary/40',
+          !onAttach && 'pl-3'
+        )}
+      >
+        {onAttach && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              multiple
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? []);
+                if (files.length > 0) onAttach(files);
+                e.target.value = '';
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="focus-ring text-muted-foreground hover:text-foreground flex shrink-0 items-center justify-center rounded-md px-1.5 py-1 transition-colors disabled:opacity-50"
+              aria-label="Attach file"
+            >
+              <Paperclip className="size-4" />
+            </button>
+          </>
+        )}
+        {richText ? (
+          // The fallback is the TEXTAREA, not a spinner: a composer that is
+          // briefly un-typeable is worse than one that is briefly plain, and
+          // the two share `value`/`onChange`, so nothing is lost when the
+          // chunk arrives.
+          <Suspense fallback={<TextareaField {...fieldProps} />}>
+            <LexicalField {...fieldProps} />
+          </Suspense>
+        ) : (
+          <TextareaField {...fieldProps} />
+        )}
+        {/* Only rendered when there is something to clear TO. Hosts that pass no
             `onClear` (the dashboard and onboarding composers) used to show this
             X at half opacity, enabled and tab-reachable, wired to nothing. */}
-          {onClear && (
-            <motion.button
-              animate={{ opacity: hasText ? 0.5 : 0, scale: hasText ? 1 : 0.8 }}
-              transition={{ duration: 0.15 }}
-              whileHover={hasText ? { opacity: 1 } : undefined}
-              onClick={onClear}
-              disabled={!hasText}
-              type="button"
-              className={cn(
-                'focus-ring text-muted-foreground hover:text-foreground shrink-0 rounded-lg p-1 transition-colors',
-                !hasText && 'pointer-events-none'
-              )}
-              aria-label="Clear message"
-            >
-              <X className="size-(--size-icon-sm)" />
-            </motion.button>
-          )}
-          <InputActionButton
-            hasText={hasText}
-            isStreaming={isStreaming}
-            // Only ever an upload this composer can stop. A host that reports an
-            // upload without a way to end it gets no progress control rather than
-            // an inert one — the spinner nobody could press is the wedge itself.
-            onCancelUpload={isUploading ? onCancelUpload : undefined}
-            commandPending={commandPending}
-            submitDisabled={!canSubmit}
-            editingQueueItem={editingQueueItem}
-            queueDepth={queueDepth}
-            isTouchOnly={isTouchOnly}
-            onSubmit={onSubmit}
-            onStop={handleStopClick}
-            stopPending={stopPending}
-            onQueue={onQueue}
-            onSteer={onSteer}
-            onStage={onStage}
-            onSaveEdit={onSaveEdit}
-            onCancelEdit={onCancelEdit}
-          />
-        </div>
+        {onClear && (
+          <motion.button
+            animate={{ opacity: hasText ? 0.5 : 0, scale: hasText ? 1 : 0.8 }}
+            transition={{ duration: 0.15 }}
+            whileHover={hasText ? { opacity: 1 } : undefined}
+            onClick={onClear}
+            disabled={!hasText}
+            type="button"
+            className={cn(
+              'focus-ring text-muted-foreground hover:text-foreground shrink-0 rounded-lg p-1 transition-colors',
+              !hasText && 'pointer-events-none'
+            )}
+            aria-label="Clear message"
+          >
+            <X className="size-(--size-icon-sm)" />
+          </motion.button>
+        )}
+        <InputActionButton
+          hasText={hasText}
+          isStreaming={isStreaming}
+          // Only ever an upload this composer can stop. A host that reports an
+          // upload without a way to end it gets no progress control rather than
+          // an inert one — the spinner nobody could press is the wedge itself.
+          onCancelUpload={isUploading ? onCancelUpload : undefined}
+          commandPending={commandPending}
+          submitDisabled={!canSubmit}
+          editingQueueItem={editingQueueItem}
+          queueDepth={queueDepth}
+          isTouchOnly={isTouchOnly}
+          onSubmit={onSubmit}
+          onStop={handleStopClick}
+          stopPending={stopPending}
+          onQueue={onQueue}
+          onSteer={onSteer}
+          onStage={onStage}
+          onSaveEdit={onSaveEdit}
+          onCancelEdit={onCancelEdit}
+        />
       </div>
-    );
-  }
-);
+    </div>
+  );
+}

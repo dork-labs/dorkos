@@ -3,7 +3,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
-import { forwardRef } from 'react';
+import { Bot } from 'lucide-react';
 import { ContributedIcon, isRenderableIcon } from '../contributed-icon';
 
 afterEach(() => {
@@ -17,18 +17,16 @@ const Good = ({ className }: { className?: string }) => (
 
 describe('ContributedIcon', () => {
   it('draws an icon React can render, function or forwardRef object', () => {
-    const Ref = forwardRef<SVGSVGElement, { className?: string }>((props, ref) => (
-      <svg ref={ref} data-testid="ref" {...props} />
-    ));
-    const { getByTestId } = render(
+    // A lucide icon is a `forwardRef` result: an object, not a function.
+    const { container, getByTestId } = render(
       <>
         <ContributedIcon icon={Good} className="size-4" />
-        <ContributedIcon icon={Ref} />
+        <ContributedIcon icon={Bot} />
       </>
     );
     expect(getByTestId('good').getAttribute('class')).toBe('size-4');
-    expect(getByTestId('ref')).toBeTruthy();
-    expect(isRenderableIcon(Ref)).toBe(true);
+    expect(container.querySelector('svg.lucide-bot')).toBeTruthy();
+    expect(isRenderableIcon(Bot)).toBe(true);
   });
 
   it.each([

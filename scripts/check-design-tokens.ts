@@ -173,6 +173,14 @@ export const RULES: Rule[] = [
     pattern: /\bfocus-visible:ring-/g,
     fix: 'use the focus-ring recipe',
   },
+  // `.claude/rules/components.md`: a bare `focus:` also fires on a mouse click
+  // (DOR-4939). `group-focus:` and `focus-visible:` are other variants.
+  {
+    id: 'bare-focus',
+    kind: 'hard',
+    pattern: /(?<![\w-])focus:(?=[\w![-])/g,
+    fix: 'use focus-visible:, which a text field still matches on a click',
+  },
   // Phase 2 Badge A. A count has one cap per placement, spelled in count-pill,
   // which lives in packages/ui so the app and the Space share it (DOR-3635).
   {

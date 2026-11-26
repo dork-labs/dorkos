@@ -49,6 +49,14 @@ describe('countIn', () => {
   it('counts the pure hexes in both lengths', () => {
     expect(countIn(CLIENT, `'#fff #000000 #FFF'`)).toEqual({ 'pure-white-black': 3 });
   });
+
+  it('refuses a bare focus: variant, alone or chained, but not its look-alikes', () => {
+    expect(countIn(CLIENT, `'focus:outline-none md:focus:shadow-md focus:!ring-0'`)).toEqual({
+      'bare-focus': 3,
+    });
+    const clean = `focus: () => void; { focus: id } 'focus-visible:shadow-md group-focus:flex peer-focus:hidden'`;
+    expect(countIn(CLIENT, clean)).toEqual({});
+  });
 });
 
 describe('the sidebar rules (Phase 4)', () => {
@@ -95,8 +103,10 @@ describe('the overlay rules (Phase 2 Overlay A)', () => {
   });
 
   it('refuses the old menu highlight, in the menus only', () => {
-    expect(countIn(DROPDOWN, `'focus:bg-dui-accent'`)).toEqual({ 'menu-focus-accent': 1 });
-    expect(countIn('packages/ui/src/command.tsx', `'focus:bg-dui-accent'`)).toEqual({});
+    // `bare-focus` refuses the same text everywhere; this pins the menu rule's own reach.
+    const menu = RULES.filter((r) => r.id === 'menu-focus-accent');
+    expect(countIn(DROPDOWN, `'focus:bg-dui-accent'`, menu)).toEqual({ 'menu-focus-accent': 1 });
+    expect(countIn('packages/ui/src/command.tsx', `'focus:bg-dui-accent'`, menu)).toEqual({});
   });
 
   it('refuses a tooltip with no delay, as a prop or a default', () => {

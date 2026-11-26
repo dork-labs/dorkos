@@ -6,6 +6,7 @@ import reactConfig from '@dorkos/eslint-config/react';
 import testConfig from '@dorkos/eslint-config/test';
 
 import fsd from './eslint-rules/fsd.js';
+import react19 from './eslint-rules/react.js';
 import routes from './eslint-rules/routes.js';
 import space from './eslint-rules/space.js';
 
@@ -86,6 +87,35 @@ export default defineConfig([
     files: ['src/**/*.{ts,tsx}'],
     plugins: { space },
     rules: { 'space/separate-sites': 'error' },
+  },
+
+  // `.claude/rules/components.md`, DOR-4939: React 19 hands `ref` over as an
+  // ordinary prop, so nothing wraps itself in `forwardRef`. Why this is local
+  // code and not `no-restricted-imports` is in the rule.
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    plugins: { react19 },
+    rules: { 'react19/no-forward-ref': 'error' },
+  },
+
+  // `.claude/rules/components.md`, DOR-4939: a component never rolls dice, so it
+  // draws the same thing on every render and in every test. Scoped to `ui/`,
+  // where components live; model and lib code that needs real randomness (a
+  // reconnect's backoff jitter, a shuffle, a celebration's odds) sits outside it.
+  {
+    files: ['src/layers/**/ui/**/*.{ts,tsx}'],
+    ignores: ['src/layers/**/__tests__/**'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'Math',
+          property: 'random',
+          message:
+            'A component never rolls dice: derive a stable value from React.useId() or the index, or move real randomness into model/ or lib/.',
+        },
+      ],
+    },
   },
 
   // FSD Layer Enforcement: shared/ cannot import higher layers, and inside

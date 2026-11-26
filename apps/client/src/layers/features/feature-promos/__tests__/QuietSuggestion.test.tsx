@@ -13,12 +13,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useSyncExternalStore } from 'react';
 import { render, renderHook, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { forwardRef } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import type { PromoDefinition, PromoContext, PromoContent } from '../model/promo-types';
 
 /** Minimal stub that satisfies the LucideIcon (ForwardRefExoticComponent) shape for tests. */
-const StubIcon = forwardRef<SVGSVGElement>(() => null) as unknown as LucideIcon;
+const StubIcon = (() => null) as unknown as LucideIcon;
 
 const localStorageMock = (() => {
   let store: Record<string, string> = {};

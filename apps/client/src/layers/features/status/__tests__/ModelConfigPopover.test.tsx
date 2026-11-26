@@ -97,18 +97,17 @@ vi.mock('motion/react', () => ({
         // special-case this would treat "create" as the tag and hand back a
         // broken <create> element instead of the caller's component (DOR-1416).
         if (tag === 'create') return (Component: React.ElementType) => Component;
-        const Component = React.forwardRef(
-          (props: Record<string, unknown>, ref: React.Ref<HTMLElement>) => {
-            const {
-              initial: _initial,
-              animate: _animate,
-              exit: _exit,
-              transition: _transition,
-              ...rest
-            } = props;
-            return React.createElement(tag, { ...rest, ref });
-          }
-        );
+        // React 19 hands `ref` over as an ordinary prop, so it rides through in `rest`.
+        const Component = (props: Record<string, unknown>) => {
+          const {
+            initial: _initial,
+            animate: _animate,
+            exit: _exit,
+            transition: _transition,
+            ...rest
+          } = props;
+          return React.createElement(tag, rest);
+        };
         Component.displayName = `motion.${tag}`;
         return Component;
       },
