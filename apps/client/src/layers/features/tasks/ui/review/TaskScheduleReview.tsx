@@ -33,7 +33,7 @@ function ReviewContent({ task, onOpenChange, returnFocus, turnOnApproval }: Revi
   const { isDesktop } = useResponsiveDialog();
   const header = (
     <ResponsiveDialogHeader className={isDesktop ? undefined : 'px-0 pt-0 pb-2'}>
-      <ResponsiveDialogTitle id={titleId} tabIndex={-1} className="focus:outline-none">
+      <ResponsiveDialogTitle id={titleId} tabIndex={-1} className="outline-none">
         Review schedule
       </ResponsiveDialogTitle>
       <ResponsiveDialogDescription>

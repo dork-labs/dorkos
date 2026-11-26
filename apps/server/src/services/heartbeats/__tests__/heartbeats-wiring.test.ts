@@ -72,7 +72,6 @@ describe('startHeartbeats', () => {
   it('arms nothing with heartbeats off, follows the switch on, and clears everything off again', async () => {
     const observe = vi.fn(() => () => undefined);
     const handle = startHeartbeats({
-      routes: {},
       origins: {},
       db: createTestDb(),
       meshCore: () => undefined,
@@ -111,7 +110,6 @@ describe('startHeartbeats', () => {
     role.value = 'agent-computer';
     config.enabled = true;
     const handle = startHeartbeats({
-      routes: {},
       origins: {},
       db: createTestDb(),
       meshCore: () => undefined,
@@ -129,7 +127,6 @@ describe('startHeartbeats', () => {
 
   it("treats a turn started by another message in a beat chat as that message's, not the beat's", () => {
     startHeartbeats({
-      routes: {},
       origins: {},
       db: createTestDb(),
       meshCore: () => undefined,
@@ -154,7 +151,6 @@ describe('startHeartbeats', () => {
     config.enabled = true;
     const manifest = { id: 'agent-juno', name: 'juno', runtime: 'claude-code' };
     const handle = startHeartbeats({
-      routes: {},
       origins: {},
       db: createTestDb(),
       meshCore: () =>

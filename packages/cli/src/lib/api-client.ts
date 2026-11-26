@@ -106,14 +106,46 @@ export class ApiError extends Error {
   }
 }
 
+/** The env var a DorkOS turn names its own server in (`turn-reference-env.ts`). */
+const SERVER_URL_ENV_VAR = 'DORKOS_API_URL';
+
 /**
- * Resolve the DorkOS server base URL by reading port + host from the
- * environment, falling back to `~/.dork/config.json`, and finally the
- * default port. Always uses `http://localhost`.
+ * The origin in `DORKOS_API_URL`, when it is a plain `http` loopback origin
+ * (`localhost`, `127.x.x.x` or `[::1]`, a port, no path), else `null`. A DorkOS
+ * turn sets it to the server that started the turn, so a command the agent
+ * runs reaches that server and not whichever one `config.json` names. Anything
+ * else is ignored rather than dialled: this client sends the agent's token.
+ */
+function turnServerOrigin(): string | null {
+  // eslint-disable-next-line no-restricted-syntax -- DORKOS_API_URL is injected into the spawned agent's env by the server, not CLI config
+  const raw = process.env[SERVER_URL_ENV_VAR]?.trim();
+  if (!raw) return null;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  const loopback =
+    url.hostname === 'localhost' ||
+    url.hostname === '[::1]' ||
+    /^127(\.\d{1,3}){3}$/.test(url.hostname);
+  const bare = url.pathname === '/' && !url.search && !url.hash && !url.username && !url.password;
+  return url.protocol === 'http:' && loopback && url.port !== '' && bare ? url.origin : null;
+}
+
+/**
+ * Resolve the DorkOS server base URL: the turn's own server
+ * (`DORKOS_API_URL`, loopback only) when a DorkOS turn named one, else the
+ * port from the environment, then `~/.dork/config.json`, then the default,
+ * always on `http://localhost`.
  *
  * @returns The base URL with no trailing slash (e.g. `http://localhost:4242`).
  */
 export function getServerBaseUrl(): string {
+  const turnServer = turnServerOrigin();
+  if (turnServer) return turnServer;
+
   // eslint-disable-next-line no-restricted-syntax -- DORKOS_PORT is set imperatively by cli.ts before subcommands run
   const envPort = process.env.DORKOS_PORT;
   if (envPort && /^\d+$/.test(envPort)) {

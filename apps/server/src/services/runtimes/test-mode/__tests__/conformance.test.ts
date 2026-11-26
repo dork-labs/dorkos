@@ -10,6 +10,7 @@ import { scenarioStore, requestFinishTurn } from '../scenario-store.js';
 import { heldProcesses } from '../held-process.js';
 import { interactionGate } from '../interaction-gate.js';
 import { TestModeRuntime } from '../test-mode-runtime.js';
+import { composeScenarioWorld } from '../../../../startup/test-composition/scenario-world.js';
 import {
   driveDurableTurn,
   driveExpiredQuestionTurn,
@@ -37,9 +38,16 @@ afterEach(() => {
 // itself bakes in no JSONL/file assumptions — the same assertions must also
 // pass against the JSONL-backed ClaudeCodeRuntime (see its conformance.test.ts).
 // A scripted fixture: it declares no guard, so DorkOS treats it as having none.
-runtimeGuardConformance(() => new TestModeRuntime());
+/** A runtime handed the real scenario world, as startup registers it. */
+function testRuntime(): TestModeRuntime {
+  const runtime = new TestModeRuntime();
+  runtime.useScenarioWorld(composeScenarioWorld());
+  return runtime;
+}
 
-runtimeConformance(() => new TestModeRuntime(), {
+runtimeGuardConformance(() => testRuntime());
+
+runtimeConformance(() => testRuntime(), {
   name: 'TestModeRuntime — AgentRuntime conformance',
   // Spec `turns-survive-restarts` §7.2: test-mode declares
   // `continuesInterruptedTurn`, so it drives the case. `tool-call` gives the
@@ -49,11 +57,11 @@ runtimeConformance(() => new TestModeRuntime(), {
   restartContinueTurn: {
     start: (sessionId) => {
       scenarioStore.setForSession(sessionId, 'tool-call');
-      return new TestModeRuntime();
+      return testRuntime();
     },
     restart: (sessionId) => {
       scenarioStore.setForSession(sessionId, 'simple-text');
-      return new TestModeRuntime();
+      return testRuntime();
     },
   },
   // Stateless by design: native history is [] — completed messages live in the
@@ -91,7 +99,7 @@ runtimeConformance(() => new TestModeRuntime(), {
   // the runtime's production failing turn (typed error, then terminal done).
   makeFailingRuntime: () => {
     scenarioStore.setDefault('error');
-    return new TestModeRuntime();
+    return testRuntime();
   },
   // Compaction rides the scenario store too: the built-in 'compacting'
   // scenario is a turn that compacts instead of answering, which is what an
@@ -100,12 +108,12 @@ runtimeConformance(() => new TestModeRuntime(), {
   // test-mode is the only adapter that can reach it without a real model.
   makeCompactingRuntime: () => {
     scenarioStore.setDefault('compacting');
-    return new TestModeRuntime();
+    return testRuntime();
   },
   // DOR-2732: the `context-reading` scenario reports tokens and window.
   contextReadingTurn: async () => {
     scenarioStore.setDefault('context-reading');
-    const runtime = new TestModeRuntime();
+    const runtime = testRuntime();
     const sessionId = 'context-reading-conformance';
     runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: '/projects/conformance' });
     const events = [];
@@ -119,7 +127,7 @@ runtimeConformance(() => new TestModeRuntime(), {
   // DOR-2732: a summary somebody asked for. test-mode's compact intent is the
   // fake that records the request and answers with a synthetic boundary.
   compactIntentTurn: async (observe) => {
-    const runtime = new TestModeRuntime();
+    const runtime = testRuntime();
     const sessionId = 'compact-intent-conformance';
     runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: '/projects/conformance' });
     for await (const _event of runtime.sendMessage(sessionId, 'conformance ping', {
@@ -144,7 +152,7 @@ runtimeConformance(() => new TestModeRuntime(), {
   // credential.
   roomCanvasTurn: () => {
     scenarioStore.setDefault('rooms-open-canvas');
-    return driveRoomCanvasTurn(new TestModeRuntime(), {
+    return driveRoomCanvasTurn(testRuntime(), {
       agentPath: '/agents/ana',
       otherAgentPath: '/agents/ben',
       // Nothing to do: the scenario itself is how this adapter emits the
@@ -243,7 +251,7 @@ it('doc SDK boundary: test-mode passes original structured context and fenced da
       yield { type: 'done', data: {} };
     });
   try {
-    const runtime = new TestModeRuntime();
+    const runtime = testRuntime();
     runtime.ensureSession('doc-sdk-boundary', {
       cwd: '/projects/conformance',
       permissionMode: 'default',

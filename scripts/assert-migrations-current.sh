@@ -2,6 +2,15 @@
 # Prove the committed Drizzle migrations still describe the schema in
 # packages/db/src/schema/.
 #
+# --help
+# Purpose: prove the committed Drizzle migrations still describe the schema, and
+#          fail where drizzle-kit itself exits 0 having refused to run.
+# Runs in: the required `db-check` job; by hand.
+# To fix:  run the generate script the message names in that package, answer any
+#          rename question in a terminal, and commit the migration.
+# Usage:   scripts/assert-migrations-current.sh [<pkg>:<config>:<out>[:<regen-script>] ...]
+# --help end
+#
 # WHY THIS EXISTS AS A SCRIPT. The obvious one-liner is what packages/db shipped
 # for years:
 #
@@ -74,6 +83,11 @@
 # trees and a stub generator in a temp dir; keeping the fixtures off this repo's
 # real state is what stops them red-lighting unrelated PRs. Neither is set by CI
 # or by the package script.
+
+# --help (DOR-4950). A gate checked out alone, as the PR-side gates are, runs without it.
+gate_help="$(dirname "$0")/lib/gate-help.sh"
+# shellcheck source=lib/gate-help.sh
+[ ! -r "$gate_help" ] || . "$gate_help"
 
 set -uo pipefail
 

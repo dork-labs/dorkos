@@ -1,7 +1,7 @@
 /** One Codex controller's live tool facts and its existing stream delivery edge. */
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { CapabilityHoldSession } from '../../../core/capabilities/capability-approval-hold.js';
-import type { RuntimeToolTurnFacts } from '../../../connectors/runtime-principal-port.js';
+import type { RuntimeToolTurnFacts } from '../../../core/connections-lease/index.js';
 
 /** Batch delivery into the transport's existing single-consumer event queue. */
 export type CodexToolEventDelivery = (events: StreamEvent[]) => void;

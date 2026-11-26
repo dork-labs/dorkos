@@ -30,6 +30,8 @@ import type { InstallResult, PermissionPreview } from '../../../services/marketp
 import type { DisclosedEffects } from '../../../services/marketplace/preview/disclosed-effects.js';
 import { createMarketplaceRoutes } from '../../marketplace.js';
 import { honoGroupListener } from '../../../http/__tests__/hono-group-listener.js';
+import { marketplaceReadsDomain } from '../../../services/marketplace/doors/marketplace-read-capabilities.js';
+import { capabilityGroup } from '../../../http/__tests__/capability-group.js';
 import {
   composeRegistry,
   initCapabilityTierGate,
@@ -205,15 +207,16 @@ export function useMarketplaceRoutes(): MarketplaceHarness {
   const h = { server: target.server } as MarketplaceHarness;
 
   function mount(routeFetcher: PackageFetcher): void {
+    const cacheRetention = new PackageCacheRetention({
+      cache: h.cache,
+      dorkHome: h.dorkHome,
+      listAgentScopes: () => h.agentScopes,
+      logger: noopLogger,
+    });
     const routes = createMarketplaceRoutes({
       sourceManager: h.sourceManager,
       cache: h.cache,
-      cacheRetention: new PackageCacheRetention({
-        cache: h.cache,
-        dorkHome: h.dorkHome,
-        listAgentScopes: () => h.agentScopes,
-        logger: noopLogger,
-      }),
+      cacheRetention,
       fetcher: routeFetcher,
       installer: h.installer as unknown as InstallerLike,
       uninstallFlow: h.uninstallFlow as unknown as UninstallFlow,
@@ -226,19 +229,31 @@ export function useMarketplaceRoutes(): MarketplaceHarness {
       consent: h.consent,
       heldBackCards: { approvals: h.approvals, onGranted: vi.fn() },
     });
+    // The reads are served by the capability mount (DOR-4978), over the same services.
+    const reads = capabilityGroup(marketplaceReadsDomain, {
+      marketplaceDeps: {
+        dorkHome: h.dorkHome,
+        sourceManager: h.sourceManager,
+        cache: h.cache,
+        cacheRetention,
+        fetcher: routeFetcher,
+        installer: h.installer,
+        updateFlow: h.updateFlow,
+        onPluginsChanged: h.onPluginsChanged,
+        listAgentScopes: () => h.agentScopes,
+        logger: noopLogger,
+      } as unknown as MarketplaceMcpDeps,
+    });
     target.mount(
-      honoGroupListener(
-        { path: '/api/marketplace', routes },
-        {
-          before: async (c, next) => {
-            // Stands in for the agent-identity middleware: with no agent
-            // header the request is the app's own (DOR-467).
-            if (h.agentHeader) c.env.incoming.headers['x-dorkos-agent'] = h.agentHeader;
-            if (h.signedInUser) c.set('user', h.signedInUser);
-            await next();
-          },
-        }
-      )
+      honoGroupListener([reads, { path: '/api/marketplace', routes }], {
+        before: async (c, next) => {
+          // Stands in for the agent-identity middleware: with no agent
+          // header the request is the app's own (DOR-467).
+          if (h.agentHeader) c.env.incoming.headers['x-dorkos-agent'] = h.agentHeader;
+          if (h.signedInUser) c.set('user', h.signedInUser);
+          await next();
+        },
+      })
     );
   }
 

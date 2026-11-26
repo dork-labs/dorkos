@@ -33,6 +33,7 @@ describe('the binary-test glob file', () => {
     const tracked = execFileSync('git', ['ls-files', '--', '*.binary.test.ts'], {
       cwd: root,
       encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
     })
       .split('\n')
       .filter(Boolean);

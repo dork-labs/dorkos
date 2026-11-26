@@ -10,7 +10,7 @@ import { ApprovalService } from '../../../core/approvals/approval-service.js';
 import { composeRegistry, type CapabilityRegistry } from '../../../core/capabilities/index.js';
 import type { AgentIdentity } from '../../../core/agent-identity/index.js';
 import { ConnectorRuntimePrincipalService } from '../../../connectors/principal/runtime-principal-service.js';
-import type { ConnectorRuntime } from '../../../connectors/runtime-principal-port.js';
+import type { ConnectorRuntime } from '../../../core/connections-lease/index.js';
 import { createRoomSubsystem } from '../../../rooms/index.js';
 import { RoomRepoStore } from '../../../rooms/repo/room-repo-store.js';
 import { composeDocChannelHttp } from './doc-channel-http.js';

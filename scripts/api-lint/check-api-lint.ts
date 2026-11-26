@@ -2,6 +2,17 @@
  * Hold the HTTP API to a ratchet: the OpenAPI document and the route census
  * may only get better, one rule and one route group at a time.
  *
+ * --help
+ * Purpose: hold the HTTP API to a ratchet: the OpenAPI document and the route
+ *          census may only get better, per rule and route group.
+ * Runs in: the required `typecheck` job (`--queue` in the merge queue); by hand.
+ * To fix:  fix the new finding it names (rules: contributing/api-reference.md).
+ *          After a fix, run `pnpm check:api-lint -- --update` and commit the lower
+ *          baseline. A lowered count in a group you never touched is a queue
+ *          leftover: `--update` and commit it with your change.
+ * Usage:   pnpm check:api-lint [-- --base <ref> | --update | --queue | --init]
+ * --help end
+ *
  * WHY THIS EXISTS. The REST API review measured the API at `8c118b8d7f`: 0 of
  * 475 operations carried an `operationId`; 157 paths ended in a command word
  * (the `verb-path` rule here counts a command word in any static segment);
@@ -101,6 +112,7 @@ import {
   type Items,
   type RuleId,
 } from './rules.ts';
+import { exitOnHelp } from '../lib/gate-help.mjs';
 
 export { BASELINE_PATH, type Counts, type UnitCounts } from './baseline-file.ts';
 
@@ -443,6 +455,7 @@ function main(argv: string[]): number {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  exitOnHelp(import.meta.url);
   try {
     process.exit(main(process.argv.slice(2)));
   } catch (err: unknown) {

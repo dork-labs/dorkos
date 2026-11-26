@@ -63,11 +63,16 @@ describe('resolveCodexLaunchTools — the references a signature carries (DOR-51
     expect(tools.referenceEnv).toEqual({
       DORKOS_AGENT_ID: '01JAGENT0000000000000000',
       DORKOS_SPACE_ID: spaceId,
+      // The server that started the turn, loopback only (DOR-5264).
+      DORKOS_API_URL: expect.stringMatching(/^http:\/\/localhost:\d+$/),
     });
   });
 
   it('leaves the agent out when no agent is registered there', async () => {
     const { tools, spaceId } = await launchTools(undefined);
-    expect(tools.referenceEnv).toEqual({ DORKOS_SPACE_ID: spaceId });
+    expect(tools.referenceEnv).toEqual({
+      DORKOS_SPACE_ID: spaceId,
+      DORKOS_API_URL: expect.stringMatching(/^http:\/\/localhost:\d+$/),
+    });
   });
 });

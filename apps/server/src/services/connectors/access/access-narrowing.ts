@@ -34,7 +34,7 @@ import {
   type GrantChangeKind,
 } from '@dorkos/db';
 import { isPaidOperation } from '@dorkos/shared/connector-schemas';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 import {
   anotherAgentTurnRefusal,
   noteMarkedTurnRefusal,

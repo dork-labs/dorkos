@@ -31,11 +31,11 @@ import {
   createCapabilityAuthorityBinding,
   type CapabilityAuthorityBindingProof,
 } from '../principal/capability-authority-binding.js';
-import {
-  isServerPrincipal,
-  type ConnectorOwnerAuthority,
-  type ServerPrincipalProof,
-} from '../principal/server-principal.js';
+import { isServerPrincipal } from '../principal/server-principal.js';
+import type {
+  ConnectorOwnerAuthority,
+  ServerPrincipalProof,
+} from '../../core/connections-lease/index.js';
 import type { ConnectorRuntimeExecutionCapabilityId } from '../runtime-capability-scope.js';
 import {
   deriveConnectionReadiness,

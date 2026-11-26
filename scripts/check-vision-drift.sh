@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # Report positioning drift that no hard gate can catch.
 #
+# --help
+# Purpose: report positioning drift no hard gate can catch (soft words in
+#          headlines, stale north-star files). Reports only; always exits 0.
+# Runs in: by hand, and the scheduled `vision-drift-check` skill. Not in CI.
+# To fix:  judge each line against meta/VOICE.md; reword the ones that are wrong.
+# Usage:   bash scripts/check-vision-drift.sh   (ROOT=<dir> to scan another checkout)
+# --help end
+#
 # WHY THIS EXISTS. scripts/check-banned-words.sh and scripts/check-vocab-gate.ts
 # FAIL the build on words that are wrong everywhere ("mission control", the
 # retired category lines, equal-accounts claims). Most drift is softer than
@@ -16,6 +24,11 @@
 #
 #   bash scripts/check-vision-drift.sh
 #   ROOT=/path/to/checkout bash scripts/check-vision-drift.sh
+
+# --help (DOR-4950). A gate checked out alone, as the PR-side gates are, runs without it.
+gate_help="$(dirname "$0")/lib/gate-help.sh"
+# shellcheck source=lib/gate-help.sh
+[ ! -r "$gate_help" ] || . "$gate_help"
 
 set -uo pipefail
 

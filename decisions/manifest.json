@@ -4972,7 +4972,7 @@
       "specSlug": "capture-cloud-link-stub",
       "lastVerified": "2026-08-06",
       "affects": [
-        "apps/server/src/services/runtimes/test-mode/fake-cloud-link.ts",
+        "apps/server/src/startup/test-composition/fake-cloud-link.ts",
         "apps/server/src/services/core/auth/cloud-link.ts"
       ]
     },

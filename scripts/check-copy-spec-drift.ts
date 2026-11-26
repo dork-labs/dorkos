@@ -1,6 +1,14 @@
 /**
  * Fail a change that rewrites user-visible copy a browser spec still asserts.
  *
+ * --help
+ * Purpose: fail a change that rewrites user-visible copy a browser spec under
+ *          apps/e2e still asserts, before the merge queue finds it.
+ * Runs in: pre-push (`copy-spec-drift`); the required `typecheck` job.
+ * To fix:  update each spec line it names to the new copy, or keep the old copy.
+ * Usage:   pnpm check:copy-spec-drift [base-ref] [repo-root]   (base: origin/main)
+ * --help end
+ *
  * WHY THIS EXISTS (DOR-1647). `browser-test` is an instant pass-through on
  * `pull_request` and only runs the Playwright shards on `merge_group` — the
  * saturation trade `.github/workflows/browser-test.yml` explains at length. The
@@ -133,7 +141,9 @@
  *   - Copy the change removes from a file it touched while an UNCHANGED file
  *     elsewhere still renders the same run. Removal is judged per changed file
  *     on purpose (above), so this direction is a false positive rather than a
- *     miss — say so on the PR; the check is advisory. The
+ *     miss, and since the check blocks, the way past it is a spec locator
+ *     that does not quote the run (a role or a test id). A DELETED file is
+ *     the exception: the corpus answers for it (DOR-4009). The
  *     `removed-spans-assertion` direction narrows that further to the removed
  *     run's OWN file, deliberately (see {@link dropSupported}), which is why
  *     replaying #1579 turns up one borderline finding — the spec's `is
@@ -148,14 +158,19 @@
  * one, and the honest thing to do then is say so here rather than delete it
  * silently.
  *
- * That is a signal, not a proof, and it is deliberately positioned as one: the
- * merge-queue shards remain the gate that decides the merge. This runs on the
- * PR so the common case is caught before it can eject anything.
+ * WHERE IT RUNS (DOR-4937). As a step of the required `typecheck` job, on
+ * every pull request and queue build, and at pre-push on the branch's own
+ * diff. It was an advisory job until then, and advice let a drift reach the
+ * queue anyway. It is still not a proof that the specs pass: the merge-queue
+ * shards decide that. It is the cheap catch for the common case before
+ * anything can be ejected.
  *
  * Usage:
  *   pnpm check:copy-spec-drift [baseRef] [repoRoot]
  *
- * `baseRef` defaults to `origin/main`; CI passes the pull request's base SHA.
+ * `baseRef` defaults to `origin/main`; CI passes the merge commit's first
+ * parent on a pull request and `merge_group.base_sha` in the queue, and
+ * pre-push passes the branch point.
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -163,6 +178,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { collectFiles } from './check-vocab-gate.ts';
+import { exitOnHelp } from './lib/gate-help.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -640,17 +656,34 @@ export function matchSpecStrings(removed: Chunk[], specChunks: Chunk[]): Finding
  *     every cross-file move: a run that survives verbatim somewhere else in the
  *     change never counts as removed in the first place.
  *
+ * A DELETED file is the exception (DOR-4009). Its own file cannot answer, so a
+ * finding from it never cleared, even when the run it held still renders
+ * verbatim from a file the change never touched (#3559 deleted
+ * `ExtensionCard.tsx`, whose `Turn it on` lives on elsewhere). For such a file
+ * the corpus answers, on the terms each shape admits: a spec string that is a
+ * whole run clears when some chunk at HEAD still contains it; a broader one
+ * clears when some chunk still contains the removed run. The collision risk
+ * the narrowings above name is accepted here, because the alternative is a
+ * finding nothing can ever clear.
+ *
  * @param findings - Output of {@link matchSpecStrings}.
  * @param corpusTexts - Every chunk text in the copy corpus at HEAD.
  * @param changedChunks - Chunks the changed files still hold at HEAD, with
  *   their paths, so a finding is answered by its OWN file.
+ * @param deletedFiles - Changed files that no longer exist at HEAD.
  */
 export function dropSupported(
   findings: Finding[],
   corpusTexts: string[],
-  changedChunks: Chunk[] = []
+  changedChunks: Chunk[] = [],
+  deletedFiles: ReadonlySet<string> = new Set()
 ): Finding[] {
   return findings.filter((finding) => {
+    if (deletedFiles.has(finding.copyFile)) {
+      const needle =
+        finding.overlap === 'removed-spans-assertion' ? finding.assertion : finding.removed;
+      return !corpusTexts.some((text) => spans(text, needle, finding.ignoreCase));
+    }
     if (finding.overlap === 'removed-spans-assertion') {
       return !changedChunks.some(
         (chunk) =>
@@ -715,6 +748,7 @@ export function runCopySpecGuard(repoRoot: string, baseRef: string): Finding[] {
 
   const before: Chunk[] = [];
   const after: Chunk[] = [];
+  const deleted = new Set<string>();
   for (const file of changed) {
     const contents = readAtRef(repoRoot, baseRef, file);
     // A file this change ADDED has no base version, so it removed nothing.
@@ -722,6 +756,7 @@ export function runCopySpecGuard(repoRoot: string, baseRef: string): Finding[] {
     const absolute = join(repoRoot, file);
     // ...and one it DELETED has no working-tree version, so it removed all of it.
     if (existsSync(absolute)) after.push(...extractChunks(file, readFileSync(absolute, 'utf8')));
+    else deleted.add(file);
   }
   if (before.length === 0) return [];
 
@@ -739,7 +774,8 @@ export function runCopySpecGuard(repoRoot: string, baseRef: string): Finding[] {
     dropSupported(
       candidates,
       collectCorpus(repoRoot, COPY_ROOTS).map((chunk) => chunk.text),
-      after
+      after,
+      deleted
     )
   );
 }
@@ -747,6 +783,7 @@ export function runCopySpecGuard(repoRoot: string, baseRef: string): Finding[] {
 const isMain = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1];
 
 if (isMain) {
+  exitOnHelp(import.meta.url);
   const baseRef = process.argv[2] ?? 'origin/main';
   const repoRoot = process.argv[3] ?? join(SCRIPT_DIR, '..');
   const findings = runCopySpecGuard(repoRoot, baseRef);
@@ -770,8 +807,9 @@ if (isMain) {
         'nearly every case — the merge-queue shards would otherwise fail on it, and a queue\n' +
         'failure ejects the PR and disarms auto-merge (DOR-1647).\n\n' +
         'If the copy genuinely still renders — assembled somewhere this gate cannot read, or\n' +
-        'produced outside the roots this gate reads — say so on the PR: this check is advisory\n' +
-        'and does not block the merge queue.'
+        'produced outside the roots this gate reads — change the spec to a locator that does\n' +
+        'not quote the removed run (a role or a test id). This check fails the required\n' +
+        '`typecheck` job (DOR-4937).'
     );
     process.exit(1);
   }

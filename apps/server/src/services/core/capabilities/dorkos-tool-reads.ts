@@ -46,16 +46,35 @@ const anyFromPackage =
     return list.some((entry) => (entry as { fromPackage?: unknown } | null)?.fromPackage === true);
   };
 
-/** Whether any installed package came from somewhere but the person's own marketplace. */
-const anyInstalledFromOutside: ReturnsOutsideText = (returned) => {
-  const installed = (returned as { installed?: unknown } | null)?.installed;
+/**
+ * Whether any source's last fetch carries a `reason`: git's or the remote's own words when a
+ * fetch failed.
+ */
+const anySourceFetchReason: ReturnsOutsideText = (returned) => {
+  const sources = (returned as { sources?: unknown } | null)?.sources;
   return (
-    Array.isArray(installed) &&
-    installed.some(
-      (entry) => (entry as { installedFrom?: unknown }).installedFrom !== PERSONAL_MARKETPLACE_NAME
+    Array.isArray(sources) &&
+    sources.some(
+      (source) =>
+        typeof (source as { lastFetch?: { reason?: unknown } } | null)?.lastFetch?.reason ===
+        'string'
     )
   );
 };
+
+/** Whether any installed package under `key` came from somewhere but the person's own marketplace. */
+const anyInstalledFromOutside =
+  (key: string): ReturnsOutsideText =>
+  (returned) => {
+    const installed = (returned as Record<string, unknown> | null)?.[key];
+    return (
+      Array.isArray(installed) &&
+      installed.some(
+        (entry) =>
+          (entry as { installedFrom?: unknown }).installedFrom !== PERSONAL_MARKETPLACE_NAME
+      )
+    );
+  };
 
 /** Every DorkOS tool an agent can reach, by capability id or hand-registered tool name. */
 export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
@@ -78,6 +97,11 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'marketplace.search': 'outside',
   'marketplace.get': 'outside',
   'marketplace.recommend': 'outside',
+  // A source's listing, a newer version's disclosure and a held-back package's effects are
+  // the package's own text (DOR-4978).
+  'marketplace.browse': 'outside',
+  'marketplace.check_updates': 'outside',
+  'marketplace.list_held_back': 'outside',
   'connector.list_toolkits': 'outside',
   'connector.recommend': 'outside',
   'connectors.list_granted_operations': 'outside',
@@ -87,6 +111,8 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'mcp.test': 'outside',
   // A server's own tool names and descriptions, which its publisher wrote.
   'mcp.check_global_tools': 'outside',
+  // A person's Heartbeat page: each beat's summary can quote what the beat read (agents are refused).
+  'heartbeat.view_page': 'outside',
   mesh_discover: 'outside',
   test_extension: 'outside',
   // ── What other turns read or said ──────────────────────────────────────────
@@ -134,7 +160,13 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'todos.confirm_promise': 'self',
   'connectors.execute_read': 'self',
   // ── Marks when a listed entry came from a third-party package ──────────────
-  'marketplace.list_installed': anyInstalledFromOutside,
+  'marketplace.list_installed': anyInstalledFromOutside('installed'),
+  // The marketplace's reads on `/api/marketplace/*` (DOR-4978) mark the same way.
+  'marketplace.list_installations': anyInstalledFromOutside('packages'),
+  'marketplace.read_installed': anyInstalledFromOutside('installations'),
+  // A failed fetch's `reason` can carry git's stderr or a remote's `remote:` lines.
+  'marketplace.list_sources': anySourceFetchReason,
+  'marketplace.list_marketplaces': anySourceFetchReason,
   mesh_list: anyFromPackage('agents'),
   mesh_inspect: anyFromPackage('agent'),
   // The registry's doors on `/api/mesh/*` (DOR-4978): an agent a package brought marks, as
@@ -155,12 +187,13 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'operator.config_patch': 'local',
   'operator.sidebar_add_to_group': 'local',
   'operator.sidebar_remove_from_group': 'local',
-  'marketplace.list_marketplaces': 'local',
   'marketplace.install': 'local',
   'marketplace.update': 'local',
   'marketplace.uninstall': 'local',
   'marketplace.create_package': 'local',
   'marketplace.link': 'local',
+  'marketplace.cache_status': 'local',
+  'marketplace.list_dev_links': 'local',
   'connectors.list_granted_connections': 'local',
   'connectors.request_connection': 'local',
   'connectors.get_connection_request': 'local',
@@ -223,10 +256,14 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'work-claims.claim': 'local',
   'work-claims.check': 'local',
   'work-claims.release': 'local',
+  // Writes links between ids; it hands back only the refs it was sent.
+  'work-graph.record-pr': 'local',
   'audit.verify': 'local',
   'agent.pause': 'local',
   'agent.resume': 'local',
   'agent.list_paused': 'local',
+  // A person's move of an old persona into SOUL.md (DOR-4978).
+  'agent.migrate_persona': 'local',
   'approvals.withdraw': 'local',
   'local_browser.state': 'local',
   'local_browser.ask_person': 'local',
@@ -244,6 +281,9 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'permissions.request_access': 'local',
   'permissions.list': 'local',
   'permissions.change': 'local',
+  // Settings, the same an agent reads on the permissions page (DOR-4978).
+  'permissions.view_agent': 'local',
+  'permissions.view_agent_level': 'local',
   'heartbeat.end_beat': 'local',
   'heartbeat.status': 'local',
   'heartbeat.wakers_off': 'local',
@@ -286,6 +326,13 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   tasks_update: 'local',
   tasks_delete: 'local',
   'tasks.view_list': 'local',
+  // The app's runtime setup reads (DOR-4978): settings, labels, folder names, key hints.
+  'runtimes.account_usage': 'local',
+  'runtimes.found_accounts': 'local',
+  'runtimes.account_eligibility': 'local',
+  'runtimes.key_status': 'local',
+  'runtimes.opencode_key_setup': 'local',
+  'runtimes.doe_model_setup': 'local',
   relay_list_endpoints: 'local',
   relay_notify_user: 'local',
   relay_list_adapters: 'local',

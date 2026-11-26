@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { act, render, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import { Bot } from 'lucide-react';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { useExtensionRegistry, type RightPanelContribution } from '@/layers/shared/model';
 
@@ -194,23 +195,16 @@ describe('RightPanelHeader', () => {
     expect(screen.getByRole('tab', { name: 'My Extension' })).toBeInTheDocument();
   });
 
-  it('renders a forwardRef icon rather than replacing it with the fallback', async () => {
+  it('renders a forwardRef icon rather than replacing it with the fallback', () => {
     // Every `lucide-react` icon is a `forwardRef` result — an OBJECT, not a
     // function. A function-only guard rejected all of them, so all six built-in
     // tabs rendered the same puzzle-piece and became indistinguishable.
-    const { forwardRef } = await import('react');
-    const RefIcon = forwardRef<SVGSVGElement, { className?: string }>((props, ref) => (
-      <svg {...props} ref={ref} data-testid="real-icon" />
-    ));
     renderHeader([
-      makeContribution('agent', {
-        title: 'Profile',
-        icon: RefIcon as unknown as RightPanelContribution['icon'],
-      }),
+      makeContribution('agent', { title: 'Profile', icon: Bot }),
       makeContribution('files', { title: 'Files' }),
     ]);
 
-    expect(screen.getByTestId('real-icon')).toBeInTheDocument();
+    expect(document.querySelector('svg.lucide-bot')).toBeInTheDocument();
   });
 
   it('renders no tab strip with a single contribution', () => {

@@ -29,7 +29,6 @@ import {
   errorShapeItems,
   isHandRegistryFile,
   isKeptRoute,
-  listPagingItems,
   operationIdItems,
   paramNameItems,
   registerPathLines,
@@ -255,54 +254,6 @@ describe('error-shape', () => {
       '/api/inline': { post: held(stepUp) },
     });
     expect(errorShapeItems(d)).toEqual({ inline: ['POST /api/inline 428'] });
-  });
-});
-
-describe('list-paging', () => {
-  const ok = (schema: object) => ({ '200': { content: { 'application/json': { schema } } } });
-  const query = (...names: string[]) => names.map((name) => ({ name, in: 'query' }));
-
-  it('finds an unpaged array, an object holding an array, and a $ref one level down', () => {
-    const d = doc(
-      {
-        '/api/a': { get: op({ responses: ok({ type: 'array' }) }) },
-        '/api/b': { get: op({ responses: ok({ properties: { items: { type: 'array' } } }) }) },
-        '/api/c': { get: op({ responses: ok({ $ref: '#/components/schemas/List' }) }) },
-      },
-      { List: { type: 'object', properties: { rows: { type: ['array', 'null'] } } } }
-    );
-    expect(listPagingItems(d)).toEqual({ a: ['GET /api/a'], b: ['GET /api/b'], c: ['GET /api/c'] });
-  });
-
-  it('passes cursor + limit + nextCursor, and never judges an item GET or a non-list', () => {
-    const paged = { properties: { items: { type: 'array' }, nextCursor: { type: 'string' } } };
-    const d = doc({
-      '/api/a': { get: op({ parameters: query('cursor', 'limit'), responses: ok(paged) }) },
-      '/api/a/{id}': { get: op({ responses: ok({ type: 'array' }) }) },
-      '/api/b': { get: op({ responses: ok({ type: 'object' }) }) },
-    });
-    expect(listPagingItems(d)).toEqual({});
-  });
-
-  it('looks one level into oneOf, anyOf and allOf for a list body and its nextCursor', () => {
-    const items = { properties: { items: { type: 'array' } } };
-    const paged = { allOf: [items, { properties: { nextCursor: { type: 'string' } } }] };
-    const d = doc({
-      '/api/a': { get: op({ responses: ok({ oneOf: [{ type: 'object' }, items] }) }) },
-      '/api/b': { get: op({ responses: ok({ anyOf: [{ $ref: '#/components/schemas/L' }] }) }) },
-      '/api/c': { get: op({ parameters: query('cursor', 'limit'), responses: ok(paged) }) },
-    });
-    d.components = { schemas: { L: { type: 'array' } } };
-    expect(listPagingItems(d)).toEqual({ a: ['GET /api/a'], b: ['GET /api/b'] });
-  });
-
-  it('fails a list that takes cursor and limit but returns no nextCursor', () => {
-    const d = doc({
-      '/api/a': {
-        get: op({ parameters: query('cursor', 'limit'), responses: ok({ type: 'array' }) }),
-      },
-    });
-    expect(listPagingItems(d)).toEqual({ a: ['GET /api/a'] });
   });
 });
 

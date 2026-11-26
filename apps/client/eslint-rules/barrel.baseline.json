@@ -1,0 +1,18 @@
+{
+  "$comment": "Barrel-only imports between slices (apps/client/eslint-rules/barrel.js, DOR-4935). Each number is how many imports past another slice's barrel that test file still holds. It may only fall: lower an entry when you remove some, remove it at zero, and never add an entry or raise a number. Only test files may be listed.",
+  "files": {
+    "src/__tests__/agent-overload-sweep.test.tsx": 1,
+    "src/__tests__/one-live-definition.test.ts": 5,
+    "src/layers/features/agent-creation/__tests__/CreateAgentDialog.test.tsx": 1,
+    "src/layers/features/composer/__tests__/ComposerInput-palettes-rich-text.test.tsx": 1,
+    "src/layers/features/extensions/__tests__/extension-loader-apps.test.ts": 1,
+    "src/layers/widgets/app-layout/__tests__/extension-dialog.test.tsx": 2,
+    "src/layers/widgets/mobile-tabs/__tests__/MobileTabsLayout.test.tsx": 2,
+    "src/layers/widgets/session/__tests__/ChatPanel-dorkbot-seed.test.tsx": 2,
+    "src/layers/widgets/session/__tests__/SessionComposer.test.tsx": 1,
+    "src/layers/widgets/session/__tests__/SessionMessage-room-post.test.tsx": 1,
+    "src/layers/widgets/session/__tests__/approval-receipts.test.tsx": 4,
+    "src/layers/widgets/session/__tests__/chip-tray-survives-turn-end.test.tsx": 1,
+    "src/layers/widgets/session/__tests__/upload-wedge-recovery.test.tsx": 1
+  }
+}

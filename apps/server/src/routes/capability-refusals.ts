@@ -22,6 +22,11 @@ import { PERSON_ONLY_AGENT_HINTS } from '@dorkos/shared/capabilities';
 import { TODO_TOOL_REFUSALS } from '../services/todos/todo-refusals.js';
 import { MESH_TOOL_REFUSALS } from '../services/mesh/doors/mesh-refusals.js';
 import { GLOBAL_MCP_TOOL_REFUSALS } from '../services/mesh/global-mcp/global-mcp-refusals.js';
+import { MARKETPLACE_TOOL_REFUSALS } from '../services/marketplace/doors/marketplace-refusals.js';
+import {
+  RUNTIME_READ_SENTENCES,
+  RUNTIME_TOOL_REFUSALS,
+} from '../services/core/runtime-doors/runtime-read-refusals.js';
 
 import type {
   TierDeniedPayload,
@@ -131,6 +136,8 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
   OUTSIDE_FOLDER: {
     code: 'outside_boundary',
     detail: 'That path is outside the folders DorkOS may use.',
+    // The account-eligibility read's own sentence (`runtimes.account_eligibility`).
+    alsoSays: [RUNTIME_READ_SENTENCES.outsideFolder],
   },
   // Not the shared `no_agent`, which is about a mini app's forward.
   NO_AGENT: { code: 'invalid_request', detail: 'This chat needs an active agent.' },
@@ -146,6 +153,8 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
     code: 'outside_turn',
     detail: 'Wait until the agent’s turn ends, then try again.',
   },
+  // `work-graph.record-pr` (DOR-5264): only a chat's own live turn records.
+  NOT_A_CHAT_TURN: { code: 'forbidden', detail: 'Only a chat’s own turn can record this.' },
   DEV_LINK_PATH_NOT_ALLOWED: {
     code: 'outside_boundary',
     detail: 'That folder is outside the folders DorkOS may use.',
@@ -269,6 +278,20 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
   // The agent registry's doors kept the hand routes' codes, statuses and sentences
   // (`services/mesh/doors/mesh-refusals.ts`).
   ...MESH_TOOL_REFUSALS,
+  // One agent's reads on `/api/agents/*` kept the hand routes' codes and sentences (DOR-4978).
+  PERMISSIONS_UNKNOWN_AGENT: { code: 'agent_not_found', detail: 'No agent with that id.' },
+  HEARTBEAT_AGENT_NOT_FOUND: { code: 'not_found', detail: 'No agent with that id.' },
+  HEARTBEATS_UNAVAILABLE: {
+    code: 'temporarily_unavailable',
+    detail: 'Heartbeats are not running on this server yet.',
+  },
+  AGENT_FOLDER_NOT_FOUND: { code: 'not_found', detail: 'No agent is registered in that folder.' },
+  // The marketplace's reads kept the hand routes' codes and sentences
+  // (`services/marketplace/doors/marketplace-refusals.ts`).
+  ...MARKETPLACE_TOOL_REFUSALS,
+  // The runtime setup reads kept the hand routes' codes and sentences
+  // (`services/core/runtime-doors/runtime-read-refusals.ts`).
+  ...RUNTIME_TOOL_REFUSALS,
 };
 
 /** How a tool code ends or starts, and the family that spelling means. */

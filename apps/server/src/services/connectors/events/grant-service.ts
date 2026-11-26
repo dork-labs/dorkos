@@ -5,7 +5,7 @@ import type {
   ConnectorEventGrantSelection,
   ConnectorReceiveScope,
 } from '@dorkos/shared/connector-event-schemas';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 import { recoverEventReview, storedEventReview } from './subscription-review.js';
 import { ConnectorSubscriptionStore } from './subscription-store.js';
 import {

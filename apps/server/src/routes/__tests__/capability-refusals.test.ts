@@ -18,6 +18,7 @@ describe('toolRefusalProblem', () => {
     ['CANNOT_RESUME_SELF', 'forbidden', 403],
     ['OPERATOR_ONLY', 'operator_only', 403],
     ['outside_turn', 'outside_turn', 403],
+    ['NOT_A_CHAT_TURN', 'forbidden', 403],
     ['SPEND_LIMIT', 'spend_limit_reached', 409],
     ['AGENT_NOT_FOUND', 'agent_not_found', 404],
     ['NOT_FOUND', 'not_found', 404],

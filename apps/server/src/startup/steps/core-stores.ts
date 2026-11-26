@@ -78,6 +78,7 @@ import {
 } from '../../services/core/auth/sessions/signed-in-devices.js';
 import { env } from '../../env.js';
 import { initAgentIdentityService } from '../../services/core/agent-identity/index.js';
+import { wireProcessTokenPort } from './work-graph.js';
 import { ActivityService } from '../../services/activity/activity-service.js';
 import { wireAuditTrail } from '../../services/audit/index.js';
 import { wireAgentPause } from '../../services/mesh/pause/index.js';
@@ -347,6 +348,8 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   // first request, whose agent-identity step in the chain reaches this
   // singleton lazily (it has no database handle in scope, same as `getAuth`).
   initAgentIdentityService(db);
+  // The runtimes report the processes that hold its tokens through a port (DOR-5264).
+  wireProcessTokenPort();
 
   // Initialize Activity Service and prune stale events
   const activityService = new ActivityService(db);

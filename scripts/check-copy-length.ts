@@ -1,6 +1,14 @@
 /**
  * Measure every block of in-app copy and flag the ones that are too long.
  *
+ * --help
+ * Purpose: fail when a block of in-app copy runs to 16 words or more.
+ * Runs in: the required `typecheck` job; by hand.
+ * To fix:  shorten the block it names (`writing-app-copy` skill: 3 or fewer is
+ *          best, 15 at most). `--warnings` also lists every 7-15 word block.
+ * Usage:   pnpm check:copy-length [--report-only] [--warnings] [repo-root]
+ * --help end
+ *
  * WHY THIS EXISTS. The app-copy standard (`writing-app-copy` skill, decided by
  * the operator on 2026-10-02) caps how many words one block of copy may carry:
  * three or fewer is preferred, six or fewer is good, seven to fifteen is
@@ -58,6 +66,7 @@ import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { collectFiles, isCopySink } from './check-vocab-gate.ts';
+import { exitOnHelp } from './lib/gate-help.mjs';
 
 /** Workspaces whose copy this script measures. See the module doc for why only the client. */
 const DEFAULT_SCAN_ROOTS = ['apps/client/src'];
@@ -406,6 +415,7 @@ export function runCopyLength(
 const isMain = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1];
 
 if (isMain) {
+  exitOnHelp(import.meta.url);
   const args = process.argv.slice(2);
   const reportOnly = args.includes('--report-only');
   const listWarnings = args.includes('--warnings');

@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ServerPrincipalProof } from '../../../connectors/principal/server-principal.js';
-import {
-  ConnectorRuntimeAuthorityError,
-  type ConnectorRuntimePrincipalPort,
-} from '../../../connectors/runtime-principal-port.js';
+import type {
+  ConnectorRuntimePrincipalPort,
+  ServerPrincipalProof,
+} from '../../../core/connections-lease/index.js';
+import { ConnectorRuntimeAuthorityError } from '@dorkos/shared/connections-lease';
 import type { ConnectorRuntimeTools } from '../../connector-tools.js';
 import { createRuntimeTurnRenewalConformanceFixture } from '../../connectors/__tests__/turn-renewal-conformance-fixture.js';
 import { ClaudeConnectorTurnContext } from '../connector-turn-context.js';

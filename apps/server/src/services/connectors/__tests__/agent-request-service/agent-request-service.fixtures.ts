@@ -29,10 +29,8 @@ import {
   ConnectorAgentRequestSourceAdapter,
   type ConnectorAgentRequestAuthorityPort,
 } from '../../agent-request-service.js';
-import {
-  createServerPrincipal,
-  type ServerPrincipalProof,
-} from '../../principal/server-principal.js';
+import { createServerPrincipal } from '../../principal/server-principal.js';
+import type { ServerPrincipalProof } from '../../../core/connections-lease/index.js';
 import { type ConnectorServiceDirectory } from '../../resources/operator-query-service.js';
 import { MessageQueueStore } from '../../../session/message-queue-store.js';
 import { PrivateSessionMessageAcceptanceService } from '../../../session/private-messages/acceptance.js';

@@ -5,6 +5,16 @@
 #   scripts/pr-gates-check.sh payload <pr-number>
 #   scripts/pr-gates-check.sh decide <arm-door verdict line>
 #
+# --help
+# Purpose: are the sign-off gates met at this PR's head (Security's signed review
+#          or passing cloud verdict; QA's and the designer's notes print only)?
+# Runs in: the required `pr-gates` check.
+# To fix:  get Security's sign-off at the current head; any push needs a new one.
+#          The reasons it prints name what is missing.
+# Usage:   scripts/pr-gates-check.sh run|payload <pr-number>
+#          scripts/pr-gates-check.sh decide <arm-door verdict line>
+# --help end
+#
 # The decision behind .github/workflows/pr-gates.yml (DOR-5107's prerequisite,
 # under DOR-5098: every merge gate in the cloud, then auto-merge at PR open).
 #
@@ -69,6 +79,12 @@
 # Exit codes: 0 gates met; 1 a gate is missing (the reasons are printed);
 # 2 usage, or something could not be read or decided.
 # Fixtures: scripts/test-pr-gates-check.sh.
+
+# --help (DOR-4950). A gate checked out alone, as the PR-side gates are, runs without it.
+gate_help="$(dirname "$0")/lib/gate-help.sh"
+# shellcheck source=lib/gate-help.sh
+[ ! -r "$gate_help" ] || . "$gate_help"
+
 set -uo pipefail
 
 GH=${GH:-gh}

@@ -195,6 +195,12 @@ for (const [match, miss, deep] of [
     `${S}/core/room-worktree-names/x.ts`,
     true,
   ],
+  // C3's kernel home (DOR-5403): the Connections lease types left services/connectors/.
+  [
+    `${S}/core/connections-lease/runtime-principal-port.ts`,
+    `${S}/core/connections-leases/x.ts`,
+    false,
+  ],
 ]) {
   test(`${match.slice(S.length + 1)} is on the main list${deep ? ' and the deep list' : ' only'}`, () => {
     assert.ok(existsSync(resolve(root, match)), `${match} no longer exists`);
@@ -209,11 +215,18 @@ for (const [match, miss, deep] of [
   });
 }
 
-// C2's shared homes (DOR-5303): main list only.
+// C2's and C3's shared homes (DOR-5303, DOR-5403): main list only.
 for (const [match, miss] of [
   ['packages/shared/src/chat-client-id.ts', 'packages/shared/src/chat-client-ids.ts'],
   ['packages/shared/src/heartbeat-schemas.ts', 'packages/shared/src/heartbeat-schema.ts'],
   ['packages/shared/src/room-attachment-paths.ts', 'packages/shared/src/room-attachment-path.ts'],
+  // C3 (DOR-5403): the Connections lease's plain values left services/connectors/.
+  ['packages/shared/src/connections-lease.ts', 'packages/shared/src/connections-leases.ts'],
+  // C4 (DOR-5444): the test-mode scenario world and its stand-in cloud link left runtimes/test-mode/.
+  [
+    'apps/server/src/startup/test-composition/fake-cloud-link.ts',
+    'apps/server/src/startup/test-compositions/fake-cloud-link.ts',
+  ],
 ]) {
   test(`${match} is on the main list only`, () => {
     assert.ok(existsSync(resolve(root, match)), `${match} no longer exists`);

@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 # Prove that a `turbo test` run actually executed tests.
 #
+# --help
+# Purpose: prove a `turbo test` run executed tests, not a full cache replay or a
+#          filter that matched nothing.
+# Runs in: test.yml's `test-shard` jobs (behind the required `test`).
+# To fix:  read the package it names: its test task was replayed from cache or
+#          never ran. Check the turbo filter and the package's test script.
+# Usage:   scripts/assert-tests-executed.sh [--packages <file>] [<summary.json>]
+# --help end
+#
 # WHY THIS EXISTS. Turbo caches `test` (turbo.json: `"test": { "cache": true }`),
 # and a full cache hit is nearly indistinguishable from a real run in the log:
 #
@@ -50,6 +59,11 @@
 # looked up. It exists so scripts/test-assert-tests-executed.sh can drive this
 # against synthetic workspaces in a temp dir; keeping the fixtures off this
 # repo's real state is what stops them red-lighting unrelated PRs.
+
+# --help (DOR-4950). A gate checked out alone, as the PR-side gates are, runs without it.
+gate_help="$(dirname "$0")/lib/gate-help.sh"
+# shellcheck source=lib/gate-help.sh
+[ ! -r "$gate_help" ] || . "$gate_help"
 
 set -uo pipefail
 

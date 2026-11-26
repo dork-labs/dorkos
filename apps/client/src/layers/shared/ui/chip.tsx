@@ -64,7 +64,7 @@ export interface ChipProps extends Omit<React.ComponentProps<'button'>, 'childre
 /**
  * A pill you can press.
  *
- * A `<button>` with a forwarded ref, so it can be a Radix trigger. Rests on the
+ * A `<button>` that takes a `ref`, so it can be a Radix trigger. Rests on the
  * same 7% tint as a {@link Badge}; hovering steps it to 11% and the word to full
  * strength. A pressed toggle inverts to the foreground, which also keeps its
  * width: nothing shifts when it turns on.
@@ -74,19 +74,17 @@ export interface ChipProps extends Omit<React.ComponentProps<'button'>, 'childre
  * @param icon - A glyph before the words.
  * @param iconClassName - Classes for the glyph.
  */
-const Chip = React.forwardRef<HTMLButtonElement, ChipProps>(function Chip(
-  {
-    size = 'sm',
-    pressed,
-    icon: Icon,
-    iconClassName,
-    className,
-    type = 'button',
-    children,
-    ...props
-  },
-  ref
-) {
+function Chip({
+  size = 'sm',
+  pressed,
+  icon: Icon,
+  iconClassName,
+  className,
+  type = 'button',
+  children,
+  ref,
+  ...props
+}: ChipProps) {
   return (
     <button
       ref={ref}
@@ -100,6 +98,6 @@ const Chip = React.forwardRef<HTMLButtonElement, ChipProps>(function Chip(
       {children !== undefined && <span className="max-w-56 truncate">{children}</span>}
     </button>
   );
-});
+}
 
 export { Chip, chipVariants };

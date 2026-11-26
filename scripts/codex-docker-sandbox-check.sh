@@ -2,6 +2,15 @@
 # Prove the DorkOS Codex seccomp profile does what docs/self-hosting/docker.mdx
 # says, and nothing more (DOR-3800).
 #
+# --help
+# Purpose: prove the Codex seccomp profile does what docs/self-hosting/docker.mdx
+#          says, and nothing more, against a built image.
+# Runs in: cli-smoke-test.yml, the `codex-docker-sandbox` job; by hand with Docker.
+# To fix:  read the FAIL lines. Fix the profile or the doc so they agree; pass
+#          `--expect` to match the host's AppArmor.
+# Usage:   scripts/codex-docker-sandbox-check.sh [--expect auto|full|apparmor] <image> <profile.json>
+# --help end
+#
 # Usage: scripts/codex-docker-sandbox-check.sh [--expect auto|full|apparmor] <image> <seccomp-profile.json>
 #
 # Runs the image twice, both with --network none and no mounts:
@@ -50,6 +59,12 @@
 # Run it on a host left at its defaults: never loosen the host's user-namespace
 # or AppArmor settings to make it pass. A host that needs that is a host the
 # profile does not support.
+
+# --help (DOR-4950). A gate checked out alone, as the PR-side gates are, runs without it.
+gate_help="$(dirname "$0")/lib/gate-help.sh"
+# shellcheck source=lib/gate-help.sh
+[ ! -r "$gate_help" ] || . "$gate_help"
+
 set -euo pipefail
 
 EXPECT=auto

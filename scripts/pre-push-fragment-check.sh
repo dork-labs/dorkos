@@ -2,6 +2,15 @@
 # Pre-push gate: refuse a push that carries a broken changelog fragment, most
 # often a seed nobody rewrote.
 #
+# --help
+# Purpose: refuse a push that carries a broken changelog fragment, most often a
+#          seeded one nobody rewrote. Same command as `fragment-present`.
+# Runs in: pre-push (`fragments`); by hand.
+# To fix:  rewrite or delete the fragment it names (changelog/README.md), commit,
+#          push again.
+# Usage:   bash scripts/pre-push-fragment-check.sh
+# --help end
+#
 #   bash scripts/pre-push-fragment-check.sh
 #
 # WHY THIS EXISTS
@@ -25,6 +34,11 @@
 #
 # Pure-stdlib Python 3, ~0.1 s. A machine with no python3 skips with a note
 # rather than refusing: CI still runs the real check.
+
+# --help (DOR-4950). A gate checked out alone, as the PR-side gates are, runs without it.
+gate_help="$(dirname "$0")/lib/gate-help.sh"
+# shellcheck source=lib/gate-help.sh
+[ ! -r "$gate_help" ] || . "$gate_help"
 
 set -uo pipefail
 

@@ -1,14 +1,15 @@
 /** Canonical session and Mesh authority for runtime connector turns. */
-import {
-  ConnectorRuntimeAuthorityError,
-  type OpenConnectorTurnInput,
-  type ConnectorRuntime,
-} from '../runtime-principal-port.js';
+import type {
+  ConnectorOwnerAuthority,
+  ConnectorRuntime,
+  OpenConnectorTurnInput,
+  ServerPrincipalClaims,
+} from '../../core/connections-lease/index.js';
+import { ConnectorRuntimeAuthorityError } from '@dorkos/shared/connections-lease';
 import type {
   ConnectorRuntimeAuthority,
   ConnectorRuntimeAuthorityResolver,
 } from './runtime-principal-service.js';
-import type { ConnectorOwnerAuthority, ServerPrincipalClaims } from './server-principal.js';
 
 /** Canonical session reads needed to authorize a runtime turn. */
 export interface ConnectorRuntimeSessionAuthoritySource {

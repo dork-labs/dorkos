@@ -42,10 +42,21 @@ vi.mock('../../lib/logger.js', () => ({
 
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
 import { createRuntimesRoutes } from '../runtimes.js';
+import { runtimeSettingsReader } from '../runtime-settings-reader.js';
+import {
+  runtimeReadsDomain,
+  setRuntimeSettingsReader,
+} from '../../services/core/runtime-doors/runtime-read-capabilities.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
+// The list is a capability the mount serves (`runtimes.found_accounts`, DOR-4978); hiding one is by hand.
+setRuntimeSettingsReader(runtimeSettingsReader());
 const server = listeningServer(
-  honoGroupListener({ path: '/api/runtimes', routes: createRuntimesRoutes() })
+  honoGroupListener([
+    capabilityGroup(runtimeReadsDomain),
+    { path: '/api/runtimes', routes: createRuntimesRoutes() },
+  ])
 );
 
 let dorkHome: string;

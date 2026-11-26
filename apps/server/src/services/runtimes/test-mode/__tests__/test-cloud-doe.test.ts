@@ -38,7 +38,10 @@ import { DoeRuntime } from '../../doe/doe-runtime.js';
 import { createFakeCloudV1Fetch, FAKE_CLOUD_MODEL } from '../fake-cloud-v1.js';
 import { createFakeInferenceRoutes, FAKE_INFERENCE_REPLY } from '../fake-inference.js';
 import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
-import { TEST_MODE_DOE_REFUSAL, testModeDoeOptions } from '../compose-test-cloud.js';
+import {
+  TEST_MODE_DOE_REFUSAL,
+  testModeDoeOptions,
+} from '../../../../startup/test-composition/compose-test-cloud.js';
 import type { DoeInferenceConfig } from '@dorkos/shared/config-schema';
 
 /** Never listened on: a turn that reached it would fail, so success proves the token's endpoint was used. */

@@ -24,7 +24,9 @@
  * - **and, since DOR-1750, one token rename in the mention palette** — its
  *   label's literal `text-[11px]` became the `text-2xs` token. The same 11px on
  *   a desktop, and the mobile type scale on a phone. It shows up in the
- *   mention-open state only, which is the only state that draws the palette.
+ *   mention-open state only, which is the only state that draws the palette;
+ * - **and, since DOR-4939, the field's outline** — `focus:outline-none` became
+ *   `outline-none`. It draws the same: an outline only shows on focus.
  *
  * The attach nodes are stripped from the ACTUAL tree before the diff runs,
  * rather than re-baselined away. The differ walks children by index, so four
@@ -304,14 +306,18 @@ function expectIntendedChromeDelta(
     { path: LANE_PATH, added: LANE_CLASSES_ADDED, removed: LANE_CLASSES_REMOVED },
   ]);
 
-  // Everything outside the card and its lane. The one every state carries is
-  // attach's: the action row drops `pl-3` because the paperclip now supplies
-  // that edge. Matched by tokens rather than by a path — the row sits one child
-  // further down when the composer is also drawing a refusal line.
+  // Everything outside the card and its lane. Two ride on every state, in DOM
+  // order. Attach's: the action row drops `pl-3` because the paperclip now
+  // supplies that edge. And the field's outline is off in every state rather
+  // than on focus only, which draws the same, since an outline only ever shows
+  // on a focused field (DOR-4939 bans the bare `focus:` variant). Matched by
+  // tokens rather than by a path — the row sits one child further down when the
+  // composer is also drawing a refusal line.
   const elsewhere = swaps.filter((swap) => swap.path !== ROOT_PATH && swap.path !== LANE_PATH);
   expect(elsewhere.map(({ added, removed }) => ({ added, removed }))).toEqual([
     ...extraSwaps,
     { added: [], removed: ['pl-3'] },
+    { added: ['outline-none'], removed: ['focus:outline-none'] },
   ]);
 }
 

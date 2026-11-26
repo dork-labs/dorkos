@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { eq, sessionMetadata, type Db } from '@dorkos/db';
 import { readManifest } from '@dorkos/shared/manifest';
 import { stableStringify } from '@dorkos/shared/capabilities';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 import type {
   ConnectorEventSessionOrigin,
   ConnectorEventSessionTargetPort,

@@ -26,6 +26,9 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=Fixture GIT_AUTHOR_EMAIL=fixture@example.invalid
 export GIT_COMMITTER_NAME=Fixture GIT_COMMITTER_EMAIL=fixture@example.invalid
 unset CLAUDECODE CLAUDE_CODE_SESSION_ID CLAUDE_SESSION_ID CODEX_THREAD_ID DORKOS_HARNESS DORKOS_SESSION_ID DORKOS_AGENT_ID DORKOS_SPACE_ID
+unset DORKOS_AGENT_TOKEN DORKOS_API_URL DORKOS_API_KEY OPEN_PR_CURL
+# No real dorkos CLI: the work-graph cases below pass their own.
+export OPEN_PR_DORKOS=
 unset OPEN_PR_CAP OPEN_PR_BASE OPEN_PR_REMOTE OPEN_PR_TSX CI
 export CLAUDE_CONFIG_DIR=/nowhere/claude
 
@@ -504,6 +507,134 @@ check 'a branch that drops the gates from its own copy still gets main'\''s answ
 FAKE_FAIL=merge open
 check 'a failed auto-merge is exit 3' 3 "$rc"
 check 'and it says who turns it on' yes "$(has "$out" 'Ask a maintainer to turn it on')"
+
+# --- the work graph (DOR-5264) --------------------------------------------------
+# Step 6 tells the chat's DorkOS server what the PR is and which tickets its body
+# names for sure. It never changes the open's result. The CLI path runs a stub
+# `dorkos`; the curl path talks to a real loopback HTTP server started here.
+branch 'chore: x' docs/x.md
+cat >"$tmp/wg-body.md" <<'BODY'
+What changed.
+
+Closes DOR-5264
+See https://linear.app/dork-labs/issue/DOR-4970/the-graph-api and part of DOR-4966.
+COVID-19, HTTP-2 and SHA-256 are words, not tickets, and so is ABC-7 here.
+Refs ABC-12
+- Fixes HTTP-2 upgrades
+fix(x): UTF-8 decoding
+Resolves SHA-256 mismatch and ISO-8601 dates
+Closes DOR-1, DOR-2
+```
+DOR-9999 sits in a fence.
+```
+<!-- DOR-8888 sits in a comment -->
+BODY
+wg() { run --title "chore: x" --body-file "$tmp/wg-body.md" "$@"; }
+WG_TICKETS='["DOR-5264","DOR-4970","DOR-4966","DOR-1","DOR-2"]'
+
+wg
+check 'with no chat token the PR still opens' "0,yes" "$rc,$(created)"
+check 'and it says the link was not recorded' yes \
+  "$(has "$out" 'work-graph: not recorded (this shell has no DorkOS chat token)')"
+
+cat >"$tmp/bin/dorkos-stub" <<'EOF2'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >"$WG_DIR/argv"
+printf '%s' "${DORKOS_AGENT_TOKEN:-}" >"$WG_DIR/token"
+cat >"$WG_DIR/stdin"
+if [ -n "${WG_REFUSE:-}" ]; then echo "Error: $WG_REFUSE" >&2; exit 1; fi
+jq -c '{ok: true, chat: "c", pr: "made-up/repo#42", tickets: .tickets, refused: [{ref: "X", reason: "unrecognised"}]}' "$WG_DIR/stdin"
+EOF2
+chmod +x "$tmp/bin/dorkos-stub"
+export WG_DIR="$tmp/wg"
+mkdir -p "$WG_DIR"
+
+DORKOS_AGENT_TOKEN=tok-5264 OPEN_PR_DORKOS="$tmp/bin/dorkos-stub" wg
+check 'from a chat, it calls dorkos call with the input on stdin' \
+  'call work-graph.record-pr --input-file -' "$(cat "$WG_DIR/argv")"
+check 'the token rides the environment, never the arguments' "tok-5264,no" \
+  "$(cat "$WG_DIR/token"),$(has "$(cat "$WG_DIR/argv")" tok-5264)"
+check 'it sends the PR and only the sure tickets: Linear links and DOR keys, on a Fixes line or not' \
+  "https://github.com/made-up/repo/pull/42 $WG_TICKETS" \
+  "$(jq -r '"\(.pr) \(.tickets | tojson)"' "$WG_DIR/stdin")"
+check 'and prints what was recorded, refused tickets by name' yes \
+  "$(has "$out" 'work-graph: recorded: this chat opened made-up/repo#42; works on DOR-5264, DOR-4970, DOR-4966, DOR-1, DOR-2; refused X (unrecognised)')"
+check 'the open itself is unchanged' "0,yes" "$rc,$(has "$out" 'auto-merge:')"
+
+WG_REFUSE='Only a chat’s own turn can record this.' DORKOS_AGENT_TOKEN=tok-5264 \
+  OPEN_PR_DORKOS="$tmp/bin/dorkos-stub" wg
+check 'a refusal from the server leaves the open at exit 0' "0,yes" "$rc,$(created)"
+check 'and says why nothing was recorded' yes \
+  "$(has "$out" 'work-graph: not recorded (Only a chat’s own turn can record this.)')"
+
+rm -f "$WG_DIR/argv"
+DORKOS_AGENT_TOKEN=tok-5264 OPEN_PR_DORKOS="$tmp/bin/dorkos-stub" wg --dry-run
+check 'a dry run says what it would send, and how' yes \
+  "$(has "$out" 'work-graph: would record opened <new PR> and works_on: DOR-5264, DOR-4970, DOR-4966, DOR-1, DOR-2, through dorkos call')"
+check 'and sends nothing' no "$([ -f "$WG_DIR/argv" ] && echo yes || echo no)"
+
+# A Fixes, Resolves or Refs line vouches for nothing but a DOR key or a Linear link.
+for line in '- Fixes HTTP-2 upgrades' 'fix(x): UTF-8 decoding' 'Resolves SHA-256 mismatch' \
+  'fix(api): ISO-8601 dates' 'Refs ABC-12' 'COVID-19 and HTTP-2'; do
+  printf '%s\n' "$line" >"$tmp/wg-one.md"
+  DORKOS_AGENT_TOKEN=tok-5264 OPEN_PR_DORKOS="$tmp/bin/dorkos-stub" \
+    run --title "chore: x" --body-file "$tmp/wg-one.md" --dry-run
+  check "\"$line\" names no ticket" yes "$(has "$out" 'works_on: no tickets,')"
+done
+printf 'Closes DOR-1, DOR-2\n' >"$tmp/wg-one.md"
+DORKOS_AGENT_TOKEN=tok-5264 OPEN_PR_DORKOS="$tmp/bin/dorkos-stub" \
+  run --title "chore: x" --body-file "$tmp/wg-one.md" --dry-run
+check '"Closes DOR-1, DOR-2" names both' yes "$(has "$out" 'works_on: DOR-1, DOR-2,')"
+
+# The curl path: no CLI, a loopback server named by DORKOS_API_URL.
+cat >"$tmp/wg-server.cjs" <<'EOF2'
+const http = require('node:http');
+const fs = require('node:fs');
+const [seen, portFile] = process.argv.slice(2);
+const server = http.createServer((req, res) => {
+  let raw = '';
+  req.on('data', (chunk) => (raw += chunk));
+  req.on('end', () => {
+    const body = JSON.parse(raw);
+    fs.writeFileSync(seen, JSON.stringify({ path: req.url, method: req.method, agent: req.headers['x-dorkos-agent'], body }));
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, chat: 'c', pr: 'made-up/repo#42', tickets: body.tickets, refused: [] }));
+  });
+});
+server.listen(0, '127.0.0.1', () => fs.writeFileSync(portFile, String(server.address().port)));
+EOF2
+node "$tmp/wg-server.cjs" "$WG_DIR/seen.json" "$WG_DIR/port" &
+wg_server=$!
+for _ in $(seq 50); do [ -s "$WG_DIR/port" ] && break; sleep 0.1; done
+cat >"$tmp/bin/curl-logger" <<'EOF2'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >"$WG_DIR/curl-argv"
+exec curl "$@"
+EOF2
+chmod +x "$tmp/bin/curl-logger"
+
+DORKOS_AGENT_TOKEN=tok-5264 DORKOS_API_URL="http://127.0.0.1:$(cat "$WG_DIR/port")" \
+  OPEN_PR_CURL="$tmp/bin/curl-logger" wg
+check 'with no CLI it posts to the invoke route of the turn’s server' \
+  'POST /api/capabilities/work-graph.record-pr/invoke' "$(jq -r '"\(.method) \(.path)"' "$WG_DIR/seen.json")"
+check 'the token arrives as the agent header' tok-5264 "$(jq -r .agent "$WG_DIR/seen.json")"
+check 'with the same sure tickets' "$WG_TICKETS" "$(jq -c .body.tickets "$WG_DIR/seen.json")"
+check 'and never on curl’s command line' no "$(has "$(cat "$WG_DIR/curl-argv")" tok-5264)"
+check 'it prints what was recorded' yes \
+  "$(has "$out" 'work-graph: recorded: this chat opened made-up/repo#42; works on DOR-5264')"
+kill "$wg_server" 2>/dev/null
+wait "$wg_server" 2>/dev/null
+
+# Nobody listens on that port any more.
+DORKOS_AGENT_TOKEN=tok-5264 DORKOS_API_URL="http://127.0.0.1:$(cat "$WG_DIR/port")" wg
+check 'with no server reachable the PR still opens, at exit 0' "0,yes" "$rc,$(created)"
+check 'and it says the link was not recorded' yes \
+  "$(has "$out" "work-graph: not recorded (no DorkOS server answered at http://127.0.0.1:$(cat "$WG_DIR/port")")"
+
+: >"$WG_DIR/curl-argv"
+DORKOS_AGENT_TOKEN=tok-5264 DORKOS_API_URL='http://192.168.1.20:4242' OPEN_PR_CURL="$tmp/bin/curl-logger" wg
+check 'it never dials a DORKOS_API_URL that is not loopback' "yes," \
+  "$(has "$out" 'work-graph: not recorded (DORKOS_API_URL is not a loopback origin)'),$(cat "$WG_DIR/curl-argv")"
 
 echo "open-pr fixtures: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

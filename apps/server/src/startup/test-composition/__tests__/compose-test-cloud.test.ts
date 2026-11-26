@@ -1,0 +1,129 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import request from '@dorkos/test-utils/supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
+
+const mockEnv = vi.hoisted(() => ({
+  DORKOS_TEST_RUNTIME: true,
+  DORKOS_TEST_RUNTIME_DOE: false,
+  DORKOS_TEST_CLOUD_AUTO_APPROVE: false,
+  DORKOS_HOST: 'localhost',
+  DORKOS_PORT: 7242,
+}));
+vi.mock('../../../env.js', () => ({ env: mockEnv }));
+const doe = vi.hoisted(() => ({ constructed: 0 }));
+vi.mock('../../../services/runtimes/doe/index.js', () => ({
+  DoeRuntime: class {
+    readonly type = 'doe';
+    constructor() {
+      doe.constructed += 1;
+    }
+    setSessionSettings() {}
+  },
+}));
+const link = vi.hoisted(() => ({
+  fetchImpl: undefined as undefined | ((input: string, init?: RequestInit) => Promise<Response>),
+}));
+vi.mock('../../../services/core/auth/cloud-link.js', () => ({
+  initCloudLinkManager: (options: { fetchImpl: typeof link.fetchImpl }) => {
+    link.fetchImpl = options.fetchImpl;
+  },
+}));
+const v1 = vi.hoisted(() => ({ fetch: undefined as unknown }));
+vi.mock('../../../services/core/cloud/v1-client.js', () => ({
+  setCloudV1Fetch: (fetch: unknown) => {
+    v1.fetch = fetch;
+  },
+}));
+
+// The `/api` chain reads login and the host settings from here; none are set.
+vi.mock('../../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(), getDot: vi.fn() },
+}));
+import { composeTestModeCloud } from '../compose-test-cloud.js';
+import { addTestControlGroup, createTestControlRoutes } from '../../../routes/test-control.js';
+import { honoGroupListener } from '../../../http/__tests__/hono-group-listener.js';
+import type { RuntimeRegistry } from '../../../services/core/runtime-registry.js';
+
+function registry() {
+  const registered: unknown[] = [];
+  return {
+    registered,
+    port: {
+      register: (runtime: unknown) => registered.push(runtime),
+    } as unknown as RuntimeRegistry,
+  };
+}
+
+describe('composeTestModeCloud', () => {
+  const listener = swappableServer();
+  beforeEach(() => {
+    mockEnv.DORKOS_TEST_RUNTIME = true;
+    mockEnv.DORKOS_TEST_RUNTIME_DOE = false;
+    mockEnv.DORKOS_TEST_CLOUD_AUTO_APPROVE = false;
+    doe.constructed = 0;
+    v1.fetch = undefined;
+    link.fetchImpl = undefined;
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('refuses to run outside test mode', () => {
+    mockEnv.DORKOS_TEST_RUNTIME = false;
+    expect(() => composeTestModeCloud(registry().port, addTestControlGroup)).toThrow(
+      'composeTestModeCloud is test-mode only (DORKOS_TEST_RUNTIME)'
+    );
+    expect(v1.fetch).toBeUndefined();
+    expect(link.fetchImpl).toBeUndefined();
+  });
+
+  it('fakes the link and /v1, mounts the local pages, and leaves Doe out by default', async () => {
+    const { port, registered } = registry();
+    expect(composeTestModeCloud(port, addTestControlGroup)).toBeNull();
+    expect(registered).toEqual([]);
+    expect(doe.constructed).toBe(0);
+    expect(typeof v1.fetch).toBe('function');
+
+    const codes = await link.fetchImpl!('https://cloud.example.invalid/api/auth/device/code', {
+      method: 'POST',
+    });
+    expect(await codes.json()).toMatchObject({
+      verification_uri: 'http://localhost:7242/api/test/fake-cloud/approve',
+    });
+
+    const app = honoGroupListener({ path: '/api/test', routes: createTestControlRoutes() });
+    const page = await request(listener.mount(app)).get(
+      '/api/test/fake-cloud/approve?code=DORK-2F7Q'
+    );
+    expect(page.status).toBe(200);
+    expect(page.text).toContain("You're in.");
+    const models = await request(listener.mount(app)).get('/api/test/fake-inference/v1/models');
+    expect(models.status).toBe(200);
+  });
+
+  it('registers the DorkOS runtime when DORKOS_TEST_RUNTIME_DOE is on', () => {
+    mockEnv.DORKOS_TEST_RUNTIME_DOE = true;
+    const { port, registered } = registry();
+    const runtime = composeTestModeCloud(port, addTestControlGroup);
+    expect(runtime).not.toBeNull();
+    expect(registered).toEqual([runtime]);
+  });
+
+  it('approves codes by itself only when DORKOS_TEST_CLOUD_AUTO_APPROVE is on', async () => {
+    const pollThrice = async () => {
+      composeTestModeCloud(registry().port, addTestControlGroup);
+      let last = 0;
+      for (let i = 0; i < 3; i += 1) {
+        const res = await link.fetchImpl!('https://cloud.example.invalid/api/auth/device/token', {
+          method: 'POST',
+          body: JSON.stringify({ device_code: 'fake-device-code' }),
+        });
+        last = res.status;
+      }
+      return last;
+    };
+    expect(await pollThrice()).toBe(400);
+    mockEnv.DORKOS_TEST_CLOUD_AUTO_APPROVE = true;
+    expect(await pollThrice()).toBe(200);
+  });
+});
