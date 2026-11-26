@@ -123,11 +123,15 @@ git worktree add --quiet --detach "$work/base" "$base" >/dev/null 2>&1 ||
   full 'git could not check out the base commit'
 
 # One `<taskId> <hash> <package> <directory>` line per test task, or failure.
+# Turbo lists a `test` task for every package, and gives one with no `test`
+# script the command `<NONEXISTENT>` (the config packages). Such a task runs
+# nothing, so it is never a suite to plan: a change to one selected a suite the
+# test leg's "suite actually executed" proof then refused (#4496).
 tasks() {
   local out
   # The banner and any warning go to stderr; stdout is the JSON alone.
   out=$(cd "$1" && $turbo test --dry=json 2>/dev/null) || return 1
-  printf '%s' "$out" | jq -er '[.tasks[] | select(.task == "test")] | if length == 0 then error("no test tasks") else .[] | "\(.taskId) \(.hash) \(.package) \(.directory)" end'
+  printf '%s' "$out" | jq -er '[.tasks[] | select(.task == "test" and .command != "<NONEXISTENT>")] | if length == 0 then error("no test tasks") else .[] | "\(.taskId) \(.hash) \(.package) \(.directory)" end'
 }
 
 base_tasks=$(tasks "$work/base") || full 'turbo could not plan the base commit'
