@@ -701,6 +701,10 @@
       "types": "./src/chat-client-id.ts",
       "default": "./dist/chat-client-id.js"
     },
+    "./connections-lease": {
+      "types": "./src/connections-lease.ts",
+      "default": "./dist/connections-lease.js"
+    },
     "./room-attachment-paths": {
       "types": "./src/room-attachment-paths.ts",
       "default": "./dist/room-attachment-paths.js"

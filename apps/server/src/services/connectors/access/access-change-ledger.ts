@@ -18,7 +18,7 @@ import {
 } from '@dorkos/db';
 import type { ConnectorAccessChange } from '@dorkos/shared/connector-exclusion-schemas';
 import type { ConnectorAgentApproval } from '@dorkos/shared/connector-schemas';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 
 /**
  * The owner's access changes, newest first.

@@ -1,6 +1,6 @@
 import { ApprovalService, hashApprovalInput } from '../../../../core/approvals/index.js';
 import { awaitCapabilityApproval } from '../../../../core/capabilities/capability-approval-hold.js';
-import type { RuntimeToolTurnFacts } from '../../../../connectors/runtime-principal-port.js';
+import type { RuntimeToolTurnFacts } from '../../../../core/connections-lease/index.js';
 import type { toolTurnFixture } from './fixture.js';
 
 const pending: Array<{ approvals: ApprovalService; id: string; held: Promise<unknown> }> = [];

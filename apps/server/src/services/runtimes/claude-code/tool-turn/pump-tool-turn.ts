@@ -1,7 +1,7 @@
 /** Producer-owned publication/retirement, independent of its stream consumer. */
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentSession } from '../agent-types.js';
-import type { RevokeConnectorTurnReason } from '../../../connectors/runtime-principal-port.js';
+import type { RevokeConnectorTurnReason } from '../../../core/connections-lease/index.js';
 import type { SessionBundle } from '../sessions/dispatch/state.js';
 import type { PumpLaunchPlan } from '../sessions/pump-launch.js';
 import type { LaunchFingerprint } from '../sessions/launch-fingerprint.js';

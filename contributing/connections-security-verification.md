@@ -12,7 +12,7 @@ DOR-1905 owns the final live acceptance verdict. Runtime renewal, environment fi
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | Local connection, grant and request authority | `apps/server/src/services/connectors/`                                                                                         |
 | Public REST authority checks                  | `apps/server/src/routes/connector-{management,execution,events}.ts`                                                            |
-| Runtime turn identity                         | `apps/server/src/services/connectors/principal/`, `apps/server/src/services/connectors/runtime-principal-port.ts`              |
+| Runtime turn identity                         | `apps/server/src/services/connectors/principal/`, `apps/server/src/services/core/connections-lease/`                           |
 | Runtime launch seams                          | `apps/server/src/services/runtimes/{claude-code,codex,opencode}/`                                                              |
 | Hosted tenant, instance and account authority | `apps/site/src/lib/connectors/managed/`, `apps/site/src/app/api/instances/connectors/`                                         |
 | Hosted event intake and delivery              | `apps/site/src/lib/connectors/managed/{event-ingress-service,event-delivery-service,event-protection}.ts`                      |

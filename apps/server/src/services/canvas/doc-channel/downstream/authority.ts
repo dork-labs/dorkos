@@ -1,10 +1,10 @@
 /** Narrow responder checks permit a granted target to acknowledge a document without reading its owning session. */
 import { agents, sessionMetadata, eq } from '@dorkos/db';
-import {
-  isServerPrincipal,
-  type ServerPrincipalProof,
-  type ServerPrincipalClaims,
-} from '../../../connectors/principal/server-principal.js';
+import { isServerPrincipal } from '../../../connectors/principal/server-principal.js';
+import type {
+  ServerPrincipalClaims,
+  ServerPrincipalProof,
+} from '../../../core/connections-lease/index.js';
 import type { DocChannelAuthorization } from '../authorization.js';
 import type { DocChannelGrants } from '../grants.js';
 import type { DocChannelStore } from '../store.js';

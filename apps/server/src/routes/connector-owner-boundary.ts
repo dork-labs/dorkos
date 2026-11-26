@@ -25,7 +25,7 @@ import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import { isInstallOwner } from '../services/core/auth/install-owner.js';
 import type { RequestUser } from '../services/core/auth/session-gate.js';
 import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
-import type { ConnectorOwnerAuthority } from '../services/connectors/principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../services/core/connections-lease/index.js';
 import type { ConnectorRegistry } from '../services/connectors/registry.js';
 
 /** Dependencies for the connector owner-management HTTP boundary. */

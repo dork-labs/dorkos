@@ -8,11 +8,11 @@ import {
   type Db,
   type DbTransaction,
 } from '@dorkos/db';
-import {
-  isServerPrincipal,
-  type ServerPrincipalProof,
-  type ServerPrincipalClaims,
-} from '../../connectors/principal/server-principal.js';
+import { isServerPrincipal } from '../../connectors/principal/server-principal.js';
+import type {
+  ServerPrincipalClaims,
+  ServerPrincipalProof,
+} from '../../core/connections-lease/index.js';
 import { parseScope } from '../scopes.js';
 import type { CanvasDocumentStore } from '../canvas-document-store.js';
 import type { DocSaveRefusalReason } from '@dorkos/shared/file-save/recovery';

@@ -1,8 +1,8 @@
 /** Compile-time port contract; server typecheck checks this file, Vitest alone does not. */
 import { expectTypeOf, it } from 'vitest';
-import type { AgentHome } from '../../core/agent-identity/index.js';
-import type { CapabilityHoldSession } from '../../core/capabilities/capability-approval-hold.js';
-import type { ServerPrincipalProof } from '../principal/server-principal.js';
+import type { AgentHome } from '../../agent-identity/index.js';
+import type { CapabilityHoldSession } from '../../capabilities/capability-approval-hold.js';
+import type { ServerPrincipalProof } from '../principal-types.js';
 import type {
   ConnectorRuntimePrincipalPort,
   ConnectorTurnOwnership,

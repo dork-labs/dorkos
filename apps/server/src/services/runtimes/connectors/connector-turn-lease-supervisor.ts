@@ -3,7 +3,7 @@ import type {
   ConnectorRuntime,
   ConnectorRuntimePrincipalPort,
   ConnectorTurnRenewalPermit,
-} from '../../connectors/runtime-principal-port.js';
+} from '../../core/connections-lease/index.js';
 
 const RENEWAL_MARGIN_MS = 3 * 60 * 60 * 1_000;
 const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000] as const;

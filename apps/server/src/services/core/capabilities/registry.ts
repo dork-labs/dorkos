@@ -53,7 +53,7 @@ import { refuseSpend, spendPermission, type SpendPreflight } from './spend-permi
 import { agentComputerActionRefusal } from '../agent-computer/hub-owned.js';
 import { preGateRefusal } from './pre-gate-refusals.js';
 import { resolveApprovalSubject } from '../approvals/approval-subject.js';
-import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
+import type { ServerPrincipalProof } from '../connections-lease/index.js';
 import { isServerPrincipal } from '../../connectors/principal/server-principal.js';
 import {
   isCapabilityAuthorityBinding,

@@ -1,9 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { agents, eq, sessionMetadata, type Db } from '@dorkos/db';
-import {
-  createServerPrincipal,
-  type ServerPrincipalClaims,
-} from '../../../connectors/principal/server-principal.js';
+import { createServerPrincipal } from '../../../connectors/principal/server-principal.js';
+import type { ServerPrincipalClaims } from '../../../core/connections-lease/index.js';
 import {
   DocChannelAuthorization,
   DocChannelNotFoundError,

@@ -34,7 +34,7 @@ import {
   type EveryAgentActivitySink,
   type EveryAgentChangeWriter,
 } from '../every-agent-activity.js';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 
 /** Event type for an agent left out of, or let back into, an every-agent share. */
 export const AGENT_EXCLUSION_CHANGED_EVENT = 'connectors.agent_exclusion_changed';

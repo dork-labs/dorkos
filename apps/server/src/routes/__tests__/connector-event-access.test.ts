@@ -10,7 +10,7 @@ import {
   createDb,
   runMigrations,
 } from '@dorkos/db';
-import type { ConnectorOwnerAuthority } from '../../services/connectors/principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../services/core/connections-lease/index.js';
 import { ConnectorRegistry } from '../../services/connectors/registry.js';
 import { ConnectorManagementActionService } from '../../services/connectors/management-action-service.js';
 import { ConnectionIdSchema } from '@dorkos/shared/connector-schemas';

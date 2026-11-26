@@ -28,7 +28,7 @@ import fs from 'node:fs';
 import type { SessionSettings, StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
 import { processEnded, processStarted } from '../../shared/references/process-token-port.js';
-import type { ConnectorThreadKeyPort } from '../../../connectors/runtime-principal-port.js';
+import type { ConnectorThreadKeyPort } from '../../../core/connections-lease/index.js';
 import type { CodexTurnTools } from '../transport/codex-transport.js';
 import type { CodexAppServerProcess } from './process-pool.js';
 import { loadWithProtectedProfile } from './profile-load.js';

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { toolTurnFixture } from './fixture.js';
-import { RuntimeToolContextUnavailableError } from '../../../../connectors/runtime-principal-port.js';
+import type { RuntimeToolTurnFacts } from '../../../../core/connections-lease/index.js';
+import { RuntimeToolContextUnavailableError } from '@dorkos/shared/connections-lease';
 import { feedProjector } from '../../../../session/session-event-normalizer.js';
 import { SessionStateProjector } from '../../../../session/session-state-projector.js';
 import { SessionEventStore } from '../../../../session/session-event-store.js';
@@ -10,7 +11,6 @@ import { awaitCapabilityApproval } from '../../../../core/capabilities/capabilit
 import { CODEX_CAPABILITIES } from '../../runtime-constants.js';
 import { levelOfMode } from '@dorkos/shared/permission-semantics';
 import { isFullLevel } from '../../../../core/turn-power/full-autonomy.js';
-import type { RuntimeToolTurnFacts } from '../../../../connectors/runtime-principal-port.js';
 import { approvalPolicyFor } from '../../app-server/turn-parts.js';
 import { backgroundCommandTurn } from '../fake-app-server.js';
 import type { FakeTurnContext } from '../fake-app-server.js';
