@@ -279,11 +279,70 @@ const noCrossFeatureModelImport = {
   },
 };
 
+/** `@/layers/widgets/<slice>`, or a path below it. */
+const WIDGET_SPECIFIER = /^@\/layers\/widgets\/([^/]+)(?:\/|$)/;
+
+/**
+ * Forbids a widget from importing another widget (DOR-4935).
+ *
+ * Widgets are the top of the layer stack under the app: each composes features
+ * and entities into one block of a screen. Putting two widgets side by side is
+ * the app layer's job (`src/app/`, `src/routes/`, `AppShell`), so a widget that
+ * reaches for another has a composition that belongs one level up.
+ *
+ * Local code rather than a `no-restricted-imports` pattern because a pattern
+ * cannot tell a sibling widget from the file's OWN widget, and a widget's tests
+ * name their own slice by the alias (`@/layers/widgets/moments`). The relative
+ * spelling of a cross-widget import is `no-cross-slice-relative-import`'s, and
+ * `vi.mock()` is not read, the same carve-out the other rules here keep.
+ */
+const noCrossWidgetImport = {
+  meta: {
+    type: 'problem',
+    docs: {
+      description: 'Disallow a widget from importing another widget.',
+      url: 'https://github.com/dork-labs/dorkos/blob/main/.claude/rules/fsd-layers.md',
+    },
+    schema: [],
+    messages: {
+      crossWidget:
+        "FSD violation: widgets/{{own}} may not import widgets/{{other}} ('{{specifier}}'). " +
+        'Compose two widgets in the app layer (src/app/), or move the shared piece down to features/.',
+    },
+  },
+
+  create(context) {
+    const slice = sliceOf(context.filename);
+    if (!slice || !slice.label.startsWith('widgets/')) return {};
+    const own = slice.label.slice('widgets/'.length);
+
+    /** @param node The string literal holding the module path. */
+    function checkSpecifier(node) {
+      if (!node || node.type !== 'Literal' || typeof node.value !== 'string') return;
+      const match = WIDGET_SPECIFIER.exec(node.value);
+      if (match === null || match[1] === own) return;
+      context.report({
+        node,
+        messageId: 'crossWidget',
+        data: { own, other: match[1], specifier: node.value },
+      });
+    }
+
+    return {
+      ImportDeclaration: (node) => checkSpecifier(node.source),
+      ExportNamedDeclaration: (node) => checkSpecifier(node.source),
+      ExportAllDeclaration: (node) => checkSpecifier(node.source),
+      ImportExpression: (node) => checkSpecifier(node.source),
+    };
+  },
+};
+
 /** ESLint plugin carrying the client's FSD-specific rules. */
 export default {
   meta: { name: 'fsd' },
   rules: {
     'no-cross-slice-relative-import': noCrossSliceRelativeImport,
     'no-cross-feature-model-import': noCrossFeatureModelImport,
+    'no-cross-widget-import': noCrossWidgetImport,
   },
 };

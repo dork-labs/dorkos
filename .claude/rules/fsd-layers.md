@@ -18,14 +18,23 @@ app → widgets → features → entities → shared
 
 ### What This File Can Import
 
-Determine the current file's layer from its path, then enforce:
+Determine the current file's layer from its path. Every cell in the right-hand
+column is a lint error in `apps/client/eslint.config.js`:
 
-| If editing in...   | Can import from...                                       | CANNOT import from...       |
-| ------------------ | -------------------------------------------------------- | --------------------------- |
-| `layers/shared/`   | Nothing in layers/ (base layer)                          | entities, features, widgets |
-| `layers/entities/` | `layers/shared/`, other entities (acyclic — see below)   | features, widgets           |
-| `layers/features/` | `layers/entities/`, `layers/shared/`                     | widgets, other features     |
-| `layers/widgets/`  | `layers/features/`, `layers/entities/`, `layers/shared/` | other widgets               |
+| If editing in...   | Can import from...                                                   | CANNOT import from...                         |
+| ------------------ | -------------------------------------------------------------------- | --------------------------------------------- |
+| `layers/shared/`   | Nothing in layers/ (base layer)                                      | entities, features, widgets                   |
+| `layers/entities/` | `layers/shared/`, other entities (acyclic — see below)               | features, widgets                             |
+| `layers/features/` | `layers/entities/`, `layers/shared/`, other features' UI (see below) | widgets; another feature's model, from model/ |
+| `layers/widgets/`  | `layers/features/`, `layers/entities/`, `layers/shared/`             | other widgets                                 |
+
+The first three rows are `no-restricted-imports` blocks scoped to each layer,
+plus `fsd/no-cross-feature-model-import` for the features row. The widgets row
+is `fsd/no-cross-widget-import` (DOR-4935): a widget may name its own slice
+however it likes, and never another widget. Two widgets side by side is the
+app layer's composition (`src/app/`, `AppShell`). The header's fixed cluster,
+which puts the `inbox-bell` widget beside `one-bar`'s controls, lives in
+`src/app/header/BarFixedCluster.tsx` for that reason.
 
 ### Cross-Module Rule: Features
 
@@ -72,7 +81,7 @@ So the rule is direction, not isolation:
 
 1. **Import through the barrel.** `@/layers/entities/session`, never `@/layers/entities/session/model/...`. The barrel is the slice's contract; a deep import couples you to its file layout. ESLint enforces this one too.
 
-   The exception is `vi.mock()`, which needs the concrete module path — mocking a barrel replaces every export in it, not the one you meant to stub. So `vi.mock('@/layers/entities/session/model/query/use-recent-sessions')` is correct and stays. The **barrel** rule does not see it, because it is a `no-restricted-imports` pattern and `vi.mock()` is a call rather than an import declaration; that is the carve-out, and it is the only one this rule has.
+   The exception is `vi.mock()`, which needs the concrete module path — mocking a barrel replaces every export in it, not the one you meant to stub. So `vi.mock('@/layers/entities/session/model/query/use-recent-sessions')` is correct and stays. The **barrel** rule does not see it, because it is a `no-restricted-imports` pattern and `vi.mock()` is a call rather than an import declaration.
 
    The carve-out covers the **aliased** deep path only. `vi.mock('../../session/model/query/use-recent-sessions')` is still an error — `fsd/no-cross-slice-relative-import` does read `vi.mock()`, deliberately, because the alias does the same job. There is nothing the relative spelling makes possible, so there is nothing to carve out.
 
@@ -158,6 +167,30 @@ import { SessionBadge, useSession } from '@/layers/entities/session';
 // WRONG — from internal path
 import { SessionBadge } from '@/layers/entities/session/ui/SessionBadge';
 ```
+
+For a slice of `entities/`, `features/` or `widgets/` that is not your own, the
+wrong case is a lint error from every file in `src/` (`barrel/import-through-barrel`,
+`apps/client/eslint-rules/barrel.js`, DOR-4935; entity to entity is the
+`entities/**` block's pattern above). What it does not count, each for a reason
+written in the rule:
+
+- your own slice, however you spell it;
+- `vi.mock()`, the carve-out above;
+- a dynamic `import()`, which names a lazy chunk's entry, and that has to be
+  the module itself (`widgets/team` loads `features/mesh/ui/TopologyGraph`
+  that way);
+- `src/dev/`, the playground, which shows a slice's parts one at a time;
+- `shared/`, whose top-level directories are segments rather than slices. Its
+  barrels (`@/layers/shared/ui`, `/lib`, `/model`) are the convention from the
+  layers above, but a deep path into it is not a lint error: some are
+  deliberately off the barrel (the Transports, below).
+
+The test files that already reached past a barrel when the rule landed are
+listed in `apps/client/eslint-rules/barrel.baseline.json`, each with its count.
+The list may only fall: a listed file with fewer deep imports than its entry is
+a lint error until the entry is lowered, and
+`apps/client/__tests__/cross-slice-import-lint.test.ts` fails on an entry that
+no longer matches its file, or on any file that is not a test.
 
 **One carve-out, inside `shared/` (DOR-1761).** A barrel is a contract for
 consumers in `entities/`, `features/` and `widgets/`. Within `shared/` itself,

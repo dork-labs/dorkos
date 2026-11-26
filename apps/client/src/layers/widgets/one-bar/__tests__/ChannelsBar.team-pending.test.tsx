@@ -24,15 +24,6 @@ import { TransportProvider } from '@/layers/shared/model';
 import { ChannelsBar } from '../ui/ChannelsBar';
 import { BarHarness } from './bar-harness';
 
-// The fixed cluster OneBar renders — real widgets with their own data needs,
-// stubbed at the seam because this file is about what the bar NAMES.
-vi.mock('@/layers/widgets/inbox-bell', () => ({
-  InboxBell: () => <button aria-label="Inbox">Inbox</button>,
-}));
-vi.mock('@/layers/features/right-panel', () => ({
-  RightPanelToggle: () => <button aria-label="Toggle right panel">Panel</button>,
-}));
-
 // Only the live presence count and the Stop mutation are stubbed. `useTeamRoom`
 // is deliberately the real one: its `loading` answer is the subject here.
 vi.mock('@/layers/entities/room', async (importOriginal) => {

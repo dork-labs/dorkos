@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ESLint, type Linter } from 'eslint';
 import { describe, it, expect, beforeAll } from 'vitest';
@@ -221,5 +222,126 @@ describe('cross-feature model import lint rule', () => {
     expect(banned).toHaveLength(1);
     expect(banned[0].severity).toBe(2);
     expect(banned[0].message).toContain('cannot import from widgets');
+  });
+});
+
+/**
+ * Lint source text as if it sat at `relativePath` (under the client package)
+ * and return one rule's messages. The rules below match the aliased specifier
+ * and the file's own path, so a virtual file is a real case for them; nothing
+ * has to be written into `src/`.
+ *
+ * @param code The file's source.
+ * @param relativePath Where ESLint should believe it lives.
+ * @param ruleId The rule whose messages to keep.
+ */
+async function lintAt(
+  code: string,
+  relativePath: string,
+  ruleId: string
+): Promise<Linter.LintMessage[]> {
+  const [result] = await eslint.lintText(code, { filePath: resolve(CLIENT_ROOT, relativePath) });
+  expect(result.messages.filter((m) => m.message.includes('File ignored'))).toEqual([]);
+  return result.messages.filter((m) => m.ruleId === ruleId);
+}
+
+/**
+ * Guards the widgets block (DOR-4935): a widget never imports another widget.
+ * The one case that existed, `one-bar` composing `inbox-bell`, moved to the app
+ * layer (`src/app/header/BarFixedCluster.tsx`); this is what keeps it from coming back.
+ */
+describe('cross-widget import lint rule', () => {
+  const RULE = 'fsd/no-cross-widget-import';
+
+  it('reports a widget importing another widget', async () => {
+    const errors = await lintAt(
+      "import { InboxBell } from '@/layers/widgets/inbox-bell';\nexport const x = InboxBell;\n",
+      'src/layers/widgets/one-bar/ui/Fixture.tsx',
+      RULE
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0].severity).toBe(2);
+    expect(errors[0].message).toContain('widgets/inbox-bell');
+  });
+
+  it('leaves a widget’s own slice alone, spelled with the alias as its tests do', async () => {
+    expect(
+      await lintAt(
+        "import { MomentHost } from '@/layers/widgets/moments';\nexport const x = MomentHost;\n",
+        'src/layers/widgets/moments/__tests__/Fixture.test.tsx',
+        RULE
+      )
+    ).toEqual([]);
+  });
+
+  it('leaves the app layer alone, where widgets are composed', async () => {
+    expect(
+      await lintAt(
+        "import { InboxBell } from '@/layers/widgets/inbox-bell';\nexport const x = InboxBell;\n",
+        'src/app/Fixture.tsx',
+        RULE
+      )
+    ).toEqual([]);
+  });
+});
+
+/**
+ * Guards barrel-only imports between slices (DOR-4935) and its ratchet,
+ * `eslint-rules/barrel.baseline.json`.
+ */
+describe('import-through-barrel lint rule', () => {
+  const RULE = 'barrel/import-through-barrel';
+  const BASELINE: Record<string, number> = JSON.parse(
+    readFileSync(resolve(CLIENT_ROOT, 'eslint-rules/barrel.baseline.json'), 'utf8')
+  ).files;
+  const deep = "import { TopologyGraph } from '@/layers/features/mesh/ui/TopologyGraph';\n";
+
+  it('reports a deep import into another slice, from a slice and from the app layer', async () => {
+    for (const path of ['src/layers/widgets/team/ui/Fixture.tsx', 'src/app/Fixture.tsx']) {
+      const errors = await lintAt(`${deep}export const x = TopologyGraph;\n`, path, RULE);
+      expect(errors, path).toHaveLength(1);
+      expect(errors[0].severity).toBe(2);
+      expect(errors[0].message).toContain('`@/layers/features/mesh`');
+    }
+  });
+
+  it('leaves the barrel, the file’s own slice, a lazy import() and the dev playground alone', async () => {
+    const code = [
+      "import { AgentHealthDetail } from '@/layers/features/mesh';",
+      "import { thing } from '@/layers/features/mesh/model/thing';",
+      "export const lazy = () => import('@/layers/features/mesh/ui/TopologyGraph');",
+      'export const x = [AgentHealthDetail, thing];',
+    ].join('\n');
+    expect(await lintAt(code, 'src/layers/features/mesh/ui/Fixture.tsx', RULE)).toEqual([]);
+    expect(
+      await lintAt(`${deep}export const x = TopologyGraph;\n`, 'src/dev/Fixture.tsx', RULE)
+    ).toEqual([]);
+  });
+
+  it('lists only test files, and each still holds exactly its entry', async () => {
+    // A listed file that no longer needs its entry (or is gone) fails here, so
+    // the baseline can only fall. Non-test files were all clean when the rule
+    // landed; there is nothing to grant one.
+    for (const [file, allowed] of Object.entries(BASELINE)) {
+      expect(file, 'only test files may be listed').toMatch(/(^|\/)__tests__\/|\.test\.tsx?$/);
+      expect(existsSync(resolve(CLIENT_ROOT, file)), `${file} is gone`).toBe(true);
+      const [result] = await eslint.lintFiles([resolve(CLIENT_ROOT, file)]);
+      const messages = result.messages.filter((m) => m.ruleId === RULE);
+      expect(messages, `${file} no longer matches its entry of ${allowed}`).toEqual([]);
+    }
+  }, 120_000);
+
+  it('fails a listed file that grows past its entry, and one that drops below it', async () => {
+    const [file, allowed] = Object.entries(BASELINE)[0];
+    const grown = Array.from(
+      { length: allowed + 1 },
+      (_, i) =>
+        `import { TopologyGraph as T${i} } from '@/layers/features/mesh/ui/TopologyGraph';\nexport const x${i} = T${i};\n`
+    ).join('');
+    expect(await lintAt(grown, file, RULE)).toHaveLength(allowed + 1);
+
+    const stale = await lintAt('export const x = 1;\n', file, RULE);
+    expect(stale).toHaveLength(1);
+    expect(stale[0].message).toContain('Lower its entry');
   });
 });

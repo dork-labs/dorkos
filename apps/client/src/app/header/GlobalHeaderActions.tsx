@@ -1,7 +1,7 @@
-import { BarFixedCluster } from '@/layers/widgets/one-bar';
 import { ControlCenter } from '@/layers/widgets/control-center';
 import { RemoteAccessBeacon } from '@/layers/widgets/remote-access';
 import { KeepAwakeBeacon } from '@/layers/widgets/keep-awake';
+import { BarFixedCluster } from './BarFixedCluster';
 
 /**
  * Keeps the global actions together on a phone, beside the route's identity
