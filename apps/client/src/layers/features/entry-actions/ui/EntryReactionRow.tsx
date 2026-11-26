@@ -1,12 +1,4 @@
-import {
-  forwardRef,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type Ref,
-} from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type Ref } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
 import {
@@ -150,6 +142,8 @@ interface EntryReactionRowProps {
   disabled?: boolean;
   /** Hand focus back to the message — the way out, bound to Escape. */
   onExit: () => void;
+  /** The roving group's handle, so the message can hand focus down to the pills. */
+  ref?: Ref<RovingGroupHandle>;
 }
 
 /**
@@ -174,141 +168,145 @@ interface EntryReactionRowProps {
  * message with ArrowDown — the pills are BELOW it, as the capsule is above —
  * moved between with arrows, and left with Escape.
  */
-export const EntryReactionRow = forwardRef<RovingGroupHandle, EntryReactionRowProps>(
-  function EntryReactionRow(
-    { reactions, viewerAuthorId, names, frequents, onToggle, disabled, onExit },
+export function EntryReactionRow({
+  reactions,
+  viewerAuthorId,
+  names,
+  frequents,
+  onToggle,
+  disabled,
+  onExit,
+  ref,
+}: EntryReactionRowProps) {
+  const [expanded, setExpanded] = useState(false);
+  // What the row held at its last COMMIT. `null` until the first paint, which
+  // is what makes the initial render animate nothing.
+  //
+  // A ref read during render, deliberately, and the one place in this file
+  // that is. React Compiler's rule is right in general — a ref read in render
+  // is usually a value that should have been state — and wrong here for a
+  // reason it cannot see: the question being asked is literally "what was
+  // committed last time", which state cannot answer. Setting state during
+  // render re-runs the component and hands back the NEW value, and setting it
+  // in an effect costs a whole extra render for an animation flag. Everything
+  // this decides is a one-shot animation frozen at the child's mount, so a
+  // stale read cannot desynchronise anything a reader can see.
+  //
+  const seenRef = useRef<Map<string, number> | null>(null);
+  const previous = seenRef.current;
+
+  // The last pill's fade needs this row to outlive it. An exit animation runs
+  // inside `AnimatePresence`, and unmounting the row unmounts that with it —
+  // so a row that vanished the instant its set emptied would swallow the very
+  // fade the design asks for. It lingers until the exit reports itself done.
+  //
+  // Decided DURING render, not in an effect, and that is the whole of why it
+  // works: an effect runs after the commit, by which time the row has already
+  // returned `null` and taken `AnimatePresence` with it. React re-runs a
+  // component that sets state while rendering and throws the first pass away,
+  // so the `null` never reaches the DOM. Measured — with this in an effect,
+  // the pill left in one frame and the 120ms fade never ran.
+  const [lingering, setLingering] = useState(false);
+  const [held, setHeld] = useState(reactions.length);
+  if (held !== reactions.length) {
+    setHeld(reactions.length);
+    setLingering(reactions.length === 0 && held > 0);
+  }
+
+  useEffect(() => {
+    seenRef.current = new Map(reactions.map((r) => [r.emoji, r.authorIds.length]));
+  });
+
+  const { shown, hidden } = splitReactionRow(reactions);
+  const drawn = expanded ? reactions : shown;
+  const mine = reactions.filter((r) => hasReacted(r, viewerAuthorId)).map((r) => r.emoji);
+  // Every pill, then the overflow button when there is one, then the ghost +.
+  // The ghost + is counted only when it is DRAWN: during the frame this row
+  // lingers for the last pill's fade there are no reactions left, so the
+  // picker is not rendered and a group sized as though it were would wrap
+  // arrow keys onto a button that is not there.
+  const overflow = hidden > 0 && !expanded ? 1 : 0;
+  const ghost = reactions.length > 0 ? 1 : 0;
+  const { register, handleKeyDown } = useRovingButtons(
+    drawn.length + overflow + ghost,
+    onExit,
     ref
-  ) {
-    const [expanded, setExpanded] = useState(false);
-    // What the row held at its last COMMIT. `null` until the first paint, which
-    // is what makes the initial render animate nothing.
-    //
-    // A ref read during render, deliberately, and the one place in this file
-    // that is. React Compiler's rule is right in general — a ref read in render
-    // is usually a value that should have been state — and wrong here for a
-    // reason it cannot see: the question being asked is literally "what was
-    // committed last time", which state cannot answer. Setting state during
-    // render re-runs the component and hands back the NEW value, and setting it
-    // in an effect costs a whole extra render for an animation flag. Everything
-    // this decides is a one-shot animation frozen at the child's mount, so a
-    // stale read cannot desynchronise anything a reader can see.
-    //
-    const seenRef = useRef<Map<string, number> | null>(null);
-    const previous = seenRef.current;
+  );
+  const keyAt = useCallback(
+    (index: number) => (event: KeyboardEvent<HTMLElement>) => handleKeyDown(event, index),
+    [handleKeyDown]
+  );
 
-    // The last pill's fade needs this row to outlive it. An exit animation runs
-    // inside `AnimatePresence`, and unmounting the row unmounts that with it —
-    // so a row that vanished the instant its set emptied would swallow the very
-    // fade the design asks for. It lingers until the exit reports itself done.
-    //
-    // Decided DURING render, not in an effect, and that is the whole of why it
-    // works: an effect runs after the commit, by which time the row has already
-    // returned `null` and taken `AnimatePresence` with it. React re-runs a
-    // component that sets state while rendering and throws the first pass away,
-    // so the `null` never reaches the DOM. Measured — with this in an effect,
-    // the pill left in one frame and the 120ms fade never ran.
-    const [lingering, setLingering] = useState(false);
-    const [held, setHeld] = useState(reactions.length);
-    if (held !== reactions.length) {
-      setHeld(reactions.length);
-      setLingering(reactions.length === 0 && held > 0);
-    }
+  if (reactions.length === 0 && !lingering) return null;
 
-    useEffect(() => {
-      seenRef.current = new Map(reactions.map((r) => [r.emoji, r.authorIds.length]));
-    });
-
-    const { shown, hidden } = splitReactionRow(reactions);
-    const drawn = expanded ? reactions : shown;
-    const mine = reactions.filter((r) => hasReacted(r, viewerAuthorId)).map((r) => r.emoji);
-    // Every pill, then the overflow button when there is one, then the ghost +.
-    // The ghost + is counted only when it is DRAWN: during the frame this row
-    // lingers for the last pill's fade there are no reactions left, so the
-    // picker is not rendered and a group sized as though it were would wrap
-    // arrow keys onto a button that is not there.
-    const overflow = hidden > 0 && !expanded ? 1 : 0;
-    const ghost = reactions.length > 0 ? 1 : 0;
-    const { register, handleKeyDown } = useRovingButtons(
-      drawn.length + overflow + ghost,
-      onExit,
-      ref
-    );
-    const keyAt = useCallback(
-      (index: number) => (event: KeyboardEvent<HTMLElement>) => handleKeyDown(event, index),
-      [handleKeyDown]
-    );
-
-    if (reactions.length === 0 && !lingering) return null;
-
-    return (
-      <div
-        data-testid="entry-reactions"
-        // 8px between pills on a phone, where they are 40px thumb targets; 4px
-        // on a desktop, where they are 24px pointer targets (design review
-        // 11.3, "gap between small adjacent targets").
-        className="mt-2 flex flex-wrap items-center gap-2 md:gap-1"
-        // A row of buttons, named so a screen reader reaching it knows what the
-        // group under the message is before stepping into it.
-        role="group"
-        aria-label="Reactions"
-      >
-        <AnimatePresence initial={false} onExitComplete={() => setLingering(false)}>
-          {/* eslint-disable-next-line react-hooks/refs -- `previous` is a
+  return (
+    <div
+      data-testid="entry-reactions"
+      // 8px between pills on a phone, where they are 40px thumb targets; 4px
+      // on a desktop, where they are 24px pointer targets (design review
+      // 11.3, "gap between small adjacent targets").
+      className="mt-2 flex flex-wrap items-center gap-2 md:gap-1"
+      // A row of buttons, named so a screen reader reaching it knows what the
+      // group under the message is before stepping into it.
+      role="group"
+      aria-label="Reactions"
+    >
+      <AnimatePresence initial={false} onExitComplete={() => setLingering(false)}>
+        {/* eslint-disable-next-line react-hooks/refs -- `previous` is a
               committed-value read; see the note where it is declared. */}
-          {drawn.map((reaction, index) => (
-            <ReactionPill
-              key={reaction.emoji}
-              reaction={reaction}
-              mine={hasReacted(reaction, viewerAuthorId)}
-              summary={reactionSummary(reaction, viewerAuthorId, names)}
-              arrived={previous !== null && !previous.has(reaction.emoji)}
-              rolled={
-                previous?.get(reaction.emoji) !== undefined &&
-                previous.get(reaction.emoji) !== reaction.authorIds.length
-              }
-              onToggle={() => onToggle(reaction.emoji)}
-              disabled={disabled}
-              buttonRef={register(index)}
-              onKeyDown={keyAt(index)}
-            />
-          ))}
-        </AnimatePresence>
+        {drawn.map((reaction, index) => (
+          <ReactionPill
+            key={reaction.emoji}
+            reaction={reaction}
+            mine={hasReacted(reaction, viewerAuthorId)}
+            summary={reactionSummary(reaction, viewerAuthorId, names)}
+            arrived={previous !== null && !previous.has(reaction.emoji)}
+            rolled={
+              previous?.get(reaction.emoji) !== undefined &&
+              previous.get(reaction.emoji) !== reaction.authorIds.length
+            }
+            onToggle={() => onToggle(reaction.emoji)}
+            disabled={disabled}
+            buttonRef={register(index)}
+            onKeyDown={keyAt(index)}
+          />
+        ))}
+      </AnimatePresence>
 
-        {overflow === 1 && (
-          // A count with somewhere to go. A bare "+3 more" would name reactions
-          // the reader has no way to see — the shape the thread reply row refuses
-          // for the same reason.
-          <button
-            ref={register(drawn.length)}
-            type="button"
-            tabIndex={-1}
-            onKeyDown={keyAt(drawn.length)}
-            onClick={() => setExpanded(true)}
-            data-testid="entry-reactions-more"
-            // Sized like the pills it sits beside, and with the same measured
-            // reason for carrying no invisible reach.
-            className="focus-ring text-muted-foreground hover:text-foreground inline-flex h-10 items-center rounded-full px-3 text-xs md:h-6 md:px-2"
-          >
-            +{hidden} more
-          </button>
-        )}
+      {overflow === 1 && (
+        // A count with somewhere to go. A bare "+3 more" would name reactions
+        // the reader has no way to see — the shape the thread reply row refuses
+        // for the same reason.
+        <button
+          ref={register(drawn.length)}
+          type="button"
+          tabIndex={-1}
+          onKeyDown={keyAt(drawn.length)}
+          onClick={() => setExpanded(true)}
+          data-testid="entry-reactions-more"
+          // Sized like the pills it sits beside, and with the same measured
+          // reason for carrying no invisible reach.
+          className="focus-ring text-muted-foreground hover:text-foreground inline-flex h-10 items-center rounded-full px-3 text-xs md:h-6 md:px-2"
+        >
+          +{hidden} more
+        </button>
+      )}
 
-        {/* The ghost + (behaviour 4): react again without summoning the capsule.
+      {/* The ghost + (behaviour 4): react again without summoning the capsule.
             Faint, because it is an affordance and not a reaction. Gone the moment
             the last pill starts to leave, so the row that lingers for that fade
             holds the fade and nothing else. */}
-        {reactions.length > 0 && (
-          <EntryReactionPicker
-            appearance="ghost-pill"
-            mine={mine}
-            frequents={frequents}
-            disabled={disabled}
-            onPick={onToggle}
-            triggerRef={register(drawn.length + overflow)}
-            onTriggerKeyDown={keyAt(drawn.length + overflow)}
-          />
-        )}
-      </div>
-    );
-  }
-);
+      {reactions.length > 0 && (
+        <EntryReactionPicker
+          appearance="ghost-pill"
+          mine={mine}
+          frequents={frequents}
+          disabled={disabled}
+          onPick={onToggle}
+          triggerRef={register(drawn.length + overflow)}
+          onTriggerKeyDown={keyAt(drawn.length + overflow)}
+        />
+      )}
+    </div>
+  );
+}

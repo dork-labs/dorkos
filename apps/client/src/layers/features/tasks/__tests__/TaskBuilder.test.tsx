@@ -35,9 +35,7 @@ vi.mock('@/layers/shared/ui', () => ({
   Label: ({ children, ...props }: Record<string, unknown> & { children?: React.ReactNode }) => (
     <label {...props}>{children}</label>
   ),
-  Input: React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
-    (props, ref) => <input ref={ref} {...props} />
-  ),
+  Input: (props: React.ComponentProps<'input'>) => <input {...props} />,
   Select: ({
     value,
     onValueChange,

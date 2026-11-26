@@ -177,7 +177,7 @@ function MarketplaceSearchInput() {
         value={localSearch}
         onChange={(e) => setLocalSearch(e.target.value)}
         placeholder="Search…"
-        className="pl-9 transition-shadow duration-200 focus:shadow-md max-sm:pr-3 sm:pr-10"
+        className="pl-9 transition-shadow duration-200 focus-visible:shadow-md max-sm:pr-3 sm:pr-10"
       />
       {/* The keyboard hint, and only where a keyboard is. A phone cannot press
           "/", so on one this badge charged the row for a shortcut nobody could

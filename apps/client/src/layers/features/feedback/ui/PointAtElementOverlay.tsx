@@ -290,7 +290,7 @@ export function PointAtElementOverlay({ phase, onSelect, onCancel }: PointAtElem
       aria-label="Point at the part of the app that looks wrong"
       tabIndex={-1}
       className={cn(
-        'fixed inset-0 z-50 focus:outline-none',
+        'fixed inset-0 z-50 outline-none',
         picking ? 'cursor-crosshair' : 'cursor-wait'
       )}
       onPointerMove={onPointerMove}

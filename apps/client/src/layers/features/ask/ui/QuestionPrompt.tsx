@@ -1,4 +1,4 @@
-import { useState, useId, useImperativeHandle, useCallback, useRef, forwardRef } from 'react';
+import { useState, useId, useImperativeHandle, useCallback, useRef, type Ref } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Check } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
@@ -46,6 +46,8 @@ interface QuestionPromptProps {
    * message remounts before history reloads.
    */
   onDecided?: (answers: Record<string, string>) => void;
+  /** The imperative handle the shortcut layer drives the form through. */
+  ref?: Ref<QuestionPromptHandle>;
 }
 
 export interface QuestionPromptHandle {
@@ -57,470 +59,467 @@ export interface QuestionPromptHandle {
   getActiveTab: () => string;
 }
 
-export const QuestionPrompt = forwardRef<QuestionPromptHandle, QuestionPromptProps>(
-  function QuestionPrompt(
-    {
-      sessionId,
-      toolCallId,
-      questions,
-      answers: preAnswers,
-      outcome,
-      result,
-      isActive = false,
-      focusedOptionIndex = -1,
-      onDecided,
-    },
-    ref
-  ) {
-    const transport = useTransport();
-    const instanceId = useId();
-    const [selections, setSelections] = useState<Record<string, string | string[]>>({});
-    const [otherText, setOtherText] = useState<Record<string, string>>({});
-    const [submitted, setSubmitted] = useState(!!preAnswers);
-    const [submitting, setSubmitting] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState('0');
-    const directionRef = useRef<1 | -1>(1);
+/**
+ * An agent's question, asked as a form: one tab per question, options to pick,
+ * and an "Other" box. The `ref` handle lets the shortcut layer drive it.
+ */
+export function QuestionPrompt({
+  sessionId,
+  toolCallId,
+  questions,
+  answers: preAnswers,
+  outcome,
+  result,
+  isActive = false,
+  focusedOptionIndex = -1,
+  onDecided,
+  ref,
+}: QuestionPromptProps) {
+  const transport = useTransport();
+  const instanceId = useId();
+  const [selections, setSelections] = useState<Record<string, string | string[]>>({});
+  const [otherText, setOtherText] = useState<Record<string, string>>({});
+  const [submitted, setSubmitted] = useState(!!preAnswers);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('0');
+  const directionRef = useRef<1 | -1>(1);
 
-    const activeQuestion = questions[Number(activeTab)] || questions[0];
-    const activeQIdx = Number(activeTab);
-    // Include the "Other" option in the count
-    const currentOptionCount = activeQuestion ? activeQuestion.options.length + 1 : 0;
+  const activeQuestion = questions[Number(activeTab)] || questions[0];
+  const activeQIdx = Number(activeTab);
+  // Include the "Other" option in the count
+  const currentOptionCount = activeQuestion ? activeQuestion.options.length + 1 : 0;
 
-    function handleSingleSelect(questionIdx: number, value: string) {
-      setSelections((prev) => ({ ...prev, [questionIdx]: value }));
-    }
+  function handleSingleSelect(questionIdx: number, value: string) {
+    setSelections((prev) => ({ ...prev, [questionIdx]: value }));
+  }
 
-    function handleMultiSelect(questionIdx: number, value: string, checked: boolean) {
-      setSelections((prev) => {
-        const current = (prev[questionIdx] as string[]) || [];
-        if (checked) {
-          return { ...prev, [questionIdx]: [...current, value] };
-        }
-        return { ...prev, [questionIdx]: current.filter((v) => v !== value) };
-      });
-    }
-
-    function handleOtherText(questionIdx: number, text: string) {
-      setOtherText((prev) => ({ ...prev, [questionIdx]: text }));
-    }
-
-    function hasAnswer(idx: number): boolean {
-      const sel = selections[idx];
-      if (!sel) return false;
-      if (questions[idx].multiSelect) {
-        const arr = sel as string[];
-        return arr.length > 0 && (!arr.includes('__other__') || !!otherText[idx]?.trim());
+  function handleMultiSelect(questionIdx: number, value: string, checked: boolean) {
+    setSelections((prev) => {
+      const current = (prev[questionIdx] as string[]) || [];
+      if (checked) {
+        return { ...prev, [questionIdx]: [...current, value] };
       }
-      return sel !== '__other__' || !!otherText[idx]?.trim();
+      return { ...prev, [questionIdx]: current.filter((v) => v !== value) };
+    });
+  }
+
+  function handleOtherText(questionIdx: number, text: string) {
+    setOtherText((prev) => ({ ...prev, [questionIdx]: text }));
+  }
+
+  function hasAnswer(idx: number): boolean {
+    const sel = selections[idx];
+    if (!sel) return false;
+    if (questions[idx].multiSelect) {
+      const arr = sel as string[];
+      return arr.length > 0 && (!arr.includes('__other__') || !!otherText[idx]?.trim());
     }
+    return sel !== '__other__' || !!otherText[idx]?.trim();
+  }
 
-    function isComplete(): boolean {
-      return questions.every((_q, idx) => hasAnswer(idx));
-    }
+  function isComplete(): boolean {
+    return questions.every((_q, idx) => hasAnswer(idx));
+  }
 
-    const handleSubmit = useCallback(async () => {
-      if (!isComplete() || submitting) return;
-      setSubmitting(true);
-      setError(null);
+  const handleSubmit = useCallback(async () => {
+    if (!isComplete() || submitting) return;
+    setSubmitting(true);
+    setError(null);
 
-      // Build answers record: key is question index as string, value is selected label(s)
-      const answers: Record<string, string> = {};
-      questions.forEach((q, idx) => {
-        const sel = selections[idx];
-        if (q.multiSelect) {
-          // Canonical multi-select format: selected labels joined with ", "
-          // (matches the SDK's own convention; see server question-answers.ts).
-          const arr = (sel as string[])
-            .map((v) => (v === '__other__' ? otherText[idx]?.trim() || '' : v))
-            .filter(Boolean);
-          answers[String(idx)] = arr.join(', ');
-        } else {
-          answers[String(idx)] =
-            sel === '__other__' ? otherText[idx]?.trim() || '' : (sel as string);
-        }
-      });
+    // Build answers record: key is question index as string, value is selected label(s)
+    const answers: Record<string, string> = {};
+    questions.forEach((q, idx) => {
+      const sel = selections[idx];
+      if (q.multiSelect) {
+        // Canonical multi-select format: selected labels joined with ", "
+        // (matches the SDK's own convention; see server question-answers.ts).
+        const arr = (sel as string[])
+          .map((v) => (v === '__other__' ? otherText[idx]?.trim() || '' : v))
+          .filter(Boolean);
+        answers[String(idx)] = arr.join(', ');
+      } else {
+        answers[String(idx)] = sel === '__other__' ? otherText[idx]?.trim() || '' : (sel as string);
+      }
+    });
 
-      try {
-        await transport.submitAnswers(sessionId, toolCallId, answers);
+    try {
+      await transport.submitAnswers(sessionId, toolCallId, answers);
+      setSubmitted(true);
+      onDecided?.(answers);
+    } catch (err) {
+      // If the server says the interaction was already resolved (409), treat as success.
+      const code = (err as { code?: string }).code;
+      if (code === 'already_resolved') {
         setSubmitted(true);
         onDecided?.(answers);
-      } catch (err) {
-        // If the server says the interaction was already resolved (409), treat as success.
-        const code = (err as { code?: string }).code;
-        if (code === 'already_resolved') {
-          setSubmitted(true);
-          onDecided?.(answers);
-        } else {
-          setError(err instanceof Error ? err.message : 'Couldn’t send your answers. Try again.');
-        }
-      } finally {
-        setSubmitting(false);
+      } else {
+        setError(err instanceof Error ? err.message : 'Couldn’t send your answers. Try again.');
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentional: isComplete and onDecided are local/stable
-    }, [selections, otherText, submitting, transport, sessionId, toolCallId, questions, onDecided]);
+    } finally {
+      setSubmitting(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentional: isComplete and onDecided are local/stable
+  }, [selections, otherText, submitting, transport, sessionId, toolCallId, questions, onDecided]);
 
-    useImperativeHandle(
-      ref,
-      () => ({
-        toggleOption(index: number) {
-          if (!activeQuestion || submitted || submitting) return;
-          // If index is the last (Other option), toggle __other__
-          if (index === activeQuestion.options.length) {
-            if (activeQuestion.multiSelect) {
-              const current = (selections[activeQIdx] as string[]) || [];
-              if (current.includes('__other__')) {
-                handleMultiSelect(activeQIdx, '__other__', false);
-              } else {
-                handleMultiSelect(activeQIdx, '__other__', true);
-              }
-            } else {
-              handleSingleSelect(activeQIdx, '__other__');
-            }
-            return;
-          }
-          const opt = activeQuestion.options[index];
-          if (!opt) return;
+  useImperativeHandle(
+    ref,
+    () => ({
+      toggleOption(index: number) {
+        if (!activeQuestion || submitted || submitting) return;
+        // If index is the last (Other option), toggle __other__
+        if (index === activeQuestion.options.length) {
           if (activeQuestion.multiSelect) {
             const current = (selections[activeQIdx] as string[]) || [];
-            if (current.includes(opt.label)) {
-              handleMultiSelect(activeQIdx, opt.label, false);
+            if (current.includes('__other__')) {
+              handleMultiSelect(activeQIdx, '__other__', false);
             } else {
-              handleMultiSelect(activeQIdx, opt.label, true);
+              handleMultiSelect(activeQIdx, '__other__', true);
             }
           } else {
-            handleSingleSelect(activeQIdx, opt.label);
+            handleSingleSelect(activeQIdx, '__other__');
           }
-        },
-        navigateOption(_direction: 'up' | 'down') {
-          // Handled externally via focusedOptionIndex prop
-        },
-        navigateQuestion(direction: 'prev' | 'next') {
-          if (questions.length <= 1) return;
-          const current = Number(activeTab);
-          if (direction === 'next' && current < questions.length - 1) {
-            directionRef.current = 1;
-            setActiveTab(String(current + 1));
-          } else if (direction === 'prev' && current > 0) {
-            directionRef.current = -1;
-            setActiveTab(String(current - 1));
+          return;
+        }
+        const opt = activeQuestion.options[index];
+        if (!opt) return;
+        if (activeQuestion.multiSelect) {
+          const current = (selections[activeQIdx] as string[]) || [];
+          if (current.includes(opt.label)) {
+            handleMultiSelect(activeQIdx, opt.label, false);
+          } else {
+            handleMultiSelect(activeQIdx, opt.label, true);
           }
-        },
-        submit() {
-          const currentIdx = Number(activeTab);
-          if (currentIdx < questions.length - 1) {
-            // Advance to next question — actual submission only on the last
-            directionRef.current = 1;
-            setActiveTab(String(currentIdx + 1));
-            return;
-          }
-          handleSubmit();
-        },
-        getOptionCount() {
-          return currentOptionCount;
-        },
-        getActiveTab() {
-          return activeTab;
-        },
-      }),
-      [
-        activeQuestion,
-        activeQIdx,
-        activeTab,
-        selections,
-        submitted,
-        submitting,
-        currentOptionCount,
-        handleSubmit,
-        questions.length,
-      ]
-    );
+        } else {
+          handleSingleSelect(activeQIdx, opt.label);
+        }
+      },
+      navigateOption(_direction: 'up' | 'down') {
+        // Handled externally via focusedOptionIndex prop
+      },
+      navigateQuestion(direction: 'prev' | 'next') {
+        if (questions.length <= 1) return;
+        const current = Number(activeTab);
+        if (direction === 'next' && current < questions.length - 1) {
+          directionRef.current = 1;
+          setActiveTab(String(current + 1));
+        } else if (direction === 'prev' && current > 0) {
+          directionRef.current = -1;
+          setActiveTab(String(current - 1));
+        }
+      },
+      submit() {
+        const currentIdx = Number(activeTab);
+        if (currentIdx < questions.length - 1) {
+          // Advance to next question — actual submission only on the last
+          directionRef.current = 1;
+          setActiveTab(String(currentIdx + 1));
+          return;
+        }
+        handleSubmit();
+      },
+      getOptionCount() {
+        return currentOptionCount;
+      },
+      getActiveTab() {
+        return activeTab;
+      },
+    }),
+    [
+      activeQuestion,
+      activeQIdx,
+      activeTab,
+      selections,
+      submitted,
+      submitting,
+      currentOptionCount,
+      handleSubmit,
+      questions.length,
+    ]
+  );
 
-    // Navigate to a specific question index by direction
-    function navigateToQuestion(direction: 'prev' | 'next') {
-      const current = Number(activeTab);
-      if (direction === 'next' && current < questions.length - 1) {
-        directionRef.current = 1;
-        setActiveTab(String(current + 1));
-      } else if (direction === 'prev' && current > 0) {
-        directionRef.current = -1;
-        setActiveTab(String(current - 1));
-      }
+  // Navigate to a specific question index by direction
+  function navigateToQuestion(direction: 'prev' | 'next') {
+    const current = Number(activeTab);
+    if (direction === 'next' && current < questions.length - 1) {
+      directionRef.current = 1;
+      setActiveTab(String(current + 1));
+    } else if (direction === 'prev' && current > 0) {
+      directionRef.current = -1;
+      setActiveTab(String(current - 1));
     }
+  }
 
-    // Render the "Other" free-text option using the appropriate primitive
-    function renderOtherOption(q: QuestionItem, qIdx: number) {
-      const isOtherSelected = q.multiSelect
-        ? ((selections[qIdx] as string[]) || []).includes('__other__')
-        : selections[qIdx] === '__other__';
-      const optionId = `${instanceId}-q-${qIdx}-other`;
-      const oIdx = q.options.length;
+  // Render the "Other" free-text option using the appropriate primitive
+  function renderOtherOption(q: QuestionItem, qIdx: number) {
+    const isOtherSelected = q.multiSelect
+      ? ((selections[qIdx] as string[]) || []).includes('__other__')
+      : selections[qIdx] === '__other__';
+    const optionId = `${instanceId}-q-${qIdx}-other`;
+    const oIdx = q.options.length;
 
-      return (
-        <OptionRow
-          isSelected={isOtherSelected}
-          isFocused={isActive && focusedOptionIndex === oIdx}
-          control={
-            q.multiSelect ? (
-              <Checkbox
-                checked={isOtherSelected}
-                id={optionId}
-                disabled={submitting}
-                onCheckedChange={(checked) => handleMultiSelect(qIdx, '__other__', !!checked)}
-              />
-            ) : (
-              <RadioGroupItem value="__other__" id={optionId} disabled={submitting} />
-            )
-          }
-        >
-          <div className="flex-1">
-            <label htmlFor={optionId} className="flex cursor-pointer items-center">
-              <span className="text-sm font-medium">Other</span>
-              {oIdx < 9 && (
-                <Kbd className="text-2xs text-muted-foreground ml-auto shrink-0">{oIdx + 1}</Kbd>
-              )}
-            </label>
-            <AnimatePresence initial={false}>
-              {isOtherSelected && (
-                <motion.div
-                  variants={COLLAPSE_VARIANTS}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={COLLAPSE_TRANSITION}
-                  className="overflow-hidden"
-                >
-                  <textarea
-                    placeholder="Type your answer…"
-                    rows={2}
-                    value={otherText[qIdx] || ''}
-                    disabled={submitting}
-                    onChange={(e) => handleOtherText(qIdx, e.target.value)}
-                    className="bg-background border-border focus:ring-ring mt-1 w-full resize-y rounded border px-2 py-1 text-sm focus:ring-1 focus:outline-none"
-                    // eslint-disable-next-line jsx-a11y/no-autofocus -- Intentional: focus the answer input when "Other" is selected
-                    autoFocus
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </OptionRow>
-      );
-    }
-
-    // Render a single question's form content
-    function renderQuestionContent(q: QuestionItem, qIdx: number) {
-      return (
-        <div>
-          <p className="text-foreground mb-1.5">{q.question}</p>
-
-          {!q.multiSelect ? (
-            <RadioGroup
-              value={(selections[qIdx] as string) ?? ''}
-              onValueChange={(value) => handleSingleSelect(qIdx, value)}
-              aria-label={q.question}
-              className="ml-1 gap-1"
-            >
-              {q.options.map((opt, oIdx) => {
-                const isSelected = selections[qIdx] === opt.label;
-                const optionId = `${instanceId}-q-${qIdx}-opt-${oIdx}`;
-                return (
-                  <OptionRow
-                    key={oIdx}
-                    isSelected={isSelected}
-                    isFocused={isActive && focusedOptionIndex === oIdx}
-                    control={
-                      <RadioGroupItem value={opt.label} id={optionId} disabled={submitting} />
-                    }
-                  >
-                    <label htmlFor={optionId} className="flex flex-1 cursor-pointer items-center">
-                      <span className="text-sm font-medium">{opt.label}</span>
-                      {opt.description && (
-                        <span className="text-muted-foreground ml-1.5 text-xs">
-                          : {opt.description}
-                        </span>
-                      )}
-                      {oIdx < 9 && (
-                        <Kbd className="text-2xs text-muted-foreground ml-auto shrink-0">
-                          {oIdx + 1}
-                        </Kbd>
-                      )}
-                    </label>
-                  </OptionRow>
-                );
-              })}
-
-              {/* "Other" free-text option */}
-              {renderOtherOption(q, qIdx)}
-            </RadioGroup>
-          ) : (
-            <div role="group" aria-label={q.question} className="ml-1 space-y-1">
-              {q.options.map((opt, oIdx) => {
-                const isSelected = ((selections[qIdx] as string[]) || []).includes(opt.label);
-                const optionId = `${instanceId}-q-${qIdx}-opt-${oIdx}`;
-                return (
-                  <OptionRow
-                    key={oIdx}
-                    isSelected={isSelected}
-                    isFocused={isActive && focusedOptionIndex === oIdx}
-                    control={
-                      <Checkbox
-                        checked={isSelected}
-                        id={optionId}
-                        disabled={submitting}
-                        onCheckedChange={(checked) => handleMultiSelect(qIdx, opt.label, !!checked)}
-                      />
-                    }
-                  >
-                    <label htmlFor={optionId} className="flex flex-1 cursor-pointer items-center">
-                      <span className="text-sm font-medium">{opt.label}</span>
-                      {opt.description && (
-                        <span className="text-muted-foreground ml-1.5 text-xs">
-                          : {opt.description}
-                        </span>
-                      )}
-                      {oIdx < 9 && (
-                        <Kbd className="text-2xs text-muted-foreground ml-auto shrink-0">
-                          {oIdx + 1}
-                        </Kbd>
-                      )}
-                    </label>
-                  </OptionRow>
-                );
-              })}
-
-              {/* "Other" free-text option */}
-              {renderOtherOption(q, qIdx)}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    // The question ended and nobody answered it. Checked BEFORE `submitted`,
-    // which a local submission can also set: an answer this client actually
-    // sent outranks a stale outcome, but nothing else does — history's word on
-    // how a question ended is the whole point of carrying it.
-    if (outcome !== undefined && outcome !== 'answered' && !submitted) {
-      return <QuestionUnansweredRow outcome={outcome} result={result} />;
-    }
-
-    // Collapsed submitted state — fade in the compact answer summary
-    if (submitted) {
-      return (
-        <motion.div
-          initial={preAnswers ? false : { opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={fadeTransition}
-        >
-          <QuestionAnswerSummary
-            questions={questions}
-            answers={preAnswers}
-            selections={selections}
-            otherText={otherText}
-          />
-        </motion.div>
-      );
-    }
-
-    // Pending state: render full question form
     return (
-      <AskCard.Root isActive={isActive} isResolved={submitted}>
-        {questions.length === 1 ? (
-          // Single question — render directly without navigation
-          renderQuestionContent(questions[0], 0)
-        ) : (
-          // Multiple questions — sequential Back/Next navigation
-          <div>
-            {/* Step indicator + Back/Next buttons */}
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-muted-foreground text-xs">
-                {questions[Number(activeTab)].header ||
-                  `Question ${Number(activeTab) + 1} of ${questions.length}`}
-              </span>
-              <div className="flex items-center gap-1.5">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => navigateToQuestion('prev')}
-                  disabled={Number(activeTab) === 0}
-                  className="h-7 px-2 text-xs"
-                >
-                  Back {isActive && <Kbd className="ml-1">&larr;</Kbd>}
-                </Button>
-                {Number(activeTab) < questions.length - 1 ? (
-                  <Button
-                    size="sm"
-                    onClick={() => navigateToQuestion('next')}
-                    className="h-7 px-2 text-xs"
-                  >
-                    Next {isActive && <Kbd className="ml-1">&rarr;</Kbd>}
-                  </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    onClick={handleSubmit}
-                    disabled={!isComplete() || submitting}
-                    className="h-7 px-2 text-xs transition-opacity duration-150"
-                  >
-                    <Check className="size-(--size-icon-xs)" />
-                    {submitting ? 'Sending…' : 'Send answers'}
-                    {isActive && <Kbd className="ml-1">Enter</Kbd>}
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {/* Directional crossfade for question content */}
-            <AnimatePresence mode="wait" custom={directionRef.current}>
-              <motion.div
-                key={activeTab}
-                custom={directionRef.current}
-                variants={questionSlideVariants}
-                initial="enter"
-                animate="center"
-                exit="exit"
-                transition={fadeTransition}
-              >
-                {renderQuestionContent(questions[Number(activeTab)], Number(activeTab))}
-              </motion.div>
-            </AnimatePresence>
-          </div>
-        )}
-
-        <AnimatePresence>
-          {error && (
-            <motion.p
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={fadeTransition}
-              className="text-destructive mt-2 text-xs"
-            >
-              {error}
-            </motion.p>
-          )}
-        </AnimatePresence>
-
-        {/* Submit button for single-question flows */}
-        {questions.length === 1 && (
-          <Button
-            size="sm"
-            onClick={handleSubmit}
-            disabled={!isComplete() || submitting}
-            className="mt-2 transition-opacity duration-150"
-          >
-            {submitting ? (
-              'Sending…'
-            ) : (
-              <>
-                <Check className="size-(--size-icon-xs)" /> Send answer
-                {isActive && <Kbd className="ml-1.5">Enter</Kbd>}
-              </>
+      <OptionRow
+        isSelected={isOtherSelected}
+        isFocused={isActive && focusedOptionIndex === oIdx}
+        control={
+          q.multiSelect ? (
+            <Checkbox
+              checked={isOtherSelected}
+              id={optionId}
+              disabled={submitting}
+              onCheckedChange={(checked) => handleMultiSelect(qIdx, '__other__', !!checked)}
+            />
+          ) : (
+            <RadioGroupItem value="__other__" id={optionId} disabled={submitting} />
+          )
+        }
+      >
+        <div className="flex-1">
+          <label htmlFor={optionId} className="flex cursor-pointer items-center">
+            <span className="text-sm font-medium">Other</span>
+            {oIdx < 9 && (
+              <Kbd className="text-2xs text-muted-foreground ml-auto shrink-0">{oIdx + 1}</Kbd>
             )}
-          </Button>
-        )}
-      </AskCard.Root>
+          </label>
+          <AnimatePresence initial={false}>
+            {isOtherSelected && (
+              <motion.div
+                variants={COLLAPSE_VARIANTS}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={COLLAPSE_TRANSITION}
+                className="overflow-hidden"
+              >
+                <textarea
+                  placeholder="Type your answer…"
+                  rows={2}
+                  value={otherText[qIdx] || ''}
+                  disabled={submitting}
+                  onChange={(e) => handleOtherText(qIdx, e.target.value)}
+                  className="bg-background border-border focus-ring mt-1 w-full resize-y rounded border px-2 py-1 text-sm"
+                  // eslint-disable-next-line jsx-a11y/no-autofocus -- Intentional: focus the answer input when "Other" is selected
+                  autoFocus
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </OptionRow>
     );
   }
-);
+
+  // Render a single question's form content
+  function renderQuestionContent(q: QuestionItem, qIdx: number) {
+    return (
+      <div>
+        <p className="text-foreground mb-1.5">{q.question}</p>
+
+        {!q.multiSelect ? (
+          <RadioGroup
+            value={(selections[qIdx] as string) ?? ''}
+            onValueChange={(value) => handleSingleSelect(qIdx, value)}
+            aria-label={q.question}
+            className="ml-1 gap-1"
+          >
+            {q.options.map((opt, oIdx) => {
+              const isSelected = selections[qIdx] === opt.label;
+              const optionId = `${instanceId}-q-${qIdx}-opt-${oIdx}`;
+              return (
+                <OptionRow
+                  key={oIdx}
+                  isSelected={isSelected}
+                  isFocused={isActive && focusedOptionIndex === oIdx}
+                  control={<RadioGroupItem value={opt.label} id={optionId} disabled={submitting} />}
+                >
+                  <label htmlFor={optionId} className="flex flex-1 cursor-pointer items-center">
+                    <span className="text-sm font-medium">{opt.label}</span>
+                    {opt.description && (
+                      <span className="text-muted-foreground ml-1.5 text-xs">
+                        : {opt.description}
+                      </span>
+                    )}
+                    {oIdx < 9 && (
+                      <Kbd className="text-2xs text-muted-foreground ml-auto shrink-0">
+                        {oIdx + 1}
+                      </Kbd>
+                    )}
+                  </label>
+                </OptionRow>
+              );
+            })}
+
+            {/* "Other" free-text option */}
+            {renderOtherOption(q, qIdx)}
+          </RadioGroup>
+        ) : (
+          <div role="group" aria-label={q.question} className="ml-1 space-y-1">
+            {q.options.map((opt, oIdx) => {
+              const isSelected = ((selections[qIdx] as string[]) || []).includes(opt.label);
+              const optionId = `${instanceId}-q-${qIdx}-opt-${oIdx}`;
+              return (
+                <OptionRow
+                  key={oIdx}
+                  isSelected={isSelected}
+                  isFocused={isActive && focusedOptionIndex === oIdx}
+                  control={
+                    <Checkbox
+                      checked={isSelected}
+                      id={optionId}
+                      disabled={submitting}
+                      onCheckedChange={(checked) => handleMultiSelect(qIdx, opt.label, !!checked)}
+                    />
+                  }
+                >
+                  <label htmlFor={optionId} className="flex flex-1 cursor-pointer items-center">
+                    <span className="text-sm font-medium">{opt.label}</span>
+                    {opt.description && (
+                      <span className="text-muted-foreground ml-1.5 text-xs">
+                        : {opt.description}
+                      </span>
+                    )}
+                    {oIdx < 9 && (
+                      <Kbd className="text-2xs text-muted-foreground ml-auto shrink-0">
+                        {oIdx + 1}
+                      </Kbd>
+                    )}
+                  </label>
+                </OptionRow>
+              );
+            })}
+
+            {/* "Other" free-text option */}
+            {renderOtherOption(q, qIdx)}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // The question ended and nobody answered it. Checked BEFORE `submitted`,
+  // which a local submission can also set: an answer this client actually
+  // sent outranks a stale outcome, but nothing else does — history's word on
+  // how a question ended is the whole point of carrying it.
+  if (outcome !== undefined && outcome !== 'answered' && !submitted) {
+    return <QuestionUnansweredRow outcome={outcome} result={result} />;
+  }
+
+  // Collapsed submitted state — fade in the compact answer summary
+  if (submitted) {
+    return (
+      <motion.div
+        initial={preAnswers ? false : { opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={fadeTransition}
+      >
+        <QuestionAnswerSummary
+          questions={questions}
+          answers={preAnswers}
+          selections={selections}
+          otherText={otherText}
+        />
+      </motion.div>
+    );
+  }
+
+  // Pending state: render full question form
+  return (
+    <AskCard.Root isActive={isActive} isResolved={submitted}>
+      {questions.length === 1 ? (
+        // Single question — render directly without navigation
+        renderQuestionContent(questions[0], 0)
+      ) : (
+        // Multiple questions — sequential Back/Next navigation
+        <div>
+          {/* Step indicator + Back/Next buttons */}
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-muted-foreground text-xs">
+              {questions[Number(activeTab)].header ||
+                `Question ${Number(activeTab) + 1} of ${questions.length}`}
+            </span>
+            <div className="flex items-center gap-1.5">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => navigateToQuestion('prev')}
+                disabled={Number(activeTab) === 0}
+                className="h-7 px-2 text-xs"
+              >
+                Back {isActive && <Kbd className="ml-1">&larr;</Kbd>}
+              </Button>
+              {Number(activeTab) < questions.length - 1 ? (
+                <Button
+                  size="sm"
+                  onClick={() => navigateToQuestion('next')}
+                  className="h-7 px-2 text-xs"
+                >
+                  Next {isActive && <Kbd className="ml-1">&rarr;</Kbd>}
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={handleSubmit}
+                  disabled={!isComplete() || submitting}
+                  className="h-7 px-2 text-xs transition-opacity duration-150"
+                >
+                  <Check className="size-(--size-icon-xs)" />
+                  {submitting ? 'Sending…' : 'Send answers'}
+                  {isActive && <Kbd className="ml-1">Enter</Kbd>}
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Directional crossfade for question content */}
+          <AnimatePresence mode="wait" custom={directionRef.current}>
+            <motion.div
+              key={activeTab}
+              custom={directionRef.current}
+              variants={questionSlideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={fadeTransition}
+            >
+              {renderQuestionContent(questions[Number(activeTab)], Number(activeTab))}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      )}
+
+      <AnimatePresence>
+        {error && (
+          <motion.p
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={fadeTransition}
+            className="text-destructive mt-2 text-xs"
+          >
+            {error}
+          </motion.p>
+        )}
+      </AnimatePresence>
+
+      {/* Submit button for single-question flows */}
+      {questions.length === 1 && (
+        <Button
+          size="sm"
+          onClick={handleSubmit}
+          disabled={!isComplete() || submitting}
+          className="mt-2 transition-opacity duration-150"
+        >
+          {submitting ? (
+            'Sending…'
+          ) : (
+            <>
+              <Check className="size-(--size-icon-xs)" /> Send answer
+              {isActive && <Kbd className="ml-1.5">Enter</Kbd>}
+            </>
+          )}
+        </Button>
+      )}
+    </AskCard.Root>
+  );
+}
