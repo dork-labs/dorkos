@@ -2,6 +2,22 @@
   "version": 1,
   "specs": [
     {
+      "id": "261126-031049",
+      "slug": "playbooks",
+      "title": "Playbooks: how a team of agents works together, as data a person picks, held the same on every runtime at DorkOS's gate and turn port, with the first three playbooks, levels, a fourth gate outcome that sends an act elsewhere, and work that moves",
+      "created": "2026-11-25",
+      "status": "specified",
+      "linearIssue": "DOR-5181"
+    },
+    {
+      "id": "261126-015502",
+      "slug": "publish-and-share",
+      "title": "Publish and share: a published page is a saved copy on its own origin, private until shared, with the store, the copy for each kind, serving apart, the audiences and the yes, the capabilities, and the build steps for docs, browser-only mini apps and web files",
+      "created": "2026-11-25",
+      "status": "specified",
+      "linearIssue": "DOR-5302"
+    },
+    {
       "id": "261126-004719",
       "slug": "one-message-system",
       "title": "One message system: every chat's words in one conversation log, a delivery record kept with each run, one way to start a turn, Relay carrying only outside windows, and Maildir counted down and retired",

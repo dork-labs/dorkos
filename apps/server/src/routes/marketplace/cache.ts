@@ -1,55 +1,21 @@
 /**
- * Marketplace routes: `/cache`: the marketplace cache's status, clearing it, and pruning packages no install needs.
+ * Marketplace routes: `/cache`: clearing the marketplace cache, and pruning packages no install needs. Its status is a capability (`services/marketplace/doors/`).
  *
  * @module routes/marketplace/cache
  */
-import { join } from 'node:path';
 import { z } from 'zod';
 import { logger } from '../../lib/logger.js';
-import type { MarketplaceCache } from '../../services/marketplace/cache/marketplace-cache.js';
 import { UnreadableInstallsError } from '../../services/marketplace/cache/package-cache-retention.js';
-import { directorySize } from '../../services/marketplace/lib/directory-size.js';
 import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
 import type { MarketplaceRouteContext } from './context.js';
 import { problem, readJsonBody } from '@dorkos/http-kit';
-import { safeReaddir, validationFailed } from './shared.js';
+import { validationFailed } from './shared.js';
 
 /**
  * Body schema for `POST /api/marketplace/cache/prune`: no options. Strict, so
  * the retired `keepLastN` is refused rather than silently ignored.
  */
 const PruneCacheBodySchema = z.object({}).strict();
-
-/** Compute counts + total size of the marketplace cache. */
-async function computeCacheStatus(cache: MarketplaceCache): Promise<{
-  marketplaces: number;
-  packages: number;
-  totalSizeBytes: number;
-}> {
-  const marketplacesRoot = join(cache.cacheRoot, 'marketplaces');
-  const marketplaceDirs = await safeReaddir(marketplacesRoot);
-  const packages = await cache.listPackages();
-
-  const [marketplacesBytes, packagesBytes] = await Promise.all([
-    directorySize(marketplacesRoot),
-    sumPackageSizes(packages),
-  ]);
-
-  return {
-    marketplaces: marketplaceDirs.length,
-    packages: packages.length,
-    totalSizeBytes: marketplacesBytes + packagesBytes,
-  };
-}
-
-/** Sum the recursive size of every cached package directory. */
-async function sumPackageSizes(packages: { path: string }[]): Promise<number> {
-  let total = 0;
-  for (const pkg of packages) {
-    total += await directorySize(pkg.path);
-  }
-  return total;
-}
 
 /**
  * Register the `/cache` routes on the marketplace router.
@@ -64,18 +30,6 @@ export function mountCacheRoutes(
   _ctx: MarketplaceRouteContext
 ): void {
   const { cache, cacheRetention } = deps;
-
-  // GET /cache -- cache status (marketplace count, package count, total bytes,
-  // and whether automatic cleanup is paused)
-  app.get('/cache', async (c) => {
-    try {
-      const status = await computeCacheStatus(cache);
-      return c.json({ ...status, cleanup: cacheRetention.status() });
-    } catch (err) {
-      logger.error('[Marketplace] Failed to read cache status', err);
-      return problem(c, 'internal_error', { detail: "Couldn't read the cache status. Try again." });
-    }
-  });
 
   // DELETE /cache -- wipe the marketplace cache
   app.delete('/cache', async (c) => {

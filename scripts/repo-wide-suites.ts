@@ -1,7 +1,6 @@
-import { defineConfig } from 'vitest/config';
-
 /**
- * The `scripts/` suites that read the whole repository, run in the merge queue.
+ * The `scripts/` suites that read the whole repository, run in the merge queue
+ * as the `scripts-repo` project of `scripts/vitest.config.ts`.
  *
  * Most of `scripts/__tests__` checks only the code in `scripts/`. These files
  * also read state anywhere in the tree: a census over `apps/` and `packages/`,
@@ -13,7 +12,7 @@ import { defineConfig } from 'vitest/config';
  * landed a follow-up (31 failed jobs and three red-main spells in the week of
  * Nov 5, 2026: #3528, #3568, #3564/#3569; ledger 261112-185148).
  *
- * `typecheck.yml` runs this config, because `typecheck` is required,
+ * `typecheck.yml` runs that project, because `typecheck` is required,
  * unfiltered and reports on `merge_group`. Whole files, not filtered test
  * names: each file here is fast, and a name filter would silently stop
  * matching when a test is renamed.
@@ -161,21 +160,3 @@ export const HERMETIC_SUITES = [
   'q3-contention/__tests__/turns.test.ts',
   'sharding/__tests__/sequencer.test.ts',
 ] as const;
-
-export default defineConfig({
-  test: {
-    name: 'scripts-repo',
-    root: import.meta.dirname,
-    environment: 'node',
-    include: [...REPO_WIDE_SUITES],
-    // The whole-repo scans are CPU-bound. On a 4-core runner, one worker per
-    // core made two of them take 26-34s and time out (DOR-4222). Two workers
-    // leave each scan more of the machine; the step still takes under a minute.
-    maxWorkers: 2,
-    // Room for a slow runner. A test that sets its own timeout keeps it, so
-    // the two slowest scans also raised theirs in-file.
-    testTimeout: 120_000,
-    // Same idiom as scripts/vitest.config.ts; CI passes no VITEST_RETRY, so 0.
-    retry: process.env.VITEST_RETRY ? Number(process.env.VITEST_RETRY) : 0,
-  },
-});

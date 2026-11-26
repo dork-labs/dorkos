@@ -11,7 +11,6 @@ import {
   UnsupportedSourceUrlError,
 } from '../../services/marketplace/sources/source-url-policy.js';
 import {
-  describeLastFetch,
   fetchNewSourceListing,
   refreshSourceListing,
 } from '../../services/marketplace/sources/source-listing.js';
@@ -20,7 +19,8 @@ import { problem, readJsonBody, sendProblem } from '@dorkos/http-kit';
 import { readQuery } from '../../http/request-query.js';
 import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
 import type { MarketplaceContext, MarketplaceRouteContext } from './context.js';
-import { unsupportedSourceProblem, validationFailed } from './shared.js';
+import { validationFailed } from './shared.js';
+import { unsupportedSourceProblem } from '../../services/marketplace/lib/error-problem.js';
 
 /** The refusal for a source name already in use. */
 const SOURCE_NAME_TAKEN = 'A package source with that name already exists. Pick another name.';
@@ -71,25 +71,6 @@ export function mountSourceRoutes(
 ): void {
   const { sourceManager, cache, fetcher, updateFlow } = deps;
   const { refuseUntrustedSourceWrite } = ctx;
-
-  // GET /sources -- list configured marketplace sources
-  app.get('/sources', async (c) => {
-    try {
-      const sources = await sourceManager.list();
-      // How each source's last fetch went, from the record the fetcher keeps
-      // (DOR-2324), so a failed listing is still shown after a reload.
-      const listed = await Promise.all(
-        sources.map(async (source) => ({
-          ...source,
-          lastFetch: await describeLastFetch(cache, source.name),
-        }))
-      );
-      return c.json({ sources: listed });
-    } catch (err) {
-      logger.error('[Marketplace] Failed to list sources', err);
-      return problem(c, 'internal_error', { detail: 'Couldn’t list the marketplace sources.' });
-    }
-  });
 
   // POST /sources -- add a new marketplace source (operator-only, DOR-502)
   app.post('/sources', async (c) => {

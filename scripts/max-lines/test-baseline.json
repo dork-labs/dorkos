@@ -255,7 +255,7 @@
     "apps/server/src/services/runtimes/codex/__tests__/fake-app-server.ts": 684,
     "apps/server/src/services/runtimes/codex/app-server/__tests__/app-server-transport.test.ts": 1113,
     "apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts": 2073,
-    "apps/server/src/services/runtimes/codex/app-server/__tests__/default-permissions.binary.test.ts": 908,
+    "apps/server/src/services/runtimes/codex/app-server/__tests__/default-permissions.binary.test.ts": 845,
     "apps/server/src/services/runtimes/codex/app-server/__tests__/thread-loader.test.ts": 534,
     "apps/server/src/services/runtimes/connect/__tests__/credentials.test.ts": 609,
     "apps/server/src/services/runtimes/connect/__tests__/delegated-login.test.ts": 601,
@@ -372,6 +372,6 @@
     "scripts/__tests__/check-vocab-gate.test.ts": 925,
     "scripts/__tests__/pr-test-plan.test.ts": 518,
     "scripts/__tests__/text-only-scope.test.ts": 570,
-    "scripts/__tests__/verify-proof.test.ts": 1056
+    "scripts/__tests__/verify-proof.test.ts": 1052
   }
 }
