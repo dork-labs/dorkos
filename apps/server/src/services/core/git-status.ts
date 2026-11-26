@@ -2,7 +2,28 @@ import { runSafeGit } from '@dorkos/shared/safe-git';
 import type { GitStatusResponse, GitStatusError } from '@dorkos/shared/types';
 import { GIT } from '../../config/constants.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
-import { mayRunGitHere } from './agent-identity/index.js';
+import { createAgentFactsSlot, type AgentFactsPort } from '@dorkos/shared/agent-facts';
+
+// The agent facts port as the computer-side files directly in `core/` hold it
+// (git status and the file lister read git's kill switch through it; spec
+// `computer-side-starts-alone` §5.3). It lives here, not in a file of its own,
+// because `services/core/` is at its file limit. Startup fills it
+// (`startup/agent-facts.ts`); unwired it fails closed and git runs nowhere.
+const factsSlot = createAgentFactsSlot();
+
+/**
+ * Hand the computer-side files in `core/` the agent facts port, or clear it.
+ *
+ * @param next - The port, or `undefined` to clear it.
+ */
+export function setCoreFacts(next: AgentFactsPort | undefined): void {
+  factsSlot.set(next);
+}
+
+/** The agent facts port, or the fail-closed one before startup hands it over. */
+export function coreFacts(): AgentFactsPort {
+  return factsSlot.get();
+}
 
 /**
  * Git repository status via `git status --porcelain=v1`.
@@ -27,7 +48,7 @@ import { mayRunGitHere } from './agent-identity/index.js';
  * @param cwd - Directory to check (must be inside a git repo)
  */
 export async function getGitStatus(cwd: string): Promise<GitStatusResponse | GitStatusError> {
-  if (!mayRunGitHere(cwd)) return { error: 'not_git_repo' as const };
+  if (!coreFacts().mayRunGit(cwd)) return { error: 'not_git_repo' as const };
   try {
     await validateBoundary(cwd);
   } catch (err) {

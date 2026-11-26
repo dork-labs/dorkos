@@ -20,6 +20,8 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { OpencodeClient } from '@opencode-ai/sdk';
 import { afterAll, vi } from 'vitest';
+// Computer-side code reads agent facts through the port, wired as boot does.
+import '../../../../core/agent-identity/__tests__/wire-test-facts.js';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { runtimeConformance } from '@dorkos/test-utils';

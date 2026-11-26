@@ -49,33 +49,26 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { readManifest } from '@dorkos/shared/manifest';
+import {
+  canonicalDir,
+  type AgentHome,
+  type DeskBinding,
+  type HomeResolution,
+} from '@dorkos/shared/agent-facts';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 
-/**
- * A registered agent home. Only {@link resolveAgentHome} mints one, so an
- * identity reader that takes this type cannot be handed a working directory.
- */
-export type AgentHome = string & { readonly __brand: 'AgentHome' };
-
-/** How a folder resolved to a home. */
-export type HomeVia = 'exact' | 'managed-workspace' | 'linked-worktree' | 'turn-agent';
-
-/**
- * The answer for one folder.
- *
- * - `home` — identity comes from `home`.
- * - `none` — no agent: a session about a directory.
- * - `refused` — the folder is some agent's, and it cannot be shown to be the
- *   turn's. Acts as nobody, and never as the operator.
- */
-export type HomeResolution =
-  | { kind: 'home'; home: AgentHome; via: HomeVia }
-  | { kind: 'none' }
-  | {
-      kind: 'refused';
-      reason: 'not-the-turns-agent' | 'unregistered-owner';
-    };
+// The pure parts both sides read live in the shared contract (spec
+// `computer-side-starts-alone` §5.3); this module keeps the resolver.
+export {
+  canonicalDir,
+  homeOf,
+  readHomeManifest,
+  turnAgentOf,
+  type AgentHome,
+  type DeskBinding,
+  type HomeResolution,
+  type HomeVia,
+} from '@dorkos/shared/agent-facts';
 
 /**
  * What the resolver needs from the rest of the server, wired once at boot.
@@ -145,38 +138,6 @@ export function resolveAgentHome(
   return turnAgent !== null
     ? { kind: 'home', home: turnAgent, via: 'turn-agent' }
     : { kind: 'refused', reason: 'unregistered-owner' };
-}
-
-/**
- * The resolved home, or `undefined` when there is none to read identity from.
- *
- * @param resolution - A resolved folder.
- */
-export function homeOf(resolution: HomeResolution): AgentHome | undefined {
-  return resolution.kind === 'home' ? resolution.home : undefined;
-}
-
-/**
- * The agent a turn is dispatched as: the neutral `forAgent`, else the room
- * marker's `agentPath` (the field `forAgent` generalises).
- *
- * @param opts - The turn's message options.
- */
-export function turnAgentOf(
-  opts: { forAgent?: string; roomTurn?: { agentPath?: string } } | undefined
-): string | undefined {
-  return opts?.forAgent ?? opts?.roomTurn?.agentPath;
-}
-
-/**
- * Read an agent's manifest from its home — the server's only door to
- * `.dork/agent.json` for identity. `@dorkos/shared/manifest` keeps its string
- * signature for the CLI and other packages.
- *
- * @param home - A resolved home.
- */
-export function readHomeManifest(home: AgentHome): ReturnType<typeof readManifest> {
-  return readManifest(home);
 }
 
 /**
@@ -433,19 +394,6 @@ function sameRealPath(a: string, b: string): boolean {
 }
 
 /**
- * How the turn's folder was chosen, as the desk guard needs to know it.
- *
- * - `home` — the agent's own home was asked for (the default binding, and
- *   every room turn).
- * - `managed` — the agent's manifest asked for a checkout of its own.
- * - `none` — the agent is configured `workspace.mode: 'none'` and shares the
- *   operator's default folder.
- * - `boundary-refused` — the agent's home is outside what this server may
- *   touch, so the default folder answered instead.
- */
-export type DeskBinding = 'home' | 'managed' | 'none' | 'boundary-refused';
-
-/**
  * Map the session-cwd chain's answer to a {@link DeskBinding} (spec
  * `agent-home-desk` §3.4).
  *
@@ -614,19 +562,7 @@ function enclosingOtherHome(dir: string, own: string): string | null {
   return null;
 }
 
-/**
- * A folder's real path, or its lexically resolved path when it does not exist.
- *
- * @param p - Any path.
- */
-export function canonicalDir(p: string): string {
-  return realPathOr(p);
-}
-
+/** A folder's real path, or its lexically resolved path when it does not exist. */
 function realPathOr(p: string): string {
-  try {
-    return fs.realpathSync(p);
-  } catch {
-    return path.resolve(p);
-  }
+  return canonicalDir(p);
 }

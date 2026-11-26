@@ -13,11 +13,15 @@
  * `--allow-hooks` and the other consent verbs also load the consent door and the
  * config store it writes through (`consent-config-store.ts`), lazily too. Cold,
  * those pushed the first consent test past 5 s on CI, and its late finish then
- * wired the door to that test's home while the next test ran (DOR-5459).
+ * wired the door to that test's home while the next test ran (DOR-5459). The
+ * sync also hands the harness its package reads (`harness-package-facts.ts`),
+ * loaded here for the same reason.
  *
  * @module cli/__tests__/preload-harness-server
  */
 import '../../server/services/harness/project-with-consent.js';
+import '../../server/services/harness/agent-facts.js';
+import '../../server/services/marketplace/package-facts.js';
 import '../../server/services/core/config-manager.js';
 import '../../server/services/core/operator/config-write.js';
 import '../../server/services/core/approvals/computer-asks/consent-config.js';

@@ -3,6 +3,8 @@
  * call would read, not just the document id, so a person sees what they allow.
  */
 import { describe, expect, it, vi } from 'vitest';
+// Computer-side code reads agent facts through the port, wired as boot does.
+import '../../../../core/agent-identity/__tests__/wire-test-facts.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { StreamEvent } from '@dorkos/shared/types';
 import {

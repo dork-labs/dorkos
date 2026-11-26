@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+// Computer-side code reads agent facts through the port, wired as boot does.
+import '../agent-identity/__tests__/wire-test-facts.js';
 import { parsePorcelainOutput } from '../git-status.js';
 
 vi.mock('../../../lib/boundary.js', () => ({

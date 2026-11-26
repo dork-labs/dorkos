@@ -8,7 +8,6 @@
  */
 import type { Db } from '@dorkos/db';
 import { logger } from '../../../lib/logger.js';
-import { getMcpLocalToken } from '../../core/auth/mcp-local-token.js';
 import { onDurableSessionRekey } from '../turn-identity/durable-rekey.js';
 import {
   getTurnContextStore,
@@ -36,21 +35,24 @@ export {
   type TurnContextPlace,
 } from './turn-context-store.js';
 
-/** The live secret values every record is swept for: the local MCP token and keys in the environment. */
-function liveSecrets(): string[] {
-  const token = getMcpLocalToken();
-  return [...secretValuesFromEnv(), ...(token !== null ? [token] : [])];
-}
-
 /**
  * Install the record over the database, and sweep out text past its 30 days.
  * Called once at startup, before any runtime takes a turn.
  *
+ * Every record is swept for the keys in the environment and for the secrets
+ * the space side hands in (the local `/mcp` token, which the space side mints
+ * and this side never reads itself).
+ *
  * @param db - The DorkOS database.
+ * @param handedSecrets - The live secret values the space side holds, read per record.
  * @returns The installed store.
  */
-export function installTurnContextStore(db: Db): TurnContextStore {
-  const store = new TurnContextStore(db, { knownSecrets: liveSecrets });
+export function installTurnContextStore(
+  db: Db,
+  handedSecrets: () => readonly string[] = () => []
+): TurnContextStore {
+  const knownSecrets = () => [...secretValuesFromEnv(), ...handedSecrets()];
+  const store = new TurnContextStore(db, { knownSecrets });
   setTurnContextStore(store);
   sweepExpiredTurnContext();
   return store;

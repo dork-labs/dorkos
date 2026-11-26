@@ -217,8 +217,11 @@ const IdentityFileTextSchema = z
 
 // === Requests (hub to computer) ===
 
-/** Replace one agent's identity copy on the computer. */
-const AgentsSyncPutSchema = z
+/**
+ * Replace one agent's identity copy on the computer. Exported as the base of
+ * the agent facts a computer reads (`@dorkos/shared/agent-facts`).
+ */
+export const AgentsSyncPutSchema = z
   .strictObject({
     op: z.literal('agents.sync'),
     agentId: RelayAgentIdSchema,

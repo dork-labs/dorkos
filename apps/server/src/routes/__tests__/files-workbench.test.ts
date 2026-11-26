@@ -1,5 +1,7 @@
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+// Computer-side code reads agent facts through the port, wired as boot does.
+import '../../services/core/agent-identity/__tests__/wire-test-facts.js';
 import fs from 'fs/promises';
 import { execFile } from 'child_process';
 import { promisify } from 'util';

@@ -717,6 +717,10 @@
       "types": "./src/computer-asks.ts",
       "default": "./dist/computer-asks.js"
     },
+    "./agent-facts": {
+      "types": "./src/agent-facts.ts",
+      "default": "./dist/agent-facts.js"
+    },
     "./consent-entries": {
       "types": "./src/consent-entries.ts",
       "default": "./dist/consent-entries.js"

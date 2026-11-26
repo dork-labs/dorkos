@@ -5,6 +5,8 @@ import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
  * (DOR-3039, DOR-3042).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+// Computer-side code reads agent facts through the port, wired as boot does.
+import '../../../../core/agent-identity/__tests__/wire-test-facts.js';
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -66,11 +68,6 @@ vi.mock('../../../../core/operator/config-write.js', () => ({ logConfigWrite: vi
 vi.mock('../../../../core/credential-env.js', () => ({
   resolveClaudeCredentialEnv: vi.fn().mockResolvedValue({}),
 }));
-vi.mock('../../../../core/agent-identity/index.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../../core/agent-identity/index.js')>()),
-  resolveAgentTokenEnv: vi.fn().mockResolvedValue({}),
-}));
-
 const RULE = 'Bash(scripts/claim-check:*)';
 const AGENT = { id: '01AGENT', name: 'dorkos-marketing', displayName: 'DorkOS Marketing' };
 let root: string;

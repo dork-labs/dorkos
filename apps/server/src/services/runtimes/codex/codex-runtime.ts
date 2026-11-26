@@ -77,12 +77,8 @@ import { SessionLockManager, runtimeLockHolder } from '../../session/session-loc
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { buildAgentContextAppend } from '../shared/agent-context.js';
-import {
-  homeOf,
-  resolveAgentHome,
-  turnAgentOf,
-  type AgentHome,
-} from '../../core/agent-identity/index.js';
+import { homeOf, turnAgentOf, type AgentHome } from '@dorkos/shared/agent-facts';
+import { runtimeFacts } from '../agent-facts.js';
 import {
   checkCodexDependencies,
   codexAppServerVersionNote,
@@ -1700,7 +1696,7 @@ export class CodexRuntime implements AgentRuntime {
    * @param forAgent - The agent a room turn is for, when a room dispatched it.
    */
   private identityPathFor(cwd: string, forAgent: string | undefined): AgentHome | undefined {
-    return homeOf(resolveAgentHome(cwd, forAgent));
+    return homeOf(runtimeFacts().home(cwd, forAgent));
   }
 
   /**

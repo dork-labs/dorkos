@@ -2,7 +2,7 @@
   "$comment": "The computer wall (apps/server/eslint-rules/computer-wall.js, spec computer-side-starts-alone §4, DOR-5158). For each computer-side file: space, its imports of space-side code; frontDoor, its imports of front-door code; tables, the space tables it names from @dorkos/db. Each may only fall. Run `pnpm check:computer-wall -- --update` after removing some; never raise a number by hand.",
   "files": {
     "src/services/browser/agent-browser-guard.ts": {
-      "space": 1,
+      "space": 0,
       "frontDoor": 1,
       "tables": 0
     },
@@ -22,21 +22,6 @@
       "tables": 0
     },
     "src/services/core/agent-computer/hub-owned.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/core/browser-registry/registry-store.ts": {
-      "space": 0,
-      "frontDoor": 0,
-      "tables": 1
-    },
-    "src/services/core/file-lister.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/core/git-status.ts": {
       "space": 1,
       "frontDoor": 0,
       "tables": 0
@@ -126,21 +111,6 @@
       "frontDoor": 0,
       "tables": 0
     },
-    "src/services/diff/git-baseline.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/harness/claude-enabled-plugins.ts": {
-      "space": 3,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/harness/dorkos-installed.ts": {
-      "space": 2,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/harness/project-with-consent.ts": {
       "space": 1,
       "frontDoor": 0,
@@ -182,7 +152,7 @@
       "tables": 0
     },
     "src/services/runtimes/claude-code/claude-code-runtime.ts": {
-      "space": 9,
+      "space": 1,
       "frontDoor": 2,
       "tables": 0
     },
@@ -237,7 +207,7 @@
       "tables": 0
     },
     "src/services/runtimes/claude-code/launch-account-check.ts": {
-      "space": 1,
+      "space": 0,
       "frontDoor": 1,
       "tables": 0
     },
@@ -401,39 +371,19 @@
       "frontDoor": 0,
       "tables": 0
     },
-    "src/services/runtimes/claude-code/messaging/context-builder.ts": {
-      "space": 7,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/runtimes/claude-code/messaging/credits-launch.ts": {
       "space": 0,
       "frontDoor": 1,
       "tables": 0
     },
-    "src/services/runtimes/claude-code/messaging/interactive-handlers.ts": {
-      "space": 2,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/runtimes/claude-code/messaging/launch-resolver.ts": {
-      "space": 3,
+      "space": 2,
       "frontDoor": 3,
       "tables": 0
     },
     "src/services/runtimes/claude-code/messaging/launch/required-launch.ts": {
       "space": 2,
       "frontDoor": 1,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/messaging/message-sender-shared.ts": {
-      "space": 4,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/messaging/tool-doc-gates.ts": {
-      "space": 2,
-      "frontDoor": 0,
       "tables": 0
     },
     "src/services/runtimes/claude-code/repo-settings/launch-repo-config.ts": {
@@ -461,11 +411,6 @@
       "frontDoor": 0,
       "tables": 0
     },
-    "src/services/runtimes/claude-code/sessions/launch-fingerprint.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/runtimes/claude-code/sessions/session-crash-recovery.ts": {
       "space": 1,
       "frontDoor": 0,
@@ -473,11 +418,6 @@
     },
     "src/services/runtimes/claude-code/shell-guard/guard-service.ts": {
       "space": 2,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/tool-gate/auto-allow.ts": {
-      "space": 1,
       "frontDoor": 0,
       "tables": 0
     },
@@ -526,11 +466,6 @@
       "frontDoor": 1,
       "tables": 0
     },
-    "src/services/runtimes/codex/agent-context.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/runtimes/codex/app-server/project-config-activity.ts": {
       "space": 1,
       "frontDoor": 0,
@@ -542,7 +477,7 @@
       "tables": 0
     },
     "src/services/runtimes/codex/codex-runtime.ts": {
-      "space": 1,
+      "space": 0,
       "frontDoor": 5,
       "tables": 0
     },
@@ -551,18 +486,13 @@
       "frontDoor": 1,
       "tables": 0
     },
-    "src/services/runtimes/codex/mcp-server-config.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/runtimes/codex/policy/secret-file-activity.ts": {
       "space": 1,
       "frontDoor": 0,
       "tables": 0
     },
     "src/services/runtimes/codex/tool-turn/outside-text-reads.ts": {
-      "space": 3,
+      "space": 2,
       "frontDoor": 0,
       "tables": 0
     },
@@ -596,17 +526,7 @@
       "frontDoor": 1,
       "tables": 0
     },
-    "src/services/runtimes/codex/turn-input.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/runtimes/connect/doe-credentials.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/connect/resolve-session-account.ts": {
       "space": 1,
       "frontDoor": 0,
       "tables": 0
@@ -637,16 +557,6 @@
       "tables": 0
     },
     "src/services/runtimes/context-preview/instructions-capability.ts": {
-      "space": 2,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/context-preview/preview.ts": {
-      "space": 2,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/context-preview/variables.ts": {
       "space": 1,
       "frontDoor": 0,
       "tables": 0
@@ -656,34 +566,19 @@
       "frontDoor": 6,
       "tables": 0
     },
-    "src/services/runtimes/doe/context.ts": {
-      "space": 2,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/runtimes/doe/credentials.ts": {
       "space": 0,
       "frontDoor": 4,
       "tables": 0
     },
     "src/services/runtimes/doe/doe-runtime.ts": {
-      "space": 2,
+      "space": 1,
       "frontDoor": 2,
       "tables": 0
     },
     "src/services/runtimes/doe/execute-turn.ts": {
-      "space": 3,
+      "space": 2,
       "frontDoor": 2,
-      "tables": 0
-    },
-    "src/services/runtimes/doe/resources.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/doe/tools.ts": {
-      "space": 1,
-      "frontDoor": 0,
       "tables": 0
     },
     "src/services/runtimes/opencode/credits-mode.ts": {
@@ -706,18 +601,8 @@
       "frontDoor": 0,
       "tables": 0
     },
-    "src/services/runtimes/opencode/messaging/turn-context.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/opencode/messaging/turn-input.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/runtimes/opencode/opencode-runtime.ts": {
-      "space": 1,
+      "space": 0,
       "frontDoor": 2,
       "tables": 0
     },
@@ -731,22 +616,7 @@
       "frontDoor": 0,
       "tables": 0
     },
-    "src/services/runtimes/opencode/tool-turn/prompt.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/runtimes/shared/accounts-access-context.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/shared/agent-context.ts": {
-      "space": 3,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/shared/home-skills-block.ts": {
       "space": 1,
       "frontDoor": 0,
       "tables": 0
@@ -756,28 +626,13 @@
       "frontDoor": 0,
       "tables": 0
     },
-    "src/services/runtimes/shared/policy/managed-config.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/shared/prose/context-warning-block.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/shared/source/agent-context-source.ts": {
-      "space": 3,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/session/agent-compaction/compaction-capabilities.ts": {
       "space": 3,
       "frontDoor": 0,
       "tables": 0
     },
     "src/services/session/agent-compaction/compaction-permission.ts": {
-      "space": 2,
+      "space": 1,
       "frontDoor": 0,
       "tables": 0
     },
@@ -821,13 +676,8 @@
       "frontDoor": 1,
       "tables": 0
     },
-    "src/services/session/fleet/carry-over-summary.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/session/fleet/carry-over.ts": {
-      "space": 5,
+      "space": 4,
       "frontDoor": 3,
       "tables": 0
     },
@@ -876,13 +726,8 @@
       "frontDoor": 0,
       "tables": 0
     },
-    "src/services/session/launch/launch-caller.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/session/launch/launch-session.ts": {
-      "space": 4,
+      "space": 3,
       "frontDoor": 2,
       "tables": 0
     },
@@ -896,13 +741,8 @@
       "frontDoor": 0,
       "tables": 0
     },
-    "src/services/session/launch/session-tool-warnings.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/session/launch/verify-chat-agent.ts": {
-      "space": 2,
+      "space": 1,
       "frontDoor": 0,
       "tables": 0
     },
@@ -917,7 +757,7 @@
       "tables": 0
     },
     "src/services/session/local-browser/outside-turn.ts": {
-      "space": 4,
+      "space": 3,
       "frontDoor": 0,
       "tables": 0
     },
@@ -976,11 +816,6 @@
       "frontDoor": 0,
       "tables": 1
     },
-    "src/services/session/new-since/turn-note.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/session/origin/active-turn-starter.ts": {
       "space": 1,
       "frontDoor": 0,
@@ -1022,13 +857,8 @@
       "tables": 0
     },
     "src/services/session/trigger-turn.ts": {
-      "space": 5,
+      "space": 4,
       "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/session/turn-context/index.ts": {
-      "space": 0,
-      "frontDoor": 1,
       "tables": 0
     },
     "src/services/session/turn-context/turn-context-redaction.ts": {
@@ -1042,11 +872,6 @@
       "tables": 0
     },
     "src/services/workspace/providers/git.ts": {
-      "space": 2,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/workspace/room-session-place.ts": {
       "space": 1,
       "frontDoor": 0,
       "tables": 0
@@ -1062,11 +887,6 @@
       "tables": 0
     },
     "src/services/workspace/workspace-reconciler.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/workspace/worktree-scan.ts": {
       "space": 1,
       "frontDoor": 0,
       "tables": 0

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import type { TriggerTurnOpts } from '../trigger-turn.js';
 import type { Db } from '@dorkos/db';
 let db: Db, home: string, agentHome: string, releaseContext: (() => void) | undefined;
-let identity: typeof import('../../core/agent-identity/index.js');
+let homes: typeof import('../../core/agent-identity/__tests__/agent-home-fixture.js');
 let permission: typeof import('../../core/capabilities/permission-enforcement.js');
 let projector: typeof import('../session-state-projector.js');
 let trigger: typeof import('../trigger-turn.js');
@@ -33,13 +33,9 @@ beforeEach(async () => {
   schema = await import('@dorkos/db');
   db = schema.createDb(join(home, 'owned.sqlite'));
   schema.runMigrations(db);
-  identity = await import('../../core/agent-identity/index.js');
-  identity.setAgentHomeRegistry({
-    isRegisteredHome: (p) => p === agentHome,
-    listRegisteredHomes: () => [agentHome],
-    managedWorkspaceOwner: () => null,
-    roomsDir: null,
-  });
+  // The fixture also wires the agent facts port turn code reads homes through.
+  homes = await import('../../core/agent-identity/__tests__/agent-home-fixture.js');
+  homes.registerTestHomes([agentHome]);
   let entered!: () => void;
   contextEntered = new Promise<void>((resolve) => {
     entered = resolve;
@@ -164,7 +160,7 @@ afterEach(async () => {
     staged?.setStagedContextStore(undefined);
     staged?.resetStagedContextStore();
     for (const id of projectorSessions) projector?.disposeProjector(id);
-    identity?.setAgentHomeRegistry(undefined);
+    homes?.clearTestHomes();
     permission?.resetPermissionGate();
     vi.resetModules();
     for (const other of otherDatabases) other.$client.close();

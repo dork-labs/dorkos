@@ -9,6 +9,8 @@
  * needs no edit here beyond a representative sample.
  */
 import { describe, it, expect, vi } from 'vitest';
+// Computer-side code reads agent facts through the port, wired as boot does.
+import '../../../../core/agent-identity/__tests__/wire-test-facts.js';
 
 // context-builder.ts pulls these app-wide collaborators at module load; mock
 // them so importing `renderContextEntry` doesn't require real wiring (mirrors

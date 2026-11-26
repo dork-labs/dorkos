@@ -26,7 +26,7 @@ import { LEDGER_RUNTIMES, type LedgerRuntime } from '@dorkos/shared/account-usag
 import { logger } from '../../../lib/logger.js';
 import type { ActivityService } from '../../activity/activity-service.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
-import { sessionAgentById } from '../../core/agent-identity/session-agent.js';
+import { sessionAgentFacts } from '../turn-port/agent-facts.js';
 import { callAdvisor, validateCarryOverSeed } from '../../core/usage/account-advisor.js';
 import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import { configManager } from '../../core/config-manager.js';
@@ -175,7 +175,9 @@ async function verifiedAgentPath(
 ): Promise<string | undefined> {
   // The recorded agent, else its folder's: a chat started in an agent's folder
   // from the command line records none (DOR-5038). A failed read carries none.
-  const agentPath = await sessionAgentById(sessionId).catch(() => undefined);
+  const agentPath = await sessionAgentFacts()
+    .ofChat(sessionId)
+    .catch(() => undefined);
   if (!agentPath || !meshCore) return undefined;
   return meshCore.listWithPaths().some((agent) => agent.projectPath === agentPath)
     ? agentPath

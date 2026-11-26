@@ -3,7 +3,6 @@ import {
   eq,
   isNull,
   sql,
-  authors,
   browserProfiles,
   browserInstances,
   browserAttachments,
@@ -22,6 +21,19 @@ import {
   type BrowserProfile,
 } from '@dorkos/shared/browser-schemas';
 import type { BrowserOwnerScope, BrowserOwnerScopeResolver } from './owner-scope.js';
+
+/**
+ * Whether an author id is a person's, read from the space side's author list
+ * (`owner/owner-people.ts`). A browser is only ever a person's.
+ */
+export interface BrowserOwnerPeople {
+  /**
+   * Whether `authorId` names a person.
+   *
+   * @param authorId - The namespace owner's author id.
+   */
+  isPerson(authorId: string): boolean;
+}
 
 /** Fixed private metadata refusal; database errors retain their original cause. */
 export class BrowserRegistryConflict extends Error {
@@ -74,16 +86,15 @@ const instanceProjection = (row: BrowserInstanceRow): Readonly<BrowserInstance> 
  * Attachment target visibility is the caller's separate obligation; no grant is issued here.
  * There is deliberately no stop-success or quarantine-release operation.
  */
-export function createBrowserRegistryStore(db: Db, resolver: BrowserOwnerScopeResolver) {
+export function createBrowserRegistryStore(
+  db: Db,
+  resolver: BrowserOwnerScopeResolver,
+  people: BrowserOwnerPeople
+) {
   function owner(scope: BrowserOwnerScope | null): string {
     const namespace = resolver.consume(scope);
     if (!namespace) return conflict();
-    const author = db
-      .select({ kind: authors.kind })
-      .from(authors)
-      .where(eq(authors.id, namespace.ownerAuthorId))
-      .get();
-    if (author?.kind !== 'human') return conflict();
+    if (!people.isPerson(namespace.ownerAuthorId)) return conflict();
     return namespace.ownerAuthorId;
   }
   function transact<T>(scope: BrowserOwnerScope | null, write: (ownerId: string) => T): T {

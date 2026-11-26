@@ -6,7 +6,7 @@
  *
  * @module services/session/launch/verify-chat-agent
  */
-import { canonicalDir } from '../../core/agent-identity/index.js';
+import { canonicalDir } from '@dorkos/shared/agent-facts';
 import type { PausedAgentRef, TurnAgentOpts } from '../../mesh/pause/agent-pause.js';
 
 /** Collaborators for {@link verifyChatAgent}, injectable without module mocks. */

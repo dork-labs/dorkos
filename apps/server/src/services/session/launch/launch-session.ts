@@ -28,12 +28,8 @@ import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import type { PersonChatBinding } from '../../core/runtime-seam/person-draft-settings.js';
 import type { FreshDmBirth } from '../chat-messages/sending/chat-message-birth.js';
-import {
-  homeOf,
-  isInsideRoomsDir,
-  readHomeManifest,
-  resolveAgentHome,
-} from '../../core/agent-identity/index.js';
+import { homeOf, readHomeManifest } from '@dorkos/shared/agent-facts';
+import { sessionAgentFacts } from '../turn-port/agent-facts.js';
 import { reportUsageEvent } from '../../core/usage-reporter.js';
 import { recordDispatchEnd, recordDispatchStart } from '../../observability/dispatch-buffers.js';
 import { fullChatOf, getWorkspaceManager, workspaceGateFor } from '../../workspace/index.js';
@@ -253,7 +249,7 @@ export async function resolveRuntimeTypeForNewSession(opts: {
   // a folder that is no agent's home reads nothing. Fall back silently when no
   // manifest exists or the read fails — a missing manifest is not an error on
   // the hot path.
-  const manifestDir = homeOf(resolveAgentHome(opts.agentPath ?? opts.cwd));
+  const manifestDir = homeOf(sessionAgentFacts().home(opts.agentPath ?? opts.cwd));
   if (manifestDir) {
     try {
       const manifest = await readHomeManifest(manifestDir);
@@ -535,7 +531,7 @@ async function launchSessionMessage(
   // room binding, anything. Asked before the session is bound, so a refused
   // launch writes nothing — and nothing that runs in a turn's folder (the
   // per-turn git status, a hook, the agent's shell) ever runs in one.
-  if (effectiveCwd !== undefined && isInsideRoomsDir(effectiveCwd)) {
+  if (effectiveCwd !== undefined && sessionAgentFacts().insideRoomsDir(effectiveCwd)) {
     return {
       refused: 'DESK_NOT_OWN',
       message:

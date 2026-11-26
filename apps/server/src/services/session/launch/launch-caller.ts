@@ -19,7 +19,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { MeshCore } from '@dorkos/mesh';
-import { resolveAgentHome } from '../../core/agent-identity/index.js';
+import { sessionAgentFacts } from '../turn-port/agent-facts.js';
 import { isProtectedPath } from '../../core/protected-paths/protected-path-check.js';
 import { protectedPathRoots } from '../../core/protected-paths/protected-path-roots.js';
 
@@ -143,7 +143,7 @@ export function isOtherAgentsFolder(
   cwd: string,
   callerPath: string
 ): boolean {
-  if (resolveAgentHome(cwd, callerPath).kind === 'refused') return true;
+  if (sessionAgentFacts().home(cwd, callerPath).kind === 'refused') return true;
   const owner = owningHome(meshCore, cwd);
   return owner !== undefined && owner !== realOr(callerPath);
 }
@@ -159,7 +159,7 @@ export function isAnyAgentsFolder(
   meshCore: Pick<MeshCore, 'listWithPaths'> | undefined,
   cwd: string
 ): boolean {
-  return resolveAgentHome(cwd).kind !== 'none' || owningHome(meshCore, cwd) !== undefined;
+  return sessionAgentFacts().home(cwd).kind !== 'none' || owningHome(meshCore, cwd) !== undefined;
 }
 
 /**

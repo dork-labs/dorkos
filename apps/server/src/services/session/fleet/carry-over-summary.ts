@@ -20,7 +20,7 @@
 import type { HistoryMessage } from '@dorkos/shared/types';
 import { SEED_CONTEXT_MAX_LENGTH } from '@dorkos/shared/schemas';
 import { runSafeGit } from '@dorkos/shared/safe-git';
-import { mayRunGitHere } from '../../core/agent-identity/index.js';
+import { sessionAgentFacts } from '../turn-port/agent-facts.js';
 
 /** How many recent user and assistant messages the summary keeps. */
 export const RECENT_MESSAGE_COUNT = 6;
@@ -239,7 +239,7 @@ export interface SummaryDeps {
  * @param args - The git arguments.
  */
 export async function runGitForSummary(cwd: string, args: string[]): Promise<string | undefined> {
-  if (!mayRunGitHere(cwd)) return undefined;
+  if (!sessionAgentFacts().mayRunGit(cwd)) return undefined;
   try {
     return await runSafeGit(args, cwd, { timeoutMs: 5_000, maxBuffer: 1024 * 1024 });
   } catch {

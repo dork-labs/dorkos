@@ -9,6 +9,8 @@
  * @vitest-environment node
  */
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
+// Computer-side code reads agent facts through the port, wired as boot does.
+import '../../core/agent-identity/__tests__/wire-test-facts.js';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, statSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

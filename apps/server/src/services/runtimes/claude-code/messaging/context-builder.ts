@@ -1,14 +1,12 @@
-import { renderDocEvents } from '../../../canvas/doc-channel/prompt.js';
 import { formatAccountsAccess } from '../../shared/accounts-access-context.js';
 import { formatContextWarning } from '../../shared/prose/context-warning-block.js';
 import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
-import { isRelayEnabled } from '../../../relay/relay-state.js';
-import { isTasksEnabled } from '../../../tasks/task-state.js';
+import { runtimeFacts } from '../../agent-facts.js';
 import type { SystemPromptAppendOptions, ToolDocGates } from './tool-doc-gates.js';
 import { GEN_UI_CONTEXT } from '../../shared/gen-ui-context.js';
 import { buildAgentContextAppend } from '../../shared/agent-context.js';
-import type { AgentHome } from '../../../core/agent-identity/index.js';
+import type { AgentHome, RelayConnectionsSource } from '@dorkos/shared/agent-facts';
 import { buildRoomToolsBlock } from '../../shared/room-tools-context.js';
 import * as uiContract from '../../../session/browser-seat/ui-tool-contract.js';
 import { formatRoomContext } from '../../shared/room-context-block.js';
@@ -19,17 +17,14 @@ import {
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import { IN_SESSION_TOOL_PREFIX } from '../mcp-tools/tool-exposure.js';
 import { WORKBENCH } from '../../../../config/constants.js';
-import type { BindingRouter } from '../../../relay/binding-router.js';
-import type { BindingStore } from '../../../relay/binding-store.js';
-import type { AdapterManager } from '../../../relay/adapter-manager.js';
 import { TASKS_TOOLS_CONTEXT } from '../mcp-tools/tasks/tasks-tools-context.js';
 
 /** Dependencies for building the <relay_connections> context block. */
 export interface RelayContextDeps {
   agentId: string;
-  bindingRouter: BindingRouter;
-  bindingStore: BindingStore;
-  adapterManager: AdapterManager;
+  bindingRouter: RelayConnectionsSource['sessions'];
+  bindingStore: RelayConnectionsSource['bindings'];
+  adapterManager: RelayConnectionsSource['adapters'];
 }
 
 /**
@@ -455,7 +450,9 @@ function buildMarketplaceToolsBlock(toolConfig?: ToolDocGates): string {
 function buildChatToolsBlock(toolConfig?: ToolDocGates, agentSession = false): string {
   if (!agentSession) return '';
   if (toolConfig && !toolConfig.messages) return '';
-  return chatToolsContext(toolConfig ? toolConfig.relay : isRelayEnabled());
+  return chatToolsContext(
+    toolConfig ? toolConfig.relay : runtimeFacts().promptFacts().relayEnabled
+  );
 }
 
 /**
@@ -480,7 +477,7 @@ function buildMeshToolsBlock(toolConfig?: ToolDocGates, agentSession = false): s
  * Otherwise falls back to the Relay feature flag.
  */
 function buildAdapterToolsBlock(toolConfig?: ToolDocGates): string {
-  if (!(toolConfig ? toolConfig.adapter : isRelayEnabled())) return '';
+  if (!(toolConfig ? toolConfig.adapter : runtimeFacts().promptFacts().relayEnabled)) return '';
   return ADAPTER_TOOLS_CONTEXT;
 }
 
@@ -491,7 +488,7 @@ function buildAdapterToolsBlock(toolConfig?: ToolDocGates): string {
  * Otherwise falls back to the Tasks feature flag.
  */
 function buildTasksToolsBlock(toolConfig?: ToolDocGates): string {
-  if (!(toolConfig ? toolConfig.tasks : isTasksEnabled())) return '';
+  if (!(toolConfig ? toolConfig.tasks : runtimeFacts().promptFacts().tasksEnabled)) return '';
   return TASKS_TOOLS_CONTEXT;
 }
 
@@ -500,7 +497,7 @@ function buildTasksToolsBlock(toolConfig?: ToolDocGates): string {
  *
  * Follows the ADR-0069 dual-gate pattern:
  * 1. relayContext must be provided (no deps = no block)
- * 2. Relay feature must be enabled (via isRelayEnabled() or toolConfig)
+ * 2. Relay feature must be enabled (the `relayEnabled` prompt fact, or toolConfig)
  * 3. Adapter tools must be enabled (via toolConfig.adapter)
  * 4. Agent must have at least one binding
  */
@@ -510,7 +507,7 @@ function buildRelayConnectionsBlock(
 ): string {
   if (!relayContext) return '';
   if (toolConfig && !toolConfig.adapter) return '';
-  if (!toolConfig && !isRelayEnabled()) return '';
+  if (!toolConfig && !runtimeFacts().promptFacts().relayEnabled) return '';
 
   const { agentId, bindingStore, bindingRouter, adapterManager } = relayContext;
 
@@ -735,7 +732,7 @@ export function renderContextEntry(entry: AdditionalContextEntry): string {
   const tag = CONTEXT_TAG[entry.kind];
   switch (entry.kind) {
     case 'doc_events':
-      return renderDocEvents(entry.data);
+      return runtimeFacts().renderDocEvents(entry.data);
     case 'git_status':
     case 'queue_note':
     case 'env':

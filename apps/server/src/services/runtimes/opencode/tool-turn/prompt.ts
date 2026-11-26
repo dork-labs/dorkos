@@ -2,7 +2,8 @@
 import type { OpencodeClient } from '@opencode-ai/sdk';
 import type { AgentRegistryPort, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { SessionSettings } from '@dorkos/shared/types';
-import { homeOf, resolveAgentHome } from '../../../core/agent-identity/index.js';
+import { homeOf } from '@dorkos/shared/agent-facts';
+import { runtimeFacts } from '../../agent-facts.js';
 import type { ConnectorRuntimeTools } from '../../connector-tools.js';
 import type { AccountsAccessContext } from '../../shared/accounts-access-context.js';
 import { creditsPromptModel } from '../credits-mode.js';
@@ -60,7 +61,7 @@ export async function dispatchOpenCodePrompt(
   // verbs describe what this exact turn can actually call.
   // The agent this turn acts as — anchored, so a room worktree reads as its
   // agent and a room turn as nobody but the agent it is for (DOR-2091).
-  const agentPath = homeOf(resolveAgentHome(cwd, forAgent));
+  const agentPath = homeOf(runtimeFacts().home(cwd, forAgent));
   const agentContext = await buildOpenCodeTurnParts(
     cwd,
     dorkosApplied,

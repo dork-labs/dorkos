@@ -16,7 +16,7 @@
 import path from 'node:path';
 import { GIT, FILE_LIMITS } from '../../config/constants.js';
 import { runSafeGitBuffer } from '@dorkos/shared/safe-git';
-import { mayRunGitHere } from '../core/agent-identity/index.js';
+import { diffFacts } from './agent-facts.js';
 
 /**
  * Read a file's bytes at git `HEAD`, or `null` when the cwd is not a git repo,
@@ -26,7 +26,7 @@ import { mayRunGitHere } from '../core/agent-identity/index.js';
  * @param absPath - Absolute path to the file, inside `cwd`.
  */
 export async function gitShowHead(cwd: string, absPath: string): Promise<Buffer | null> {
-  if (!mayRunGitHere(cwd)) return null;
+  if (!diffFacts().mayRunGit(cwd)) return null;
   // `git show HEAD:<path>` wants a repo-relative, forward-slashed path.
   const rel = path.relative(cwd, absPath).split(path.sep).join('/');
   // A path that escapes cwd (leading `..`) is never a tracked file here — refuse
