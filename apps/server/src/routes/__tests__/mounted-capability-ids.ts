@@ -61,6 +61,11 @@ export const MOUNTED_CAPABILITY_IDS: readonly string[] = [
   'audit.get',
   'audit.account_timeline',
   'audit.running_chats',
+  // The work graph's reads, registered right after the audit domain they take their reader from.
+  'work-graph.agent_chats',
+  'work-graph.chat_tree',
+  'work-graph.agent_work',
+  'work-graph.chat_work',
   'agent.pause',
   'agent.resume',
   'agent.list_paused',

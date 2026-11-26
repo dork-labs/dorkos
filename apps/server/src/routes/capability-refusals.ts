@@ -253,6 +253,16 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
   // A person's work queue doors kept the hand routes' sentences when they moved
   // onto the mount (`services/work-queue/work-queue-person-capabilities.ts`).
   WORK_QUEUE_AGENT_NOT_FOUND: { code: 'not_found', detail: 'No agent on the team has that id.' },
+  // The work graph's reads (DOR-4970).
+  WORK_GRAPH_AGENT_NOT_FOUND: { code: 'not_found', detail: 'No agent on the team has that id.' },
+  INVALID_REFERENCE: {
+    code: 'invalid_request',
+    detail: 'Send an id or a dork: reference of the right kind.',
+  },
+  INVALID_CURSOR: {
+    code: 'invalid_request',
+    detail: 'That cursor wasn’t given by this list. Leave it out to start again.',
+  },
   WORK_ITEM_NOT_FOUND: { code: 'not_found', detail: 'No item in a work queue has that id.' },
   WORK_ITEM_STARTED: { code: 'conflict', detail: 'That item has already started.' },
   WORK_ITEM_NOT_ENDED: { code: 'conflict', detail: 'That item has not ended.' },

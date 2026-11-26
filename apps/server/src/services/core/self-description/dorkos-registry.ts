@@ -62,7 +62,12 @@ import { capabilitiesDomain } from './capabilities-domain.js';
 import { instructionsDomain } from '../../runtimes/context-preview/instructions-capability.js';
 import { permissionsDomain } from '../permissions/permission-capabilities.js';
 import { permissionViewsDomain } from '../permissions/agent-permission-views.js';
-import { auditDomain } from '../../audit/audit-capabilities.js';
+import { auditDomain, readerFor } from '../../audit/audit-capabilities.js';
+import { readableSessionIds } from '../../audit/session-visibility.js';
+import { chatTitleOf } from '../../session/chat-messages/chat-message-wiring.js';
+import { chatHoldsOutsideText } from '../turn-power/chat-outside-words.js';
+import { markCallerTurnOutsider } from '../capabilities/mark-caller-turn.js';
+import { createWorkGraphReadDomain } from '../../work-graph/reads/work-graph-read-capabilities.js';
 import { agentPauseDomain } from '../../mesh/pause/pause-capabilities.js';
 import { approvalsDomain } from '../approvals/approval-withdraw-capability.js';
 import { linkDomain } from '../links/link-capabilities.js';
@@ -71,6 +76,20 @@ import { directoryDomain } from '../directory/directory-capabilities.js';
 import { diffDomain } from '../../diff/diff-capabilities.js';
 import { workspacesDomain } from '../../workspace/workspace-capabilities.js';
 import { templatesDomain } from '../agent-templates/template-catalog.js';
+
+/**
+ * The work graph's reads (DOR-4970), handed what they take from other domains
+ * here, at the composition root: the audit read side's reader rule, a chat's
+ * title and whether it holds outside words, and the turn mark. Each is read
+ * when a call runs, never when this module loads.
+ */
+export const workGraphReadDomain = createWorkGraphReadDomain({
+  readerOf: (audit, context) => readerFor(audit, context),
+  readable: (reader, chatIds) => readableSessionIds(reader, chatIds),
+  titleOf: (chatId) => chatTitleOf(chatId),
+  holdsOutsideText: (chatId) => chatHoldsOutsideText(chatId),
+  markOutside: (context) => markCallerTurnOutsider(context, { kind: 'chat' }),
+});
 
 /**
  * Compose the whole DorkOS capability registry from whichever domains `deps`
@@ -120,6 +139,8 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.workClaimDeps) domains.push(workClaimDomain);
   if (deps.workGraphDeps) domains.push(workGraphDomain);
   if (deps.auditDeps) domains.push(auditDomain);
+  // The work graph's reads take their reader and roster from the audit deps (DOR-4970).
+  if (deps.auditDeps) domains.push(workGraphReadDomain);
   if (deps.agentPauseDeps) domains.push(agentPauseDomain);
   if (deps.approvalWithdrawDeps) domains.push(approvalsDomain);
   if (deps.linkDeps) domains.push(linkDomain);
@@ -224,6 +245,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     workClaimDomain,
     workGraphDomain,
     auditDomain,
+    workGraphReadDomain,
     agentPauseDomain,
     approvalsDomain,
     linkDomain,

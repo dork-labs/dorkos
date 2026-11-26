@@ -63,9 +63,10 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     // Work claims ride here with no words of their own: a claim is a chat saying
     // "I have this", and the block has no room left under its token cap.
     can: 'spin off long work; message, read or stop chats; summarize yours.',
-    // A chat's change review (diff.*), its run list (runs.*, DOR-5212) and recording
-    // the pull request it opened (work-graph.*, DOR-5264) ride here with no words of
-    // their own (DOR-4978).
+    // A chat's change review (diff.*), its run list (runs.*, DOR-5212), recording the
+    // pull request it opened (work-graph.record-pr, DOR-5264) and the work graph's reads
+    // of an agent's chats, a chat's tree and the work linked to either (DOR-4970) ride
+    // here with no words of their own (DOR-4978).
     covers: [
       'chat.',
       'session_start',
