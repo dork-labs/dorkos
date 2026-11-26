@@ -62,8 +62,9 @@ import {
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import { heldWifiOwner, personProof } from '../services/todos/caller.js';
 import type { RequestFacts } from '../http/request-facts.js';
-import { gateResponse, toolRefusalProblem } from './capability-refusals.js';
+import { gateResponse, loggableRefusal, toolRefusalProblem } from './capability-refusals.js';
 import { holdConfirmFirst } from './capability-confirm-first.js';
+import { isDocOperatorAccount } from '../services/canvas/doc-channel/doc-source-policy.js';
 import { problemRefusalUnlessOwner } from './cloud-owner-bar.js';
 
 /** What a request answers while boot has not handed the registry over. */
@@ -243,8 +244,9 @@ async function invokeAs(
     // The capability refused (agent not found, system agent protected, …):
     // a problem from the fixed table, never the handler's own words.
     if (err instanceof CapabilityToolError) {
-      // The handler's own words (an upstream's raw answer, say) stay in the log.
-      logger.debug('[capabilities] invoke refused', { id, payload: err.payload });
+      // The handler's own words (an upstream's raw answer, say) stay in the log; what a
+      // refusal carries to the caller (a stale save's file text) never does.
+      logger.debug('[capabilities] invoke refused', { id, payload: loggableRefusal(err.payload) });
       return sendProblem(c, toolRefusalProblem(err.payload));
     }
     logger.error('[capabilities] invoke failed', { id, err });
@@ -294,6 +296,9 @@ export function capabilityRequestFacts(facts: RequestFacts): CapabilityRequestFa
     },
     get frontDoorElsewhere() {
       return frontDoorAnswer() === 'not-at-this-computer';
+    },
+    get ownerOrNoAccount() {
+      return isDocOperatorAccount(facts.user);
     },
   };
 }

@@ -17,7 +17,9 @@ import {
   createCanvasDocEventRoutes,
   canvasDocBodyRule,
 } from '../../../../../routes/canvas-doc-events.js';
-import { createFileRoutes } from '../../../../../routes/files.js';
+import { capabilityGroup } from '../../../../../http/__tests__/capability-group.js';
+import { testFileDeps } from '../../../../../http/__tests__/file-deps.js';
+import { filesDomain } from '../../../../core/directory/file-capabilities.js';
 import { createSessionCanvasRoutes } from '../../../../../routes/session-canvas.js';
 import { initBoundary } from '../../../../../lib/boundary.js';
 import { initConfigManager } from '../../../../core/config-manager.js';
@@ -72,9 +74,7 @@ async function setup(
       { bodyRules: [canvasDocBodyRule(() => undefined)] }
     )
   );
-  files.mount(
-    honoGroupListener({ path: '/api/files', routes: createFileRoutes(h.http.fileWrites) })
-  );
+  files.mount(honoGroupListener(capabilityGroup(filesDomain, testFileDeps(h.http.fileWrites))));
   return h;
 }
 

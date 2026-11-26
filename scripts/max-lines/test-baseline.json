@@ -162,7 +162,7 @@
     "apps/server/src/services/connectors/principal/__tests__/runtime-principal-service.test.ts": 636,
     "apps/server/src/services/core/__tests__/mcp-tool-gate.test.ts": 631,
     "apps/server/src/services/core/__tests__/runtime-registry.test.ts": 727,
-    "apps/server/src/services/core/agent-computer/__tests__/agent-writes-census.test.ts": 699,
+    "apps/server/src/services/core/agent-computer/__tests__/agent-writes-census.test.ts": 613,
     "apps/server/src/services/core/auth/__tests__/owner-second-factor.integration.test.ts": 893,
     "apps/server/src/services/core/auth/__tests__/wifi-device-sign-in.integration.test.ts": 631,
     "apps/server/src/services/core/capabilities/__tests__/capability-conformance.test.ts": 548,

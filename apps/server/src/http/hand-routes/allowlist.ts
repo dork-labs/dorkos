@@ -462,5 +462,30 @@ export const HAND_ROUTE_ALLOWLIST: readonly HandRouteAllowlistEntry[] = [
     path: '/api/agents/current',
     category: 'network-reachable',
     reason: 'network-reachable by design, waits for A5 (API-key audience), DOR-5267',
+  }, // A person's review of a document's routes and unfinished work (Security, t1j): a replay
+  // from a held device is refused in the route (`routes/canvas-doc-work-review.ts`).
+  {
+    method: 'POST',
+    path: '/api/canvas/docs/:id/routes/:routeId/review',
+    category: 'network-reachable',
+    reason: 'network-reachable by design, waits for A5 (API-key audience), DOR-5267',
+  },
+  {
+    method: 'POST',
+    path: '/api/canvas/docs/:id/routes/:routeId/revoke',
+    category: 'network-reachable',
+    reason: 'network-reachable by design, waits for A5 (API-key audience), DOR-5267',
+  },
+  {
+    method: 'POST',
+    path: '/api/canvas/docs/:id/work/:batchId/replay',
+    category: 'network-reachable',
+    reason: 'network-reachable by design, waits for A5 (API-key audience), DOR-5267',
+  },
+  {
+    method: 'POST',
+    path: '/api/canvas/docs/:id/work/:batchId/clear',
+    category: 'network-reachable',
+    reason: 'network-reachable by design, waits for A5 (API-key audience), DOR-5267',
   },
 ];

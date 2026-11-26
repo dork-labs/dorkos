@@ -14,6 +14,21 @@ import { parseScope } from '../scopes.js';
 import { DocChannelNotFoundError } from './authorization.js';
 import { DocRouteGrantError } from './grant-policy.js';
 
+/**
+ * The document channel's operator rule for a signed-in account: no account, or
+ * the install's owner account. With no owner account, any signed-in account is
+ * refused. A chat canvas's file save (`files.save`, through the mount's
+ * `ownerOrNoAccount` answer) and its recovery (`captureDocumentSaveOperator`)
+ * both ask this, whether login is on or off.
+ *
+ * @param user - The request's signed-in account, if any.
+ */
+export function isDocOperatorAccount(user: { readonly userId: string } | undefined): boolean {
+  if (!user) return true;
+  const owner = readOwnerAccount();
+  return !!owner && owner.id === user.userId;
+}
+
 /** Read the actual current install owner, sharing the existing local-install/account policy. */
 export function docInstallationOwner(installationId: string): ConnectorOwnerAuthority {
   const owner = readOwnerAccount();

@@ -90,5 +90,11 @@ export const MOUNTED_CAPABILITY_IDS: readonly string[] = [
   'workspaces.list',
   'workspaces.scan',
   'workspaces.pin',
+  'files.read_text',
+  'files.save',
+  'files.create',
+  'files.delete',
+  'files.rename',
+  'files.reveal',
   'templates.list',
 ];

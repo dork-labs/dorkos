@@ -222,9 +222,11 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       // Opening a /r/ link is a read that names nothing new, so it rides here with no words of its
       // own (DOR-5046): the block has no room left under its token cap.
       'link.resolve',
-      // Folder and workspace reads ride here with no words of their own (DOR-4978).
+      // Folder, workspace and file reads ride here with no words of their own (DOR-4978).
+      // The file browser's writes are person-only, so no agent can call one.
       'directory.',
       'workspaces.',
+      'files.',
     ],
     areas: [],
     gate: 'read only',

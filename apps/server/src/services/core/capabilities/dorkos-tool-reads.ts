@@ -313,6 +313,13 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'workspaces.list': 'local',
   'workspaces.scan': 'local',
   'workspaces.pin': 'local',
+  // The file browser (DOR-4978): a file's text can come from anywhere.
+  'files.read_text': 'outside',
+  'files.save': 'local',
+  'files.create': 'local',
+  'files.delete': 'local',
+  'files.rename': 'local',
+  'files.reveal': 'local',
   'templates.list': 'local',
   ping: 'local',
   get_server_info: 'local',

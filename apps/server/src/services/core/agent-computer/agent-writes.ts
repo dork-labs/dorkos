@@ -7,7 +7,7 @@
  * is installed, what is connected and what is scheduled are the hub's to
  * decide, and a deny-list of those routes misses each one added after it was
  * written. So the gate keeps the other list: the writes an agent's own work
- * needs (its sessions, files, documents, rooms, terminal and to-dos),
+ * needs (its sessions, uploads, documents, rooms, terminal and to-dos),
  * each named by its exact method and route with the reason it is open.
  * Reads stay open to agents.
  *
@@ -47,12 +47,10 @@ export const AGENT_COMPUTER_WRITES: ReadonlyMap<string, string> = new Map([
   ['PATCH /api/sessions/:id/queue/:messageId', 'edits a message waiting its turn'],
   ['DELETE /api/sessions/:id/queue/:messageId', 'drops a message waiting its turn'],
   ['POST /api/sessions/:id/tasks/:taskId/stop', 'stops a background task of a turn'],
-  // Files: the work itself.
-  ['POST /api/files', 'creates a file or folder'],
+  // Files: the work itself. An agent changes its folder with its own runtime's tools; the
+  // file browser's writes on `/api/files` are a person's (DOR-4978), all but the copy, which
+  // stays a hand route until its path names a resource.
   ['POST /api/files/copy', 'copies a file'],
-  ['POST /api/files/rename', 'renames or moves a file'],
-  ['PUT /api/files/content', 'writes a file'],
-  ['DELETE /api/files', 'deletes a file'],
   ['POST /api/uploads', 'uploads a file for a message'],
   // Shared documents.
   ['POST /api/canvas/docs/:id/events', 'edits a shared document'],

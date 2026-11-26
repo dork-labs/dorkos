@@ -42,13 +42,23 @@ vi.mock('../../services/core/config-manager.js', () => ({
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
+import { noopLogger } from '@dorkos/shared/logger';
+import { composeRegistry } from '../../services/core/capabilities/index.js';
+import { filesDomain } from '../../services/core/directory/file-capabilities.js';
+import { testFileDeps } from '../../http/__tests__/file-deps.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import fileRoutes from '../files.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 
 const admission = new MainRequestAdmission();
 // Routed as the running server routes: the moved groups answer from Hono.
-const testServer = listeningServer(composedListener(admission));
+// The JSON file doors are capabilities the mount serves (DOR-4978).
+const testServer = listeningServer(
+  composedListener(admission, {
+    capabilities: composeRegistry([filesDomain], { logger: noopLogger, ...testFileDeps() }),
+  })
+);
 
 /** Called with each JSON body the files routes answer, as they issue it. */
 let observeJson: ((method: string, path: string, body: unknown) => void) | undefined;
@@ -59,7 +69,7 @@ let observeJson: ((method: string, path: string, body: unknown) => void) | undef
  */
 const observedServer = listeningServer(
   honoGroupListener(
-    { path: '/api/files', routes: fileRoutes },
+    [{ path: '/api/files', routes: fileRoutes }, capabilityGroup(filesDomain, testFileDeps())],
     {
       before: async (c, next) => {
         const json = c.json;
