@@ -36,6 +36,12 @@
  *   the caller's identity token, never from the call, and the link carries
  *   the turn's marks. Unlike the others, this one refuses: it is a capability
  *   call, and its caller is told when nothing was recorded.
+ * - **A to-do or a promise an agent made in a chat** (DOR-5266): the to-do
+ *   tools announce one an agent made from a chat's turn (`onTodoMadeInChat`,
+ *   wired at the composition root in `startup/steps/work-graph.ts`), and
+ *   {@link recordChatTodo} records the chat `produced` it (`dork:todo:<id>`;
+ *   a promise is a to-do). The chat is server-held state only, and a person's
+ *   to-do or promise names none, so records nothing.
  *
  * Two read sites:
  *
@@ -239,7 +245,13 @@ function recordChatLink(
     });
     return;
   }
-  const input: WorkLinkInput = { from: from.value, relation, to: to.value, source: 'server' };
+  recordLink({ from: from.value, relation, to: to.value, source: 'server' }, ids);
+}
+
+/** Record one edge, never throwing: a refusal or a database failure is logged with `ids` and dropped. */
+function recordLink(input: WorkLinkInput, ids: Record<string, string>): void {
+  if (store === null) return;
+  const { relation } = input;
   try {
     const result = store.record(input);
     if (!result.ok)
@@ -283,4 +295,44 @@ export function recordChatFork(sourceId: string, forkId: string): void {
  */
 function recordChatStart(starterId: string, chatId: string): void {
   recordChatLink('started', starterId, chatId, { starterId, chatId });
+}
+
+/**
+ * Record that a chat produced a to-do or a promise an agent made from its
+ * turn (DOR-5266), so "what did this chat make" includes it. Every id the
+ * server held for the chat is resolved through recorded re-keys; ids that
+ * resolve to two different chats record nothing, since neither can be picked.
+ * An exact repeat adds nothing. Never throws.
+ *
+ * @param made - The server-held ids of the chat, and the to-do's id.
+ */
+export function recordChatTodo(made: { chatIds: readonly string[]; todoId: string }): void {
+  const links = store;
+  if (links === null) return;
+  let chats: string[];
+  try {
+    chats = [...new Set(made.chatIds.map((id) => links.resolveRekey(id)))];
+  } catch {
+    // Unresolved, the ids as the server gave them still name the chat.
+    chats = [...new Set(made.chatIds)];
+  }
+  const [chatId] = chats;
+  if (chatId === undefined || chats.length !== 1) {
+    logger.warn('[work-graph] the call named no one chat; edge not recorded', {
+      relation: 'produced',
+      todoId: made.todoId,
+    });
+    return;
+  }
+  const ids = { chatId, todoId: made.todoId };
+  const from = entityRef('chat', chatId);
+  const to = entityRef('todo', made.todoId);
+  if (!from.ok || !to.ok) {
+    logger.warn('[work-graph] a chat or to-do id has no reference form; edge not recorded', {
+      relation: 'produced',
+      ...ids,
+    });
+    return;
+  }
+  recordLink({ from: from.value, relation: 'produced', to: to.value, source: 'server' }, ids);
 }

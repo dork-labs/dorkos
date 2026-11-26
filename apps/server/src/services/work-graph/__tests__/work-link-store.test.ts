@@ -89,7 +89,7 @@ describe('WorkLinkStore', () => {
     for (const kind of ENTITY_KINDS) {
       const result = store.record({
         from: subject,
-        relation: 'produced',
+        relation: 'belongs_to',
         to: ref(kind),
         source: 'server',
       });
@@ -99,8 +99,8 @@ describe('WorkLinkStore', () => {
       ENTITY_KINDS.map((kind) => ({ kind, id: SAMPLE_IDS[kind] }))
     );
     for (const kind of ENTITY_KINDS) {
-      expect(store.to(ref(kind), 'produced')).toEqual([
-        expect.objectContaining({ from: { kind: 'chat', id: 'chat-a' }, relation: 'produced' }),
+      expect(store.to(ref(kind), 'belongs_to')).toEqual([
+        expect.objectContaining({ from: { kind: 'chat', id: 'chat-a' }, relation: 'belongs_to' }),
       ]);
     }
   });
@@ -188,6 +188,15 @@ describe('WorkLinkStore', () => {
     [{ relation: 'started', to: { kind: 'pr', id: '#4' } }, 'bad-kinds'],
     [{ relation: 'opened', to: { kind: 'ticket', id: 'DOR-4' } }, 'bad-kinds'],
     [{ relation: 'works_on', to: { kind: 'chat', id: 'chat-b' } }, 'bad-kinds'],
+    [{ relation: 'produced', to: { kind: 'pr', id: '#4' } }, 'bad-kinds'],
+    [
+      {
+        relation: 'produced',
+        from: { kind: 'ticket', id: 'DOR-4' },
+        to: { kind: 'todo', id: 'T1' },
+      },
+      'bad-kinds',
+    ],
     [
       { relation: 'works_on', from: { kind: 'pr', id: '#4' }, to: { kind: 'ticket', id: 'DOR-4' } },
       'bad-kinds',
