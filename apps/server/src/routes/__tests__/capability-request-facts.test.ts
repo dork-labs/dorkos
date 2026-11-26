@@ -73,6 +73,7 @@ describe('context.request', () => {
       'frontDoorElsewhere',
       'frontDoorOwner',
       'heldWifiOwner',
+      'ownerOrNoAccount',
       'ownerProven',
     ]);
     const everything = JSON.stringify(seen);

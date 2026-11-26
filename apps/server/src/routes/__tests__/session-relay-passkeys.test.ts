@@ -103,7 +103,7 @@ import {
   writeRelayPin,
   type RelayPin,
 } from '../../services/core/session-relay/pin-store.js';
-import { createSessionRelayRoutes, type SessionRelayRouteDeps } from '../session-relay.js';
+import { sessionRelayGroups, type SessionRelayRouteDeps } from './session-relay-groups.js';
 import { RELAY_PASSKEY_CSP, createRelayPasskeyPageRoutes } from '../relay-passkey-page.js';
 
 const PASSWORD = 'correct horse';
@@ -176,7 +176,7 @@ function app(options: { user?: RequestUser; ingress?: IngressKind; bare?: boolea
   const server = target.mount(
     honoGroupListener(
       [
-        { path: '/api/session-relay', routes: createSessionRelayRoutes(deps) },
+        ...sessionRelayGroups(deps),
         { path: '/', routes: createRelayPasskeyPageRoutes() },
         stepUpFixtureRoutes({
           ownerId: () => 'user_owner',
@@ -1016,7 +1016,7 @@ describe('a server listening on ::1, as a default install on macOS does', () => 
     const server = http.createServer(
       honoGroupListener(
         [
-          { path: '/api/session-relay', routes: createSessionRelayRoutes(deps) },
+          ...sessionRelayGroups(deps),
           { path: '/', routes: createRelayPasskeyPageRoutes() },
           stepUpFixtureRoutes({
             ownerId: () => 'user_owner',

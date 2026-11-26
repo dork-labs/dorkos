@@ -138,6 +138,8 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'chat.read': 'self',
   // A listed chat that holds outside words, whose title may quote them.
   'audit.running_chats': 'self',
+  // The same for an agent's chats, ended ones too (DOR-4970).
+  'work-graph.agent_chats': 'self',
   // An opened note marks when a line of it was saved while reading outside words.
   'memory.read': 'self',
   // Every to-do tool marks when a to-do it hands back carries a stranger's words, never for the
@@ -264,6 +266,17 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'agent.list_paused': 'local',
   // A person's move of an old persona into SOUL.md (DOR-4978).
   'agent.migrate_persona': 'local',
+  // The agent a folder belongs to: the team's own agent files; another agent gets no instructions.
+  'agent.current': 'local',
+  // Chat from the web (DOR-4978): a status, browser labels and passkey labels. Only the status
+  // reaches an agent, without the hub's address or the linked name.
+  'session-relay.status': 'local',
+  'session-relay.presence': 'local',
+  'session-relay.devices': 'local',
+  'session-relay.passkeys': 'local',
+  'session-relay.pause': 'local',
+  'session-relay.end_presence': 'local',
+  'session-relay.unlink': 'local',
   'approvals.withdraw': 'local',
   'local_browser.state': 'local',
   'local_browser.ask_person': 'local',
@@ -291,6 +304,11 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   // A chat's run records: statuses, ids, endings and fixed DorkOS lines. A
   // turn's words stay in its queue row and its runtime's transcript (§4.1).
   'runs.chat_runs': 'local',
+  // The work graph's tree and work reads (DOR-4970): ids, states, relations, PR and ticket
+  // references and dates, never a title or a chat's words.
+  'work-graph.chat_tree': 'local',
+  'work-graph.agent_work': 'local',
+  'work-graph.chat_work': 'local',
   // The rest of the registry's doors: ids, health, counts, folders and a person's changes.
   'mesh.status': 'local',
   'mesh.topology': 'local',
@@ -313,6 +331,13 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'workspaces.list': 'local',
   'workspaces.scan': 'local',
   'workspaces.pin': 'local',
+  // The file browser (DOR-4978): a file's text can come from anywhere.
+  'files.read_text': 'outside',
+  'files.save': 'local',
+  'files.create': 'local',
+  'files.delete': 'local',
+  'files.rename': 'local',
+  'files.reveal': 'local',
   'templates.list': 'local',
   ping: 'local',
   get_server_info: 'local',

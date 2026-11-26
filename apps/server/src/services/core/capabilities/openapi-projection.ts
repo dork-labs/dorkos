@@ -32,6 +32,7 @@ import {
   capabilityStandardResponses,
   registerInvokeOperation,
 } from '../openapi/capabilities-invoke.js';
+import { PROBLEM_CONTENT_TYPE, ProblemSchema } from '@dorkos/shared/problem';
 import { capabilityInputObject, splitPathParams } from './input-projection.js';
 
 import type { CapabilityRegistry } from './registry.js';
@@ -115,8 +116,18 @@ function projectSuccess(
     status === 204
       ? { description }
       : { description, content: { 'application/json': { schema: capability.output } } };
+  // The capability's own refusals, documented beside the standard ones they narrow.
+  const own = Object.fromEntries(
+    Object.entries(capability.httpErrors ?? {}).map(([code, error]) => [
+      code,
+      {
+        description: error.description,
+        content: { [PROBLEM_CONTENT_TYPE]: { schema: error.schema ?? ProblemSchema } },
+      },
+    ])
+  );
   // A 202 success replaces the approval entry: both mean "accepted, not done".
-  return { ...capabilityStandardResponses(), [status]: success };
+  return { ...capabilityStandardResponses(), ...own, [status]: success };
 }
 
 /**

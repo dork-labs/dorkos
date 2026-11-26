@@ -63,9 +63,10 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     // Work claims ride here with no words of their own: a claim is a chat saying
     // "I have this", and the block has no room left under its token cap.
     can: 'spin off long work; message, read or stop chats; summarize yours.',
-    // A chat's change review (diff.*), its run list (runs.*, DOR-5212) and recording
-    // the pull request it opened (work-graph.*, DOR-5264) ride here with no words of
-    // their own (DOR-4978).
+    // A chat's change review (diff.*), its run list (runs.*, DOR-5212), recording the
+    // pull request it opened (work-graph.record-pr, DOR-5264) and the work graph's reads
+    // of an agent's chats, a chat's tree and the work linked to either (DOR-4970) ride
+    // here with no words of their own (DOR-4978).
     covers: [
       'chat.',
       'session_start',
@@ -180,7 +181,7 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       'create_agent',
       'get_agent',
       // Also a person's move of an old persona into SOUL.md (`agent.migrate_persona`,
-      // person-only, DOR-4978).
+      // person-only, DOR-4978), and the agent a folder belongs to (`agent.current`).
       'agent.',
       'operator.update_agent',
       'operator.sidebar_',
@@ -222,9 +223,11 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       // Opening a /r/ link is a read that names nothing new, so it rides here with no words of its
       // own (DOR-5046): the block has no room left under its token cap.
       'link.resolve',
-      // Folder and workspace reads ride here with no words of their own (DOR-4978).
+      // Folder, workspace and file reads ride here with no words of their own (DOR-4978).
+      // The file browser's writes are person-only, so no agent can call one.
       'directory.',
       'workspaces.',
+      'files.',
     ],
     areas: [],
     gate: 'read only',
@@ -251,6 +254,9 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       'runtimes.key_status',
       'runtimes.opencode_key_setup',
       'runtimes.doe_model_setup',
+      // Chat from the web (`session-relay.*`, DOR-4978) rides here with no words of its own:
+      // an agent reads only its status; the rest is person-only.
+      'session-relay.',
     ],
     areas: ['settings', 'permissions'],
   },

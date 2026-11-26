@@ -22,11 +22,13 @@ import { PERSON_ONLY_AGENT_HINTS } from '@dorkos/shared/capabilities';
 import { TODO_TOOL_REFUSALS } from '../services/todos/todo-refusals.js';
 import { MESH_TOOL_REFUSALS } from '../services/mesh/doors/mesh-refusals.js';
 import { GLOBAL_MCP_TOOL_REFUSALS } from '../services/mesh/global-mcp/global-mcp-refusals.js';
+import { SESSION_RELAY_TOOL_REFUSALS } from '../services/core/session-relay-doors/session-relay-refusals.js';
 import { MARKETPLACE_TOOL_REFUSALS } from '../services/marketplace/doors/marketplace-refusals.js';
 import {
   RUNTIME_READ_SENTENCES,
   RUNTIME_TOOL_REFUSALS,
 } from '../services/core/runtime-doors/runtime-read-refusals.js';
+import { FILE_TOOL_REFUSALS } from '../services/core/directory/file-refusals.js';
 
 import type {
   TierDeniedPayload,
@@ -46,6 +48,13 @@ interface Refusal {
   readonly alsoSays?: readonly string[];
   /** The status, when a door kept one other than the code's default (a registry 422). */
   readonly status?: ProblemStatus;
+  /**
+   * The refusal's own fields sent beside the sentence as extension members, when
+   * a client needs them to recover (a stale save's file as it is now). Only the
+   * names listed here, and only string values, are sent. One entry uses it,
+   * `FILE_CHANGED_SINCE_OPENED` (`files.save`); {@link codesThatCarry} pins that.
+   */
+  readonly carries?: readonly string[];
 }
 
 /** The sentence each refusal family answers with, when no tool code says more. */
@@ -245,6 +254,16 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
   // A person's work queue doors kept the hand routes' sentences when they moved
   // onto the mount (`services/work-queue/work-queue-person-capabilities.ts`).
   WORK_QUEUE_AGENT_NOT_FOUND: { code: 'not_found', detail: 'No agent on the team has that id.' },
+  // The work graph's reads (DOR-4970).
+  WORK_GRAPH_AGENT_NOT_FOUND: { code: 'not_found', detail: 'No agent on the team has that id.' },
+  INVALID_REFERENCE: {
+    code: 'invalid_request',
+    detail: 'Send an id or a dork: reference of the right kind.',
+  },
+  INVALID_CURSOR: {
+    code: 'invalid_request',
+    detail: 'That cursor wasn’t given by this list. Leave it out to start again.',
+  },
   WORK_ITEM_NOT_FOUND: { code: 'not_found', detail: 'No item in a work queue has that id.' },
   WORK_ITEM_STARTED: { code: 'conflict', detail: 'That item has already started.' },
   WORK_ITEM_NOT_ENDED: { code: 'conflict', detail: 'That item has not ended.' },
@@ -266,6 +285,8 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
   // The MCP servers a person adds for every agent keep their hand routes' codes and
   // sentences (`services/mesh/global-mcp/global-mcp-person-capabilities.ts`).
   ...GLOBAL_MCP_TOOL_REFUSALS,
+  // Chat from the web's doors (`services/core/session-relay-doors/session-relay-refusals.ts`).
+  ...SESSION_RELAY_TOOL_REFUSALS,
   TODO_AGENT_NOT_FOUND: { code: 'not_found', detail: 'No agent on the team has that id.' },
   TODO_PROMISE_OWNER_ONLY: {
     code: 'owner_only',
@@ -292,6 +313,9 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
   // The runtime setup reads kept the hand routes' codes and sentences
   // (`services/core/runtime-doors/runtime-read-refusals.ts`).
   ...RUNTIME_TOOL_REFUSALS,
+  // The file browser kept the hand routes' codes and sentences
+  // (`services/core/directory/file-refusals.ts`).
+  ...FILE_TOOL_REFUSALS,
 };
 
 /** How a tool code ends or starts, and the family that spelling means. */
@@ -354,6 +378,40 @@ function sharedCode(code: string): Refusal | undefined {
   return { code: lower as ProblemCode, detail: definition.title };
 }
 
+/** The string fields a refusal's entry names, read off its payload; `undefined` for none. */
+function carried(
+  payload: unknown,
+  names: readonly string[] | undefined
+): Record<string, string> | undefined {
+  if (!names || typeof payload !== 'object' || payload === null) return undefined;
+  const fields = payload as Record<string, unknown>;
+  const kept = names.filter((name) => typeof fields[name] === 'string');
+  return kept.length
+    ? Object.fromEntries(kept.map((name) => [name, fields[name] as string]))
+    : undefined;
+}
+
+/** The tool codes whose refusal carries fields to the caller; pinned by a test. */
+export function codesThatCarry(): string[] {
+  return Object.keys(TOOL_REFUSALS).filter((code) => TOOL_REFUSALS[code]?.carries);
+}
+
+/**
+ * A refusal's payload as the log may keep it: without the fields its entry
+ * carries to the caller (a stale save's file text), which never go in a log.
+ *
+ * @param payload - The `CapabilityToolError`'s payload, of unknown shape.
+ * @returns The payload, minus any carried field.
+ */
+export function loggableRefusal(payload: unknown): unknown {
+  if (typeof payload !== 'object' || payload === null) return payload;
+  const raw = (payload as { code?: unknown }).code;
+  const code = typeof raw === 'string' ? raw.toUpperCase().replace(/-/g, '_') : undefined;
+  const carries = code === undefined ? undefined : TOOL_REFUSALS[code]?.carries;
+  if (!carries) return payload;
+  return Object.fromEntries(Object.entries(payload).filter(([name]) => !carries.includes(name)));
+}
+
 /**
  * The problem a capability's own refusal answers with over HTTP.
  *
@@ -371,9 +429,11 @@ export function toolRefusalProblem(payload: unknown): Problem {
       ? family('invalid_request')
       : (TOOL_REFUSALS[code] ?? sharedCode(code) ?? familyOf(code));
   const listed = typeof error === 'string' && refusal.alsoSays?.includes(error);
+  const extensions = carried(payload, refusal.carries);
   return problemBody(refusal.code, {
     detail: listed ? error : refusal.detail,
     ...(refusal.status === undefined ? {} : { status: refusal.status }),
+    ...(extensions ? { extensions } : {}),
   });
 }
 

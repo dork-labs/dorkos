@@ -1,7 +1,7 @@
 /** Keep domain-owned API registration out of the large legacy path registry. */
 import { registerAccountSigninOpenApi } from '../../health/account-signin-openapi.js';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
-import { registerFileWriteOpenApi } from '../../canvas/doc-channel/writes/file-writes-openapi.js';
+import { registerFileSaveRecoveryOpenApi } from '../../canvas/doc-channel/writes/file-save-recovery/openapi.js';
 import { registerDocRouteControlsOpenApi } from '../../canvas/doc-channel/route-controls/openapi.js';
 import { registerConnectorEventOpenApi } from '../../connectors/events/openapi.js';
 import { registerConnectorSpendingOpenApi } from '../../connectors/spending/openapi.js';
@@ -39,7 +39,8 @@ export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
   registerKeepAwakeOpenApi(registry);
   registerOnboardingOpenApi(registry);
   registerComputerOpenApi(registry);
-  registerFileWriteOpenApi(registry);
+  // The file save itself (`PUT /api/files/content`) is the `files.save` capability (DOR-4978).
+  registerFileSaveRecoveryOpenApi(registry);
   registerDocRouteControlsOpenApi(registry);
   registerConnectorHoldsOpenApi(registry);
   registerRelayAdapterOpenApi(registry);

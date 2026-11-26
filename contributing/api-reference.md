@@ -764,7 +764,7 @@ Agent identity endpoints are always mounted at `/api/agents/` — no feature fla
 
 ### GET /api/agents/current
 
-Get the agent manifest for a working directory.
+Get the agent a folder belongs to: its home, through any checkout of its repo, with its SOUL.md, NOPE.md, MEMORY.md and HEARTBEAT.md. Served by the capability mount as `agent.current` (`services/mesh/doors/agent-current-capability.ts`). An agent reading another agent's folder gets no `persona`, `conventions`, `permissions`, `mcpServers`, `workspace`, `projectPath` or files, as the `/api/mesh` reads leave out.
 
 **Query params:**
 
@@ -772,10 +772,9 @@ Get the agent manifest for a working directory.
 
 **Responses:**
 
-- `200` - `AgentManifest` object
+- `200` - The agent, or `null` when no agent lives there
 - `400` - Missing `path` query parameter
 - `403` - Path outside configured boundary
-- `404` - No agent registered at this path
 
 ### POST /api/agents
 

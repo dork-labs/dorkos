@@ -22,6 +22,7 @@
  * @module services/mesh/pause/pause-capabilities
  */
 import { migratePersonaCapability } from '../doors/agent-persona-capability.js';
+import { agentCurrentCapability } from '../doors/agent-current-capability.js';
 import type { AuditActor } from '@dorkos/shared/audit-schemas';
 import {
   AgentPauseListSchema,
@@ -194,7 +195,9 @@ export const agentPauseDomain: CapabilityDomain = {
       },
       invoke: async (deps) => ({ pauses: requirePauseDeps(deps).list() }),
     }),
-    // A person's move of an old persona into SOUL.md rides in this `agent` domain (DOR-4978).
+    // A person's move of an old persona into SOUL.md, and the agent a folder belongs to
+    // (`GET /api/agents/current`), ride in this `agent` domain (DOR-4978).
     migratePersonaCapability,
+    agentCurrentCapability,
   ],
 };

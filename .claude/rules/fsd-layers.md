@@ -24,7 +24,7 @@ column is a lint error in `apps/client/eslint.config.js`:
 | If editing in...   | Can import from...                                                   | CANNOT import from...                         |
 | ------------------ | -------------------------------------------------------------------- | --------------------------------------------- |
 | `layers/shared/`   | Nothing in layers/ (base layer)                                      | entities, features, widgets                   |
-| `layers/entities/` | `layers/shared/`, other entities (acyclic — see below)               | features, widgets                             |
+| `layers/entities/` | `layers/shared/`, other entities (acyclic, see below)                | features, widgets                             |
 | `layers/features/` | `layers/entities/`, `layers/shared/`, other features' UI (see below) | widgets; another feature's model, from model/ |
 | `layers/widgets/`  | `layers/features/`, `layers/entities/`, `layers/shared/`             | other widgets                                 |
 
@@ -241,7 +241,7 @@ Each module should organize code by purpose:
 
 Not all segments are required — only create what the module needs.
 
-**Note on `shared/` layer:** The `shared/` layer uses both `model/` and `lib/` segments at the top level. `shared/model/` contains hooks, stores, and React context (TransportContext, app-store, useTheme, useIsMobile, etc.). `shared/lib/` contains pure utilities and helpers (cn, font-config, favicon-utils, celebrations, etc.), plus the two Transport implementations — which are in the directory but deliberately NOT on its barrel (DOR-1809): reach them at `@/layers/shared/lib/transport` and `@/layers/shared/lib/direct-transport`, the same subpaths the package's `exports` map publishes. Consumers outside `shared/` import hooks and stores from `@/layers/shared/model` and utilities from `@/layers/shared/lib`. For `lib/`, code inside `shared/` names the leaf module instead of the barrel, and that is lint-enforced (see the carve-out above); `model/` has no such rule yet, so importing the `@/layers/shared/model` barrel from inside `shared/` is fine, aliased or relative.
+**Note on `shared/` layer:** The `shared/` layer uses both `model/` and `lib/` segments at the top level. `shared/model/` contains hooks, stores, and React context (TransportContext, app-store, useTheme, useIsMobile, etc.). `shared/lib/` contains pure utilities and helpers (cn, font-config, favicon-utils, celebrations, etc.), plus the Transport implementation (`HttpTransport`, in `shared/lib/transport/`), which is in the directory but deliberately NOT on its barrel (DOR-1809): reach it at `@/layers/shared/lib/transport`. Consumers outside `shared/` import hooks and stores from `@/layers/shared/model` and utilities from `@/layers/shared/lib`. For `lib/`, code inside `shared/` names the leaf module instead of the barrel, and that is lint-enforced (see the carve-out above); `model/` has no such rule yet, so importing the `@/layers/shared/model` barrel from inside `shared/` is fine, aliased or relative.
 
 ## Server Size Monitoring
 

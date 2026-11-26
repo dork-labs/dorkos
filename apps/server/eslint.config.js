@@ -136,6 +136,29 @@ const SERVICES_NO_ROUTES_EXEMPT = [
   'src/services/heartbeats/heartbeats-wiring.ts',
 ];
 
+// conf picks which migrations run by `projectVersion`, so it is `SERVER_VERSION` from
+// `lib/version.ts`, never a string literal (`contributing/configuration.md`, Anti-patterns). The
+// selector reaches any `projectVersion` property, not only one written inside `new Conf(...)`,
+// because the config manager builds the options in a `confOptions` object first. Tests are exempt:
+// a migration test states the version it upgrades to.
+const PROJECT_VERSION_LITERAL = {
+  selector:
+    "Property:matches([key.name='projectVersion'], [key.value='projectVersion'])[value.type=/^(Literal|TemplateLiteral)$/]",
+  message:
+    "conf's projectVersion is SERVER_VERSION from lib/version.ts, never a literal: it picks which migrations run. See contributing/configuration.md.",
+};
+// The chain parses the body before the route runs (`@dorkos/http-kit` request-body), so a route
+// reads it with `readJsonBody(c)`; `c.req.json()` finds the stream spent (`.claude/rules/api.md`).
+// Routes only: the sign-in handlers in `http/` mount ahead of the parser and read the raw body.
+const RAW_BODY_READ = {
+  selector:
+    "CallExpression[callee.property.name='json'][callee.object.type='MemberExpression'][callee.object.property.name='req']",
+  message:
+    'Read the body with readJsonBody(c) from @dorkos/http-kit: the chain has already parsed it. See .claude/rules/api.md.',
+};
+/** Server test files, which the source-only syntax bans skip. */
+const SERVER_TESTS = ['src/**/__tests__/**', 'src/**/*.{test,spec}.{ts,tsx}'];
+
 // Every dependency confined to exactly one directory. DERIVED from, rather
 // than restated alongside, both the global ban list and every per-directory
 // one below: each directory owns exactly one entry and bans the rest via
@@ -564,6 +587,22 @@ export default defineConfig([
     ignores: ['src/**/__tests__/**', 'src/**/__fixtures__/**', 'src/**/*.{test,spec}.{ts,tsx}'],
     plugins: { 'import-boundary': importBoundary },
     rules: { 'import-boundary/boundary': 'error' },
+  },
+
+  // Hard syntax bans (DOR-4938), on `dorkos/restricted-syntax`: the core `no-restricted-syntax`
+  // under a second name, so these fail lint while the shared `process.env` selector stays a
+  // warning (see `dorkosPlugin` in `@dorkos/eslint-config/base`). Options replace rather than
+  // merge, so the routes block restates `PROJECT_VERSION_LITERAL`. Tests get the shared test
+  // preset's selectors instead, from `testConfig` below.
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: SERVER_TESTS,
+    rules: { 'dorkos/restricted-syntax': ['error', PROJECT_VERSION_LITERAL] },
+  },
+  {
+    files: ['src/routes/**/*.{ts,tsx}'],
+    ignores: SERVER_TESTS,
+    rules: { 'dorkos/restricted-syntax': ['error', PROJECT_VERSION_LITERAL, RAW_BODY_READ] },
   },
 
   ...testConfig,

@@ -201,20 +201,20 @@ Unidirectional dependencies from top to bottom:
 app → widgets → features → entities → shared
 ```
 
-| Layer       | Purpose                                                | Can Import From            |
-| ----------- | ------------------------------------------------------ | -------------------------- |
-| `app/`      | AppShell.tsx, router.tsx, main.tsx, init-extensions.ts | All lower layers           |
-| `widgets/`  | Large compositions (layout, workspace)                 | features, entities, shared |
-| `features/` | Complete user functionality (chat, commands)           | entities, shared           |
-| `entities/` | Business domain objects (Session, Command)             | shared only                |
-| `shared/`   | UI primitives, utilities, Transport                    | Nothing (base layer)       |
+| Layer       | Purpose                                                | Can Import From                            |
+| ----------- | ------------------------------------------------------ | ------------------------------------------ |
+| `app/`      | AppShell.tsx, router.tsx, main.tsx, init-extensions.ts | All lower layers                           |
+| `widgets/`  | Large compositions (layout, workspace)                 | features, entities, shared                 |
+| `features/` | Complete user functionality (chat, commands)           | entities, shared, another feature's barrel |
+| `entities/` | Business domain objects (Session, Command)             | shared, other entities (no cycles)         |
+| `shared/`   | UI primitives, utilities, Transport                    | Nothing (base layer)                       |
 
-**Critical rules:**
+**Critical rules** (the full set, and what lint enforces, is `.claude/rules/fsd-layers.md`):
 
 - Higher layers import from lower layers only
 - Never import upward (entities cannot import features)
-- Never import across same-level modules (feature A cannot import feature B)
-- Compose cross-feature interactions at the widget or app level
+- Entities may import each other through the barrel, but never in a circle (`import-x/no-cycle`)
+- A feature may render another feature's components, but its `model/` never imports another feature's `model/` (`fsd/no-cross-feature-model-import`); put shared logic in an entity or in `shared/`
 
 ## Standard Segments
 

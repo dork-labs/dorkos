@@ -22,7 +22,9 @@ import { docDocumentGeneration } from '../../identity/incarnation.js';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { honoGroupListener } from '../../../../../http/__tests__/hono-group-listener.js';
-import { createFileRoutes } from '../../../../../routes/files.js';
+import { capabilityGroup } from '../../../../../http/__tests__/capability-group.js';
+import { testFileDeps } from '../../../../../http/__tests__/file-deps.js';
+import { filesDomain } from '../../../../core/directory/file-capabilities.js';
 import { saveOriginalDocumentFile } from '../installation-file-writes.js';
 import { saved } from './saved-outcome.js';
 import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
@@ -316,9 +318,7 @@ it('the real ordinary PUT route exposes receipt refusals as 404 and 412 rather t
     input = f.request();
   // The real host/auth middleware reads its normal boot singleton; keep its config inside this owned fixture.
   initConfigManager(f.h.dir);
-  target.mount(
-    honoGroupListener({ path: '/api/files', routes: createFileRoutes(f.h.http.fileWrites) })
-  );
+  target.mount(honoGroupListener(capabilityGroup(filesDomain, testFileDeps(f.h.http.fileWrites))));
   const saved = await request(target.server).put('/api/files/content').send(input);
   expect(saved.status).toBe(200);
   expect(receipt(saved.body)).toMatchObject({

@@ -51,11 +51,7 @@ import {
 import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
 import { resolveNamedAgentIdentity } from '../services/mesh/normalize-agent-identity.js';
 import { logger } from '../lib/logger.js';
-import {
-  homeOf,
-  readHomeManifest,
-  resolveAgentHome,
-} from '../services/core/agent-identity/index.js';
+import { homeOf, resolveAgentHome } from '../services/core/agent-identity/index.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import type { SyncFromDiskResult } from '@dorkos/mesh';
@@ -209,42 +205,8 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
   const { meshCore, activity: activityService } = deps;
   const router = new Hono<ApiEnv>();
 
-  // GET /api/agents/current?path=/path/to/project
-  // Returns the agent manifest for the home the given directory resolves to,
-  // or null when no agent lives there. A worktree or managed checkout of an
-  // agent's repo answers with the agent's HOME values, never the committed
-  // `.dork/` copy it carries (spec `agent-home-desk` §3.2 row 9).
-  router.get('/current', async (c) => {
-    try {
-      const rawPath = rawPathOf(c);
-      if (!rawPath) return missingPath(c);
-      const agentPath = homeOf(resolveAgentHome(await validateBoundaryOrDorkHome(rawPath)));
-      if (!agentPath) {
-        return c.json(null);
-      }
-      const manifest = await readHomeManifest(agentPath);
-      if (!manifest) {
-        return c.json(null);
-      }
-
-      // Include convention file contents alongside manifest data
-      const soulContent = await readConventionFile(agentPath, CONVENTION_FILES.soul);
-      const nopeContent = await readConventionFile(agentPath, CONVENTION_FILES.nope);
-      // Read alongside the other two, so the editor that PATCHes `memoryContent`
-      // can read back what it saved. Without this the round trip is broken in
-      // the direction a person notices last: the save appears to work and the
-      // field comes back empty on the next load.
-      const memoryContent = await readConventionFile(agentPath, CONVENTION_FILES.memory);
-      // Read for the Heartbeat page's editor, for the same round-trip reason.
-      const heartbeatContent = await readConventionFile(agentPath, CONVENTION_FILES.heartbeat);
-
-      return c.json({ ...manifest, soulContent, nopeContent, memoryContent, heartbeatContent });
-    } catch (err) {
-      if (err instanceof BoundaryError) return boundaryProblem(c, err);
-      logger.error('[agents] GET /current failed', { err });
-      return problem(c, 'internal_error');
-    }
-  });
+  // `GET /api/agents/current` is the mount's `agent.current`
+  // (`services/mesh/doors/agent-current-capability.ts`, DOR-4978).
 
   // POST /api/agents/resolve
   // Batch resolve agents for multiple paths (avoids N+1 in DirectoryPicker)

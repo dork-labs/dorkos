@@ -100,6 +100,7 @@ import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createAgentsRoutes } from '../agents.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { personaMoveGroup } from './persona-move-group.js';
 import { runWithAuditActor } from '../../services/audit/audit-context.js';
 import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
 import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
@@ -126,7 +127,7 @@ afterEach(() => clearTestHomes());
 
 // Build a minimal Express app with just the agents router
 const testServer = listeningServer(
-  honoGroupListener({ path: '/api/agents', routes: createAgentsRoutes() })
+  honoGroupListener([{ path: '/api/agents', routes: createAgentsRoutes() }, personaMoveGroup()])
 );
 
 const mockManifest: AgentManifest = {
@@ -160,9 +161,7 @@ describe('Agents Routes', () => {
     it('returns 200 with null when no manifest found', async () => {
       mockReadManifest.mockResolvedValue(null);
 
-      const res = await request(testServer)
-        .get('/api/agents/current')
-        .query({ path: '/home/user/project' });
+      const res = await request(testServer).get('/api/agents/current').query({ path: '/p' });
 
       expect(res.status).toBe(200);
       expect(res.body).toBeNull();
@@ -171,9 +170,7 @@ describe('Agents Routes', () => {
     it('returns 200 with manifest when found', async () => {
       mockReadManifest.mockResolvedValue(mockManifest);
 
-      const res = await request(testServer)
-        .get('/api/agents/current')
-        .query({ path: '/home/user/project' });
+      const res = await request(testServer).get('/api/agents/current').query({ path: '/p' });
 
       expect(res.status).toBe(200);
       expect(res.body.id).toBe('test-agent-id');

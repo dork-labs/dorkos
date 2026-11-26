@@ -207,6 +207,12 @@ export interface HttpSurface {
    * a fixed list ({@link PERSON_ONLY_AGENT_HINTS}).
    */
   agentsUse?: PersonOnlyAgentHint;
+  /**
+   * Every answer on this path, refusals included, carries `Cache-Control:
+   * no-store`: for an answer about a person's own devices or sign-ins, which
+   * no browser or proxy should keep.
+   */
+  noStore?: true;
 }
 
 /**

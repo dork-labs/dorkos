@@ -53,6 +53,7 @@ import {
   RoomRepoStore,
 } from '../../../rooms/repo/index.js';
 import { conformanceMeshDeps } from './capability-conformance-mesh.js';
+import { conformancePersonDoorDeps } from './capability-conformance-person-doors.js';
 
 // ── Mock the non-hermetic seams the operator handlers reach through ─────────
 // config.get / config.patch read + write the real `configManager` singleton via
@@ -448,13 +449,8 @@ const registry = composeDorkOsCapabilityRegistry({
   },
   // The agent registry's doors on `/api/mesh/*` (DOR-4978), over an empty registry.
   meshDeps: conformanceMeshDeps,
-  // A person's doors on the MCP servers every agent gets (`/api/mcp-servers`, DOR-4978):
-  // person-only, so the anonymous probe is refused before any of these run.
-  globalMcpPersonDeps: {
-    store: {} as NonNullable<CapabilityDeps['globalMcpPersonDeps']>['store'],
-    ledger: {} as NonNullable<CapabilityDeps['globalMcpPersonDeps']>['ledger'],
-    agents: () => [],
-  },
+  // A person's doors on the MCP servers every agent gets and on chat from the web (DOR-4978).
+  ...conformancePersonDoorDeps,
   // The link domain serves `GET /api/links/target` (DOR-5046), over the
   // harness's real rooms; it holds no chats and no agents.
   linkDeps: {

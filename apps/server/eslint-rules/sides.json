@@ -123,6 +123,7 @@
       "core/onboarding",
       "core/remote",
       "core/runtime-doors",
+      "core/session-relay-doors",
       "core/sign-in-landing",
       "core/tunnel-manager.ts",
       "core/update-checker.ts",
