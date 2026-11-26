@@ -56,12 +56,18 @@ import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
 import { runsDomain } from '../../runs/run-capabilities.js';
 import { taskViewDomain } from '../../tasks/view/task-view-capabilities.js';
 import { runtimeReadsDomain } from '../runtime-doors/runtime-read-capabilities.js';
+import { filesDomain } from '../directory/file-capabilities.js';
 import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
 import { instructionsDomain } from '../../runtimes/context-preview/instructions-capability.js';
 import { permissionsDomain } from '../permissions/permission-capabilities.js';
 import { permissionViewsDomain } from '../permissions/agent-permission-views.js';
-import { auditDomain } from '../../audit/audit-capabilities.js';
+import { auditDomain, readerFor } from '../../audit/audit-capabilities.js';
+import { readableSessionIds } from '../../audit/session-visibility.js';
+import { chatTitleOf } from '../../session/chat-messages/chat-message-wiring.js';
+import { chatHoldsOutsideText } from '../turn-power/chat-outside-words.js';
+import { markCallerTurnOutsider } from '../capabilities/mark-caller-turn.js';
+import { createWorkGraphReadDomain } from '../../work-graph/reads/work-graph-read-capabilities.js';
 import { agentPauseDomain } from '../../mesh/pause/pause-capabilities.js';
 import { approvalsDomain } from '../approvals/approval-withdraw-capability.js';
 import { linkDomain } from '../links/link-capabilities.js';
@@ -70,6 +76,21 @@ import { directoryDomain } from '../directory/directory-capabilities.js';
 import { diffDomain } from '../../diff/diff-capabilities.js';
 import { workspacesDomain } from '../../workspace/workspace-capabilities.js';
 import { templatesDomain } from '../agent-templates/template-catalog.js';
+import { sessionRelayDomain } from '../session-relay-doors/session-relay-capabilities.js';
+
+/**
+ * The work graph's reads (DOR-4970), handed what they take from other domains
+ * here, at the composition root: the audit read side's reader rule, a chat's
+ * title and whether it holds outside words, and the turn mark. Each is read
+ * when a call runs, never when this module loads.
+ */
+export const workGraphReadDomain = createWorkGraphReadDomain({
+  readerOf: (audit, context) => readerFor(audit, context),
+  readable: (reader, chatIds) => readableSessionIds(reader, chatIds),
+  titleOf: (chatId) => chatTitleOf(chatId),
+  holdsOutsideText: (chatId) => chatHoldsOutsideText(chatId),
+  markOutside: (context) => markCallerTurnOutsider(context, { kind: 'chat' }),
+});
 
 /**
  * Compose the whole DorkOS capability registry from whichever domains `deps`
@@ -100,6 +121,8 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.mcpDeps) domains.push(mcpDomain);
   // The MCP servers a person adds for every agent, on `/api/mcp-servers` (DOR-4978).
   if (deps.globalMcpPersonDeps) domains.push(globalMcpPersonDomain);
+  // Chat from the web, on `/api/session-relay` (DOR-4978).
+  if (deps.sessionRelayDeps) domains.push(sessionRelayDomain);
   if (deps.roomDeps) domains.push(roomsDomain);
   if (deps.sessionCompactionDeps) domains.push(sessionDomain);
   if (deps.chatMessageDeps) domains.push(chatDomain);
@@ -119,6 +142,8 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.workClaimDeps) domains.push(workClaimDomain);
   if (deps.workGraphDeps) domains.push(workGraphDomain);
   if (deps.auditDeps) domains.push(auditDomain);
+  // The work graph's reads take their reader and roster from the audit deps (DOR-4970).
+  if (deps.auditDeps) domains.push(workGraphReadDomain);
   if (deps.agentPauseDeps) domains.push(agentPauseDomain);
   if (deps.approvalWithdrawDeps) domains.push(approvalsDomain);
   if (deps.linkDeps) domains.push(linkDomain);
@@ -154,8 +179,9 @@ export function composeDorkOsCapabilityRegistry(
   domains.push(runtimeReadsDomain);
   // Unconditional too: the folder picker, the diff review and the workspace
   // reads read the filesystem and process-wide stores every server has, so
-  // their paths answer wherever the hand routes used to.
-  domains.push(directoryDomain, diffDomain, workspacesDomain);
+  // their paths answer wherever the hand routes used to. The file browser too
+  // (DOR-4978); its save says so itself until boot hands it the writer.
+  domains.push(directoryDomain, diffDomain, workspacesDomain, filesDomain);
   // The template list reads the data directory the template routes write.
   if (deps.templateDeps) domains.push(templatesDomain);
 
@@ -207,6 +233,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     connectorHoldDomain,
     mcpDomain,
     globalMcpPersonDomain,
+    sessionRelayDomain,
     roomsDomain,
     sessionDomain,
     chatDomain,
@@ -222,6 +249,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     workClaimDomain,
     workGraphDomain,
     auditDomain,
+    workGraphReadDomain,
     agentPauseDomain,
     approvalsDomain,
     linkDomain,
@@ -239,6 +267,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     directoryDomain,
     diffDomain,
     workspacesDomain,
+    filesDomain,
     templatesDomain,
   ];
   const deps: CapabilityDeps = {
@@ -249,6 +278,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     connectorExecutionDeps: {} as CapabilityDeps['connectorExecutionDeps'],
     mcpDeps: {} as CapabilityDeps['mcpDeps'],
     globalMcpPersonDeps: {} as CapabilityDeps['globalMcpPersonDeps'],
+    sessionRelayDeps: {} as CapabilityDeps['sessionRelayDeps'],
     roomDeps: {} as CapabilityDeps['roomDeps'],
     sessionCompactionDeps: {} as CapabilityDeps['sessionCompactionDeps'],
     chatMessageDeps: {} as CapabilityDeps['chatMessageDeps'],

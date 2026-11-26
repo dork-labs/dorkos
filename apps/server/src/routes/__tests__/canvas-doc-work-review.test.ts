@@ -19,6 +19,7 @@ import {
   agents,
   canvasDocBatches,
   sessionMetadata,
+  session,
   eq,
   type Db,
 } from '@dorkos/db';
@@ -449,6 +450,8 @@ describe('document work review over the mounted app', () => {
     const expired = await work('expired');
     // Wi-Fi takes no password; a device signs in by code (DOR-4744).
     const wifi = (await wifiSignInCookie(getAuth()!, 'localhost')).split('; ');
+    // A replay asks an agent to run, so the device must be one the owner let run agents.
+    db.update(session).set({ wifiAgentTurnsAt: new Date() }).where(eq(session.route, 'wifi')).run();
     const replayed = await act(expired, 'replay').set('x-test-ingress', 'wifi').set('Cookie', wifi);
     expect(replayed.status).toBe(200);
     const pending = replayed.body.nextBatchId as string;
@@ -466,6 +469,8 @@ describe('document work review over the mounted app', () => {
     const uncertain = await work('in_doubt');
     // Wi-Fi takes no password; a device signs in by code (DOR-4744).
     const wifi = (await wifiSignInCookie(getAuth()!, 'localhost')).split('; ');
+    // A replay asks an agent to run, so the device must be one the owner let run agents.
+    db.update(session).set({ wifiAgentTurnsAt: new Date() }).where(eq(session.route, 'wifi')).run();
     const unconfirmed = await act(uncertain, 'replay')
       .set('x-test-ingress', 'wifi')
       .set('Cookie', wifi);

@@ -103,6 +103,14 @@ export function conformanceSampleInputs(
     'diff.advance_baseline': { cwd: '/conformance', path: 'a.ts', sessionId: 'conformance-chat' },
     'diff.pending': { cwd: '/conformance', sessionId: 'conformance-chat' },
     'diff.revert': { cwd: '/conformance', path: 'a.ts', sessionId: 'conformance-chat' },
+    // The file browser (DOR-4978): the read refuses a folder outside the boundary; each
+    // person-only door refuses the anonymous call before it runs.
+    'files.read_text': { cwd: '/conformance-no-such-folder', path: 'a.md' },
+    'files.save': { cwd: '/conformance-no-such-folder', path: 'a.md', content: 'x' },
+    'files.create': { cwd: '/conformance-no-such-folder', path: 'a.md', type: 'file' },
+    'files.delete': { cwd: '/conformance-no-such-folder', path: 'a.md' },
+    'files.rename': { cwd: '/conformance-no-such-folder', from: 'a.md', to: 'b.md' },
+    'files.reveal': { cwd: '/conformance-no-such-folder', path: 'a.md' },
     // The agents' queue tools, parseable so the gate or the handler answers:
     // with no identity each refuses `NO_AGENT`; the destructive ones meet the gate.
     'work-queue.add': { title: 'Conformance', prompt: 'A conformance probe.' },
@@ -129,6 +137,7 @@ export function conformanceSampleInputs(
     // DorkOS is still starting (no reader set).
     'heartbeat.view_page': { id: 'conformance-agent' },
     'agent.migrate_persona': { path: '/conformance' },
+    'agent.current': { path: '/conformance' },
     'permissions.view_agent': { id: 'conformance-agent' },
     'permissions.view_agent_level': { id: 'conformance-agent' },
     // Valid input; each person-only door refuses the anonymous call before it runs.
@@ -143,6 +152,12 @@ export function conformanceSampleInputs(
     // A chat id is required, so `{}` would be a ZodError. With no run record
     // wired here, the handler answers its own `NOT_READY` refusal.
     'runs.chat_runs': { id: '00000000-0000-4000-8000-0000000c0a55' },
+    // An agent or chat is required. No agent is registered and no work graph is
+    // installed here, so each answers its own `WORK_GRAPH_AGENT_NOT_FOUND` or `NOT_READY`.
+    'work-graph.agent_chats': { agentId: '01JCONFORMANCEAGENT0000000' },
+    'work-graph.agent_work': { agentId: '01JCONFORMANCEAGENT0000000' },
+    'work-graph.chat_tree': { chatId: 'conformance-chat' },
+    'work-graph.chat_work': { chatId: 'conformance-chat' },
     // Anonymous here, so the handler refuses with its own structured error
     // (there is no agent to scope the request to), which is what "wired" means.
     'permissions.request_access': {

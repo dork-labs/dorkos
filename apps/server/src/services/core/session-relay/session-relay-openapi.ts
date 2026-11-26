@@ -1,7 +1,9 @@
 /**
  * OpenAPI entries for a computer's own switch for chatting from the web
- * (step B3, DOR-2946, `routes/session-relay.ts`). Bodies are the protocol's
- * own (`@dorkos/shared/session-relay-link`).
+ * (step B3, DOR-2946, `routes/session-relay.ts`): the hand routes. The reads,
+ * Pause, ending use from the web and Unlink are capabilities, whose entries
+ * the registry projects (`session-relay-doors/session-relay-capabilities.ts`,
+ * DOR-4978). Bodies are the protocol's own (`@dorkos/shared/session-relay-link`).
  *
  * @module services/core/session-relay/session-relay-openapi
  */
@@ -9,7 +11,6 @@ import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import { links } from '@dorkos/shared/links';
 import {
-  SessionRelayDeviceListSchema,
   SessionRelayLevelBodySchema,
   SessionRelayLinkBodySchema,
   SessionRelayPasskeyFinishBodySchema,
@@ -17,7 +18,6 @@ import {
   SessionRelayPasskeyRemoveBodySchema,
   SessionRelayPasskeyStartBodySchema,
   SessionRelayPasskeyStartSchema,
-  SessionRelayPresenceSchema,
   SessionRelayStatusSchema,
 } from '@dorkos/shared/session-relay-link';
 import { problemResponse } from '../openapi/problem-openapi.js';
@@ -33,16 +33,11 @@ const json = (schema: z.ZodType, description: string) => ({
 type Declared = ReturnType<typeof json> | ReturnType<typeof problemResponse>;
 
 const STATUS = json(SessionRelayStatusSchema, 'Where the link stands now');
-const PRESENCE = json(
-  SessionRelayPresenceSchema,
-  'Whether someone is using this computer from the web'
-);
 const OFF = problemResponse('On a hub, or while the `sessionRelay.enabled` experiment is off');
 const NOT_HERE = problemResponse(
   '`operator_only`: not the owner at this computer using the app: the ' +
     'relay, another device, an agent, an approval token, an API key or any other bearer'
 );
-const AGENT = problemResponse('`forbidden`: a caller presenting agent identity');
 const NOT_LINKED = problemResponse('`conflict`: this computer is not linked');
 const PASSWORD = problemResponse(
   "`operator_only`, or `forbidden` when the owner's password was missing or wrong " +
@@ -78,56 +73,6 @@ function registerWrite(
  * @param registry - The server's OpenAPI registry.
  */
 export function registerSessionRelayOpenApi(registry: OpenAPIRegistry): void {
-  registry.registerPath({
-    method: 'get',
-    path: '/api/session-relay/status',
-    tags: TAGS,
-    summary: 'Where chatting from the web stands',
-    description:
-      'Whether this computer is linked to a hub, its level and pause, and whether the relay ' +
-      'is connected now. Never the relay secret.',
-    responses: { 200: STATUS, 404: OFF },
-  });
-
-  registry.registerPath({
-    method: 'get',
-    path: '/api/session-relay/presence',
-    tags: TAGS,
-    summary: 'Whether someone is using this computer from the web',
-    description:
-      'Active while the relay is connected and the hub has at least one of its chats open, ' +
-      'with when that began and the browsers seen since. Pushed as `session_relay_presence` ' +
-      'on `GET /api/events` whenever it changes.',
-    responses: { 200: PRESENCE, 403: AGENT, 404: OFF },
-  });
-
-  registry.registerPath({
-    method: 'get',
-    path: '/api/session-relay/devices',
-    tags: TAGS,
-    summary: 'Browsers that used chat from the web here',
-    description:
-      "Every browser the hub named on a relayed request, by the hub's label, with when it was " +
-      'first and last seen. Most recent first; at most 50.',
-    responses: {
-      200: json(SessionRelayDeviceListSchema, 'The browsers seen here'),
-      403: AGENT,
-      404: OFF,
-    },
-  });
-
-  registerWrite(
-    registry,
-    'post',
-    '/presence/end',
-    'End use from the web now',
-    'Closes the live connection and pauses the link, as Pause does. Resuming needs the ' +
-      "owner's password.",
-    { 409: NOT_LINKED },
-    undefined,
-    PRESENCE
-  );
-
   registerWrite(
     registry,
     'post',
@@ -163,32 +108,11 @@ export function registerSessionRelayOpenApi(registry: OpenAPIRegistry): void {
   registerWrite(
     registry,
     'post',
-    '/pause',
-    'Pause chatting from the web',
-    'Keeps the link, closes the live connection, and stops every dial until resumed.',
-    { 409: NOT_LINKED }
-  );
-
-  registerWrite(
-    registry,
-    'post',
     '/resume',
     'Resume chatting from the web',
     'Lets the relay dial its hub again after confirmation in the app.',
     { 409: NOT_LINKED }
   );
-
-  // Registered directly, not through `registerWrite`, to name it: `POST /link`
-  // derives `sessionRelay.link` and so would this one ("link" is a command word).
-  registry.registerPath({
-    method: 'delete',
-    path: '/api/session-relay/link',
-    operationId: 'sessionRelay.unlink',
-    tags: TAGS,
-    summary: 'Unlink this computer',
-    description: 'Forgets the hub and closes the live link. Works with the network off.',
-    responses: { 200: STATUS, 403: NOT_HERE, 404: OFF },
-  });
 
   registerPasskeyOpenApi(registry);
 }
@@ -198,19 +122,8 @@ const PASSKEY_REFUSED = problemResponse(
   'Refused (`invalid_request` or `conflict`), with why in `detail`'
 );
 
-/** The approvals passkeys (B4c): adding one, listing them, removing one. */
+/** The approvals passkeys (B4c): adding one and removing one. */
 function registerPasskeyOpenApi(registry: OpenAPIRegistry): void {
-  registry.registerPath({
-    method: 'get',
-    path: '/api/session-relay/passkeys',
-    tags: TAGS,
-    summary: 'The approvals passkeys pinned here',
-    description:
-      'The approve page approvals from the web must come from, and each passkey by label, ' +
-      'date and algorithm. Never key material. The owner at this computer only.',
-    responses: { 200: PASSKEYS, 403: NOT_HERE, 404: OFF },
-  });
-
   registerWrite(
     registry,
     'post',

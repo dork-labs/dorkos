@@ -313,7 +313,10 @@ export class DocumentFileSave {
         tx.insert(canvasDocFileSaveIntents).values(row).run();
       });
       if (row.status === 'no_op')
-        return { status: 200 as const, body: { ok: true, hash: afterHash, effect: 'no_op' } };
+        return {
+          status: 200 as const,
+          body: { ok: true as const, hash: afterHash, effect: 'no_op' as const },
+        };
       const attempt = { renameStarted: false, cleanupComplete: true };
       try {
         await replaceOriginalDocumentFile(
@@ -369,7 +372,10 @@ export class DocumentFileSave {
       if (sha256(await fs.readFile(row.canonicalPath, 'utf8')) !== row.afterHash)
         throw new CanonicalFileIdentityChangedError();
       this.#current(captured);
-      return { status: 200 as const, body: { ok: true, hash: row.afterHash, effect: 'no_op' } };
+      return {
+        status: 200 as const,
+        body: { ok: true as const, hash: row.afterHash, effect: 'no_op' as const },
+      };
     }
     if (row.status === 'failed')
       throw Object.assign(new Error('The original save failed before replacement.'), {
@@ -478,9 +484,9 @@ export class DocumentFileSave {
     return {
       status: 200 as const,
       body: {
-        ok: true,
+        ok: true as const,
         hash: row.afterHash,
-        effect: duplicate ? 'no_op' : 'changed',
+        effect: duplicate ? ('no_op' as const) : ('changed' as const),
         documentReceipt: receipt,
       },
     };

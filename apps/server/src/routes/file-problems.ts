@@ -1,7 +1,8 @@
 /**
- * The problem documents the file routes (`routes/files.ts`,
+ * The problem documents the hand file routes (`routes/files.ts`,
  * `routes/file-entries.ts`) share (DOR-4979): one fixed sentence per case,
- * never a path or an error's own text. The cause goes to the log.
+ * never a path or an error's own text. The cause goes to the log. The file
+ * capabilities keep the same sentences in `services/core/directory/file-refusals.ts`.
  *
  * @module routes/file-problems
  */

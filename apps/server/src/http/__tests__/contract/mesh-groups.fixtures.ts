@@ -26,7 +26,7 @@ export const OUTSIDE = problemBody('outside_boundary', {
 export const NO_PATH = problemBody('invalid_request', {
   detail: 'Send the agent’s folder as `path`.',
 });
-// The persona move names the field since it moved onto the mount (DOR-4978).
+// The persona move and `GET /current` name the field since they moved onto the mount (DOR-4978).
 /** `NO_PATH_FIELD`: one expected answer the contract cases share. */
 export const NO_PATH_FIELD = validationProblemBody({
   fieldErrors: { path: ['Send the agent’s folder as `path`.'] },

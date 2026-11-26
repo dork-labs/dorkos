@@ -20,6 +20,7 @@ import {
 } from '../authorization.js';
 import {
   docInstallationOwner,
+  isDocOperatorAccount,
   readSessionDocSourceDescriptor,
   sameDocOwnerAuthority,
   type DocSourceDescriptor,
@@ -63,9 +64,9 @@ export function captureDocumentSaveOperator(
       /^Bearer\s+dct_/iu.test(caller.headers.authorization))
   )
     throw new DocChannelNotFoundError({ reason: 'not_operator' });
-  const owner = docInstallationOwner(deps.installationId);
-  if (caller.user && (owner.kind !== 'user' || owner.userId !== caller.user.userId))
+  if (!isDocOperatorAccount(caller.user))
     throw new DocChannelNotFoundError({ reason: 'not_operator' });
+  const owner = docInstallationOwner(deps.installationId);
   const actor: DocChannelActor = {
     surface: 'http',
     principal: createServerPrincipal({ kind: 'operator', owner }),

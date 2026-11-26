@@ -48,6 +48,10 @@
  *   and is the one place that decides which started chats a reader is shown
  *   (`./chat-lineage.ts`).
  *
+ * The read tools (W4, DOR-4970: an agent's chats, a chat's tree and the work
+ * linked to either) are in `./reads/`, and read chat bindings only through
+ * `./reads/chat-bindings.ts`.
+ *
  * The store lives in this computer's SQLite store for now; its move to the
  * space store is DOR-5139 (ADR 261122-173853). The store is space data; turn
  * code reaches it only through hooks or events, so DOR-5139 is a store move,
@@ -70,6 +74,7 @@ import { onDurableSessionRekey } from '../session/turn-identity/durable-rekey.js
 import { registerDurableRekeyResolver } from '../session/turn-identity/follow-chat-rekey.js';
 import { getRunRecord } from '../runs/index.js';
 import { ChatLineageReader, type ChatLineage, type ChatLineageOptions } from './chat-lineage.js';
+import { LineageReads, type LineageReadsDeps } from './lineage-reads.js';
 import { WorkLinkStore, type WorkLinkInput } from './work-link-store.js';
 
 export {
@@ -147,25 +152,69 @@ export function getWorkLinkStore(): WorkLinkStore | null {
 }
 
 /**
+ * The database the store was installed over, or `null` before startup
+ * installs it: what the read tools hand `./reads/chat-bindings.ts`.
+ */
+export function getWorkGraphDb(): Db | null {
+  return installedDb;
+}
+
+/**
+ * The chat that started each of these, when another chat did, from
+ * `session_started_by` (a carry-over names the chat it continues). For the
+ * read tools, which reach the session's records only through this barrel.
+ *
+ * @param chatIds - Current chat ids.
+ * @returns Each started chat's starter; a chat no chat started is absent.
+ */
+export function chatStartersOf(chatIds: readonly string[]): Map<string, string> {
+  const starters = new Map<string, string>();
+  for (const [id, row] of getSessionStartedByStore()?.getMany(chatIds) ?? []) {
+    if (row.kind === 'chat' && row.startedBySessionId !== null)
+      starters.set(id, row.startedBySessionId);
+  }
+  return starters;
+}
+
+/**
  * A chat's ancestors and its subtree with depth, read from this server's
  * stores: the installed edge store, `session_started_by` and the run record.
  * See {@link ChatLineageReader} for what is shown and what is left out.
  *
  * @param chatId - The chat, by any id it has had.
- * @param opts - How many levels of descendants; all by default.
+ * @param opts - How many levels of descendants (all by default), and for whom.
  * @returns The lineage; `null` before startup installs the store, or when the
  *   chat has neither a binding nor a run, and nothing it started is shown.
  */
 export function readChatLineage(chatId: string, opts?: ChatLineageOptions): ChatLineage | null {
+  const deps = lineageDeps();
+  return deps ? new ChatLineageReader(deps).read(chatId, opts) : null;
+}
+
+/**
+ * The lineage query's batched reads over the same stores
+ * {@link readChatLineage} reads, so a caller learns a chat's parent and the
+ * order it sits in among its siblings exactly as the walk does (the W4 tree's
+ * cursor).
+ *
+ * @returns The reads, or `null` before startup installs the store.
+ */
+export function readLineageReads(): LineageReads | null {
+  const deps = lineageDeps();
+  return deps ? new LineageReads(deps) : null;
+}
+
+/** What the lineage reads read on this server, or `null` before startup installs the store. */
+function lineageDeps(): LineageReadsDeps | null {
   if (store === null || installedDb === null) return null;
   const startedBy = getSessionStartedByStore();
   const runs = getRunRecord()?.store;
-  return new ChatLineageReader({
+  return {
     db: installedDb,
     links: store,
     ...(startedBy ? { startedBy } : {}),
     ...(runs ? { runs } : {}),
-  }).read(chatId, opts);
+  };
 }
 
 /**

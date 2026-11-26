@@ -72,11 +72,13 @@ import type { WireMcpTasksAndSkillsResult } from './mcp-tasks-skills.js';
 import type { ServerRefs } from '../server-refs.js';
 import { globalMcpPersonDepsFor } from '../../services/mesh/global-mcp/global-mcp-person-capabilities.js';
 import { enrichTopology } from '../../routes/mesh-topology.js';
+import { sessionRelayDoorDeps } from '../../routes/session-relay.js';
 import {
   projectComputerPlacement,
   projectComputerPlacementById,
 } from '../../routes/computer-placement.js';
 import { agentPersonaDeps } from './agent-persona-deps.js';
+import { savePersonFile } from '../../services/canvas/doc-channel/writes/person-file-save.js';
 
 /** What {@link composeCapabilities} reads from the startup steps before it. */
 export interface ComposeCapabilitiesInput {
@@ -210,6 +212,8 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
         service: docChannelHttp.grants,
         authorization: docChannelHttp.authorization,
       },
+      // The file browser's saves share the installation's one file gate (DOR-4978).
+      fileDeps: { save: (input, owner) => savePersonFile(docChannelHttp.fileWrites, input, owner) },
       // An agent's approved `change_permission` writes through the same owner
       // Settings does (spec `agent-permissions` D9).
       permissionService,
@@ -252,6 +256,7 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       ...(mcpDeps && { mcpDeps }),
       // The MCP servers a person adds for every agent, on their REST paths (DOR-4978).
       ...globalMcpPersonDepsFor(deps, () => refs.meshCore),
+      sessionRelayDeps: sessionRelayDoorDeps(), // chat from the web's doors (DOR-4978)
       // The rooms domain (room-participation spec §10.2, §10.3): the verbs an
       // agent has in the rooms it belongs to. The SAME service instances the
       // REST routes and the trigger dispatcher hold — one set of membership

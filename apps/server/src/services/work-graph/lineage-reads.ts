@@ -16,18 +16,18 @@
  * shown as `unknown` (`./chat-lineage.ts`). This check reads no transcript,
  * unlike `sessionExists`.
  *
- * When the work graph moves to the space store (DOR-5139), the binding and
- * run reads here go over the contract instead of this computer's tables.
+ * The binding read is `./reads/chat-bindings.ts`, the work graph's one reader
+ * of `session_metadata`. When the work graph moves to the space store
+ * (DOR-5139), it and the run read go over the contract instead of this
+ * computer's tables.
  *
  * @module services/work-graph/lineage-reads
  */
-import { and, inArray, isNotNull, sessionMetadata, type Db } from '@dorkos/db';
+import type { Db } from '@dorkos/db';
 import type { SessionStartedByStore } from '../session/origin/session-started-by-store.js';
 import type { RunStore, TurnRun } from '../runs/index.js';
 import { REKEY_MAX_DEPTH, type WorkLinkStore } from './work-link-store.js';
-
-/** Most ids one batched read asks SQLite for at once, well under its variable limit. */
-const BATCH = 500;
+import { boundChatIds } from './reads/chat-bindings.js';
 
 /** How a chat came from the one above it: started by it, or carried on from it to another account. */
 export type LineageVia = 'started' | 'carried';
@@ -205,7 +205,7 @@ export class LineageReads {
     const { of } = this.aliases(ids);
     const all = [...of.values()].flat();
     const runs = this.deps.runs?.listForChats(all) ?? new Map<string, TurnRun[]>();
-    const bound = this.bound(all);
+    const bound = boundChatIds(this.deps.db, all);
     const rows = this.deps.startedBy?.getMany(ids) ?? new Map();
     const states = new Map<string, LineageState | null>();
     for (const id of ids) {
@@ -220,25 +220,6 @@ export class LineageReads {
       states.set(id, fromLastRun(own.at(-1), rows.get(id)?.title ?? null));
     }
     return states;
-  }
-
-  /** The ids among these that are bound to a runtime. */
-  private bound(ids: readonly string[]): Set<string> {
-    const found = new Set<string>();
-    for (let i = 0; i < ids.length; i += BATCH) {
-      const rows = this.deps.db
-        .select({ sessionId: sessionMetadata.sessionId })
-        .from(sessionMetadata)
-        .where(
-          and(
-            inArray(sessionMetadata.sessionId, ids.slice(i, i + BATCH)),
-            isNotNull(sessionMetadata.runtime)
-          )
-        )
-        .all();
-      for (const row of rows) found.add(row.sessionId);
-    }
-    return found;
   }
 }
 

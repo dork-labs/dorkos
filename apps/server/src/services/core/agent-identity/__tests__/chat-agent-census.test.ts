@@ -100,6 +100,10 @@ const ALLOWED: Record<string, { count: number; why: string }> = {
     count: 1,
     why: 'the same chat now vs when its browser opened, both from chatFactsOf; a lost folder refuses',
   },
+  'services/work-graph/reads/chat-bindings.ts': {
+    count: 2,
+    why: 'lists an agent’s chats as stored, as runtime-registry does; never a check: who may read each is the audit rule’s, and a NULL chat is only left off the list',
+  },
   'startup/steps/connector-services.ts': {
     count: 1,
     why: 'not a chat record: a room member vs the mesh agent’s own path',

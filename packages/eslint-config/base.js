@@ -1,8 +1,31 @@
 import js from '@eslint/js';
+import { builtinRules } from 'eslint/use-at-your-own-risk';
 import tseslint from 'typescript-eslint';
 import jsdoc from 'eslint-plugin-jsdoc';
 import prettier from 'eslint-config-prettier';
 import deprecatedRemoval, { deprecatedRemovalSoon } from './rules/deprecated-removal.js';
+
+/**
+ * The repo's own rules, as one plugin object: `test.js` names it too, and flat
+ * config accepts a plugin declared twice only when it is the same object.
+ *
+ * `restricted-syntax` is ESLint's own `no-restricted-syntax` under a second
+ * name (DOR-4938). A rule carries one severity and one option list, and flat
+ * config REPLACES that list rather than merging it. `no-restricted-syntax`
+ * already holds the `process.env` selector below at `warn`, so a hard
+ * restriction added there would either fail nothing or promote every
+ * `process.env` warning to an error, and a block that forgot to restate the
+ * selector would silently drop it. The second name keeps the two apart: hard
+ * selectors go under `dorkos/restricted-syntax` at `error`, and a block that
+ * sets it restates every selector of this rule that reaches its files.
+ */
+export const dorkosPlugin = {
+  rules: {
+    'deprecated-removal': deprecatedRemoval,
+    'deprecated-removal-soon': deprecatedRemovalSoon,
+    'restricted-syntax': builtinRules.get('no-restricted-syntax'),
+  },
+};
 
 /** @type {import('eslint').Linter.Config[]} */
 export default [
@@ -38,14 +61,7 @@ export default [
 
   // Shared by every package and root scripts; a warning would not fail lint.
   {
-    plugins: {
-      dorkos: {
-        rules: {
-          'deprecated-removal': deprecatedRemoval,
-          'deprecated-removal-soon': deprecatedRemovalSoon,
-        },
-      },
-    },
+    plugins: { dorkos: dorkosPlugin },
     rules: {
       'dorkos/deprecated-removal': 'error',
       'dorkos/deprecated-removal-soon': 'warn',

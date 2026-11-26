@@ -73,3 +73,43 @@ describe('gate --help', () => {
     15_000
   );
 });
+
+describe('help takes over only on the first argument (Security, #4518)', () => {
+  const lib = join(dirname(fileURLToPath(import.meta.url)), '..', 'lib');
+
+  it('the JS helper ignores --help anywhere but first', () => {
+    // Purpose: fails if a gate could be made to exit 0 by --help in a later argument.
+    // A real gate, so the help block it would print exists.
+    const gateUrl = new URL('../check-max-lines.ts', import.meta.url).href;
+    const run = (args: string[]) =>
+      spawnSync(
+        process.execPath,
+        [
+          '--input-type=module',
+          '-e',
+          `import { exitOnHelp } from ${JSON.stringify(join(lib, 'gate-help.mjs'))};` +
+            `exitOnHelp(${JSON.stringify(gateUrl)}, ${JSON.stringify(args)});` +
+            'process.exit(7);',
+        ],
+        { encoding: 'utf8' }
+      ).status;
+    expect(run(['run', '--help'])).toBe(7);
+    expect(run(['run', '-h'])).toBe(7);
+    expect(run(['--', 'run', '--help'])).toBe(7);
+    expect(run(['--help'])).toBe(0);
+    expect(run(['--', '-h'])).toBe(0);
+  });
+
+  it('the bash helper ignores --help anywhere but first', () => {
+    // Purpose: fails if a bash gate could be made to exit 0 by --help in a later argument.
+    const run = (args: string[]) =>
+      spawnSync(
+        'bash',
+        ['-c', `. ${JSON.stringify(join(lib, 'gate-help.sh'))}; exit 7`, 'gate', ...args],
+        { encoding: 'utf8' }
+      ).status;
+    expect(run(['run', '--help'])).toBe(7);
+    expect(run(['--', 'run', '-h'])).toBe(7);
+    expect(run(['--help'])).toBe(0);
+  });
+});
