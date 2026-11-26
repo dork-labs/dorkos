@@ -266,6 +266,17 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'agent.list_paused': 'local',
   // A person's move of an old persona into SOUL.md (DOR-4978).
   'agent.migrate_persona': 'local',
+  // The agent a folder belongs to: the team's own agent files; another agent gets no instructions.
+  'agent.current': 'local',
+  // Chat from the web (DOR-4978): a status, browser labels and passkey labels. Only the status
+  // reaches an agent, without the hub's address or the linked name.
+  'session-relay.status': 'local',
+  'session-relay.presence': 'local',
+  'session-relay.devices': 'local',
+  'session-relay.passkeys': 'local',
+  'session-relay.pause': 'local',
+  'session-relay.end_presence': 'local',
+  'session-relay.unlink': 'local',
   'approvals.withdraw': 'local',
   'local_browser.state': 'local',
   'local_browser.ask_person': 'local',

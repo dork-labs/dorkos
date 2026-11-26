@@ -1,53 +1,46 @@
 /**
  * `/api/session-relay`: the computer's own switch for chatting with its agents
  * from the web, through the owner's hub (spec `everything-is-a-space` step B3,
- * DOR-2946; ADR 261015-042933 rules 4 and 5).
+ * DOR-2946; ADR 261015-042933 rules 4 and 5). The changes that open access
+ * wider stay here, by hand; the reads and the changes that only narrow access
+ * (the status, presence, devices and passkey list, Pause, ending use from the
+ * web and Unlink) are capabilities the mount serves on the same paths
+ * (`services/core/session-relay-doors/session-relay-capabilities.ts`, DOR-4978).
  *
- * - `GET /status`: where the link stands, for anyone the session gate let in.
- *   Never the relay secret.
- * - `GET /presence` and `GET /devices`: whether someone is using this
- *   computer from the web now, and the browsers seen here, for anyone the
- *   session gate let in but an agent, as the live event goes to the owner's
- *   windows only. Labels and times only, never what was said.
- * - `POST /presence/end`: end use from the web now. Behind the same bar as
- *   the writes below; it closes the relay and pauses the link, as Pause does,
- *   so it needs no password: it only narrows access.
- * - `POST /link`, `PATCH /level`, `POST /pause`, `POST /resume` and
- *   `DELETE /link`: behind {@link requirePersonAtThisComputer}, the owner
- *   using the app at this computer or signed in on an encrypted connection
- *   (DOR-3172), so neither the relay itself nor a plain-`http` Wi-Fi sign-in
- *   can link a computer, raise what the web may do, or undo a pause. Linking
- *   also needs an owner account, since the relay only ever serves one.
- * - `/passkeys`: the approvals passkeys a web approval is signed with, behind
- *   the same two bars held to this computer (`routes/session-relay-passkeys.ts`,
- *   B4c): a passkey strengthens a sign-in, so it is added where the owner is
- *   already proved best.
+ * - `POST /link`, `PATCH /level` and `POST /resume`: behind
+ *   {@link requirePersonAtThisComputer}, the owner using the app at this
+ *   computer or signed in on an encrypted connection (DOR-3172), so neither
+ *   the relay itself nor a plain-`http` Wi-Fi sign-in can link a computer,
+ *   raise what the web may do, or undo a pause. Linking also needs an owner
+ *   account, since the relay only ever serves one.
+ * - `/passkeys`: adding and removing the approvals passkeys a web approval is
+ *   signed with, behind the same two bars held to this computer
+ *   (`routes/session-relay-passkeys.ts`, B4c): a passkey strengthens a
+ *   sign-in, so it is added where the owner is already proved best.
  * - **The owner's password, on top, for every change that opens access or
  *   raises it**: linking, raising the level to Full control, resuming, and
  *   adding or removing an approvals passkey. The
  *   bar above cannot tell the app from an agent's shell calling loopback while
  *   this computer asks for no password (DOR-505); the agent does not have the
  *   owner's password (`services/core/auth/owner-password.ts`). This holds in
- *   every posture, a browser session included. Pausing, lowering the level and
- *   unlinking only narrow access, so they need no password. The step-up covers
+ *   every posture, a browser session included. Lowering the level only
+ *   narrows access, so it needs no password. The step-up covers
  *   the API and MCP paths only: anything that can write the data folder (an
  *   agent with a shell, say) can still write a pin directly, as it could open
  *   any other channel. That is the DOR-505 class, tracked separately.
  * - Every change to the pin runs one at a time (`withRelayPinLock`) and reads
  *   the pin inside the lock, so a resume racing an unlink cannot bring it back.
  *
- * Unlinking and pausing work with the network off: they change the pin file
- * and close the live connection, and tell nobody. The hub learns when the
- * dial stops.
- *
- * The whole group answers the `/api` 404 on a hub and while the
- * `sessionRelay.enabled` experiment is off. Every write is audited, never with
- * the code or the secret.
+ * Every route here answers the `/api` 404 on a hub and while the
+ * `sessionRelay.enabled` experiment is off, with `Cache-Control: no-store`.
+ * Each checks that itself rather than through middleware on the group, which
+ * would also cover the mount's paths beside it. Every write is audited, never
+ * with the code or the secret.
  *
  * @module routes/session-relay
  */
 import { createHash } from 'node:crypto';
-import { Hono, type Context } from 'hono';
+import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 import {
   SessionRelayLevelBodySchema,
@@ -55,7 +48,6 @@ import {
   type SessionRelayDevice,
   type SessionRelayLinkRefusal,
   type SessionRelayPresence,
-  type SessionRelayStatus,
 } from '@dorkos/shared/session-relay-link';
 import type { ApiEnv } from '../http/api-chain.js';
 import { problem, readJsonBody, validationProblem, type ProblemStatus } from '@dorkos/http-kit';
@@ -63,7 +55,6 @@ import type { ProblemCode } from '@dorkos/shared/problem';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import { requirePersonAtThisComputer } from '../lib/caller-authority.js';
-import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import { currentServerRole } from '../lib/server-role.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import { canExpose } from '../services/core/auth/exposure-guard.js';
@@ -96,6 +87,10 @@ import {
   type SessionRelayPasskeyDeps,
 } from './session-relay-passkeys.js';
 import { apiNotFound } from '../http/unclaimed.js';
+import {
+  statusOf,
+  type SessionRelayDoorDeps,
+} from '../services/core/session-relay-doors/session-relay-capabilities.js';
 
 /** What the routes read and change, injectable for tests. */
 export interface SessionRelayRouteDeps {
@@ -145,6 +140,16 @@ const liveDeps: SessionRelayRouteDeps = {
   devices: () => sessionRelayDevices().list(),
   passkeys: livePasskeyDeps,
 };
+
+/**
+ * What the mount's session-relay doors read (`session-relay-capabilities.ts`):
+ * the same seams as these routes, with the pin lock and the audit writer.
+ *
+ * @param deps - The routes' seams; the live relay by default.
+ */
+export function sessionRelayDoorDeps(deps: SessionRelayRouteDeps = liveDeps): SessionRelayDoorDeps {
+  return { ...deps, withPinLock: withRelayPinLock, recordAudit };
+}
 
 /** One way a relay write can refuse: its code, status and sentence. */
 interface RelayRefusal {
@@ -268,20 +273,8 @@ function relayLinkHash(pin: RelayPin | null): string {
 export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
 
-  /** Where the link stands now. */
-  function status(): SessionRelayStatus {
-    const pin = deps.readPin();
-    return {
-      linked: pin !== null,
-      hubOrigin: pin?.hubOrigin ?? null,
-      computerName: pin?.computerName ?? null,
-      level: pin?.level ?? 'chat',
-      paused: pin?.paused ?? false,
-      connected: pin !== null && !pin.paused && deps.connected(),
-      pinnedAt: pin?.pinnedAt ?? null,
-      suggestedName: deps.suggestedName(),
-    };
-  }
+  /** Where the link stands now, as the mount's doors answer it. */
+  const status = () => statusOf(deps);
 
   /** The person-at-this-computer bar's refusal, or `undefined` to go on. */
   function refusePerson(c: Context<ApiEnv>): Response | undefined {
@@ -305,18 +298,20 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
     return refuseWith(c, PASSWORD_REFUSALS[check]);
   }
 
-  // The whole group is off on a hub and while the experiment is off.
-  router.use('*', async (c, next) => {
+  /**
+   * Off on a hub and while the experiment is off: the `/api` 404. Run first by
+   * each route here, never as middleware on the group, which would cover the
+   * mount's paths beside it.
+   */
+  const on: MiddlewareHandler<ApiEnv> = async (c, next) => {
     if (deps.isHub() || !deps.enabled()) {
       return apiNotFound(c);
     }
     c.header('Cache-Control', 'no-store');
     await next();
-  });
+  };
 
-  router.get('/status', (c) => c.json(status()));
-
-  router.post('/link', async (c) => {
+  router.post('/link', on, async (c) => {
     const refusal = refusePerson(c);
     if (refusal) return refusal;
     const parsed = SessionRelayLinkBodySchema.safeParse(readJsonBody(c));
@@ -354,7 +349,7 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
     });
   });
 
-  router.patch('/level', async (c) => {
+  router.patch('/level', on, async (c) => {
     const refusal = refusePerson(c);
     if (refusal) return refusal;
     const parsed = SessionRelayLevelBodySchema.safeParse(readJsonBody(c));
@@ -391,66 +386,32 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
     });
   });
 
-  /** Pause or resume: the pin's flag, and pausing closes the live connection. */
-  async function setPaused(c: Context<ApiEnv>, paused: boolean): Promise<Response> {
+  // Resume: the pin's flag, with the owner's password. Pausing is the mount's
+  // (`session-relay.pause`), since it only narrows access.
+  router.post('/resume', on, async (c) => {
     const refusal = refusePerson(c);
     if (refusal) return refusal;
-    if (!paused && !deps.ownerExists()) {
+    if (!deps.ownerExists()) {
       return noOwner(c);
     }
     const requestedLink = relayLinkHash(deps.readPin());
-    const run = async () => {
-      const pin = await withRelayPinLock(async () => {
-        if (!paused && relayLinkHash(deps.readPin()) !== requestedLink) return 'changed' as const;
-        const next = await deps.updatePin({ paused });
-        // Inside the lock, so no resume can open a relay after this pause.
-        if (next && paused) deps.closeRelay();
-        return next;
-      });
-      if (pin === 'changed') return linkChanged(c);
-      if (!pin) return notLinked(c);
-      audit(
-        paused ? 'pause' : 'resume',
-        'modify',
-        paused ? 'Paused chatting from the web' : 'Resumed chatting from the web',
-        'ok'
-      );
-      return c.json(status());
-    };
-    if (paused) return run();
     return runFrontDoorWrite(c, {
       kind: 'session-relay.resume',
       target: 'web-access',
       input: { paused: false, linkHash: requestedLink },
       reason: 'Resume chatting from the web.',
       subject: 'chatting from the web',
-      run,
+      run: async () => {
+        const pin = await withRelayPinLock(async () => {
+          if (relayLinkHash(deps.readPin()) !== requestedLink) return 'changed' as const;
+          return deps.updatePin({ paused: false });
+        });
+        if (pin === 'changed') return linkChanged(c);
+        if (!pin) return notLinked(c);
+        audit('resume', 'modify', 'Resumed chatting from the web', 'ok');
+        return c.json(status());
+      },
     });
-  }
-
-  /** The browsers using this computer are the owner's to see, never an agent's. */
-  function refuseAgent(c: Context<ApiEnv>): Response | undefined {
-    if (!presentsAgentIdentity(honoRequestFacts(c))) return undefined;
-    return problem(c, 'forbidden', { detail: 'Only you can see this.' });
-  }
-
-  router.get('/presence', (c) => refuseAgent(c) ?? c.json(deps.presence()));
-
-  router.get('/devices', (c) => refuseAgent(c) ?? c.json({ devices: deps.devices() }));
-
-  // End use from the web now: pause the link and close the relay, as Pause
-  // does. The live connection ending is what tells the open windows.
-  router.post('/presence/end', async (c) => {
-    const refusal = refusePerson(c);
-    if (refusal) return refusal;
-    const pin = await withRelayPinLock(async () => {
-      const next = await deps.updatePin({ paused: true });
-      if (next) deps.closeRelay();
-      return next;
-    });
-    if (!pin) return notLinked(c);
-    audit('presence.end', 'modify', 'Ended use from the web and paused chat from the web', 'ok');
-    return c.json(deps.presence());
   });
 
   /**
@@ -472,23 +433,9 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
       refusePerson: refusePersonHere,
       refusePassword,
       readPin: deps.readPin,
+      on,
     })
   );
-
-  router.post('/pause', (c) => setPaused(c, true));
-  router.post('/resume', (c) => setPaused(c, false));
-
-  router.delete('/link', async (c) => {
-    const refusal = refusePerson(c);
-    if (refusal) return refusal;
-    const had = await withRelayPinLock(() => {
-      const pin = deps.readPin();
-      deps.clearPin();
-      return pin;
-    });
-    if (had) audit('unlink', 'remove', `Unlinked this computer from ${had.hubOrigin}`, 'ok');
-    return c.json(status());
-  });
 
   return router;
 }

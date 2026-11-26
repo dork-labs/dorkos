@@ -77,9 +77,6 @@ const EXCEPTIONS: Record<string, string> = {
   'cloud POST /credits/undo-filled': 'Removes credits choices.',
   'cloud POST /credits/notices/dismiss': 'Dismisses a notice.',
   'cloud-communities POST /moves/:moveId/cancel': 'Cancels a move.',
-  'session-relay POST /pause': 'Only closes access.',
-  'session-relay POST /presence/end': 'Only closes access.',
-  'session-relay DELETE /link': 'Removes a link.',
   'session-relay-passkeys POST /finish':
     'Consumes the one-use enrol statement from confirmed /start.',
   'session-relay-passkeys DELETE /': 'Existing password check removes a damaged passkey file.',

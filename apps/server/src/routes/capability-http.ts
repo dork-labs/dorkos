@@ -208,6 +208,7 @@ export function createCapabilityHttpRoutes(deps: CapabilityHttpDeps): Hono<ApiEn
     claimed.set(key, capability.id);
     const served = capability as ServedCapability;
     const handler = (c: Context<ApiEnv>) => {
+      if (surface.noStore) c.header('Cache-Control', 'no-store');
       const registry = deps.registry();
       // The path is declared on every server, but its domain may not have
       // started on this one (no mesh, say): not here, rather than "unknown".

@@ -73,7 +73,6 @@ const KNOWN_ALL: Readonly<Record<string, string>> = {
   'ALL /api/person-session/*': 'middleware (`use`) in front of the group',
   'ALL /api/runtimes/claude-code/signins/*': 'middleware (`use`) in front of the group',
   'ALL /api/session-locations/*': 'middleware (`use`) in front of the group',
-  'ALL /api/session-relay/*': 'middleware (`use`) in front of the group',
   'ALL /api/sessions/:id/*': 'middleware (`use`) in front of the group',
   'ALL /api/sign-in-landings/*': 'middleware (`use`) in front of the group',
   'ALL /api/step-up/*': 'middleware (`use`) in front of the group',

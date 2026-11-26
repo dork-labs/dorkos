@@ -315,6 +315,18 @@ export const HAND_ROUTE_ALLOWLIST: readonly HandRouteAllowlistEntry[] = [
   },
   {
     method: 'POST',
+    path: '/api/session-relay/passkeys/start',
+    category: 'sign-in-handshake',
+    reason: 'Starts a WebAuthn ceremony for an approvals passkey: a challenge, after the password.',
+  },
+  {
+    method: 'POST',
+    path: '/api/session-relay/passkeys/finish',
+    category: 'sign-in-handshake',
+    reason: "The ceremony's answer, from the loopback return page, with no session by design.",
+  },
+  {
+    method: 'POST',
     path: '/api/person-session',
     category: 'sign-in-handshake',
     reason: "The owner's password step-up, which sets its cookie.",

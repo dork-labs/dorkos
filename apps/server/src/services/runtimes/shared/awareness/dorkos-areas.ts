@@ -181,7 +181,7 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       'create_agent',
       'get_agent',
       // Also a person's move of an old persona into SOUL.md (`agent.migrate_persona`,
-      // person-only, DOR-4978).
+      // person-only, DOR-4978), and the agent a folder belongs to (`agent.current`).
       'agent.',
       'operator.update_agent',
       'operator.sidebar_',
@@ -254,6 +254,9 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       'runtimes.key_status',
       'runtimes.opencode_key_setup',
       'runtimes.doe_model_setup',
+      // Chat from the web (`session-relay.*`, DOR-4978) rides here with no words of its own:
+      // an agent reads only its status; the rest is person-only.
+      'session-relay.',
     ],
     areas: ['settings', 'permissions'],
   },

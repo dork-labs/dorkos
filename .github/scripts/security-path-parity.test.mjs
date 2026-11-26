@@ -185,6 +185,13 @@ for (const [match, miss, deep] of [
   [`${S}/marketplace-mcp/tool-install.ts`, `${S}/marketplace-mcpx/tool-install.ts`, false],
   [`${S}/core-extensions/ensure-core-extensions.ts`, `${S}/core-extension/x.ts`, false],
   [`${S}/mcp-apps/mcp-app-resource-service.ts`, `${S}/mcp-app/mcp-app-resource-service.ts`, false],
+  // The capability doors on the front-door side (DOR-4978): chat from the web, runtime setup reads.
+  [
+    `${S}/core/session-relay-doors/session-relay-capabilities.ts`,
+    `${S}/core/session-relay-door/x.ts`,
+    false,
+  ],
+  [`${S}/core/runtime-doors/runtime-read-capabilities.ts`, `${S}/core/runtime-door/x.ts`, false],
   // C2's new kernel homes (DOR-5303): code moved out of covered folders stays covered.
   [`${S}/core/child-bundle/child-bundle.ts`, `${S}/core/child-bundles/child-bundle.ts`, false],
   [`${S}/core/room-turn-ref/room-turn-ref.ts`, `${S}/core/room-turn-refs/room-turn-ref.ts`, false],

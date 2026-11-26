@@ -22,6 +22,7 @@ import { PERSON_ONLY_AGENT_HINTS } from '@dorkos/shared/capabilities';
 import { TODO_TOOL_REFUSALS } from '../services/todos/todo-refusals.js';
 import { MESH_TOOL_REFUSALS } from '../services/mesh/doors/mesh-refusals.js';
 import { GLOBAL_MCP_TOOL_REFUSALS } from '../services/mesh/global-mcp/global-mcp-refusals.js';
+import { SESSION_RELAY_TOOL_REFUSALS } from '../services/core/session-relay-doors/session-relay-refusals.js';
 import { MARKETPLACE_TOOL_REFUSALS } from '../services/marketplace/doors/marketplace-refusals.js';
 import {
   RUNTIME_READ_SENTENCES,
@@ -284,6 +285,8 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
   // The MCP servers a person adds for every agent keep their hand routes' codes and
   // sentences (`services/mesh/global-mcp/global-mcp-person-capabilities.ts`).
   ...GLOBAL_MCP_TOOL_REFUSALS,
+  // Chat from the web's doors (`services/core/session-relay-doors/session-relay-refusals.ts`).
+  ...SESSION_RELAY_TOOL_REFUSALS,
   TODO_AGENT_NOT_FOUND: { code: 'not_found', detail: 'No agent on the team has that id.' },
   TODO_PROMISE_OWNER_ONLY: {
     code: 'owner_only',

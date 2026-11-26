@@ -24,7 +24,6 @@
     "ALL /api/person-session/*",
     "ALL /api/runtimes/claude-code/signins/*",
     "ALL /api/session-locations/*",
-    "ALL /api/session-relay/*",
     "ALL /api/sessions/:id/*",
     "ALL /api/sign-in-landings/*",
     "ALL /api/step-up/*",

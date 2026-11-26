@@ -76,6 +76,7 @@ import { directoryDomain } from '../directory/directory-capabilities.js';
 import { diffDomain } from '../../diff/diff-capabilities.js';
 import { workspacesDomain } from '../../workspace/workspace-capabilities.js';
 import { templatesDomain } from '../agent-templates/template-catalog.js';
+import { sessionRelayDomain } from '../session-relay-doors/session-relay-capabilities.js';
 
 /**
  * The work graph's reads (DOR-4970), handed what they take from other domains
@@ -120,6 +121,8 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.mcpDeps) domains.push(mcpDomain);
   // The MCP servers a person adds for every agent, on `/api/mcp-servers` (DOR-4978).
   if (deps.globalMcpPersonDeps) domains.push(globalMcpPersonDomain);
+  // Chat from the web, on `/api/session-relay` (DOR-4978).
+  if (deps.sessionRelayDeps) domains.push(sessionRelayDomain);
   if (deps.roomDeps) domains.push(roomsDomain);
   if (deps.sessionCompactionDeps) domains.push(sessionDomain);
   if (deps.chatMessageDeps) domains.push(chatDomain);
@@ -230,6 +233,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     connectorHoldDomain,
     mcpDomain,
     globalMcpPersonDomain,
+    sessionRelayDomain,
     roomsDomain,
     sessionDomain,
     chatDomain,
@@ -274,6 +278,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     connectorExecutionDeps: {} as CapabilityDeps['connectorExecutionDeps'],
     mcpDeps: {} as CapabilityDeps['mcpDeps'],
     globalMcpPersonDeps: {} as CapabilityDeps['globalMcpPersonDeps'],
+    sessionRelayDeps: {} as CapabilityDeps['sessionRelayDeps'],
     roomDeps: {} as CapabilityDeps['roomDeps'],
     sessionCompactionDeps: {} as CapabilityDeps['sessionCompactionDeps'],
     chatMessageDeps: {} as CapabilityDeps['chatMessageDeps'],

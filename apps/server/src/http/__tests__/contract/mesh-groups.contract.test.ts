@@ -347,7 +347,7 @@ contractSuite('mesh, agent and discovery groups', [
   {
     name: 'GET /api/agents/current refuses a request with no path',
     path: '/api/agents/current',
-    expect: { status: 400, headers: PROBLEM_TYPE, body: NO_PATH },
+    expect: { status: 400, headers: PROBLEM_TYPE, body: NO_PATH_FIELD },
   },
   {
     name: 'HEAD /api/agents/current answers the GET’s status with no body',
