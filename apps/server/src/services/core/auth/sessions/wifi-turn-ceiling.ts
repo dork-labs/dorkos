@@ -34,7 +34,7 @@
  */
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { RequestFacts } from '../../../../http/request-facts.js';
-import { presentsAgentIdentity } from '../../../../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../../../../lib/http/agent-identity-header.js';
 import { readOwnerAccount } from '../index.js';
 import { wifiAgentTurnsAllowed } from './wifi-agent-turns.js';
 import { isFromWifi } from './wifi-level.js';

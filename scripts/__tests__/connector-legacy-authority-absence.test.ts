@@ -19,7 +19,7 @@ function ordinaryConnectorSources(): string[] {
   const files = execFileSync(
     'git',
     ['ls-files', '--cached', '--others', '--exclude-standard', '--', '*.ts'],
-    { encoding: 'utf8' }
+    { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
   )
     .trim()
     .split('\n')

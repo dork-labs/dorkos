@@ -1,7 +1,8 @@
 /**
  * `GET /api/agents/:id/heartbeat` (spec `heartbeats` §7.6, §13): what the
  * Heartbeat page reads, over a real heartbeat store, real measures and a real
- * HEARTBEAT.md on disk.
+ * HEARTBEAT.md on disk. Served by the capability mount (`heartbeat.view_page`,
+ * DOR-4978): a person's page, which an agent and a program are refused.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -21,12 +22,17 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { HeartbeatStatusSchema } from '@dorkos/shared/heartbeat-schemas';
 
 const viewer = vi.hoisted(() => ({ owner: true }));
-vi.mock('../../lib/caller-authority.js', () => ({
+vi.mock('../../lib/caller-authority.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/caller-authority.js')>()),
   refuseUnlessAccountOwner: () => (viewer.owner ? undefined : 'not-the-owner'),
 }));
 
-import { createHeartbeatRoutes } from '../heartbeats.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
+import {
+  heartbeatPageCapability,
+  setHeartbeatPageReader,
+} from '../../services/heartbeats/measures/page-capability.js';
 import { HeartbeatStore } from '../../services/heartbeats/heartbeat-store.js';
 import { heartbeatStatus } from '../../services/heartbeats/heartbeat-status.js';
 import { RaiseStore } from '../../services/heartbeats/raises/raise-store.js';
@@ -49,7 +55,7 @@ beforeEach(async () => {
   enabled = true;
   viewer.owner = true;
   const agent = { id: 'agent-juno', name: 'Juno', runtime: 'doe', projectPath: root };
-  const routes = createHeartbeatRoutes({
+  setHeartbeatPageReader({
     status: (agentId, viewerIsOwner, days) =>
       heartbeatStatus({
         viewerIsOwner,
@@ -81,10 +87,15 @@ beforeEach(async () => {
           }),
       }),
   });
-  target.mount(honoGroupListener({ path: '/api/agents/:id/heartbeat', routes }));
+  target.mount(
+    honoGroupListener(
+      capabilityGroup({ name: 'heartbeat', capabilities: [heartbeatPageCapability] })
+    )
+  );
 });
 
 afterEach(async () => {
+  setHeartbeatPageReader(undefined);
   vi.useRealTimers();
   await rm(root, { recursive: true, force: true });
 });
@@ -188,6 +199,24 @@ describe('GET /api/agents/:id/heartbeat', () => {
   it('answers 404 for an agent that does not exist', async () => {
     const res = await request(target.server).get('/api/agents/nobody/heartbeat');
     expect(res.status).toBe(404);
+    expect(res.body).toMatchObject({ code: 'not_found', detail: 'No agent with that id.' });
+  });
+
+  it('refuses an agent and a program, naming the tool an agent reads a heartbeat with', async () => {
+    for (const header of [
+      ['X-DorkOS-Agent', 'juno-token'],
+      ['Authorization', 'Bearer some-key'],
+    ] as const) {
+      const res = await request(target.server)
+        .get('/api/agents/agent-juno/heartbeat')
+        .set(header[0], header[1]);
+      expect(res.status, header[0]).toBe(403);
+      expect(res.body).toMatchObject({ code: 'person_only' });
+    }
+    const agent = await request(target.server)
+      .get('/api/agents/agent-juno/heartbeat')
+      .set('X-DorkOS-Agent', 'juno-token');
+    expect(agent.body.detail).toBe('Agents read a heartbeat with heartbeat_status.');
   });
 
   it('lists the last 50 beats and the measures over the default 7 days', async () => {

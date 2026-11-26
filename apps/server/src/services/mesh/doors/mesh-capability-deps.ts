@@ -5,10 +5,10 @@
  * @module services/mesh/doors/mesh-capability-deps
  */
 import type { MeshCore } from '@dorkos/mesh';
+import type { TopologyView } from '@dorkos/shared/mesh-schemas';
 
 import type { CapabilityDeps, CapabilityHandlerContext } from '../../core/capabilities/index.js';
 import type { ActivityService } from '../../activity/activity-service.js';
-import type { TopologyEnrichmentDeps } from '../../../routes/mesh-topology.js';
 
 declare module '../../core/capabilities/capability-definition.js' {
   interface CapabilityDeps {
@@ -17,12 +17,49 @@ declare module '../../core/capabilities/capability-definition.js' {
   }
 }
 
-/** The registry, the activity feed and the subsystems the topology view reads. */
-export interface MeshCapabilityDeps extends TopologyEnrichmentDeps {
+/** The registry and the subsystems the topology view's counts are read from. */
+export interface MeshTopologySources {
   /** The agent registry. */
   meshCore: MeshCore;
+  /** Task store for per-agent schedule counts; only enabled, `active` tasks count. */
+  taskStore?: {
+    getTasks(): Array<{ agentId: string | null; enabled: boolean; status: string }>;
+  };
+  /** Relay, for the endpoints an agent's adapters are read from. */
+  relayCore?: { listEndpoints(): Array<{ subject: string }> };
+}
+
+/** The registry's view, each agent enriched with its health, Relay adapters and schedules. */
+export type EnrichTopology = (topology: TopologyView, sources: MeshTopologySources) => TopologyView;
+
+/** An agent with the computer it runs on, when the canonical path has one bound. */
+export type ProjectComputerPlacement = <T extends { projectPath?: string }>(
+  agent: T
+) => T & { effectiveRuntimeId?: string };
+
+/** The same, for an agent read without its path, found by id among `paths`. */
+export type ProjectComputerPlacementById = <T extends { id: string }>(
+  agent: T,
+  paths: readonly { id: string; projectPath: string }[]
+) => T & { effectiveRuntimeId?: string };
+
+/**
+ * How the reads shape what they answer. The composition root passes the mesh
+ * routes' own (`routes/mesh-topology.ts`, `routes/computer-placement.ts`), so
+ * a door and a route answer alike.
+ */
+export interface MeshReadViews {
+  enrichTopology: EnrichTopology;
+  projectPlacement: ProjectComputerPlacement;
+  projectPlacementById: ProjectComputerPlacementById;
+}
+
+/** The registry, the activity feed and the subsystems the topology view reads. */
+export interface MeshCapabilityDeps extends MeshTopologySources {
   /** Where registrations and removals are recorded; absent in a test that does not watch it. */
   activity?: ActivityService;
+  /** How the reads shape what they answer. */
+  views: MeshReadViews;
 }
 
 /**

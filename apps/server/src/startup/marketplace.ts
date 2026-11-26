@@ -523,6 +523,7 @@ export async function startMarketplace(deps: MarketplaceStartupDeps): Promise<St
       onPluginsChanged,
       listAgentScopes,
       devLinks: devLinkService,
+      cacheRetention: marketplaceCacheRetention,
       logger,
     };
     logger.info('[Marketplace] MCP tools wired into external /mcp server');

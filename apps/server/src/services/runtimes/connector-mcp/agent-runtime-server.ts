@@ -4,7 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AgentIdentity } from '../../core/agent-identity/index.js';
 import type { CapabilityRegistry } from '../../core/capabilities/index.js';
 import { registerCapabilitiesAsMcpTools } from '../../core/external-mcp/capability-mcp-tools.js';
-import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
+import type { ServerPrincipalProof } from '../../core/connections-lease/index.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
 
 /**

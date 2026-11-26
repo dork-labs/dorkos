@@ -31,11 +31,11 @@ import { z } from 'zod';
 
 import { trustPosture } from '@dorkos/shared/permissions';
 
+import { permissionGateSources } from '../core/capabilities/index.js';
 import {
   defineCapability,
-  permissionGateSources,
   type CapabilityDomain,
-} from '../core/capabilities/index.js';
+} from '../core/capabilities/capability-definition.js';
 import type { CapabilityDeps, CapabilityHandlerContext } from '../core/capabilities/index.js';
 import { unwrapMcpEnvelope } from '../core/capabilities/mcp-envelope.js';
 import { turnReadOutsideWords } from '../core/turn-power/outsider-turn.js';
@@ -267,8 +267,17 @@ export const marketplaceDomain: CapabilityDomain = {
           annotations: { idempotentHint: true, openWorldHint: true },
         },
       },
-      invoke: async (deps, input) =>
-        unwrapMcpEnvelope(await createListInstalledHandler(requireMarketplaceDeps(deps))(input)),
+      invoke: async (deps, input, context) =>
+        unwrapMcpEnvelope(
+          await createListInstalledHandler(requireMarketplaceDeps(deps))(
+            input,
+            // An agent reads no dev link's working folder, as on the REST read (DOR-4978).
+            {
+              agentAsking:
+                context.identity !== undefined || context.agentIdentityPresented === true,
+            }
+          )
+        ),
     }),
     defineCapability({
       id: 'marketplace.recommend',

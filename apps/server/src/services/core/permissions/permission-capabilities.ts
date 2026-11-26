@@ -55,16 +55,18 @@ import { APPROVAL_REQUEST_REASON_MAX_LENGTH } from '@dorkos/shared/approval-sche
 import type { ActionConsent, McpServerId } from '@dorkos/shared/capabilities';
 
 import {
-  CapabilityToolError,
-  defineCapability,
   permissionGateSources,
   REQUEST_PERMISSION_TOOL,
-  type CapabilityDeps,
-  type CapabilityDefinition,
-  type CapabilityDomain,
   type CapabilityHandlerContext,
   type CapabilityRegistry,
 } from '../capabilities/index.js';
+import {
+  CapabilityToolError,
+  defineCapability,
+  type CapabilityDeps,
+  type CapabilityDefinition,
+  type CapabilityDomain,
+} from '../capabilities/capability-definition.js';
 import { titleForMcpTool } from '../mcp-tool-tiers.js';
 import { agentRequestWriter, agentWriter } from './permission-history.js';
 import { PermissionError, type PermissionService } from './permission-service.js';

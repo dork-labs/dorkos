@@ -26,7 +26,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import { globalEventsRoute } from '../events-socket.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
-import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
+import { AGENT_IDENTITY_HEADER } from '../../lib/http/agent-identity-header.js';
 import {
   getOrCreateProjector,
   disposeProjector,

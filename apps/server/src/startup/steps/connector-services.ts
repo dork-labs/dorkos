@@ -29,7 +29,7 @@ import { setExtensionConnectionServices } from '../../services/connectors/extens
 import { ManagedUsageMirrorService } from '../../services/connectors/execution/managed-usage-mirror-service.js';
 import { getCloudLinkManager } from '../../services/core/auth/cloud-link.js';
 import { ManagedConnectorCloudError } from '../../services/core/auth/cloud-link-client.js';
-import type { ConnectorOwnerAuthority } from '../../services/connectors/principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../services/core/connections-lease/index.js';
 import { ConnectorSubscriptionService } from '../../services/connectors/events/subscription-service.js';
 import { ConnectorEventGrantService } from '../../services/connectors/events/grant-service.js';
 import { ConnectorEventSessionSourceAdapter } from '../../services/connectors/events/session-source-adapter.js';

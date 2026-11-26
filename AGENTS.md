@@ -95,7 +95,7 @@ Decided, and not built unless `meta/ROADMAP.md` lists it as built. Target shape:
 
 Rules today:
 
-1. A feature goes in the server core only if the core acts on it, only the core can see it, or a mini app can't do it right. Otherwise: a mini app (`contributing/extension-authoring.md`), or a schedule with a skill (ADR `261124-150519`).
+1. A feature goes in the server core only if the core acts on it, only the core can see it, or a mini app can't do it right. Otherwise: a mini app (`contributing/extension-authoring.md`), or a schedule with a skill (ADR `261124-150519`). A pull request watcher is the example: none of the three hold, so it is a mini app that calls the core's one wake. A PR that adds a folder under `apps/server/src/services/` answers the three questions in its body; review checks it (`REVIEW.md`, "Path-specific focus").
 2. No new service or process unless its lifetime or trust level differs.
 3. Never plan, rank or write work by a date or a launch (ADR `261124-150515`).
 4. Architecture work leaves the space server's code alone (`services/spaces`, `apps/space`, the community wire, `spaces/migrate.ts`) until the Community Space has opened and its opening checks are green. Fixes the opening needs are fine.
@@ -128,7 +128,7 @@ All enforced, so a break fails a check. Rules 1-5 ride `lint`, 6-7 are hooks, 9 
 
 1. **FSD layer violations are errors** (`no-restricted-imports`).
 2. **Each runtime SDK stays in its adapter dir** under `services/runtimes/`.
-3. **`os.homedir()` is banned in `apps/server/src`**; use `lib/dork-home.ts`. The few carve-outs mirror another program's own directory and are listed in `.claude/rules/dork-home.md`.
+3. **`os.homedir()` is banned in `apps/server/src`**; use `lib/dork-home.ts`. The carve-outs, with reasons, are in `.claude/rules/dork-home.md`.
 4. **Exports carry TSDoc** with a real description (`eslint-plugin-jsdoc`, all `error`).
 5. **Prettier and Tailwind class sorting run at turn end and pre-commit**, not after each edit, so your in-context copy stays valid. Don't hand-format. Pre-push checks formatting and names the files to fix.
 6. **`git stash` and `git checkout -- <path>` are refused.** The stash is shared by every worktree, and the pathspec checkout silently drops uncommitted work. Park files in your scratchpad and restore with `cp`.

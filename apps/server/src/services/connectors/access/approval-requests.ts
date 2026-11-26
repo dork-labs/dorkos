@@ -17,7 +17,7 @@ import {
 } from '@dorkos/db';
 import type { ConnectorAgentRequestService } from '../agent-request-service.js';
 import { serviceName } from '../every-agent-activity.js';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 import type { ApprovalRequests } from './access-approval.js';
 import { ownerColumns } from './access-writes.js';
 

@@ -23,6 +23,7 @@ import {
   useLoginOffConfig,
   type MockMeshCore,
 } from './mesh.fixtures.js';
+import { meshReadViews } from './mesh-read-views.js';
 
 useLoginOffConfig();
 
@@ -58,7 +59,9 @@ function serve(identity?: AgentIdentity): void {
   };
   fixtureTarget.mount(
     honoGroupListener(
-      capabilityGroup(meshDomain, { meshDeps: { meshCore: meshCore as unknown as MeshCore } }),
+      capabilityGroup(meshDomain, {
+        meshDeps: { meshCore: meshCore as unknown as MeshCore, views: meshReadViews },
+      }),
       { before }
     )
   );

@@ -55,8 +55,7 @@
  *   `caller`) -> the MCP fabricated rows red, alone.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { RequestListener } from 'node:http';
-import request, { type Response, type Test } from '@dorkos/test-utils/supertest';
+import request, { type Response } from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
 vi.mock('../../env.js', () => ({
@@ -111,114 +110,36 @@ import {
   type CapabilityRegistry,
 } from '../../services/core/capabilities/index.js';
 import { roomsDomain } from '../../services/rooms/room-capabilities.js';
-import { createExternalMcpServer } from '../../services/core/mcp-server.js';
 import { createCapabilityMcpClient } from '../../services/runtimes/claude-code/mcp-tools/__tests__/capability-mcp-client.js';
 import type { AgentIdentity } from '../../services/core/agent-identity/agent-identity-service.js';
-import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
 import {
   initAgentIdentityService,
   resetAgentIdentityService,
-  TOKEN_ABSOLUTE_TTL_MS,
 } from '../../services/core/agent-identity/agent-identity-service.js';
-import { agentIdentityTokens } from '@dorkos/db';
-import { createCapabilitiesInvokeRoutes } from '../capabilities-invoke.js';
-import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
-import { createMcpEndpoint } from '../mcp.js';
 import {
-  agentLookupFor,
   createRoomHarness,
   scriptedRunner,
   type RoomHarness,
 } from '../../services/rooms/__tests__/room-test-harness.js';
+import {
+  ANA_PATH,
+  agents,
+  anaTokenIn,
+  DEAD_TOKEN_STATES,
+  deadTokenIn,
+  invokeApp,
+  jsonRpc,
+  mcpApp,
+  mcpErrorPayload,
+  mcpRpc,
+  PROBLEM_CODE,
+  REFUSAL_CODE,
+  refusalText,
+  toolCall,
+  type DeadTokenState,
+} from './room-capabilities-unverified-agent.fixtures.js';
 
 const fixtureTarget = swappableServer();
-
-/** A token shaped like the real thing that resolves to NO agent at all. */
-const UNVERIFIABLE = 'dork_agent_this-token-resolves-to-nothing';
-
-/** The three states a presented token can be dead in. Each must be refused. */
-type DeadTokenState = 'fabricated' | 'revoked' | 'expired';
-
-/** Every dead state, so a row that only covers one cannot pass for coverage. */
-const DEAD_TOKEN_STATES: DeadTokenState[] = ['fabricated', 'revoked', 'expired'];
-
-/** The code every room seam now answers a token it cannot verify with. */
-const REFUSAL_CODE = 'AGENT_IDENTITY_UNVERIFIED';
-
-/** The problem code the HTTP doors answer that refusal with. */
-const PROBLEM_CODE = 'agent_identity_unverified';
-
-const ANA_PATH = '/agents/ana';
-
-const agents = agentLookupFor({
-  [ANA_PATH]: { name: 'ana', displayName: 'Ana', responseMode: 'always' },
-});
-
-/** Minimal deps for the external MCP server — the shape `mcp-integration` uses. */
-function minimalMcpDeps(): McpToolDeps {
-  return {
-    transcriptReader: {
-      listSessions: vi.fn().mockResolvedValue([]),
-    } as unknown as McpToolDeps['transcriptReader'],
-    defaultCwd: '/tmp/test',
-    dorkHome: '/tmp/dorkos-test-home',
-  };
-}
-
-/** JSON-RPC `tools/call`, in the shape the stateless transport accepts. */
-function toolCall(name: string, args: Record<string, unknown>): Record<string, unknown> {
-  return { jsonrpc: '2.0', method: 'tools/call', params: { name, arguments: args }, id: 1 };
-}
-
-/** Read one JSON-RPC message back, whichever way the transport chose to send it. */
-function jsonRpc(res: Response): {
-  result?: { isError?: boolean; content?: Array<{ text?: string }> };
-} {
-  const contentType = (res.headers['content-type'] as string) ?? '';
-  if (contentType.includes('text/event-stream')) {
-    const line = res.text.split('\n').find((l) => l.startsWith('data: '));
-    return JSON.parse(line!.slice(6));
-  }
-  return res.body;
-}
-
-/** The payload a capability refusal carries back through the MCP envelope. */
-function mcpErrorPayload(res: Response): { code?: string; error?: string } {
-  const body = jsonRpc(res);
-  expect(body.result?.isError).toBe(true);
-  return JSON.parse(body.result!.content![0]!.text!);
-}
-
-/**
- * Whether a JSON-RPC reply is a refusal, in EITHER shape a refusal can take.
- *
- * Two gates can turn one of these calls away and they answer differently on
- * purpose: `callerAuthor` throws the rooms domain's typed error (`isError`),
- * while the tier gate returns a structured `denied` payload that is deliberately
- * NOT `isError` so a model reads it rather than retrying. Which one answers
- * depends on the caller and the tier — a revoked token is capped at `observe`,
- * so an `act` verb is stopped by the ceiling before `callerAuthor` ever runs.
- * The property under test is that the call did not happen, so the assertion is
- * on that, not on which door closed first (DOR-486).
- *
- * @param res - The transport response.
- * @returns The refusal text, for the caller to make its own claims about.
- */
-function refusalText(res: Response): string {
-  const body = jsonRpc(res);
-  const text = body.result?.content?.[0]?.text ?? '';
-  // Parsed, not substring-matched: the denial payload is pretty-printed, so
-  // `"status":"denied"` never appears literally in it.
-  let status: unknown;
-  try {
-    status = (JSON.parse(text) as { status?: unknown }).status;
-  } catch {
-    status = undefined;
-  }
-  const refused = body.result?.isError === true || status === 'denied';
-  expect(refused, `expected a refusal, got: ${text.slice(0, 200)}`).toBe(true);
-  return text;
-}
 
 describe('an unverifiable agent token on the rooms capability surfaces', () => {
   let harness: RoomHarness;
@@ -256,37 +177,9 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
     resetAgentIdentityService();
   });
 
-  /** A token that really does resolve to Ana. */
-  function anaToken(): Promise<string> {
-    return initAgentIdentityService(harness.db).mint({
-      agentPath: ANA_PATH,
-      displayName: 'Ana',
-    });
-  }
-
-  /**
-   * A token in one of the three dead states, built the way it really happens.
-   *
-   * `revoked` and `expired` are REAL — minted for Ana and then killed — because
-   * the fabricated string is the one dead state that never had an identity to
-   * resolve to, and it is precisely the state that kept passing while the other
-   * two walked through (DOR-486).
-   *
-   * @param state - Which dead state to produce.
-   * @returns The token to present.
-   */
-  async function deadToken(state: DeadTokenState): Promise<string> {
-    if (state === 'fabricated') return UNVERIFIABLE;
-    const token = await anaToken();
-    if (state === 'revoked') {
-      await initAgentIdentityService(harness.db).revoke(ANA_PATH);
-      return token;
-    }
-    // Past the absolute cap, which no amount of use resets.
-    const longAgo = new Date(Date.now() - TOKEN_ABSOLUTE_TTL_MS - 60_000).toISOString();
-    harness.db.update(agentIdentityTokens).set({ createdAt: longAgo, lastUsedAt: longAgo }).run();
-    return token;
-  }
+  /** A token that really does resolve to Ana, and one dead in `state` (see `deadTokenIn`). */
+  const anaToken = () => anaTokenIn(harness);
+  const deadToken = (state: DeadTokenState) => deadTokenIn(harness, state);
 
   /** How many entries the room holds — what a refused post must not change. */
   function entryCount(): number {
@@ -295,12 +188,7 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
 
   describe('POST /api/capabilities/:id/invoke', () => {
     /** The invoke route behind the `/api` chain, which resolves the agent identity. */
-    function app() {
-      return honoGroupListener({
-        path: '/api/capabilities',
-        routes: createCapabilitiesInvokeRoutes(registry),
-      });
-    }
+    const app = () => invokeApp(registry);
 
     it.each(DEAD_TOKEN_STATES)('refuses rooms.post for a %s token', async (state) => {
       const refused = await request(fixtureTarget.mount(app()))
@@ -370,40 +258,9 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
   });
 
   describe('the external /mcp server', () => {
-    /**
-     * The real MCP endpoint over the real external server, behind the chain
-     * that resolves the agent header, as `index.ts` wires it.
-     */
-    function app(): RequestListener {
-      return honoGroupListener({
-        path: '/mcp',
-        routes: createMcpEndpoint((caller) =>
-          createExternalMcpServer(
-            minimalMcpDeps(),
-            undefined,
-            registry,
-            caller.identity,
-            caller.userId,
-            caller.agentIdentityPresented
-          )
-        ),
-      });
-    }
-
-    /**
-     * Post one JSON-RPC message with the headers the transport insists on.
-     *
-     * `token` is set before the body so the identity is complete before awaiting
-     * the chain; awaiting, `.then()`, or `.end()` dispatches it.
-     */
-    function rpc(body: Record<string, unknown>, token?: string): Test {
-      const req = request(fixtureTarget.mount(app()))
-        .post('/mcp')
-        .set('Content-Type', 'application/json')
-        .set('Accept', 'application/json, text/event-stream');
-      if (token) req.set('X-DorkOS-Agent', token);
-      return req.send(body);
-    }
+    /** One JSON-RPC message to the real external `/mcp` server (see `mcpRpc`). */
+    const rpc = (body: Record<string, unknown>, token?: string) =>
+      mcpRpc(fixtureTarget.mount(mcpApp(registry)), body, token);
 
     it.each(DEAD_TOKEN_STATES)('refuses post_to_room for a %s token', async (state) => {
       const refused = await rpc(
@@ -548,67 +405,12 @@ describe('a capability in the Rooms permission area, on the real surfaces', () =
   });
 
   /** A token that really does resolve to Ana. */
-  function anaToken(): Promise<string> {
-    return initAgentIdentityService(harness.db).mint({
-      agentPath: ANA_PATH,
-      displayName: 'Ana',
-    });
-  }
-
-  /**
-   * A token in one of the three dead states, built the way it really happens.
-   *
-   * `revoked` and `expired` are REAL — minted for Ana and then killed — because
-   * the fabricated string is the one dead state that never had an identity to
-   * resolve to, and it is precisely the state that kept passing while the other
-   * two walked through (DOR-486).
-   *
-   * @param state - Which dead state to produce.
-   * @returns The token to present.
-   */
-  async function deadToken(state: DeadTokenState): Promise<string> {
-    if (state === 'fabricated') return UNVERIFIABLE;
-    const token = await anaToken();
-    if (state === 'revoked') {
-      await initAgentIdentityService(harness.db).revoke(ANA_PATH);
-      return token;
-    }
-    // Past the absolute cap, which no amount of use resets.
-    const longAgo = new Date(Date.now() - TOKEN_ABSOLUTE_TTL_MS - 60_000).toISOString();
-    harness.db.update(agentIdentityTokens).set({ createdAt: longAgo, lastUsedAt: longAgo }).run();
-    return token;
-  }
+  const anaToken = () => anaTokenIn(harness);
 
   describe('the external /mcp server', () => {
-    /**
-     * The real MCP endpoint over the real external server, behind the chain
-     * that resolves the agent header, as `index.ts` wires it.
-     */
-    function app(): RequestListener {
-      return honoGroupListener({
-        path: '/mcp',
-        routes: createMcpEndpoint((caller) =>
-          createExternalMcpServer(
-            minimalMcpDeps(),
-            undefined,
-            registry,
-            caller.identity,
-            caller.userId,
-            caller.agentIdentityPresented
-          )
-        ),
-      });
-    }
-
-    /** Post one JSON-RPC message, headers before body (see the note above). */
-    function rpc(body: Record<string, unknown>, token?: string): Test {
-      const req = request(fixtureTarget.mount(app()))
-        .post('/mcp')
-        .set('Content-Type', 'application/json')
-        .set('Accept', 'application/json, text/event-stream');
-      if (token) req.set('X-DorkOS-Agent', token);
-      return req.send(body);
-    }
+    /** One JSON-RPC message to the real external `/mcp` server (see `mcpRpc`). */
+    const rpc = (body: Record<string, unknown>, token?: string) =>
+      mcpRpc(fixtureTarget.mount(mcpApp(registry)), body, token);
 
     /** The gate's structured payload, read out of the MCP envelope. */
     function refusalPayload(res: Response): Record<string, unknown> {
@@ -771,12 +573,7 @@ describe('a capability in the Rooms permission area, on the real surfaces', () =
 
   describe('POST /api/capabilities/:id/invoke', () => {
     /** The invoke route behind the `/api` chain, which resolves the agent identity. */
-    function app() {
-      return honoGroupListener({
-        path: '/api/capabilities',
-        routes: createCapabilitiesInvokeRoutes(registry),
-      });
-    }
+    const app = () => invokeApp(registry);
 
     it('answers 403 — refused, with no card minted', async () => {
       grantIs(undefined);

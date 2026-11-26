@@ -16,6 +16,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { SESSION_RELAY_FEATURES } from '@dorkos/shared/session-relay';
+import { upgradeGuards } from '../../../../startup/upgrade-guards.js';
 
 const role = vi.hoisted(() => ({ value: 'hub' as 'computer' | 'hub' }));
 vi.mock('../../../../lib/server-role.js', () => ({ currentServerRole: () => role.value }));
@@ -159,7 +160,12 @@ describe('a computer dialing its hub for real', () => {
       },
     } as Parameters<typeof serving.setHubServingState>[0]);
     server = createServer();
-    attachUpgradeRouter(server, [hubRelayComputerRoute()], new MainRequestAdmission());
+    attachUpgradeRouter(
+      server,
+      [hubRelayComputerRoute()],
+      new MainRequestAdmission(),
+      upgradeGuards
+    );
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
     port = (server.address() as AddressInfo).port;

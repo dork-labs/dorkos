@@ -80,6 +80,7 @@ function wiring(over: Partial<SessionRelayWiring> = {}): SessionRelayWiring {
         ),
     },
     roomSessionPlace: () => undefined,
+    remoteAccessOn: () => true,
     ...over,
   };
 }

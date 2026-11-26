@@ -21,7 +21,7 @@ import {
   HeartbeatWakeSchema,
   type HeartbeatStatus,
 } from '@dorkos/shared/heartbeat-schemas';
-import { defineCapability } from '../../core/capabilities/index.js';
+import { defineCapability } from '../../core/capabilities/capability-definition.js';
 import { MEASURE_WINDOW_DAYS, MEASURE_WINDOW_MAX_DAYS } from './measures.js';
 
 /** The MCP tool name, exported so prose that names it reads it from here. */

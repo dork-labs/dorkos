@@ -53,7 +53,7 @@ import { refuseSpend, spendPermission, type SpendPreflight } from './spend-permi
 import { agentComputerActionRefusal } from '../agent-computer/hub-owned.js';
 import { preGateRefusal } from './pre-gate-refusals.js';
 import { resolveApprovalSubject } from '../approvals/approval-subject.js';
-import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
+import type { ServerPrincipalProof } from '../connections-lease/index.js';
 import { isServerPrincipal } from '../../connectors/principal/server-principal.js';
 import {
   isCapabilityAuthorityBinding,
@@ -100,7 +100,7 @@ export interface CapabilityInvocationContext {
    * The wider question than {@link identity}, and a different one: that field
    * answers "WHICH agent is this", which needs a token that verified; this
    * answers "is a machine calling", which a token that did NOT verify still
-   * says. It is the same fact `middleware/agent-identity.ts` exposes as
+   * says. It is the same fact `lib/http/agent-identity-header.ts` exposes as
    * `presentsAgentIdentity`, threaded here so the two HTTP surfaces
    * (`routes/capabilities-invoke.ts`, `routes/mcp.ts`) can state it — an
    * in-process surface resolves its caller structurally and leaves it absent.

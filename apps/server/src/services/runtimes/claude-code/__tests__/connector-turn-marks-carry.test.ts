@@ -11,8 +11,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
-import type { ServerPrincipalProof } from '../../../connectors/principal/server-principal.js';
-import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
+import type {
+  ConnectorRuntimePrincipalPort,
+  ServerPrincipalProof,
+} from '../../../core/connections-lease/index.js';
 import type { ConnectorRuntimeTools } from '../../connector-tools.js';
 import { recordTurnLevels } from '../../../core/turn-power/turn-levels.js';
 import { noteRoomTurnWords } from '../../../core/turn-power/outside-words.js';

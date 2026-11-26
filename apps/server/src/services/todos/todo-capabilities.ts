@@ -52,12 +52,12 @@ import {
 import { TODO_NOTES_MAX, TODO_RANK_MAX, TodoSchema } from '@dorkos/shared/todo-schemas';
 import { marksOf, passedOnLevelOf } from '../core/turn-power/turn-levels.js';
 import { hasMarks } from '../core/turn-power/turn-marks.js';
+import { type CapabilityHandlerContext } from '../core/capabilities/index.js';
 import {
   defineCapability,
   type CapabilityDeps,
   type CapabilityDomain,
-  type CapabilityHandlerContext,
-} from '../core/capabilities/index.js';
+} from '../core/capabilities/capability-definition.js';
 import { callerAgentId } from './caller.js';
 import { TodoPromiseError, PERSON_ASSIGNER } from './todo-promise-service.js';
 import type { TodoActor } from './todo-authority.js';

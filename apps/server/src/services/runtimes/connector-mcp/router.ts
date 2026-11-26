@@ -4,7 +4,7 @@ import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import { Hono } from 'hono';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
+import type { ServerPrincipalProof } from '../../core/connections-lease/index.js';
 import { CONNECTOR_RUNTIME_REFUSAL, type ConnectorRuntimeEnv } from './auth.js';
 
 /** Builds the exact connector-only capability projection for one principal. */

@@ -13,9 +13,13 @@
 import { z } from 'zod';
 import type { ConnectorCatalogResourcePage } from '@dorkos/shared/connector-resource-schemas';
 
-import { defineCapability, type CapabilityDomain } from '../core/capabilities/index.js';
+import {
+  defineCapability,
+  type CapabilityDomain,
+} from '../core/capabilities/capability-definition.js';
 import type { CapabilityDeps } from '../core/capabilities/index.js';
 import { CapabilityToolError } from '../core/capabilities/mcp-envelope.js';
+import { SERVICE_CATALOG_TOOL_NAME } from '@dorkos/shared/connections-lease';
 import { agentAppSetupNote, appReachProblem } from './app-connection-way.js';
 import type { RelayAdapterCatalog } from './routing.js';
 import {
@@ -24,15 +28,6 @@ import {
   recommendService,
 } from './recommend/connector-recommend.js';
 import type { ConnectorRegistry } from './registry.js';
-
-/**
- * The `dorkos` server tool that lists the services an agent can ask for.
- *
- * Request guidance and request refusals name it so an agent looks a service id
- * up instead of guessing one (DOR-2231). It is only callable where the `dorkos`
- * server itself was attached to the turn, so guidance names it only then.
- */
-export const SERVICE_CATALOG_TOOL_NAME = 'connector_list_toolkits';
 
 /** The nonprivate connector discovery services available to capability callers. */
 export interface ConnectorCapabilityDeps {

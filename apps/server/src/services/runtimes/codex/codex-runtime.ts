@@ -144,7 +144,7 @@ import type { ConnectorRuntimeMcpInjection, ConnectorRuntimeTools } from '../con
 import type {
   OpenConnectorTurnResult,
   RevokeConnectorTurnReason,
-} from '../../connectors/runtime-principal-port.js';
+} from '../../core/connections-lease/index.js';
 import type { ConnectorTurnLeaseSupervisorHandle } from '../connectors/connector-turn-lease-supervisor.js';
 import { openConnectorTurn } from '../connectors/open-connector-turn.js';
 

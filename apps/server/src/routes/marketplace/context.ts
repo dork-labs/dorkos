@@ -34,10 +34,9 @@ import { problem } from '@dorkos/http-kit';
 import { gateResponse } from '../capability-refusals.js';
 import { isAtThisComputer, personSessionRequired } from '../../services/core/auth/gate-policy.js';
 import { notePersonSessionMissing } from '../../lib/person-without-session.js';
-import { presentsAgentIdentity } from '../../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../../lib/http/agent-identity-header.js';
 import type { ApiEnv } from '../../http/api-chain.js';
 import { honoRequestFacts } from '../../http/request-facts.js';
-import { readQuery } from '../../http/request-query.js';
 import {
   describeMarketplaceSourceRefusal,
   marketplaceSourceNeedsApp,
@@ -203,25 +202,6 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
     updateFlow,
     listAgentScopes,
     onPluginsChanged,
-  };
-
-  /**
-   * Read `?projectPath` as at most one string. A repeated key reads as an
-   * array (`readQuery`), which used to be dropped silently and answer for every
-   * scope; that is a 400 now.
-   *
-   * @returns `{ refused }` carrying the sent 400, or `{ projectPath }`.
-   */
-  const readProjectPathQuery = (
-    c: MarketplaceContext
-  ): { refused: Response } | { refused?: undefined; projectPath?: string } => {
-    const value = readQuery(c).projectPath;
-    if (value === undefined || typeof value === 'string') {
-      return value ? { projectPath: value } : {};
-    }
-    return {
-      refused: problem(c, 'invalid_request', { detail: 'Send `projectPath` only once.' }),
-    };
   };
 
   /**
@@ -430,7 +410,6 @@ export function createRouteContext(deps: MarketplaceRouteDeps) {
     gateResponse,
     confineProjectPath,
     updateDeps,
-    readProjectPathQuery,
     batchNeedsApproval,
     refuseUntrustedSourceWrite,
     askAboutAgentInstall,

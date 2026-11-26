@@ -9,7 +9,7 @@ import {
 import { endAgentAccessLevels, replaceNamedAgentGrants } from './execution/access-levels.js';
 import type { ConnectorAuthorityCleanupPort } from './authority-cleanup-port.js';
 import type { ConnectorManagementActionApplier } from './management-review-service.js';
-import type { ConnectorOwnerAuthority } from './principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../core/connections-lease/index.js';
 import type { ConnectorRegistry } from './registry.js';
 import type { ConnectorLifecycleService } from './resources/lifecycle-service.js';
 import type { ManagedAuthoritySyncService } from './resources/managed-authority-sync-service.js';

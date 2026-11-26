@@ -32,7 +32,10 @@ import {
   type MemoryProvenance,
 } from '@dorkos/shared/memory-provider';
 import { fenceUntrustedBlock } from '../core/untrusted-text/untrusted-fence.js';
-import { defineCapability, type CapabilityDeps } from '../core/capabilities/index.js';
+import {
+  defineCapability,
+  type CapabilityDeps,
+} from '../core/capabilities/capability-definition.js';
 import type { CapabilityDomain } from '../core/capabilities/index.js';
 import type { CapabilityHandlerContext } from '../core/capabilities/registry.js';
 import { getMemoryProvider } from './index.js';

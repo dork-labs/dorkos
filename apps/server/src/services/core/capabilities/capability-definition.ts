@@ -464,3 +464,25 @@ export interface CapabilityDomain {
    */
   assertDeps?(deps: CapabilityDeps): void;
 }
+
+/**
+ * A capability handler outcome that must surface to the MCP client as an
+ * `isError` result. Carries the plain payload the handler produced (already the
+ * structured `{ error, code, ... }` shape) so the transport adapter re-wraps it
+ * verbatim.
+ *
+ * A capability's `invoke` throws this (via {@link unwrapMcpEnvelope}) instead of
+ * returning it, so the registry's plain-data contract holds while the exact
+ * error payload and the `isError` flag are preserved for the wire.
+ */
+export class CapabilityToolError extends Error {
+  /**
+   * Wrap an error payload a capability handler returned.
+   *
+   * @param payload - The plain error payload the handler produced.
+   */
+  constructor(public readonly payload: unknown) {
+    super('Capability invocation returned an error result.');
+    this.name = 'CapabilityToolError';
+  }
+}

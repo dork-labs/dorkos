@@ -17,6 +17,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { REMOTE_EDGE_PROOF_OVERLAP_SECONDS } from '@dork-labs/cloud-api';
+import { upgradeGuards } from '../../../../startup/upgrade-guards.js';
 
 const role = vi.hoisted(() => ({ value: 'hub' as 'computer' | 'hub' }));
 vi.mock('../../../../lib/server-role.js', () => ({ currentServerRole: () => role.value }));
@@ -127,7 +128,8 @@ beforeEach(async () => {
         }),
       },
     ],
-    new MainRequestAdmission()
+    new MainRequestAdmission(),
+    upgradeGuards
   );
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');

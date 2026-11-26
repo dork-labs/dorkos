@@ -40,7 +40,8 @@ vi.mock('../../../core/auth/session-gate.js', async (importOriginal) => ({
   decideSessionGate: vi.fn(async () => ({ allowed: true })),
 }));
 
-import { createRequirePerson } from '../../inbox/extension-inbox-context.js';
+import { createRequirePerson, setExtensionPersonBar } from '../../inbox/extension-inbox-context.js';
+import { assessPerson } from '../../../../routes/extensions-person-bar.js';
 import { createIsolatedHandler } from '../isolated-router.js';
 import { bridgeExpressRouter } from '../../http/express-bridge.js';
 import type { ExtensionHttpHandler } from '../../http/extension-http.js';
@@ -50,6 +51,9 @@ import { PERSON_VERDICT_HEADER } from '../ipc-protocol.js';
 import type { IsolatedExit } from '../isolated-host.js';
 import { ROUTER_BUNDLE_SOURCE } from './fixtures/router-bundle.js';
 import { cleanup, createHarness, makeHost, startOk, type Harness } from './isolation-harness.js';
+
+// The person bar every extension route runs, wired as boot wires it.
+setExtensionPersonBar(assessPerson);
 
 const NAME = 'Router Test';
 const TRUSTED_ORIGIN = 'http://localhost:7777';

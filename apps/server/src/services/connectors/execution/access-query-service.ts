@@ -34,11 +34,11 @@ import {
   registryWayHealth,
   type ConnectionWayHealthPort,
 } from '../readiness/connection-readiness.js';
-import {
-  isServerPrincipal,
-  type ConnectorOwnerAuthority,
-  type ServerPrincipalProof,
-} from '../principal/server-principal.js';
+import { isServerPrincipal } from '../principal/server-principal.js';
+import type {
+  ConnectorOwnerAuthority,
+  ServerPrincipalProof,
+} from '../../core/connections-lease/index.js';
 import type { ConnectorRegistry } from '../registry.js';
 import type { ConnectorAgentOwnershipPort } from './authorization-service.js';
 import {

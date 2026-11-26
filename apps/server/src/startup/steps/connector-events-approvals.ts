@@ -41,6 +41,7 @@ import {
 } from '../../services/marketplace-mcp/confirmation-provider.js';
 import { DocChannelMetrics } from '../../services/observability/doc-channel-metrics.js';
 import { createDocChannelHttpComposition } from '../../services/canvas/doc-channel/http-composition.js';
+import { resolveCaller } from '../../routes/room-caller.js';
 import { DocChannelLiveBuffer } from '../../services/canvas/doc-channel/streams/live-buffer.js';
 import { subscribeCommittedDocEvents } from '../../services/canvas/doc-channel/committed-events.js';
 import { setDocScopeNotificationsFactory } from '../../services/canvas/doc-channel/streams/registry.js';
@@ -211,6 +212,7 @@ export async function wireConnectorEventsAndApprovals(
       docChannelRuntimePrincipals.current?.isPrincipalCurrent(proof) ?? false,
     revalidateRuntime: (proof) =>
       docChannelRuntimePrincipals.current?.revalidatePrincipal(proof) ?? Promise.resolve(false),
+    resolveRoomCaller: resolveCaller,
   });
   const docStreamAuthority = {
     resolveScope: (scope: string) => canvasDocuments.lifecycle.resolveScope(scope),

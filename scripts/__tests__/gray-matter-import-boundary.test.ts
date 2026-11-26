@@ -52,7 +52,7 @@ describe('gray-matter import boundary (DOR-2308, DOR-2311)', () => {
         '*.mts',
         '*.cts',
       ],
-      { encoding: 'utf8' }
+      { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
     )
       .trim()
       .split('\n')

@@ -25,6 +25,7 @@ const repoRoot = path.resolve(import.meta.dirname, '..', '..', '..', '..');
 const trackedSkillFiles = execFileSync('git', ['ls-files', '--', '*SKILL.md', '**/SKILL.md'], {
   cwd: repoRoot,
   encoding: 'utf8',
+  maxBuffer: 64 * 1024 * 1024,
 })
   .split('\n')
   .filter((line) => line.length > 0 && !line.includes('/fixtures/'));
@@ -52,6 +53,7 @@ describe('every markdown file in the repo reads within the frontmatter limits (D
   const trackedMarkdown = execFileSync('git', ['ls-files', '--', '*.md'], {
     cwd: repoRoot,
     encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
   })
     .split('\n')
     .filter((line) => line.length > 0);

@@ -5,7 +5,7 @@ import { getRequestListener } from '@hono/node-server';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import bodyParser from 'body-parser';
 import { Hono } from 'hono';
-import type { ConnectorRuntimePrincipalPort } from '../../connectors/runtime-principal-port.js';
+import type { ConnectorRuntimePrincipalPort } from '../../core/connections-lease/index.js';
 import { createConnectorRuntimeAuth, type ConnectorRuntimeEnv } from './auth.js';
 import { buildConnectorRuntimeRateLimiter } from './rate-limit.js';
 import {

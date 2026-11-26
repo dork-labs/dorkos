@@ -8,15 +8,19 @@ import {
   ConnectorExecutionTargetSchema,
 } from '@dorkos/shared/connector-schemas';
 import {
-  defineCapability,
-  type CapabilityDeps,
-  type CapabilityDomain,
   type CapabilityHandlerContext,
   type CapabilityInvocationContext,
   type CapabilityPreflightResult,
 } from '../../core/capabilities/index.js';
+import {
+  defineCapability,
+  type CapabilityDeps,
+  type CapabilityDomain,
+} from '../../core/capabilities/capability-definition.js';
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
-import { isServerPrincipal, type ServerPrincipalProof } from '../principal/server-principal.js';
+import { isServerPrincipal } from '../principal/server-principal.js';
+import type { ServerPrincipalProof } from '../../core/connections-lease/index.js';
+import { SERVICE_CATALOG_TOOL_NAME } from '@dorkos/shared/connections-lease';
 import {
   ConnectorAccessQueryError,
   type ConnectorAccessQueryService,
@@ -32,7 +36,6 @@ import {
   CONNECTOR_REQUEST_LIVE_HOLD_MS,
   type ConnectorRuntimeExecutionCapabilityId,
 } from '../runtime-capability-scope.js';
-import { SERVICE_CATALOG_TOOL_NAME } from '../connector-capabilities.js';
 import { outsideLevelsListNote } from '../access/level-gap-lines.js';
 import {
   ConnectorAgentRequestError,

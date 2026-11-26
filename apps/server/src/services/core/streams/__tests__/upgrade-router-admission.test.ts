@@ -6,6 +6,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { MainRequestAdmission } from '../../lifecycle/main-request-admission.js';
 import { attachUpgradeRouter, type UpgradeDecision, type UpgradeRoute } from '../upgrade-router.js';
 import { authorizeStreamUpgrade } from '../stream-upgrade-auth.js';
+import { upgradeGuards } from '../../../../startup/upgrade-guards.js';
 
 vi.mock('../../tunnel-manager.js', () => ({
   tunnelManager: { status: { enabled: false, connected: false, url: null } },
@@ -38,7 +39,7 @@ const credential = vi.mocked(authorizeStreamUpgrade);
 
 async function listen(route: UpgradeRoute) {
   server = createServer((_req, res) => res.end('running'));
-  attachUpgradeRouter(server, [route], admission);
+  attachUpgradeRouter(server, [route], admission, upgradeGuards);
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   port = (server.address() as AddressInfo).port;

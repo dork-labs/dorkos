@@ -9,7 +9,7 @@
  *
  * @module services/core/capabilities/mark-caller-turn
  */
-import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
+import type { ServerPrincipalProof } from '../connections-lease/index.js';
 import { markRunningTurnOutsider } from '../turn-power/turn-levels.js';
 import type { ReadMarkSource } from '../turn-power/live-outsider-turns.js';
 import { principalTurnOf } from './marked-turn-holds.js';

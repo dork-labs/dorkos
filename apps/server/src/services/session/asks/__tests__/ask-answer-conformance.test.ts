@@ -52,7 +52,7 @@ import {
   requireOperatorCookieUnderLogin,
 } from '../../../../lib/caller-authority.js';
 import { readCallerPrincipal } from '../../../../lib/caller-principal.js';
-import { AGENT_IDENTITY_HEADER } from '../../../../middleware/agent-identity.js';
+import { AGENT_IDENTITY_HEADER } from '../../../../lib/http/agent-identity-header.js';
 import type { RequestUser } from '../../../core/auth/session-gate.js';
 import { askEntitlement } from '../ask-entitlement.js';
 

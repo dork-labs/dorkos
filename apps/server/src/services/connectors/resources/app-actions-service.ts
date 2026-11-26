@@ -32,7 +32,7 @@ import {
 } from '@dorkos/shared/connector-resource-schemas';
 import type { ConnectorProviderInstanceId } from '@dorkos/shared/connector-schemas';
 import { logger } from '../../../lib/logger.js';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 import type { ConnectorRegistry } from '../registry.js';
 
 /** How long a complete list counts as fresh. */

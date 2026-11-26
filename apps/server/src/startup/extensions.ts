@@ -8,6 +8,8 @@
  */
 import { logger } from '../lib/logger.js';
 import { broadcastExtensionReloaded } from '../routes/extensions.js';
+import { assessPerson } from '../routes/extensions-person-bar.js';
+import { setExtensionPersonBar } from '../services/extensions/inbox/extension-inbox-context.js';
 import { startExtensionApprovalQueue } from '../services/extensions/extension-approval-queue.js';
 import { ExtensionManager } from '../services/extensions/extension-manager.js';
 import { calledAppAccessLookupIn } from '../services/extensions/isolation/called-apps.js';
@@ -35,6 +37,10 @@ export async function startExtensions(
   agentHomes: () => readonly string[] = () => []
 ): Promise<ExtensionManager | undefined> {
   try {
+    // The bar an extension's own routes run is the extensions routes' bar, so
+    // both refuse the same callers in the same words (DOR-4922: injected, since
+    // a service never imports a route).
+    setExtensionPersonBar(assessPerson);
     const manager = new ExtensionManager(dorkHome, coreExtensions);
     // An approval covers what each app it calls shared then; one that shares
     // more now asks again (DOR-3293). Read live from this manager's records.

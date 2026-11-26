@@ -69,7 +69,7 @@ import {
 import { toolSurfaceDigest } from '../tool-surface.js';
 import { noopLogger } from '@dorkos/shared/logger';
 import type { CapabilityRegistry } from '../../../../core/capabilities/index.js';
-import type { ServerPrincipalProof } from '../../../../connectors/principal/server-principal.js';
+import type { ServerPrincipalProof } from '../../../../core/connections-lease/index.js';
 import {
   clearTestHomes,
   registerEveryFolderAsHome,

@@ -12,12 +12,12 @@ import { noopLogger } from '@dorkos/shared/logger';
 import { uiDomain } from '../../../session/browser-seat/ui-capabilities.js';
 import { ConnectorRuntimePrincipalService } from '../../../connectors/principal/runtime-principal-service.js';
 import { createServerPrincipal } from '../../../connectors/principal/server-principal.js';
-import { createDocChannelHttpComposition } from '../http-composition.js';
+import { composeDocChannelHttp } from './doc-channel-http.js';
 
 let db: Db;
 let rooms: RoomSubsystem;
 let approvals: ApprovalService;
-let http: ReturnType<typeof createDocChannelHttpComposition>;
+let http: ReturnType<typeof composeDocChannelHttp>;
 let documentId: string;
 const actor = () => ({
   surface: 'http' as const,
@@ -31,7 +31,7 @@ beforeEach(() => {
   runMigrations(db);
   rooms = createRoomSubsystem({ db });
   approvals = new ApprovalService(db);
-  http = createDocChannelHttpComposition({
+  http = composeDocChannelHttp({
     db,
     documents: rooms.canvasDocuments,
     rooms: rooms.service,
@@ -135,7 +135,7 @@ describe('production explicit agent target binding', () => {
     );
     const resolved = await principals.resolve({ bearer: opened.bearer, expectedRuntime: 'codex' });
     if (resolved.status !== 'resolved') throw new Error('Expected authenticated turn');
-    const composition = createDocChannelHttpComposition({
+    const composition = composeDocChannelHttp({
       db,
       documents: rooms.canvasDocuments,
       rooms: rooms.service,
