@@ -11,6 +11,7 @@
  *
  * @module features/composer/ui/field/ComposerFieldProps
  */
+import type { Ref } from 'react';
 import type { EditingSurface } from '../editing-surface';
 import type { MentionSubject } from './use-mention-nodes';
 
@@ -67,6 +68,8 @@ export interface ComposerFieldProps {
    * surfaces with no roster — chat, the dashboard, onboarding.
    */
   mentionSubjects?: readonly MentionSubject[];
+  /** The handle the host drives the field through. */
+  ref?: Ref<ComposerFieldHandle>;
 }
 
 /**

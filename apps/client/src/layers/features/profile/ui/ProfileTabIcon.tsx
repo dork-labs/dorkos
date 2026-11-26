@@ -8,24 +8,22 @@
  *
  * @module features/profile/ui/ProfileTabIcon
  */
-import { forwardRef } from 'react';
-import { User, type LucideProps } from 'lucide-react';
+import { User } from 'lucide-react';
 import { AgentAvatar, resolveAgentVisual, useCurrentAgent } from '@/layers/entities/agent';
 import { cn } from '@/layers/shared/lib';
 import { useDockedAgentPath } from '../model/use-docked-agent';
 
-/**
- * Drop-in for a lucide icon in the right panel's tab strip. A `forwardRef`
- * because a panel contribution's `icon` is typed as one; the ref lands on the
- * fallback glyph only.
- */
-export const ProfileTabIcon = forwardRef<SVGSVGElement, LucideProps>(function ProfileTabIcon(
-  { className },
-  ref
-) {
+/** Props for {@link ProfileTabIcon}: only the sizing a tab strip hands an icon. */
+interface ProfileTabIconProps {
+  /** Sizing and colour from the tab strip. */
+  className?: string;
+}
+
+/** Drop-in for a lucide icon in the right panel's tab strip. */
+export function ProfileTabIcon({ className }: ProfileTabIconProps) {
   const agentPath = useDockedAgentPath();
   const { data: agent } = useCurrentAgent(agentPath);
-  if (!agentPath || !agent) return <User ref={ref} className={className} />;
+  if (!agentPath || !agent) return <User className={className} />;
   const visual = resolveAgentVisual(agent);
   // 16px, a touch larger than the 14px glyphs beside it, as faces need.
   return (
@@ -37,8 +35,8 @@ export const ProfileTabIcon = forwardRef<SVGSVGElement, LucideProps>(function Pr
         color={visual.color}
         emoji={visual.emoji}
         size="xs"
-        className="size-4 text-[10px]"
+        className="text-3xs size-4"
       />
     </span>
   );
-});
+}

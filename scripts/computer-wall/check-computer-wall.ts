@@ -5,6 +5,15 @@
  * go, and the numbers in `apps/server/eslint-rules/computer-wall.baseline.json`
  * may only fall.
  *
+ * --help
+ * Purpose: hold the computer wall's baseline to its rules: what computer-side
+ *          files import from the space side may only go, and entries only fall.
+ * Runs in: pre-push (`computer-wall`); the required `typecheck` job.
+ * To fix:  remove the import it names. After removing some, run
+ *          `pnpm check:computer-wall -- --update`. Never raise or add an entry.
+ * Usage:   pnpm check:computer-wall [-- --base <ref> | --update | --init | --root <dir>]
+ * --help end
+ *
  * WHY THIS EXISTS. The ESLint rule (`apps/server/eslint-rules/computer-wall.js`)
  * refuses, file by file and column by column, an import past its entry and a
  * drop its entry has not locked in. It cannot see a baseline raised by hand
@@ -59,6 +68,7 @@ import {
   sideOf,
   type Column,
 } from '../../apps/server/eslint-rules/computer-wall.js';
+import { exitOnHelp } from '../lib/gate-help.mjs';
 
 /** The server package, relative to the root. */
 const SERVER = 'apps/server';
@@ -488,6 +498,7 @@ function main(argv: string[]): number {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  exitOnHelp(import.meta.url);
   try {
     process.exit(main(process.argv.slice(2)));
   } catch (err: unknown) {

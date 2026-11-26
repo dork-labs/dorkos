@@ -13,26 +13,26 @@
  *   `TestModeRuntime`, refusing any turn not paid by (fake) DorkOS credits, so
  *   it can never reach a real model service.
  *
- * Reached only through the gated dynamic `import()` in `index.ts`, so none of
- * it is in the production module graph.
+ * Reached only through the gated dynamic `import()` in `startup/runtimes.ts`,
+ * so none of it is in the production module graph.
  *
- * @module services/runtimes/test-mode/compose-test-cloud
+ * @module startup/test-composition/compose-test-cloud
  */
-import type { RuntimeRegistry } from '../../core/runtime-registry.js';
-import { initCloudLinkManager } from '../../core/auth/cloud-link.js';
-import { setCloudV1Fetch } from '../../core/cloud/v1-client.js';
+import type { RuntimeRegistry } from '../../services/core/runtime-registry.js';
+import { initCloudLinkManager } from '../../services/core/auth/cloud-link.js';
+import { setCloudV1Fetch } from '../../services/core/cloud/v1-client.js';
 import type { Hono } from 'hono';
-import type { ApiEnv } from '../../../http/api-chain.js';
+import type { ApiEnv } from '../../http/api-chain.js';
 import { localDialHost } from '@dorkos/shared/local-dial-host';
-import { logger } from '../../../lib/logger.js';
-import { env } from '../../../env.js';
-import { DoeRuntime } from '../doe/index.js';
-import type { DoeRuntimeOptions } from '../doe/doe-runtime.js';
-import { resolveDoeInference } from '../doe/credentials.js';
-import { CREDITS_PROVIDER_ID } from '../shared/credits/environment.js';
+import { logger } from '../../lib/logger.js';
+import { env } from '../../env.js';
+import { DoeRuntime } from '../../services/runtimes/doe/index.js';
+import type { DoeRuntimeOptions } from '../../services/runtimes/doe/doe-runtime.js';
+import { resolveDoeInference } from '../../services/runtimes/doe/credentials.js';
+import { CREDITS_PROVIDER_ID } from '../../services/runtimes/shared/credits/environment.js';
 import { createFakeCloudApprovalRoutes, createFakeCloudLink } from './fake-cloud-link.js';
-import { createFakeCloudV1Fetch } from './fake-cloud-v1.js';
-import { createFakeInferenceRoutes } from './fake-inference.js';
+import { createFakeCloudV1Fetch } from '../../services/runtimes/test-mode/fake-cloud-v1.js';
+import { createFakeInferenceRoutes } from '../../services/runtimes/test-mode/fake-inference.js';
 
 /** Why a test-mode DorkOS turn on anything but credits is refused. */
 export const TEST_MODE_DOE_REFUSAL =

@@ -3,6 +3,17 @@
  * over the limit may grow, nothing new may cross it, and the baseline only
  * goes down.
  *
+ * --help
+ * Purpose: hold every source and test file to 500 lines with a ratchet: nothing
+ *          over may grow, nothing new may cross, the baseline only goes down.
+ * Runs in: pre-push (`max-lines`); the required `typecheck` job.
+ * To fix:  move code out of a file that grew or is new (split a test by subject).
+ *          After a shrink, split, delete or `git mv`, run
+ *          `pnpm check:max-lines -- --update`. Never raise an entry. A conflict in
+ *          the baseline: rebase, take either side, run `--update` again.
+ * Usage:   pnpm check:max-lines [-- --base <ref> | --update | --init | --root <dir>]
+ * --help end
+ *
  * WHY THIS EXISTS. `max-lines` (500, blank lines and comments skipped) has been
  * `warn` in `packages/eslint-config/base.js` since the rule was written, and a
  * warning fails nothing: every package's lint script is a bare `eslint .`. So
@@ -74,6 +85,7 @@ import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ESLint } from 'eslint';
+import { exitOnHelp } from './lib/gate-help.mjs';
 
 /** The limit the prefilter assumes. A file with fewer raw lines cannot be over it. */
 export const LIMIT = 500;
@@ -613,6 +625,7 @@ async function main(argv: string[]): Promise<number> {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  exitOnHelp(import.meta.url);
   main(process.argv.slice(2)).then(
     (code) => process.exit(code),
     (err: unknown) => {

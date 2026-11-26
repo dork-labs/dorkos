@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # hold-reason-check.sh — a `hold` label must come with a reason.
 #
+# --help
+# Purpose: a `hold` label must come with a `hold: <reason>` comment. Advisory.
+# Runs in: the `hold-reason` workflow (never required).
+# To fix:  comment `hold: <why, and who lifts it>` on the PR, or take `hold` off.
+#          `scripts/open-pr.sh --hold "<reason>"` posts it for you.
+# Usage:   scripts/hold-reason-check.sh <pr-number>
+# --help end
+#
 #   scripts/hold-reason-check.sh <pr-number>
 #
 # Passes when the PR has no `hold` label, or when one of its comments starts
@@ -25,6 +33,12 @@
 #
 # Exit codes: 0 no hold, or a hold with a reason; 1 a hold with no reason;
 # 2 usage, or GitHub could not be read.
+
+# --help (DOR-4950). A gate checked out alone, as the PR-side gates are, runs without it.
+gate_help="$(dirname "$0")/lib/gate-help.sh"
+# shellcheck source=lib/gate-help.sh
+[ ! -r "$gate_help" ] || . "$gate_help"
+
 set -euo pipefail
 
 GH=${GH:-gh}

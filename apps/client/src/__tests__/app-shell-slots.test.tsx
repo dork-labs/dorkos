@@ -9,7 +9,6 @@ import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { BANNER_PRIORITY, type BannerDescriptor } from '@/layers/widgets/app-banner';
-import { InboxBell } from '@/layers/widgets/inbox-bell';
 import { clearInboxRequest, requestInbox, useInboxRequest } from '@/layers/entities/notifications';
 
 // ── Route-aware mock: control the pathname returned by useRouterState ──
@@ -148,14 +147,6 @@ vi.mock('@/layers/widgets/one-bar', async () => {
   return {
     resolveRouteHeader,
     OneBarProvider: ({ children }: React.PropsWithChildren) => <>{children}</>,
-    // The real bell, in the shell's own cluster — the one thing this suite needs from the bar
-    // module beyond the resolver, because the approvals marker rides it and must be reachable
-    // from every route.
-    BarFixedCluster: () => (
-      <div data-testid="bar-fixed-cluster">
-        <InboxBell />
-      </div>
-    ),
   };
 });
 

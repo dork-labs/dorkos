@@ -50,6 +50,7 @@ Never review from source alone. Review the rendered page, measured. `/ui-audit:m
 - **2.2** **Floors (measured):**
   - Desktop: **12px** for anything a person reads. `text-2xs` (11px) is for incidental metadata only, and 10px is the absolute floor (counts).
   - Phone: **13px** to read and **12px** absolute. Body text is 17px.
+  - A literal size (`text-[11px]`) doesn't grow on the phone, so one under 12px fails `pnpm check:design-tokens` (`text-under-floor`). Use a token.
 - **2.3** **Line height and tracking (measured).** Use §11.1's values.
   - Multi-line text has a line height of at least **1.3**, and reading text 1.5 or more.
   - Single-line labels sit at 1.15 or more, so nothing clips.
@@ -65,7 +66,7 @@ Never review from source alone. Review the rendered page, measured. `/ui-audit:m
 
   A control icon under 20px on the phone is a **Blocker**. That's the "tiny icons in the mobile header" problem.
 
-- **3.2** Size icons with a token (`size-(--size-icon-*)`), never a raw `size-3` or `h-4 w-4`. Raw sizes don't grow on the phone, and there are about 660 of them today.
+- **3.2** Size icons with a token (`size-(--size-icon-*)`), never a raw `size-3` or `h-4 w-4`. Raw sizes don't grow on the phone. `pnpm check:design-tokens` counts them per file (`raw-icon-size`, 876 when it started) and the count may only fall.
 - **3.3** The icon grows _with_ its target (`TOUCH_TARGET_RESPONSIVE_SIZE`, 44px on the phone). The glyph sits centred in the box; don't shrink the box to fit the glyph.
 - **3.4** Stroke and weight match the neighbouring icons. Icon-only buttons have an `aria-label`.
 
@@ -134,7 +135,7 @@ Never review from source alone. Review the rendered page, measured. `/ui-audit:m
 
 **The rule:** phone values only ever go up from desktop, whether size, line height in px, spacing or target. Phone means a viewport under 768px (`md`), the same gate `--_st` and `TOUCH_TARGET_*` already use.
 
-**The mechanism today:** `--mobile-scale: 1.25` multiplies every text token, icon token and button height (`apps/client/src/index.css`). That's sound, but it gives fractional sizes (16.25, 17.5), and it doesn't reach two pinned line heights or the roughly 660 raw icon sizes. These tokens replace the single multiplier with an explicit phone value per token, snapped to the iOS default ramp. A follow-up PR makes them real, with a lint that fails below the floors; until it lands, the **floors** in `floors.json` are what review enforces and these tables are the target.
+**The mechanism today:** `--mobile-scale: 1.25` multiplies every text token, icon token and button height (`apps/client/src/index.css`). That's sound, but it gives fractional sizes (16.25, 17.5), and it doesn't reach two pinned line heights or the raw icon sizes (§3.2). These tokens replace the single multiplier with an explicit phone value per token, snapped to the iOS default ramp. A follow-up PR makes them real. Two floors are already checks in `pnpm check:design-tokens`: literal text under 12px fails (§2.2), and raw icon sizes may only fall (§3.2). For the rest, the **floors** in `floors.json` are what review enforces and these tables are the target.
 
 ### 11.1 Type: size / line height / tracking
 

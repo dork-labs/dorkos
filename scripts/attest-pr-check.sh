@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 # attest-pr-check.sh — did this check already pass on the queue entry's PR head?
 #
+# --help
+# Purpose: in the merge queue, say whether a check already passed on the entry's
+#          PR head, so its heavy job can be skipped. Never fails.
+# Runs in: the merge-group `attest` steps of `lint`, `credential-free-build`,
+#          `openapi-fresh`, `fixtures` and `codex-sandbox-macos`.
+# To fix:  nothing to fix: `attested=false` runs the real check. The reason is on
+#          stderr.
+# Usage:   scripts/attest-pr-check.sh <context> <merge-group-head-ref>
+# --help end
+#
 #   scripts/attest-pr-check.sh <context> <merge-group-head-ref>
 #
 # DOR-5130 step 1 (ci-steward's docs/plan-ci-efficiency.md, agreed with an
@@ -31,6 +41,12 @@
 # Reads only, through `gh api` (GH overrides the binary). REPO defaults to
 # $GITHUB_REPOSITORY, then dork-labs/dorkos. Needs scripts/queue-repeat-guard.sh
 # beside it. Fixtures: scripts/test-attest-pr-check.sh.
+
+# --help (DOR-4950). A gate checked out alone, as the PR-side gates are, runs without it.
+gate_help="$(dirname "$0")/lib/gate-help.sh"
+# shellcheck source=lib/gate-help.sh
+[ ! -r "$gate_help" ] || . "$gate_help"
+
 set -uo pipefail
 
 GH=${GH:-gh}

@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # not-held-check.sh — fail while a pull request carries the `hold` label.
 #
+# --help
+# Purpose: fail while a pull request carries the `hold` label.
+# Runs in: the required `not-held` check.
+# To fix:  whoever set `hold` takes it off when the reason is gone; the check
+#          re-runs and the PR goes on.
+# Usage:   scripts/not-held-check.sh <pr-number>
+# --help end
+#
 #   scripts/not-held-check.sh <pr-number>
 #
 # The decision behind .github/workflows/not-held.yml (DOR-5103, under DOR-5098:
@@ -20,6 +28,12 @@
 #
 # Exit codes: 0 no hold; 1 held; 2 usage, or GitHub could not be read (a gate
 # that cannot read the labels fails closed).
+
+# --help (DOR-4950). A gate checked out alone, as the PR-side gates are, runs without it.
+gate_help="$(dirname "$0")/lib/gate-help.sh"
+# shellcheck source=lib/gate-help.sh
+[ ! -r "$gate_help" ] || . "$gate_help"
+
 set -euo pipefail
 
 GH=${GH:-gh}

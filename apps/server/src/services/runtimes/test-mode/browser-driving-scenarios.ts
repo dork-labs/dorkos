@@ -25,7 +25,6 @@ import {
   readConsole,
   readNetwork,
 } from '../../session/browser-seat/devtools-reads.js';
-import { CapabilityImageResult } from '../../core/capabilities/index.js';
 import type { StreamEvent } from '@dorkos/shared/types';
 import {
   createBrowserSeatHandlers,
@@ -36,6 +35,7 @@ import {
 } from '../../session/index.js';
 import type { RawSessionEvent } from '../../session/session-state-projector.js';
 import type { ScenarioFn } from './scenario-store.js';
+import { worldOf } from './scenario-world.js';
 
 /** The button this scenario clicks, and the text the fixture page shows after. */
 export const DRIVING_FIXTURE_BUTTON = 'Mark as done';
@@ -173,13 +173,14 @@ export function browserDrivingScenarios(): Record<string, ScenarioFn> {
       ctx.sessionId,
       devtoolsCaptureStore
     );
+    const image = worldOf(ctx).imageOf(screenshot);
     yield {
       type: 'text_delta',
       data: {
         text: JSON.stringify({
           bridgeEvidence: true,
-          screenshot: screenshot instanceof CapabilityImageResult ? screenshot.payload : screenshot,
-          image: screenshot instanceof CapabilityImageResult ? screenshot.image.mimeType : null,
+          screenshot: image ? image.payload : screenshot,
+          image: image ? image.image.mimeType : null,
           action: action.payload,
           console,
           network,
@@ -204,14 +205,14 @@ export function browserDrivingScenarios(): Record<string, ScenarioFn> {
         takeScreenshot(ctx.sessionId, devtoolsCaptureStore),
         handlers.readPage({}),
       ]);
+      const image = worldOf(ctx).imageOf(screenshot);
       yield {
         type: 'text_delta',
         data: {
           text: JSON.stringify({
             bridgeRekey: true,
-            screenshot:
-              screenshot instanceof CapabilityImageResult ? screenshot.payload : screenshot,
-            image: screenshot instanceof CapabilityImageResult ? screenshot.image.mimeType : null,
+            screenshot: image ? image.payload : screenshot,
+            image: image ? image.image.mimeType : null,
             action: action.payload,
           }),
         },

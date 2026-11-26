@@ -3,7 +3,7 @@
  * (DOR-2783): the reads and the inference token a linked computer needs to
  * run a chat on DorkOS credits, answered in-process.
  *
- * Like `fake-cloud-link.ts`, it fakes the network dependency and nothing
+ * Like `startup/test-composition/fake-cloud-link.ts`, it fakes the network dependency and nothing
  * else: every answer is parsed against the real `@dork-labs/cloud-api`
  * schemas before it is sent, so the app's own `/v1` client, mint, catalog and
  * readiness code run unchanged. The minted token's endpoints point at the

@@ -9,9 +9,9 @@ const mockEnv = vi.hoisted(() => ({
   DORKOS_HOST: 'localhost',
   DORKOS_PORT: 7242,
 }));
-vi.mock('../../../../env.js', () => ({ env: mockEnv }));
+vi.mock('../../../env.js', () => ({ env: mockEnv }));
 const doe = vi.hoisted(() => ({ constructed: 0 }));
-vi.mock('../../doe/index.js', () => ({
+vi.mock('../../../services/runtimes/doe/index.js', () => ({
   DoeRuntime: class {
     readonly type = 'doe';
     constructor() {
@@ -23,26 +23,26 @@ vi.mock('../../doe/index.js', () => ({
 const link = vi.hoisted(() => ({
   fetchImpl: undefined as undefined | ((input: string, init?: RequestInit) => Promise<Response>),
 }));
-vi.mock('../../../core/auth/cloud-link.js', () => ({
+vi.mock('../../../services/core/auth/cloud-link.js', () => ({
   initCloudLinkManager: (options: { fetchImpl: typeof link.fetchImpl }) => {
     link.fetchImpl = options.fetchImpl;
   },
 }));
 const v1 = vi.hoisted(() => ({ fetch: undefined as unknown }));
-vi.mock('../../../core/cloud/v1-client.js', () => ({
+vi.mock('../../../services/core/cloud/v1-client.js', () => ({
   setCloudV1Fetch: (fetch: unknown) => {
     v1.fetch = fetch;
   },
 }));
 
 // The `/api` chain reads login and the host settings from here; none are set.
-vi.mock('../../../core/config-manager.js', () => ({
+vi.mock('../../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn(), getDot: vi.fn() },
 }));
 import { composeTestModeCloud } from '../compose-test-cloud.js';
-import { addTestControlGroup, createTestControlRoutes } from '../../../../routes/test-control.js';
-import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
-import type { RuntimeRegistry } from '../../../core/runtime-registry.js';
+import { addTestControlGroup, createTestControlRoutes } from '../../../routes/test-control.js';
+import { honoGroupListener } from '../../../http/__tests__/hono-group-listener.js';
+import type { RuntimeRegistry } from '../../../services/core/runtime-registry.js';
 
 function registry() {
   const registered: unknown[] = [];

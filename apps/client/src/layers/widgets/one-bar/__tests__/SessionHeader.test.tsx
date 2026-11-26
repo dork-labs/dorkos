@@ -13,13 +13,6 @@ vi.mock('@/layers/entities/room', async (importOriginal) => ({
   useDirectChat: () => ({ data: directChat.current }),
 }));
 
-vi.mock('@/layers/widgets/inbox-bell', () => ({
-  InboxBell: () => <button aria-label="Inbox">Inbox</button>,
-}));
-vi.mock('@/layers/features/right-panel', () => ({
-  RightPanelToggle: () => <button aria-label="Toggle right panel">Panel</button>,
-}));
-
 // The account badge reads the session's account through real hooks and has its
 // own suite (`features/status/__tests__/AccountBadge.test.tsx`, gate included);
 // here it is a stub that says where the bar puts it and which session it names.

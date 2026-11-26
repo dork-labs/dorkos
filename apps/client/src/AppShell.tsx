@@ -19,7 +19,7 @@ import { useTodosPalette } from './app/use-todos-palette';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
 import { ServerUnreachableScreen } from './app/ServerUnreachableScreen';
-import { GlobalHeaderActions } from './app/GlobalHeaderActions';
+import { GlobalHeaderActions } from './app/header/GlobalHeaderActions';
 import { FIRST_RUN_SLOTS } from './app/first-run-slots';
 import { ServerErrorScreen } from './app/ServerErrorScreen';
 import { latestFailure, refetchUntilAnsweredThisLaunch } from './app/config-failure-memory';

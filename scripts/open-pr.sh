@@ -58,8 +58,14 @@
 #          the ruleset requires them, the PR opens without auto-merge, exactly
 #          as before, so this switches itself on when they become required.
 #      The strategy flag is left off: the merge queue owns it.
+#   6. The work graph (DOR-5264): scripts/open-pr-work-links.sh tells this
+#      computer's DorkOS that the chat running this shell opened the PR and
+#      works on the tickets its body names for sure. It names no chat (the
+#      server reads it off the chat's own token), and it never stops the open:
+#      with no DorkOS chat or server it says the link was not recorded.
 #   Then it prints the PR URL, the head SHA, the labels GitHub reports, the
-#   provenance line it appended, and whether auto-merge is on.
+#   provenance line it appended, whether auto-merge is on, and the `work-graph:`
+#   line.
 #
 # `--extra-label` adds any other label, but never `hold` or another hold label
 # (`do-not-merge`, `wip`, `blocked`), never a gate label someone else owns
@@ -73,7 +79,7 @@
 # Environment: GH (the gh binary, for fixtures), OPEN_PR_CAP (the cap script),
 # OPEN_PR_BASE (default origin/main), OPEN_PR_REMOTE (default origin),
 # OPEN_PR_TSX (the tsx binary that runs the provenance CLI, default the repo's
-# node_modules/.bin/tsx).
+# node_modules/.bin/tsx), and for step 6 the ones open-pr-work-links.sh names.
 #
 # Exit codes: 0 opened (or dry run); 1 refused by a rule or the cap; 2 usage;
 # 3 a gh call failed (the PR may exist: read the message).
@@ -371,6 +377,7 @@ if [ "$dry_run" = 1 ]; then
   [ "$hold_given" = 1 ] && echo "would run: $(printf '%q ' "$GH" pr comment "<new PR>" --body "hold: $hold_reason")"
   echo "auto-merge: $auto_why"
   [ "$auto_merge" = 1 ] && echo "would run: $(printf '%q ' "$GH" pr merge "<new PR>" --auto)"
+  "$DIR/open-pr-work-links.sh" --dry-run "$body" || echo "work-graph: the step failed"
   exit 0
 fi
 
@@ -407,3 +414,6 @@ if [ "$auto_merge" = 1 ]; then
     die 3 "opened $url, but could not turn on auto-merge. Ask a maintainer to turn it on; never merge it directly"
 fi
 echo "auto-merge: $auto_why"
+
+# --- 6. The work graph (DOR-5264). Never the open's exit code. -------------------
+"$DIR/open-pr-work-links.sh" "$url" "$body" || echo "work-graph: not recorded (the step failed)"

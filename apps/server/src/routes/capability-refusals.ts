@@ -153,6 +153,8 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
     code: 'outside_turn',
     detail: 'Wait until the agent’s turn ends, then try again.',
   },
+  // `work-graph.record-pr` (DOR-5264): only a chat's own live turn records.
+  NOT_A_CHAT_TURN: { code: 'forbidden', detail: 'Only a chat’s own turn can record this.' },
   DEV_LINK_PATH_NOT_ALLOWED: {
     code: 'outside_boundary',
     detail: 'That folder is outside the folders DorkOS may use.',

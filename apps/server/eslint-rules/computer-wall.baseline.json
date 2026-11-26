@@ -861,61 +861,6 @@
       "frontDoor": 0,
       "tables": 0
     },
-    "src/services/runtimes/test-mode/browser-driving-scenarios.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/test-mode/compose-test-cloud.ts": {
-      "space": 0,
-      "frontDoor": 2,
-      "tables": 0
-    },
-    "src/services/runtimes/test-mode/demo-scenarios.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/test-mode/demo-team-room-scenario.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/test-mode/demo-workspace-scenarios.ts": {
-      "space": 2,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/test-mode/doc-frame/doc-frame-sdk-probe.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/test-mode/fake-cloud-link.ts": {
-      "space": 0,
-      "frontDoor": 1,
-      "tables": 0
-    },
-    "src/services/runtimes/test-mode/local-browser-driving-scenario.ts": {
-      "space": 2,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/test-mode/room-reply-scenarios.ts": {
-      "space": 3,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/test-mode/scenarios/room-post-to-scenario.ts": {
-      "space": 2,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/test-mode/test-mode-runtime.ts": {
-      "space": 3,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/session/agent-compaction/compaction-capabilities.ts": {
       "space": 3,
       "frontDoor": 0,
