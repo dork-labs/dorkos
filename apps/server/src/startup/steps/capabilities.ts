@@ -76,6 +76,7 @@ import {
   projectComputerPlacementById,
 } from '../../routes/computer-placement.js';
 import { agentPersonaDeps } from './agent-persona-deps.js';
+import { savePersonFile } from '../../services/canvas/doc-channel/writes/person-file-save.js';
 
 /** What {@link composeCapabilities} reads from the startup steps before it. */
 export interface ComposeCapabilitiesInput {
@@ -209,6 +210,8 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
         service: docChannelHttp.grants,
         authorization: docChannelHttp.authorization,
       },
+      // The file browser's saves share the installation's one file gate (DOR-4978).
+      fileDeps: { save: (input, owner) => savePersonFile(docChannelHttp.fileWrites, input, owner) },
       // An agent's approved `change_permission` writes through the same owner
       // Settings does (spec `agent-permissions` D9).
       permissionService,

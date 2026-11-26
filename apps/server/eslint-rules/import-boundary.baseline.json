@@ -20,7 +20,7 @@
     "canvas -> core/agent-identity": 1,
     "canvas -> core/approvals": 15,
     "canvas -> core/auth": 1,
-    "canvas -> core/openapi": 3,
+    "canvas -> core/openapi": 2,
     "canvas -> core/protected-paths": 1,
     "canvas -> core/untrusted-text": 1,
     "canvas -> rooms": 4,

@@ -55,6 +55,7 @@ import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
 import { runsDomain } from '../../runs/run-capabilities.js';
 import { taskViewDomain } from '../../tasks/view/task-view-capabilities.js';
 import { runtimeReadsDomain } from '../runtime-doors/runtime-read-capabilities.js';
+import { filesDomain } from '../directory/file-capabilities.js';
 import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
 import { instructionsDomain } from '../../runtimes/context-preview/instructions-capability.js';
@@ -152,8 +153,9 @@ export function composeDorkOsCapabilityRegistry(
   domains.push(runtimeReadsDomain);
   // Unconditional too: the folder picker, the diff review and the workspace
   // reads read the filesystem and process-wide stores every server has, so
-  // their paths answer wherever the hand routes used to.
-  domains.push(directoryDomain, diffDomain, workspacesDomain);
+  // their paths answer wherever the hand routes used to. The file browser too
+  // (DOR-4978); its save says so itself until boot hands it the writer.
+  domains.push(directoryDomain, diffDomain, workspacesDomain, filesDomain);
   // The template list reads the data directory the template routes write.
   if (deps.templateDeps) domains.push(templatesDomain);
 
@@ -236,6 +238,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     directoryDomain,
     diffDomain,
     workspacesDomain,
+    filesDomain,
     templatesDomain,
   ];
   const deps: CapabilityDeps = {

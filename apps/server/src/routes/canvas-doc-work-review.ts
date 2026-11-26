@@ -15,7 +15,11 @@
  *
  * Wi-Fi keeps both writes: a replay is one run under a route that is already
  * allowed (by a person, or the opener's own route), clearing only narrows, and
- * allowing a route stays refused there.
+ * allowing a route stays refused there. Both are network-reachable by design
+ * (`http/hand-routes/allowlist.ts`, Security's ruling, DOR-5267). A replay from
+ * a held device (the owner's sign-in on a device not let run agents,
+ * `heldWifiOwner`) is refused `person_only` ({@link HELD_DEVICE_REPLAY}): it
+ * never proves the person, and a replay asks an agent to run.
  *
  * @module routes/canvas-doc-work-review
  */
@@ -27,9 +31,10 @@ import {
   type DocWorkReviewedMetadata,
 } from '@dorkos/shared/canvas-doc-routes';
 import type { ApiEnv } from '../http/api-chain.js';
-import { readJsonBody } from '@dorkos/http-kit';
+import { problem, readJsonBody } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { honoRequestFacts } from '../http/request-facts.js';
+import { heldWifiOwner } from '../services/todos/caller.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import {
   decideAsPerson,
@@ -41,6 +46,10 @@ import type { DocChannelHttpSource } from './canvas-doc-events.js';
 import { docRefusalProblem } from './canvas-doc-refusal.js';
 
 const IdSchema = z.string().min(1).max(200);
+
+/** What a held device reads when it asks to run document work again. */
+export const HELD_DEVICE_REPLAY =
+  'Run this work again at this computer, or from a device allowed to run agents.';
 
 /** One honest sentence per refusal code; a code not listed falls back by status. */
 const CODE_MESSAGES: Record<string, string> = {
@@ -179,6 +188,10 @@ export function createCanvasDocWorkReviewRoutes(
   for (const action of ['replay', 'clear'] as const) {
     router.post(`/:id/work/:batchId/${action}`, async (c) => {
       c.header('Cache-Control', 'no-store');
+      // A held device never proves the person, and a replay asks an agent to run (Security, t1j).
+      if (action === 'replay' && heldWifiOwner(honoRequestFacts(c))) {
+        return problem(c, 'person_only', { detail: HELD_DEVICE_REPLAY });
+      }
       const person = personOrRefuse(c);
       if (person instanceof Response) return person;
       try {

@@ -1,213 +1,29 @@
 /**
- * The file routes that change something in a session's working directory:
- * create, delete, rename, copy, and show in the file manager. Split out of
- * `routes/files.ts`, which mounts them; the reading routes stay there.
+ * The one file change that stays by hand: copying an entry in a session's
+ * working directory, until its path names a resource (the API lint's verb rule).
+ * Making, deleting, moving and showing an entry are capabilities the mount
+ * serves (`services/core/directory/file-entry-capabilities.ts`, DOR-4978).
+ * `routes/files.ts` mounts it.
  *
  * @module routes/file-entries
  */
 import { Hono } from 'hono';
-import crypto from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
-import {
-  CreateEntryRequestSchema,
-  DeleteEntryQuerySchema,
-  RenameEntryRequestSchema,
-  CopyEntryRequestSchema,
-  RevealEntryRequestSchema,
-} from '@dorkos/shared/schemas';
-import { revealInFileManager } from '../lib/reveal-in-file-manager.js';
+import { CopyEntryRequestSchema } from '@dorkos/shared/schemas';
 import { resolveWithinCwd } from '../lib/file-route-guards.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { NAME_TAKEN, NOT_ALLOWED_TO_CHANGE, pathCheckFailure } from './file-problems.js';
-import { readQuery } from '../http/request-query.js';
 
 const router = new Hono<ApiEnv>();
-
-/** A non-recursive delete of a folder with something in it. */
-const FOLDER_NOT_EMPTY = 'That folder isn’t empty, so nothing was deleted.';
 
 /** A folder copied into itself or into a folder inside it. */
 const INTO_ITSELF = 'A folder can’t be copied into itself.';
 
 /**
- * Create a file or directory inside a session's working directory. Rejects with
- * 409 if the target already exists. A new file's write is atomic (temp +
- * rename); intermediate parent directories are created as needed. The target is
- * boundary-validated against `cwd`.
- */
-router.post('/', async (c) => {
-  const parsed = CreateEntryRequestSchema.safeParse(readJsonBody(c));
-  if (!parsed.success) {
-    return validationProblem(c, parsed.error);
-  }
-  const { cwd, path: relPath, type, content } = parsed.data;
-
-  let validatedCwd: string;
-  let resolved: string;
-  try {
-    ({ validatedCwd, resolved } = await resolveWithinCwd(cwd, relPath));
-  } catch (err) {
-    return pathCheckFailure(c, err, 'POST /', { cwd, path: relPath });
-  }
-
-  if (resolved === validatedCwd) {
-    return problem(c, 'working_folder_root', {
-      detail: 'The chat’s top folder can’t be replaced.',
-    });
-  }
-
-  try {
-    await fs.access(resolved);
-    return problem(c, 'already_exists', { detail: NAME_TAKEN });
-  } catch {
-    // Does not exist — proceed to create.
-  }
-
-  const relForResponse = path.relative(validatedCwd, resolved).split(path.sep).join('/');
-  try {
-    if (type === 'dir') {
-      await fs.mkdir(resolved, { recursive: true });
-    } else {
-      await fs.mkdir(path.dirname(resolved), { recursive: true });
-      const tmp = `${resolved}.${crypto.randomBytes(6).toString('hex')}.tmp`;
-      try {
-        await fs.writeFile(tmp, content ?? '', 'utf8');
-        await fs.rename(tmp, resolved);
-      } catch (err) {
-        await fs.rm(tmp, { force: true }).catch(() => {});
-        throw err;
-      }
-    }
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'EACCES') {
-      return problem(c, 'forbidden', { detail: NOT_ALLOWED_TO_CHANGE });
-    }
-    logger.error('[files] POST / create failed', { err, resolved });
-    return problem(c, 'internal_error', { detail: 'Couldn’t create that. Try again.' });
-  }
-
-  return c.json({ ok: true, path: relForResponse }, 201);
-});
-
-/**
- * Delete a file or directory inside a session's working directory. Refuses to
- * delete the `cwd` root itself. A non-empty directory requires `recursive`; a
- * bare non-empty-directory delete is rejected with 409. The target is
- * boundary-validated against `cwd`.
- */
-router.delete('/', async (c) => {
-  const parsed = DeleteEntryQuerySchema.safeParse(readQuery(c));
-  if (!parsed.success) {
-    return validationProblem(c, parsed.error);
-  }
-  const { cwd, path: relPath, recursive } = parsed.data;
-
-  let validatedCwd: string;
-  let resolved: string;
-  try {
-    ({ validatedCwd, resolved } = await resolveWithinCwd(cwd, relPath));
-  } catch (err) {
-    return pathCheckFailure(c, err, 'DELETE /', { cwd, path: relPath });
-  }
-
-  if (resolved === validatedCwd) {
-    return problem(c, 'working_folder_root', {
-      detail: 'The chat’s top folder can’t be deleted.',
-    });
-  }
-
-  try {
-    const stat = await fs.lstat(resolved);
-    if (stat.isDirectory() && !recursive) {
-      const children = await fs.readdir(resolved);
-      if (children.length > 0) {
-        return problem(c, 'folder_not_empty', { detail: FOLDER_NOT_EMPTY });
-      }
-    }
-    await fs.rm(resolved, { recursive, force: false });
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') {
-      return problem(c, 'not_found', { detail: 'That isn’t there anymore.' });
-    }
-    if (code === 'ENOTEMPTY') {
-      return problem(c, 'folder_not_empty', { detail: FOLDER_NOT_EMPTY });
-    }
-    if (code === 'EACCES') {
-      return problem(c, 'forbidden', { detail: NOT_ALLOWED_TO_CHANGE });
-    }
-    logger.error('[files] DELETE / failed', { err, resolved });
-    return problem(c, 'internal_error', { detail: 'Couldn’t delete that. Try again.' });
-  }
-
-  return c.json({ ok: true });
-});
-
-/**
- * Move or rename an entry within a session's working directory. Both `from` and
- * `to` are boundary-validated against `cwd`; `from` must exist (404), `to` must
- * not (409), and neither may be the `cwd` root. The destination's parent
- * directories are created as needed.
- */
-router.post('/rename', async (c) => {
-  const parsed = RenameEntryRequestSchema.safeParse(readJsonBody(c));
-  if (!parsed.success) {
-    return validationProblem(c, parsed.error);
-  }
-  const { cwd, from, to } = parsed.data;
-
-  let validatedCwd: string;
-  let fromResolved: string;
-  let toResolved: string;
-  try {
-    const fromR = await resolveWithinCwd(cwd, from);
-    validatedCwd = fromR.validatedCwd;
-    fromResolved = fromR.resolved;
-    // `to` does not exist yet, so it is confined through its deepest existing
-    // ancestor — a `..` escape and a symlinked parent are both rejected.
-    ({ resolved: toResolved } = await resolveWithinCwd(cwd, to));
-  } catch (err) {
-    return pathCheckFailure(c, err, 'POST /rename', { cwd, from, to });
-  }
-
-  if (fromResolved === validatedCwd || toResolved === validatedCwd) {
-    return problem(c, 'working_folder_root', {
-      detail: 'The chat’s top folder can’t be moved.',
-    });
-  }
-
-  try {
-    await fs.access(fromResolved);
-  } catch {
-    return problem(c, 'not_found', { detail: 'The item to move isn’t there anymore.' });
-  }
-
-  try {
-    await fs.access(toResolved);
-    return problem(c, 'already_exists', { detail: NAME_TAKEN });
-  } catch {
-    // Target free — proceed.
-  }
-
-  try {
-    await fs.mkdir(path.dirname(toResolved), { recursive: true });
-    await fs.rename(fromResolved, toResolved);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'EACCES') {
-      return problem(c, 'forbidden', { detail: NOT_ALLOWED_TO_CHANGE });
-    }
-    logger.error('[files] POST /rename failed', { err, fromResolved, toResolved });
-    return problem(c, 'internal_error', { detail: 'Couldn’t move that. Try again.' });
-  }
-
-  return c.json({ ok: true });
-});
-
-/**
- * Copy an entry within a session's working directory. Mirrors `POST /rename`'s
+ * Copy an entry within a session's working directory. Mirrors `files.rename`'s
  * shape and guards: both `from` and `to` are boundary-validated against `cwd`,
  * `from` must exist (404), `to` must not (409), and neither may be the `cwd`
  * root. Directories copy recursively; copying a directory into itself or into
@@ -301,46 +117,6 @@ router.post('/copy', async (c) => {
   }
 
   return c.json({ ok: true });
-});
-
-/**
- * Show an entry in the operating system's file manager, on the machine the
- * server runs on: Finder (macOS), File Explorer (Windows), or the desktop's
- * default handler (everything else). The path is boundary-validated against
- * `cwd` and must exist (404); nothing is read or written.
- *
- * Every launcher runs through `execFile` with an argument array — never a
- * shell — so a file name containing shell metacharacters is passed through as
- * data rather than parsed as a command.
- */
-router.post('/reveal', async (c) => {
-  const parsed = RevealEntryRequestSchema.safeParse(readJsonBody(c));
-  if (!parsed.success) {
-    return validationProblem(c, parsed.error);
-  }
-  const { cwd, path: relPath } = parsed.data;
-
-  let resolved: string;
-  try {
-    ({ resolved } = await resolveWithinCwd(cwd, relPath));
-  } catch (err) {
-    return pathCheckFailure(c, err, 'POST /reveal', { cwd, path: relPath });
-  }
-
-  try {
-    await fs.access(resolved);
-  } catch {
-    return problem(c, 'not_found', { detail: 'That isn’t there anymore.' });
-  }
-
-  try {
-    await revealInFileManager(resolved);
-  } catch (err) {
-    logger.error('[files] POST /reveal failed', { err, resolved });
-    return problem(c, 'internal_error', { detail: 'Couldn’t open the file manager.' });
-  }
-
-  return c.body(null, 204);
 });
 
 export default router;

@@ -15,7 +15,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
@@ -30,6 +30,14 @@ import {
 } from '../../services/core/permissions/__tests__/permission-fixtures.js';
 
 import { initConfigManager } from '../../services/core/config-manager.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { session, user } from '@dorkos/db';
+import { initAuth } from '../../services/core/auth/index.js';
+import {
+  createCanvasDocWorkReviewRoutes,
+  HELD_DEVICE_REPLAY,
+} from '../../routes/canvas-doc-work-review.js';
+import type { DocChannelHttp } from '../../routes/canvas-doc-events.js';
 
 // The real config in a throwaway folder: login off, nothing else set.
 let configHome: string;
@@ -68,7 +76,7 @@ function wifiApp() {
 }
 
 describe('network-reachable hand routes', () => {
-  it('are exactly the eleven Security ruled on (DOR-5267)', () => {
+  it('are exactly the fifteen Security ruled on (DOR-5267)', () => {
     const reachable = HAND_ROUTE_ALLOWLIST.filter(
       (entry) => entry.category === 'network-reachable'
     ).map((entry) => `${entry.method} ${entry.path}`);
@@ -87,6 +95,11 @@ describe('network-reachable hand routes', () => {
         'POST /api/tasks/:id/trigger',
         'POST /api/tasks/:id/undo-agent-mode',
         'POST /api/tasks/runs/:id/cancel',
+        // A person's review of a document's routes and unfinished work (Security, t1j).
+        'POST /api/canvas/docs/:id/routes/:routeId/review',
+        'POST /api/canvas/docs/:id/routes/:routeId/revoke',
+        'POST /api/canvas/docs/:id/work/:batchId/replay',
+        'POST /api/canvas/docs/:id/work/:batchId/clear',
       ].sort()
     );
   });
@@ -114,5 +127,77 @@ describe('network-reachable hand routes', () => {
       .patch(path)
       .send({ areas: { rooms: 'blocked' }, surface: 'agent-page' });
     expect(lower.status).toBe(200);
+  });
+});
+
+describe('a held device on a network-reachable document review route', () => {
+  /** The owner's two Wi-Fi sign-ins: the phone was let run agents, the laptop was not. */
+  function seedOwner(): void {
+    const db = createTestDb();
+    initAuth(db, configHome);
+    const now = new Date();
+    db.insert(user)
+      .values({ id: 'user_owner', name: 'Owner', email: 'owner@census.test', updatedAt: now })
+      .run();
+    for (const id of ['phone', 'laptop']) {
+      db.insert(session)
+        .values({
+          id,
+          token: `token-${id}`,
+          userId: 'user_owner',
+          route: 'wifi',
+          expiresAt: new Date(now.getTime() + 60 * 60 * 1000),
+          updatedAt: now,
+          lastActiveAt: now,
+          wifiAgentTurnsAt: id === 'phone' ? now : null,
+        })
+        .run();
+    }
+  }
+
+  /** The work review routes, reached from Wi-Fi on the owner's sign-in from `device`. */
+  function fromDevice(device: string, workReview: object) {
+    const source = () => ({ workReview, actor: () => ({}) }) as unknown as DocChannelHttp;
+    return target.mount(
+      honoGroupListener(
+        { path: '/api/canvas/docs', routes: createCanvasDocWorkReviewRoutes(source) },
+        {
+          before: async (c, next) => {
+            markIngress(c.env.incoming, 'wifi');
+            c.set('user', {
+              userId: 'user_owner',
+              credential: 'cookie',
+              sessionId: device,
+              route: 'wifi',
+            });
+            await next();
+          },
+        }
+      )
+    );
+  }
+
+  it('refuses a replay from a held device with person_only, before the work runs', async () => {
+    seedOwner();
+    const workReview = { replay: vi.fn(), clear: vi.fn() };
+    const res = await request(fromDevice('laptop', workReview)).post(
+      '/api/canvas/docs/doc-1/work/batch-1/replay'
+    );
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: 'person_only', detail: HELD_DEVICE_REPLAY });
+    expect(workReview.replay).not.toHaveBeenCalled();
+  });
+
+  it('keeps clearing reachable from a held device, and a replay from a device let run agents', async () => {
+    seedOwner();
+    const workReview = { replay: vi.fn(), clear: vi.fn() };
+    const clear = await request(fromDevice('laptop', workReview)).post(
+      '/api/canvas/docs/doc-1/work/batch-1/clear'
+    );
+    expect(clear.body.detail).not.toBe(HELD_DEVICE_REPLAY);
+    const replay = await request(fromDevice('phone', workReview)).post(
+      '/api/canvas/docs/doc-1/work/batch-1/replay'
+    );
+    expect(replay.body.detail).not.toBe(HELD_DEVICE_REPLAY);
   });
 });

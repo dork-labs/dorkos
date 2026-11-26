@@ -80,6 +80,17 @@ export interface CapabilityDeps {
  */
 export type CapabilityWifiMode = 'lowers-power' | 'person-held';
 
+/** A refusal status a capability's HTTP route may document on its own. */
+export type CapabilityHttpErrorStatus = 400 | 403 | 404 | 409 | 412 | 413 | 415 | 500 | 503;
+
+/** One documented refusal: what it means, and the problem's schema when it carries more. */
+export interface CapabilityHttpError {
+  /** Which problem codes answer with this status, and when. */
+  readonly description: string;
+  /** The problem document's schema, when it has members beyond the standard ones. */
+  readonly schema?: z.ZodType;
+}
+
 /**
  * A capability declared by a service domain: the single source of truth every
  * agent-facing surface is generated from.
@@ -369,6 +380,13 @@ export interface CapabilityDefinition<
    * declare one, and only the ids `CONFIRM_FIRST_CAPABILITY_IDS` lists.
    */
   confirmFirst?: CapabilityConfirmFirst<z.infer<In>>;
+  /**
+   * The refusals this capability's HTTP route documents beyond the dispatcher's
+   * standard ones, by status: what each means and, when the problem carries more
+   * than the standard members, its schema (a stale save's file as it is now).
+   * Only the OpenAPI document reads it (`openapi-projection.ts`).
+   */
+  httpErrors?: Readonly<Partial<Record<CapabilityHttpErrorStatus, CapabilityHttpError>>>;
   /**
    * A cancel window this call may wait out INSTEAD of the approval card (spec
    * `trusted-by-default-flip` §5.6). Only `connectors.execute_destructive`

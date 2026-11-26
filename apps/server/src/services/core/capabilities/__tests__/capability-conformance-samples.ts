@@ -103,6 +103,14 @@ export function conformanceSampleInputs(
     'diff.advance_baseline': { cwd: '/conformance', path: 'a.ts', sessionId: 'conformance-chat' },
     'diff.pending': { cwd: '/conformance', sessionId: 'conformance-chat' },
     'diff.revert': { cwd: '/conformance', path: 'a.ts', sessionId: 'conformance-chat' },
+    // The file browser (DOR-4978): the read refuses a folder outside the boundary; each
+    // person-only door refuses the anonymous call before it runs.
+    'files.read_text': { cwd: '/conformance-no-such-folder', path: 'a.md' },
+    'files.save': { cwd: '/conformance-no-such-folder', path: 'a.md', content: 'x' },
+    'files.create': { cwd: '/conformance-no-such-folder', path: 'a.md', type: 'file' },
+    'files.delete': { cwd: '/conformance-no-such-folder', path: 'a.md' },
+    'files.rename': { cwd: '/conformance-no-such-folder', from: 'a.md', to: 'b.md' },
+    'files.reveal': { cwd: '/conformance-no-such-folder', path: 'a.md' },
     // The agents' queue tools, parseable so the gate or the handler answers:
     // with no identity each refuses `NO_AGENT`; the destructive ones meet the gate.
     'work-queue.add': { title: 'Conformance', prompt: 'A conformance probe.' },

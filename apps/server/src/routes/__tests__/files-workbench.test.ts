@@ -39,12 +39,21 @@ vi.mock('../../services/core/config-manager.js', () => ({
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
+import { noopLogger } from '@dorkos/shared/logger';
+import { composeRegistry } from '../../services/core/capabilities/index.js';
+import { filesDomain } from '../../services/core/directory/file-capabilities.js';
+import { testFileDeps } from '../../http/__tests__/file-deps.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
 
 const execFileAsync = promisify(execFile);
 const admission = new MainRequestAdmission();
 // Routed as the running server routes: the moved groups answer from Hono.
-const testServer = listeningServer(composedListener(admission));
+// The JSON file doors are capabilities the mount serves (DOR-4978).
+const testServer = listeningServer(
+  composedListener(admission, {
+    capabilities: composeRegistry([filesDomain], { logger: noopLogger, ...testFileDeps() }),
+  })
+);
 const sha = (s: string) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
 
 /** Make the second validateBoundary call (target-vs-cwd) reject like an escape. */
@@ -263,6 +272,13 @@ describe('Workbench file routes', () => {
         .query({ cwd: dir, path: 'tree' });
       expect(refused.status).toBe(409);
       expect(refused.body.code).toBe('folder_not_empty');
+
+      // `recursive=false` is never read as true (a coerced boolean would): no data loss.
+      const notRecursive = await request(testServer)
+        .delete('/api/files')
+        .query({ cwd: dir, path: 'tree', recursive: 'false' });
+      expect(notRecursive.status).toBe(409);
+      await expect(fs.access(path.join(dir, 'tree', 'f.txt'))).resolves.toBeUndefined();
 
       const ok = await request(testServer)
         .delete('/api/files')

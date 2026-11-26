@@ -245,7 +245,7 @@ export interface ComposedGroupDeps {
    * Document events (`/api/canvas/docs`). Always mounted; without this every
    * request answers that document events are not available yet.
    */
-  docChannel?: DocChannelHttp & { fileWrites?: Parameters<typeof createFileRoutes>[0] };
+  docChannel?: DocChannelHttp;
   /**
    * The agent registry first-run setup moves DorkBot's runtime through
    * (`/api/onboarding`, always mounted), for a boot that mounts no mesh routes
@@ -392,7 +392,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/community-connections', createCommunityConnectionsRoutes());
   app.use('/api/communities/*', gateRemoteCommunities());
   app.route('/api/communities', createRemoteCommunitiesRoutes());
-  app.route('/api/files', createFileRoutes(deps.docChannel?.fileWrites));
+  // The media bytes; the JSON file doors are capabilities the mount serves (DOR-4978).
+  app.route('/api/files', createFileRoutes());
   app.route('/api/diff', diffRoutes);
   app.route('/api/workbench', workbenchServeRoutes);
   app.route('/api/uploads', uploadRoutes);
