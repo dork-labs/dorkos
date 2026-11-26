@@ -1,6 +1,6 @@
 ---
 id: 261126-001517
-title: The design-token check refuses a bare focus: class (DOR-4939)
+title: 'The design-token check refuses a bare focus: class (DOR-4939)'
 kind: hygiene
 status: proposed
 actor: agent
