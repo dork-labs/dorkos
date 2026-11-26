@@ -58,7 +58,7 @@ import {
   ownerQueryToolCode,
   type ConnectionRefusalFamily,
 } from './owner-refusals.js';
-import type { ConnectionManagementDeps } from './owner-management-capabilities.js';
+import type { ConnectionManagementDeps } from './owner-door-types.js';
 
 /** What the owner's connection doors read: the services the hand routes hold. */
 export interface ConnectionOwnerDeps extends ConnectionManagementDeps {

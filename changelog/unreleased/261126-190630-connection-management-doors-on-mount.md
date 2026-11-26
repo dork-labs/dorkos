@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(api): six more connection doors move onto the account-decision bar on the capability mount (DOR-4978)'
+  - "fix(api): a connection service's schema error stays a 500 on the management doors; parity rows and a types file (DOR-4978)"
 ---
 
 ### Changed

@@ -31,25 +31,12 @@ import {
   type CapabilityDeps,
   type CapabilityDomain,
 } from '../../core/capabilities/capability-definition.js';
-import {
-  ConnectorGrantExclusionError,
-  type ConnectorGrantExclusionService,
-} from '../access/grant-exclusions.js';
-import {
-  ConnectorAgentRequestError,
-  type ConnectorAgentRequestService,
-} from '../agent-request-service.js';
+import { ConnectorGrantExclusionError } from '../access/grant-exclusions.js';
+import { ConnectorAgentRequestError } from '../agent-request-service.js';
 import { ConnectorSubscriptionError } from '../events/subscription-store.js';
-import {
-  ConnectorAccessQueryError,
-  type ConnectorAccessQueryService,
-} from '../execution/access-query-service.js';
-import {
-  ConnectorManagementReviewError,
-  type ConnectorManagementReviewService,
-} from '../management-review-service.js';
+import { ConnectorAccessQueryError } from '../execution/access-query-service.js';
+import { ConnectorManagementReviewError } from '../management-review-service.js';
 import { ConnectorReconciliationError } from '../reconciliation/reconciliation-error.js';
-import type { ConnectorReconciliationService } from '../reconciliation-service.js';
 import {
   ConnectionId,
   OWNER_BAR,
@@ -60,25 +47,14 @@ import {
 } from './owner-capabilities.js';
 import { AGENT_REQUESTS_OFF_TOOL_CODE } from './owner-refusals.js';
 
-/** What the owner's management doors read, beside the connection doors' deps. */
-export interface ConnectionManagementDeps {
-  /** Programs' requests for an account change, as the owner reviews them. */
-  readonly reviews: Pick<ConnectorManagementReviewService, 'get'>;
-  /** Agents' requests for an app; absent while agent identity is off. */
-  readonly agentRequests?: Pick<ConnectorAgentRequestService, 'pollAuthentication'>;
-  /** Which agents may use what. */
-  readonly reconciliation: Pick<ConnectorReconciliationService, 'revokeEveryAgent'>;
-  /** Agents left out of a connection's every-agent share. */
-  readonly exclusions: Pick<ConnectorGrantExclusionService, 'leaveOut'>;
-  /** The owner's usage of connected apps. */
-  readonly usage: Pick<ConnectorAccessQueryService, 'listOperatorUsage'>;
-}
-
 /**
  * A management refusal as the hand routes answered it; anything else is
- * thrown on, as they threw it on to the error handler.
+ * thrown on, as they threw it on to the error handler. A service's own schema
+ * error stays a fault (a 500), never a 400 naming its internal fields, as the
+ * hand routes' error handler answered it.
  */
 function managementRefusal(deps: CapabilityDeps, error: unknown): never {
+  if (error instanceof z.ZodError) throw new Error('A connection service failed a schema check.');
   throw (
     knownConnectionRefusal(deps, error, [
       [ConnectorAgentRequestError, 'AGENT_REQUEST'],
@@ -249,6 +225,7 @@ export const operatorUsageCapability = defineCapability({
     try {
       return connectionOwnerDepsOf(deps).usage.listOperatorUsage(ownerOf(context), query);
     } catch (error) {
+      // A schema error is thrown on as a 400, as the hand route's `programErrorResponse` did.
       throw knownConnectionRefusal(deps, error, [[ConnectorAccessQueryError, 'USAGE']]) ?? error;
     }
   },

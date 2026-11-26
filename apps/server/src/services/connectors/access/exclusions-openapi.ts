@@ -46,7 +46,6 @@ export function registerConnectorExclusionsOpenApi(registry: OpenAPIRegistry): v
       404: notFound,
     },
   });
-
   registry.registerPath({
     method: 'get',
     path: '/api/connectors/access-changes',
