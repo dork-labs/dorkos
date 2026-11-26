@@ -321,6 +321,7 @@ export function recordChatTodo(made: { chatIds: readonly string[]; todoId: strin
     logger.warn('[work-graph] the call named no one chat; edge not recorded', {
       relation: 'produced',
       todoId: made.todoId,
+      chatIds: chats,
     });
     return;
   }

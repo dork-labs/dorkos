@@ -302,7 +302,7 @@ export class TodoService {
   }
 
   /**
-   * Make a to-do.
+   * Make a to-do. An agent's door must also call `announceTodoMadeInChat`, or its link is lost.
    *
    * @param actor - Who is making it, as the server established it.
    * @param input - What it is and who it is for.
