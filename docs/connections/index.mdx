@@ -158,7 +158,7 @@ A local DorkOS installation without login has one local owner. Keep it on a trus
 
 Program commands still name an agent and can use only that agent's approved connections. Omitting `--agent` never widens access. Through the supported agent and program paths, a request can ask for access but cannot approve itself.
 
-One kind of write does not have that protection: changing who can use an app: sharing it, narrowing it, disconnecting it. With login off, DorkOS cannot tell that write apart from one the app itself made, so anything with a shell on this machine can make it, the same as the app could. **Every agent** is just the widest version of that change, not a special case. Turning login on closes the gap for all of them, because from then on only you, signed in, can make those writes. Until then, changing an app's access is a choice for a machine you trust.
+One kind of write does not have that protection: changing who can use an app (sharing it, narrowing it, disconnecting it). With login off, DorkOS cannot tell that write apart from one the app itself made, so anything with a shell on this machine can make it, the same as the app could. **Every agent** is just the widest version of that change, not a special case. Turning login on closes the gap for all of them, because from then on only you, signed in, can make those writes. Until then, changing an app's access is a choice for a machine you trust.
 
 These controls are boundaries inside DorkOS. They do not isolate other software running as your operating-system user. That software can reach the same local files and credentials that you can. The [threat model](/docs/self-hosting/threat-model#connections-and-account-access) explains token lifetime, runtime settings, and this same-user limit.
 
