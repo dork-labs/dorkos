@@ -20,6 +20,7 @@ import { authors, roomMembers, roomSessions, rooms, sessionMetadata, user } from
 import { noopLogger } from '@dorkos/shared/logger';
 import { entityRef, type EntityKind } from '@dorkos/shared/entity-ref';
 import { capabilityGroup } from '../../../../http/__tests__/capability-group.js';
+import { createCapabilitiesInvokeRoutes } from '../../../../routes/capabilities-invoke.js';
 import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 import type { ApiEnv } from '../../../../http/api-chain.js';
 import type { WorkLinkInput } from '../../work-link-store.js';
@@ -32,7 +33,7 @@ import { AccountIds } from '../../../audit/account-ids.js';
 import { resetSessionVisibility } from '../../../audit/session-visibility.js';
 import { wireSessionVisibility } from '../../../audit/wire-session-visibility.js';
 import { setSessionStartedByStore } from '../../../session/origin/session-started-by-store.js';
-import { getWorkLinkStore, type WorkLinkRelation } from '../../index.js';
+import { getWorkLinkStore, isSpanRelation, type WorkLinkRelation } from '../../index.js';
 import { stores, useLineageStores } from '../../__tests__/lineage-fixture.js';
 import { workGraphReadDomain } from '../../../core/self-description/dorkos-registry.js';
 
@@ -111,14 +112,25 @@ export function useWorkGraphReads(): void {
         ],
       }),
     };
+    const invokeRegistry = composeRegistry([workGraphReadDomain], {
+      logger: noopLogger,
+      auditDeps,
+    });
     target.mount(
-      honoGroupListener(capabilityGroup(workGraphReadDomain, { auditDeps }), {
-        before: (async (c, next) => {
-          const identity = identityOf(c.req.header('x-test-reader') as Reader);
-          if (identity) c.set('agentIdentity', identity);
-          await next();
-        }) satisfies MiddlewareHandler<ApiEnv>,
-      })
+      honoGroupListener(
+        [
+          capabilityGroup(workGraphReadDomain, { auditDeps }),
+          // `/invoke`, as `dorkos call` reaches a capability.
+          { path: '/api/capabilities', routes: createCapabilitiesInvokeRoutes(invokeRegistry) },
+        ],
+        {
+          before: (async (c, next) => {
+            const identity = identityOf(c.req.header('x-test-reader') as Reader);
+            if (identity) c.set('agentIdentity', identity);
+            await next();
+          }) satisfies MiddlewareHandler<ApiEnv>,
+        }
+      )
     );
   });
   afterEach(() => resetSessionVisibility());
@@ -147,17 +159,27 @@ export async function get(url: string, reader: Reader = 'owner'): Promise<Respon
 }
 
 /**
+ * Call a capability through `POST /api/capabilities/:id/invoke`, as
+ * `dorkos call` does, with no key and no agent token.
+ */
+export async function invoke(id: string, input: Record<string, unknown>): Promise<Response> {
+  return request(target.server).post(`/api/capabilities/${id}/invoke`).send(input);
+}
+
+/**
  * Call a read's tool over the in-session MCP server, with no turn bound to the
- * call: the caller `readerFor` reads as an agent nobody could name.
+ * call: the caller `readerFor` reads as an agent nobody could name. Over the
+ * `external` server, the caller is one no agent token or person names.
  *
  * @returns Whether the tool answered an error, and the JSON it carried.
  */
 export async function callInSession(
   name: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  server: 'in-session' | 'external' = 'in-session'
 ): Promise<{ isError: boolean; body: Record<string, unknown> }> {
   const registry = composeRegistry([workGraphReadDomain], { logger: noopLogger, auditDeps });
-  const { client } = await createCapabilityMcpClient(registry, 'in-session');
+  const { client } = await createCapabilityMcpClient(registry, server);
   const result = (await client.callTool({ name, arguments: args })) as {
     isError?: boolean;
     structuredContent?: Record<string, unknown>;
@@ -255,6 +277,10 @@ export function link(
     source: 'open-pr',
     recordingChatId: chatId,
     ...(turnMarks ? { turnMarks } : {}),
+    // A claim is written by the claim tool, at the claim's own time.
+    ...(isSpanRelation(relation)
+      ? { source: 'claim-tool', recordedAt: new Date().toISOString() }
+      : {}),
   });
   if (!result.ok) throw new Error(`link refused: ${result.reason}`);
 }
