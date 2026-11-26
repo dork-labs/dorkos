@@ -611,7 +611,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   router.post('/:id/command-intents/:intent', sessionCommandIntentHandler);
 
   // /api/sessions/:id/canvas — this session's own canvas (spec
-  // `canvas-agent-seat` §1.6). Five thin handlers over the one writer, in their own
+  // `canvas-agent-seat` §1.6). Six thin handlers over the one writer, in their own
   // file for the same reason the devtools sink is: this one stays under the size
   // rule. A person is the gate; an agent is refused `PEOPLE_ONLY` and reaches its
   // own canvas through `control_ui` and `read_canvas_document` instead.

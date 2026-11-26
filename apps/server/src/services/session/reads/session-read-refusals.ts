@@ -15,11 +15,6 @@ import type { ProblemCode } from '@dorkos/shared/problem';
 /** Every sentence the chat reads refuse with, as the hand routes said it. */
 export const SESSION_READ_SENTENCES = {
   invalidId: 'That chat id isn’t valid.',
-  canvasPersonOnly: 'A chat’s canvas is the person’s own.',
-  agentUnverified:
-    'That agent identity could not be verified. Its token may have been revoked, or it may have expired.',
-  canvasUnavailable: 'The canvas isn’t available on this server.',
-  noSuchDocument: 'No such document on this canvas',
 } as const;
 
 /** One refusal: its problem code and its fixed sentence. */
@@ -33,8 +28,4 @@ const S = SESSION_READ_SENTENCES;
 /** The chat reads' tool codes, each with the hand route's problem code and sentence. */
 export const SESSION_READ_TOOL_REFUSALS: Readonly<Record<string, SessionReadToolRefusal>> = {
   CHAT_ID_INVALID: { code: 'invalid_request', detail: S.invalidId },
-  CHAT_CANVAS_PERSON_ONLY: { code: 'person_only', detail: S.canvasPersonOnly },
-  CHAT_CANVAS_AGENT_UNVERIFIED: { code: 'agent_identity_unverified', detail: S.agentUnverified },
-  CHAT_CANVAS_UNAVAILABLE: { code: 'temporarily_unavailable', detail: S.canvasUnavailable },
-  CHAT_CANVAS_DOCUMENT_NOT_FOUND: { code: 'not_found', detail: S.noSuchDocument },
 };

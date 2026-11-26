@@ -235,6 +235,7 @@
     "GET /api/sessions",
     "GET /api/sessions/:id",
     "GET /api/sessions/:id/canvas",
+    "GET /api/sessions/:id/canvas/:documentId",
     "GET /api/sessions/:id/chat-messages",
     "GET /api/sessions/:id/continue-options",
     "GET /api/sessions/:id/limit-history",

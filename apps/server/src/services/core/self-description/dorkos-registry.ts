@@ -57,7 +57,6 @@ import { runsDomain } from '../../runs/run-capabilities.js';
 import { taskViewDomain } from '../../tasks/view/task-view-capabilities.js';
 import { createSessionReadsDomain } from '../../session/reads/session-read-capabilities.js';
 import { auditTrail } from '../../audit/audit-trail.js';
-import { peekCanvasService, sessionScope } from '../../canvas/index.js';
 import { runtimeRegistry } from '../runtime-registry.js';
 import { runtimeReadsDomain } from '../runtime-doors/runtime-read-capabilities.js';
 import { filesDomain } from '../directory/file-capabilities.js';
@@ -97,9 +96,9 @@ export const workGraphReadDomain = createWorkGraphReadDomain({
 });
 
 /**
- * The app's chat reads (DOR-4978), handed the session read guard's rule, the
- * runtime registry's two lookups and the canvas here, at the composition root.
- * Each is read when a call runs, never when this module loads.
+ * The app's chat reads (DOR-4978), handed the session read guard's rule and the
+ * runtime registry's two lookups here, at the composition root. Each is read
+ * when a call runs, never when this module loads.
  */
 export const sessionReadsDomain = createSessionReadsDomain({
   mayRead: (context, chatId) =>
@@ -108,8 +107,6 @@ export const sessionReadsDomain = createSessionReadsDomain({
     ),
   runtimeTypeOf: (chatId) => runtimeRegistry.getSessionRuntimeType(chatId),
   settingsOf: (chatId) => runtimeRegistry.getSessionSettings(chatId),
-  canvasDocument: (chatId, documentId) =>
-    peekCanvasService()?.get(sessionScope(chatId), documentId),
 });
 
 /**

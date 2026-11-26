@@ -126,8 +126,6 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   // The app's run reads (DOR-4978): a run's summary is its own words, which quote what it read.
   'tasks.view_runs': 'outside',
   'tasks.view_run': 'outside',
-  // A canvas document is whatever was opened on it: a page, a file, an app's view (DOR-4978).
-  'sessions.get_canvas_document': 'outside',
   relay_get_trace: 'outside',
   // ── Marks itself, when what it returned holds outside words ────────────────
   'rooms.read_history': 'self',

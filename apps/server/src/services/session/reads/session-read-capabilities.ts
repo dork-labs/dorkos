@@ -2,11 +2,13 @@
  * The app's simplest chat reads (DOR-4978), as capabilities the mount serves on
  * the paths the app always used (ADR 261123-170830, ADR 261125-114705):
  *
- * | Capability                      | Path                                          |
- * | ------------------------------- | --------------------------------------------- |
- * | `sessions.get_runtime_type`     | `GET /api/sessions/{id}/runtime-type`         |
- * | `sessions.get_settings`         | `GET /api/sessions/{id}/settings`             |
- * | `sessions.get_canvas_document`  | `GET /api/sessions/{id}/canvas/{documentId}`  |
+ * | Capability                  | Path                                  |
+ * | --------------------------- | ------------------------------------- |
+ * | `sessions.get_runtime_type` | `GET /api/sessions/{id}/runtime-type` |
+ * | `sessions.get_settings`     | `GET /api/sessions/{id}/settings`     |
+ *
+ * The canvas document read (`GET /api/sessions/{id}/canvas/{documentId}`) stays
+ * by hand until the widget definition can be described as JSON Schema.
  *
  * ## Who may read what: exactly the hand routes' readers
  *
@@ -16,12 +18,6 @@
  * same `session_not_found` for a chat it may not read as for one that does not
  * exist. Anyone else (the app, a person's own key) reads every chat. A chat id
  * that does not parse is refused first, as the hand routes did.
- *
- * A chat's canvas is the person's own: a verified agent is refused
- * `person_only`, and an agent token DorkOS cannot verify `agent_identity_unverified`,
- * after the read check, exactly as the hand route answered. It is not
- * `audience: 'person'`, because that also refuses a person's own API key, which
- * reads a canvas today.
  *
  * Each read writes nothing: `get_runtime_type` reports the registry's inference
  * for an unbound id without storing it (DOR-812), and `get_settings` answers the
@@ -34,7 +30,6 @@ import {
   StoredSessionSettingsResponseSchema,
   type StoredSessionSettingsResponse,
 } from '@dorkos/shared/schemas';
-import { CanvasDocumentSchema, type CanvasDocument } from '@dorkos/shared/room-schemas';
 import type { CapabilityHandlerContext } from '../../core/capabilities/index.js';
 import {
   CapabilityToolError,
@@ -56,11 +51,6 @@ export interface SessionReadPorts {
   readonly runtimeTypeOf: (chatId: string) => Promise<string>;
   /** The settings stored for a chat id, or `null`. Never writes. */
   readonly settingsOf: (chatId: string) => Promise<StoredSessionSettingsResponse['settings']>;
-  /** One document on a chat's canvas: `undefined` with no canvas, `null` with no such document. */
-  readonly canvasDocument: (
-    chatId: string,
-    documentId: string
-  ) => CanvasDocument | null | undefined;
 }
 
 /** A chat id as the path carries it: checked by the handler, so a bad one keeps its sentence. */
@@ -93,25 +83,6 @@ function readableChatId(
     throw new CapabilityToolError({ code: 'SESSION_NOT_FOUND', error: 'No chat with that id.' });
   }
   return id;
-}
-
-/**
- * Refuse any agent a chat's canvas, as the hand route did: a verified one is
- * `person_only`, one whose token DorkOS cannot verify (or a shut-off one) is
- * `agent_identity_unverified`.
- *
- * @param context - Who calls.
- */
-function refuseAgentsTheCanvas(context: CapabilityHandlerContext): void {
-  if (context.identity && !context.identity.inactive) {
-    throw new CapabilityToolError({ code: 'CHAT_CANVAS_PERSON_ONLY', error: S.canvasPersonOnly });
-  }
-  if (context.identity || context.agentIdentityPresented || context.mcpServer === 'in-session') {
-    throw new CapabilityToolError({
-      code: 'CHAT_CANVAS_AGENT_UNVERIFIED',
-      error: S.agentUnverified,
-    });
-  }
 }
 
 /** Why these reads need no permission area: reading a chat an agent may read is the point. */
@@ -159,41 +130,6 @@ export function createSessionReadsDomain(ports: SessionReadPorts): CapabilityDom
           const id = readableChatId(input.id, context, ports);
           // Under the id as asked: a chat that has not started has no runtime to hold an alias.
           return { settings: await ports.settingsOf(id) };
-        },
-      }),
-      defineCapability({
-        id: 'sessions.get_canvas_document',
-        title: 'Read one document on a chat’s canvas',
-        description:
-          'One document on a chat’s canvas, content included. A document id from another chat ' +
-          'answers exactly as one that never existed. A chat’s canvas is the person’s own: every ' +
-          'agent is refused. Agents read a canvas document with `read_canvas_document`.',
-        tier: 'observe',
-        area: null,
-        areaNote: AREA_NOTE,
-        input: z.object({
-          id: ChatIdSchema,
-          documentId: z.string().min(1).describe('The document on that chat’s canvas.'),
-        }),
-        output: CanvasDocumentSchema,
-        surfaces: { http: { method: 'get', path: '/api/sessions/{id}/canvas/{documentId}' } },
-        invoke: async (_deps, input, context) => {
-          const id = readableChatId(input.id, context, ports);
-          refuseAgentsTheCanvas(context);
-          const document = ports.canvasDocument(id, input.documentId);
-          if (document === undefined) {
-            throw new CapabilityToolError({
-              code: 'CHAT_CANVAS_UNAVAILABLE',
-              error: S.canvasUnavailable,
-            });
-          }
-          if (!document) {
-            throw new CapabilityToolError({
-              code: 'CHAT_CANVAS_DOCUMENT_NOT_FOUND',
-              error: S.noSuchDocument,
-            });
-          }
-          return document;
         },
       }),
     ],

@@ -199,7 +199,7 @@
   "GET /api/sessions/running": "audit.running_chats",
   "GET /api/sessions/{id}": "sessions.get",
   "GET /api/sessions/{id}/canvas": "sessions.listCanvas",
-  "GET /api/sessions/{id}/canvas/{documentId}": "sessions.get_canvas_document",
+  "GET /api/sessions/{id}/canvas/{documentId}": "sessions.getCanvas",
   "GET /api/sessions/{id}/chat-messages": "sessions.getChatMessages",
   "GET /api/sessions/{id}/continue-options": "sessions.getContinueOptions",
   "GET /api/sessions/{id}/events": "sessions.getEvents",

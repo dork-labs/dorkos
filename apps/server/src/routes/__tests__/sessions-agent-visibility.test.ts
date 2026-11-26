@@ -288,7 +288,6 @@ const everyRoute = [
   ['get', '/chat-messages'],
   ['get', '/settings'],
   ['get', '/runtime-type'],
-  ['get', '/canvas/doc-1'],
   ['get', '/limit-history'],
   ['get', '/continue-options'],
   ['get', '/canvas'],
@@ -313,7 +312,7 @@ describe('the guard in front of every session route', () => {
 
   // The reads the mount serves fold the guard in (DOR-4978): the hand route's
   // refusal, plus a `detail` that repeats its title, as every mount refusal has.
-  it.each([['/settings'], ['/runtime-type'], ['/canvas/doc-1']])(
+  it.each([['/settings'], ['/runtime-type']])(
     'get /:id%s refuses a private chat as a hand route does',
     async (tail) => {
       const hand = await request(server).get(`/api/sessions/${PRIVATE}/queue`).set(AGENT);

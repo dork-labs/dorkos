@@ -97196,6 +97196,96 @@
       }
     },
     "/api/sessions/{id}/canvas/{documentId}": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Read one document on this session’s canvas",
+        "description": "One row, content included. A document id from another session answers exactly as one that never existed, so an id is never a way to read across sessions.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "documentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasDocument"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "That is not a session id",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "That agent identity could not be verified — its token may be revoked or expired",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A session’s canvas is the person’s own",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such document on this canvas",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server has no canvas",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "sessions.getCanvas"
+      },
       "patch": {
         "tags": [
           "Sessions"
@@ -97387,149 +97477,6 @@
           }
         },
         "operationId": "sessions.deleteCanvas"
-      },
-      "get": {
-        "operationId": "sessions.get_canvas_document",
-        "tags": [
-          "Sessions"
-        ],
-        "summary": "Read one document on a chat’s canvas",
-        "description": "One document on a chat’s canvas, content included. A document id from another chat answers exactly as one that never existed. A chat’s canvas is the person’s own: every agent is refused. Agents read a canvas document with `read_canvas_document`.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "description": "The chat, by its session id."
-            },
-            "required": true,
-            "description": "The chat, by its session id.",
-            "name": "id",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "description": "The document on that chat’s canvas."
-            },
-            "required": true,
-            "description": "The document on that chat’s canvas.",
-            "name": "documentId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Read one document on a chat’s canvas result",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CanvasDocument"
-                }
-              }
-            }
-          },
-          "202": {
-            "description": "A person must allow the call first; nothing ran",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "The capability refused because of the state it met, such as `conflict`",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "412": {
-            "description": "`precondition_failed`: something changed since the caller looked",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "`internal_error`: something went wrong running it",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "`signin_unreachable`: the remote server did not answer",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        }
       }
     },
     "/api/sessions/{id}/canvas/{documentId}/editing": {

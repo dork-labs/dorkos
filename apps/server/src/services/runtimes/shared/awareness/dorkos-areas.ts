@@ -66,8 +66,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     // A chat's change review (diff.*), its run list (runs.*, DOR-5212), recording the
     // pull request it opened (work-graph.record-pr, DOR-5264) and the work graph's reads
     // of an agent's chats, a chat's tree and the work linked to either (DOR-4970), and
-    // the app's chat reads (sessions.*: a chat's runtime, stored settings and a canvas
-    // document, which refuses every agent) ride here with no words of their own (DOR-4978).
+    // the app's chat reads (sessions.*: a chat's runtime and stored settings) ride here
+    // with no words of their own (DOR-4978).
     covers: [
       'chat.',
       'session_start',

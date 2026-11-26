@@ -6090,6 +6090,27 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: 'get',
+  path: '/api/sessions/{id}/canvas/{documentId}',
+  tags: ['Sessions'],
+  summary: 'Read one document on this session’s canvas',
+  description:
+    'One row, content included. A document id from another session answers exactly as one that never existed, so an id is never a way to read across sessions.',
+  request: { params: SessionCanvasParams },
+  responses: {
+    200: {
+      description: 'The document',
+      content: { 'application/json': { schema: CanvasDocumentSchema } },
+    },
+    400: sessionCanvasInvalidId,
+    401: sessionCanvasIdentityUnverified,
+    403: sessionCanvasPeopleOnly,
+    503: sessionCanvasUnavailable,
+    404: sessionCanvasDocumentNotFound,
+  },
+});
+
+registry.registerPath({
   method: 'post',
   path: '/api/sessions/{id}/canvas',
   tags: ['Sessions'],
