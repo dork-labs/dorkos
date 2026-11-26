@@ -3,7 +3,7 @@ import type {
   ConnectorReceiveScope,
   ConnectorEventGrantSelection,
 } from '@dorkos/shared/connector-event-schemas';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 
 /** Exact owner decision; reviewId comes from the durable owner-review state machine. */
 export interface ConnectorEventGrantReview {

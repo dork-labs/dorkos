@@ -119,7 +119,16 @@ import type { Server } from 'node:http';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
 import { createRuntimesRoutes } from '../runtimes.js';
+import { localOnlyRoutes } from './runtimes-connect-local-routes.js';
+import { runtimeSettingsReader } from '../runtime-settings-reader.js';
+import {
+  runtimeReadsDomain,
+  setRuntimeSettingsReader,
+} from '../../services/core/runtime-doors/runtime-read-capabilities.js';
+import { composeRegistry } from '../../services/core/capabilities/index.js';
+import { noopLogger } from '@dorkos/shared/logger';
 import { logger } from '../../lib/logger.js';
 import {
   storeRuntimeCredential,
@@ -146,7 +155,11 @@ import { signInLandings } from '../../services/core/sign-in-landing/sign-in-land
 import { resetHeldStepUpsForTests } from '../../services/core/auth/step-up/step-up-holds.js';
 
 const admission = new MainRequestAdmission();
-const app = composedListener(admission);
+// The key, form and model reads are capabilities the mount serves (`runtimes.*`, DOR-4978).
+setRuntimeSettingsReader(runtimeSettingsReader());
+const app = composedListener(admission, {
+  capabilities: composeRegistry([runtimeReadsDomain], { logger: noopLogger }),
+});
 
 /**
  * ONE listener for the whole file (DOR-483). Requests target `server`, never
@@ -162,7 +175,10 @@ const SECRET = 'sk-ant-secret-never-echo';
 let currentPeer = '127.0.0.1';
 
 /** The real runtimes routes behind the `/api` chain, with the TCP peer rewritten first. */
-const peerRoutes = honoGroupListener({ path: '/api/runtimes', routes: createRuntimesRoutes() });
+const peerRoutes = honoGroupListener([
+  capabilityGroup(runtimeReadsDomain),
+  { path: '/api/runtimes', routes: createRuntimesRoutes() },
+]);
 const peerServer = listeningServer((req, res) => {
   Object.defineProperty(req.socket, 'remoteAddress', { value: currentPeer, configurable: true });
   peerRoutes(req, res);
@@ -933,105 +949,20 @@ describe('runtime connect endpoints', () => {
     /** The LAN peer that defeated the header-only check, per the DOR-532 probes. */
     const REMOTE_PEER = '192.168.86.200';
 
-    const ROUTES: Array<{
-      name: string;
-      method: 'get' | 'post';
-      path: string;
-      body?: Record<string, unknown>;
-      /** The action that must never run. */
-      action?: () => unknown;
-      /** Whether the request body carries a secret that must not be echoed. */
-      carriesSecret?: boolean;
-    }> = [
-      {
-        name: 'POST /:type/credential',
-        method: 'post',
-        path: '/api/runtimes/claude-code/credential',
-        body: { secret: SECRET },
-        action: () => storeRuntimeCredential,
-        carriesSecret: true,
-      },
-      {
-        name: 'POST /opencode/provider/credential',
-        method: 'post',
-        path: '/api/runtimes/opencode/provider/credential',
-        body: { providerId: 'anthropic', secret: SECRET },
-        action: () => storeProviderCredential,
-        carriesSecret: true,
-      },
-      {
-        name: 'GET /opencode/provider',
-        method: 'get',
-        path: '/api/runtimes/opencode/provider',
-        action: () => readOpenCodeDirectSetup,
-      },
-      {
-        name: 'POST /opencode/provider/credential/check',
-        method: 'post',
-        path: '/api/runtimes/opencode/provider/credential/check',
-        body: { providerId: 'openai', secret: SECRET },
-        action: () => checkProviderCredential,
-        carriesSecret: true,
-      },
-      {
-        name: 'GET /:type/credential',
-        method: 'get',
-        path: '/api/runtimes/claude-code/credential',
-        action: () => readRuntimeKeyStatus,
-      },
-      {
-        name: 'POST /:type/credential/check',
-        method: 'post',
-        path: '/api/runtimes/claude-code/credential/check',
-        body: { secret: SECRET },
-        action: () => checkRuntimeCredential,
-        carriesSecret: true,
-      },
-      {
-        name: 'POST /codex/login',
-        method: 'post',
-        path: '/api/runtimes/codex/login',
-        body: {},
-        action: () => delegateRuntimeLogin,
-      },
-      {
-        name: 'POST /opencode/openrouter/key',
-        method: 'post',
-        path: '/api/runtimes/opencode/openrouter/key',
-        body: { key: SECRET },
-        action: () => storeOpenRouterKeyReference,
-        carriesSecret: true,
-      },
-      {
-        name: 'POST /opencode/openrouter/oauth/start',
-        method: 'post',
-        path: '/api/runtimes/opencode/openrouter/oauth/start',
-        body: {},
-      },
-      {
-        name: 'GET /opencode/openrouter/oauth/status',
-        method: 'get',
-        path: '/api/runtimes/opencode/openrouter/oauth/status',
-      },
-      {
-        name: 'GET /opencode/ollama',
-        method: 'get',
-        path: '/api/runtimes/opencode/ollama',
-        action: () => detectOllama,
-      },
-      {
-        name: 'GET /opencode/ollama/models',
-        method: 'get',
-        path: '/api/runtimes/opencode/ollama/models',
-      },
-      {
-        name: 'POST /opencode/ollama/pull',
-        method: 'post',
-        path: '/api/runtimes/opencode/ollama/pull',
-        body: { model: 'qwen2.5-coder:7b' },
-        action: () => pullOllamaModel,
-      },
-    ];
+    /** The services a refused route must never reach, by the name the fixture gives. */
+    const ACTIONS: Record<string, unknown> = {
+      storeRuntimeCredential,
+      storeProviderCredential,
+      readOpenCodeDirectSetup,
+      checkProviderCredential,
+      readRuntimeKeyStatus,
+      checkRuntimeCredential,
+      delegateRuntimeLogin,
+      storeOpenRouterKeyReference,
+      detectOllama,
+      pullOllamaModel,
+    };
+    const ROUTES = localOnlyRoutes(SECRET);
 
     it.each(ROUTES)('refuses $name from a non-loopback peer', async (route) => {
       const req = request(appWithPeer(REMOTE_PEER))
@@ -1043,7 +974,7 @@ describe('runtime connect endpoints', () => {
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('operator_only');
       expect(res.body.detail).toMatch(/only available on this computer/i);
-      if (route.action) expect(route.action()).not.toHaveBeenCalled();
+      if (route.action) expect(ACTIONS[route.action]).not.toHaveBeenCalled();
       if (route.carriesSecret) expect(JSON.stringify(res.body)).not.toContain(SECRET);
     });
 
@@ -1058,7 +989,7 @@ describe('runtime connect endpoints', () => {
         const res = await (route.body ? req.send(route.body) : req);
 
         expect(res.status).toBe(401);
-        if (route.action) expect(route.action()).not.toHaveBeenCalled();
+        if (route.action) expect(ACTIONS[route.action]).not.toHaveBeenCalled();
         if (route.carriesSecret) expect(JSON.stringify(res.body)).not.toContain(SECRET);
       }
     );

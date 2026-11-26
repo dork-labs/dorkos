@@ -46,12 +46,13 @@ import {
 } from '@dorkos/shared/connector-schemas';
 import type { ConnectorEventGrantPort } from './events/grant-port.js';
 import { ConnectorSubscriptionError } from './events/subscription-store.js';
-import {
-  isServerPrincipal,
-  type ConnectorOwnerAuthority,
-  type ServerPrincipalClaims,
-  type ServerPrincipalProof,
-} from './principal/server-principal.js';
+import { isServerPrincipal } from './principal/server-principal.js';
+import type {
+  ConnectorOwnerAuthority,
+  ServerPrincipalClaims,
+  ServerPrincipalProof,
+} from '../core/connections-lease/index.js';
+import { SERVICE_CATALOG_TOOL_NAME } from '@dorkos/shared/connections-lease';
 import type { ConnectorRuntimePrincipalService } from './principal/runtime-principal-service.js';
 import type {
   ConnectorOperatorQueryService,
@@ -77,7 +78,6 @@ import {
   type GrantedClasses,
 } from './resources/agent-request-classes.js';
 import { dorkosToolNameFor } from '../runtimes/shared/dorkos-tool-names.js';
-import { SERVICE_CATALOG_TOOL_NAME } from './connector-capabilities.js';
 import type { ConnectorAuthenticationFlowService } from './resources/authentication-flow-service.js';
 import { agentGrantScope, type AgentGrantDenial } from './execution/agent-grant-scope.js';
 import { CONNECTOR_REQUEST_LIVE_HOLD_MS } from './runtime-capability-scope.js';

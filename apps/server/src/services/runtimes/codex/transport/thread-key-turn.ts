@@ -15,7 +15,7 @@
  * @module services/runtimes/codex/transport/thread-key-turn
  */
 import { logger } from '../../../../lib/logger.js';
-import type { ConnectorThreadKeyPort } from '../../../connectors/runtime-principal-port.js';
+import type { ConnectorThreadKeyPort } from '../../../core/connections-lease/index.js';
 import type { CodexTurnRequest } from './codex-transport.js';
 
 /** One turn's thread-key steps, in order: attach, then end. */

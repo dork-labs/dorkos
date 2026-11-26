@@ -205,7 +205,7 @@ describe('what counts as a program on PATH', () => {
 });
 
 // The permanent reproduction of DOR-2340
-// (research/20260926-marketplace-retained-copy-reproduction.md), as a
+// (research/20260926_marketplace-retained-copy-reproduction.md), as a
 // regression test: every case it records now comes out inert.
 describe.skipIf(process.platform === 'win32')('the recorded DOR-2340 reproduction', () => {
   it('leaves no saved copy runnable, on the PATH, discovered or disclosed', async () => {

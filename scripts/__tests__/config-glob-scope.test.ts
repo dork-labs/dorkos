@@ -41,6 +41,7 @@ function trackedConfigFiles(): string[] {
   return execFileSync('git', ['ls-files', '--', '*.config.ts'], {
     cwd: repoRoot,
     encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
   })
     .split('\n')
     .filter(Boolean);

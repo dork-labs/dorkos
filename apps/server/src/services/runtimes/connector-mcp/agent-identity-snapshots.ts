@@ -11,8 +11,8 @@ import type {
   ResolveConnectorTurnResult,
   RevokeConnectorTurnReason,
   RuntimeToolCaller,
-} from '../../connectors/runtime-principal-port.js';
-import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
+  ServerPrincipalProof,
+} from '../../core/connections-lease/index.js';
 
 /** Dependencies for {@link AgentIdentitySnapshotPrincipalPort}. */
 export interface AgentIdentitySnapshotPrincipalPortOptions {

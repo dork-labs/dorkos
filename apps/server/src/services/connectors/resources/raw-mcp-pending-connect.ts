@@ -6,7 +6,7 @@ import {
   eq,
   type Db,
 } from '@dorkos/db';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 import { connectorAuthenticationRequestHash } from './authentication-flow-request.js';
 import type { ConnectorRegistry } from '../registry.js';
 import type { RawMcpPendingConnectResolver } from '../providers/raw-mcp.js';

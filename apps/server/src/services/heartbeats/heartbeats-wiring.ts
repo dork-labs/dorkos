@@ -29,7 +29,6 @@ import { resolveAgentIdForPath } from '../mesh/agent-path-lookup.js';
 import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
 import { onDispatchLifecycle } from '../session/message-dispatcher.js';
 import { auditTrail } from '../audit/audit-trail.js';
-import type { HeartbeatRouterDeps } from '../../routes/heartbeats.js';
 import { liveWakersOffReader } from './wakers-off/live-wakers-off.js';
 import { setWakersOffReader } from './wakers-off/wakers-off-capability.js';
 import type { SessionOriginResolvers } from '../session/origin/session-origin-overlays.js';
@@ -50,6 +49,7 @@ import { systemClock } from './beat-scheduler.js';
 import { heartbeatStatus } from './heartbeat-status.js';
 import { setRaiseRecipientCheck } from './heartbeat-capabilities.js';
 import { measureAgent } from './measures/measures.js';
+import { setHeartbeatPageReader } from './measures/page-capability.js';
 import { setHeartbeatStatusReader } from './measures/status-capability.js';
 import { mountTriage, type TriageMount } from './triage/triage-mount.js';
 import {
@@ -70,13 +70,6 @@ import {
 
 /** What the composition root hands over. */
 export interface HeartbeatsWiringDeps extends DeliveryDeps {
-  /**
-   * Where the status route's reads go (`GET /api/agents/:id/heartbeat`,
-   * mounted by `http/hono-api.ts`).
-   */
-  routes: {
-    heartbeat?: HeartbeatRouterDeps;
-  };
   /** The session list's origin overlays, which gain the chat list's Heartbeat label. */
   origins: SessionOriginResolvers;
   /** Mesh, once it runs. */
@@ -310,6 +303,7 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
       triage.stop();
       setRaiseRecipientCheck(undefined);
       setHeartbeatStatusReader(undefined);
+      setHeartbeatPageReader(undefined);
       setWakersOffReader(undefined);
       hub.uninstall();
       outbox.stop();
@@ -413,7 +407,8 @@ function mountStatus(
           ...(days !== undefined ? { days } : {}),
         }),
     });
-  deps.routes.heartbeat = { status };
+  // The person's Heartbeat page (`heartbeat.view_page`); the owner alone sees held words.
+  setHeartbeatPageReader({ status });
   // An agent reads what anyone but the owner sees: no held words, no chat ids.
   setHeartbeatStatusReader({
     status: (agentId, days) => status(agentId, false, days),

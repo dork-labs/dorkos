@@ -151,7 +151,7 @@ No new ADR is extracted: this specification proposes a bounded experiment and ma
 - [Ideation](01-ideation.md)
 - [Workspace reconciler source](../../apps/server/src/services/workspace/workspace-reconciler.ts)
 - [Warm-process lifecycle specification](../warm-process-lifecycle/02-specification.md)
-- [Local marketplace recovery evidence](../../research/20260926-local-marketplace-recovery-evidence.md)
+- [Local marketplace recovery evidence](../../research/20260926_local-marketplace-recovery-evidence.md)
 
 ## Central adoption follow-up
 

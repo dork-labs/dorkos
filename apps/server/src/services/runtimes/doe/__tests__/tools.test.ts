@@ -55,7 +55,7 @@ import { createAgentRuntimeMcpServer } from '../../connector-mcp/agent-runtime-s
 import { startConnectorRuntimeMcpListener } from '../../connector-mcp/listener.js';
 import { assembleDoeMcp } from '../mcp.js';
 import type { CapabilityInvocationContext } from '../../../core/capabilities/index.js';
-import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
+import type { ConnectorRuntimePrincipalPort } from '../../../core/connections-lease/index.js';
 
 it('RT-MCP-01: executes registry projections through the real authenticated listener and preserves caller authority', async () => {
   const principal = createServerPrincipal({

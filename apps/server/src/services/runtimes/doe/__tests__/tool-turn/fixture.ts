@@ -21,7 +21,7 @@ import {
 } from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
 import { CanonicalConnectorRuntimeAuthorityResolver } from '../../../../connectors/principal/runtime-authority-resolver.js';
 import { ConnectorRuntimePrincipalService } from '../../../../connectors/principal/runtime-principal-service.js';
-import type { ConnectorOwnerAuthority } from '../../../../connectors/principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../../../core/connections-lease/index.js';
 import { ConnectorRegistry } from '../../../../connectors/registry.js';
 import { ConnectorExecutionAuthorizationService } from '../../../../connectors/execution/authorization-service.js';
 import { ConnectorAccessQueryService } from '../../../../connectors/execution/access-query-service.js';

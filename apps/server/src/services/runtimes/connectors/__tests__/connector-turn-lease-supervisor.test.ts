@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type {
   ConnectorRuntimePrincipalPort,
   ConnectorTurnRenewalPermit,
-} from '../../../connectors/runtime-principal-port.js';
+} from '../../../core/connections-lease/index.js';
 import {
   ConnectorTurnLeaseSupervisor,
   type ConnectorLeaseScheduler,

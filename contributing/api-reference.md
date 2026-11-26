@@ -354,6 +354,8 @@ The marketplace routes are mounted at `/api/marketplace` and backed by injected 
 
 A source name rides in the path or, from the app, in `?name=`: a name saved by an older DorkOS may hold a `/`, and Remote Access refuses an encoded `/` in a URL path (DOR-4212). Both forms run the same handler.
 
+**Who may call them** (DOR-4978): the capability mount serves the reads (`GET /sources`, `/cache`, `/packages`, `/installed`, `/installed/:name`, `/updates`, `/held-back`, `/dev-links`; `services/marketplace/doors/marketplace-read-capabilities.ts`). They are open to agents, as the `marketplace_*` tools are; an agent reads `/installed`, `/installed/:name` and `/held-back` without the working folder a dev-linked package runs from (`linkedPath`, `devLink.path`, the folder in `note` and a `bindsTo` that spells it). The exception is `GET /dev-links`: it names a person's working folders, so an agent, an approval token, an API key or any `Authorization` header gets `403 person_only`. `GET /packages/:name` and every write stay by hand.
+
 **Error responses** are problem documents from a centralised `mapErrorToProblem` helper — `400 invalid_request` for invalid manifests, `409 conflict` for file conflicts, `404 not_found` for missing packages/sources, `500 internal_error` for unexpected failures.
 
 See `contributing/marketplace-installs.md` for the full install pipeline, transaction semantics, and per-kind flow details.
@@ -926,6 +928,8 @@ Change one or more areas or single actions for everyone. `null` removes a change
 ### GET /api/agents/:id/permissions
 
 One agent's resolved permissions, with where each area's state and its Files & commands stop came from.
+
+Served by the capability mount as `permissions.view_agent`, beside `GET /api/agents/:id/level` (`permissions.view_agent_level`). Whoever could read it before still can, an agent included (DOR-4978).
 
 - `200` - `AgentPermissionsResponse`: `{ agentId, agentName, overrides, areas: [{ ...area, inherited, changedOutsideAt, lastChange? }], filesAndCommands: { stop, source, lastChange?, inherited: { stop, source, lastChange? } } }`. `source` is one of `agent | runtime | default | runtime-own`; `changedOutsideAt` is set when the area's most recent change was an edit to the agent's settings file DorkOS noticed rather than made.
 

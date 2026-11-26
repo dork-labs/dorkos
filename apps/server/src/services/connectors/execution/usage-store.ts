@@ -7,7 +7,7 @@ import {
   isNull,
   type Db,
 } from '@dorkos/db';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 
 /** Publicly safe terminal vocabulary retained by the internal receipt ledger. */
 export type ConnectorUsageOutcome =

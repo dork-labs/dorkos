@@ -51,7 +51,7 @@ import {
 } from './access-writes.js';
 import { approverHolding } from './approver-holding.js';
 import { anotherAgentTurnRefusal, type TurnGateRefusal } from './turn-gate.js';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 
 /** Every refusal approval or an agent's Undo can give, with its words (§7). */
 export const APPROVAL_MESSAGES = {

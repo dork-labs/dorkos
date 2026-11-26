@@ -32,7 +32,7 @@ import {
 } from '@dorkos/shared/connector-schemas';
 import { ConnectorExternalAccountRefSchema } from '@dorkos/shared/connector-provider';
 import type { ConnectorAuthorityCleanupPort } from '../authority-cleanup-port.js';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 import type { ConnectorRegistry } from '../registry.js';
 import type { ConnectorAuthenticationFlowService } from './authentication-flow-service.js';
 import {

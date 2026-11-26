@@ -10,7 +10,7 @@ import type {
   ConnectorPhysicalTrigger,
 } from '@dorkos/shared/connector-events';
 import type { ConnectorProviderInstanceId } from '@dorkos/shared/connector-schemas';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 import type { ConnectorRegistry } from '../registry.js';
 import { ConnectorSubscriptionError, ConnectorSubscriptionStore } from './subscription-store.js';
 
