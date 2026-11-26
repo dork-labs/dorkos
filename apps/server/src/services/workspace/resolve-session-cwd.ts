@@ -142,7 +142,9 @@ export function sessionCwdDeps(
     // `agent.json`, which it can rewrite, so a new one always goes through an
     // agent's card (DOR-2335). A turn cannot carry the token back; the pending
     // card is remembered, and until a person approves, the turn runs in the
-    // agent's own folder.
+    // agent's own folder. No `chatId`: this checkout is the agent's home,
+    // reused by every chat it runs, not made for one chat, so the work graph
+    // records no chat `opened` it (DOR-5265).
     ensureWorkspace: (req, sessionId) =>
       getWorkspaceManager().ensure(
         req,

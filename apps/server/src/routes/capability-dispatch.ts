@@ -55,8 +55,10 @@ import { honoRequestFacts } from '../http/request-facts.js';
 import {
   clearsTheAgentBar,
   frontDoorRefusal,
+  presentsProgram,
   presentsProgramCredential,
   readCallerAuthority,
+  refuseFrontDoorChange,
   refuseUnlessAccountOwner,
 } from '../lib/caller-authority.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
@@ -66,6 +68,7 @@ import { gateResponse, loggableRefusal, toolRefusalProblem } from './capability-
 import { holdConfirmFirst } from './capability-confirm-first.js';
 import { isDocOperatorAccount } from '../services/canvas/doc-channel/doc-source-policy.js';
 import { problemRefusalUnlessOwner } from './cloud-owner-bar.js';
+import { frontDoorProblem } from './front-door-step-up.js';
 
 /** What a request answers while boot has not handed the registry over. */
 const STILL_STARTING = 'DorkOS is still starting. Try again in a moment.';
@@ -129,6 +132,14 @@ export async function dispatchCapability(
   }
 
   const facts = honoRequestFacts(c);
+  // A front-door confirm-first capability runs its bar first, as its hand route
+  // did, so a person not allowed to change it hears why before anything else.
+  // A program or an agent is left to `registry.invoke`, which answers `person_only`.
+  const hold = capability.confirmFirst;
+  if (hold?.bar === 'front-door' && !presentsProgram(facts)) {
+    const refusal = refuseFrontDoorChange(facts, hold.subject);
+    if (refusal) return frontDoorProblem(c, refusal);
+  }
   // A Wi-Fi sign-in reads through capabilities, but acts at the computer
   // (DOR-2969): an `act` or `destructive` one is refused before it runs,
   // unless it declares a network mode (ADR 261125-114705, decision 3): it only
@@ -142,10 +153,10 @@ export async function dispatchCapability(
     return problem(c, 'not_from_wifi', { detail: WIFI_ACTION_REFUSAL });
   }
 
-  // A confirm-first capability runs the account owner bar first, held or not, as
-  // the account writes always did (ADR 261125-114705, decision 4).
-  if (capability.confirmFirst) {
-    const refusal = problemRefusalUnlessOwner(facts, capability.confirmFirst.accountOwner);
+  // An account-owner confirm-first capability runs the account owner bar first,
+  // held or not, as the account writes always did (ADR 261125-114705, decision 4).
+  if (hold?.bar === 'account-owner') {
+    const refusal = problemRefusalUnlessOwner(facts, hold.accountOwner);
     if (refusal) return sendProblem(c, refusal);
   }
   return invokeAs(

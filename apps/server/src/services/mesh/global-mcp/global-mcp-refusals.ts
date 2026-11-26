@@ -19,6 +19,8 @@ export interface GlobalMcpToolRefusal {
   readonly detail: string;
   /** Every other sentence these doors refuse with under this code, each sent as it is. */
   readonly alsoSays?: readonly string[];
+  /** The status the hand route kept for a server that can't run here, over the code's own. */
+  readonly status?: 422;
 }
 
 /** What the change bar names, in its refusal. */
@@ -43,6 +45,19 @@ export const GLOBAL_MCP_UNDO = {
   unreadable: 'That agent’s settings file couldn’t be read. Nothing changed.',
 } as const;
 
+/** The sentences the store's refusals answer with (DOR-4978), as the hand routes said them. */
+export const GLOBAL_MCP_STORE = {
+  nameTaken: 'A server with that name already exists. Pick another.',
+  reservedName: "That name is one of DorkOS's own. Pick another.",
+  oauthUnsupported: "This server needs a sign-in DorkOS can't do yet.",
+  unsafeCommand: "That command can't run here. Use the full path to the program.",
+  unsafeEnv: "One of those environment variables isn't allowed.",
+  maskedValue: "Type the secret again. A masked value can't be saved.",
+  unreadable: "The saved servers couldn't be read. Nothing changed.",
+  changed: 'This server changed since you looked. Reload it and try again.',
+  secretLeft: "The server is removed, but its saved key couldn't be deleted.",
+} as const;
+
 /** The sentence for a server name that names nothing. */
 export const NO_SUCH_SERVER = 'There is no MCP server by that name.';
 
@@ -58,17 +73,32 @@ export const GLOBAL_MCP_TOOL_REFUSALS: Readonly<Record<string, GlobalMcpToolRefu
     detail: GLOBAL_MCP_FRONT_DOOR.notTheOwner,
     alsoSays: [GLOBAL_MCP_FRONT_DOOR.elsewhere],
   },
+  GLOBAL_MCP_NAME_TAKEN: {
+    code: 'conflict',
+    detail: GLOBAL_MCP_STORE.nameTaken,
+    alsoSays: [GLOBAL_MCP_STORE.reservedName],
+  },
+  GLOBAL_MCP_CANT_RUN: {
+    code: 'invalid_request',
+    status: 422,
+    detail: GLOBAL_MCP_STORE.unsafeCommand,
+    alsoSays: [
+      GLOBAL_MCP_STORE.oauthUnsupported,
+      GLOBAL_MCP_STORE.unsafeEnv,
+      GLOBAL_MCP_STORE.maskedValue,
+    ],
+  },
   GLOBAL_MCP_UNREADABLE: {
     code: 'temporarily_unavailable',
-    detail: "The saved servers couldn't be read. Nothing changed.",
+    detail: GLOBAL_MCP_STORE.unreadable,
   },
   GLOBAL_MCP_CHANGED: {
     code: 'precondition_failed',
-    detail: 'This server changed since you looked. Reload it and try again.',
+    detail: GLOBAL_MCP_STORE.changed,
   },
   GLOBAL_MCP_SECRET_LEFT: {
     code: 'secret_left',
-    detail: "The server is removed, but its saved key couldn't be deleted.",
+    detail: GLOBAL_MCP_STORE.secretLeft,
   },
   GLOBAL_MCP_UNDO_REFUSED: {
     code: 'invalid_request',

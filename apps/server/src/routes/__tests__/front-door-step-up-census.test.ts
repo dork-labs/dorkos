@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
-import { exportedHandler, unguardedWrites } from './front-door-write-flow.js';
+import { CONFIRM_FIRST_ROUTES, exportedHandler, unguardedWrites } from './front-door-write-flow.js';
 import { HELD_WRITES } from '../../services/core/auth/step-up/front-door-openapi.js';
 import { composeCapabilityRegistryForDocs } from '../../services/core/self-description/dorkos-registry.js';
 
@@ -179,7 +179,7 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
     'Short-lived video link for one path of one app, as no person; no lasting credential (N).',
   'workbench-serve.ts':
     'Scoped serve/proxy URLs are transient preview grants, not front-door credentials (N).',
-  'mcp-servers.ts': 'Already holds add, replace and widen; mcp-servers-step-up.test.ts covers it.',
+  'mcp-servers.ts': 'Holds widen; add and replace are confirm-first capabilities, checked below.',
   'runtimes-http.ts':
     'Shared runtime bars and the key-save hold (HOLD_HELPERS); runtimes.ts routes are checked.',
   'runtimes-doe-setup.ts': 'Runtime sign-in and model settings are N.',
@@ -214,9 +214,9 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
     'Delegated mesh PATCH holds credits-on and rechecks the agent and manifest; mesh-credits-step-up.test.ts covers it.',
   'front-door-step-up.ts': 'The shared helper itself rechecks the bar.',
   'capability-dispatch.ts':
-    'Reads the person bar only to open the person-only door (audience person) on a capability, and runs a confirm-first capability’s account owner bar; it grants nothing, and the tier and permission gate still run inside registry.invoke (N). Confirm-first capabilities are checked below.',
+    'Reads the person bar only to open the person-only door (audience person) on a capability, and runs a confirm-first capability’s declared bar (account owner, or front door) before anything is held; it grants nothing, and the tier and permission gate still run inside registry.invoke (N). Confirm-first capabilities are checked below.',
   'capability-confirm-first.ts':
-    'Holds a confirm-first capability call through runAccountWrite; every such capability is checked below.',
+    'Holds a confirm-first capability call through its declared bar, runAccountWrite or runFrontDoorWrite; every such capability is checked below.',
   // Shared bars and helpers: their callers are classified here one by one.
   'agent-instructions.ts': 'Reads an agent’s instructions; no write route.',
   'extension-write-binding.ts': 'Shared extension write bar; its callers are classified here.',
@@ -633,7 +633,7 @@ describe('front-door write census', () => {
     const held = composeCapabilityRegistryForDocs()
       .capabilities.filter((capability) => capability.confirmFirst !== undefined)
       .map(({ surfaces }) => `${surfaces.http?.method} ${surfaces.http?.path}`);
-    expect(held).toEqual(['put /api/heartbeats/triage-credits']);
+    expect(held.sort()).toEqual(CONFIRM_FIRST_ROUTES);
     expect(held.filter((key) => !HELD_WRITES.has(key))).toEqual([]);
   });
 

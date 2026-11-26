@@ -535,3 +535,6 @@ export class CapabilityToolError extends Error {
     this.name = 'CapabilityToolError';
   }
 }
+
+/** Seal server state a confirm-first hold binds (`ConfirmFirstSheet.heldState`), for a handler to compare. */
+export { sealHeldState } from './declarations/held-state.js';

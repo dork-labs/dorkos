@@ -30,8 +30,11 @@ export const HELD_WRITES = new Set([
   'patch /api/config',
   'post /api/config/mcp/reveal-token',
   'post /api/config/mcp/rotate-token',
-  // A capability's route (`heartbeat.choose_triage_credits`, confirm-first): its 428 is added here too.
+  // Confirm-first capabilities' routes (`heartbeat.choose_triage_credits`, and adding or
+  // replacing an MCP server every agent gets, DOR-4978): their 428 is added here too.
   'put /api/heartbeats/triage-credits',
+  'post /api/mcp-servers',
+  'put /api/mcp-servers/{name}',
   'post /api/tasks',
   'patch /api/tasks/{id}',
   'patch /api/mesh/agents/{id}',

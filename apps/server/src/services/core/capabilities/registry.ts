@@ -992,7 +992,7 @@ export function composeRegistry(
       }
 
       // A confirm-first call runs only once the person confirmed it (ADR 261125-114705, decision 4).
-      requireConfirmation(capability, parsed, supplied.confirmed);
+      requireConfirmation(capability, parsed, supplied.confirmed, deps, invocationContext);
 
       // Run as the caller (spec `audit-trail` PR2): an identified agent's call
       // runs inside its own audit scope, so a write the capability makes further
