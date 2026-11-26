@@ -394,7 +394,7 @@ describe('credential-free-build workflow', () => {
       ['.github/workflows/lint.yml', 1, 1],
       ['.github/workflows/scripts-test.yml', 1, 1],
       ['.github/workflows/site-build.yml', 1, 0],
-      ['.github/workflows/typecheck.yml', 1, 1],
+      ['.github/workflows/typecheck.yml', 2, 1],
     ] as const) {
       const text = readFileSync(path.join(repoRoot, rel), 'utf8');
       expect(

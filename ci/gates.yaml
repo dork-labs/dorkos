@@ -432,6 +432,9 @@ gates:
   - id: wf.typecheck.typecheck
     source: .github/workflows/typecheck.yml
     purpose: Full-monorepo typecheck, plus the policy gates (retired words, copy a browser spec still quotes, boundary, every ratchet in scripts/ratchets/registry.ts through one `pnpm ratchet` step, NUL bytes, dead doc paths, one-shot browser routes) and the CI Steward census and ledger checks.
+  - id: wf.typecheck.policy
+    source: .github/workflows/typecheck.yml
+    purpose: The policy gates on their own (retired words, copy length, copy a browser spec still quotes, one-shot browser routes, boundary, config migration, NUL bytes, dead doc paths, the repo-wide scripts suites, the CI Steward census and ledger checks) in their own job, so a red typecheck can come to mean tsc alone (DOR-4949). Until policy is required, typecheck runs them too.
 
   # --- update-homebrew.yml ---
   - id: wf.update-homebrew.tag-is-on-main
