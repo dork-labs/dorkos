@@ -22,6 +22,7 @@ import { entityRef, type EntityKind } from '@dorkos/shared/entity-ref';
 import { capabilityGroup } from '../../../../http/__tests__/capability-group.js';
 import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 import type { ApiEnv } from '../../../../http/api-chain.js';
+import type { WorkLinkInput } from '../../work-link-store.js';
 import { configManager, initConfigManager } from '../../../core/config-manager.js';
 import { initAuth } from '../../../core/auth/index.js';
 import type { AgentIdentity } from '../../../core/agent-identity/index.js';
@@ -242,7 +243,7 @@ export function link(
   relation: WorkLinkRelation,
   kind: Extract<EntityKind, 'pr' | 'ticket'>,
   id: string,
-  turnMarks?: { outsider?: boolean }
+  turnMarks?: NonNullable<WorkLinkInput['turnMarks']>
 ): void {
   const from = entityRef('chat', chatId);
   const to = entityRef(kind, id);
