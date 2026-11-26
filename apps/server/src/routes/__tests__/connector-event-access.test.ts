@@ -147,7 +147,6 @@ function fixture() {
           listConnections: vi.fn(),
           listOperations: vi.fn(),
           listAgentUsage: vi.fn(),
-          listOperatorUsage: vi.fn(),
         },
         eventAccess: access,
         programPrincipals: programs,

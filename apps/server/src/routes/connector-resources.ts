@@ -88,7 +88,7 @@ export interface ConnectorResourcesRouterDeps extends ConnectorOwnerBoundaryDeps
   /** App logos, fetched once from the service's logo host and served from this server. */
   readonly logos: Pick<CatalogLogoService, 'get'>;
   /** Restart-safe provider authentication flows. */
-  readonly authentication: Pick<ConnectorAuthenticationFlowService, 'start' | 'reconnect' | 'poll'>;
+  readonly authentication: Pick<ConnectorAuthenticationFlowService, 'start' | 'reconnect'>;
   /** Canonical local lifecycle mutations. */
   readonly lifecycle: Pick<ConnectorLifecycleService, 'pause' | 'resume' | 'disconnect'>;
   /** What an app lets agents do, read on demand and kept. */
@@ -272,16 +272,6 @@ export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDep
         }
       },
     });
-  });
-
-  router.get('/authentication-flows/:flowId', async (c) => {
-    const operator = owner(c);
-    if (operator instanceof Response) return operator;
-    try {
-      return c.json(await deps.authentication.poll(operator, c.req.param('flowId')));
-    } catch (error) {
-      return resourceErrorResponse(c, error);
-    }
   });
 
   router.post('/connections/:connectionId/reconnect', async (c) => {

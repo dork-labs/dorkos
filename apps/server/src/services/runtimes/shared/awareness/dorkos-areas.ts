@@ -128,7 +128,10 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     can: 'use them, ask for one, or give access up.',
     // `connectors.` also covers the owner's own account doors on `/api/connectors`
     // (`connectors.disconnect_impact`, `connectors.rename_connection`,
-    // `connectors.remove_connection`, DOR-4978), behind the account-decision bar, which refuse agents.
+    // `connectors.remove_connection`, `connectors.get_sign_in`, `connectors.get_review`,
+    // `connectors.get_agent_request_sign_in`, `connectors.stop_every_agent_share`,
+    // `connectors.leave_agent_out`, `connectors.list_usage`, DOR-4978), behind the
+    // account-decision bar, which refuse agents.
     covers: ['connector.', 'connectors.'],
     areas: ['permissions'],
     gate: 'per-app grant',

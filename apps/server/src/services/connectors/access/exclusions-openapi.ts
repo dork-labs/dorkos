@@ -46,23 +46,7 @@ export function registerConnectorExclusionsOpenApi(registry: OpenAPIRegistry): v
       404: notFound,
     },
   });
-  registry.registerPath({
-    method: 'put',
-    path: '/api/connectors/connections/{connectionId}/exclusions/{agentId}',
-    tags: ['Connectors'],
-    summary: "Leave one agent out of a connection's every-agent share",
-    description:
-      'Owner only. The agent keeps only the access given to it by name. The share, now and ' +
-      'as it changes later, no longer reaches it. Takes effect on its next call.',
-    request: { params: ConnectorGrantExclusionParamsSchema },
-    responses: {
-      200: {
-        description: 'The agent is left out',
-        content: { 'application/json': { schema: ConnectorGrantExclusionChangeSchema } },
-      },
-      404: notFound,
-    },
-  });
+
   registry.registerPath({
     method: 'get',
     path: '/api/connectors/access-changes',

@@ -7,7 +7,6 @@ import {
   ConnectorAgentRequestDecisionSchema,
 } from '@dorkos/shared/connector-agent-request-schemas';
 import {
-  ConnectorEveryAgentRevokeResponseSchema,
   ConnectorManagementReviewCreateRequestSchema,
   ConnectorManagementReviewDecisionSchema,
   ConnectorReconciliationApplyRequestSchema,
@@ -53,6 +52,7 @@ import {
   SUBSCRIPTION_PROBLEM,
   sendConnectorProblem,
 } from './connector-problems.js';
+import { AGENT_REQUESTS_OFF } from '../services/connectors/resources/owner-refusals.js';
 import { CONNECTED_APPS, onlyRemovesAccess } from './connector-step-up.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 import { PROGRAM_KEY_ROUTES as KEY } from '../services/connectors/principal/program-key-routes.js';
@@ -87,19 +87,16 @@ export interface ConnectorManagementRouterDeps extends ConnectorOwnerBoundaryDep
   /** Durable management review lifecycle. */
   readonly reviews: Pick<
     ConnectorManagementReviewService,
-    'create' | 'get' | 'getProgramStatus' | 'list' | 'resolve'
+    'create' | 'getProgramStatus' | 'list' | 'resolve'
   >;
   /** Complete-catalog exact grant reconciliation. */
-  readonly reconciliation: Pick<
-    ConnectorReconciliationService,
-    'preview' | 'apply' | 'revokeEveryAgent'
-  >;
+  readonly reconciliation: Pick<ConnectorReconciliationService, 'preview' | 'apply'>;
   /** Agents left out of a connection's every-agent share (DOR-3961). */
-  readonly exclusions: Pick<ConnectorGrantExclusionService, 'list' | 'leaveOut' | 'letBackIn'>;
+  readonly exclusions: Pick<ConnectorGrantExclusionService, 'list' | 'letBackIn'>;
   /** Owner-only review and resolution for requests raised by runtime agents. */
   readonly agentRequests?: Pick<
     ConnectorAgentRequestService,
-    'listForOwner' | 'getForOwner' | 'resolve' | 'startAuthentication' | 'pollAuthentication'
+    'listForOwner' | 'getForOwner' | 'resolve' | 'startAuthentication'
   >;
   /**
    * Another agent's approval of a request, as the field the owner's item spreads in
@@ -203,9 +200,7 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
   });
   const requireAgentRequests = (c: Context<ApiEnv>) =>
     deps.agentRequests ??
-    problem(c, 'temporarily_unavailable', {
-      detail: 'Agents’ requests aren’t available while agent identity is off.',
-    });
+    problem(c, AGENT_REQUESTS_OFF.code, { detail: AGENT_REQUESTS_OFF.detail });
 
   // Path-less, like the Express router it replaces: every `/api/connectors`
   // request that reaches this group, its routes or the groups after it, is
@@ -250,16 +245,6 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     if (!query.success) return validationProblem(c, query.error);
     try {
       return c.json({ reviews: deps.reviews.list(owner, query.data.state) });
-    } catch (error) {
-      return managementErrorResponse(c, error);
-    }
-  });
-
-  router.get('/reviews/:reviewRequestId', (c) => {
-    const owner = resolveConnectorOperator(c, deps);
-    if (owner instanceof Response) return owner;
-    try {
-      return c.json(deps.reviews.get(owner, c.req.param('reviewRequestId')));
     } catch (error) {
       return managementErrorResponse(c, error);
     }
@@ -379,20 +364,6 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     });
   });
 
-  router.get('/agent-requests/:requestId/authentication-flows/:flowId', async (c) => {
-    const owner = resolveConnectorOperator(c, deps);
-    if (owner instanceof Response) return owner;
-    const requests = requireAgentRequests(c);
-    if (requests instanceof Response) return requests;
-    try {
-      return c.json(
-        await requests.pollAuthentication(owner, c.req.param('requestId'), c.req.param('flowId'))
-      );
-    } catch (error) {
-      return managementErrorResponse(c, error);
-    }
-  });
-
   router.post('/reconciliation/previews', async (c) => {
     const owner = resolveConnectorOperator(c, deps);
     if (owner instanceof Response) return owner;
@@ -409,26 +380,10 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     }
   });
 
-  // Stop sharing a connection with every agent. Owner-only like every grant
-  // change, but with no preview: taking access away needs no reviewed catalog,
-  // so it works while the provider is down (ADR 260926-192625).
-  router.delete('/connections/:connectionId/every-agent', async (c) => {
-    const owner = resolveConnectorOperator(c, deps);
-    if (owner instanceof Response) return owner;
-    try {
-      return c.json(
-        ConnectorEveryAgentRevokeResponseSchema.parse(
-          await deps.reconciliation.revokeEveryAgent(owner, c.req.param('connectionId'))
-        )
-      );
-    } catch (error) {
-      return managementErrorResponse(c, error);
-    }
-  });
-
-  // Leave one agent out of a connection's every-agent share, or let it back in
-  // (DOR-3961). Owner-only, like every grant change: an agent or program is
-  // refused by `resolveConnectorOperator` before the service is reached.
+  // The agents left out of a connection's every-agent share (DOR-3961). Leaving
+  // one out, like reading one review, polling an agent request's sign-in and
+  // stopping the share, is on the capability mount behind the same bar
+  // (`services/connectors/resources/owner-management-capabilities.ts`, DOR-4978).
   router.get('/connections/:connectionId/exclusions', (c) => {
     const owner = resolveConnectorOperator(c, deps);
     if (owner instanceof Response) return owner;
@@ -445,22 +400,8 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     }
   });
 
-  router.put('/connections/:connectionId/exclusions/:agentId', async (c) => {
-    const owner = resolveConnectorOperator(c, deps);
-    if (owner instanceof Response) return owner;
-    try {
-      return c.json(
-        ConnectorGrantExclusionChangeSchema.parse(
-          await deps.exclusions.leaveOut(owner, c.req.param('connectionId'), c.req.param('agentId'))
-        )
-      );
-    } catch (error) {
-      return managementErrorResponse(c, error);
-    }
-  });
-
   // Letting an agent back in gives it the shared access again, so it waits for
-  // the owner (DOR-4355); leaving one out above stays immediate.
+  // the owner (DOR-4355); leaving one out stays immediate.
   router.delete('/connections/:connectionId/exclusions/:agentId', async (c) => {
     const owner = resolveConnectorOperator(c, deps);
     if (owner instanceof Response) return owner;

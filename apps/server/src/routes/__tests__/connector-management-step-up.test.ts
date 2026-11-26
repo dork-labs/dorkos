@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 import { env } from '../../env.js';
 import { createConnectorManagementRoutes } from '../connector-management.js';
+import { withOwnerDoors } from './connector-owner-doors.js';
 import { ReconciliationNeedsConfirmationError } from '../../services/connectors/reconciliation/reconciliation-error.js';
 import { frontDoorStepUpHarness } from './front-door-step-up-harness.js';
 
@@ -46,21 +47,18 @@ describe('connected-app decision confirmation', () => {
     startAuthentication: vi.fn(async () => ({ flowId: 'flow-a', state: 'starting' })),
     pollAuthentication: vi.fn(),
   };
-  const owner = frontDoorStepUpHarness(() => [
-    {
-      path: '/api/connectors',
-      routes: createConnectorManagementRoutes({
-        registry: { migrationHealth: () => ({ status: 'ready', migrated: false }) },
-        reviews,
-        reconciliation,
-        exclusions,
-        agentRequests,
-        resolveOwner: () => OWNER,
-        loginEnabled: () => true,
-        trustedOrigins: () => [ORIGIN],
-      } as unknown as Parameters<typeof createConnectorManagementRoutes>[0]),
-    },
-  ]);
+  const owner = frontDoorStepUpHarness(() =>
+    withOwnerDoors(createConnectorManagementRoutes, {
+      registry: { migrationHealth: () => ({ status: 'ready', migrated: false }) },
+      reviews,
+      reconciliation,
+      exclusions,
+      agentRequests,
+      resolveOwner: () => OWNER,
+      loginEnabled: () => true,
+      trustedOrigins: () => [ORIGIN],
+    } as unknown as Parameters<typeof createConnectorManagementRoutes>[0])
+  );
   beforeEach(() => {
     vi.clearAllMocks();
   });

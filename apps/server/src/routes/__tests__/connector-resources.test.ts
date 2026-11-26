@@ -7,11 +7,8 @@ import {
   type ConnectorResourcesRouterDeps,
 } from '../connector-resources.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
-import { capabilityGroup } from '../../http/__tests__/capability-group.js';
-import {
-  connectionOwnerDomain,
-  type ConnectionOwnerDeps,
-} from '../../services/connectors/resources/owner-capabilities.js';
+import { withOwnerDoors } from './connector-owner-doors.js';
+import type { ConnectionOwnerDeps } from '../../services/connectors/resources/owner-capabilities.js';
 import { ConnectorAuthenticationFlowError } from '../../services/connectors/resources/authentication-flow-service.js';
 import { ConnectorAppActionsError } from '../../services/connectors/resources/app-actions-service.js';
 import { ConnectorOperatorQueryError } from '../../services/connectors/resources/operator-query-service.js';
@@ -31,16 +28,7 @@ const fixtureTarget = swappableServer();
 
 /** The hand group and its account doors on the mount (DOR-4978), in the app's order. */
 type Deps = ConnectorResourcesRouterDeps & ConnectionOwnerDeps;
-function groups(deps: Deps) {
-  return [
-    capabilityGroup(
-      connectionOwnerDomain,
-      { connectionOwnerDeps: deps },
-      { accountDecision: deps }
-    ),
-    { path: '/api/connectors', routes: createConnectorResourcesRoutes(deps) },
-  ];
-}
+const groups = (deps: Deps) => withOwnerDoors(createConnectorResourcesRoutes, deps);
 
 describe('connector resource routes', () => {
   let deps: Deps;

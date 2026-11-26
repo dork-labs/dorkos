@@ -209,6 +209,13 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'connectors.disconnect_impact': 'local',
   'connectors.rename_connection': 'local',
   'connectors.remove_connection': 'local',
+  'connectors.get_sign_in': 'local',
+  // A program's requested change carries the program's words and the app's own action text.
+  'connectors.get_review': 'outside',
+  'connectors.get_agent_request_sign_in': 'local',
+  'connectors.stop_every_agent_share': 'local',
+  'connectors.leave_agent_out': 'local',
+  'connectors.list_usage': 'local',
   'mcp.list': 'local',
   'mcp.add': 'local',
   'mcp.import': 'local',

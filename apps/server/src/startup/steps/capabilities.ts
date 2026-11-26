@@ -71,8 +71,13 @@ import type { WireSessionServicesResult } from './session-services.js';
 import type { WireMcpTasksAndSkillsResult } from './mcp-tasks-skills.js';
 import type { ServerRefs } from '../server-refs.js';
 import { globalMcpPersonDepsFor } from '../../services/mesh/global-mcp/global-mcp-person-capabilities.js';
+import {
+  connectionOwnerDepsFor,
+  type ConnectionOwnerServices,
+} from '../../services/connectors/resources/owner-capabilities.js';
 import { enrichTopology } from '../../routes/mesh-topology.js';
 import { sessionRelayDoorDeps } from '../../routes/session-relay.js';
+import { managedCloudRefusalCode } from '../../routes/managed-cloud-error.js';
 import {
   projectComputerPlacement,
   projectComputerPlacementById,
@@ -81,13 +86,12 @@ import { agentPersonaDeps } from './agent-persona-deps.js';
 import { savePersonFile } from '../../services/canvas/doc-channel/writes/person-file-save.js';
 
 /** What {@link composeCapabilities} reads from the startup steps before it. */
-export interface ComposeCapabilitiesInput {
+export interface ComposeCapabilitiesInput extends ConnectionOwnerServices {
   localBrowserService: WireMcpTasksAndSkillsResult['localBrowserService'];
   docChannelHttp: WireConnectorEventsAndApprovalsResult['docChannelHttp'];
   permissionService: MountCoreRoutesResult['permissionService'];
   connectorRegistry: WireCoreStoresResult['connectorRegistry'];
   connectorOperatorQueries: WireConnectorServicesResult['connectorOperatorQueries'];
-  connectorLifecycle: WireConnectorServicesResult['connectorLifecycle'];
   connectorAuthorization: WireConnectorServicesResult['connectorAuthorization'];
   connectorBroker: WireDocDeliveryResult['connectorBroker'];
   connectorAccess: WireDocDeliveryResult['connectorAccess'];
@@ -132,7 +136,6 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
     permissionService,
     connectorRegistry,
     connectorOperatorQueries,
-    connectorLifecycle,
     connectorAuthorization,
     connectorBroker,
     connectorAccess,
@@ -260,10 +263,11 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       ...globalMcpPersonDepsFor(deps, () => refs.meshCore),
       // The owner's connection doors, behind the account-decision bar (DOR-4978): the
       // same services the hand routes hold.
-      connectionOwnerDeps: {
-        query: connectorOperatorQueries,
-        lifecycle: connectorLifecycle,
-      },
+      connectionOwnerDeps: connectionOwnerDepsFor(
+        built,
+        refs.connectorAgentRequests,
+        managedCloudRefusalCode
+      ),
       sessionRelayDeps: sessionRelayDoorDeps(), // chat from the web's doors (DOR-4978)
       // The rooms domain (room-participation spec §10.2, §10.3): the verbs an
       // agent has in the rooms it belongs to. The SAME service instances the
