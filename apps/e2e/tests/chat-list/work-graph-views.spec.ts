@@ -160,6 +160,10 @@ test.describe('pull requests by chat and by agent', () => {
       const chip = page.getByTestId('chat-work-chip');
       await expect(chip).toBeVisible();
       await expect(chip).toHaveAccessibleName('2 PRs from this chat. Show them');
+      if (size.name === 'phone') {
+        // The shared chip's phone size: 40px drawn, with a hit area out to 44.
+        expect((await chip.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(40);
+      }
       await chip.click();
       const panel = page.getByRole('dialog', { name: 'Pull requests' });
       await expect(panel.getByText('dork-labs/dorkos#4412')).toBeVisible();

@@ -141,10 +141,10 @@ describe('buildChatTree', () => {
       'New chat (Starting) [no open]',
       'New chat (Didn’t start: lost in a restart) [no open]',
       'New chat (Didn’t start) [no open]',
-      'A chat (Can’t be opened) [no open]',
+      'Can’t be opened [no open]',
       'Another chat',
       'A private chat [no open]',
-      '  A chat (Can’t be opened) [no open]',
+      '  Can’t be opened [no open]',
     ]);
     // The joint is not a chat you can count; the one below it is.
     expect(model.count).toBe(7);
@@ -169,13 +169,43 @@ describe('buildChatTree', () => {
     expect(outline(model.nodes)).toEqual(['a (Done)', '  old (Done)', 'older (Done)']);
   });
 
-  it('waits for the last page before placing a spin-off the read has not named yet', () => {
-    const model = buildChatTree({
-      spinOffs: [folded('later', 'host')],
-      byId: new Map(),
-      pages: [page([], { nextCursor: 'next', truncated: true })],
+  it('keeps the list’s spin-offs in view while more pages wait, until their page places them', () => {
+    const spinOffs = [folded('a', 'host'), folded('b', 'a')];
+    const chats = byId(...spinOffs);
+    const first = page([], { nextCursor: 'next', truncated: true });
+    const waiting = buildChatTree({ spinOffs, byId: chats, pages: [first] });
+    expect(outline(waiting.nodes)).toEqual(['a (Done)', '  b (Done)']);
+    expect(waiting.count).toBe(2);
+    expect(waiting.truncated).toBe(true);
+
+    const both = buildChatTree({
+      spinOffs,
+      byId: chats,
+      pages: [first, page([below('a', 'host', 1), below('b', 'a', 2)])],
     });
-    expect(model.nodes).toEqual([]);
-    expect(model.truncated).toBe(true);
+    expect(outline(both.nodes)).toEqual(['a (Done)', '  b (Done)']);
+  });
+
+  it('hangs a chat under the parent the read names, even after a repeat', () => {
+    const chats = byId(known('a'), known('b'), known('x'), known('y'), known('e'));
+    const model = buildChatTree({
+      spinOffs: [],
+      byId: chats,
+      pages: [
+        page([below('a', 'host', 1), below('b', 'a', 2), below('x', 'a', 2), below('y', 'x', 3)], {
+          nextCursor: 'next',
+        }),
+        // The next page repeats b, then lists a chat b started: under b, not
+        // under x, where the depth alone would put it.
+        page([below('b', 'a', 2), below('e', 'b', 3)]),
+      ],
+    });
+    expect(outline(model.nodes)).toEqual([
+      'a (Done)',
+      '  b (Done)',
+      '    e (Done)',
+      '  x (Done)',
+      '    y (Done)',
+    ]);
   });
 });

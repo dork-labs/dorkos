@@ -11,6 +11,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import type { WorkPage } from '@dorkos/shared/work-graph-reads';
 import { TransportProvider } from '@/layers/shared/model';
+import { workGraphKeys } from '@/layers/entities/work-graph';
 import { ChatWorkChip } from '../ui/ChatWorkChip';
 
 beforeAll(() => {
@@ -40,18 +41,22 @@ function renderChip(page: WorkPage) {
       </TransportProvider>
     </QueryClientProvider>
   );
-  return transport;
+  return { transport, client };
 }
 
 describe('ChatWorkChip', () => {
   it('draws nothing while the chat and its spin-offs have no pull requests', async () => {
-    const transport = renderChip({ items: [], nextCursor: null });
-    await vi.waitFor(() => expect(transport.getChatWork).toHaveBeenCalled());
+    const { client } = renderChip({ items: [], nextCursor: null });
+    // Settled first: before the answer the chip draws nothing either, so an
+    // absence read then could not tell "none" from "not yet".
+    await vi.waitFor(() =>
+      expect(client.getQueryState(workGraphKeys.chatWork('chat-1', 'pr'))?.status).toBe('success')
+    );
     expect(screen.queryByTestId('chat-work-chip')).not.toBeInTheDocument();
   });
 
   it('counts them, and lists them when pressed', async () => {
-    const transport = renderChip({
+    const { transport } = renderChip({
       items: [
         {
           ref: { kind: 'pr', id: 'dork-labs/dorkos#42' },

@@ -264,7 +264,9 @@ function TreeNodeRow({
     return (
       <SidebarRow
         dataSlot={CHAT_LIST_ROW_SLOT}
-        buttonRef={actions.registerRow(node.chatId)}
+        // Only a chat this list holds answers `⇧↵`: forking another agent's
+        // chat would copy it into this agent's folder.
+        {...(node.kind === 'chat' ? { buttonRef: actions.registerRow(node.chatId) } : {})}
         title={node.title}
         className={ROW_INSET}
         isActive={node.chatId === actions.activeSessionId}
@@ -279,8 +281,10 @@ function TreeNodeRow({
       {/* The right gutter a row keeps for its menu, so this row's state lines
           up with the states of the rows that open (`SIDEBAR_MENU_GUTTER`). */}
       <div className="text-sidebar-foreground/60 flex min-h-7 min-w-0 items-center gap-2 rounded-md py-1 pr-7 pl-2 text-xs max-md:min-h-9 max-md:pr-11">
-        <span className="min-w-0 flex-1 truncate">{node.title}</span>
-        {detail}
+        {/* Both yield on a narrow screen, the state at half the rate: it is
+            what this row is for. */}
+        <span className="min-w-0 shrink truncate">{node.title}</span>
+        {detail && <span className="ml-auto min-w-0 shrink-[0.5] truncate">{detail}</span>}
       </div>
       {children}
     </li>

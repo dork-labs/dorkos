@@ -63,10 +63,23 @@ const TREE: ChatTree = {
   nextCursor: null,
 };
 
-function renderFold(onOpen = vi.fn(), onOpenOther = vi.fn()) {
+interface FoldOptions {
+  tree?: ChatTree;
+  spinOffs?: FoldedSpinOff[];
+  activeSessionId?: string | null;
+}
+
+function renderFold({
+  tree = TREE,
+  spinOffs = [folded('mid', 'Plan the post', 'host')],
+  activeSessionId = null,
+}: FoldOptions = {}) {
   const transport = createMockTransport();
-  transport.getChatTree = vi.fn().mockResolvedValue(TREE);
-  const mid = folded('mid', 'Plan the post', 'host');
+  transport.getChatTree = vi.fn().mockResolvedValue(tree);
+  const onOpen = vi.fn();
+  const onOpenOther = vi.fn();
+  // Which chats a row hands the list for `⇧↵`.
+  const registerRow = vi.fn((_sessionId: string) => () => {});
   render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
@@ -77,25 +90,25 @@ function renderFold(onOpen = vi.fn(), onOpenOther = vi.fn()) {
             <ChatTreeFold
               hostId="host"
               parentTitle="Launch"
-              spinOffs={[mid]}
-              byId={new Map([['mid', mid]])}
-              activeSessionId={null}
+              spinOffs={spinOffs}
+              byId={new Map(spinOffs.map((s) => [s.session.id, s]))}
+              activeSessionId={activeSessionId}
               search=""
               onOpen={onOpen}
               onOpenOther={onOpenOther}
-              registerRow={() => () => {}}
+              registerRow={registerRow}
             />
           </ul>
         </TooltipProvider>
       </TransportProvider>
     </QueryClientProvider>
   );
-  return { transport, onOpen, onOpenOther };
+  return { transport, onOpen, onOpenOther, registerRow };
 }
 
 describe('ChatTreeFold', () => {
   it('reads the tree only when opened, then draws it at every depth behind its own toggles', async () => {
-    const { transport, onOpen, onOpenOther } = renderFold();
+    const { transport, onOpen, onOpenOther, registerRow } = renderFold();
     expect(transport.getChatTree).not.toHaveBeenCalled();
 
     await userEvent.click(screen.getByRole('button', { name: '1 spin-off from Launch' }));
@@ -114,5 +127,43 @@ describe('ChatTreeFold', () => {
     await userEvent.click(screen.getByRole('button', { name: '1 spin-off from A private chat' }));
     await userEvent.click(screen.getByRole('button', { name: /^Another chat/ }));
     expect(onOpenOther).toHaveBeenCalledWith('deep');
+    // Only the list's own chat answers `⇧↵`: forking another agent's chat
+    // would copy it into this agent's folder.
+    expect(registerRow).toHaveBeenCalledWith('mid');
+    expect(registerRow).not.toHaveBeenCalledWith('deep');
+  });
+
+  it('stops stepping in past the fourth level, so a deep chain still fits', async () => {
+    // c1 started c2, and so on down to c6, which is open: every fold opens for it.
+    const chain = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'];
+    const spinOffs = chain.map((id, i) =>
+      folded(id, `Chat ${id}`, i === 0 ? 'host' : chain[i - 1]!)
+    );
+    renderFold({
+      spinOffs,
+      activeSessionId: 'c6',
+      tree: {
+        ...TREE,
+        descendants: chain.map((chatId, i) => ({
+          chatId,
+          parentId: i === 0 ? 'host' : chain[i - 1]!,
+          depth: i + 1,
+          via: 'started' as const,
+          state: { kind: 'chat' as const },
+        })),
+      },
+    });
+    expect(await screen.findByRole('button', { name: /^Chat c6/ })).toBeInTheDocument();
+    const stepsIn = Array.from(document.querySelectorAll<HTMLElement>('ul[data-depth]')).map(
+      (list) => [list.dataset.depth, list.classList.contains('pl-3')]
+    );
+    expect(stepsIn).toEqual([
+      ['1', true],
+      ['2', true],
+      ['3', true],
+      ['4', true],
+      ['5', false],
+      ['6', false],
+    ]);
   });
 });

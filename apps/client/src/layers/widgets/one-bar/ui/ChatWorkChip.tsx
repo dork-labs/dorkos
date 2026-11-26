@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { GitPullRequest } from 'lucide-react';
 import {
+  Chip,
   ResponsivePopover,
   ResponsivePopoverContent,
   ResponsivePopoverTitle,
@@ -61,16 +62,17 @@ export function ChatWorkChip({ sessionId }: ChatWorkChipProps) {
     // eslint-disable-next-line jsx-a11y/no-autofocus
     <ResponsivePopover open={open} onOpenChange={onOpenChange} autoFocus>
       <ResponsivePopoverTrigger asChild>
-        <button
-          type="button"
+        {/* The shared chip: 40px on a phone with a 44px hit area, the floor a
+            thumb needs; the bar's own 28px pills are under it. */}
+        <Chip
+          size="sm"
+          icon={GitPullRequest}
           data-testid="chat-work-chip"
           aria-label={`${words} from this chat. Show them`}
-          className="focus-ring text-muted-foreground hover:text-foreground border-border text-2xs inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 transition-colors @max-md/bar:min-h-7"
         >
-          <GitPullRequest className="size-(--size-icon-xs)" aria-hidden />
           <span className="@max-md/bar:hidden">{words}</span>
           <span className="hidden tabular-nums @max-md/bar:inline">{count}</span>
-        </button>
+        </Chip>
       </ResponsivePopoverTrigger>
       <ResponsivePopoverContent
         side="bottom"

@@ -21,7 +21,8 @@ import { launchingWords, neverStartedWords } from './chat-tree-words';
  * - `chat`: a chat this list holds. It opens.
  * - `elsewhere`: a chat that ran but is not in this list, such as another
  *   agent's. It opens by its id.
- * - `unknown`: only a start record proves it. It can't be opened.
+ * - `unknown`: only a start record proves it. It can't be opened, and that is
+ *   what its row says.
  * - `launching`: waiting to start, or starting.
  * - `never-started`: its run ended before its turn began.
  * - `private`: a chat you may not read, kept because one you may hangs below.
@@ -111,7 +112,9 @@ function nodeOf(
           }
         : { ...node, kind: 'elsewhere', title: 'Another chat', detail: null, opens: true };
     case 'unknown':
-      return { ...node, kind: 'unknown', title: 'A chat', detail: 'Can’t be opened' };
+      // The state is the name: "A chat" beside it said nothing, and on a phone
+      // it was the part a deep row cut to "A c…".
+      return { ...node, kind: 'unknown', title: 'Can’t be opened', detail: null };
     case 'launching':
       return {
         ...node,
@@ -129,22 +132,37 @@ function nodeOf(
   }
 }
 
+/** One entry of the tree read, ready to hang: its node, its depth and its parent. */
+interface TreeEntry {
+  depth: number;
+  parentId: string | null;
+  node: ChatTreeNode;
+}
+
 /**
- * Nest a depth-first list: each entry hangs under the nearest entry before it
- * that is one level up. Depth first is how the tree read lists them, so this
- * is exact, and it holds across pages: the next page goes on where the last
- * one stopped.
+ * Hang the tree read's entries under their parents. A chat hangs under the
+ * chat its `parentId` names. A chat under a private joint has no `parentId`,
+ * so it hangs under the nearest joint, or chat, one level up before it: the
+ * read is depth first, so that is the one, and it holds across pages. A depth
+ * of 1 hangs under the row itself.
  *
- * @param entries - Depth-first entries, depth 1 being the row's own children.
+ * @param entries - The read's entries, depth first, repeats already resolved.
  */
-function nest(entries: ReadonlyArray<{ depth: number; node: ChatTreeNode }>): ChatTreeNode[] {
+function nest(entries: readonly TreeEntry[]): ChatTreeNode[] {
   const roots: ChatTreeNode[] = [];
-  const path: ChatTreeNode[] = [];
-  for (const { depth, node } of entries) {
-    path.length = Math.min(path.length, Math.max(depth - 1, 0));
-    const parent = path.at(-1);
-    (parent ? parent.children : roots).push(node);
-    path.push(node);
+  const byId = new Map<string, ChatTreeNode>();
+  const lastAtDepth: ChatTreeNode[] = [];
+  for (const { depth, parentId, node } of entries) {
+    const parent =
+      depth <= 1
+        ? undefined
+        : ((parentId === null ? undefined : byId.get(parentId)) ?? lastAtDepth[depth - 1]);
+    if (!byId.has(node.key) || node.chatId === null) {
+      (parent ? parent.children : roots).push(node);
+      if (node.chatId !== null) byId.set(node.chatId, node);
+    }
+    lastAtDepth[depth] = node;
+    lastAtDepth.length = depth + 1;
   }
   return roots;
 }
@@ -162,11 +180,11 @@ function countOf(nodes: readonly ChatTreeNode[]): number {
  * page and are not part of what it draws, so only the descendants are read; a
  * chat a later page lists again is drawn once.
  *
- * A folded spin-off the read does not name, once its last page is in, still
- * shows: under the chat that started it when the tree has that chat, else at
- * the top. The list's own record of who started whom is older than the work
- * graph, so a chat from before it has no edge to be found by, and the fold
- * must never lose a chat the list already showed.
+ * A folded spin-off the read does not name still shows: under the chat that
+ * started it when the tree has that chat, else at the top. The list's own
+ * record of who started whom is older than the work graph, so a chat from
+ * before it has no edge to be found by, and the fold must never lose a chat
+ * the list already showed.
  *
  * @param pages - Every page read so far, first first.
  * @param spinOffs - The row's folded spin-offs, from the list, oldest first.
@@ -178,22 +196,24 @@ function fromPages(
   byId: ReadonlyMap<string, FoldedSpinOff>
 ): ChatTreeModel {
   const seen = new Map<string, ChatTreeNode>();
-  const entries: Array<{ depth: number; node: ChatTreeNode }> = [];
+  const entries: TreeEntry[] = [];
   let index = 0;
   for (const page of pages) {
     for (const entry of page.descendants) {
       const at = index++;
-      if (entry.chatId !== null && seen.has(entry.chatId)) continue;
-      const node = nodeOf(entry, at, byId);
+      // A chat a later page lists again keeps the node it already has, so
+      // the chats after it still find their place by it.
+      const known = entry.chatId === null ? undefined : seen.get(entry.chatId);
+      const node = known ?? nodeOf(entry, at, byId);
       if (entry.chatId !== null) seen.set(entry.chatId, node);
-      entries.push({ depth: entry.depth, node });
+      entries.push({ depth: entry.depth, parentId: entry.parentId, node });
     }
   }
   const nodes = nest(entries);
-  if (pages.at(-1)?.nextCursor === null) {
-    const unnamed = spinOffs.filter((spinOff) => !seen.has(spinOff.session.id));
-    for (const leftover of fromList(unnamed, seen).nodes) nodes.push(leftover);
-  }
+  // Placed whether or not more pages wait: a later page moves a chat to its
+  // place, and until then the fold still shows every chat the list did.
+  const unnamed = spinOffs.filter((spinOff) => !seen.has(spinOff.session.id));
+  for (const leftover of fromList(unnamed, seen).nodes) nodes.push(leftover);
   return {
     nodes,
     count: countOf(nodes),
