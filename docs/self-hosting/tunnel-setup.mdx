@@ -73,7 +73,7 @@ The tunnel URL appears in your terminal with a QR code. Scan it with your phone'
 
 You can start and stop remote access from the DorkOS window, without restarting the server:
 
-1. Open the **Control Center** — the ⚡ icon in the top bar
+1. Open the **Control Center** (the ⚡ icon in the top bar)
 2. Flip **Remote access** on. The first time, this opens a short setup where you paste your ngrok token
 3. Once it connects, a **globe appears in the top bar**
 
@@ -84,8 +84,8 @@ The globe is only there while remote access is running. Click it and you get:
 - A switch to turn remote access off
 - **Manage…**, which opens the full Remote Access window
 
-The same full settings are also one click away in **Settings → Remote Access**
-— the Control Center row, the beacon and the Settings tab all show the one
+The same full settings are also one click away in **Settings → Remote Access**.
+The Control Center row, the beacon and the Settings tab all show the one
 tunnel, so turning it on or off from any of them updates the other two too.
 Either surface gives you:
 
@@ -166,7 +166,7 @@ Common issues:
 - **Auth token not found**: make sure `NGROK_AUTHTOKEN` is exported in your shell, or paste it into the Remote Access tab in Settings.
 - **Custom domain errors**: verify your domain is claimed at dashboard.ngrok.com/domains.
 - **Connection quality red**: latency to the tunnel is over 500ms, usually because the nearest ngrok edge server is far from you geographically.
-- **The tunnel dropped**: you get a notification either way, and it tells you which happened. ngrok sometimes loses its connection and re-establishes it on its own — DorkOS says "reconnecting", keeps your address, and the globe dims until it is back. If the tunnel closed for good, DorkOS says so and stays off until you turn it back on.
+- **The tunnel dropped**: you get a notification either way, and it tells you which happened. ngrok sometimes loses its connection and re-establishes it on its own. DorkOS says "reconnecting", keeps your address, and the globe dims until it is back. If the tunnel closed for good, DorkOS says so and stays off until you turn it back on.
 
 ## Reference: how the tunnel works under the hood
 
@@ -177,7 +177,7 @@ Everything below is background for the curious. You don't need it to set up or u
     TUNNEL_ENABLED: {
       type: 'boolean',
       description:
-        'Open the tunnel when DorkOS starts. Leave it unset and your saved setting decides — which is how the switch in the app keeps working after a restart. Set it to false to keep this one run private whatever you have saved.',
+        'Open the tunnel when DorkOS starts. Leave it unset and your saved setting decides, which is how the switch in the app keeps working after a restart. Set it to false to keep this one run private whatever you have saved.',
       default: 'your saved setting',
     },
     NGROK_AUTHTOKEN: {
@@ -281,7 +281,7 @@ curl http://localhost:4242/api/health
 ### CLI QR Code
 
 Opening a tunnel takes a few seconds, so the address arrives after the opening
-banner rather than inside it — below the startup logs, with a QR code you can
+banner rather than inside it, below the startup logs, with a QR code you can
 scan to open DorkOS on your phone:
 
 ```

@@ -6,7 +6,7 @@ paths: blog/**, changelog/unreleased/**, docs/**/*.mdx, README.md, packages/cli/
 
 You are editing prose a **user** reads, not a developer or coding agent. Write it so a smart 9th grader who does not code can follow it. The full standard is the **`writing-for-humans`** skill: load it before writing.
 
-The contract in one line: 9th-grade level, short sentences (one big idea each), active voice with a clear actor, benefit before mechanism, every acronym glossed or cut, no em dashes.
+The contract in one line: 9th-grade level, short sentences (one big idea each), active voice with a clear actor, benefit before mechanism, every acronym glossed or cut, no em dashes. The vocab gate (`scripts/check-vocab-gate.ts`, wave 12) fails on an em dash in `docs/**/*.mdx` prose.
 
 Run these five self-checks before you save:
 

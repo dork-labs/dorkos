@@ -206,7 +206,7 @@ Each package says where it stands:
 
 - **Update available: v1.2.0 → v1.3.0.** Its **Update to v1.3.0** button installs the new version in the same place. If the new version runs commands or programs of its own, the button first shows you what they are and asks you to confirm.
 - **Up to date.** There's nothing to install, so there's no Update button.
-- **Couldn't check for updates, and why.** For example, "couldn't reach github.com" when you're offline, or "linked install — update its source instead" for a package linked to a folder on your computer. DorkOS never calls a package up to date when it couldn't check it.
+- **Couldn't check for updates, and why.** For example, "couldn't reach github.com" when you're offline, or "linked install: update its source instead" for a package linked to a folder on your computer. DorkOS never calls a package up to date when it couldn't check it.
 
 While the check runs, each package says **Checking for updates…**. It can take a moment when many packages are installed.
 
@@ -266,9 +266,9 @@ Installing a plugin doesn't interrupt anything. Chats that aren't open pick it u
 
 Sometimes a chat takes a few minutes longer, and there's a good reason for it.
 
-An agent keeps a copy of your chat ready so it doesn't have to re-read the whole thing every time you speak. Adding a plugin can change the tools it has, and when that happens the copy is thrown away — so your next message makes it read the entire chat again. You pay for that reading, and you wait for it. On a long chat it's the most expensive moment of the day, and one install can trigger it in every chat you have open at once.
+An agent keeps a copy of your chat ready so it doesn't have to re-read the whole thing every time you speak. Adding a plugin can change the tools it has, and when that happens the copy is thrown away, so your next message makes it read the entire chat again. You pay for that reading, and you wait for it. On a long chat it's the most expensive moment of the day, and one install can trigger it in every chat you have open at once.
 
-So DorkOS asks first, and keeps asking. If the chat is short, or switching the plugin on wouldn't disturb anything, it happens immediately. If it would be expensive, DorkOS waits and checks back every few minutes: the agent's ready copy expires on its own after a while, and once it has, switching the plugin on costs nothing at all. How long that takes isn't something DorkOS guesses at — it asks the agent each time, because the answer depends on how you're signed in. If the copy never expires, DorkOS stops waiting after fifteen minutes and switches the plugin on anyway, so nothing runs on yesterday's plugins for long.
+So DorkOS asks first, and keeps asking. If the chat is short, or switching the plugin on wouldn't disturb anything, it happens immediately. If it would be expensive, DorkOS waits and checks back every few minutes: the agent's ready copy expires on its own after a while, and once it has, switching the plugin on costs nothing at all. How long that takes isn't something DorkOS guesses at. It asks the agent each time, because the answer depends on how you're signed in. If the copy never expires, DorkOS stops waiting after fifteen minutes and switches the plugin on anyway, so nothing runs on yesterday's plugins for long.
 
 Two things you can always do:
 
@@ -277,8 +277,8 @@ Two things you can always do:
 
 <Callout type="info">
   The line DorkOS draws between "cheap enough to do now" and "worth waiting for" is a fixed number
-  in the code — `PLUGIN_RELOAD_SILENT_TOKENS` in
-  `apps/server/src/services/runtimes/claude-code/messaging/plugin-reload-policy.ts` — not a setting.
+  in the code (`PLUGIN_RELOAD_SILENT_TOKENS` in
+  `apps/server/src/services/runtimes/claude-code/messaging/plugin-reload-policy.ts`), not a setting.
   It's a starting guess, so every one of these checks is written to the debug log (`[plugin-reload]
   cache-impact check`) with the chat's size and what the reload would change. Turn debug logging on
   for a week and those lines say what the number should really be.
@@ -356,7 +356,7 @@ number.
 A source address is either an `https://` link to a git repository, or a folder on this machine
 written as `file:///path/to/folder`. Nothing else works: DorkOS reads a marketplace's listing over
 the web, so SSH-style addresses like `git@github.com:org/repo` have no listing to read. Anything
-else is turned down when you add it, with a note saying so — which also keeps out the exotic
+else is turned down when you add it, with a note saying so, which also keeps out the exotic
 addresses git accepts that run a command instead of fetching a repository.
 
 You can also manage sources in DorkOS, at `/marketplace/sources` on your own DorkOS address. On the default port that is [http://localhost:4242/marketplace/sources](http://localhost:4242/marketplace/sources); if you changed the port, or the [desktop app](/docs/getting-started/desktop-app#find-your-address) had to move off 4242, **Settings → Advanced → Server** shows the address to use. Sources are merged into a single browse surface: packages from your team's marketplace appear alongside community packages, with the source clearly labeled on each card.

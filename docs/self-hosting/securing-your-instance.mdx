@@ -181,7 +181,7 @@ curl -H "Authorization: Bearer dork_..." http://localhost:4242/mcp
 
 <Callout type="warn">
   **`MCP_API_KEY` does not open a side door past login.** Once login is on, the login gate answers
-  `/mcp` first, and it only accepts a sign-in or a per-user API key — a client sending nothing but
+  `/mcp` first, and it only accepts a sign-in or a per-user API key. A client sending nothing but
   `MCP_API_KEY` gets a `401`. Use it for a **headless** setup (a server nobody signs into, like CI
   or a background job) where login stays off: there it is a fixed key you can hand to every client,
   it wins over the local token, and it can only be changed in the environment, never revoked from

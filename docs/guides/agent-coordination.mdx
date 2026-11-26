@@ -116,7 +116,7 @@ curl -X PUT http://localhost:4242/api/mesh/topology/access \
   -d '{"sourceNamespace": "*", "targetNamespace": "*", "action": "allow"}'
 ```
 
-`GET /api/mesh/topology` reports it as `openMesh`, and so does an agent's own `mesh_query_topology` tool. `*` has to be on both sides or neither — a half-wildcard is rejected.
+`GET /api/mesh/topology` reports it as `openMesh`, and so does an agent's own `mesh_query_topology` tool. `*` has to be on both sides or neither. A half-wildcard is rejected.
 
 ### Messaging another agent
 

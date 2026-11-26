@@ -39,7 +39,11 @@
  */
 import { copyFile, link, mkdir, readdir, realpath, rm, stat, writeFile } from 'fs/promises';
 import path from 'path';
-import { PROJECTED_ATTACHMENTS_ROOT } from '@dorkos/shared/room-attachment-paths';
+import {
+  PROJECTED_ATTACHMENTS_IGNORE,
+  PROJECTED_ATTACHMENTS_IGNORE_LINE,
+  PROJECTED_ATTACHMENTS_ROOT,
+} from '@dorkos/shared/room-attachment-paths';
 import { logError, logger } from '../../../lib/logger.js';
 import type { ProjectableAttachment } from '../room-context.js';
 import { projectedAttachmentPath } from './attachment-paths.js';
@@ -175,6 +179,7 @@ async function projectOne(
   const root = path.join(cwd, PROJECTED_ATTACHMENTS_ROOT);
   await mkdir(root, { recursive: true });
   await assertInside(cwd, root);
+  await writeIgnoreFile(cwd);
 
   await mkdir(path.dirname(destination), { recursive: true });
 
@@ -231,6 +236,28 @@ async function exists(file: string): Promise<boolean> {
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
     throw err;
+  }
+}
+
+/**
+ * Write the ignore file beside the projected attachments, once. Created only when nothing is there
+ * (`wx` refuses an existing file or link), so a file an agent wrote is left as it is. A write that
+ * fails is logged and the file is still projected: without the ignore file, a search of the tree
+ * counts the attachments as read.
+ */
+async function writeIgnoreFile(cwd: string): Promise<void> {
+  try {
+    await writeFile(
+      path.join(cwd, PROJECTED_ATTACHMENTS_IGNORE),
+      `${PROJECTED_ATTACHMENTS_IGNORE_LINE}\n`,
+      { flag: 'wx' }
+    );
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') return;
+    logger.warn('[rooms] could not write the projected attachments ignore file', {
+      cwd,
+      ...logError(err),
+    });
   }
 }
 

@@ -273,6 +273,16 @@
         "apps/client/src/layers/entities/session/model/query/use-sessions.ts"
       ]
     },
+    "work-graph-views": {
+      "relatedCode": [
+        "apps/client/src/layers/features/chat-list/ui/ChatTreeFold.tsx",
+        "apps/client/src/layers/features/chat-list/model/build-chat-tree.ts",
+        "apps/client/src/layers/entities/work-graph/ui/WorkItemList.tsx",
+        "apps/client/src/layers/widgets/one-bar/ui/ChatWorkChip.tsx",
+        "apps/client/src/layers/features/profile/ui/pages/PullRequestsPage.tsx",
+        "apps/client/src/dev/showcases/work-graph-mock-data.ts"
+      ]
+    },
     "session-switcher": {
       "relatedCode": [
         "apps/client/src/layers/features/dashboard-sidebar/ui/SessionSwitcher.tsx",

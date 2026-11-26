@@ -89,7 +89,11 @@ export interface ChatRow {
    * "another chat". Null for a chat nothing else started.
    */
   startedFrom: string | null;
-  /** Spin-offs folded under it, newest first. Empty when it has none. */
+  /**
+   * Spin-offs folded under it, oldest first, the order the chat tree lists
+   * siblings in. Empty when it has none. Each says, through its own
+   * `startedBy`, which of them it hangs under (`build-chat-tree`).
+   */
   spinOffs: FoldedSpinOff[];
 }
 
@@ -118,6 +122,11 @@ export interface ChatListModel {
   total: number;
   /** How many chats matched the search. Equal to `total` without one. */
   matched: number;
+  /**
+   * Every chat in the list, search or not, with what it is doing: what the
+   * chat tree draws a chat it finds here with (`build-chat-tree`).
+   */
+  byId: ReadonlyMap<string, FoldedSpinOff>;
 }
 
 /** What a needs-you section is called. */
@@ -319,8 +328,10 @@ function buildRows(
       .get(where.hostId)
       ?.spinOffs.push({ session: fact.session, status: fact.status, lifecycle: fact.lifecycle });
   }
-  const newest = byKeyDesc<FoldedSpinOff>((s) => Date.parse(s.updatedAt));
-  for (const row of rows.values()) row.spinOffs.sort(newest);
+  // Oldest first, as the chat tree orders siblings: the fold must not reorder
+  // itself once the tree's own answer arrives.
+  const oldest = byKeyDesc<FoldedSpinOff>((s) => -Date.parse(s.createdAt));
+  for (const row of rows.values()) row.spinOffs.sort(oldest);
   return rows;
 }
 
@@ -372,7 +383,8 @@ function cutSections(
  *
  * 1. A spin-off you never touched is not its own row. It folds under the row
  *    of the chat that started it, or under that chat's own host when the
- *    parent is itself folded, so a chain of spin-offs shares one toggle.
+ *    parent is itself folded, so a chain of spin-offs shares one toggle. The
+ *    fold draws them as a tree, each under the chat that started it.
  * 2. An automated chat goes in the Automated group.
  * 3. A chat that needs you, ran out of usage, or stopped with an error is never
  *    folded: it is a row in Needs you, wherever it would otherwise sit, saying
@@ -401,15 +413,20 @@ export function buildChatList(
   const needle = options.query?.trim().toLowerCase() ?? '';
   const visible = filterByTitle(sessions, needle);
 
-  const facts = new Map<string, ChatFacts>();
-  for (const session of visible) {
+  const all = new Map<string, ChatFacts>();
+  for (const session of sessions) {
     const lifecycle = lifecycleOf(session, lifecycles);
-    facts.set(session.id, {
+    all.set(session.id, {
       session,
       owner: chatOwnership(session),
       lifecycle,
       status: chatStatus(lifecycle, waitingIds.has(session.id), outOfUsageIds.has(session.id)),
     });
+  }
+  const facts = new Map<string, ChatFacts>();
+  for (const session of visible) {
+    const fact = all.get(session.id);
+    if (fact) facts.set(session.id, fact);
   }
   const titleById = new Map(sessions.map((s) => [s.id, sessionDisplayTitle(s.title)]));
   const placement = placeChats(facts);
@@ -422,5 +439,6 @@ export function buildChatList(
     showRuntime: new Set(sessions.map((s) => s.runtime)).size > 1,
     total: sessions.length,
     matched: visible.length,
+    byId: all,
   };
 }
