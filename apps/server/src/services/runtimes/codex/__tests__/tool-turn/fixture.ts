@@ -22,7 +22,7 @@ import { initConfigManager } from '../../../../core/config-manager.js';
 import { CodexRuntime } from '../../codex-runtime.js';
 import { CodexThreadMap } from '../../thread-map.js';
 import { makeAppServerHarness, PERSON_HOME } from '../app-server-harness.js';
-import type { RuntimeToolCaller } from '../../../../connectors/runtime-principal-port.js';
+import type { RuntimeToolCaller } from '../../../../core/connections-lease/index.js';
 
 interface ToolTurnFixture {
   home: string;

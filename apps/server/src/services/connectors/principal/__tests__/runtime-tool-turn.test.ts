@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { connectorRuntimeBindings } from '@dorkos/db';
 import { clearTestHomes } from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
-import { RuntimeToolContextUnavailableError } from '../../runtime-principal-port.js';
+import { RuntimeToolContextUnavailableError } from '@dorkos/shared/connections-lease';
 import { createServerPrincipal } from '../server-principal.js';
 import { liveTurnFixture } from './runtime-tool-turn.fixture.js';
 

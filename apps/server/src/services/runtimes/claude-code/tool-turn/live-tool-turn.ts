@@ -1,5 +1,5 @@
 /** Live facts from settings actually handed to this Claude turn's query. */
-import type { RuntimeToolTurnFacts } from '../../../connectors/runtime-principal-port.js';
+import type { RuntimeToolTurnFacts } from '../../../core/connections-lease/index.js';
 import type { CapabilityHoldSession } from '../../../core/capabilities/capability-approval-hold.js';
 import type { AgentSession } from '../agent-types.js';
 import { runningPermissionMode } from '../mcp-tools/session-start-permission.js';

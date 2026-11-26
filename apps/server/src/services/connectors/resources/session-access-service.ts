@@ -39,7 +39,7 @@ import {
 } from '@dorkos/shared/connector-resource-schemas';
 import { ConnectionIdSchema, type ConnectionId } from '@dorkos/shared/connector-schemas';
 import type { SessionConnectorAttachmentStore } from '../attachment-store.js';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 import {
   ConnectorOperatorQueryError,
   type ConnectorOperatorQueryService,

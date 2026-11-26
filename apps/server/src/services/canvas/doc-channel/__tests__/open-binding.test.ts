@@ -14,9 +14,11 @@ import { uiTurnFacts } from '../../../session/browser-seat/ui-turn-facts.js';
 import {
   createServerPrincipal,
   isServerPrincipal,
-  type ConnectorRuntime,
-  type ServerPrincipalProof,
 } from '../../../connectors/principal/server-principal.js';
+import type {
+  ConnectorRuntime,
+  ServerPrincipalProof,
+} from '../../../core/connections-lease/index.js';
 import { ConnectorRuntimePrincipalService } from '../../../connectors/principal/runtime-principal-service.js';
 import { ApprovalService } from '../../../core/approvals/approval-service.js';
 import {

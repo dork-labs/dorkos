@@ -13,7 +13,7 @@ import { ConnectorExecutionBroker, type ConnectorSignInEndedPort } from './execu
 import type { ConnectorUsageStore } from './usage-store.js';
 import type { ManagedConnectorExecutionContextBindingPort } from './managed-execution-context.js';
 import { DestructiveHoldService } from './destructive-hold.js';
-import type { ServerPrincipalProof } from '../principal/server-principal.js';
+import type { ServerPrincipalProof } from '../../core/connections-lease/index.js';
 
 /** What {@link createConnectorExecution} assembles from. */
 export interface ConnectorExecutionParts {

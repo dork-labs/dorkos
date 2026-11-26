@@ -1,12 +1,11 @@
 /** Verified API-key program principals for connector REST and CLI calls. */
 import { and, apikey, eq, type Db } from '@dorkos/db';
 import type { RequestUser } from '../../core/auth/session-gate.js';
-import {
-  createServerPrincipal,
-  isServerPrincipal,
-  type ConnectorOwnerAuthority,
-  type ServerPrincipalProof,
-} from './server-principal.js';
+import { createServerPrincipal, isServerPrincipal } from './server-principal.js';
+import type {
+  ConnectorOwnerAuthority,
+  ServerPrincipalProof,
+} from '../../core/connections-lease/index.js';
 
 /** SQLite-backed program-principal mint and live credential validator. */
 export class ConnectorProgramPrincipalService {

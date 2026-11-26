@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { levelOfMode } from '@dorkos/shared/permission-semantics';
 import type { StreamEvent } from '@dorkos/shared/types';
-import type { RuntimeToolTurnFacts } from '../../../../connectors/runtime-principal-port.js';
-import { RuntimeToolContextUnavailableError } from '../../../../connectors/runtime-principal-port.js';
+import type { RuntimeToolTurnFacts } from '../../../../core/connections-lease/index.js';
+import { RuntimeToolContextUnavailableError } from '@dorkos/shared/connections-lease';
 import { isFullLevel } from '../../../../core/turn-power/full-autonomy.js';
 import { ApprovalService, hashApprovalInput } from '../../../../core/approvals/index.js';
 import { awaitCapabilityApproval } from '../../../../core/capabilities/capability-approval-hold.js';
