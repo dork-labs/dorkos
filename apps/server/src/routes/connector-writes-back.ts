@@ -32,7 +32,7 @@ import {
   serviceName,
   type EveryAgentActivitySink,
 } from '../services/connectors/every-agent-activity.js';
-import type { ConnectorOwnerAuthority } from '../services/connectors/principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../services/core/connections-lease/index.js';
 import {
   resolveConnectorOperator,
   type ConnectorOwnerBoundaryDeps,

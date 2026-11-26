@@ -6,7 +6,7 @@ import {
 } from './readers/prepared-readers.js';
 import { UiCanvasContentSchema } from '@dorkos/shared/schemas';
 import { readOwnerAccount } from '../../core/auth/index.js';
-import type { ConnectorOwnerAuthority } from '../../connectors/principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 import type { RoomRepoStore } from '../../rooms/repo/room-repo-store.js';
 import type { CanvasDocumentStore } from '../canvas-document-store.js';
 import { canvasSourcePath } from '../document-key.js';

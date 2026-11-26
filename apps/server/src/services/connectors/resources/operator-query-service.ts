@@ -68,7 +68,7 @@ import { custodyDisclosure } from '../custody-disclosure.js';
 import { everyAgentGrantFor, liveEveryAgentAccess } from '../every-agent-grants.js';
 import { everyAgentLevel } from '../execution/access-levels.js';
 import type { ConnectorAgentOwnershipPort } from '../execution/authorization-service.js';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 import type { ConnectorRegistry } from '../registry.js';
 import type { RelayAdapterCatalog } from '../routing.js';
 import { BUILT_IN_APPS, type BuiltInApp } from './built-in-apps.js';

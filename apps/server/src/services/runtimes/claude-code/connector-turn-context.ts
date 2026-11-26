@@ -3,11 +3,11 @@ import type { Query } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentSession } from './agent-types.js';
 import { readClaudeToolTurn, type ClaudeToolLaunchSettings } from './tool-turn/live-tool-turn.js';
 import { queryModeChange } from './tool-turn/query-mode.js';
-import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
 import type {
   OpenConnectorTurnResult,
   RevokeConnectorTurnReason,
-} from '../../connectors/runtime-principal-port.js';
+  ServerPrincipalProof,
+} from '../../core/connections-lease/index.js';
 import type { ConnectorRuntimeTools } from '../connector-tools.js';
 import { logger } from '../../../lib/logger.js';
 import { aliasTurnLevel } from '../../core/turn-power/turn-levels.js';

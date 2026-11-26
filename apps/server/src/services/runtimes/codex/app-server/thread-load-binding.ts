@@ -1,5 +1,5 @@
 /** Authenticate MCP discovery with the already-open turn while Codex loads a thread. */
-import type { ConnectorThreadKeyPort } from '../../../connectors/runtime-principal-port.js';
+import type { ConnectorThreadKeyPort } from '../../../core/connections-lease/index.js';
 import type { ThreadLoadInput } from './thread-loader.js';
 
 /**

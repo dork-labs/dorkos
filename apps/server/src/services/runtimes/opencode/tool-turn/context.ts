@@ -3,7 +3,7 @@ import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import { chosenModeWithinOwnBounds } from '../../../core/turn-power/full-autonomy.js';
 import { effectiveApprovalMode } from '../messaging/approvals.js';
 import { OPENCODE_CAPABILITIES } from '../runtime-constants.js';
-import type { RuntimeToolTurnFacts } from '../../../connectors/runtime-principal-port.js';
+import type { RuntimeToolTurnFacts } from '../../../core/connections-lease/index.js';
 import type { CapabilityHoldSession } from '../../../core/capabilities/capability-approval-hold.js';
 import { hostTurnEvent, type OpenCodeHostEvent } from './host-events.js';
 

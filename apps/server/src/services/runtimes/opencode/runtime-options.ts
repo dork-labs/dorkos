@@ -1,5 +1,5 @@
 import type { OpenCodeClientProvider, OpenCodeSessionMapStore } from './sessions/session-mapper.js';
-import type { ConnectorRuntime } from '../../connectors/runtime-principal-port.js';
+import type { ConnectorRuntime } from '../../core/connections-lease/index.js';
 import type { SessionAttachmentStore } from '../../session/attachments/index.js';
 
 /** Constructor dependencies for the OpenCode runtime (composition root). */

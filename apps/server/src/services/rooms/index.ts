@@ -1,7 +1,5 @@
-import {
-  isServerPrincipal,
-  type ServerPrincipalProof,
-} from '../connectors/principal/server-principal.js';
+import { isServerPrincipal } from '../connectors/principal/server-principal.js';
+import type { ServerPrincipalProof } from '../core/connections-lease/index.js';
 /**
  * Rooms subsystem barrel + factory (spec `rooms`, ADR 260726-170125).
  *

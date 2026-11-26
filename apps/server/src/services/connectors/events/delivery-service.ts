@@ -4,7 +4,7 @@ import { stableStringify } from '@dorkos/shared/capabilities';
 import type { ConnectorEventContent } from '@dorkos/shared/connector-event-schemas';
 import type { DbTransaction } from '@dorkos/db';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 import type { ConnectorEventInboxStore, LeasedConnectorEvent } from '../event-inbox-store.js';
 import type { PrivateSessionMessageAcceptanceService } from '../../session/private-messages/acceptance.js';
 import type { ConnectorEventProtectionPort } from './ingress-service.js';

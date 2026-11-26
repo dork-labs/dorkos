@@ -38,10 +38,8 @@ vi.mock('../../shared/policy/managed-config.js', () => ({
 }));
 import { CodexThreadMap } from '../thread-map.js';
 import { codexSimpleTurn, makeMockThread } from './codex-scenarios.js';
-import {
-  ConnectorRuntimeAuthorityError,
-  type ConnectorRuntimePrincipalPort,
-} from '../../../connectors/runtime-principal-port.js';
+import type { ConnectorRuntimePrincipalPort } from '../../../core/connections-lease/index.js';
+import { ConnectorRuntimeAuthorityError } from '@dorkos/shared/connections-lease';
 import type { ConnectorTurnLeaseSupervisorFactory } from '../../connectors/connector-turn-lease-supervisor.js';
 import { createRuntimeTurnRenewalConformanceFixture } from '../../connectors/__tests__/turn-renewal-conformance-fixture.js';
 import {

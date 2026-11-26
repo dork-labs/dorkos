@@ -5,7 +5,7 @@ import {
   type ConnectorRuntimeTools,
 } from '../connector-tools.js';
 import { DORKOS_MCP_SERVER_NAME, dorkosToolNameFor, mcpToolNameFor } from './dorkos-tool-names.js';
-import { SERVICE_CATALOG_TOOL_NAME } from '../../connectors/connector-capabilities.js';
+import { SERVICE_CATALOG_TOOL_NAME } from '@dorkos/shared/connections-lease';
 import { outsideWordsNote } from '../../core/turn-power/marked-turn-copy.js';
 
 /** Select a snapshot now; record it only after the adapter delivers the context. */

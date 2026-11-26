@@ -1,5 +1,5 @@
 import type { StreamEvent } from '@dorkos/shared/types';
-import type { RuntimeToolTurnFacts } from '../../../connectors/runtime-principal-port.js';
+import type { RuntimeToolTurnFacts } from '../../../core/connections-lease/index.js';
 import type { DoeEventQueue } from '../event-queue.js';
 
 /** One active turn's host-card delivery and independent logical tool lifetime. */

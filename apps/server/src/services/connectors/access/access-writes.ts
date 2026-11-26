@@ -25,7 +25,7 @@ import {
 } from '@dorkos/shared/connector-schemas';
 import { recordAccessLevel, replaceNamedAgentGrants } from '../execution/access-levels.js';
 import { managedSelectors } from '../reconciliation-service.js';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 import type { ManagedAuthoritySyncService } from '../resources/managed-authority-sync-service.js';
 import { sameIds, type AccessState } from './access-state.js';
 

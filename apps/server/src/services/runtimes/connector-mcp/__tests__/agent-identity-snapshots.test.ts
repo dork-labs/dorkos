@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
+import type { ConnectorRuntimePrincipalPort } from '../../../core/connections-lease/index.js';
 import { createServerPrincipal } from '../../../connectors/principal/server-principal.js';
 import { AgentIdentitySnapshotPrincipalPort } from '../agent-identity-snapshots.js';
 
