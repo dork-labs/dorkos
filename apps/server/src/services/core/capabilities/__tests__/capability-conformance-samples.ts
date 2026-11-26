@@ -156,6 +156,10 @@ export function conformanceSampleInputs(
       connection: { transport: 'stdio', command: 'npx', args: ['-y', 'conformance-mcp@1.0.0'] },
     },
     'mcp.remove_global_server': { name: 'conformance-srv' },
+    // Behind the account-decision bar: refused before the handler without the mount's proof.
+    'connectors.disconnect_impact': { connectionId: 'conformance-connection' },
+    'connectors.rename_connection': { connectionId: 'conformance-connection', label: 'Work' },
+    'connectors.remove_connection': { connectionId: 'conformance-connection' },
     'mcp.check_global_tools': { name: 'conformance-srv' },
     'mcp.undo_global_allow': {
       name: 'conformance-srv',

@@ -7,6 +7,11 @@ import {
   type ConnectorResourcesRouterDeps,
 } from '../connector-resources.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
+import {
+  connectionOwnerDomain,
+  type ConnectionOwnerDeps,
+} from '../../services/connectors/resources/owner-capabilities.js';
 import { ConnectorAuthenticationFlowError } from '../../services/connectors/resources/authentication-flow-service.js';
 import { ConnectorAppActionsError } from '../../services/connectors/resources/app-actions-service.js';
 import { ConnectorOperatorQueryError } from '../../services/connectors/resources/operator-query-service.js';
@@ -24,8 +29,21 @@ vi.mock('../../services/core/config-manager.js', () => ({
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const fixtureTarget = swappableServer();
 
+/** The hand group and its account doors on the mount (DOR-4978), in the app's order. */
+type Deps = ConnectorResourcesRouterDeps & ConnectionOwnerDeps;
+function groups(deps: Deps) {
+  return [
+    capabilityGroup(
+      connectionOwnerDomain,
+      { connectionOwnerDeps: deps },
+      { accountDecision: deps }
+    ),
+    { path: '/api/connectors', routes: createConnectorResourcesRoutes(deps) },
+  ];
+}
+
 describe('connector resource routes', () => {
-  let deps: ConnectorResourcesRouterDeps;
+  let deps: Deps;
   let app: RequestListener;
 
   beforeEach(() => {
@@ -66,11 +84,8 @@ describe('connector resource routes', () => {
           .fn()
           .mockResolvedValue({ sessionId: 'session-a', agentId: 'agent-a', connections: [] }),
       },
-    } as unknown as ConnectorResourcesRouterDeps;
-    app = honoGroupListener({
-      path: '/api/connectors',
-      routes: createConnectorResourcesRoutes(deps),
-    });
+    } as unknown as Deps;
+    app = honoGroupListener(groups(deps));
   });
 
   function api() {
@@ -83,14 +98,11 @@ describe('connector resource routes', () => {
   describe('with login on, the owner of this DorkOS alone', () => {
     function signedInAs(userId: string) {
       const signedIn = honoGroupListener(
-        {
-          path: '/api/connectors',
-          routes: createConnectorResourcesRoutes({
-            ...deps,
-            loginEnabled: () => true,
-            isAccountOwner: (user) => user?.userId === 'user-owner',
-          }),
-        },
+        groups({
+          ...deps,
+          loginEnabled: () => true,
+          isAccountOwner: (user) => user?.userId === 'user-owner',
+        }),
         {
           before: async (c, next) => {
             c.set('user', { userId, credential: 'cookie' });

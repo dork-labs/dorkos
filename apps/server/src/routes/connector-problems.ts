@@ -10,7 +10,7 @@
  */
 import type { Context } from 'hono';
 import { problemBody, sendProblem } from '@dorkos/http-kit';
-import type { Problem, ProblemCode } from '@dorkos/shared/problem';
+import type { Problem } from '@dorkos/shared/problem';
 import { logger } from '../lib/logger.js';
 import type { ConnectorAgentRequestError } from '../services/connectors/agent-request-service.js';
 import type { ConnectorGrantExclusionErrorCode } from '../services/connectors/access/grant-exclusions.js';
@@ -22,30 +22,22 @@ import type { ConnectorManagementReviewErrorCode } from '../services/connectors/
 import type { ConnectorReconciliationErrorCode } from '../services/connectors/reconciliation/reconciliation-error.js';
 import type { ConnectorAppActionsError } from '../services/connectors/resources/app-actions-service.js';
 import type { ConnectorAuthenticationFlowError } from '../services/connectors/resources/authentication-flow-service.js';
-import type { ConnectorLifecycleError } from '../services/connectors/resources/lifecycle-service.js';
-import type { ConnectorOperatorQueryError } from '../services/connectors/resources/operator-query-service.js';
 import type { ConnectorSessionAccessError } from '../services/connectors/resources/session-access-service.js';
 
-/** One refusal's answer: its problem code and the sentence the person reads. */
-export interface ConnectorProblem {
-  readonly code: ProblemCode;
-  readonly detail: string;
-}
+import {
+  AGENT_GONE,
+  BAD_CURSOR,
+  CONNECTION_GONE,
+  type ConnectorProblem,
+} from '../services/connectors/resources/owner-refusals.js';
 
-/** A connected account that is gone, or never was this owner's. */
-const CONNECTION_GONE: ConnectorProblem = {
-  code: 'not_found',
-  detail: 'That app isn’t connected anymore. Pick it again from the list.',
-};
-
-/** An agent id this owner doesn't have. */
-const AGENT_GONE: ConnectorProblem = { code: 'not_found', detail: 'That agent isn’t here.' };
-
-/** A page cursor that isn't one of ours. */
-const BAD_CURSOR: ConnectorProblem = {
-  code: 'invalid_request',
-  detail: 'That page link has expired. Start the list again.',
-};
+// The resource tables live beside the connection doors on the mount, so the
+// hand routes and the mount say each refusal the same way (DOR-4978).
+export {
+  LIFECYCLE_PROBLEM,
+  OPERATOR_QUERY_PROBLEM,
+  type ConnectorProblem,
+} from '../services/connectors/resources/owner-refusals.js';
 
 /** No working way to reach the app: nothing to sign in to or list. */
 const APP_NOT_SET_UP: ConnectorProblem = {
@@ -88,28 +80,6 @@ export const SESSION_ACCESS_PROBLEM: Record<ConnectorSessionAccessError['code'],
       code: 'other_agent_chat',
       detail: 'This chat’s access is set for another agent, so it can’t change here.',
     },
-  };
-
-/** Pausing, resuming, renaming, disconnecting and removing an account. */
-export const LIFECYCLE_PROBLEM: Record<ConnectorLifecycleError['code'], ConnectorProblem> = {
-  connection_not_found: CONNECTION_GONE,
-  managed_sync_unavailable: {
-    code: 'temporarily_unavailable',
-    detail: 'DorkOS couldn’t reach your account’s apps. Try again soon.',
-  },
-  connection_not_disconnected: {
-    code: 'still_connected',
-    detail: 'Disconnect this app before removing it.',
-  },
-};
-
-/** The owner's reads of accounts, agents and chats. */
-export const OPERATOR_QUERY_PROBLEM: Record<ConnectorOperatorQueryError['code'], ConnectorProblem> =
-  {
-    connection_not_found: CONNECTION_GONE,
-    agent_not_found: AGENT_GONE,
-    session_not_found: { code: 'session_not_found', detail: 'That chat isn’t here anymore.' },
-    invalid_cursor: BAD_CURSOR,
   };
 
 /** A program's reads of what an agent may use. */

@@ -87,6 +87,7 @@ export interface ComposeCapabilitiesInput {
   permissionService: MountCoreRoutesResult['permissionService'];
   connectorRegistry: WireCoreStoresResult['connectorRegistry'];
   connectorOperatorQueries: WireConnectorServicesResult['connectorOperatorQueries'];
+  connectorLifecycle: WireConnectorServicesResult['connectorLifecycle'];
   connectorAuthorization: WireConnectorServicesResult['connectorAuthorization'];
   connectorBroker: WireDocDeliveryResult['connectorBroker'];
   connectorAccess: WireDocDeliveryResult['connectorAccess'];
@@ -131,6 +132,7 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
     permissionService,
     connectorRegistry,
     connectorOperatorQueries,
+    connectorLifecycle,
     connectorAuthorization,
     connectorBroker,
     connectorAccess,
@@ -256,6 +258,12 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       ...(mcpDeps && { mcpDeps }),
       // The MCP servers a person adds for every agent, on their REST paths (DOR-4978).
       ...globalMcpPersonDepsFor(deps, () => refs.meshCore),
+      // The owner's connection doors, behind the account-decision bar (DOR-4978): the
+      // same services the hand routes hold.
+      connectionOwnerDeps: {
+        query: connectorOperatorQueries,
+        lifecycle: connectorLifecycle,
+      },
       sessionRelayDeps: sessionRelayDoorDeps(), // chat from the web's doors (DOR-4978)
       // The rooms domain (room-participation spec §10.2, §10.3): the verbs an
       // agent has in the rooms it belongs to. The SAME service instances the

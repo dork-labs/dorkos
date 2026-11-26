@@ -160,6 +160,39 @@ export const PERSON_ONLY_AGENT_HINTS = [
 export type PersonOnlyAgentHint = (typeof PERSON_ONLY_AGENT_HINTS)[number];
 
 /**
+ * The owner bars a person-only capability may declare on its HTTP surface
+ * ({@link HttpSurface.ownerBar}). A closed list: each value is one existing
+ * check, run by the mount before the handler.
+ *
+ * - `account-decision`: who may make an account decision about this install's
+ *   connections (`lib/http/account-decision-bar.ts`): a page on a trusted origin,
+ *   never an agent, an approval token or any program credential header, and with
+ *   login on, the owner's own browser session.
+ */
+export type HttpOwnerBar = 'account-decision';
+
+/**
+ * The fixed sentences an `account-decision` bar may refuse a signed-in
+ * non-owner with ({@link HttpSurface.ownerOnly}), one per area. Only these are
+ * ever sent, so a new one is an edit here.
+ */
+export const ACCOUNT_DECISION_OWNER_ONLY = [
+  'Only the owner of this DorkOS can manage the connections on its DorkOS account.',
+] as const;
+
+/** One of {@link ACCOUNT_DECISION_OWNER_ONLY}. */
+export type AccountDecisionOwnerOnly = (typeof ACCOUNT_DECISION_OWNER_ONLY)[number];
+
+/**
+ * A check the mount runs before anything else on a path, answering `503` when
+ * the part of DorkOS it names did not start ({@link HttpSurface.precheck}).
+ *
+ * - `connector-store`: the connected-apps store's migration failed, as every
+ *   `/api/connectors` route answered before it moved onto the mount.
+ */
+export type HttpPrecheck = 'connector-store';
+
+/**
  * The HTTP projection of a capability: a route the server serves (the generic
  * capability mount, `routes/capability-http.ts`) and the OpenAPI document
  * describes, both from this one declaration (ADR 261123-170830).
@@ -207,6 +240,21 @@ export interface HttpSurface {
    * a fixed list ({@link PERSON_ONLY_AGENT_HINTS}).
    */
   agentsUse?: PersonOnlyAgentHint;
+  /**
+   * The owner bar the mount runs before the handler, on this path and on
+   * `POST /api/capabilities/{id}/invoke` alike. Declared here, never chosen
+   * from the input or the request. Only with `audience: 'person'` and no MCP
+   * surface; the handler then reads the server-owned owner as
+   * `context.ownerAuthority`. See {@link HttpOwnerBar}.
+   */
+  ownerBar?: HttpOwnerBar;
+  /**
+   * With {@link HttpSurface.ownerBar}, the sentence its `owner_only` refusal
+   * says: one of a fixed list ({@link ACCOUNT_DECISION_OWNER_ONLY}).
+   */
+  ownerOnly?: AccountDecisionOwnerOnly;
+  /** A check that answers first, before any bar. See {@link HttpPrecheck}. */
+  precheck?: HttpPrecheck;
   /**
    * Every answer on this path, refusals included, carries `Cache-Control:
    * no-store`: for an answer about a person's own devices or sign-ins, which

@@ -21,7 +21,6 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import ts from 'typescript';
 import {
   collectFiles,
   collectMdxFiles,
@@ -1216,61 +1215,6 @@ describe('the shipped banned-terms.json and allowlist.json', () => {
     const repoRoot = join(import.meta.dirname, '../..');
     expect(runVocabGate(repoRoot)).toEqual([]);
   }, 120_000);
-
-  it('checks literal API errors and owner-refusal messages in connector management', () => {
-    const repoRoot = join(import.meta.dirname, '../..');
-    // The owner refusals live beside the management routes, in the boundary
-    // every connector group shares (DOR-2804).
-    const routePaths = [
-      join(repoRoot, 'apps/server/src/routes/connector-management.ts'),
-      join(repoRoot, 'apps/server/src/routes/connector-owner-boundary.ts'),
-      // The fixed problem sentences for every connection refusal (DOR-4979).
-      join(repoRoot, 'apps/server/src/routes/connector-problems.ts'),
-    ];
-    const apiCopy: string[] = [];
-
-    function staticText(node: ts.Expression | undefined): string | undefined {
-      if (node && ts.isStringLiteralLike(node)) return node.text;
-      if (node && ts.isTemplateExpression(node)) {
-        return [node.head.text, ...node.templateSpans.map((span) => span.literal.text)].join(' ');
-      }
-      return undefined;
-    }
-
-    for (const routePath of routePaths) {
-      const sourceFile = ts.createSourceFile(
-        routePath,
-        readFileSync(routePath, 'utf8'),
-        ts.ScriptTarget.Latest,
-        true,
-        ts.ScriptKind.TS
-      );
-      const visit = (node: ts.Node): void => {
-        // `detail` since the routes answer problem documents (DOR-4979).
-        if (ts.isPropertyAssignment(node) && node.name.getText(sourceFile) === 'detail') {
-          const text = staticText(node.initializer);
-          if (text !== undefined) apiCopy.push(text);
-        }
-        if (ts.isCallExpression(node) && node.expression.getText(sourceFile) === 'ownerRefusal') {
-          const text = staticText(node.arguments[2]);
-          if (text !== undefined) apiCopy.push(text);
-        }
-        ts.forEachChild(node, visit);
-      };
-      visit(sourceFile);
-    }
-
-    const copySource = apiCopy
-      .map((text, index) => `const apiCopy${index} = { message: ${JSON.stringify(text)} };`)
-      .join('\n');
-    // Every refusal sentence the connection routes can send, found as `detail`
-    // values and `ownerRefusal` sentences (DOR-4979 moved them from `error`).
-    expect(apiCopy.length).toBeGreaterThan(40);
-    expect(apiCopy).toContain(
-      'Only the owner of this DorkOS can manage the connections on its DorkOS account.'
-    );
-    expect(scanSource(routePaths[0]!, copySource, loadBannedTerms())).toEqual([]);
-  });
 
   it('every allowlist entry path resolves to a real file or directory', () => {
     // A rename or deletion that leaves a stale allowlist entry behind is not

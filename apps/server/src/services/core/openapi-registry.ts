@@ -250,10 +250,8 @@ import {
   CONNECTOR_LOGO_SERVICE_ID,
   ConnectorConnectionDetailSchema,
   ConnectorConnectionListResourceSchema,
-  ConnectorConnectionPatchSchema,
   ConnectorAppActionsQuerySchema,
   ConnectorAppActionsSchema,
-  ConnectorDisconnectImpactSchema,
   ConnectorLifecycleResultSchema,
   ConnectorReconnectRequestSchema,
   ConnectorSessionAccessUpdateSchema,
@@ -3805,24 +3803,6 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: 'patch',
-  path: '/api/connectors/connections/{connectionId}',
-  tags: ['Connectors'],
-  summary: 'Rename one stable connection',
-  request: {
-    params: z.object({ connectionId: z.string().min(1) }),
-    body: { content: { 'application/json': { schema: ConnectorConnectionPatchSchema } } },
-  },
-  responses: {
-    200: {
-      description: 'Updated lifecycle projection',
-      content: { 'application/json': { schema: ConnectorLifecycleResultSchema } },
-    },
-    404: problemResponse('Connection absent or owned by someone else'),
-  },
-});
-
-registry.registerPath({
   method: 'delete',
   path: '/api/connectors/connections/{connectionId}',
   tags: ['Connectors'],
@@ -3861,34 +3841,6 @@ registry.registerPath({
     403: problemResponse('Only the owner can read this, from the DorkOS app'),
     404: problemResponse('The named way of reaching apps is not set up'),
     502: problemResponse('The service could not list the app’s actions just now'),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/connectors/connections/{connectionId}/disconnect-impact',
-  tags: ['Connectors'],
-  summary: 'Preview authority affected by disconnecting a connection',
-  request: { params: z.object({ connectionId: z.string().min(1) }) },
-  responses: {
-    200: {
-      description: 'Current grant, session, and subscription impact',
-      content: { 'application/json': { schema: ConnectorDisconnectImpactSchema } },
-    },
-    404: problemResponse('Connection absent or owned by someone else'),
-  },
-});
-
-registry.registerPath({
-  method: 'post',
-  path: '/api/connectors/connections/{connectionId}/remove',
-  tags: ['Connectors'],
-  summary: 'Remove a disconnected account from Accounts while retaining its history',
-  request: { params: z.object({ connectionId: z.string().min(1) }) },
-  responses: {
-    204: { description: 'Account removed from the owner inventory' },
-    404: problemResponse('Account absent or owned by someone else'),
-    409: problemResponse('Account must finish disconnecting before removal'),
   },
 });
 

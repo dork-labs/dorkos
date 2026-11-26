@@ -59,7 +59,7 @@ export const CONFIRM_FIRST_CAPABILITY_IDS: ReadonlyMap<string, ConfirmFirstBar> 
  *
  * @param capability - The capability being composed.
  * @throws When it declares `cancelWindow`, a `wifi` mode or `confirmFirst`
- *   without being listed for it, a confirm-first bar other than its listed one, or `person-held` or `confirmFirst` on a
+ *   without being listed for it, an owner bar it may not ({@link assertOwnerBar}), a confirm-first bar other than its listed one, or `person-held` or `confirmFirst` on a
  *   capability any agent may call.
  */
 export function assertNarrowDeclarations(
@@ -69,6 +69,7 @@ export function assertNarrowDeclarations(
   >
 ): void {
   const { id } = capability;
+  assertOwnerBar(capability);
   if (capability.cancelWindow && !CANCEL_WINDOW_CAPABILITY_IDS.has(id)) {
     throw new Error(`Capability registry: "${id}" may not declare a cancel window.`);
   }
@@ -92,5 +93,42 @@ export function assertNarrowDeclarations(
   }
   if (capability.wifi === 'person-held' && capability.surfaces.http?.audience !== 'person') {
     throw new Error(`Capability registry: "${id}" is person-held, so only a person may call it.`);
+  }
+}
+
+/**
+ * Refuse an owner bar (`http.ownerBar`, DOR-4978) anywhere an agent could reach
+ * it or the bar would mean less: it needs `audience: 'person'` and its own
+ * `owner_only` sentence, and takes no MCP surface, no network mode and no
+ * confirm-first hold (a held call's confirmation does not re-run this bar yet).
+ *
+ * @param capability - The capability being composed.
+ * @throws Naming what the declaration may not have.
+ */
+function assertOwnerBar(
+  capability: Pick<CapabilityDefinition, 'id' | 'wifi' | 'confirmFirst' | 'surfaces'>
+): void {
+  const { id, surfaces } = capability;
+  const http = surfaces.http;
+  if (http?.ownerBar === undefined) {
+    if (http?.ownerOnly !== undefined) {
+      throw new Error(`Capability registry: "${id}" names an owner sentence but no owner bar.`);
+    }
+    return;
+  }
+  if (http.audience !== 'person') {
+    throw new Error(`Capability registry: "${id}" has an owner bar, so only a person may call it.`);
+  }
+  if (http.ownerOnly === undefined) {
+    throw new Error(`Capability registry: "${id}" has an owner bar, so it names its own sentence.`);
+  }
+  if (surfaces.mcp !== undefined) {
+    throw new Error(`Capability registry: "${id}" has an owner bar, so it has no MCP surface.`);
+  }
+  if (capability.wifi !== undefined) {
+    throw new Error(`Capability registry: "${id}" has an owner bar, so it has no network mode.`);
+  }
+  if (capability.confirmFirst !== undefined) {
+    throw new Error(`Capability registry: "${id}" has an owner bar, so it can't be confirm-first.`);
   }
 }
