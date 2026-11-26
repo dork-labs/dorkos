@@ -46,6 +46,7 @@ import {
 } from './tier-enforcement.js';
 import { assertCallerProofs, type PersonCaller, type TrustedCaller } from './trusted-caller.js';
 import { personReadsPastArea } from './context/person-read.js';
+import { ownerAuthorityFor } from './context/owner-authority.js';
 import { notify } from './context/notify-observer.js';
 import { connectorGateFacts, resolveCallPermission } from './permission-enforcement.js';
 import { principalTurnOf } from './marked-turn-holds.js';
@@ -801,6 +802,8 @@ export function composeRegistry(
       // identity, and a person's proof for a person-only capability
       // (ADR 261123-170830), here inside the one gate so no door goes around it.
       assertCallerProofs(id, capability, supplied);
+      // Behind the account-decision bar only with the mount's proof it passed (DOR-4978).
+      const ownerAuthority = ownerAuthorityFor(capability, supplied.accountDecision);
 
       if (supplied.serverPrincipal !== undefined && !isServerPrincipal(supplied.serverPrincipal)) {
         throw new Error(
@@ -844,6 +847,7 @@ export function composeRegistry(
         ...(supplied.signal ? { signal: supplied.signal } : {}),
         ...(supplied.connectorAgentId ? { connectorAgentId: supplied.connectorAgentId } : {}),
         ...(supplied.connectorSurface ? { connectorSurface: supplied.connectorSurface } : {}),
+        ...(ownerAuthority ? { ownerAuthority } : {}),
       };
       let rememberPackageReview: ReturnType<typeof packageReviews.gate>['remember'] | undefined;
       const invocationContext: CapabilityHandlerContext = supplied.trusted

@@ -14,7 +14,9 @@
  * | --- | --- |
  * | The capability ran | the route's success status (`200` unless declared) |
  * | A person must approve first | `202`, the approval payload (not an error) |
+ * | A declared precheck found its part of DorkOS not started (`http.precheck`) | `503` problem, first |
  * | A caller that is not a person called a person-only capability (`http.audience: 'person'`) | `403` problem, `person_only` (from `registry.invoke`) |
+ * | The account-decision bar refused (`http.ownerBar`) | its `403`/`401` problem, before the input is read |
  * | The gate refused for good | `403` problem, {@link gateRefusalProblem} |
  * | A network sign-in asked for an `act` or `destructive` one that declares no network mode (`wifi`) | `403` problem, `not_from_wifi` |
  * | The input failed the capability's schema | `400` problem, `invalid_request` |
@@ -33,8 +35,10 @@ import { z } from 'zod';
 import {
   EXTENSION_TOOL_UNAVAILABLE_MESSAGE,
   isExtensionCapabilityId,
+  type HttpPrecheck,
   type HttpSuccessStatus,
 } from '@dorkos/shared/capabilities';
+import type { Problem } from '@dorkos/shared/problem';
 
 import {
   APPROVAL_TOKEN_HEADER,
@@ -69,6 +73,15 @@ import { holdConfirmFirst } from './capability-confirm-first.js';
 import { isDocOperatorAccount } from '../services/canvas/doc-channel/doc-source-policy.js';
 import { problemRefusalUnlessOwner } from './cloud-owner-bar.js';
 import { frontDoorProblem } from './front-door-step-up.js';
+import {
+  accountDecisionBar,
+  accountDecisionSentence,
+  type AccountDecisionPolicy,
+} from '../lib/http/account-decision-bar.js';
+import {
+  accountDecisionPassed,
+  type AccountDecisionPass,
+} from '../services/core/capabilities/context/owner-authority.js';
 
 /** What a request answers while boot has not handed the registry over. */
 const STILL_STARTING = 'DorkOS is still starting. Try again in a moment.';
@@ -99,6 +112,24 @@ export interface CapabilityDispatch {
    * Blocked for agents (DOR-4978).
    */
   rest?: true;
+  /** What the doors run before a capability that declares a bar or a precheck. */
+  ports?: CapabilityDoorPorts;
+}
+
+/**
+ * What the HTTP doors run for a capability before its handler, injected at the
+ * composition root (`http/hono-api.ts`), the same on the REST path and on
+ * `/invoke`.
+ */
+export interface CapabilityDoorPorts {
+  /**
+   * The account-decision bar's policy, for a capability that declares
+   * `http.ownerBar: 'account-decision'`. Absent, no proof is minted and the
+   * registry refuses such a capability `person_only`.
+   */
+  accountDecision?: AccountDecisionPolicy;
+  /** Each declared precheck (`http.precheck`): its `503` problem, or `undefined` to go on. */
+  prechecks?: Partial<Record<HttpPrecheck, () => Problem | undefined>>;
 }
 
 /**
@@ -131,7 +162,26 @@ export async function dispatchCapability(
     return problem(c, 'unknown_capability', { detail: UNKNOWN_CAPABILITY });
   }
 
+  const http = capability.surfaces.http;
+  // A declared precheck answers first, as the hand group's middleware did.
+  const unavailable = http?.precheck && dispatch.ports?.prechecks?.[http.precheck]?.();
+  if (unavailable) return sendProblem(c, unavailable);
+
   const facts = honoRequestFacts(c);
+  // The account-decision bar, before the input is read (DOR-4978): the same
+  // function the hand routes run, so the order, codes and step-up note match.
+  let accountDecision: AccountDecisionPass | undefined;
+  const policy = dispatch.ports?.accountDecision;
+  if (http?.ownerBar === 'account-decision' && policy) {
+    const outcome = accountDecisionBar(facts, policy);
+    if (!outcome.ok) {
+      const { code, which } = outcome.refusal;
+      // The sentence is the definition's own, never from the request.
+      const detail = accountDecisionSentence(which, http.ownerOnly ?? '');
+      return problem(c, code, { detail });
+    }
+    accountDecision = accountDecisionPassed(outcome.owner);
+  }
   // A front-door confirm-first capability runs its bar first, as its hand route
   // did, so a person not allowed to change it hears why before anything else.
   // A program or an agent is left to `registry.invoke`, which answers `person_only`.
@@ -162,7 +212,13 @@ export async function dispatchCapability(
   return invokeAs(
     c,
     registry,
-    { id, input, success: dispatch.success ?? 200, ...(dispatch.rest ? { rest: true } : {}) },
+    {
+      id,
+      input,
+      success: dispatch.success ?? 200,
+      ...(dispatch.rest ? { rest: true } : {}),
+      ...(accountDecision ? { accountDecision } : {}),
+    },
     facts
   );
 }
@@ -181,7 +237,13 @@ export async function dispatchCapability(
 async function invokeAs(
   c: Context<ApiEnv>,
   registry: CapabilityRegistry,
-  call: { id: string; input: unknown; success: HttpSuccessStatus; rest?: boolean },
+  call: {
+    id: string;
+    input: unknown;
+    success: HttpSuccessStatus;
+    rest?: boolean;
+    accountDecision?: AccountDecisionPass;
+  },
   facts: RequestFacts,
   confirmed?: unknown
 ): Promise<Response> {
@@ -231,6 +293,7 @@ async function invokeAs(
       ...(user ? { userId: user.userId } : {}),
       ...(approvalToken ? { approvalToken } : {}),
       ...(person ? { person } : {}),
+      ...(call.accountDecision ? { accountDecision: call.accountDecision } : {}),
       request: capabilityRequestFacts(facts),
       retryChannel: 'http-header',
       ...(confirmed !== undefined ? { confirmed } : {}),

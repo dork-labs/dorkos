@@ -50,7 +50,7 @@ import type {
 } from '../services/core/capabilities/index.js';
 import { composeCapabilityRegistryForDocs } from '../services/core/self-description/dorkos-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { dispatchCapability } from './capability-dispatch.js';
+import { dispatchCapability, type CapabilityDoorPorts } from './capability-dispatch.js';
 import { problem, readJsonBody } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 
@@ -65,6 +65,10 @@ export const HAND_SERVED_CAPABILITIES: Readonly<Record<string, string>> = Object
   'rooms.reseat': 'routes/room-reseat.ts; moves onto the mount with the rooms domain',
   'capabilities.list': 'routes/capabilities-catalog.ts; moves onto the mount with its page shape',
 });
+
+/** Why a connection capability may skip the connector group's migration gate. */
+const CONNECTOR_GATE_FOLDED_IN =
+  'The capability declares the connector-store precheck, which answers the same 503 first.';
 
 /** Why the task reads may skip the task step-up middleware. */
 const TASK_STEP_UP_WRITES_ONLY = 'The task step-up asks only before a write, and this is a read.';
@@ -93,6 +97,13 @@ export const SKIPPABLE_MIDDLEWARE: Readonly<Record<string, string>> = Object.fre
   'GET /api/sessions/:id/runtime-type skips ALL /api/sessions/:id/*': SESSION_READS_FOLD_THE_GUARD,
   'GET /api/sessions/:id/settings skips ALL /api/sessions/:id/*': SESSION_READS_FOLD_THE_GUARD,
   // `askForPersonBeforeTaskWrite` asks for the step-up only before a write; these are reads.
+  // The connector store's migration gate is folded in (`http.precheck: 'connector-store'`).
+  'GET /api/connectors/connections/:connectionId/disconnect-impact skips ALL /api/connectors/*':
+    CONNECTOR_GATE_FOLDED_IN,
+  'PATCH /api/connectors/connections/:connectionId skips ALL /api/connectors/*':
+    CONNECTOR_GATE_FOLDED_IN,
+  'POST /api/connectors/connections/:connectionId/remove skips ALL /api/connectors/*':
+    CONNECTOR_GATE_FOLDED_IN,
   'GET /api/tasks skips ALL /api/tasks': TASK_STEP_UP_WRITES_ONLY,
   'GET /api/tasks skips ALL /api/tasks/*': TASK_STEP_UP_WRITES_ONLY,
   'GET /api/tasks/runs skips ALL /api/tasks/*': TASK_STEP_UP_WRITES_ONLY,
@@ -153,6 +164,8 @@ export interface CapabilityHttpDeps {
   registry: () => CapabilityRegistry | undefined;
   /** The capabilities to serve; only those with an `http` surface get a route. */
   capabilities: readonly CapabilityDefinition[];
+  /** The bars and prechecks a declared capability runs first; see {@link CapabilityDoorPorts}. */
+  ports?: CapabilityDoorPorts;
 }
 
 /**
@@ -227,6 +240,7 @@ export function createCapabilityHttpRoutes(deps: CapabilityHttpDeps): Hono<ApiEn
         input: requestInput(c, surface),
         ...(surface.success ? { success: surface.success } : {}),
         rest: true,
+        ...(deps.ports ? { ports: deps.ports } : {}),
       });
     };
     MOUNT_HANDLERS.add(handler);

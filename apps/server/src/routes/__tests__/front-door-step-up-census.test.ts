@@ -99,8 +99,6 @@ const EXCEPTIONS: Record<string, string> = {
     'Stops sharing an account with every agent.',
   'connector-management PUT /connections/:connectionId/exclusions/:agentId':
     'Leaves one agent out of an account.',
-  'connector-resources PATCH /connections/:connectionId': 'Renames an account.',
-  'connector-resources POST /connections/:connectionId/remove': 'Removes an account.',
   'connector-resources DELETE /connections/:connectionId': 'Disconnects an account.',
   'connector-resources PUT /sessions/:sessionId/connections/:connectionId':
     'Turns an app the chat’s agent already holds on or off for one chat; never more than the agent’s own access.',
