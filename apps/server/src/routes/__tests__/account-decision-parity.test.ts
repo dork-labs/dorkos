@@ -182,6 +182,22 @@ describe('every refusal is the same on every door', () => {
       'Programs and agents can’t make account decisions.',
     ],
     [
+      'an X-API-Key header',
+      {},
+      { 'X-API-Key': 'made-up-key' },
+      403,
+      'person_only',
+      'Programs and agents can’t make account decisions.',
+    ],
+    [
+      'a Proxy-Authorization header',
+      {},
+      { 'Proxy-Authorization': 'Basic made-up' },
+      403,
+      'person_only',
+      'Programs and agents can’t make account decisions.',
+    ],
+    [
       'login on, with no session',
       { loginEnabled: () => true },
       {},

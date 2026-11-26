@@ -27,6 +27,7 @@ import { isInstallOwner } from '../../services/core/auth/install-owner.js';
 import { APPROVAL_TOKEN_HEADER } from '../../services/core/capabilities/approval-wording.js';
 import type { ConnectorOwnerAuthority } from '../../services/core/connections-lease/index.js';
 import { presentsAgentIdentity } from './agent-identity-header.js';
+import { presentsProgramCredential } from '../caller-authority.js';
 import { logger } from '../logger.js';
 import { notePersonSessionMissing } from '../person-without-session.js';
 import { resolveTrustedOrigins } from '../trusted-origins.js';
@@ -137,8 +138,8 @@ function refuse(
 
 /**
  * Run the account-decision bar, in this order: a foreign origin (`403
- * origin_not_allowed`); an agent, an approval token or any `Authorization`
- * header (`403 person_only`); with login on, no cookie session (`403
+ * origin_not_allowed`); an agent, an approval token or any program credential
+ * header (`PROGRAM_CREDENTIAL_HEADERS`) (`403 person_only`); with login on, no cookie session (`403
  * person_only`, noted as a missing session when nobody signed in); with login
  * on, a signed-in account that does not own this install (`403 owner_only`);
  * an owner DorkOS can't work out (`401 unauthenticated`).
@@ -152,7 +153,9 @@ export function accountDecisionBar(
   policy: AccountDecisionPolicy
 ): AccountDecisionOutcome {
   if (fromForeignOrigin(facts, policy)) return refuse('origin_not_allowed', 'foreign-origin');
-  if (presentsMachineSignal(facts) || facts.headers.authorization !== undefined) {
+  // Any program credential header (`PROGRAM_CREDENTIAL_HEADERS`: Authorization,
+  // X-API-Key, Proxy-Authorization), read from the one list every person bar uses.
+  if (presentsMachineSignal(facts) || presentsProgramCredential(facts)) {
     return refuse('person_only', 'machine');
   }
   const { user } = facts;

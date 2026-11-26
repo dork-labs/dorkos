@@ -4,7 +4,7 @@
  * anything that belongs to the owner.
  *
  * Only a person at the DorkOS app clears it: never a program (any
- * `Authorization` header), an agent (an `X-DorkOS-Agent` header, verified or
+ * program credential header: Authorization, X-API-Key or Proxy-Authorization), an agent (an `X-DorkOS-Agent` header, verified or
  * not) or a caller holding an approval token, and never a page on an origin
  * this server does not serve. With login on it takes the owner's browser
  * session, so another signed-in account and an API key are refused too.
