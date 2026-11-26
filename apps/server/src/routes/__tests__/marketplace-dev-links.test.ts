@@ -16,6 +16,8 @@ import { noopLogger } from '@dorkos/shared/logger';
 import type { AgentPermissions } from '@dorkos/shared/permissions';
 import { createMarketplaceRoutes } from '../marketplace.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { marketplaceReadsDomain } from '../../services/marketplace/doors/marketplace-read-capabilities.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
 import { initBoundary } from '../../lib/boundary.js';
 import { initConfigManager } from '../../services/core/config-manager.js';
 import { ApprovalService } from '../../services/core/approvals/index.js';
@@ -97,7 +99,13 @@ beforeEach(async () => {
   } as unknown as MarketplaceRouteDeps);
   target.mount(
     honoGroupListener(
-      { path: '/api/marketplace', routes },
+      [
+        // The list is served by the capability mount (DOR-4978).
+        capabilityGroup(marketplaceReadsDomain, {
+          marketplaceDeps: { dorkHome: home, devLinks } as unknown as MarketplaceMcpDeps,
+        }),
+        { path: '/api/marketplace', routes },
+      ],
       {
         before: async (c, next) => {
           if (agentHeader) c.env.incoming.headers['x-dorkos-agent'] = agentHeader;

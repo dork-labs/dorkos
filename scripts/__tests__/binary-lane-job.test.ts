@@ -52,7 +52,7 @@ function trackedBinarySuites(): string[] {
   const out = spawnSync(
     'git',
     ['ls-files', '--', 'apps/*.binary.test.ts', 'packages/*.binary.test.ts'],
-    { cwd: root, encoding: 'utf8' }
+    { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
   );
   expect(out.status, out.stderr).toBe(0);
   return out.stdout.split('\n').filter(Boolean).sort();

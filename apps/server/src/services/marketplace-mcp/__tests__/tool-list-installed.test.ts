@@ -2,7 +2,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -162,6 +162,38 @@ describe('createListInstalledHandler', () => {
     expect(installed).toHaveLength(2);
     const names = installed.map((p) => p.name).sort();
     expect(names).toEqual(['researcher', 'sentry-monitor']);
+  });
+
+  // Purpose (DOR-4978): an agent reads a dev link's row without the working
+  // folder it runs from, as on `GET /api/marketplace/installed`.
+  it("leaves a dev link's folder out for an agent, and in for a person", async () => {
+    const home = await realpath(dorkHome);
+    await mkdir(join(home, 'plugins'), { recursive: true });
+    await mkdir(join(home, 'marketplace'), { recursive: true });
+    const folder = '/work/northwind-flow';
+    await writeFile(
+      join(home, 'marketplace', 'dev-links.json'),
+      JSON.stringify({
+        version: 1,
+        links: [
+          {
+            name: 'flow',
+            type: 'plugin',
+            scope: 'global',
+            slot: join(home, 'plugins', 'flow'),
+            target: folder,
+            linkedAt: '2026-11-25T00:00:00.000Z',
+            linkedVia: 'terminal',
+          },
+        ],
+      })
+    );
+    const handler = createListInstalledHandler(buildDeps(home));
+
+    expect((await handler({})).content[0].text).toContain(folder);
+    const agent = (await handler({}, { agentAsking: true })).content[0].text;
+    expect(agent).toContain('"flow"');
+    expect(agent).not.toContain(folder);
   });
 
   // Purpose (DOR-2197): with `verify` an agent can tell a person which
