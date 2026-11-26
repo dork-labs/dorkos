@@ -1,6 +1,10 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+
+/** The repo root, so the test reads the same files from any working directory. */
+const ROOT = path.resolve(import.meta.dirname, '../..');
 
 // A whole-repo scan, sized like its sibling gray-matter-import-boundary.test.ts.
 vi.setConfig({ testTimeout: 15_000 });
@@ -37,6 +41,8 @@ const TYPE_ONLY_KEYS: Record<string, string> = {
 
 /** Server-only keys that stay in `@dorkos/shared`, each with the reason. */
 const SERVER_ONLY_KEYS: Record<string, string> = {
+  'work-graph-reads':
+    "A wire contract: one shape for the work graph's REST reads and its agent tools (DOR-4970), which the client and the CLI read once their callers land.",
   'community-administer':
     'Community wire, frozen until the Community Space opens (AGENTS.md, "Where the system is going", rule 4).',
   'community-private-wire':
@@ -77,7 +83,9 @@ export function importedSharedKeys(source: string): string[] {
 
 /** The export keys, without their leading `./`. */
 function exportKeys(): string[] {
-  const manifest = JSON.parse(readFileSync('packages/shared/package.json', 'utf8')) as {
+  const manifest = JSON.parse(
+    readFileSync(path.join(ROOT, 'packages/shared/package.json'), 'utf8')
+  ) as {
     exports: Record<string, unknown>;
   };
   return Object.keys(manifest.exports).map((key) => key.replace(/^\.\//, ''));
@@ -89,15 +97,18 @@ function importersByKey(keys: readonly string[]): Map<string, string[]> {
     'git',
     ['ls-files', '--', '*.ts', '*.tsx', '*.js', '*.mjs', '*.cjs', '*.mts', '*.cts'],
     // The repo lists well over 1 MB of paths, the default buffer.
-    { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
+    { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
   )
     .trim()
     .split('\n')
-    .filter((path) => path.length > 0 && !path.startsWith('packages/shared/') && existsSync(path));
+    .filter(
+      (file) =>
+        file.length > 0 && !file.startsWith('packages/shared/') && existsSync(path.join(ROOT, file))
+    );
   const importers = new Map(keys.map((key) => [key, [] as string[]]));
-  for (const path of files) {
-    for (const key of importedSharedKeys(readFileSync(path, 'utf8')))
-      importers.get(key)?.push(path);
+  for (const file of files) {
+    for (const key of importedSharedKeys(readFileSync(path.join(ROOT, file), 'utf8')))
+      importers.get(key)?.push(file);
   }
   return importers;
 }
@@ -115,7 +126,7 @@ export function exportFindings(
 ): string[] {
   const findings: string[] = [];
   for (const [key, files] of importers) {
-    const outsideServer = files.filter((path) => !path.startsWith('apps/server/'));
+    const outsideServer = files.filter((file) => !file.startsWith('apps/server/'));
     if (files.length === 0 && key in typeOnly) continue;
     if (files.length === 0) findings.push(`${key}: no importer outside packages/shared`);
     else if (outsideServer.length === 0 && !(key in serverOnly))
