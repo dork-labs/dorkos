@@ -1,11 +1,9 @@
 /** Real local-page tools from a scripted turn, inert unless selected on a test-mode server. */
 import { z } from 'zod';
 import { LocalBrowserObservationSchema } from '@dorkos/shared/local-browser';
-import { CapabilityImageResult, CapabilityToolError } from '../../core/capabilities/index.js';
-import { composeRegistry } from '../../core/capabilities/registry.js';
-import { createLocalBrowserDomain } from '../../session/local-browser/capabilities.js';
 import type { LocalBrowserService } from '../../session/local-browser/service.js';
 import type { ScenarioFn } from './scenario-store.js';
+import { worldOf } from './scenario-world.js';
 
 let currentBrowser: () => LocalBrowserService | undefined = () => undefined;
 
@@ -18,40 +16,39 @@ export function configureLocalBrowserDriving(read: () => LocalBrowserService | u
 export const localBrowserDrivingScenario: ScenarioFn = async function* (_content, ctx, opts) {
   const browser = currentBrowser();
   if (!browser) throw new Error('Local browser fixture requires the boot-owned browser service');
-  const registry = composeRegistry([createLocalBrowserDomain(browser)], {
-    logger: { debug() {}, info() {}, warn() {}, error() {} },
-    localBrowserDeps: browser,
-  });
+  const world = worldOf(ctx);
+  const invoke = world.localBrowserTools(browser);
   const context = { sessionId: ctx.sessionId, ...(opts?.cwd ? { cwd: opts.cwd } : {}) };
   let result: string;
   try {
     const observation = LocalBrowserObservationSchema.parse(
-      await registry.invoke('local_browser.observe', {}, context)
+      await invoke('local_browser.observe', {}, context)
     );
     if (_content === 'verify stale key focus' || _content === 'verify same key focus') {
       yield { type: 'text_delta', data: { text: 'local-browser: key-focus observed; ' } };
       await ctx.awaitStep();
       let outcome = 'pressed';
       try {
-        await registry.invoke(
+        await invoke(
           'local_browser.act',
           { action: { kind: 'press', key: 'Enter', revision: observation.revision } },
           context
         );
       } catch (error) {
-        if (!(error instanceof CapabilityToolError)) throw error;
-        outcome = z.object({ code: z.string() }).parse(error.payload).code;
+        const refusal = world.refusalOf(error);
+        if (!refusal) throw error;
+        outcome = z.object({ code: z.string() }).parse(refusal.payload).code;
       }
       // A second observation is deliberately AFTER the old action; observing first would
       // invalidate its revision and make the focus refusal vacuous.
       const after = LocalBrowserObservationSchema.parse(
-        await registry.invoke('local_browser.observe', {}, context)
+        await invoke('local_browser.observe', {}, context)
       );
       if (after.snapshot !== observation.snapshot)
         throw new Error('Key-focus fixture changed its accessibility snapshot');
       result = 'local-browser: ' + outcome + '; unchanged-snapshot=true';
     } else {
-      await registry.invoke(
+      await invoke(
         'local_browser.act',
         {
           action: {
@@ -65,9 +62,9 @@ export const localBrowserDrivingScenario: ScenarioFn = async function* (_content
         context
       );
       const fresh = LocalBrowserObservationSchema.parse(
-        await registry.invoke('local_browser.observe', {}, context)
+        await invoke('local_browser.observe', {}, context)
       );
-      await registry.invoke(
+      await invoke(
         'local_browser.act',
         {
           action: {
@@ -79,18 +76,15 @@ export const localBrowserDrivingScenario: ScenarioFn = async function* (_content
         },
         context
       );
-      const image = await registry.invoke('local_browser.screenshot', {}, context);
-      if (
-        !(image instanceof CapabilityImageResult) ||
-        image.image.mimeType !== 'image/png' ||
-        !image.image.data
-      )
+      const image = world.imageOf(await invoke('local_browser.screenshot', {}, context));
+      if (!image || image.image.mimeType !== 'image/png' || !image.image.data)
         throw new Error('The live-page screenshot did not return PNG pixels');
       result = 'local-browser: saved; screenshot=image/png';
     }
   } catch (error) {
-    if (!(error instanceof CapabilityToolError)) throw error;
-    result = `local-browser: ${z.object({ code: z.string() }).parse(error.payload).code}`;
+    const refusal = world.refusalOf(error);
+    if (!refusal) throw error;
+    result = `local-browser: ${z.object({ code: z.string() }).parse(refusal.payload).code}`;
   }
   yield { type: 'text_delta', data: { text: result } };
   yield { type: 'done', data: { sessionId: ctx.sessionId } };

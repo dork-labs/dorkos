@@ -25,6 +25,7 @@
  *
  * @module services/runtimes/test-mode/interaction-gate
  */
+import type { ScenarioWorld } from './scenario-world.js';
 
 /** What an operator answered on a tool-approval card. */
 export interface ToolDecision {
@@ -66,6 +67,8 @@ export class ScenarioAborted extends Error {
 export interface ScenarioContext {
   /** The exact fenced document input a production runtime receives, for scripted proofs. */
   docEventsPrompt?: string;
+  /** The server this turn runs against, when startup handed the runtime one (read it with `worldOf`). */
+  readonly world?: ScenarioWorld;
   /** The session this turn belongs to. */
   readonly sessionId: string;
   /**

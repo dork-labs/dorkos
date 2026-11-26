@@ -103,9 +103,15 @@ export async function registerRuntimes(deps: RuntimeStartupDeps): Promise<Regist
   let relayAgentRuntime: RegisteredRuntimes['relayAgentRuntime'];
   let creditsRelay: CreditsRelay | null = null;
   if (env.DORKOS_TEST_RUNTIME) {
-    const { TestModeRuntime } = await import('../services/runtimes/test-mode/test-mode-runtime.js');
+    const [{ TestModeRuntime }, { composeScenarioWorld }] = await Promise.all([
+      import('../services/runtimes/test-mode/test-mode-runtime.js'),
+      import('./test-composition/scenario-world.js'),
+    ]);
+    // What every scenario runs against: rooms, registries, canvas, heartbeat.
+    const world = composeScenarioWorld();
     const testRuntime = new TestModeRuntime();
     testRuntime.setSessionSettings(runtimeRegistry);
+    testRuntime.useScenarioWorld(world);
     runtimeRegistry.register(testRuntime);
     relayAgentRuntime = testRuntime;
     // Optional SECOND instance under a distinct type — gives e2e a server with
@@ -115,6 +121,7 @@ export async function registerRuntimes(deps: RuntimeStartupDeps): Promise<Regist
     if (env.DORKOS_TEST_RUNTIME_SECONDARY) {
       const secondaryRuntime = new TestModeRuntime('test-mode-b');
       secondaryRuntime.setSessionSettings(runtimeRegistry);
+      secondaryRuntime.useScenarioWorld(world);
       runtimeRegistry.register(secondaryRuntime);
       logger.info('[TestMode] Secondary TestModeRuntime registered as test-mode-b');
     }
@@ -127,6 +134,7 @@ export async function registerRuntimes(deps: RuntimeStartupDeps): Promise<Regist
     if (env.DORKOS_TEST_RUNTIME_CLAUDE_ALIAS) {
       const aliasRuntime = new TestModeRuntime('claude-code');
       aliasRuntime.setSessionSettings(runtimeRegistry);
+      aliasRuntime.useScenarioWorld(world);
       runtimeRegistry.register(aliasRuntime);
       logger.info('[TestMode] TestModeRuntime alias registered as claude-code (DOR-952)');
     }
@@ -140,8 +148,7 @@ export async function registerRuntimes(deps: RuntimeStartupDeps): Promise<Regist
       import('../routes/test-control.js'),
       import('../routes/test-heartbeat.js'),
     ]);
-    const { composeTestModeCloud } =
-      await import('../services/runtimes/test-mode/compose-test-cloud.js');
+    const { composeTestModeCloud } = await import('./test-composition/compose-test-cloud.js');
     doeRuntime = composeTestModeCloud(runtimeRegistry, addTestControlGroup);
     // A beat on demand for seeded installs (`routes/test-heartbeat.ts`).
     addTestControlGroup('/heartbeat', createTestHeartbeatRoutes());

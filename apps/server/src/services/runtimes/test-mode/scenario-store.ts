@@ -162,7 +162,7 @@ function workingTurn(ticks: number, closeDelayMs = 0): ScenarioFn {
     // somebody halted, so a turn that is stopped mid-hold still leaves the room
     // with nothing — which is what a halt means. Outside a room `sayInRoom` is
     // a no-op, so an ordinary session is exactly what it always was.
-    await sayInRoom(opts, ctx.sessionId, 'Working on it');
+    await sayInRoom(opts, ctx, 'Working on it');
     yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
     if (closeDelayMs > 0) {
       try {
@@ -405,7 +405,7 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
     // what it always was: one echoed line on its own stream. A seat answering a
     // hand-off posts the draft it was handed, as a real seat would (DOR-5032).
     const said = handedOffDraft(content) ?? `Echo: ${content}`;
-    const posted = await sayInRoom(opts, ctx.sessionId, said);
+    const posted = await sayInRoom(opts, ctx, said);
     if (opts?.roomTurn && posted !== true) {
       throw new Error(
         `Echo could not answer in the room: ${posted === false ? 'post refused' : posted}`

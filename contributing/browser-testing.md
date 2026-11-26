@@ -445,7 +445,7 @@ The fixture's id is derived from its directory, so re-seeding in a per-test `bef
 
 ### Test-Mode DorkOS Cloud
 
-Every test-mode server talks to an in-process fake of DorkOS Cloud instead of the real service (DOR-2783), so linking an account, minting a credits token and running a chat on DorkOS credits all work offline and charge nothing. `services/runtimes/test-mode/compose-test-cloud.ts` wires it, reached only through the gated dynamic import in `index.ts`; each fake also throws if built outside `DORKOS_TEST_RUNTIME`.
+Every test-mode server talks to an in-process fake of DorkOS Cloud instead of the real service (DOR-2783), so linking an account, minting a credits token and running a chat on DorkOS credits all work offline and charge nothing. `startup/test-composition/compose-test-cloud.ts` wires it, reached only through the gated dynamic import in `startup/runtimes.ts`; each fake also throws if built outside `DORKOS_TEST_RUNTIME`.
 
 | Piece                          | What it answers                                                                                                                                                                                                                                                                                                                                    |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

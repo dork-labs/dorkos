@@ -50,7 +50,7 @@ export function forcedLimitScenario(
   return async function* forcedLimit(_content, ctx, turnOpts) {
     if (at === 'after-post') {
       // Mid-turn: it has already said something in the room and used a tool.
-      await sayInRoom(turnOpts, ctx.sessionId, FORCED_LIMIT_PARTIAL_ANSWER);
+      await sayInRoom(turnOpts, ctx, FORCED_LIMIT_PARTIAL_ANSWER);
       const toolCallId = `forced-limit-${sessionId}`;
       yield {
         type: 'tool_call_start',

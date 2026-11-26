@@ -7,27 +7,29 @@ import { fileURLToPath } from 'node:url';
 // without a full module re-import (vi.mock's factory is hoisted above imports;
 // vi.hoisted() is what lets it safely close over mockEnv).
 const mockEnv = vi.hoisted(() => ({ DORKOS_TEST_RUNTIME: true }));
-vi.mock('../../../../env.js', () => ({ env: mockEnv }));
+vi.mock('../../../env.js', () => ({ env: mockEnv }));
 
 // The `/api` chain reads login and the host settings from here; none are set.
-vi.mock('../../../core/config-manager.js', () => ({
+vi.mock('../../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn(), getDot: vi.fn() },
 }));
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createFakeCloudApprovalRoutes, createFakeCloudLink } from '../fake-cloud-link.js';
-import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
+import { honoGroupListener } from '../../../http/__tests__/hono-group-listener.js';
 
 const APPROVAL_URL = 'http://localhost:7242/api/test/fake-cloud/approve';
 const createFakeCloudLinkFetch = () => createFakeCloudLink({ approvalUrl: APPROVAL_URL }).fetch;
 const createAutoApprovingFetch = () =>
   createFakeCloudLink({ approvalUrl: APPROVAL_URL, autoApprove: true }).fetch;
 
-const CLOUD_LINK_TS = fileURLToPath(new URL('../../../core/auth/cloud-link.ts', import.meta.url));
-const CLOUD_LINK_CLIENT_TS = fileURLToPath(
-  new URL('../../../core/auth/cloud-link-client.ts', import.meta.url)
+const CLOUD_LINK_TS = fileURLToPath(
+  new URL('../../../services/core/auth/cloud-link.ts', import.meta.url)
 );
-const ROUTES_CLOUD_TS = fileURLToPath(new URL('../../../../routes/cloud.ts', import.meta.url));
+const CLOUD_LINK_CLIENT_TS = fileURLToPath(
+  new URL('../../../services/core/auth/cloud-link-client.ts', import.meta.url)
+);
+const ROUTES_CLOUD_TS = fileURLToPath(new URL('../../../routes/cloud.ts', import.meta.url));
 
 describe('createFakeCloudLink', () => {
   const listener = swappableServer();
