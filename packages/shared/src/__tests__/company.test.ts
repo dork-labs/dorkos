@@ -61,6 +61,7 @@ function trackedLicenses(): string[] {
   return execFileSync('git', ['ls-files', '--', ':(glob)**/LICENSE', ':(glob)**/LICENSE.*'], {
     cwd: ROOT,
     encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
   })
     .split('\n')
     .filter(Boolean);
@@ -266,7 +267,7 @@ describe('company facts', { timeout: 30_000 }, () => {
     const registries = execFileSync(
       'git',
       ['ls-files', '--', ':(glob)**/.claude-plugin/marketplace.json'],
-      { cwd: ROOT, encoding: 'utf8' }
+      { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
     )
       .split('\n')
       .filter(Boolean);
