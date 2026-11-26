@@ -1,8 +1,9 @@
 /**
  * `POST /api/workspaces` names the chat a worktree is made for only from the
  * caller's own agent token (DOR-5265): an agent whose token a running chat
- * holds leaves that chat `opened` the worktree and its branch; a person, who
- * has no chat here, leaves nothing; and a chat named in the body is not read.
+ * holds leaves that chat `opened` the worktree and its branch; a token no chat
+ * holds, and a caller with no token, leave nothing; and a chat named in the
+ * body is not read.
  *
  * Real git repositories, the real workspace service, real agent identity and
  * the real edge store behind the real `/api` chain.
@@ -114,7 +115,19 @@ describe('POST /api/workspaces and the chat a worktree is made for', () => {
     ]);
   });
 
-  it('a person records nothing, and a chat named in the body is not read', async () => {
+  it('an agent whose token no running chat holds records nothing', async () => {
+    const token = await initAgentIdentityService(db).mint({
+      agentPath: '/agents/ana',
+      displayName: 'Ana',
+    });
+
+    const res = await ensure().set('X-DorkOS-Agent', token);
+
+    expect(res.status).toBe(201);
+    expect(links()).toEqual([]);
+  });
+
+  it('a caller with no agent token records nothing, and a chat named in the body is not read', async () => {
     const res = await ensure({ chatId: OTHER_CHAT });
 
     expect(res.status).toBe(201);
