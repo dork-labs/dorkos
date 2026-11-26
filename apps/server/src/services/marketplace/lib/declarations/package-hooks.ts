@@ -26,7 +26,7 @@
  *
  * - For a PROJECT-scoped install those hooks reach a harness settings file only
  *   for a `plugin` or `skill-pack`, and only after a person approves that exact
- *   command set for that project (`services/harness/hook-approval.ts`, DOR-522).
+ *   command set for that project (`services/core/approvals/computer-asks/hook-card-ask.ts`, DOR-522).
  *   A GLOBAL plugin is loaded straight into every Claude Code session by the SDK
  *   (`plugin-activation.ts`), hooks included. The UI therefore says the package
  *   "declares" these commands rather than that it "will run" them.

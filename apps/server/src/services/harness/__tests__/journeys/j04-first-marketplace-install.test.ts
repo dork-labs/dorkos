@@ -64,6 +64,7 @@ vi.mock('../../../core/config-manager.js', () => ({
 }));
 
 import { runAutoProjection } from '../../auto-project.js';
+import { createComputerAsks } from '../../../core/approvals/computer-asks/index.js';
 
 /** The command the package wants Claude Code to run at the end of every turn. */
 const FLOW_HOOK = 'node "${CLAUDE_PLUGIN_ROOT}/hooks/flow-loop.mjs"';
@@ -103,10 +104,10 @@ async function install(repo: StagedRepo, outcome: 'granted' | 'denied'): Promise
     { projectPath: repo.root, packageName: 'flow', action: 'install' },
     {
       dorkHome: repo.dorkHome,
-      approvals: {
+      asks: createComputerAsks({
         request: vi.fn().mockReturnValue(ticket()),
         consume: vi.fn().mockReturnValue({ outcome, approvalId: 'a1', capabilityId: 'x' }),
-      },
+      }),
     }
   );
 }

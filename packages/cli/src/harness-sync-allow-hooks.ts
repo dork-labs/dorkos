@@ -120,7 +120,8 @@ export async function resolveAllowHooks(opts: {
   }
 
   const { initConfigManager } = await import('../server/services/core/config-manager.js');
-  const { recordHookApproval } = await import('../server/services/harness/hook-consent.js');
+  const { recordHookApproval } =
+    await import('../server/services/core/approvals/computer-asks/hook-decisions.js');
   initConfigManager(dorkHome);
   for (const request of requests) {
     if (allowHooks.includes(request.packageName)) recordHookApproval(request);

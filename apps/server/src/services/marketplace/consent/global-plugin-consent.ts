@@ -99,13 +99,15 @@ import type { PackageType } from '@dorkos/marketplace';
 import { stableStringify } from '@dorkos/shared/capabilities';
 import { disclosesAnything } from '@dorkos/shared/marketplace-schemas';
 import {
-  forgetApprovedEntries,
   GLOBAL_ACTIVATION_ENTRY_MARKER,
-  recordApprovedEntry,
-  recordRefusedEntry,
   storedHookDecisions,
   type HookDecisions,
 } from '../../harness/hook-consent.js';
+import {
+  forgetApprovedEntries,
+  recordApprovedEntry,
+  recordRefusedEntry,
+} from '../../core/approvals/computer-asks/index.js';
 import { disclosedEffectsOf, type DisclosedEffects } from '../preview/disclosed-effects.js';
 import { listEnabledPluginNames } from '../installed-scanner.js';
 import { readInstallMetadata, writeInstallMetadata } from '../installed-metadata.js';

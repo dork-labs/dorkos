@@ -12,15 +12,19 @@ import {
   describeHookProjection,
   summariseHookProjection,
 } from '../hook-card.js';
-import { _internal, hookProjectionBinding } from '../hook-approval.js';
-import { raisePassiveHookRows, resumePassiveHookRows } from '../ask-withheld-hooks.js';
+import { _internal } from '../../core/approvals/computer-asks/hook-card-ask.js';
 import {
-  hookApprovalEntry,
-  isHookProjectionRefused,
+  hookProjectionBinding,
+  createComputerAsks,
+} from '../../core/approvals/computer-asks/index.js';
+import { raisePassiveHookRows, resumePassiveHookRows } from '../ask-withheld-hooks.js';
+import { hookApprovalEntry, isHookProjectionRefused } from '../hook-consent.js';
+import {
   recordHookRefusal,
   recordHookApproval,
-} from '../hook-consent.js';
+} from '../../core/approvals/computer-asks/hook-decisions.js';
 import type { HookProjectionRequest } from '../hook-consent.js';
+import { _internal as askInternal } from '../ask-withheld-hooks.js';
 
 const config = {
   harness: { autoSync: true, approvedHooks: [] as string[], refusedHooks: [] as string[] },
@@ -69,7 +73,7 @@ beforeEach(() => {
 afterEach(async () => {
   for (const row of service.listPending()) service.deny(row.approvalId);
   await new Promise((resolve) => setTimeout(resolve, 20));
-  _internal.forgetDecisions();
+  askInternal.forgetDecisions();
   _internal.sleep = sleep;
   _internal.pollIntervalMs = interval;
   db.$client.close();
@@ -138,7 +142,7 @@ describe('individual hook re-asks', () => {
     try {
       raisePassiveHookRows([{ reason: 'unasked', request: full, notInstalledByDorkos: true }], {
         projectPath: full.projectPath,
-        approvals: service,
+        asks: createComputerAsks(service),
         dorkHome: home,
         reproject,
       });
@@ -172,7 +176,7 @@ describe('individual hook re-asks', () => {
     try {
       raisePassiveHookRows([{ reason: 'unasked', request: huge, notInstalledByDorkos: true }], {
         projectPath: full.projectPath,
-        approvals: service,
+        asks: createComputerAsks(service),
         dorkHome: home,
         reproject: vi.fn(),
       });
@@ -202,9 +206,9 @@ describe('individual hook re-asks', () => {
     expect(restarted.isReaskedHook(hookProjectionBinding(changed, true))).toBe(true);
     expect(restarted.grant(next.approvalId)).toBeUndefined();
     const reproject = vi.fn(async () => []);
-    expect(resumePassiveHookRows({ dorkHome: home, approvals: restarted, reproject })).toEqual([
-      'lunar-hooks',
-    ]);
+    expect(
+      resumePassiveHookRows({ dorkHome: home, asks: createComputerAsks(restarted), reproject })
+    ).toEqual(['lunar-hooks']);
     await vi.waitFor(() => expect(reproject).toHaveBeenCalledTimes(1));
     expect(config.harness.refusedHooks).toEqual([]);
     expect(config.harness.approvedHooks).toEqual([hookApprovalEntry(changed)]);
@@ -222,7 +226,7 @@ describe('individual hook re-asks', () => {
     const huge = { ...full, hooks: [{ event: 'Stop', command: 'x'.repeat(4001) }] };
     raisePassiveHookRows([{ reason: 'unasked', request: huge, notInstalledByDorkos: true }], {
       projectPath: full.projectPath,
-      approvals: service,
+      asks: createComputerAsks(service),
       dorkHome: home,
       reproject: vi.fn(),
     });

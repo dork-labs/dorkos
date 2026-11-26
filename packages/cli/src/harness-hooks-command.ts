@@ -167,7 +167,8 @@ async function listDecisions(dorkHome: string): Promise<number> {
  */
 async function revokeDecisions(dorkHome: string, packageName: string): Promise<number> {
   const { initConfigManager } = await import('../server/services/core/config-manager.js');
-  const { revokeHookDecisions } = await import('../server/services/harness/hook-consent.js');
+  const { revokeHookDecisions } =
+    await import('../server/services/core/approvals/computer-asks/hook-decisions.js');
   initConfigManager(dorkHome);
   const removed = revokeHookDecisions(packageName);
 

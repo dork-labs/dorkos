@@ -12,7 +12,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, beforeAll } from 'vitest';
 
 vi.mock('../../../../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -30,10 +30,6 @@ vi.mock('../../../../core/operator/config-write.js', () => ({ logConfigWrite: vi
 
 import { hashApprovalInput } from '../../../../core/approvals/index.js';
 import {
-  setFolderAllowApprovalGateway,
-  type FolderAllowApprovalGateway,
-} from '../../folder-settings/folder-allow-approval.js';
-import {
   applyRepoConfigStep,
   applyRepoConfigToLaunch,
   applyRepoMcpServers,
@@ -45,17 +41,9 @@ import {
   setRepoConfigActivity,
   type RepoConfigActivityEntry,
 } from '../repo-config-activity.js';
-import {
-  _internal,
-  askForRepoConfig,
-  describeRepoConfigCapability,
-  repoConfigTitle,
-} from '../repo-config-approval.js';
-import {
-  isRepoConfigApproved,
-  isRepoConfigRefused,
-  recordRepoConfigApproval,
-} from '../repo-config-consent.js';
+import { _internal, askForRepoConfig } from '../repo-config-approval.js';
+import { _internal as cardWait } from '../../../../core/approvals/computer-asks/repo-config-card-ask.js';
+import { isRepoConfigApproved, isRepoConfigRefused } from '../repo-config-consent.js';
 import { pinRepoBaseline } from '../repo-baseline.js';
 import { readLocalSettings } from '../repo-local-settings.js';
 import {
@@ -69,6 +57,19 @@ import {
 import { setMarkedFullActivity } from '../../../../core/turn-power/full-autonomy.js';
 import { watchFolderAllows } from '../../tool-gate/folder-file-allows.js';
 import { readFolderSettingsEntries } from '../../tool-gate/folder-settings-files.js';
+import {
+  type FolderAllowApprovalGateway,
+  recordRepoConfigApproval,
+  createComputerAsks,
+} from '../../../../core/approvals/computer-asks/index.js';
+import {
+  describeRepoConfigCapability,
+  repoConfigTitle,
+} from '../../../../core/approvals/computer-asks/repo-config-card-ask.js';
+import { wireTestAsks } from '../../../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The computer side records consent through the space side, as at startup.
+beforeAll(() => wireTestAsks());
 
 const GUARD_SETTINGS = {
   hooks: {
@@ -139,7 +140,7 @@ beforeEach(async () => {
   answer = current;
   _internal.forgetOpenCards();
   forgetRepoConfigActivity();
-  vi.spyOn(_internal, 'sleep').mockImplementation(() => new Promise((r) => setTimeout(r, 0)));
+  vi.spyOn(cardWait, 'sleep').mockImplementation(() => new Promise((r) => setTimeout(r, 0)));
   gateway = {
     request: (input) => {
       cards.push(input as (typeof cards)[number]);
@@ -160,7 +161,7 @@ beforeEach(async () => {
       current.outcome = 'denied';
     },
   };
-  setFolderAllowApprovalGateway(gateway);
+  wireTestAsks(gateway);
   setRepoConfigActivity((entry) => activity.push(entry));
 });
 
@@ -168,7 +169,7 @@ afterEach(async () => {
   // End any card still waiting, before the next test resets the store it writes to.
   answer.outcome = 'denied';
   await new Promise((resolve) => setTimeout(resolve, 100));
-  setFolderAllowApprovalGateway(null);
+  wireTestAsks(null);
   setRepoConfigActivity(undefined);
   vi.restoreAllMocks();
   repo.cleanup();
@@ -525,7 +526,7 @@ describe('the card while it is open', () => {
   it('binds to the content digest and records exactly that content', async () => {
     const onChanged = vi.fn();
     const pending = askForRepoConfig(
-      gateway,
+      createComputerAsks(gateway),
       request('/x/wt', 'd1'),
       async () => ({ digest: 'd1' }),
       onChanged
@@ -540,7 +541,7 @@ describe('the card while it is open', () => {
   it('goes stale when the hook changes again, and asks about the new version', async () => {
     const onChanged = vi.fn();
     const result = await askForRepoConfig(
-      gateway,
+      createComputerAsks(gateway),
       request('/x/wt', 'd1'),
       async () => ({ digest: 'd2' }),
       onChanged
@@ -576,7 +577,7 @@ describe('the card while it is open', () => {
 
   it('raises the card with its own title and spends the yes under the same capability', async () => {
     const pending = askForRepoConfig(
-      gateway,
+      createComputerAsks(gateway),
       { ...request('/x/wt', 'd1'), names: ['.claude/skills/x/SKILL.md'] },
       async () => ({ digest: 'd1' }),
       vi.fn()
@@ -877,7 +878,7 @@ describe('Security and designer rows for the repo-pin titles (DOR-3359)', () => 
     for (const names of [['.claude/skills/x/SKILL.md'], ['.claude/hooks/guard.mjs']]) {
       cards = [];
       void askForRepoConfig(
-        gateway,
+        createComputerAsks(gateway),
         { ...hookChange('/x/wt'), names },
         async () => 'unknown',
         vi.fn()

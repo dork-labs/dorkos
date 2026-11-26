@@ -67,7 +67,7 @@ import {
   raisePassiveHookRows,
   resumePassiveHookRows,
 } from './ask-withheld-hooks.js';
-import { type HookApprovalGateway } from './hook-approval.js';
+import type { ComputerAsks } from '@dorkos/shared/computer-asks';
 import { storedPresetIsFull } from './hook-consent.js';
 import { provenDorkosInstallsIfFull } from './dorkos-installed.js';
 import {
@@ -98,13 +98,14 @@ export interface RunAutoProjectionOptions {
   /** Resolved DorkOS data directory (see `.claude/rules/dork-home.md`). */
   dorkHome: string;
   /**
-   * The approval primitive, used to ask before a package's hooks are installed.
+   * The asks port, used to ask before a package's hooks are installed (spec
+   * `computer-side-starts-alone` §5.7).
    *
    * Optional because a boot without it must still project skills and commands —
    * but its absence FAILS CLOSED: with nobody to ask, hooks a person has not
    * already allowed simply do not project.
    */
-  approvals?: HookApprovalGateway;
+  asks?: ComputerAsks;
 }
 
 /**
@@ -290,7 +291,7 @@ async function projectAndAsk(
   const { withheld } = await projectAndLog(ctx, opts.dorkHome);
 
   if (withheld.length === 0) return [];
-  if (!opts.approvals) {
+  if (!opts.asks) {
     logger.warn('[HarnessSync] No approval service; package hooks were not projected', {
       packageName,
       projectPath,
@@ -305,7 +306,7 @@ async function projectAndAsk(
   // changes when the same question is asked from a button.
   await askAboutWithheldHooks(withheld, {
     projectPath,
-    approvals: opts.approvals,
+    asks: opts.asks,
     reproject: async () => {
       await projectAndLog(ctx, opts.dorkHome);
     },
@@ -377,10 +378,10 @@ export async function runAutoProjection(
     );
     // After the lock, never inside it: a passive row's wait has no end, and its
     // yes takes the lock itself to project again (DOR-3427).
-    if (opts.approvals) {
+    if (opts.asks) {
       raisePassiveHookRows(withheld, {
         projectPath,
-        approvals: opts.approvals,
+        asks: opts.asks,
         dorkHome: opts.dorkHome,
         reproject: () => projectAgainAfterYes({ ...ctx, projectPath }, opts.dorkHome),
       });
@@ -421,18 +422,15 @@ export async function projectAgainAfterYes(
  * which runs on every server whatever else is switched on. Never throws: a
  * start that cannot pick the rows up still starts.
  *
- * @param approvals - The approval primitive the rows were raised through.
+ * @param asks - The asks port the rows were raised through.
  * @param dorkHome - Resolved DorkOS data directory.
  * @returns The package names picked up.
  */
-export function resumeQuietRowsAtStartup(
-  approvals: HookApprovalGateway,
-  dorkHome: string
-): string[] {
+export function resumeQuietRowsAtStartup(asks: ComputerAsks, dorkHome: string): string[] {
   try {
     return resumePassiveHookRows({
       dorkHome,
-      approvals,
+      asks,
       reproject: (request) =>
         projectAgainAfterYes(
           { projectPath: request.projectPath, packageName: request.packageName, action: 'install' },

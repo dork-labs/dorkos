@@ -27,7 +27,7 @@ import {
   type StepUpStatementV1,
 } from '@dork-labs/cloud-api';
 import type { RelayResultBody } from '@dorkos/shared/session-relay';
-import { hashApprovalInput } from '../approvals/approval-input-hash.js';
+import { hashApprovalInput } from '@dorkos/shared/approval-text';
 import type { ApprovalKeys } from './approval-key-store.js';
 
 /** How long a challenge may be signed and answered. */

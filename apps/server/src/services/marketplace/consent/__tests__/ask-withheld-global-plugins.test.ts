@@ -44,7 +44,7 @@ import {
   recordGlobalActivationApproval,
 } from '../global-plugin-consent.js';
 import { packageContentHash } from '../../lib/content-hash.js';
-import type { HookApprovalGateway } from '../../../harness/hook-approval.js';
+import type { HookApprovalGateway } from '../../../core/approvals/computer-asks/index.js';
 import type {
   ApprovalConsumeResult,
   ApprovalRequestInput,

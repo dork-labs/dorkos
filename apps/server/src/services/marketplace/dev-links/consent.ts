@@ -44,12 +44,14 @@ import {
   type DevLinkRecord,
 } from '@dorkos/shared/marketplace-schemas';
 import {
-  forgetApprovedEntries,
   hookApprovalEntry,
-  recordApprovedEntry,
   sameHookCommands,
   storedHookDecisions,
 } from '../../harness/hook-consent.js';
+import {
+  forgetApprovedEntries,
+  recordApprovedEntry,
+} from '../../core/approvals/computer-asks/index.js';
 import {
   activationEffectsOf,
   bindingOf,

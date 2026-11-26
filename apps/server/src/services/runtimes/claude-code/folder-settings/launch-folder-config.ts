@@ -41,7 +41,7 @@ import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { logger } from '../../../../lib/logger.js';
 import { recordFullAction } from '../../../core/turn-power/full-autonomy.js';
 import { writeDenyRules } from '../messaging/directory-grants.js';
-import { folderAllowApprovalGateway } from './folder-allow-approval.js';
+import { runtimeAsks } from '../../computer-asks.js';
 import { folderInstructions } from './folder-instructions.js';
 import {
   askForFolderConfig,
@@ -53,7 +53,6 @@ import {
   hasFolderConfigRecord,
   isFolderConfigApproved,
   lastApprovedParts,
-  recordFolderConfigApproval,
 } from './folder-config-consent.js';
 import {
   changedParts,
@@ -150,7 +149,11 @@ export async function resolveFolderConfigForLaunch(
   const unknown = !firstUse && !hasFolderConfigRecord(agent.id, home);
   if (firstUse) {
     try {
-      recordFolderConfigApproval(state, 'pinned on first use');
+      runtimeAsks().record({
+        kind: 'folder_config_approved',
+        ...state,
+        reason: 'pinned on first use',
+      });
     } catch (err) {
       // No record means nothing vouches for what is there: hold all of it, and
       // ask nobody, since a yes could not be recorded either.
@@ -196,9 +199,8 @@ export async function resolveFolderConfigForLaunch(
     changed: askable,
     detail: folderConfigDetail(now.values, askable),
   };
-  const gateway = folderAllowApprovalGateway();
-  if (gateway && mayAskAboutFolderConfig(request)) {
-    void askForFolderConfig(gateway, request).catch((err: unknown) => {
+  if (mayAskAboutFolderConfig(request)) {
+    void askForFolderConfig(runtimeAsks(), request).catch((err: unknown) => {
       logger.warn("[FolderConfig] Could not ask about an agent's folder settings", {
         agentId: agent.id,
         error: err instanceof Error ? err.message : String(err),

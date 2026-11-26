@@ -41,8 +41,8 @@ import {
   applyFolderConfigToLaunch,
   resolveFolderConfigForLaunch,
 } from '../launch-folder-config.js';
-import { recordFolderConfigApproval } from '../folder-config-consent.js';
 import { readFolderConfigParts } from '../folder-config-pin.js';
+import { recordFolderConfigApproval } from '../../../../core/approvals/computer-asks/index.js';
 
 const BINARY = resolveBundledClaudeBinary();
 const AGENT = { id: '01AGENT', name: 'Ops' };

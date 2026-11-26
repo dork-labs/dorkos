@@ -5,7 +5,7 @@ import type { ApprovalBinding, ApprovalTicket } from './approval-service.js';
 import type { ApprovalRequestInput } from './approval-request-input.js';
 import type { ApprovalRow } from './approval-card.js';
 import { storedHookRequest } from './approval-completeness.js';
-import { recordHookRefusal } from '../../harness/hook-consent.js';
+import { recordHookRefusal } from './computer-asks/hook-decisions.js';
 
 /** Why a declined row cannot start another review. */
 export type HookReaskFailure = 'not_declined' | 'already_reasked' | 'unavailable';

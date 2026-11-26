@@ -259,11 +259,12 @@ function removalLines(removals: readonly SweptPath[], about: 'will' | 'did'): st
 async function enableTool(dorkHome: string, tool: HarnessId): Promise<number> {
   const {
     readGlobalSharingFromDisk,
-    writeGlobalSharing,
     globalRootsFor,
     boundaryConfigFromDisk,
     configuredBoundaryRoot,
   } = await import('../server/services/harness/global-scope.js');
+  const { writeGlobalSharing } =
+    await import('../server/services/core/approvals/computer-asks/global-sharing.js');
   const { boundaryWasConfigured } = await import('../server/lib/boundary.js');
   const { initConfigManager } = await import('../server/services/core/config-manager.js');
   const {
@@ -405,11 +406,12 @@ async function enableTool(dorkHome: string, tool: HarnessId): Promise<number> {
 async function disableTool(dorkHome: string, tool: HarnessId): Promise<number> {
   const {
     readGlobalSharingFromDisk,
-    writeGlobalSharing,
     globalRootsFor,
     boundaryConfigFromDisk,
     configuredBoundaryRoot,
   } = await import('../server/services/harness/global-scope.js');
+  const { writeGlobalSharing } =
+    await import('../server/services/core/approvals/computer-asks/global-sharing.js');
   const { boundaryWasConfigured } = await import('../server/lib/boundary.js');
   const { initConfigManager } = await import('../server/services/core/config-manager.js');
   const { projectGlobal, sweepGlobalOrphans, findGlobalOrphans, globalBoundarySkipLine } =

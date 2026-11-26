@@ -86,16 +86,6 @@
       "frontDoor": 0,
       "tables": 0
     },
-    "src/services/core/session-relay/approval-challenges.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/core/session-relay/approval-proof.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/core/session-relay/index.ts": {
       "space": 2,
       "frontDoor": 1,
@@ -148,26 +138,6 @@
     },
     "src/services/harness/dorkos-installed.ts": {
       "space": 2,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/harness/global-scope.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/harness/hook-approval.ts": {
-      "space": 3,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/harness/hook-card.ts": {
-      "space": 2,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/harness/hook-consent.ts": {
-      "space": 1,
       "frontDoor": 0,
       "tables": 0
     },
@@ -241,28 +211,8 @@
       "frontDoor": 0,
       "tables": 0
     },
-    "src/services/runtimes/claude-code/folder-settings/folder-allow-approval.ts": {
-      "space": 3,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/folder-settings/folder-allow-consent.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/runtimes/claude-code/folder-settings/folder-allow-notice.ts": {
       "space": 2,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/folder-settings/folder-config-approval.ts": {
-      "space": 3,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/folder-settings/folder-config-consent.ts": {
-      "space": 1,
       "frontDoor": 0,
       "tables": 0
     },
@@ -492,16 +442,6 @@
       "tables": 0
     },
     "src/services/runtimes/claude-code/repo-settings/repo-config-activity.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/repo-settings/repo-config-approval.ts": {
-      "space": 3,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/repo-settings/repo-config-consent.ts": {
       "space": 1,
       "frontDoor": 0,
       "tables": 0

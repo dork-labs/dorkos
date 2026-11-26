@@ -86,6 +86,7 @@ describe('dorkos harness global — sharing your all-projects packages', () => {
   // wrong reason; paid here, every case is measured on its own work.
   beforeAll(async () => {
     await import('../../server/services/harness/global-scope.js');
+    await import('../../server/services/core/approvals/computer-asks/global-sharing.js');
     await import('../../server/services/core/config-manager.js');
     await import('../../server/lib/boundary.js');
     await import('@dorkos/harness');

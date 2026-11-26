@@ -49,9 +49,11 @@
  *
  * @module services/runtimes/claude-code/repo-settings/repo-baseline
  */
+import type { UntrustedReason } from '@dorkos/shared/computer-asks';
 import { logger } from '../../../../lib/logger.js';
 import { hooksChangedBetween } from './repo-baseline-move.js';
-import { recordBaseline, recordedBaseline, type RecordedBaseline } from './repo-config-consent.js';
+import { runtimeAsks } from '../../computer-asks.js';
+import { recordedBaseline, type RecordedBaseline } from './repo-config-consent.js';
 import {
   GitMissingError,
   isAncestor,
@@ -63,9 +65,8 @@ import {
 import { listTreeThroughLinks } from './repo-tree-links.js';
 import { realOrResolved } from './repo-files.js';
 
-/** Why there is no trusted commit to compare against. */
-export type UntrustedReason =
-  'not-a-repo' | 'no-default-branch' | 'first-seen' | 'moved' | 'hooks-moved';
+// Why there is no trusted commit to compare against: a trust card carries it.
+export type { UntrustedReason };
 
 /** One file as the baseline has it. */
 export interface BaselineFile {
@@ -145,7 +146,7 @@ export async function resolveRepoBaseline(cwd: string, dorkHome: string): Promis
       return untrusted('hooks-moved', "[RepoConfig] A repo's default branch changed its hooks");
     }
     try {
-      recordBaseline(commonDir, branch);
+      runtimeAsks().record({ kind: 'repo_baseline', commonDir, baseline: branch });
     } catch (err) {
       logger.warn('[RepoConfig] Could not record the commit a repo was compared against', {
         error: err instanceof Error ? err.message : String(err),
@@ -177,7 +178,7 @@ export async function pinRepoBaseline(folder: string): Promise<boolean> {
   if (recordedBaseline(commonDir)) return false;
   const branch = await resolveDefaultBranch(repo.root);
   if (!branch) return false;
-  recordBaseline(commonDir, branch);
+  runtimeAsks().record({ kind: 'repo_baseline', commonDir, baseline: branch });
   return true;
 }
 

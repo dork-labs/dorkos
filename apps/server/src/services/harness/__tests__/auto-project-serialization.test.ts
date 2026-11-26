@@ -71,9 +71,14 @@ vi.mock('../../core/config-manager.js', () => ({
 }));
 
 import { runAutoProjection, _internal as autoInternal } from '../auto-project.js';
-import { _internal as approvalInternal, HOOK_PROJECTION_CAPABILITY_ID } from '../hook-approval.js';
+import { _internal as approvalInternal } from '../../core/approvals/computer-asks/hook-card-ask.js';
+import {
+  HOOK_PROJECTION_CAPABILITY_ID,
+  createComputerAsks,
+} from '../../core/approvals/computer-asks/index.js';
 import { projectWithConsent } from '../project-with-consent.js';
-import type { HookApprovalGateway } from '../hook-approval.js';
+import type { HookApprovalGateway } from '../../core/approvals/computer-asks/index.js';
+import { _internal as askInternal } from '../ask-withheld-hooks.js';
 
 /** The two packages installed into the same repo. */
 const PACKAGES = ['alpha', 'beta'] as const;
@@ -234,14 +239,14 @@ describe('J-12 — two installs into one repo, in one process', () => {
     vi.restoreAllMocks();
     config.harness = { autoSync: true, approvedHooks: [], refusedHooks: [] };
     approvalInternal.pollIntervalMs = 0;
-    approvalInternal.forgetDecisions();
+    askInternal.forgetDecisions();
     homes = { alpha: makeTempDir('j12-home-a-'), beta: makeTempDir('j12-home-b-') };
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     approvalInternal.pollIntervalMs = DEFAULT_POLL_MS;
-    approvalInternal.forgetDecisions();
+    askInternal.forgetDecisions();
     for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true });
   });
 
@@ -255,7 +260,7 @@ describe('J-12 — two installs into one repo, in one process', () => {
       PACKAGES.map((packageName) =>
         runAutoProjection(
           { projectPath: repo, packageName, action: 'install' },
-          { dorkHome: homes[packageName]!, approvals }
+          { dorkHome: homes[packageName]!, asks: createComputerAsks(approvals) }
         )
       )
     );
@@ -279,20 +284,20 @@ describe('J-12 — two installs into one repo, in one process', () => {
       PACKAGES.map((packageName) =>
         runAutoProjection(
           { projectPath: concurrentRepo, packageName, action: 'install' },
-          { dorkHome: homes[packageName]!, approvals }
+          { dorkHome: homes[packageName]!, asks: createComputerAsks(approvals) }
         )
       )
     );
 
     // A second repo, staged identically, projected strictly one after the other.
     config.harness = { autoSync: true, approvedHooks: [], refusedHooks: [] };
-    approvalInternal.forgetDecisions();
+    askInternal.forgetDecisions();
     const sequentialRepo = stageRepo();
     const sequentialApprovals = grantingGateway([]);
     for (const packageName of PACKAGES) {
       await runAutoProjection(
         { projectPath: sequentialRepo, packageName, action: 'install' },
-        { dorkHome: homes[packageName]!, approvals: sequentialApprovals }
+        { dorkHome: homes[packageName]!, asks: createComputerAsks(sequentialApprovals) }
       );
     }
 

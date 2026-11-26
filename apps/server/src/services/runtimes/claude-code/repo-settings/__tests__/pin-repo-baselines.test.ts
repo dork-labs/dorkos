@@ -5,7 +5,7 @@
  * @vitest-environment node
  */
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, beforeAll } from 'vitest';
 
 vi.mock('../../../../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -24,6 +24,10 @@ vi.mock('../../../../core/operator/config-write.js', () => ({ logConfigWrite: vi
 import { pinKnownRepoBaselinesOnce } from '../pin-repo-baselines.js';
 import { resolveRepoBaseline } from '../repo-baseline.js';
 import { isolateGitEnv, makeRepo, type RepoFixture } from './git-fixture.js';
+import { wireTestAsks } from '../../../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The computer side records consent through the space side, as at startup.
+beforeAll(() => wireTestAsks());
 
 const DORK_HOME = '/nonexistent-dork-home';
 let known: RepoFixture;

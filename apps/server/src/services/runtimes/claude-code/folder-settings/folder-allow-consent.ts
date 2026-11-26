@@ -21,54 +21,23 @@
  *
  * `permissions.approvedFolderAllows` and `permissions.refusedFolderAllows` in
  * `~/.dork/config.json`, both `operator-only` (`config-write-policy.ts`): an
- * agent that could write the yes would approve its own permissions. The
+ * agent that could write the yes would approve its own permissions. The space
+ * side writes them (`core/approvals/computer-asks/folder-decisions.ts`), from a
+ * card's answer or a decision this side reports through the asks port; this
+ * module only reads. The
  * residual is the one `hook-consent.ts` states: with login off, a caller that
  * omits its agent header is treated as the operator (DOR-505).
  *
  * @module services/runtimes/claude-code/folder-settings/folder-allow-consent
  */
-import { createHash } from 'node:crypto';
-import path from 'node:path';
+import type { FolderAllowRequest } from '@dorkos/shared/computer-asks';
+import { FOLDER_ALLOWS_ENTRY_MARKER, folderAllowEntry } from '@dorkos/shared/consent-entries';
 import { configManager } from '../../../core/config-manager.js';
-import { logConfigWrite } from '../../../core/operator/config-write.js';
 
-/** One agent's folder allow list, as a person is asked about it. */
-export interface FolderAllowRequest {
-  /** The registered agent's id. */
-  agentId: string;
-  /** The agent's display name, for the card. */
-  agentName: string;
-  /** The registered agent home the rules were read from. */
-  home: string;
-  /** The rules DorkOS would apply, in order (already judged). */
-  rules: readonly string[];
-  /** The rules behind the agent's current yes, when it had one: the card says what changed. */
-  previousRules?: readonly string[];
-  /** How many rules in the file DorkOS left out (wildcards, its own tools). */
-  dropped?: number;
-}
-
-/** What sits between the agent id and the digest in a stored entry. */
-export const FOLDER_ALLOWS_ENTRY_MARKER = '@folder-allows-';
-
-/**
- * The stored form of one decision about one agent's list.
- *
- * @param request - The agent, its home and its rules.
- */
-export function folderAllowEntry(
-  request: Pick<FolderAllowRequest, 'agentId' | 'home' | 'rules'>
-): string {
-  const digest = createHash('sha256')
-    .update(JSON.stringify({ home: path.resolve(request.home), rules: request.rules }))
-    .digest('hex');
-  return `${request.agentId}${FOLDER_ALLOWS_ENTRY_MARKER}${digest}`;
-}
-
-/** Whether a stored entry is about this agent. */
-function isAgentEntry(agentId: string): (stored: string) => boolean {
-  return (stored) => stored.startsWith(`${agentId}${FOLDER_ALLOWS_ENTRY_MARKER}`);
-}
+// The stored form of a decision is the space side's too: it writes these lists
+// (`core/approvals/computer-asks/folder-decisions.ts`), this module reads them.
+export type { FolderAllowRequest };
+export { FOLDER_ALLOWS_ENTRY_MARKER, folderAllowEntry };
 
 /** Both lists, and the rules behind each agent's yes, as stored now. */
 function storedDecisions(): {
@@ -82,29 +51,6 @@ function storedDecisions(): {
     refused: [...(permissions.refusedFolderAllows ?? [])],
     rules: { ...(permissions.approvedFolderAllowRules ?? {}) },
   };
-}
-
-/** Write the decisions back, and say nothing when nothing changed. */
-function writeDecisions(
-  reason: string,
-  approved: string[],
-  refused: string[],
-  rules: Record<string, string[]>
-): void {
-  const permissions = configManager.get('permissions');
-  const next = {
-    approvedFolderAllows: approved,
-    refusedFolderAllows: refused,
-    approvedFolderAllowRules: rules,
-  };
-  const current = {
-    approvedFolderAllows: permissions.approvedFolderAllows ?? [],
-    refusedFolderAllows: permissions.refusedFolderAllows ?? [],
-    approvedFolderAllowRules: permissions.approvedFolderAllowRules ?? {},
-  };
-  if (JSON.stringify(next) === JSON.stringify(current)) return;
-  configManager.set('permissions', { ...permissions, ...next });
-  logConfigWrite(reason, 'permissions', permissions, configManager.get('permissions'));
 }
 
 /**
@@ -127,45 +73,6 @@ export function isFolderAllowListRefused(
   request: Pick<FolderAllowRequest, 'agentId' | 'home' | 'rules'>
 ): boolean {
   return storedDecisions().refused.includes(folderAllowEntry(request));
-}
-
-/**
- * Record a person's yes. Replaces the agent's earlier yes, and clears a
- * matching no.
- *
- * @param request - The list that was allowed.
- */
-export function recordFolderAllowApproval(
-  request: Pick<FolderAllowRequest, 'agentId' | 'home' | 'rules'>,
-  reason = 'approving an agent folder allow list'
-): void {
-  const entry = folderAllowEntry(request);
-  const { approved, refused, rules } = storedDecisions();
-  writeDecisions(
-    reason,
-    [...approved.filter((stored) => !isAgentEntry(request.agentId)(stored)), entry],
-    refused.filter((stored) => stored !== entry),
-    { ...rules, [request.agentId]: [...request.rules] }
-  );
-}
-
-/**
- * Record a person's no. Clears a matching yes; the agent's yes for a different
- * list is already dead (only the current list is ever looked up), so it is
- * dropped too.
- *
- * @param request - The list that was turned down.
- */
-export function recordFolderAllowRefusal(request: FolderAllowRequest): void {
-  const entry = folderAllowEntry(request);
-  const { approved, refused, rules } = storedDecisions();
-  const { [request.agentId]: _forgotten, ...kept } = rules;
-  writeDecisions(
-    'turning down an agent folder allow list',
-    approved.filter((stored) => !isAgentEntry(request.agentId)(stored)),
-    refused.includes(entry) ? refused : [...refused, entry],
-    kept
-  );
 }
 
 /**

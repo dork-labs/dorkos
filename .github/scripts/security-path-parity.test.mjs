@@ -247,6 +247,25 @@ for (const [match, miss] of [
     'apps/server/src/services/session/chat-rows/chat-rows-port.ts',
     'apps/server/src/services/session/chat-rowsx/chat-rows-port.ts',
   ],
+  // C14 (DOR-5459): the asks port. What a consent card asks and how a yes is
+  // keyed and bound, and the slots the computer side asks through.
+  ['packages/shared/src/computer-asks.ts', 'packages/shared/src/computer-asks-old.ts'],
+  ['packages/shared/src/approval-text.ts', 'packages/shared/src/approval-texts.ts'],
+  ['packages/shared/src/consent-entries.ts', 'packages/shared/src/consent-entries-old.ts'],
+  ['packages/shared/src/folder-allows-card.ts', 'packages/shared/src/folder-allows-cards.ts'],
+  ['apps/server/src/startup/computer-asks.ts', 'apps/server/src/startup/computer-asks-old.ts'],
+  [
+    'apps/server/src/services/runtimes/computer-asks.ts',
+    'apps/server/src/services/runtimesx/computer-asks.ts',
+  ],
+  [
+    'apps/server/src/services/harness/computer-asks.ts',
+    'apps/server/src/services/harnessx/computer-asks.ts',
+  ],
+  [
+    'apps/server/src/services/core/approvals/computer-asks/consent-config.ts',
+    'apps/server/src/services/core/approvalsx/computer-asks/consent-config.ts',
+  ],
 ]) {
   test(`${match} is on the main list only`, () => {
     assert.ok(existsSync(resolve(root, match)), `${match} no longer exists`);

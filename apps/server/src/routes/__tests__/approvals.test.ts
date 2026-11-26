@@ -35,7 +35,7 @@ import { UPGRADE_WRITER } from '../../services/core/permissions/permission-histo
 import {
   describeHookProjectionCapability,
   HOOK_PROJECTION_CAPABILITY_ID,
-} from '../../services/harness/hook-approval.js';
+} from '../../services/core/approvals/computer-asks/index.js';
 
 // The routes are served through the `/api` chain, whose host guard and session
 // gate read the login setting: off, as on a fresh install. The routes' own

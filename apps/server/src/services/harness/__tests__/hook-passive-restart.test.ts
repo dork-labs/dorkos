@@ -42,17 +42,18 @@ vi.mock('../../core/config-manager.js', () => ({
 import { logger } from '../../../lib/logger.js';
 import { ApprovalService } from '../../core/approvals/index.js';
 import { raisePassiveHookRows, resumePassiveHookRows } from '../ask-withheld-hooks.js';
+import { _internal as approvalInternal } from '../../core/approvals/computer-asks/hook-card-ask.js';
 import {
-  _internal as approvalInternal,
   describeHookProjectionCapability,
   type HookApprovalGateway,
-} from '../hook-approval.js';
+  createComputerAsks,
+} from '../../core/approvals/computer-asks/index.js';
 import {
   hookApprovalEntry,
   isHookProjectionApproved,
-  recordHookRefusal,
   storedHookDecisions,
 } from '../hook-consent.js';
+import { recordHookRefusal } from '../../core/approvals/computer-asks/hook-decisions.js';
 import {
   passiveHookRowsPath,
   readPassiveHookRows,
@@ -63,6 +64,7 @@ import {
   type EscalationService,
 } from '../../notifications/escalation-service.js';
 import type { WithheldHooks } from '../project-with-consent.js';
+import { _internal as askInternal } from '../ask-withheld-hooks.js';
 
 /** The package as it was when its row went up, running `run.sh` at version a. */
 const V1: WithheldHooks = {
@@ -118,7 +120,7 @@ async function raiseThenRestart(withheld: WithheldHooks): Promise<string> {
   const before = killable(freshService());
   raisePassiveHookRows([withheld], {
     projectPath: '/repo',
-    approvals: before,
+    asks: createComputerAsks(before),
     dorkHome,
     reproject: () => undefined,
   });
@@ -126,7 +128,7 @@ async function raiseThenRestart(withheld: WithheldHooks): Promise<string> {
   const [row] = freshService().listPending();
   before.kill();
   await settle();
-  approvalInternal.forgetDecisions();
+  askInternal.forgetDecisions();
   return row!.approvalId;
 }
 
@@ -144,7 +146,7 @@ afterEach(async () => {
   const service = freshService();
   for (const pending of service.listPending()) service.deny(pending.approvalId);
   await settle();
-  approvalInternal.forgetDecisions();
+  askInternal.forgetDecisions();
   approvalInternal.pollIntervalMs = SHIPPED_POLL_MS;
   approvalInternal.sleep = SHIPPED_SLEEP;
   setEscalationService(null);
@@ -164,7 +166,9 @@ describe('a yes on a quiet row after a restart (DOR-3427)', () => {
       .run();
     const after = freshService();
     const reproject = vi.fn(async () => [] as WithheldHooks[]);
-    expect(resumePassiveHookRows({ dorkHome, approvals: after, reproject })).toEqual(['evil']);
+    expect(resumePassiveHookRows({ dorkHome, asks: createComputerAsks(after), reproject })).toEqual(
+      ['evil']
+    );
     await settle();
     const pending = after.listPending();
     expect(pending).toHaveLength(1);
@@ -184,7 +188,9 @@ describe('a yes on a quiet row after a restart (DOR-3427)', () => {
     const after = freshService();
     const reproject = vi.fn(async () => [] as WithheldHooks[]);
 
-    expect(resumePassiveHookRows({ dorkHome, approvals: after, reproject })).toEqual(['evil']);
+    expect(resumePassiveHookRows({ dorkHome, asks: createComputerAsks(after), reproject })).toEqual(
+      ['evil']
+    );
     await settle();
     // Picked up, not raised again.
     expect(after.listPending().map((row) => row.approvalId)).toEqual([approvalId]);
@@ -201,11 +207,13 @@ describe('a yes on a quiet row after a restart (DOR-3427)', () => {
     after.grant(approvalId);
     const reproject = vi.fn(async () => [] as WithheldHooks[]);
 
-    resumePassiveHookRows({ dorkHome, approvals: after, reproject });
+    resumePassiveHookRows({ dorkHome, asks: createComputerAsks(after), reproject });
     await vi.waitFor(() => expect(reproject).toHaveBeenCalledTimes(1));
     // A second startup finds nothing left to apply.
-    approvalInternal.forgetDecisions();
-    expect(resumePassiveHookRows({ dorkHome, approvals: freshService(), reproject })).toEqual([]);
+    askInternal.forgetDecisions();
+    expect(
+      resumePassiveHookRows({ dorkHome, asks: createComputerAsks(freshService()), reproject })
+    ).toEqual([]);
     await settle();
     expect(reproject).toHaveBeenCalledTimes(1);
     expect(config.harness.approvedHooks).toHaveLength(1);
@@ -216,7 +224,7 @@ describe('a yes on a quiet row after a restart (DOR-3427)', () => {
     const after = freshService();
     // The script was edited while the server was down: the next pass holds v2 back.
     const reproject = vi.fn(async () => [V2]);
-    resumePassiveHookRows({ dorkHome, approvals: after, reproject });
+    resumePassiveHookRows({ dorkHome, asks: createComputerAsks(after), reproject });
     await settle();
     after.grant(approvalId);
     await vi.waitFor(() => expect(reproject).toHaveBeenCalledTimes(1));
@@ -238,7 +246,9 @@ describe('a yes on a quiet row after a restart (DOR-3427)', () => {
     const after = freshService();
     const reproject = vi.fn(async () => [] as WithheldHooks[]);
 
-    expect(resumePassiveHookRows({ dorkHome, approvals: after, reproject })).toEqual([]);
+    expect(resumePassiveHookRows({ dorkHome, asks: createComputerAsks(after), reproject })).toEqual(
+      []
+    );
     after.grant(approvalId);
     await settle();
     expect(reproject).not.toHaveBeenCalled();
@@ -252,20 +262,22 @@ describe('a yes on a quiet row after a restart (DOR-3427)', () => {
     after.deny(approvalId);
     const reproject = vi.fn(async () => [] as WithheldHooks[]);
 
-    resumePassiveHookRows({ dorkHome, approvals: after, reproject });
+    resumePassiveHookRows({ dorkHome, asks: createComputerAsks(after), reproject });
     await vi.waitFor(() => expect(config.harness.refusedHooks).toHaveLength(1));
+    // The space side records the no before the answer reaches this side, which
+    // then drops the saved row.
+    await vi.waitFor(() => expect(readPassiveHookRows(dorkHome)).toEqual([]));
     expect(reproject).not.toHaveBeenCalled();
     expect(config.harness.approvedHooks).toEqual([]);
-    expect(readPassiveHookRows(dorkHome)).toEqual([]);
   });
 
   it('a saved row with no open ticket is dropped, and no new row goes up', async () => {
     rememberPassiveHookRow(dorkHome, V1.request);
     const after = freshService();
 
-    expect(resumePassiveHookRows({ dorkHome, approvals: after, reproject: vi.fn() })).toEqual([
-      'evil',
-    ]);
+    expect(
+      resumePassiveHookRows({ dorkHome, asks: createComputerAsks(after), reproject: vi.fn() })
+    ).toEqual(['evil']);
     await settle();
     expect(after.listPending()).toEqual([]);
     expect(readPassiveHookRows(dorkHome)).toEqual([]);
@@ -302,7 +314,11 @@ describe('a yes on a quiet row after a restart (DOR-3427)', () => {
     );
     expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual([good]);
     expect(() =>
-      resumePassiveHookRows({ dorkHome, approvals: freshService(), reproject: vi.fn() })
+      resumePassiveHookRows({
+        dorkHome,
+        asks: createComputerAsks(freshService()),
+        reproject: vi.fn(),
+      })
     ).not.toThrow();
     await settle();
   });

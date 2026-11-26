@@ -709,6 +709,22 @@
       "types": "./src/connections-lease.ts",
       "default": "./dist/connections-lease.js"
     },
+    "./approval-text": {
+      "types": "./src/approval-text.ts",
+      "default": "./dist/approval-text.js"
+    },
+    "./computer-asks": {
+      "types": "./src/computer-asks.ts",
+      "default": "./dist/computer-asks.js"
+    },
+    "./consent-entries": {
+      "types": "./src/consent-entries.ts",
+      "default": "./dist/consent-entries.js"
+    },
+    "./folder-allows-card": {
+      "types": "./src/folder-allows-card.ts",
+      "default": "./dist/folder-allows-card.js"
+    },
     "./room-attachment-paths": {
       "types": "./src/room-attachment-paths.ts",
       "default": "./dist/room-attachment-paths.js"

@@ -35,11 +35,12 @@ vi.mock('../../core/config-manager.js', () => ({
 import { ApprovalService, hashApprovalInput } from '../../core/approvals/index.js';
 import { PASSIVE_APPROVAL_EXPIRES_AT } from '../../core/approvals/passive-approval.js';
 import { raisePassiveHookRows } from '../ask-withheld-hooks.js';
+import { _internal as approvalInternal } from '../../core/approvals/computer-asks/hook-card-ask.js';
 import {
-  _internal as approvalInternal,
   describeHookProjectionCapability,
   HOOK_PROJECTION_CAPABILITY_ID,
-} from '../hook-approval.js';
+  createComputerAsks,
+} from '../../core/approvals/computer-asks/index.js';
 import {
   setEscalationService,
   type EscalationService,
@@ -47,6 +48,7 @@ import {
 import { notificationEntry, resolvePerKind } from '../../notifications/notification-registry.js';
 import { capabilityApprovalPayload } from '../../notifications/emitters/capability-approval.js';
 import type { WithheldHooks } from '../project-with-consent.js';
+import { _internal as askInternal } from '../ask-withheld-hooks.js';
 
 /** One package Full held back because DorkOS did not install it. */
 const HELD_BACK: WithheldHooks = {
@@ -68,7 +70,7 @@ const SHIPPED_SLEEP = approvalInternal.sleep;
 function sync(): string[] {
   return raisePassiveHookRows([HELD_BACK], {
     projectPath: '/repo',
-    approvals,
+    asks: createComputerAsks(approvals),
     reproject: () => undefined,
   });
 }
@@ -97,7 +99,7 @@ afterEach(async () => {
   // test resets the config it would write that no into.
   for (const pending of approvals.listPending()) approvals.deny(pending.approvalId);
   await settle();
-  approvalInternal.forgetDecisions();
+  askInternal.forgetDecisions();
   approvalInternal.pollIntervalMs = SHIPPED_POLL_MS;
   approvalInternal.sleep = SHIPPED_SLEEP;
   setEscalationService(null);
@@ -131,7 +133,7 @@ describe('on Full, a held-back package’s Needs-you row is quiet (DOR-3427)', (
     sync();
     // As after a restart: the in-process memory is gone, and the open ticket
     // is picked up again rather than raised a second time.
-    approvalInternal.forgetDecisions();
+    askInternal.forgetDecisions();
     sync();
     await settle();
 
@@ -165,18 +167,18 @@ describe('on Full, a held-back package’s Needs-you row is quiet (DOR-3427)', (
     };
     raisePassiveHookRows([v1], {
       projectPath: '/repo',
-      approvals: before,
+      asks: createComputerAsks(before),
       reproject: () => undefined,
     });
     await settle();
     const [old] = before.listPending();
 
     // As after a restart: the open-card memory is gone, the rows are not.
-    approvalInternal.forgetDecisions();
+    askInternal.forgetDecisions();
     const after = new ApprovalService(db, { describeCapability: describeHookProjectionCapability });
     raisePassiveHookRows([v2], {
       projectPath: '/repo',
-      approvals: after,
+      asks: createComputerAsks(after),
       reproject: () => undefined,
     });
     await settle();
@@ -188,7 +190,7 @@ describe('on Full, a held-back package’s Needs-you row is quiet (DOR-3427)', (
     // Another package in the same project keeps its own row.
     raisePassiveHookRows(
       [{ ...HELD_BACK, request: { ...HELD_BACK.request, packageName: 'other' } }],
-      { projectPath: '/repo', approvals: after, reproject: () => undefined }
+      { projectPath: '/repo', asks: createComputerAsks(after), reproject: () => undefined }
     );
     await settle();
     expect(after.listPending()).toHaveLength(2);
@@ -200,7 +202,11 @@ describe('on Full, a held-back package’s Needs-you row is quiet (DOR-3427)', (
 
   it('a yes on the row records the approval and projects again', async () => {
     const reproject = vi.fn();
-    raisePassiveHookRows([HELD_BACK], { projectPath: '/repo', approvals, reproject });
+    raisePassiveHookRows([HELD_BACK], {
+      projectPath: '/repo',
+      asks: createComputerAsks(approvals),
+      reproject,
+    });
     await settle();
     approvals.grant(approvals.listPending()[0]!.approvalId);
     await vi.waitFor(() => expect(reproject).toHaveBeenCalledTimes(1));

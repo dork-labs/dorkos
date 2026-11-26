@@ -168,7 +168,7 @@ export function scanClaudeOnlySkills(
  * shell commands the harnesses run on the person's behalf. Omitted, every
  * package's hooks project, which is what a person running `dorkos harness sync`
  * asks for; DorkOS's own install-triggered projection passes a gate instead
- * (`services/harness/hook-approval.ts`, DOR-522).
+ * (`services/core/approvals/computer-asks/hook-card-ask.ts`, DOR-522).
  *
  * `opts.dorkosHarness` is the harness DorkOS's own default runtime reads. It
  * changes nothing a sync WRITES — it only adds a `dorkos-runtime` entry to

@@ -31,68 +31,32 @@
  * (`config-write-policy.ts`): an agent that could write the yes would approve
  * its own hooks. The residual is the one `hook-consent.ts` states: with login
  * off, a caller that omits its agent header is treated as the operator
- * (DOR-505).
+ * (DOR-505). The space side writes them
+ * (`core/approvals/computer-asks/folder-decisions.ts`), from a card's answer or
+ * a decision this side reports through the asks port (a pin on first use, a
+ * person's own edit moving the pin); this module only reads.
  *
  * @module services/runtimes/claude-code/folder-settings/folder-config-consent
  */
-import { createHash } from 'node:crypto';
-import { realpathSync } from 'node:fs';
-import path from 'node:path';
+import type { FolderConfigRequest } from '@dorkos/shared/computer-asks';
+import { FOLDER_CONFIG_ENTRY_MARKER, folderConfigEntry } from '@dorkos/shared/consent-entries';
 import { logger } from '../../../../lib/logger.js';
 import { configManager } from '../../../core/config-manager.js';
-import { logConfigWrite } from '../../../core/operator/config-write.js';
+import { runtimeAsks } from '../../computer-asks.js';
 import {
-  FOLDER_CONFIG_PARTS,
   inertApartFromRuntime,
   readFolderConfigParts,
   type FolderConfigDigests,
   type FolderConfigPart,
 } from './folder-config-pin.js';
 
-/** One agent's folder settings, as a person is asked about them. */
-export interface FolderConfigRequest {
-  /** The registered agent's id. */
-  agentId: string;
-  /** The agent's display name, for the card. */
-  agentName: string;
-  /** The registered agent home the settings were read from. */
-  home: string;
-  /** The part digests of the state the card asks about. */
-  digests: FolderConfigDigests;
-  /** The parts that differ from the agent's last yes, in card order. */
-  changed: readonly FolderConfigPart[];
-  /** What those parts would run, for the card. Never sent to an agent. */
-  detail?: string;
-}
+// The stored form of a decision is the space side's too: it writes these lists
+// (`core/approvals/computer-asks/folder-decisions.ts`), this module reads them.
+export type { FolderConfigRequest };
+export { FOLDER_CONFIG_ENTRY_MARKER, folderConfigEntry };
 
 /** The agent, its home and a state of its settings. */
 type FolderConfigState = Pick<FolderConfigRequest, 'agentId' | 'home' | 'digests'>;
-
-/** What sits between the agent id and the digest in a stored entry. */
-export const FOLDER_CONFIG_ENTRY_MARKER = '@folder-config-';
-
-/**
- * The stored form of one decision about one state of one agent's settings.
- *
- * @param state - The agent, its home and the part digests.
- */
-export function folderConfigEntry(state: FolderConfigState): string {
-  const parts = Object.fromEntries(FOLDER_CONFIG_PARTS.map((p) => [p, state.digests[p]]));
-  const digest = createHash('sha256')
-    .update(JSON.stringify({ home: canonicalHome(state.home), parts }))
-    .digest('hex');
-  return `${state.agentId}${FOLDER_CONFIG_ENTRY_MARKER}${digest}`;
-}
-
-/** A home by its real path, or as resolved when it is not there. */
-function canonicalHome(home: string): string {
-  const resolved = path.resolve(home);
-  try {
-    return realpathSync.native(resolved);
-  } catch {
-    return resolved;
-  }
-}
 
 /** Whether a stored entry is about this agent. */
 function isAgentEntry(agentId: string): (stored: string) => boolean {
@@ -118,20 +82,6 @@ function storedDecisions(): Decisions {
     refused: [...(harness.refusedFolderConfig ?? [])],
     parts: { ...(harness.approvedFolderConfigParts ?? {}) },
   };
-}
-
-/** Write the leaves back, and say nothing when nothing changed. */
-function writeDecisions(reason: string, next: Decisions): void {
-  const harness = configManager.get('harness');
-  const current = storedDecisions();
-  if (JSON.stringify(next) === JSON.stringify(current)) return;
-  configManager.set('harness', {
-    ...harness,
-    approvedFolderConfig: next.approved,
-    refusedFolderConfig: next.refused,
-    approvedFolderConfigParts: next.parts,
-  });
-  logConfigWrite(reason, 'harness', harness, configManager.get('harness'));
 }
 
 /**
@@ -200,73 +150,11 @@ export function lastApprovedParts(agentId: string, home: string): FolderConfigDi
 }
 
 /**
- * Record a yes: it replaces the agent's earlier yes, and clears a matching no.
- *
- * @param state - The state that was allowed.
- * @param reason - The config-write log line.
- */
-export function recordFolderConfigApproval(
-  state: FolderConfigState,
-  reason = "allowing an agent's folder settings"
-): void {
-  const entry = folderConfigEntry(state);
-  const { approved, refused, parts } = storedDecisions();
-  writeDecisions(reason, {
-    approved: [...approved.filter((stored) => !isAgentEntry(state.agentId)(stored)), entry],
-    refused: refused.filter((stored) => stored !== entry),
-    parts: { ...parts, [state.agentId]: { ...state.digests } },
-  });
-}
-
-/**
- * Record a no. The agent's earlier yes stays: what it ran before is still what
- * a person approved, and the agent must not look unpinned.
- *
- * @param state - The state that was turned down.
- */
-export function recordFolderConfigRefusal(state: FolderConfigState): void {
-  const entry = folderConfigEntry(state);
-  const current = storedDecisions();
-  writeDecisions("turning down an agent's folder settings", {
-    ...current,
-    refused: current.refused.includes(entry) ? current.refused : [...current.refused, entry],
-  });
-}
-
-/**
- * Move one part of an agent's yes from `before` to `after`, when a PERSON just
- * made that change through DorkOS. Only when the agent's yes had exactly
- * `before` for that part: a part the agent already changed on its own stays
- * unapproved, so the card still asks about it. The other parts keep their
- * approved digests.
- *
- * @param agentId - The registered agent's id.
- * @param home - The agent's home.
- * @param part - The part the person changed.
- * @param before - That part's digest just before their change.
- * @param after - Its digest just after.
- * @param reason - The config-write log line.
- * @returns Whether the yes moved.
- */
-export function repinFolderConfigPart(
-  agentId: string,
-  home: string,
-  part: FolderConfigPart,
-  before: string,
-  after: string,
-  reason: string
-): boolean {
-  const approved = lastApprovedParts(agentId, home);
-  if (!approved || approved[part] !== before) return false;
-  if (before === after) return true;
-  recordFolderConfigApproval({ agentId, home, digests: { ...approved, [part]: after } }, reason);
-  return true;
-}
-
-/**
- * Run a write a PERSON asked for through DorkOS, then move the agent's yes for
- * `part` to what it wrote ({@link repinFolderConfigPart}). Never fails the
- * write: a pin that could not move only means the next turn asks.
+ * Run a write a PERSON asked for through DorkOS, then have the space side move
+ * the agent's yes for `part` to what it wrote (a `folder_config_repinned`
+ * decision: only when the yes had exactly the digest from before the write, so
+ * a part the agent changed on its own stays unapproved). Never fails the write:
+ * a pin that could not move only means the next turn asks.
  *
  * Call it only where the caller is known to be a person. A write an agent can
  * make for itself must leave the yes alone, so the card asks.
@@ -287,7 +175,7 @@ export async function withPersonRepin<T>(
   const after = safeRead(target.home, part);
   if (before !== undefined && after !== undefined) {
     try {
-      repinFolderConfigPart(target.agentId, target.home, part, before, after, reason);
+      repin(target.agentId, target.home, part, before, after, reason);
     } catch (err) {
       logger.warn('[FolderConfig] Could not move the pin after a person changed it', {
         agentId: target.agentId,
@@ -331,7 +219,7 @@ export function withPersonRepinAtHome<T>(
   if (before !== undefined && after !== undefined) {
     for (const agentId of agents) {
       try {
-        repinFolderConfigPart(agentId, home, part, before, after, reason);
+        repin(agentId, home, part, before, after, reason);
       } catch (err) {
         logger.warn('[FolderConfig] Could not move the pin after a projection', {
           agentId,
@@ -342,6 +230,26 @@ export function withPersonRepinAtHome<T>(
     }
   }
   return result;
+}
+
+/** Report a person's edit of one part, for the space side to move the pin. */
+function repin(
+  agentId: string,
+  home: string,
+  part: FolderConfigPart,
+  before: string,
+  after: string,
+  reason: string
+): void {
+  runtimeAsks().record({
+    kind: 'folder_config_repinned',
+    agentId,
+    home,
+    part,
+    before,
+    after,
+    reason,
+  });
 }
 
 /** One part's digest, or `undefined` when it can't be vouched for. */
@@ -432,10 +340,13 @@ export function pinPersonCreatedAgent(agentId: string, home: string): boolean {
     if (hasFolderConfigRecord(agentId, home)) return false;
     const now = readFolderConfigParts(home);
     if (!now.inert && !inertApartFromRuntime(now)) return false;
-    recordFolderConfigApproval(
-      { agentId, home, digests: now.digests },
-      'pinning an agent a person created'
-    );
+    runtimeAsks().record({
+      kind: 'folder_config_approved',
+      agentId,
+      home,
+      digests: now.digests,
+      reason: 'pinning an agent a person created',
+    });
     return true;
   } catch (err) {
     logger.warn('[FolderConfig] Could not pin an agent a person created', {
@@ -451,19 +362,6 @@ export function folderConfigsPinned(): boolean {
   return (
     (configManager.get('harness') as { folderConfigPinned?: boolean } | undefined)
       ?.folderConfigPinned === true
-  );
-}
-
-/** Record that the agents that already existed were pinned, so it never happens again. */
-export function markFolderConfigsPinned(): void {
-  if (folderConfigsPinned()) return;
-  const harness = configManager.get('harness');
-  configManager.set('harness', { ...harness, folderConfigPinned: true });
-  logConfigWrite(
-    'pinning the agents DorkOS already had',
-    'harness',
-    harness,
-    configManager.get('harness')
   );
 }
 

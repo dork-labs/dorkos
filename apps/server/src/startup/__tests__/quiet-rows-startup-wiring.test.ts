@@ -85,8 +85,15 @@ describe('the saved quiet rows are picked up on every server (DOR-3427)', () => 
     expect(calls).toHaveLength(1);
     const [call] = calls;
     expect(isConditional(call!, step.body!)).toBe(false);
+    // The asks port over the step's own approval service (spec
+    // `computer-side-starts-alone` §5.7): the rows' cards are raised through it.
     const first = call!.arguments[0];
-    expect(first && ts.isIdentifier(first) ? first.text : undefined).toBe('approvalService');
+    const built = first && ts.isCallExpression(first) ? first : undefined;
+    expect(built && ts.isIdentifier(built.expression) ? built.expression.text : undefined).toBe(
+      'createComputerAsks'
+    );
+    const service = built?.arguments[0];
+    expect(service && ts.isIdentifier(service) ? service.text : undefined).toBe('approvalService');
   });
 
   it('the server always runs the approvals step, whatever relay is set to', () => {
