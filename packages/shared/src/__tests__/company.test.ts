@@ -163,6 +163,8 @@ const LITERAL_URL_ALLOWED: Record<string, string> = {
   'packages/shared/src/links.ts': 'the module itself',
   'packages/shared/src/community-release-manifest.ts':
     'the one definition of the Community image repository, which the CLI imports',
+  'apps/client/eslint-rules/barrel.js':
+    'an ESLint rule loaded as plain JS before any workspace package is built',
   'apps/client/eslint-rules/fsd.js':
     'an ESLint rule loaded as plain JS before any workspace package is built',
   'apps/space/acceptance/run.mjs':
