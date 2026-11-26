@@ -9,7 +9,7 @@ import { rmSync, writeFileSync } from 'node:fs';
 import { utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { MarketplaceJson, PluginSource } from '@dorkos/marketplace';
-import { resolvePackageSource } from '../../marketplace/packages.js';
+import { resolvePackageSource } from '../../../services/marketplace/aggregate-packages.js';
 import {
   SAMPLE_MARKETPLACE_JSON,
   tempDir,

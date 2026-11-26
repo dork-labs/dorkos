@@ -9,11 +9,11 @@ import {
   runMigrations,
   type Db,
 } from '@dorkos/db';
+import type { OpenConnectorTurnInput } from '../../../core/connections-lease/index.js';
 import {
   ConnectorRuntimeAuthorityError,
   RuntimeToolContextUnavailableError,
-  type OpenConnectorTurnInput,
-} from '../../runtime-principal-port.js';
+} from '@dorkos/shared/connections-lease';
 import {
   ConnectorRuntimePrincipalService,
   type ConnectorRuntimeAuthorityResolver,

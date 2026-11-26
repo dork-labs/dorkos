@@ -1,4 +1,4 @@
-import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
+import type { ServerPrincipalProof } from '../../core/connections-lease/index.js';
 /**
  * Driving the DorkOS window, and reading back what is in it — the handlers
  * behind `control_ui` and `get_ui_state` (spec `canvas-agent-seat` §5).

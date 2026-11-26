@@ -21,7 +21,7 @@ import { CanonicalConnectorRuntimeAuthorityResolver } from '../../../../connecto
 import { ConnectorRuntimePrincipalService } from '../../../../connectors/principal/runtime-principal-service.js';
 import { initConfigManager } from '../../../../core/config-manager.js';
 import { isConnectorRuntimeCapabilityId } from '../../../../connectors/runtime-capability-scope.js';
-import type { RuntimeToolCaller } from '../../../../connectors/runtime-principal-port.js';
+import type { RuntimeToolCaller } from '../../../../core/connections-lease/index.js';
 import { OpenCodeRuntime } from '../../opencode-runtime.js';
 import { OpenCodeSessionMap } from '../../sessions/session-map.js';
 import { sessionIdle } from '../opencode-sse-fixtures.js';

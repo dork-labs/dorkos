@@ -128,7 +128,7 @@ All enforced, so a break fails a check. Rules 1-5 ride `lint`, 6-7 are hooks, 9 
 
 1. **FSD layer violations are errors** (`no-restricted-imports`).
 2. **Each runtime SDK stays in its adapter dir** under `services/runtimes/`.
-3. **`os.homedir()` is banned in `apps/server/src`**; use `lib/dork-home.ts`. The few carve-outs mirror another program's own directory and are listed in `.claude/rules/dork-home.md`.
+3. **`os.homedir()` is banned in `apps/server/src`**; use `lib/dork-home.ts`. The carve-outs, with reasons, are in `.claude/rules/dork-home.md`.
 4. **Exports carry TSDoc** with a real description (`eslint-plugin-jsdoc`, all `error`).
 5. **Prettier and Tailwind class sorting run at turn end and pre-commit**, not after each edit, so your in-context copy stays valid. Don't hand-format. Pre-push checks formatting and names the files to fix.
 6. **`git stash` and `git checkout -- <path>` are refused.** The stash is shared by every worktree, and the pathspec checkout silently drops uncommitted work. Park files in your scratchpad and restore with `cp`.

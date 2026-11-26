@@ -19,11 +19,11 @@ These documents remain in the public repository. Start with the atlas for the cu
 | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | [System architecture atlas](../contributing/system-architecture.md)                               | Current service boundaries, communication, replaceable interfaces, data authority and rendered diagrams.                     |
 | [November 21 rebaseline](../research/20261121_architecture-rebaseline.md)                         | Current direction: the evidence matrix by role, October's recommendations dispositioned, ranked risks, owners.               |
-| [October 9 vision-reset assessment](../research/20261009-vision-reset-architecture-assessment.md) | Historical: the first read of the one-program direction; its command-core target and four "unbuilt" findings are superseded. |
+| [October 9 vision-reset assessment](../research/20261009_vision-reset-architecture-assessment.md) | Historical: the first read of the one-program direction; its command-core target and four "unbuilt" findings are superseded. |
 | [Vision brief](2026-10-vision-reset.md) and [decisions](2026-10-vision-reset-decisions.md)        | Agreed rationale; the north-star set in `meta/` remains canon.                                                               |
-| [October 4 assessment](../research/20261004-architecture-assessment.md)                           | Historical source evidence; its permanent-topology recommendation is superseded.                                             |
+| [October 4 assessment](../research/20261004_architecture-assessment.md)                           | Historical source evidence; its permanent-topology recommendation is superseded.                                             |
 | [Diagram sources and rendering](../contributing/diagrams/architecture/README.md)                  | Editable Mermaid sources, generated SVG locations and regeneration procedure.                                                |
-| [Cloud retirement readiness](../research/20260928-cloud-retirement-readiness.md)                  | Current forwarding correction, historical evidence and prerequisites for retiring local account implementation.              |
+| [Cloud retirement readiness](../research/20260928_cloud-retirement-readiness.md)                  | Current forwarding correction, historical evidence and prerequisites for retiring local account implementation.              |
 | [Shared design-system ideation](../specs/shared-design-system/01-ideation.md)                     | Original brief; current implementation and consumer receipts are linked from its reading-context note.                       |
 | [Shutdown/handoff specification](../specs/shutdown-handoff-outcomes/02-specification.md)          | Existing design for the first recommended implementation chunk.                                                              |
 
@@ -56,7 +56,7 @@ The [target design](../research/20261121_architecture-target-design.md) (2026-11
 
 ## Historical assessment, 2026-10-09
 
-**Public source:** `417bd3a33fb99a80c0184800a33432f09e44f4f8`. The vision reset changes the target to **one DorkOS program and one app, runnable locally or hosted**, with free accountless local use and optional Cloud. The [assessment](../research/20261009-vision-reset-architecture-assessment.md) and [planned target diagram](../contributing/diagrams/architecture/vision-reset-target.mmd) replace the October 4 recommendation to keep the current server split permanently. The split remains current implementation until the accepted Hono/convergence migration lands.
+**Public source:** `417bd3a33fb99a80c0184800a33432f09e44f4f8`. The vision reset changes the target to **one DorkOS program and one app, runnable locally or hosted**, with free accountless local use and optional Cloud. The [assessment](../research/20261009_vision-reset-architecture-assessment.md) and [planned target diagram](../contributing/diagrams/architecture/vision-reset-target.mmd) replace the October 4 recommendation to keep the current server split permanently. The split remains current implementation until the accepted Hono/convergence migration lands.
 
 Keep DOR-2344 as cross-programme coordination rather than folding it entirely into DOR-2742. The latter owns the framework/server migration; audit/privacy, proactive work, terminal ownership, messaging and package trust have their own delivery homes. No second architecture project or duplicate issue set is needed.
 
@@ -78,7 +78,7 @@ Keep DOR-2348/2349 and the shipped lifecycle, identity, shared UI and recovery r
 
 ## Historical assessment, 2026-10-04
 
-Public source: `116297e14f7c357d24010ba34b9ceaa1b44aef99`. The [deep assessment](../research/20261004-architecture-assessment.md) and [atlas](../contributing/system-architecture.md) supersede current-state assumptions in the dated snapshots below. Keep local execution, independent Community content authority and optional Cloud control operations as the topology. The main remaining debt is ownership after acceptance: lifetime, revocation, recovery and permission to hand off resources.
+Public source: `116297e14f7c357d24010ba34b9ceaa1b44aef99`. The [deep assessment](../research/20261004_architecture-assessment.md) and [atlas](../contributing/system-architecture.md) supersede current-state assumptions in the dated snapshots below. Keep local execution, independent Community content authority and optional Cloud control operations as the topology. The main remaining debt is ownership after acceptance: lifetime, revocation, recovery and permission to hand off resources.
 
 Credits selection and all three runtime implementations have shipped under DOR-2623/2633, with advertised-format gating and different payer scopes. Dynamic extension tools/skills and dev links are delivered under DOR-2685/2696. Relay delivery observations are delivered under DOR-2666. Avoid scheduling these as unbuilt features. Isolated extension backends remain active under DOR-2686: foundations are merged, but production activation still refuses at this source. Document delivery is partly wired with later publication/checkbox work active. Managed-browser foundations remain private fixture/research code without production activation.
 
@@ -98,7 +98,7 @@ The first implementation recommendation is lifecycle laboratory proof. Recovery 
 
 ## Disposition snapshot, 2026-10-01
 
-Reviewed public source: `996161118a84f938fe76b6e569ba077dfb7a574a`. Linear states were read on October 1; they are a snapshot, not dispatch approval. The [review receipt](../research/20261001-architecture-refresh.md) and [architecture atlas](../contributing/system-architecture.md) supersede the current-state assumptions in the historical sections below.
+Reviewed public source: `996161118a84f938fe76b6e569ba077dfb7a574a`. Linear states were read on October 1; they are a snapshot, not dispatch approval. The [review receipt](../research/20261001_architecture-refresh.md) and [architecture atlas](../contributing/system-architecture.md) supersede the current-state assumptions in the historical sections below.
 
 The architecture still separates local execution, independent Community content and optional Cloud management. Projects, extension orchestration, Connections policy and Spaces recovery/administration now have substantially more implementation. Avoid opening replacement programmes for the shipped machinery.
 
@@ -213,7 +213,7 @@ Update this file when rationale, boundaries, evidence assumptions or workstream 
 
 ## Local evidence and lifecycle shaping, 2026-09-26
 
-Reviewed against `7168a5b7c69def16bb2cb48319b24285c9894a3f`. The [local marketplace evidence matrix](../research/20260926-local-marketplace-recovery-evidence.md) is the bounded DOR-2427 slice of DOR-2349. It credits shipped recovery tests and prior SIGKILL proof, documents update's uninstall/reinstall boundary, and records DOR-2340/DOR-2341 triage without changing approvals or discovery. DOR-2349 remains broader than this local delivery; Cloud, Community and shared reconnect guarantees are not certified here.
+Reviewed against `7168a5b7c69def16bb2cb48319b24285c9894a3f`. The [local marketplace evidence matrix](../research/20260926_local-marketplace-recovery-evidence.md) is the bounded DOR-2427 slice of DOR-2349. It credits shipped recovery tests and prior SIGKILL proof, documents update's uninstall/reinstall boundary, and records DOR-2340/DOR-2341 triage without changing approvals or discovery. DOR-2349 remains broader than this local delivery; Cloud, Community and shared reconnect guarantees are not certified here.
 
 The [lifecycle ownership map and pilot specification](../specs/local-workspace-lifecycle/02-specification.md) deliver DOR-2347's shaping outcome. Ordered central teardown and the concurrent-signal guard already exist. The proposed local workspace reconciler pilot addresses tracked work and bounded disposal; implementation and adoption into central startup/shutdown remain separately selected follow-ups. The spec remains `specified`, not `implemented`.
 

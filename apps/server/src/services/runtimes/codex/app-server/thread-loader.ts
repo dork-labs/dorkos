@@ -27,7 +27,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import type { SessionSettings, StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
-import type { ConnectorThreadKeyPort } from '../../../connectors/runtime-principal-port.js';
+import type { ConnectorThreadKeyPort } from '../../../core/connections-lease/index.js';
 import {
   CONNECTOR_RUNTIME_MCP_SERVER_NAME,
   CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS,

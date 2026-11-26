@@ -85,6 +85,7 @@ import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createAgentsRoutes } from '../agents.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { personaMoveGroup } from './persona-move-group.js';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import {
   clearTestHomes,
@@ -96,7 +97,11 @@ import {
 beforeEach(() => registerEveryFolderAsHome());
 afterEach(() => clearTestHomes());
 
-const app = honoGroupListener({ path: '/api/agents', routes: createAgentsRoutes() });
+// With the capability mount's persona move (`POST /current/migrate-persona`, DOR-4978).
+const app = honoGroupListener([
+  { path: '/api/agents', routes: createAgentsRoutes() },
+  personaMoveGroup(),
+]);
 
 /**
  * ONE listener for the whole file (DOR-483). Requests target `server`, never

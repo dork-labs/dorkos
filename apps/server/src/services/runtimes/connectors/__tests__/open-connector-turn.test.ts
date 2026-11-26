@@ -7,7 +7,7 @@ import { clearTestHomes } from '../../../core/agent-identity/__tests__/agent-hom
 import {
   ConnectorRuntimeAuthorityError,
   RuntimeToolContextUnavailableError,
-} from '../../../connectors/runtime-principal-port.js';
+} from '@dorkos/shared/connections-lease';
 
 const BINDING = {
   bindingId: 'binding-1',

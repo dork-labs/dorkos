@@ -9,7 +9,7 @@ import {
   type ConnectorEventGrantSelection,
 } from '@dorkos/shared/connector-event-schemas';
 import { CONNECTOR_EVENT_REVIEW_SCOPE_LIMIT } from '@dorkos/shared/connector-schemas';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 import {
   ConnectorSubscriptionError,
   type ConnectorSubscriptionStore,

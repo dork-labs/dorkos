@@ -7,7 +7,6 @@
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import {
-  AccountEligibilityQuerySchema,
   AccountEligibilityResponseSchema,
   AgentsMayPickSchema,
   NoAutoMoveSchema,
@@ -36,29 +35,6 @@ const PERSON_BAR =
  * @param registry - The server's OpenAPI registry.
  */
 export function registerAccountEligibilityOpenApi(registry: OpenAPIRegistry): void {
-  registry.registerPath({
-    method: 'get',
-    path: '/api/runtimes/claude-code/account-eligibility',
-    tags: ['Runtimes'],
-    summary: 'Which Claude accounts may work in a project',
-    description:
-      'Every Claude account (Main is `default`) as the project a folder belongs to sees it. An ' +
-      'account may work in a project only when both rules allow it: its own (`onlyProjects`, ' +
-      'null for any project; a list never allows a folder in no project) and the project’s ' +
-      '(`allow`, null when the project has no list). Leave out `project` for a folder in no ' +
-      'project.',
-    request: { query: AccountEligibilityQuerySchema },
-    responses: {
-      200: {
-        description: 'The project and every account',
-        content: { 'application/json': { schema: AccountEligibilityResponseSchema } },
-      },
-      400: error('The query is not valid'),
-      403: error("The folder, or its repository, is outside the server's directory boundary"),
-      500: error('The rules could not be read'),
-    },
-  });
-
   registry.registerPath({
     method: 'put',
     path: '/api/runtimes/claude-code/project-accounts',

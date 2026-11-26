@@ -16,7 +16,7 @@ import {
   isCapabilityAuthorityBinding,
   type CapabilityAuthorityBindingProof,
 } from '../principal/capability-authority-binding.js';
-import type { ServerPrincipalProof } from '../principal/server-principal.js';
+import type { ServerPrincipalProof } from '../../core/connections-lease/index.js';
 import type { ConnectorRuntimeExecutionCapabilityId } from '../runtime-capability-scope.js';
 import {
   ConnectorExecutionAuthorizationService,

@@ -1,4 +1,4 @@
-import type { ServerPrincipalProof } from '../connectors/principal/server-principal.js';
+import type { ServerPrincipalProof } from '../core/connections-lease/index.js';
 import type { CanvasChannelDeclaration } from '@dorkos/shared/canvas-channel-schemas';
 /**
  * The one writer for every canvas on this machine — a room's shared table and a

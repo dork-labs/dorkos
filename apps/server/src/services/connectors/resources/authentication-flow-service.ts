@@ -32,7 +32,7 @@ import {
   CONNECTOR_AUTHENTICATION_FLOW_TTL_MS,
   SIGN_IN_COPY,
 } from '@dorkos/shared/connector-schemas';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 import type { ConnectorRegistry } from '../registry.js';
 import type { TrustedConnectionSharing } from '../access/trusted-sharing.js';
 import { publicFlowState } from './authentication-flow-public.js';

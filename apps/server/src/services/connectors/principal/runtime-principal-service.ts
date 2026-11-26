@@ -2,10 +2,11 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { and, connectorRuntimeBindings, eq, isNull, type Db } from '@dorkos/db';
 import type {
-  ConnectorTurnOwnership,
-  ConnectorTurnRenewalPermit,
+  ConnectorOwnerAuthority,
   ConnectorRuntimeBindingBootPort,
   ConnectorRuntimePrincipalPort,
+  ConnectorTurnOwnership,
+  ConnectorTurnRenewalPermit,
   OpenConnectorTurnInput,
   OpenConnectorTurnResult,
   RenewConnectorTurnInput,
@@ -15,19 +16,15 @@ import type {
   RevokeConnectorTurnReason,
   RuntimeToolCaller,
   RuntimeToolTurnFacts,
-} from '../runtime-principal-port.js';
+  ServerPrincipalClaims,
+  ServerPrincipalProof,
+} from '../../core/connections-lease/index.js';
 import {
   ConnectorRuntimeAuthorityError,
   RuntimeToolContextUnavailableError,
-} from '../runtime-principal-port.js';
+} from '@dorkos/shared/connections-lease';
 import { homeOf, resolveAgentHome } from '../../core/agent-identity/index.js';
-import {
-  createServerPrincipal,
-  isServerPrincipal,
-  type ConnectorOwnerAuthority,
-  type ServerPrincipalProof,
-  type ServerPrincipalClaims,
-} from './server-principal.js';
+import { createServerPrincipal, isServerPrincipal } from './server-principal.js';
 import type { ConnectorThreadKeyResolver } from './thread-keys.js';
 
 type RuntimeBindingRow = typeof connectorRuntimeBindings.$inferSelect;

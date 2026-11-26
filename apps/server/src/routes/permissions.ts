@@ -1,7 +1,8 @@
 /**
- * The permission routes (spec `agent-permissions` D10): read the default layer
- * and one agent's settings, change the preset, the defaults and one agent, read
- * the history, and undo one change from it (D14).
+ * The permission routes (spec `agent-permissions` D10): read the default layer,
+ * change the preset, the defaults and one agent, read the history, and undo one
+ * change from it (D14). One agent's settings and level are read on the
+ * capability mount (`services/core/permissions/agent-permission-views.ts`).
  *
  * ## Every mutating route proves a person
  *
@@ -29,7 +30,6 @@
  */
 import { Hono, type Context } from 'hono';
 import {
-  type AgentLevelResponse,
   PatchAgentPermissionsBodySchema,
   PatchPermissionDefaultsBodySchema,
   PermissionHistoryQuerySchema,
@@ -215,11 +215,6 @@ export interface PermissionsRouterDeps {
   activity: Pick<ActivityService, 'list'>;
   /** In tests, a login-state lookup; the live config otherwise. */
   isLoginEnabled?: LoginEnabledLookup;
-  /**
-   * The level an agent runs at (`agent-level.ts`), or `null` for no such
-   * agent. Absent, `GET /agents/:id/level` is not served.
-   */
-  readAgentLevel?: (agentId: string) => Promise<AgentLevelResponse | null>;
 }
 
 /**
@@ -227,7 +222,8 @@ export interface PermissionsRouterDeps {
  * registered, so the group answers nothing else under `/api`.
  *
  * @param deps - See {@link PermissionsRouterDeps}.
- * @returns The routes serving `/permissions*`, `/agents/:id/permissions` and `/agents/:id/level`.
+ * @returns The routes serving `/permissions*` and `PATCH /agents/:id/permissions`; one agent's
+ *   reads are capabilities (`services/core/permissions/agent-permission-views.ts`).
  */
 export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
@@ -346,26 +342,6 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
       run
     );
   });
-
-  router.get('/agents/:id/permissions', async (c) => {
-    try {
-      return c.json(await permissions.getAgent(c.req.param('id')));
-    } catch (err) {
-      return sendPermissionError(c, err);
-    }
-  });
-
-  // Read-only, and the same audience as the agent's permissions above: there
-  // is no write path for a level, only for the settings it is resolved from.
-  const readAgentLevel = deps.readAgentLevel;
-  if (readAgentLevel) {
-    router.get('/agents/:id/level', async (c) => {
-      const id = c.req.param('id');
-      const level = await readAgentLevel(id);
-      if (!level) return problem(c, 'agent_not_found', { detail: 'No agent with that id.' });
-      return c.json(level);
-    });
-  }
 
   router.patch('/agents/:id/permissions', async (c) => {
     const caller = person(c);
