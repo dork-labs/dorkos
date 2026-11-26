@@ -6,7 +6,8 @@
  * A gate is found by name, so a new one is held here the day it lands:
  * `check-*`, `assert-*`, `pre-push-*` and `*-check` scripts in `scripts/`, and
  * `check-*.ts` one folder down. `heavy-run-lock.sh` is the load gate, not a
- * check, and keeps its own `--help` (the queue usage).
+ * check, and keeps its own `--help` (the queue usage). `ratchets/ratchet.ts` runs gates
+ * rather than being named like one, so it is listed by hand (DOR-4948).
  */
 import { spawnSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -18,10 +19,12 @@ import { readGateHelp } from '../lib/gate-help.mjs';
 const SCRIPTS = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TOP = /^(?!test-)(?:(?:check|assert|pre-push)-.+|.+-check)\.(?:sh|ts|mjs)$/;
 const NESTED = /^check-.+\.ts$/;
+/** Gates not named like one. */
+const BY_HAND = ['ratchets/ratchet.ts'];
 
 /** Every gate script, as a path relative to `scripts/`. */
 function gates(): string[] {
-  const found: string[] = [];
+  const found: string[] = [...BY_HAND];
   for (const name of readdirSync(SCRIPTS)) {
     const path = join(SCRIPTS, name);
     if (statSync(path).isFile()) {
@@ -50,6 +53,7 @@ describe('gate --help', () => {
         'check-max-lines.ts',
         'pre-push-format-check.sh',
         'not-held-check.sh',
+        'ratchets/ratchet.ts',
       ])
     );
   });

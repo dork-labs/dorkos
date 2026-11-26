@@ -7,7 +7,7 @@
  * --help
  * Purpose: hold the services import boundary's baseline to its rules: imports
  *          between `services/` domains may only go, and counts only fall.
- * Runs in: pre-push (`import-boundary`); the required `typecheck` job.
+ * Runs in: `pnpm ratchet` (pre-push; the required `typecheck` job).
  * To fix:  remove the import it names. After removing some, run
  *          `pnpm check:import-boundary -- --update`. Never add or raise a pair.
  * Usage:   pnpm check:import-boundary [-- --base <ref> | --update | --init | --root <dir>]

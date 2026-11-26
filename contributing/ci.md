@@ -54,7 +54,7 @@ This guide covers everything between an agent's edit and a change on `main`: the
 EDIT     Claude Code hooks (.claude/settings.json): PreToolUse guards on every Bash call; eslint and an any-ban warning on every edit. No typecheck per edit
 TURN END prettier --write on changed files (Stop hook); checkpoint in worktrees
 COMMIT   lefthook pre-commit: prettier, drizzle generate, dir-size, turbo lint --affected (under the machine-wide slot cap). No typecheck at commit
-PUSH     lefthook pre-push: fast checks that each front-run a CI check (formatting, fragments, the ratchets, ledger coverage; lefthook.yml lists them), and CI still running from the last push. No tests run at push (DOR-2160)
+PUSH     lefthook pre-push: fast checks that each front-run a CI check (formatting, fragments, the ratchets (`pnpm ratchet --pre-push`), ledger coverage; lefthook.yml lists them), and CI still running from the last push. No tests run at push (DOR-2160)
 PR       ~19-25 Actions jobs; the required checks below must pass ON THE PR before it may enter the queue
 AUTO     open-pr.sh turns on auto-merge at open; GitHub queues the PR once every required check (pr-gates: Security) is green
 DOOR     queue-repeat-guard reads each queue entry and takes out a head that failed the same check twice
@@ -256,6 +256,15 @@ Runs with no label, and agents' own commands, never read the order file. CI neve
 **Adding a shell fixture suite** is adding the file: `scripts/run-scripts-suites.sh` finds every `scripts/test-*.sh` and `.agents/skills/*/scripts/test-*.sh` by glob, and both `scripts-test` jobs and `pnpm test:scripts` run it, so there is no workflow step or list line to add (ledger `fixture-suites-by-glob`). A suite runs in the required `fixtures` job, with no node_modules, unless its first 15 lines say `# scripts-suite-lane: harness`. `scripts/__tests__/shell-suite-parity.test.ts` fails on a step or line that names a suite by hand.
 
 **Capacity.** The org is on the GitHub **Team** plan: 60 concurrent jobs, not the Free plan's 20. One push to a PR starts about 14 jobs (docs-only) to 20 (code), down from 19 to 25 before the PR leg went to two shards and dropped `community-pg`, plus four `@smoke` browser shards of about 15 to 20 minutes each since PRs started running them; a queue entry costs about 19 to 20, plus three browser shards more since that suite went to six (a queue build's full check-run count, the number the CI Steward ledger uses, went from about 31 to 34). Since DOR-5130 a queue entry runs the four `@smoke` shards, or none when its change reaches no browser leg, instead of the six full shards and `first-run`, which run once per push to `main`. Twenty agents each pushing once is 400 to 500 jobs, 7 to 8 full refills of the pool, and the queue's own builds wait behind them. That arithmetic is why no remedy anywhere here is "push an empty commit".
+
+## Ratchets
+
+A ratchet is a count held in a committed baseline file that may only fall: files over 500 lines, mocks of our own modules, each package's test budget, imports across the server's walls, design-token misses, API lint findings, unused code. `scripts/ratchets/registry.ts` is the one list of them, with the role that keeps each and the ticket that lowers it; `pnpm ratchet --help` says how to run and fix them. Each ratchet keeps its own script and baseline file.
+
+- **`pnpm ratchet`** runs every ratchet's own check at once and prints a line per ratchet. It fails when one that is not advisory fails. knip is advisory until DOR-4629 decides, and needs the packages built (without a build it reports "cannot measure"). The whole run takes about 20 s and spawns no build, so it needs no load gate.
+- **Pre-push** runs `pnpm ratchet --pre-push` on the branch point (the ratchets marked `prePush`, about 17 s). The required `typecheck` job runs all of them in its `Ratchets (DOR-4948)` step, after the typecheck step.
+- **`pnpm ratchet --update`** runs each ratchet's own `--update`, which only lowers. It refuses to run under CI.
+- A new baseline file under `scripts/` or `apps/server/eslint-rules/` must be listed in the registry; `scripts/__tests__/ratchets.test.ts` fails until it is.
 
 ## The merge queue
 
@@ -587,19 +596,15 @@ gh api repos/{owner}/{repo}/rules/branches/main
 
 **Cause:** YAML and the `ci/` hand files disagree (a new job with no `ci/gates.yaml` entry, a missing `timeout-minutes`, a generated block out of date, a required check that can deadlock). **Fix:** read the step log, which names the gate. `node packages/ci-steward/src/cli.ts census --fix` regenerates the blocks; gates and timeouts are hand edits.
 
-### "File-size ratchet (DOR-2822)" is red in `typecheck`
+### "Ratchets (DOR-4948)" is red in `typecheck`
 
-**Cause:** a file over 500 lines (ESLint's `max-lines` count) grew, a new file passed 500, a source file shrank and its entry was not lowered, or a baseline was raised against the base. **Fix:** the step names each file and what to do; `node scripts/check-max-lines.ts --help` has every fix, and the script's header the rules (test files have their own baseline, and a shrunk one is only noted).
+**Cause:** a ratchet in `scripts/ratchets/registry.ts` failed: its count grew, a drop was not locked in with `--update`, or its baseline was raised against the base. **Fix:** the summary at the end of the step names each failing ratchet, and its own lines above say what it found; `node <its script> --help` has the fixes (`pnpm ratchet --help` names the scripts). The file-size ratchet: a file over 500 lines (ESLint's `max-lines` count) grew or a new one passed 500; test files have their own baseline, and a shrunk one is only noted. The API lint ratchet: a new finding in a route group, or two operations sharing an `operationId`; rules in [api-reference.md](api-reference.md#the-api-lint-gate). A line marked `advisory` (knip) never fails the step.
 
-### "API lint gate (DOR-4996)" is red in `typecheck`
-
-**Cause:** a change added an API lint finding in a route group, two operations share an `operationId`, a fixed finding's baseline was not lowered (on a PR only), or the baseline was raised against the base. **Fix:** the step names the rule, the group and what it found; `node scripts/api-lint/check-api-lint.ts --help` has the fixes. Rules: [api-reference.md](api-reference.md#the-api-lint-gate).
-
-**In the merge queue a lowered count only prints** (`--queue`): two queued PRs that each fix one finding in a group merge cleanly into a tree one finding under its baseline, and failing on that would eject the second for a fix. So a lowered count in a group your PR never touched is a queue leftover, not your change. The file-size ratchet has the same race and does not yet make this exception.
+**In the merge queue a lowered API lint count only prints** (`--queue`): two queued PRs that each fix one finding in a group merge cleanly into a tree one finding under its baseline, and failing on that would eject the second for a fix. So a lowered count in a group your PR never touched is a queue leftover, not your change. The file-size ratchet has the same race and does not yet make this exception.
 
 ### "the repo › keeps every package within its test budget" is red in `typecheck`
 
-**Cause:** a package added tests faster than source and is past its ceiling in `scripts/test-ratio/baseline.json` (pre-push runs the same check as `test-ratio`). **Fix:** `node scripts/test-ratio/check-test-ratio.ts --help`. Two PRs that each pass alone can sum past a budget once both land; the second then goes red on its next run, and the fix is the same.
+**Cause:** a package added tests faster than source and is past its ceiling in `scripts/test-ratio/baseline.json` (pre-push runs the same check, in `pnpm ratchet --pre-push`). **Fix:** `node scripts/test-ratio/check-test-ratio.ts --help`. Two PRs that each pass alone can sum past a budget once both land; the second then goes red on its next run, and the fix is the same.
 
 ### "CI Steward ledger coverage" is red
 

@@ -6,7 +6,7 @@
  * --help
  * Purpose: hold every source and test file to 500 lines with a ratchet: nothing
  *          over may grow, nothing new may cross, the baseline only goes down.
- * Runs in: pre-push (`max-lines`); the required `typecheck` job.
+ * Runs in: `pnpm ratchet` (pre-push; the required `typecheck` job).
  * To fix:  move code out of a file that grew or is new (split a test by subject).
  *          After a shrink, split, delete or `git mv`, run
  *          `pnpm check:max-lines -- --update`. Never raise an entry. A conflict in

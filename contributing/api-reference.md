@@ -256,22 +256,22 @@ The `docs-openapi-check` workflow runs both and fails on any difference, so CI c
 
 ## The API lint gate
 
-The API lint gate (DOR-4996) stops the HTTP API from getting worse while old routes are migrated area by area (DOR-4977). It reads two committed files, `docs/api/openapi.json` and the route census `apps/server/src/http/__tests__/route-census.baseline.json`, and holds what it finds to a baseline that may only go down. It runs as the `API lint gate (DOR-4996)` step of the required `typecheck` job.
+The API lint gate (DOR-4996) stops the HTTP API from getting worse while old routes are migrated area by area (DOR-4977). It reads two committed files, `docs/api/openapi.json` and the route census `apps/server/src/http/__tests__/route-census.baseline.json`, and holds what it finds to a baseline that may only go down. It is one of the ratchets `pnpm ratchet` runs (`scripts/ratchets/registry.ts`), in the `Ratchets (DOR-4948)` step of the required `typecheck` job.
 
-| Concept                  | Location                                                           |
-| ------------------------ | ------------------------------------------------------------------ |
-| The check (CLI, ratchet) | `scripts/api-lint/check-api-lint.ts`                               |
-| The rules and word lists | `scripts/api-lint/rules.ts`                                        |
-| The baseline             | `scripts/api-lint/baseline.json`                                   |
-| Tests                    | `scripts/__tests__/check-api-lint.test.ts`                         |
-| The CI step              | `.github/workflows/typecheck.yml`, step `API lint gate (DOR-4996)` |
+| Concept                  | Location                                                      |
+| ------------------------ | ------------------------------------------------------------- |
+| The check (CLI, ratchet) | `scripts/api-lint/check-api-lint.ts`                          |
+| The rules and word lists | `scripts/api-lint/rules.ts`                                   |
+| The baseline             | `scripts/api-lint/baseline.json`                              |
+| Tests                    | `scripts/__tests__/check-api-lint.test.ts`                    |
+| The CI step              | `.github/workflows/typecheck.yml`, step `Ratchets (DOR-4948)` |
 
 ```bash
 pnpm check:api-lint                    # check against the baseline
 pnpm check:api-lint -- --update        # after fixing findings: lower the baseline
 ```
 
-`--update` lowers a blocking rule's entries and never raises them. It sets an advisory rule's entries (`hand-registered-path`) to whatever it measured, up or down, so that count stays true and the rule does not go red the day it starts blocking; `--base` never judges an advisory entry. In the merge queue the step adds `--queue`, which turns a stale entry into a note ([contributing/ci.md](ci.md#api-lint-gate-dor-4996-is-red-in-typecheck) says why).
+`--update` lowers a blocking rule's entries and never raises them. It sets an advisory rule's entries (`hand-registered-path`) to whatever it measured, up or down, so that count stays true and the rule does not go red the day it starts blocking; `--base` never judges an advisory entry. In the merge queue the step adds `--queue`, which turns a stale entry into a note ([contributing/ci.md](ci.md#ratchets-dor-4948-is-red-in-typecheck) says why).
 
 The counts are per rule and group, not per finding: a PR that fixes one finding and adds another of the same rule in the same group leaves the count where it was and passes. The ratchet stops the API getting worse in total, not every new finding.
 
