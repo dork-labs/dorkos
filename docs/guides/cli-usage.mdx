@@ -119,7 +119,7 @@ dorkos config path                   # Print config file location
 dorkos config validate               # Check config validity
 ```
 
-`dorkos config set` follows the same rules as changing a setting in DorkOS itself. It checks the value before saving, so a value a setting cannot hold — or a setting that does not exist — is reported instead of written, and it shows you the value that was actually saved. Every change you make this way is written to your log at `~/.dork/logs/dorkos.log`, by name, so you can find out later what moved a setting. Only the setting's name is logged, never its value.
+`dorkos config set` follows the same rules as changing a setting in DorkOS itself. It checks the value before saving, so a value a setting cannot hold (or a setting that does not exist) is reported instead of written, and it shows you the value that was actually saved. Every change you make this way is written to your log at `~/.dork/logs/dorkos.log`, by name, so you can find out later what moved a setting. Only the setting's name is logged, never its value.
 
 **Lists are set whole, not item by item.** `dorkos config set` writes one setting at a time, and a list counts as one setting: `dorkos config set ui.dismissedUpgradeVersions.0 1.2.3` is refused. To change what is in a list, run `dorkos config edit` and change it in the file.
 
@@ -263,13 +263,13 @@ dorkos harness sync --fix --strict          # Stop with an error if any hooks we
 
 Run it from your project root: it works on the folder you are in, and reads `.agents/harness.manifest.json` there. `--check` only reports, so it never writes anything. `--fix` is what changes files, and it creates that manifest for you if the folder has none.
 
-That manifest holds three things, and nothing else: `harnesses`, the agents you want files shared with; `claudeOnlySkills`, the skills you are deliberately keeping in Claude Code's own folder; and `hookPolicies`, one line per agent saying what to do with your hooks. A policy is `generate` (DorkOS writes that agent's hooks file), `native` (the agent reads your hooks itself) or `none` (DorkOS writes nothing for that agent, and clears away a hooks file it wrote there before). Say nothing about an agent and DorkOS does what it has always done for it. Four older keys — `skillWrappers`, `commandMappings`, `instructionProjections` and `skillBundles` — are no longer read by anything. Your file still works if it has them; DorkOS just names each one so you can delete it.
+That manifest holds three things, and nothing else: `harnesses`, the agents you want files shared with; `claudeOnlySkills`, the skills you are deliberately keeping in Claude Code's own folder; and `hookPolicies`, one line per agent saying what to do with your hooks. A policy is `generate` (DorkOS writes that agent's hooks file), `native` (the agent reads your hooks itself) or `none` (DorkOS writes nothing for that agent, and clears away a hooks file it wrote there before). Say nothing about an agent and DorkOS does what it has always done for it. Four older keys (`skillWrappers`, `commandMappings`, `instructionProjections` and `skillBundles`) are no longer read by anything. Your file still works if it has them; DorkOS just names each one so you can delete it.
 
-When DorkOS sets up a folder for the first time, it turns on the agents it can see you already use — and one more: the agent DorkOS itself runs your sessions on. If your project has only ever used OpenCode, there is nothing of Claude Code's for DorkOS to find, and yet Claude Code is what a DorkOS session in that folder starts. So DorkOS turns it on and says so in one line, and the only file it writes for it is a `.claude/CLAUDE.md` that points at the `AGENTS.md` you already keep. Your instructions stay in one file you own; the session reads them.
+When DorkOS sets up a folder for the first time, it turns on the agents it can see you already use, and one more: the agent DorkOS itself runs your sessions on. If your project has only ever used OpenCode, there is nothing of Claude Code's for DorkOS to find, and yet Claude Code is what a DorkOS session in that folder starts. So DorkOS turns it on and says so in one line, and the only file it writes for it is a `.claude/CLAUDE.md` that points at the `AGENTS.md` you already keep. Your instructions stay in one file you own; the session reads them.
 
-The same happens on its own the moment you point a DorkOS agent at a folder: DorkOS sets that folder up once, right then, instead of waiting for you to run anything. It never removes files on that pass, and it never asks you to approve anything — it only adds.
+The same happens on its own the moment you point a DorkOS agent at a folder: DorkOS sets that folder up once, right then, instead of waiting for you to run anything. It never removes files on that pass, and it never asks you to approve anything. It only adds.
 
-Every run looks at which agents your project actually uses. If it finds one you have not turned on — a `.cursor/` folder appeared last week, say, or your manifest was written before DorkOS started adding its own agent — it tells you, and tells you how to turn it on:
+Every run looks at which agents your project actually uses. If it finds one you have not turned on (a `.cursor/` folder appeared last week, say, or your manifest was written before DorkOS started adding its own agent), it tells you, and tells you how to turn it on:
 
 ```bash
 dorkos harness sync --fix --enable cursor   # Turn Cursor on and set it up, in one go
@@ -283,7 +283,7 @@ Some of what DorkOS writes belongs to this computer, not to your project: links 
 dorkos harness sync --fix --write-gitignore # Add the missing lines to .gitignore
 ```
 
-It only ever appends, under a comment saying where the lines came from, and it leaves the rest of the file alone. If you ignore `.agents/` itself, DorkOS says what that means: your skills stay on this computer, while the links it writes into `.claude/skills` still get committed — so anyone who clones your project gets links pointing at files they do not have.
+It only ever appends, under a comment saying where the lines came from, and it leaves the rest of the file alone. If you ignore `.agents/` itself, DorkOS says what that means: your skills stay on this computer, while the links it writes into `.claude/skills` still get committed, so anyone who clones your project gets links pointing at files they do not have.
 
 Some packages ship hooks: commands your agent runs on its own, before or after it does things. `--fix` holds those back until you allow them. It sets up everything else the package brought, then prints each command it did not install and how to allow it:
 
@@ -385,7 +385,7 @@ dorkos agent update --path <dir> --color "" --icon ""      # Pass "" to clear a 
 
 A template is copied into the new agent's folder, and that folder is where the agent's sessions run. So before it lands, DorkOS checks what it brings: settings files the sessions load (such as `.claude/settings.json` with its hooks and permission rules, or a `.mcp.json`), and skills that run commands or use tools without asking. If it brings any of those, `dorkos agent create` prints them and asks before creating the agent (`--yes` skips the question and still prints them). When an agent runs this command, a person has to approve it on a card first; the command prints the `--approval` retry. An agent from the marketplace is created from the Marketplace in the app, or with `dorkos marketplace install`, rather than as a template.
 
-What an agent may do — Rooms, Tasks & schedules, Other agents, Messages, Chat connections, Tools & packages, Extension tools, Own chat, To-dos, DorkOS settings, Safety limits, Permissions, Reach & secrets, and Files & commands — is set with `dorkos agent permissions`, not `dorkos agent update`:
+What an agent may do (Rooms, Tasks & schedules, Other agents, Messages, Chat connections, Tools & packages, Extension tools, Own chat, To-dos, DorkOS settings, Safety limits, Permissions, Reach & secrets, and Files & commands) is set with `dorkos agent permissions`, not `dorkos agent update`:
 
 ```bash
 dorkos agent permissions <agent>                       # What one agent may do, and why

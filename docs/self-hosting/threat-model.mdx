@@ -64,7 +64,7 @@ See [Securing your instance](/docs/self-hosting/securing-your-instance) for the 
 
 DorkOS ships a tool endpoint at `/mcp` so external agents and scripts can drive it. **It is closed by default, on localhost too.** What you send to open it depends on whether you have turned on login:
 
-- **On this computer, with login off (the default).** Anything that changes something on your machine — installing a package, creating an agent, running extension code — needs your **local MCP token**, a file only someone signed in to your computer can read. Without it, those calls come back `401`. What still answers with no token is the handshake and read-only checks: listing the tools, `ping`, `get_server_info`. A tool DorkOS does not recognise is refused rather than allowed, so a tool added later starts out closed.
+- **On this computer, with login off (the default).** Anything that changes something on your machine (installing a package, creating an agent, running extension code) needs your **local MCP token**, a file only someone signed in to your computer can read. Without it, those calls come back `401`. What still answers with no token is the handshake and read-only checks: listing the tools, `ping`, `get_server_info`. A tool DorkOS does not recognise is refused rather than allowed, so a tool added later starts out closed.
 - **Login on, on this computer.** The login gate covers `/mcp` like the rest of the API, so every call needs a sign-in or a per-user API key, and the local token steps aside.
 - **From another device.** `/mcp` takes a per-user API key and nothing else: a sign-in from the app doesn't count, and the key goes in the `Authorization` header, never the address. A call from another device never gets the local token or the no-token checks, whatever "Ask for a password on this computer too" says.
 - **Exposing the server** does not loosen either rule; it adds the exposure guard on top. The server refuses to bind to a public address without an owner account. Two things get past that guard, and both are worth knowing: the official Docker image opts out of it on purpose (the callout above), and a reverse proxy in front of a loopback bind is a path it never sees, because it only inspects the address DorkOS itself binds to. The request gate still catches that proxy: its forwarding headers make every request through it another device, which needs a sign-in. The one gap left is named here on purpose. A proxy on this computer that sends no forwarding headers and points `Host` at `localhost` or `127.0.0.1` (nginx's default for `proxy_pass http://127.0.0.1:4242`) makes its traffic look like this computer. A browser still gives itself away when it changes something, because it names the page it is on. A script or command-line client names no page, so through such a proxy it gets everything this computer gets. For the same reason, a sign-in made on this computer also works through that proxy, because DorkOS cannot tell the two apart. Make your proxy send `X-Forwarded-For` (the configs in [Reverse proxy](/docs/self-hosting/reverse-proxy) do), or turn on "Ask for a password on this computer too".
@@ -72,15 +72,15 @@ DorkOS ships a tool endpoint at `/mcp` so external agents and scripts can drive 
 <Callout type="warn">
   **The honest limit of the local token.** While login is off, any program running on your computer
   can read the token file the same way the app does. The token stops callers that have no token at
-  all, and it guards the endpoint anywhere the port is reachable from outside — a tunnel or a proxy.
-  It does not stand between you and other software running as you, which can still drive tools that
-  install packages and run extension code. [Turning on
+  all, and it guards the endpoint anywhere the port is reachable from outside, such as a tunnel or a
+  proxy. It does not stand between you and other software running as you, which can still drive
+  tools that install packages and run extension code. [Turning on
   login](/docs/self-hosting/securing-your-instance) is the boundary that closes that. `MCP_API_KEY`
   is not: it is the fixed key for a server nobody signs into, not the thing standing between you and
   an open endpoint.
 </Callout>
 
-The A2A agent endpoints work the same way, with one difference: while login is off, reading an Agent Card needs no token, because a card is public metadata — but every JSON-RPC call, which runs a prompt against one of your agents, is gated. Turn login on and card reads need a credential too. From another device, A2A is closed: neither DorkOS's own remote access nor your own tunnel serves `/a2a` or an agent card, with or without a key.
+The A2A agent endpoints work the same way, with one difference: while login is off, reading an Agent Card needs no token, because a card is public metadata, but every JSON-RPC call, which runs a prompt against one of your agents, is gated. Turn login on and card reads need a credential too. From another device, A2A is closed: neither DorkOS's own remote access nor your own tunnel serves `/a2a` or an agent card, with or without a key.
 
 ## Agent-to-agent messaging and budgets
 
@@ -143,7 +143,7 @@ values, and they never pass through your local app, agents or CLI. Your service�
 still apply alongside the grants you choose in DorkOS.
 
 With login off (the default), DorkOS cannot tell a write that changes who can use an app apart from
-one the app itself made — so anything with a shell on this machine can make that change, the same as
+one the app itself made, so anything with a shell on this machine can make that change, the same as
 the app could: sharing an app, narrowing it, disconnecting it. Sharing an app with **Every agent** is
 just the widest version of that change, worth naming because it needs no per-agent review: a caller
 with a shell on this machine could turn it on for itself and every other agent. Turning login on

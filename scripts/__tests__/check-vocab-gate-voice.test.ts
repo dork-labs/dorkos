@@ -1,7 +1,7 @@
 /**
  * Pins for the DOR-4943 waves of `check-vocab-gate.ts`: the app-copy voice
- * words (wave 9), the pronoun "I" (wave 10) and the five banned button labels
- * (wave 11).
+ * words (wave 9), the pronoun "I" (wave 10), the five banned button labels
+ * (wave 11) and the em dash in docs prose (wave 12).
  *
  * Each wave is read from the shipped `banned-terms.json`, so a test fails if
  * the data loses the field that scopes it (`roots`, `caseSensitive`,
@@ -15,10 +15,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import ts from 'typescript';
 import { afterEach, describe, expect, it } from 'vitest';
-import { loadBannedTerms, runVocabGate, scanSource, termsForPath } from '../check-vocab-gate.ts';
+import {
+  loadBannedTerms,
+  runVocabGate,
+  scanMdx,
+  scanSource,
+  termsForPath,
+} from '../check-vocab-gate.ts';
 
 const CLIENT_FILE = 'apps/client/src/layers/features/foo/Panel.tsx';
 const terms = loadBannedTerms();
+const wave = (id: string) => terms.filter((t) => t.wave === id);
 
 /** Scan `jsx` as a client file against the shipped terms that apply there. */
 function hits(jsx: string): string[] {
@@ -182,5 +189,29 @@ describe("the connection routes' API copy", () => {
       'Only the owner of this DorkOS can manage the connections on its DorkOS account.'
     );
     expect(scanSource(routePaths[0]!, copySource, loadBannedTerms())).toEqual([]);
+  });
+});
+
+describe('wave 12: the em dash in docs prose', () => {
+  const dash = wave('wave-12');
+
+  it('fires on an em dash in prose and stays silent inside code', () => {
+    const text = [
+      'Agents run here — on your computer.',
+      'Run `a — b` to see it.',
+      '```bash',
+      'echo "a — b"',
+      '```',
+    ].join('\n');
+    expect(scanMdx('docs/guides/x.mdx', text, dash).map((v) => v.line)).toEqual([1]);
+  });
+
+  it('fires in docs and stays silent in client copy', () => {
+    const root = repoWith({
+      'docs/guides/x.mdx': 'Agents run here — on your computer.\n',
+      'apps/client/src/layers/features/foo/A.tsx': 'export const A = () => <p>Here — now.</p>;\n',
+    });
+    const found = runVocabGate(root, ['apps/client/src'], ['docs']);
+    expect(found.map((v) => [v.file, v.term])).toEqual([['docs/guides/x.mdx', '—']]);
   });
 });
