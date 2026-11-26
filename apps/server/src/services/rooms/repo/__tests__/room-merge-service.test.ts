@@ -28,241 +28,44 @@
  *   conflict markers staged.
  */
 import { execFileSync } from 'node:child_process';
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
+import { describe, it, expect } from 'vitest';
+import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { tmpdir } from 'node:os';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { rooms, type Db } from '@dorkos/db';
-import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
-import { ROOM_REPO_CAP_DEFAULTS, type RoomRepoCaps } from '@dorkos/shared/room-repo';
+import { ROOM_REPO_CAP_DEFAULTS } from '@dorkos/shared/room-repo';
 import { RoomError } from '../../room-errors.js';
-import { RoomRepoStore } from '../room-repo-store.js';
-import { RoomRepoService } from '../room-repo-service.js';
-import { MAX_QUEUE_DEPTH, RoomRepoMutex } from '../room-repo-mutex.js';
-import { RoomWorktreeManager } from '../room-worktree-manager.js';
-import { roomWorktreeSlug } from '../../../core/room-worktree-name/room-worktree-name.js';
-import { RoomMergeService, symlinkLeavesRepo } from '../room-merge-service.js';
+import { MAX_QUEUE_DEPTH } from '../room-repo-mutex.js';
+import { symlinkLeavesRepo } from '../room-merge-service.js';
 import { mergeNoFf, runGit } from '../room-repo-git.js';
-import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 import { auditEvents } from '@dorkos/db';
 import { AuditLog } from '../../../audit/audit-log.js';
 import { AccountIds } from '../../../audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../../audit/audit-trail.js';
 import { runWithAuditActor } from '../../../audit/audit-context.js';
-
-const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
-const OPERATOR = 'author-operator';
-const ANA = 'author-ana';
-const BEN = 'author-ben';
-
-const ROOM: Room = {
-  id: ROOM_ID,
-  kind: 'channel',
-  slug: 'release-train',
-  title: 'Release train',
-  topic: 'Shipping 0.70',
-  archived: false,
-  ambientMaxEntries: 20,
-  createdAt: '2026-08-27T12:00:00.000Z',
-  lastActivityAt: '2026-08-27T12:00:00.000Z',
-};
-
-/** What the fake room log recorded. */
-interface Announcement {
-  text: string;
-  merge: { branch: string; commit: string; files: number; insertions: number; deletions: number };
-  subjectAuthorId: string;
-}
+import {
+  ANA,
+  announced,
+  BEN,
+  commitIn,
+  enableRepo,
+  git,
+  knobs,
+  merges,
+  mutex,
+  OPERATOR,
+  refusalOf,
+  repos,
+  ROOM_ID,
+  scratch,
+  slugOf,
+  store,
+  useMergeWorld,
+  worktreeFor,
+} from './room-merge-service.fixtures.js';
 
 describe('RoomMergeService', () => {
-  let db: Db;
-  let scratch: string;
-  let store: RoomRepoStore;
-  let repos: RoomRepoService;
-  let worktrees: RoomWorktreeManager;
-  let merges: RoomMergeService;
-  let mutex: RoomRepoMutex;
-  /** Everything the room was told, oldest first. */
-  let announced: Announcement[];
-  /** Who may see the room; anybody else is answered as "no such room". */
-  let members: string[];
-  /** `config.rooms.repo.enabled`, per test. */
-  let enabled: boolean;
-  /** The room, so a test can archive it. */
-  let room: Room;
-  /** The caps a NEW binding is created under, per test. */
-  let caps: RoomRepoCaps;
-  /** The next `seq` the fake room log hands out. */
-  let nextSeq: number;
-
-  /** Run git in `dir` with the room's home as the discovery ceiling. */
-  function git(args: string[], dir: string): Promise<string> {
-    return runGit(args, dir, store.homeDir(ROOM_ID));
-  }
-
-  /** Where agent `name` keeps its work — the workspace path is its identity. */
-  function agentPath(name: string): string {
-    return path.join(scratch, 'agents', name);
-  }
-
-  /** The agents on the room's roster, by author id. */
-  const roster: Record<string, { name: string; displayName: string }> = {
-    [ANA]: { name: 'ana', displayName: 'Ana' },
-    [BEN]: { name: 'ben', displayName: 'Ben' },
-  };
-
-  /** The worktree slug one agent takes. */
-  function slugOf(authorId: string): string {
-    const agent = roster[authorId];
-    if (!agent) throw new Error(`no such agent ${authorId}`);
-    return roomWorktreeSlug(agent.displayName, agentPath(agent.name));
-  }
-
-  /** Give an agent its working copy and answer where it is. */
-  async function worktreeFor(authorId: string): Promise<string> {
-    const agent = roster[authorId];
-    if (!agent) throw new Error(`no such agent ${authorId}`);
-    const handle = await worktrees.ensureWorktree(
-      ROOM_ID,
-      agentPath(agent.name),
-      agent.displayName
-    );
-    return handle.path;
-  }
-
-  /** Write a file in an agent's working copy and commit it there. */
-  async function commitIn(
-    authorId: string,
-    file: string,
-    contents: string,
-    message = 'work'
-  ): Promise<string> {
-    const dir = await worktreeFor(authorId);
-    await mkdir(path.dirname(path.join(dir, file)), { recursive: true });
-    await writeFile(path.join(dir, file), contents, 'utf-8');
-    await git(['add', '--all'], dir);
-    await git(
-      ['-c', 'user.name=Agent', '-c', 'user.email=a@dorkos.local', 'commit', '-q', '-m', message],
-      dir
-    );
-    return dir;
-  }
-
-  /** The refusal a call made, or a failure saying it made none. */
-  async function refusalOf(call: Promise<unknown>): Promise<RoomError> {
-    try {
-      await call;
-    } catch (err) {
-      if (err instanceof RoomError) return err;
-      throw err;
-    }
-    throw new Error('expected a refusal, and the call succeeded');
-  }
-
-  beforeEach(async () => {
-    db = createTestDb();
-    // Before anything makes a repo: keep git's detached maintenance child from
-    // racing this suite's teardown into the directory. See `fixture-git.ts`.
-    silenceGitAutoMaintenance();
-    // The DorkOS home sits inside a git repository on purpose — see the header.
-    scratch = await mkdtemp(path.join(tmpdir(), 'dorkos-room-merge-'));
-    await runGit(['init', '-b', 'main', '--quiet', '.'], scratch, scratch);
-    await writeFile(path.join(scratch, '.gitignore'), '*\n', 'utf-8');
-    await runGit(['add', '-f', '.gitignore'], scratch, scratch);
-    await runGit(
-      [
-        '-c',
-        'user.name=Enclosing',
-        '-c',
-        'user.email=e@dorkos.local',
-        'commit',
-        '-q',
-        '-m',
-        'base',
-      ],
-      scratch,
-      scratch
-    );
-    const dorkHome = path.join(scratch, '.dork');
-    await mkdir(dorkHome, { recursive: true });
-
-    store = new RoomRepoStore(db, dorkHome);
-    mutex = new RoomRepoMutex();
-    announced = [];
-    members = [OPERATOR, ANA, BEN];
-    enabled = true;
-    room = { ...ROOM };
-    caps = { ...ROOM_REPO_CAP_DEFAULTS };
-    nextSeq = 1;
-
-    db.insert(rooms)
-      .values({
-        id: ROOM_ID,
-        kind: 'channel',
-        title: ROOM.title,
-        topic: ROOM.topic,
-        createdAt: ROOM.createdAt,
-        lastActivityAt: ROOM.lastActivityAt,
-      })
-      .run();
-
-    repos = new RoomRepoService({
-      store,
-      mutex,
-      queueWaitMs: () => 5000,
-      enabled: () => enabled,
-      getRoom: () => room,
-      isOwnerAuthor: (authorId) => authorId === OPERATOR,
-      operatorGitName: () => 'Dorian',
-      getAuthor: () => null,
-      pinRoomMd: () => {},
-      caps: () => caps,
-      maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
-    });
-    worktrees = new RoomWorktreeManager({
-      store,
-      hasRepo: (roomId) => repos.hasRepo(roomId),
-      listStrandedWorktrees: (roomId) => repos.listStrandedWorktrees(roomId),
-      reapAfterDays: () => 14,
-      busyAgentPaths: () => [],
-    });
-    merges = new RoomMergeService({
-      store,
-      mutex,
-      enabled: () => enabled,
-      mergeQueueWaitMs: () => 5000,
-      requireMembership: (_roomId, authorId) => {
-        // The real service answers "not a member" exactly as "no such room".
-        if (!members.includes(authorId)) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
-        return room;
-      },
-      listAgentMembers: (_roomId) =>
-        members
-          .filter((authorId) => roster[authorId])
-          .map((authorId) => ({
-            authorId,
-            agentPath: agentPath(roster[authorId]!.name),
-            displayName: roster[authorId]!.displayName,
-          })),
-      listStrandedWorktrees: (roomId) => repos.listStrandedWorktrees(roomId),
-      announce: (_roomId, input) => {
-        announced.push(input);
-        return { seq: nextSeq++ } as RoomEntry;
-      },
-      isOwnerAuthor: (authorId) => authorId === OPERATOR,
-    });
-  });
-
-  afterEach(async () => {
-    vi.unstubAllEnvs();
-    await removeFixtureTree(scratch);
-  });
-
-  /** Give the room files, as the operator would. */
-  async function enableRepo(): Promise<void> {
-    await repos.enable(ROOM_ID, OPERATOR);
-  }
+  // A fresh home inside an enclosing repo, per test (see the fixtures).
+  useMergeWorld();
 
   describe('the gates every repo verb shares', () => {
     it('refuses a room with no files', async () => {
@@ -272,14 +75,14 @@ describe('RoomMergeService', () => {
 
     it('refuses when room files are switched off for the whole install', async () => {
       await enableRepo();
-      enabled = false;
+      knobs.enabled = false;
       const refusal = await refusalOf(merges.merge(ROOM_ID, ANA, { summary: 'work' }));
       expect(refusal.code).toBe('ROOM_REPOS_DISABLED');
     });
 
     it('answers a non-member exactly as it answers a room that does not exist', async () => {
       await enableRepo();
-      members = [OPERATOR, ANA];
+      knobs.members = [OPERATOR, ANA];
       const refusal = await refusalOf(merges.merge(ROOM_ID, BEN, { summary: 'work' }));
       // Never a 403-shaped code: a room id must not be a capability.
       expect(refusal.code).toBe('ROOM_NOT_FOUND');
@@ -288,7 +91,7 @@ describe('RoomMergeService', () => {
     it('refuses to merge into an archived room', async () => {
       await enableRepo();
       await commitIn(ANA, 'notes.md', 'hello');
-      room = { ...room, archived: true };
+      knobs.room = { ...knobs.room, archived: true };
       const refusal = await refusalOf(merges.merge(ROOM_ID, ANA, { summary: 'work' }));
       // Asked BEFORE the merge, so nothing lands in git that the room could
       // never be told about.
@@ -528,7 +331,7 @@ describe('RoomMergeService', () => {
     });
 
     it('refuses a file bigger than the room’s own limit', async () => {
-      caps = { ...ROOM_REPO_CAP_DEFAULTS, maxFileBytes: 64 };
+      knobs.caps = { ...ROOM_REPO_CAP_DEFAULTS, maxFileBytes: 64 };
       await enableRepo();
       await commitIn(ANA, 'big.bin', 'x'.repeat(200));
 
@@ -539,18 +342,18 @@ describe('RoomMergeService', () => {
     });
 
     it('reads the caps off the sidecar, so lowering a setting cannot make old files illegal', async () => {
-      caps = { ...ROOM_REPO_CAP_DEFAULTS, maxFileBytes: 1024 };
+      knobs.caps = { ...ROOM_REPO_CAP_DEFAULTS, maxFileBytes: 1024 };
       await enableRepo();
       await commitIn(ANA, 'medium.txt', 'x'.repeat(200));
       // The install's setting is lowered AFTER the repo was created. The
       // sidecar remembers what this room was created under.
-      caps = { ...ROOM_REPO_CAP_DEFAULTS, maxFileBytes: 8 };
+      knobs.caps = { ...ROOM_REPO_CAP_DEFAULTS, maxFileBytes: 8 };
 
       await expect(merges.merge(ROOM_ID, ANA, { summary: 'work' })).resolves.toBeDefined();
     });
 
     it('refuses work that would take the whole room past its limit', async () => {
-      caps = { ...ROOM_REPO_CAP_DEFAULTS, maxRepoBytes: 256 };
+      knobs.caps = { ...ROOM_REPO_CAP_DEFAULTS, maxRepoBytes: 256 };
       await enableRepo();
       await commitIn(ANA, 'a.txt', 'x'.repeat(400));
 
@@ -725,86 +528,6 @@ describe('RoomMergeService', () => {
       ]);
       expect(enableResult.created).toBe(false);
       expect(mergeResult.files).toBe(1);
-    });
-  });
-
-  describe('room_repo_status', () => {
-    it('reports the main tip, every branch, and what is unmerged', async () => {
-      await enableRepo();
-      await commitIn(ANA, 'ana.md', 'ana\n');
-      const benDir = await commitIn(BEN, 'ben.md', 'ben\n');
-      await writeFile(path.join(benDir, 'scratch.md'), 'wip', 'utf-8');
-      await merges.merge(ROOM_ID, ANA, { summary: 'Ana’s work' });
-
-      const status = await merges.status(ROOM_ID, ANA);
-
-      expect(status.mainCommit).toBe(await git(['rev-parse', 'main'], store.repoPath(ROOM_ID)));
-      expect(status.mainCommittedAt).toMatch(/^\d{4}-/);
-
-      const ana = status.branches.find((b) => b.slug === slugOf(ANA));
-      // Ana has merged, so she is holding nothing — but she IS one behind, and
-      // that is `--no-ff` being honest: the merge commit exists on main and on
-      // no branch. Nothing is stranded, because stranded is about work nobody
-      // has, not about a branch being level.
-      expect(ana).toMatchObject({ agent: 'Ana', mine: true, ahead: 0, behind: 1, dirty: false });
-      expect(ana?.stranded).toBe(false);
-
-      const ben = status.branches.find((b) => b.slug === slugOf(BEN));
-      expect(ben).toMatchObject({ agent: 'Ben', mine: false, ahead: 1, dirty: true });
-      expect(ben?.behind).toBeGreaterThan(0);
-      expect(ben?.stranded).toBe(true);
-      expect(status.strandedWorktrees).toEqual([slugOf(BEN)]);
-
-      expect(status.size.usedBytes).toBeGreaterThan(0);
-      expect(status.size.maxRepoBytes).toBe(ROOM_REPO_CAP_DEFAULTS.maxRepoBytes);
-    });
-
-    it('never puts an agent’s workspace path in front of the room', async () => {
-      await enableRepo();
-      await commitIn(BEN, 'ben.md', 'ben\n');
-      const status = await merges.status(ROOM_ID, ANA);
-      // An agent reads its own rooms' status, and `/Users/…` is not something
-      // to hand every member. The slug is a digest, which is the point.
-      expect(JSON.stringify(status)).not.toContain(agentPath('ben'));
-    });
-
-    it('answers a non-member as no such room', async () => {
-      await enableRepo();
-      members = [OPERATOR, ANA];
-      const refusal = await refusalOf(merges.status(ROOM_ID, BEN));
-      expect(refusal.code).toBe('ROOM_NOT_FOUND');
-    });
-
-    it('gives each caller their OWN branch as `mine`, even off the same cached answer', async () => {
-      // The answer is memoized per `(room, main sha)` for a few seconds, and
-      // `mine` is the one field in it that is about who ASKED rather than about
-      // the room. So the cache must hold the room's answer and re-aim `mine`
-      // per caller — the tempting mistake is to cache the whole per-caller
-      // object, which hands the second caller the first one's idea of whose
-      // branch is theirs. Both agents commit so both have a branch to own.
-      await enableRepo();
-      await commitIn(ANA, 'ana.md', 'ana\n');
-      await commitIn(BEN, 'ben.md', 'ben\n');
-
-      // Ana asks first: a cache miss, so this computes and stores.
-      const forAna = await merges.status(ROOM_ID, ANA);
-      // Ben asks inside the memo window: a cache HIT on the same `main` sha, so
-      // this exercises `withCaller` on a cached answer rather than a fresh one.
-      const forBen = await merges.status(ROOM_ID, BEN);
-
-      const anaSlug = slugOf(ANA);
-      const benSlug = slugOf(BEN);
-
-      // Each sees exactly their own row as theirs.
-      expect(forAna.branches.find((b) => b.slug === anaSlug)?.mine).toBe(true);
-      expect(forAna.branches.find((b) => b.slug === benSlug)?.mine).toBe(false);
-      expect(forBen.branches.find((b) => b.slug === benSlug)?.mine).toBe(true);
-      expect(forBen.branches.find((b) => b.slug === anaSlug)?.mine).toBe(false);
-
-      // And it really was one cached computation, not two: the two answers agree
-      // on every field that is about the ROOM, differing only in `mine`.
-      expect(forBen.mainCommit).toBe(forAna.mainCommit);
-      expect(forBen.branches.map((b) => b.slug)).toEqual(forAna.branches.map((b) => b.slug));
     });
   });
 

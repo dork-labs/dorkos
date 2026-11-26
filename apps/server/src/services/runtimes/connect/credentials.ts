@@ -39,6 +39,7 @@ import type {
   SavedKeyState,
   StoreCredentialResult,
 } from '@dorkos/shared/runtime-connect';
+import { CREDENTIAL_RUNTIME_TYPES } from '@dorkos/shared/runtime-connect-schemas';
 import {
   credentialProvider,
   credentialStore,
@@ -57,9 +58,6 @@ import {
   type ProviderCredentialInput,
 } from './persist-provider-credential.js';
 import { pipeSecretToChild, type SpawnFn } from './delegated-login.js';
-
-/** Runtime types the native paste-key endpoint accepts. */
-export const CREDENTIAL_RUNTIME_TYPES = ['claude-code', 'codex'] as const;
 
 /** Injectable dependencies for {@link storeRuntimeCredential} (production defaults resolve the singletons). */
 export interface StoreCredentialDeps {

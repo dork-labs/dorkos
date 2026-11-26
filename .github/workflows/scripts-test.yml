@@ -500,7 +500,7 @@ jobs:
   # One part of it did (ledger 261112-185148): the suites that read the whole
   # repo went red on main three times in one week, each time after a PR this
   # job's scope never saw. Those suites, listed in
-  # scripts/vitest.repo.config.ts, now ALSO run in the required `typecheck`
+  # scripts/repo-wide-suites.ts, now ALSO run in the required `typecheck`
   # job on every PR and queue build. The unit-test step below still runs the
   # whole project, them included.
   harness:
@@ -619,4 +619,4 @@ jobs:
       # term appears anywhere in stdout or stderr. Both directions of that
       # property were mutation-checked when it landed.
       - name: Unit tests
-        run: pnpm exec vitest run --config scripts/vitest.config.ts
+        run: pnpm exec vitest run --config scripts/vitest.config.ts --project scripts

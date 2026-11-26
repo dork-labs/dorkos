@@ -23,6 +23,10 @@ import { TODO_TOOL_REFUSALS } from '../services/todos/todo-refusals.js';
 import { MESH_TOOL_REFUSALS } from '../services/mesh/doors/mesh-refusals.js';
 import { GLOBAL_MCP_TOOL_REFUSALS } from '../services/mesh/global-mcp/global-mcp-refusals.js';
 import { MARKETPLACE_TOOL_REFUSALS } from '../services/marketplace/doors/marketplace-refusals.js';
+import {
+  RUNTIME_READ_SENTENCES,
+  RUNTIME_TOOL_REFUSALS,
+} from '../services/core/runtime-doors/runtime-read-refusals.js';
 
 import type {
   TierDeniedPayload,
@@ -132,6 +136,8 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
   OUTSIDE_FOLDER: {
     code: 'outside_boundary',
     detail: 'That path is outside the folders DorkOS may use.',
+    // The account-eligibility read's own sentence (`runtimes.account_eligibility`).
+    alsoSays: [RUNTIME_READ_SENTENCES.outsideFolder],
   },
   // Not the shared `no_agent`, which is about a mini app's forward.
   NO_AGENT: { code: 'invalid_request', detail: 'This chat needs an active agent.' },
@@ -283,6 +289,9 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
   // The marketplace's reads kept the hand routes' codes and sentences
   // (`services/marketplace/doors/marketplace-refusals.ts`).
   ...MARKETPLACE_TOOL_REFUSALS,
+  // The runtime setup reads kept the hand routes' codes and sentences
+  // (`services/core/runtime-doors/runtime-read-refusals.ts`).
+  ...RUNTIME_TOOL_REFUSALS,
 };
 
 /** How a tool code ends or starts, and the family that spelling means. */

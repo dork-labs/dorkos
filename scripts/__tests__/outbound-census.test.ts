@@ -38,7 +38,7 @@ vi.setConfig({ testTimeout: 120_000 });
  * requests). A new dependency fails here until someone decides which.
  *
  * It runs on every pull request and in the merge queue, in the required
- * `typecheck` job's repo-wide scripts step (`scripts/vitest.repo.config.ts`).
+ * `typecheck` job's repo-wide scripts step (`scripts/repo-wide-suites.ts`).
  *
  * This is a static guard, not a proof: a call through an injected `fetch` is
  * caught where the global is wired in (so `packages/decisions` shows up as
