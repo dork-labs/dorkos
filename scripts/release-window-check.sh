@@ -6,6 +6,15 @@
 #   scripts/release-window-check.sh open
 #   scripts/release-window-check.sh rerun-list <runs.json> <open-heads.txt>
 #
+# --help
+# Purpose: may this PR merge now, given a merge freeze and an unreleased version?
+# Runs in: the required `release-window` check, and release-window-refresh.yml.
+# To fix:  nothing on your PR: wait for the freeze to lift or the release to
+#          reach npm. It re-runs by itself. The WAIT line says which.
+# Usage:   scripts/release-window-check.sh pr <pr> | group <pr> <base> <head> | open
+#          scripts/release-window-check.sh rerun-list <runs.json> <open-heads.txt>
+# --help end
+#
 # The decision behind .github/workflows/release-window.yml (DOR-5102, under
 # DOR-5098: every merge gate in the cloud, then auto-merge at PR open). Until
 # now these rules lived only in the local arm script (.temp/coord/arm.sh), so
@@ -43,6 +52,12 @@
 # arm.sh did (an npm outage blocks merges; Security ruled that a PM call).
 #
 # Fixtures: scripts/test-release-window-check.sh.
+
+# --help (DOR-4950). A gate checked out alone, as the PR-side gates are, runs without it.
+gate_help="$(dirname "$0")/lib/gate-help.sh"
+# shellcheck source=lib/gate-help.sh
+[ ! -r "$gate_help" ] || . "$gate_help"
+
 set -euo pipefail
 
 GH=${GH:-gh}

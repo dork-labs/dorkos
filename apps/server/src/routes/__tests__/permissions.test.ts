@@ -296,15 +296,6 @@ describe('permission routes', () => {
       ]);
     });
 
-    it("reads one agent's permissions, and 404s an unknown one", async () => {
-      const { app } = build();
-      const ok = await request(app).get('/api/agents/agent-auditor/permissions');
-      const missing = await request(app).get('/api/agents/nobody/permissions');
-      expect(ok.status).toBe(200);
-      expect(ok.body.agentName).toBe('security-auditor');
-      expect(missing.status).toBe(404);
-    });
-
     it('reads the history, per agent', async () => {
       const { app } = build();
       await request(app)

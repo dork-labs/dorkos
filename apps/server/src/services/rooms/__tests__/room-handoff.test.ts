@@ -32,6 +32,8 @@ import type { RoomStore } from '../room-store.js';
 import type { RoomTurnRequest } from '../room-turn-port.js';
 import type { RecordedTurn, ScriptedTurnRunner } from './room-test-harness.js';
 import type { Db } from '@dorkos/db';
+import type { ScenarioContext } from '../../runtimes/test-mode/interaction-gate.js';
+import type { ScenarioWorld } from '../../runtimes/test-mode/scenario-world.js';
 
 let setChatMessageService: (typeof import('../../session/chat-messages/chat-message-current.js'))['setChatMessageService'];
 let composeRegistry: (typeof import('../../core/capabilities/index.js'))['composeRegistry'];
@@ -868,12 +870,16 @@ describe('one seat per agent per room, and the hand-off', () => {
   // DOR-5032: the test runtime has to drive a hand-off end to end, so QA can check one survives
   // a restart. The seat runs the test runtime's own default turn, not a stand-in for it.
   describe('on the test runtime', () => {
+    /** The world {@link seatRunsTestMode} built, over this test's fresh modules. */
+    let world: ScenarioWorld | undefined;
     /** Bo's #dorkos seat runs each turn on the test runtime's default `simple-text`. */
     async function seatRunsTestMode(): Promise<void> {
       const { setRoomService } = await import('../index.js');
       const { TestModeRuntime } = await import('../../runtimes/test-mode/test-mode-runtime.js');
+      const composition = await import('../../../startup/test-composition/scenario-world.js');
       setRoomService(service);
       const runtime = new TestModeRuntime();
+      runtime.useScenarioWorld((world = composition.composeScenarioWorld()));
       scripts[dorkos.id] = async (request, sessionId) => {
         if (draftIn(request.prompt) === undefined) return null;
         const opts = {
@@ -896,15 +902,10 @@ describe('one seat per agent per room, and the hand-off', () => {
       return said.join('');
     }
 
-    /** The context a direct chat's scripted turn runs with. */
-    function chatContext(
-      sessionId: string
-    ): import('../../runtimes/test-mode/interaction-gate.js').ScenarioContext {
-      return {
-        sessionId,
-        signal: new AbortController().signal,
-        delay: async () => {},
-      } as unknown as import('../../runtimes/test-mode/interaction-gate.js').ScenarioContext;
+    /** The context a direct chat's scripted turn runs with, against the seat's world. */
+    function chatContext(sessionId: string): ScenarioContext {
+      const ctx = { sessionId, world, delay: async () => {} };
+      return { ...ctx, signal: new AbortController().signal } as never;
     }
 
     it('a seat’s scripted reply posts the handed-off draft, and the hand-off ends posted', async () => {

@@ -1,4 +1,3 @@
-import { renderDocEvents } from '../../canvas/doc-channel/prompt.js';
 import type {
   AgentRuntime,
   DependencyCheck,
@@ -50,8 +49,7 @@ import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { heldProcesses } from './held-process.js';
 import { ScenarioAborted, interactionGate } from './interaction-gate.js';
 import { declaredInterruptOutcome, scenarioStore } from './scenario-store.js';
-import { forcedLimitScenario } from '../../rooms/reseat/forced-limit-turn.js';
-import { setTestAccountWorld } from '../../rooms/reseat/test-account-world.js';
+import { worldOf, type ScenarioWorld } from './scenario-world.js';
 import { TestModeSessionRegistry } from './session-registry.js';
 import {
   hasPreparedSettingsMutation,
@@ -86,11 +84,7 @@ const declaredCanonicalIds = new Map<string, { canonicalId: string; revealed: bo
  * end-to-end proof that the snapshot/subscribe/list contract has no baked-in
  * JSONL/file assumptions (spec chat-stream-reconnection task #15, ADR-0263
  * Decision 1). Registered instead of ClaudeCodeRuntime when
- * DORKOS_TEST_RUNTIME=true.
- *
- * Never imported in production — index.ts only imports this module when the
- * env var is set. There is no tree-shaking concern because the condition is
- * evaluated at server startup, not at build time.
+ * DORKOS_TEST_RUNTIME=true, and only then imported (`startup/runtimes.ts`).
  */
 export class TestModeRuntime implements AgentRuntime {
   readonly type: string;
@@ -103,15 +97,16 @@ export class TestModeRuntime implements AgentRuntime {
   /** Turns running right now, per session; drives {@link isTurnOpen}. */
   private readonly openTurns = new Map<string, number>();
   private readonly replay?: ReplaySource;
+  /** The server the scenarios run against, handed in at registration. */
+  private world: ScenarioWorld | undefined;
 
   /**
    * Create a test-mode runtime instance registered under `type`.
    *
    * @param type - Runtime type identifier this instance registers under.
-   *   Defaults to `'test-mode'`. e2e servers register a SECOND instance under
-   *   a distinct type (`DORKOS_TEST_RUNTIME_SECONDARY=true` in index.ts) so
-   *   multi-runtime UI — the status-bar picker, `?runtime=` launch binding,
-   *   session-list runtime marks — is testable with zero real agent binaries.
+   *   Defaults to `'test-mode'`. e2e servers register a SECOND instance under a
+   *   distinct type (`DORKOS_TEST_RUNTIME_SECONDARY=true`) so multi-runtime UI
+   *   is testable with zero real agent binaries.
    */
   constructor(type = 'test-mode', replay?: ReplaySource) {
     if (isReplayIsolated() && !replay) throw new Error('Recorded demo needs a recording.');
@@ -159,9 +154,8 @@ export class TestModeRuntime implements AgentRuntime {
    * a completed turn is also flushed to the durable SQLite store (DOR-189),
    * which `readLogBackedHistory` reads FIRST when a store is wired (the e2e
    * server). Disposing only the projector would leave those rows behind, so a
-   * reused id resurrects pre-reset history straight from SQLite. The store is
-   * absent in bare unit tests — then `getSessionEventStore()` is `undefined`
-   * and only the projector is disposed, the pre-DOR-189 behavior.
+   * reused id resurrects pre-reset history straight from SQLite. Bare unit
+   * tests wire no store, so only the projector is disposed there.
    *
    * Held processes go back too (DOR-1326), and so do declared first-turn
    * renames. They are per-session runtime state like the projectors above, so a
@@ -172,10 +166,8 @@ export class TestModeRuntime implements AgentRuntime {
   resetTrackedSessions(): void {
     this.replay?.reset();
     // And the forced-limit seam's world (DOR-3143), so no test inherits one.
-    setTestAccountWorld(null, true);
+    this.world?.resetAccountWorld();
     heldProcesses.reset();
-    // Declared first-turn renames go too: a session id reused after a reset must
-    // not inherit a rename the previous test asked for.
     declaredCanonicalIds.clear();
     const store = getSessionEventStore();
     for (const sessionId of this.registry.ids()) {
@@ -204,6 +196,11 @@ export class TestModeRuntime implements AgentRuntime {
 
   setSessionSettings(port: SessionSettingsPort): void {
     this.settingsPort = port;
+  }
+
+  /** Hand in the server the scenarios run against (`startup/test-composition`). */
+  useScenarioWorld(world: ScenarioWorld): void {
+    this.world = world;
   }
 
   async updateSession(sessionId: string, opts: SessionSettings): Promise<SessionUpdateResult> {
@@ -263,15 +260,18 @@ export class TestModeRuntime implements AgentRuntime {
     // the id the client minted (see `declareCanonicalSessionId`).
     this.revealCanonicalSessionId(sessionId);
     // The forced-limit seam (DOR-3143) first: `undefined` unless a test set a world.
-    const scenario = forcedLimitScenario(sessionId, opts) ?? scenarioStore.getScenario(sessionId);
+    const world = this.world;
+    const scenario =
+      world?.forcedLimitScenario(sessionId, opts) ?? scenarioStore.getScenario(sessionId);
     // The gate is what makes an interactive scenario possible: it hands the
     // scenario the handle it parks on, and gives `approveTool`/`submitAnswers`/
     // `submitElicitation`/`interruptQuery` something real to resolve.
     const ctx = {
       ...interactionGate.open(sessionId),
+      world,
       docEventsPrompt: opts?.additionalContext
         ?.filter((entry) => entry.kind === 'doc_events')
-        .map((entry) => renderDocEvents(entry.data))
+        .map((entry) => worldOf({ world }).renderDocEvents(entry.data))
         .join('\n\n'),
     };
     // Boots this session's scripted process if it opted in and holds none yet,

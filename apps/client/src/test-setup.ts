@@ -193,8 +193,8 @@ const componentCache = new Map<string, React.FC<Record<string, unknown>>>();
 function makeMotionComponent(
   target: string | React.ElementType
 ): React.FC<Record<string, unknown>> {
-  // eslint-disable-next-line react/display-name
-  return React.forwardRef((allProps: Record<string, unknown>, ref: React.Ref<unknown>) => {
+  // React 19 hands `ref` over as an ordinary prop, so it rides through in `rest`.
+  return function MotionMock(allProps: Record<string, unknown>) {
     const { children, onAnimationComplete, ...rest } = allProps;
     const filtered = stripMotionProps(rest);
 
@@ -205,8 +205,8 @@ function makeMotionComponent(
       }
     }, [onAnimationComplete]);
 
-    return React.createElement(target, { ...filtered, ref }, children as React.ReactNode);
-  }) as unknown as React.FC<Record<string, unknown>>;
+    return React.createElement(target, filtered, children as React.ReactNode);
+  };
 }
 
 function getMotionComponent(tag: string): React.FC<Record<string, unknown>> {

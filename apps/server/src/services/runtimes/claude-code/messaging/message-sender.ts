@@ -23,6 +23,7 @@ import { fireLaunchProbes } from './launch-probes.js';
 import { recordClaudeTurnContext, systemAppendOf } from './turn-context/turn-context-record.js';
 import { launchQuery } from '../sdk/launch-query.js';
 import { releaseHeavyJobsOf } from '../tool-gate/load-gate-hook.js';
+import { processEnded, processStarted } from '../../shared/references/process-token-port.js';
 import type { AgentSession } from '../agent-types.js';
 import { createToolState, stopWasAimedAt } from '../agent-types.js';
 import {
@@ -187,6 +188,8 @@ export async function* executeSdkQuery(
   // The per-PROCESS probes run once the servers are handed over: what this
   // subprocess supports, asked once per launch and never awaited. Shared with the
   // pump, which launches the same way and owes its session the same answers.
+  // This turn's process holds its identity token until the turn ends (DOR-5264).
+  processStarted(sdkOptions.env, sessionId);
   const agentQuery = launchQuery({
     prompt: heldPrompt.prompt,
     options: sdkOptions,
@@ -682,6 +685,8 @@ export async function* executeSdkQuery(
     // loses its slot early, which only lets the next one start sooner: it fails
     // open, never holding the line for a process that is gone.
     releaseHeavyJobsOf(sdkOptions);
+    // And its identity token names its chat no more (DOR-5264).
+    processEnded(sdkOptions.env);
     // Preserve the query reference for post-stream control methods (e.g.
     // reloadPlugins) — but only when this frame still OWNS the active query
     // (DOR-1088). Unconditional, this cleared whatever query happened to be

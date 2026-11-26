@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 # Fail when a retired word reappears in user-facing PROSE.
 #
+# --help
+# Purpose: fail when a retired word or positioning line reappears in user-facing
+#          prose (READMEs, AGENTS.md, docs, manifests, release notes).
+# Runs in: the required `typecheck` job; by hand.
+# To fix:  reword the line it names (meta/VOICE.md lists the words). A line that
+#          must name the word (a quote, GitHub's product) carries `vocab-allow`;
+#          a docs page uses an entry in scripts/vocab-gate/allowlist.json.
+# Usage:   pnpm check:banned-words      (ROOT=<dir> to scan another checkout)
+# --help end
+#
 # WHY THIS EXISTS. DOR-1517 swept "mission control" and "cockpit" out of every
 # surface a user can read, after the operator retired both words for good (the
 # category phrase became "one place" then; since 2026-10 it is "a workspace
@@ -156,6 +166,11 @@
 #
 # Pinned by scripts/test-check-banned-words.sh, which proves it goes red on a
 # seeded violation and stays green on each exemption above.
+
+# --help (DOR-4950). A gate checked out alone, as the PR-side gates are, runs without it.
+gate_help="$(dirname "$0")/lib/gate-help.sh"
+# shellcheck source=lib/gate-help.sh
+[ ! -r "$gate_help" ] || . "$gate_help"
 
 set -uo pipefail
 

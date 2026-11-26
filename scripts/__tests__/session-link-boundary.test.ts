@@ -177,7 +177,7 @@ describe('session link boundary (DOR-2077)', () => {
         '*.mts',
         '*.cts',
       ],
-      { encoding: 'utf8' }
+      { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
     )
       .trim()
       .split('\n')

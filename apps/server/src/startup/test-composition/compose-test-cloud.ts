@@ -1,0 +1,108 @@
+/**
+ * The test-mode DorkOS Cloud (DOR-2783): everything a `DORKOS_TEST_RUNTIME`
+ * server needs so the account link, a credits token and a credits chat run
+ * end to end with nothing leaving the machine and nothing charged.
+ *
+ * - the device-link transport (`fake-cloud-link.ts`), whose code is approved
+ *   by opening `/api/test/fake-cloud/approve?code=` on this server;
+ * - every `/v1` contract call (`fake-cloud-v1.ts`), through the `/v1` client's
+ *   fetch seam;
+ * - an OpenAI-compatible stream at `/api/test/fake-inference/v1`
+ *   (`fake-inference.ts`) that the fake token's endpoints point at;
+ * - with `DORKOS_TEST_RUNTIME_DOE=true`, the DorkOS runtime itself, beside
+ *   `TestModeRuntime`, refusing any turn not paid by (fake) DorkOS credits, so
+ *   it can never reach a real model service.
+ *
+ * Reached only through the gated dynamic `import()` in `startup/runtimes.ts`,
+ * so none of it is in the production module graph.
+ *
+ * @module startup/test-composition/compose-test-cloud
+ */
+import type { RuntimeRegistry } from '../../services/core/runtime-registry.js';
+import { initCloudLinkManager } from '../../services/core/auth/cloud-link.js';
+import { setCloudV1Fetch } from '../../services/core/cloud/v1-client.js';
+import type { Hono } from 'hono';
+import type { ApiEnv } from '../../http/api-chain.js';
+import { localDialHost } from '@dorkos/shared/local-dial-host';
+import { logger } from '../../lib/logger.js';
+import { env } from '../../env.js';
+import { DoeRuntime } from '../../services/runtimes/doe/index.js';
+import type { DoeRuntimeOptions } from '../../services/runtimes/doe/doe-runtime.js';
+import { resolveDoeInference } from '../../services/runtimes/doe/credentials.js';
+import { CREDITS_PROVIDER_ID } from '../../services/runtimes/shared/credits/environment.js';
+import { createFakeCloudApprovalRoutes, createFakeCloudLink } from './fake-cloud-link.js';
+import { createFakeCloudV1Fetch } from '../../services/runtimes/test-mode/fake-cloud-v1.js';
+import { createFakeInferenceRoutes } from '../../services/runtimes/test-mode/fake-inference.js';
+
+/** Why a test-mode DorkOS turn on anything but credits is refused. */
+export const TEST_MODE_DOE_REFUSAL =
+  'In test mode, the DorkOS runtime runs only on DorkOS credits.';
+
+/** Block both Cloud transports for recorded demos without constructing a model client. */
+export function composeReplayCloud(): void {
+  if (!env.DORKOS_TEST_RUNTIME) throw new Error('Recorded demo needs the test runtime.');
+  // Every Cloud method uses this transport, including explicit clicks after boot.
+  const blockedFetch = async (): Promise<never> => {
+    throw new Error('Recorded demo: Cloud is off.');
+  };
+  initCloudLinkManager({ fetchImpl: blockedFetch });
+  setCloudV1Fetch(blockedFetch);
+}
+
+/**
+ * The DorkOS runtime's options in test mode: a turn resolves its model only
+ * when DorkOS credits pay for it, whose token the fake Cloud mints against the
+ * fake inference stream. An own key or a local model would reach a real
+ * endpoint, so it is refused before anything is sent.
+ */
+export function testModeDoeOptions(): DoeRuntimeOptions {
+  return {
+    resolveModel: async (config) => {
+      if (config.source !== CREDITS_PROVIDER_ID) throw new Error(TEST_MODE_DOE_REFUSAL);
+      return resolveDoeInference(config);
+    },
+  };
+}
+
+/**
+ * Hang a test-only group of routes under `/api/test` at `path`. Boot passes the
+ * test-control routes' own (`addTestControlGroup`).
+ */
+export type AddTestControlGroup = (path: string, routes: Hono<ApiEnv>) => void;
+
+/**
+ * Wire the test-mode Cloud into this server, and register the DorkOS runtime
+ * when `DORKOS_TEST_RUNTIME_DOE` asks for it.
+ *
+ * @param registry - The runtime registry the DorkOS runtime joins.
+ * @param addTestControlGroup - Where the approval page and inference stream
+ *   are served from, under `/api/test`.
+ * @returns The DorkOS runtime when one was registered, else `null`.
+ * @throws If called outside `DORKOS_TEST_RUNTIME`.
+ */
+export function composeTestModeCloud(
+  registry: RuntimeRegistry,
+  addTestControlGroup: AddTestControlGroup
+): DoeRuntime | null {
+  if (!env.DORKOS_TEST_RUNTIME) {
+    throw new Error('composeTestModeCloud is test-mode only (DORKOS_TEST_RUNTIME)');
+  }
+  const origin = `http://${localDialHost(env.DORKOS_HOST)}:${env.DORKOS_PORT}`;
+  const link = createFakeCloudLink({
+    approvalUrl: `${origin}/api/test/fake-cloud/approve`,
+    autoApprove: env.DORKOS_TEST_CLOUD_AUTO_APPROVE,
+  });
+  initCloudLinkManager({ fetchImpl: link.fetch });
+  setCloudV1Fetch(
+    createFakeCloudV1Fetch({ inferenceBaseUrl: `${origin}/api/test/fake-inference/v1` })
+  );
+  addTestControlGroup('/fake-cloud', createFakeCloudApprovalRoutes(link));
+  addTestControlGroup('/fake-inference', createFakeInferenceRoutes());
+
+  if (!env.DORKOS_TEST_RUNTIME_DOE) return null;
+  const doe = new DoeRuntime(testModeDoeOptions());
+  doe.setSessionSettings(registry);
+  registry.register(doe);
+  logger.info('[TestMode] DorkOS runtime registered against the test-mode Cloud');
+  return doe;
+}

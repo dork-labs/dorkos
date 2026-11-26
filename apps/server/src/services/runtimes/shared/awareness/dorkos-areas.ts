@@ -63,9 +63,18 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     // Work claims ride here with no words of their own: a claim is a chat saying
     // "I have this", and the block has no room left under its token cap.
     can: 'spin off long work; message, read or stop chats; summarize yours.',
-    // A chat's change review (diff.*) and its run list (runs.*, DOR-5212) ride
-    // here with no words of their own (DOR-4978).
-    covers: ['chat.', 'session_start', 'session.compact', 'work-claims.', 'diff.', 'runs.'],
+    // A chat's change review (diff.*), its run list (runs.*, DOR-5212) and recording
+    // the pull request it opened (work-graph.*, DOR-5264) ride here with no words of
+    // their own (DOR-4978).
+    covers: [
+      'chat.',
+      'session_start',
+      'session.compact',
+      'work-claims.',
+      'diff.',
+      'runs.',
+      'work-graph.',
+    ],
     areas: ['agents', 'messages', 'own_chat'],
   },
   {
@@ -126,6 +135,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     can: 'add or remove MCP servers and packages; build mini apps a person approves. A change reaches you next turn, in this chat: no restart.',
     // `mcp.` also covers a person's doors for servers every agent gets
     // (`mcp.remove_global_server` and the rest, DOR-4978), which refuse agents.
+    // `marketplace.` also covers the marketplace's reads on `/api/marketplace/*` (DOR-4978);
+    // the dev links among them are a person's read.
     covers: ['mcp.', 'marketplace.', 'create_extension', 'reload_extensions', 'test_extension'],
     areas: ['packages'],
     gate: 'adding or changing an MCP server asks, and only a person adds one for all agents',
@@ -152,7 +163,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     can: 'create, change, delete schedules; read runs; end a heartbeat.',
     // Also the team page's list of what cannot wake (`heartbeat.wakers_off`, DOR-4978), and the
     // owner's answer to the credits offer (`heartbeat.choose_triage_credits`), person-only, so no
-    // agent can call it. And the app's task and run reads (`tasks.view_*`, DOR-4978).
+    // agent can call it. And the app's task and run reads (`tasks.view_*`, DOR-4978), and a
+    // person's Heartbeat page (`heartbeat.view_page`), person-only: agents use heartbeat_status.
     covers: ['tasks_', 'tasks.', 'heartbeat.'],
     areas: ['tasks'],
   },
@@ -167,6 +179,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       'mesh.',
       'create_agent',
       'get_agent',
+      // Also a person's move of an old persona into SOUL.md (`agent.migrate_persona`,
+      // person-only, DOR-4978).
       'agent.',
       'operator.update_agent',
       'operator.sidebar_',
@@ -224,10 +238,19 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       'approvals.withdraw',
       'operator.config_',
       'operator.check_update',
+      // One agent's permissions and level (`permissions.view_agent*`, DOR-4978), any agent's.
       'permissions.',
       'instructions.',
       'capabilities.list',
       'operator.feedback_draft',
+      // The app's runtime setup reads (DOR-4978) ride here with no words of their own: each is
+      // person-only, so no agent can call one.
+      'runtimes.account_usage',
+      'runtimes.found_accounts',
+      'runtimes.account_eligibility',
+      'runtimes.key_status',
+      'runtimes.opencode_key_setup',
+      'runtimes.doe_model_setup',
     ],
     areas: ['settings', 'permissions'],
   },

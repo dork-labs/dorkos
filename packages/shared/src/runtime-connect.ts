@@ -7,8 +7,16 @@
  *
  * @module shared/runtime-connect
  */
-import type { DoeInferenceConfig } from './config-schema.js';
 import type { ModelTier } from './schemas.js';
+
+// The reads the capability mount serves keep their schemas in their own module (DOR-4978).
+export type {
+  DoeCreditsCatalog,
+  DoeInferenceStatus,
+  OpenCodeDirectSetup,
+  RuntimeKeyStatus,
+  SavedKeyState,
+} from './runtime-connect-schemas.js';
 
 /**
  * Result of storing a runtime credential (native paste-key path). Carries only
@@ -345,38 +353,6 @@ export interface CredentialCheckFailure {
 export type CredentialCheckResult = CredentialCheckOk | CredentialCheckFailure;
 
 /**
- * Whether a key is already saved, and the last four characters of it when it is.
- *
- * Four characters is the industry-standard masking a person recognizes their own
- * key by; nothing more of the secret ever leaves the server.
- */
-export type SavedKeyState = { saved: false } | { saved: true; last4: string };
-
-/**
- * What the OpenCode "your own key" form should show when it is reopened: the
- * service that was chosen, the base URL that was entered, and whether a key is
- * already saved. Secret-free by construction — only the last four characters of
- * a saved key are ever included.
- */
-export interface OpenCodeDirectSetup {
-  /** The saved service id (`openai`/`anthropic`/…), or `null` when none is saved. */
-  providerId: string | null;
-  /** The saved base URL override, or `null` when none was entered. */
-  baseURL: string | null;
-  /** Whether a key is saved for {@link providerId}, and its last four characters. */
-  key: SavedKeyState;
-}
-
-/**
- * Whether a runtime's own pasted key is already saved, for the Claude/Codex key
- * form's "Saved · ends in …" hint. Secret-free: last four characters at most.
- */
-export interface RuntimeKeyStatus {
-  /** Whether a key is saved for this runtime, and its last four characters. */
-  key: SavedKeyState;
-}
-
-/**
  * One service DorkOS can point OpenCode straight at with your own key.
  *
  * The client's picker and the server's allow-list both read this list, so the
@@ -441,25 +417,11 @@ export function findOpenCodeDirectProvider(providerId: string): OpenCodeDirectPr
   return OPENCODE_DIRECT_PROVIDERS.find((entry) => entry.id === providerId);
 }
 
-/** Metadata-only credits choices for one explicit wire protocol. */
-export interface DoeCreditsCatalog {
-  endpoint: string | null;
-  models: { id: string; displayName: string; contextWindow: number; maxOutputTokens: number }[];
-}
 /**
  * What DorkOS calls the model it picks for a chat on credits when nobody chose
  * one (ADR 261010-143211): the model list's description and the Settings row.
  */
 export const CHOSEN_BY_DORKOS = 'Chosen by DorkOS';
-
-/** The saved DorkOS model setup, metadata only. */
-export interface DoeInferenceStatus {
-  /** The setup, or `null`: on credits, DorkOS picks the model. */
-  inference: DoeInferenceConfig | null;
-  hasKey: boolean;
-  /** The format DorkOS picks a credits model in, or `null` when it has nothing to pick. */
-  autoProtocol: DoeInferenceConfig['protocol'] | null;
-}
 
 /**
  * Where a Claude folder's sign-in stands. Only masked emails are exposed;

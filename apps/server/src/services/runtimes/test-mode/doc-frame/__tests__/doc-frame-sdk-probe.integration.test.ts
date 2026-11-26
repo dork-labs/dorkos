@@ -11,7 +11,7 @@ import {
   eq,
 } from '@dorkos/db';
 import { noopLogger } from '@dorkos/shared/logger';
-import type { ServerPrincipalProof } from '../../../../connectors/principal/server-principal.js';
+import type { ServerPrincipalProof } from '../../../../core/connections-lease/index.js';
 import { composeRegistry } from '../../../../core/capabilities/index.js';
 import { setCanvasService, peekCanvasService } from '../../../../canvas/index.js';
 import { uiDomain } from '../../../../session/browser-seat/ui-capabilities.js';

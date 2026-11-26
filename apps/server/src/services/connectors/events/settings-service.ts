@@ -10,7 +10,7 @@ import {
 import { ConnectorEventPayloadProtector } from '@dork-labs/connector-providers';
 import { stableStringify } from '@dorkos/shared/capabilities';
 import type { CredentialProvider, CredentialStore } from '../../core/credential-provider.js';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 import { ConnectorSubscriptionError } from './subscription-store.js';
 import type { ConnectorEventProtectionPort } from './ingress-service.js';
 

@@ -19,7 +19,12 @@ import { credentialRef } from '../../audit/account-ids.js';
 import { readManifest } from '@dorkos/shared/manifest';
 
 import { logger } from '../../../lib/logger.js';
-import { getAgentIdentityService, type AgentIdentity } from './agent-identity-service.js';
+import {
+  forgetAgentTokens,
+  getAgentIdentityService,
+  holdTokenChat,
+  type AgentIdentity,
+} from './agent-identity-service.js';
 import type { CapabilityInvocationContext } from '../capabilities/index.js';
 import { homeOf, type HomeResolution } from './agent-home.js';
 
@@ -85,6 +90,37 @@ export async function resolveAgentTokenEnv(
     });
     return {};
   }
+}
+
+/**
+ * A process launched with `env` has started for `chatId`: its token names that
+ * chat until the process ends (DOR-5264). The space side's half of the process
+ * token port (`runtimes/shared/references/process-token-port.ts`), which
+ * `startup/steps/work-graph.ts` wires; pair it with {@link forgetTokenChatOf}.
+ * Never throws.
+ *
+ * @param env - The environment the process is launched with.
+ * @param chatId - The chat it runs.
+ */
+export function holdTokenChatOf(
+  env: Readonly<Record<string, string | undefined>> | undefined,
+  chatId: string
+): void {
+  const token = env?.[AGENT_TOKEN_ENV_VAR];
+  if (token) holdTokenChat(token, chatId);
+}
+
+/**
+ * The process launched with `env` has ended: its token names its chat no more,
+ * unless another live process holds it too (DOR-5264). Never throws.
+ *
+ * @param env - The environment the ended process was launched with.
+ */
+export function forgetTokenChatOf(
+  env: Readonly<Record<string, string | undefined>> | undefined
+): void {
+  const token = env?.[AGENT_TOKEN_ENV_VAR];
+  if (token) forgetAgentTokens(token);
 }
 
 /**

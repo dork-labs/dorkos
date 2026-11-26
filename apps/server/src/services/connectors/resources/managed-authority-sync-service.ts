@@ -44,7 +44,7 @@ import type {
   ManagedConnectorCloudErrorCode,
 } from '../../core/auth/cloud-link-client.js';
 import { logger } from '../../../lib/logger.js';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 import {
   endAgentAccessLevels,
   endConnectionAccessLevels,

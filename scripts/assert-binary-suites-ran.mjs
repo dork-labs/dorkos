@@ -3,6 +3,15 @@
  * Prove that test.yml's `test-binary` job ran every real-CLI suite it owns
  * (DOR-4190, ledger 261115-203006).
  *
+ * --help
+ * Purpose: prove the `test-binary` job ran every real-CLI suite it planned, with
+ *          no file missing and no test skipped.
+ * Runs in: test.yml, the `test-binary` job (behind the required `test`).
+ * To fix:  a skipped suite means its CLI is missing or broken in the job: fix the
+ *          install. A missing file means the plan and the run's filter disagree.
+ * Usage:   node scripts/assert-binary-suites-ran.mjs <planned-files.txt> <out.txt>
+ * --help end
+ *
  * WHY. The `*.binary.test.ts` suites spawn a real CLI (the SDK-bundled
  * `claude`, the pinned `opencode`) and `describe.skipIf(BINARY === null)` when
  * it is missing, so a broken install reads as a green, fully skipped file. In
@@ -29,6 +38,9 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { exitOnHelp } from './lib/gate-help.mjs';
+
+exitOnHelp(import.meta.url);
 
 const [plannedPath, outPath] = process.argv.slice(2);
 

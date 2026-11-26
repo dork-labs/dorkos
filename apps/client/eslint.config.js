@@ -5,7 +5,9 @@ import { createTypeScriptImportResolver } from 'eslint-import-resolver-typescrip
 import reactConfig from '@dorkos/eslint-config/react';
 import testConfig from '@dorkos/eslint-config/test';
 
+import barrel from './eslint-rules/barrel.js';
 import fsd from './eslint-rules/fsd.js';
+import react19 from './eslint-rules/react.js';
 import routes from './eslint-rules/routes.js';
 import space from './eslint-rules/space.js';
 
@@ -86,6 +88,35 @@ export default defineConfig([
     files: ['src/**/*.{ts,tsx}'],
     plugins: { space },
     rules: { 'space/separate-sites': 'error' },
+  },
+
+  // `.claude/rules/components.md`, DOR-4939: React 19 hands `ref` over as an
+  // ordinary prop, so nothing wraps itself in `forwardRef`. Why this is local
+  // code and not `no-restricted-imports` is in the rule.
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    plugins: { react19 },
+    rules: { 'react19/no-forward-ref': 'error' },
+  },
+
+  // `.claude/rules/components.md`, DOR-4939: a component never rolls dice, so it
+  // draws the same thing on every render and in every test. Scoped to `ui/`,
+  // where components live; model and lib code that needs real randomness (a
+  // reconnect's backoff jitter, a shuffle, a celebration's odds) sits outside it.
+  {
+    files: ['src/layers/**/ui/**/*.{ts,tsx}'],
+    ignores: ['src/layers/**/__tests__/**'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'Math',
+          property: 'random',
+          message:
+            'A component never rolls dice: derive a stable value from React.useId() or the index, or move real randomness into model/ or lib/.',
+        },
+      ],
+    },
   },
 
   // FSD Layer Enforcement: shared/ cannot import higher layers, and inside
@@ -242,6 +273,46 @@ export default defineConfig([
         },
       ],
     },
+  },
+
+  // FSD Layer Enforcement: a widget never imports another widget (DOR-4935).
+  //
+  // Composing two widgets is the app layer's job (`src/app/`, `AppShell`), which
+  // is where the header's fixed cluster went when this landed: it put the inbox
+  // bell, a widget, beside `one-bar`'s controls. A rule rather than a pattern in
+  // a `no-restricted-imports` block for two reasons: a pattern cannot tell a
+  // sibling widget from the file's own (widget tests name their own slice by the
+  // alias), and no block sets `no-restricted-imports` for `widgets/**` today, so
+  // there is nothing here for its options to replace or drop. Proven by
+  // `__tests__/cross-slice-import-lint.test.ts`.
+  {
+    files: ['src/layers/widgets/**/*.{ts,tsx}'],
+    plugins: { fsd },
+    rules: { 'fsd/no-cross-widget-import': 'error' },
+  },
+
+  // FSD Barrel-Only Imports (DOR-4935): any file reaches a slice of entities/,
+  // features/ or widgets/ that is not its own through the slice's index.ts.
+  //
+  // The entities block above already holds this for entity-to-entity imports,
+  // with a `no-restricted-imports` pattern; this extends it to every other
+  // importer and to features and widgets as targets. A rule rather than more
+  // patterns because a pattern cannot tell a slice's own file from a sibling's,
+  // and because `no-restricted-imports` options REPLACE rather than merge: a
+  // pattern added to all of `src/**` would have dropped the layer bans the
+  // shared/, entities/ and features/ blocks carry for their files.
+  //
+  // The deep imports already in the tree (all in test files) are a ratchet in
+  // `eslint-rules/barrel.baseline.json` that may only fall; the rule and the
+  // baseline's own rules are written up in `eslint-rules/barrel.js`.
+  //
+  // `src/dev/` is out of scope: the dev playground shows a slice's parts one at
+  // a time, in isolation, which is the one consumer a barrel is not written for.
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/dev/**'],
+    plugins: { barrel },
+    rules: { 'barrel/import-through-barrel': 'error' },
   },
 
   // FSD Slice Encapsulation (DOR-1010): a relative path may not leave its slice.

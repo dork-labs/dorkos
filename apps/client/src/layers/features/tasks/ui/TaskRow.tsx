@@ -520,11 +520,11 @@ export function TaskRow({
                     )}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
+                      variant="destructive"
                       onClick={(e) => {
                         e.stopPropagation();
                         setDeleteConfirmOpen(true);
                       }}
-                      className="text-destructive focus:text-destructive"
                     >
                       <Trash2 className="mr-2 size-3.5" />
                       Delete

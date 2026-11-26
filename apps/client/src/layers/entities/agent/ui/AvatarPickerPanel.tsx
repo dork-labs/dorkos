@@ -29,24 +29,35 @@ const fadeIn = {
 // Sparkle burst — first-customization celebration
 // ---------------------------------------------------------------------------
 
+const SPARKLE_COUNT = 14;
+
+/** Irrational steps (the golden ratio's and the square root of 2's fractions): each scatters 0..1 evenly. */
+const REACH_STEP = 0.6180339887;
+const SIZE_STEP = 0.4142135624;
+
+/**
+ * A stable value in `[0, 1)` for particle `i`, which looks scattered but is the
+ * same on every mount, so the burst rolls no dice.
+ */
+function scatter(i: number, step: number): number {
+  return ((i + 1) * step) % 1;
+}
+
+/** The burst's particles, fixed once: evenly round the circle, varied in reach and size. */
+const SPARKLE_PARTICLES = Array.from({ length: SPARKLE_COUNT }, (_, i) => {
+  const angle = (Math.PI * 2 * i) / SPARKLE_COUNT;
+  const dist = 28 + scatter(i, REACH_STEP) * 20;
+  return {
+    x: Math.cos(angle) * dist,
+    y: Math.sin(angle) * dist,
+    size: 3 + scatter(i, SIZE_STEP) * 3,
+    hue: (360 * i) / SPARKLE_COUNT,
+    delay: i * 0.02,
+  };
+});
+
 function SparkleBurst() {
-  // A lazy `useState` initializer, not a memo: the burst is randomised once per
-  // mount and never recomputed, and render itself may not roll dice.
-  const [particles] = useState(() => {
-    const count = 14;
-    return Array.from({ length: count }, (_, i) => {
-      const angle = (Math.PI * 2 * i) / count;
-      const dist = 28 + Math.random() * 20;
-      const hue = (360 * i) / count;
-      return {
-        x: Math.cos(angle) * dist,
-        y: Math.sin(angle) * dist,
-        size: 3 + Math.random() * 3,
-        hue,
-        delay: i * 0.02,
-      };
-    });
-  });
+  const particles = SPARKLE_PARTICLES;
 
   return (
     <div className="pointer-events-none absolute inset-0 z-50 overflow-visible" aria-hidden>

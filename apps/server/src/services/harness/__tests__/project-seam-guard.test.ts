@@ -170,7 +170,7 @@ describe('harness projection consent seam', () => {
   const files = execFileSync(
     'git',
     ['ls-files', '--cached', '--others', '--exclude-standard', '--', '*.ts', '*.tsx'],
-    { encoding: 'utf8', cwd: ROOT }
+    { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, cwd: ROOT }
   )
     .trim()
     .split('\n')

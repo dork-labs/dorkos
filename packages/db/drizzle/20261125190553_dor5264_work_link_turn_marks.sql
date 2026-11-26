@@ -1,0 +1,1 @@
+ALTER TABLE `work_links` ADD `turn_marks` text;

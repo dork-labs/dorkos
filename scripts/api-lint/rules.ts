@@ -342,18 +342,46 @@ function variants(doc: OpenApiDocument, schema: SchemaNode): SchemaNode[] {
   return [schema, ...members.map((member) => resolveSchema(doc, member))];
 }
 
-function isListBody(doc: OpenApiDocument, schema: SchemaNode): boolean {
-  if (hasType(schema, 'array')) return true;
-  return Object.values(schema.properties ?? {}).some((prop) =>
-    hasType(resolveSchema(doc, prop), 'array')
+/** Item types that make an array a plain attribute (tags, names, counts), not a collection. */
+const SCALAR_TYPES: readonly string[] = ['string', 'number', 'integer', 'boolean', 'null'];
+
+/** Whether an array's items are plain values: an `enum`, or only scalar types. Unknown items are not. */
+function holdsScalars(doc: OpenApiDocument, array: SchemaNode): boolean {
+  const items = resolveSchema(doc, array.items);
+  const types = items.type === undefined ? [] : [items.type].flat();
+  return (
+    items.enum !== undefined || (types.length > 0 && types.every((t) => SCALAR_TYPES.includes(t)))
   );
 }
 
+/**
+ * Whether a 200 body is a list: a top-level array, or an object that wraps a
+ * collection. An object wraps one when at least one property is an array whose
+ * items are not plain values, or when every property is an array (`{ files:
+ * string[] }`). An array of plain values beside a non-array property is an
+ * attribute. An `id` makes the object one resource that holds arrays, except
+ * on a sub-collection path (`/rooms/{id}/members`), where it is the parent's.
+ * The other properties are not judged: a real list often carries `warnings`
+ * or counts beside its rows.
+ */
+function isListBody(doc: OpenApiDocument, schema: SchemaNode, subCollection: boolean): boolean {
+  if (hasType(schema, 'array')) return true;
+  const props = schema.properties ?? {};
+  if ('id' in props && !subCollection) return false;
+  const arrays = Object.values(props)
+    .map((prop) => resolveSchema(doc, prop))
+    .filter((prop) => hasType(prop, 'array'));
+  const onlyArrays = arrays.length > 0 && arrays.length === Object.keys(props).length;
+  return onlyArrays || arrays.some((array) => !holdsScalars(doc, array));
+}
+
 function isCollectionGet(doc: OpenApiDocument, { path, method, op }: Operation): boolean {
-  const last = segments(path).at(-1);
+  const parts = segments(path);
+  const last = parts.at(-1);
   if (method !== 'get' || !last || isParam(last)) return false;
+  const subCollection = isParam(parts.at(-2) ?? '');
   const schema = okSchema(doc, op);
-  return schema ? variants(doc, schema).some((v) => isListBody(doc, v)) : false;
+  return schema ? variants(doc, schema).some((v) => isListBody(doc, v, subCollection)) : false;
 }
 
 function isPaged(doc: OpenApiDocument, op: OperationNode): boolean {
@@ -371,8 +399,8 @@ function isPaged(doc: OpenApiDocument, op: OperationNode): boolean {
 }
 
 /**
- * List GETs (a static last segment and a 200 body that is an array or holds
- * one) that do not page with `cursor`, `limit` and `nextCursor`.
+ * List GETs (a static last segment and a 200 body that is a list, see
+ * `isListBody`) that do not page with `cursor`, `limit` and `nextCursor`.
  *
  * @param doc - The OpenAPI document.
  */

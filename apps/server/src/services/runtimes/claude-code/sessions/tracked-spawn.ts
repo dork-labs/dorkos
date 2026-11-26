@@ -146,9 +146,21 @@ export function createTrackedSpawn(
     // diagnostic tail must never take the process down with it.
     child.stderr?.on('error', () => {});
 
+    // Once, on exit or on a spawn that never started: an ENOENT emits only
+    // `error`, and what the process was given must still come back.
+    let ended = false;
+    const end = (): void => {
+      if (ended) return;
+      ended = true;
+      guarded(onExit, 'exit');
+    };
+    child.once('error', () => {
+      if (child.pid === undefined) end();
+    });
+
     child.once('exit', (code, exitSignal) => {
       if (pid !== undefined) ledger.forget(pid);
-      guarded(onExit, 'exit');
+      end();
       if (code === 0 || code === null) return;
       logger.warn('[tracked-spawn] a warm agent process exited badly', {
         pid,

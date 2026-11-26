@@ -16,7 +16,6 @@ import {
   roomWorktreeSlug,
 } from '../../../core/room-worktree-name/room-worktree-name.js';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 
 const uploads = { maxFileSize: 1_024 * 1_024, maxFiles: 3, allowedTypes: ['*/*'] };
@@ -28,118 +27,38 @@ vi.mock('../../../core/config-manager.js', async (importOriginal) => ({
   },
 }));
 
-import { composeRegistry, type CapabilityRegistry } from '../../../core/capabilities/index.js';
-import { initBoundary } from '../../../../lib/boundary.js';
-import { roomsDomain } from '../../room-capabilities.js';
-import {
-  agentLookupFor,
-  createRoomHarness,
-  scriptedRunner,
-  type RoomHarness,
-} from '../../__tests__/room-test-harness.js';
 import { UNBOUND_ATTACHMENT_TTL_MS } from '../unbound-sweep.js';
-import { LocalRoomAttachmentStore } from '../local-room-attachment-store.js';
-import { setRoomAttachmentStores } from '../attachment-stores.js';
 import { projectRoomAttachments } from '../attachment-projection.js';
 import { projectedAttachmentPath } from '../attachment-paths.js';
-import type { RoomAttachmentStore } from '../room-attachment-store.js';
 import { discardStagedAttachments, readOwnFile } from '../agent-attachments.js';
 import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+import {
+  ANA_PATH,
+  anaCwd,
+  bytesHome,
+  GIF,
+  harness,
+  KAI_PATH,
+  kaiCwd,
+  moveAnaTo,
+  nothingWasWritten,
+  PNG,
+  post,
+  postFrom,
+  root,
+  roomId,
+  store,
+  storedFiles,
+  unboundRows,
+  useAttachmentWorld,
+} from './agent-attachments.fixtures.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
 // refuses every path and turn code knows no Claude transcript.
 registerClaudeCodeFacts();
 
-const ANA_PATH = '/agents/ana';
-const KAI_PATH = '/agents/kai';
-const agents = agentLookupFor({
-  [ANA_PATH]: { name: 'ana', displayName: 'Ana', responseMode: 'always' },
-  [KAI_PATH]: { name: 'kai', displayName: 'Kai', responseMode: 'always' },
-});
-
-/** The smallest thing that reads as a GIF — what a recording arrives as. */
-const GIF = Buffer.concat([Buffer.from('GIF89a', 'latin1'), Buffer.alloc(8, 3)]);
-
-/** A one-pixel PNG, so a `preview: 'image'` assertion means the bytes sniffed. */
-const PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-  'base64'
-);
-
-let root: string;
-/**
- * Ana's working directory, and Kai's — two agents' own folders under one
- * boundary. A room turn stands in the agent's home, so these are homes; the
- * room copies a turn is granted are set up in their own block below.
- */
-let anaCwd: string;
-let kaiCwd: string;
-let bytesHome: string;
-let store: RoomAttachmentStore;
-let harness: RoomHarness;
-let registry: CapabilityRegistry;
-let roomId: string;
-
-/** Invoke `rooms.post` as Ana, from Ana's own working directory. */
-function post(input: Record<string, unknown>): Promise<unknown> {
-  return registry.invoke('rooms.post', input, {
-    identity: { agentPath: ANA_PATH, displayName: 'Ana' },
-    cwd: anaCwd,
-  } as Parameters<CapabilityRegistry['invoke']>[2]);
-}
-
-/** Every UNBOUND row this room holds — what a refusal must leave empty. */
-function unboundRows() {
-  return harness.attachments.listUnboundBefore(roomId, new Date(Date.now() + 60_000).toISOString());
-}
-
-/**
- * One room's attachment directory, or `[]` when nothing ever wrote to it.
- *
- * Takes the room, because a post to a room id that does not exist stages under
- * THAT id — asserting against the real room's directory would be empty whether
- * the rollback ran or not.
- *
- * @param room - The room whose stored bytes to list. Defaults to the seeded one.
- */
-async function storedFiles(room: string = roomId): Promise<string[]> {
-  return fs.readdir(path.join(bytesHome, 'rooms', room, 'attachments')).catch(() => []);
-}
-
-/** Nothing was written: no unbound rows, no bytes, no entry. */
-async function nothingWasWritten(): Promise<void> {
-  expect(unboundRows()).toHaveLength(0);
-  expect(await storedFiles()).toEqual([]);
-  expect(harness.service.readHistory(roomId, harness.human, { limit: 10 })).toHaveLength(0);
-}
-
-beforeEach(async () => {
-  root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-agent-att-')));
-  anaCwd = path.join(root, 'ana');
-  kaiCwd = path.join(root, 'kai');
-  bytesHome = path.join(root, 'dork');
-  await fs.mkdir(anaCwd, { recursive: true });
-  await fs.mkdir(kaiCwd, { recursive: true });
-  // The boundary contains BOTH working copies, which is exactly the project-room
-  // shape: `validateBoundary` alone would let Ana name Kai's file.
-  await initBoundary(root);
-
-  store = new LocalRoomAttachmentStore(bytesHome);
-  harness = createRoomHarness({ agents, runner: scriptedRunner(() => null) });
-  setRoomAttachmentStores({ attachments: store, rows: harness.attachments });
-  registry = composeRegistry([roomsDomain], {
-    logger: { debug() {}, info() {}, warn() {}, error() {} },
-    roomDeps: { rooms: harness.service },
-  });
-  roomId = harness.service.createRoom(
-    { kind: 'channel', title: 'Backend', members: [], agentPaths: [ANA_PATH, KAI_PATH] },
-    harness.human
-  ).id;
-});
-
-afterEach(async () => {
-  await fs.rm(root, { recursive: true, force: true });
-});
+// The two agents' folders, the room and its stores, rebuilt per test (see the fixtures).
+useAttachmentWorld();
 
 describe('an agent attaches a file it made', () => {
   it('stores the bytes, binds the rows to the entry, and renders it inline', async () => {
@@ -517,7 +436,7 @@ describe('an agent attaches from its own copy of a room`s files (spec `agent-hom
     // `dorkos` agent's home — so the home CONTAINS every room's files.
     await fs.writeFile(path.join(repo, 'plan.png'), PNG);
     await fs.writeFile(path.join(kaiCopy, 'secret.png'), PNG);
-    anaCwd = root;
+    moveAnaTo(root);
 
     for (const named of [
       path.join('data', 'rooms', roomId, 'repo', 'plan.png'),
@@ -588,14 +507,6 @@ describe('an agent cannot attach a protected file (DOR-4060)', () => {
   const CANARY = 'TOKEN=dor-4060-dummy-canary';
   let home: string;
   let dork: string;
-
-  /** Invoke `rooms.post` as Ana, standing in `cwd`. */
-  function postFrom(cwd: string, input: Record<string, unknown>): Promise<unknown> {
-    return registry.invoke('rooms.post', input, {
-      identity: { agentPath: ANA_PATH, displayName: 'Ana' },
-      cwd,
-    } as Parameters<CapabilityRegistry['invoke']>[2]);
-  }
 
   beforeEach(async () => {
     home = path.join(root, 'home');

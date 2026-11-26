@@ -44,6 +44,8 @@ import { warnRedundantEnabledEntries } from '../../services/core-extensions/warn
 import { startExtensions } from '../extensions.js';
 import { onPermissionsChanged } from '../../services/core/permissions/permission-history.js';
 import { registerRuntimes } from '../runtimes.js';
+import { runtimeSettingsReader } from '../../routes/runtime-settings-reader.js';
+import { setRuntimeSettingsReader } from '../../services/core/runtime-doors/runtime-read-capabilities.js';
 import { getAgentSendService } from '../../services/extensions/agent-send/agent-send.js';
 import type { ClaimDataDirectoryResult } from './data-directory.js';
 import type { OpenConfigAndDatabaseResult } from './config-and-database.js';
@@ -268,6 +270,9 @@ export async function startTelemetryExtensionsAndRuntimes(
     // Agents' own folders hold the mini apps they made (DOR-3068).
     () => refs.meshCore?.listWithPaths().map((agent) => agent.projectPath) ?? []
   );
+
+  // The app's runtime setup reads, served by the capability mount (DOR-4978).
+  setRuntimeSettingsReader(runtimeSettingsReader());
 
   // --- Register runtime: TestModeRuntime in test mode, ClaudeCodeRuntime otherwise ---
   ({
