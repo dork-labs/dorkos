@@ -62,16 +62,18 @@ async function mountApp(): Promise<Mods> {
   const configManager = configModule.configManager;
   const { setAccountUsageStore } = await import('../../services/core/usage/current-usage-store.js');
   const configRouter = (await import('../config.js')).default;
-  const { createRuntimesRoutes } = await import('../runtimes.js');
   const { honoGroupListener } = await import('../../http/__tests__/hono-group-listener.js');
+  const { capabilityGroup } = await import('../../http/__tests__/capability-group.js');
+  const { runtimeReadsDomain, setRuntimeSettingsReader } =
+    await import('../../services/core/runtime-doors/runtime-read-capabilities.js');
+  const { runtimeSettingsReader } = await import('../runtime-settings-reader.js');
+  // Account usage is a capability the mount serves (`runtimes.account_usage`, DOR-4978).
+  setRuntimeSettingsReader(runtimeSettingsReader());
   const user = { userId: 'user_cockpit', credential: 'cookie' } as const;
-  // Both groups answer from the Hono `/api` app, as the running server routes them.
+  // Config and the usage read answer from the Hono `/api` app, as the running server routes them.
   target.mount(
     honoGroupListener(
-      [
-        { path: '/api/config', routes: configRouter },
-        { path: '/api/runtimes', routes: createRuntimesRoutes() },
-      ],
+      [{ path: '/api/config', routes: configRouter }, capabilityGroup(runtimeReadsDomain)],
       {
         before: (c, next) => {
           c.set('user', user);
