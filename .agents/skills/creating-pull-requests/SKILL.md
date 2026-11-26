@@ -136,7 +136,8 @@ exists, fold the stub's `covers:` line into it byte-for-byte and delete the stub
 mechanics: `changelog/README.md#seeded-fragments`.
 
 **The `skip-changelog` label race, and the fix that is not an empty commit.**
-`gh pr create --label skip-changelog` can lose a race: the `opened` run of
+A PR opened with `skip-changelog` on it (`scripts/open-pr.sh` adds the label at
+creation) can lose a race: the `opened` run of
 `fragment-present` reads labels from its event payload, which can be captured before
 the label attaches, so coverage runs and fails a PR whose commits are typed `feat(` or
 `fix(`. Two reflexes make it worse. A re-run replays the same stale payload (on #768,

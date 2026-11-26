@@ -43,7 +43,7 @@ Skip any step = lying, not verifying
 | --------------------- | ------------------------------------- | ---------------------------- |
 | Tests pass (full run) | `pnpm test -- --run`                  | 0 failures, exit 0           |
 | Single test file      | `pnpm vitest run <path-to-test-file>` | 0 failures, exit 0           |
-| Linter clean          | `pnpm lint`                           | 0 errors, 0 warnings         |
+| Linter clean          | `pnpm lint`                           | 0 errors (warnings fail nothing) |
 | Types check           | `pnpm typecheck`                      | 0 errors across all packages |
 | Build succeeds        | `pnpm build`                          | exit 0 for all packages      |
 
