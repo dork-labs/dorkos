@@ -76,6 +76,7 @@ import type { ServerRefs } from '../server-refs.js';
 import { appScreenRunsIn } from '../../routes/app-screen-runs.js';
 import { personSessionRequired } from '../../services/core/auth/gate-policy.js';
 import { wireConnectorSpending } from '../../services/connectors/spending/spending-port.js';
+import { connectorStoreUnavailable } from '../../routes/connector-owner-boundary.js';
 import { wireSessionListSpaceView, wireSessionRelayStep } from '../space-views.js';
 
 /** What {@link mountCoreRoutes} reads from the startup steps before it. */
@@ -224,6 +225,12 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     },
   };
   deps.connectors = connectorRoutes;
+  // The account-decision bar and the connector store's 503 for the capabilities
+  // that declare them, on their REST paths and on `/invoke` (DOR-4978).
+  deps.capabilityPorts = {
+    accountDecision: connectorOwnerBoundary,
+    prechecks: { 'connector-store': () => connectorStoreUnavailable(connectorRegistry) },
+  };
   mountedRouters.push('connectors');
 
   // Relay routes, only when Relay is enabled and started.

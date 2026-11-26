@@ -61333,170 +61333,6 @@
         },
         "operationId": "connectors.getConnections"
       },
-      "patch": {
-        "tags": [
-          "Connectors"
-        ],
-        "summary": "Rename one stable connection",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": true,
-            "name": "connectionId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "label": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200
-                  }
-                },
-                "required": [
-                  "label"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Updated lifecycle projection",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "connectionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "lifecycle": {
-                      "type": "string",
-                      "enum": [
-                        "connected",
-                        "paused",
-                        "disconnected"
-                      ]
-                    },
-                    "authenticationStatus": {
-                      "type": "string",
-                      "enum": [
-                        "active",
-                        "expired",
-                        "revoked",
-                        "pending"
-                      ]
-                    },
-                    "authoritySync": {
-                      "oneOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "status": {
-                              "type": "string",
-                              "enum": [
-                                "ready"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "status"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "status": {
-                              "type": "string",
-                              "enum": [
-                                "pending"
-                              ]
-                            },
-                            "reason": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 1000
-                            },
-                            "retryAt": {
-                              "type": "string",
-                              "format": "date-time"
-                            }
-                          },
-                          "required": [
-                            "status"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "status": {
-                              "type": "string",
-                              "enum": [
-                                "failed"
-                              ]
-                            },
-                            "reason": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 1000
-                            }
-                          },
-                          "required": [
-                            "status",
-                            "reason"
-                          ],
-                          "additionalProperties": false
-                        }
-                      ]
-                    },
-                    "externalCleanup": {
-                      "type": "string",
-                      "enum": [
-                        "not_required",
-                        "pending",
-                        "complete",
-                        "failed"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "connectionId",
-                    "lifecycle",
-                    "authenticationStatus",
-                    "authoritySync",
-                    "externalCleanup"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Connection absent or owned by someone else",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "connectors.updateConnections"
-      },
       "delete": {
         "tags": [
           "Connectors"
@@ -61641,6 +61477,262 @@
           }
         },
         "operationId": "connectors.deleteConnections"
+      },
+      "patch": {
+        "operationId": "connectors.rename_connection",
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Rename a connected account",
+        "description": "Give one connected account a new name in DorkOS. Only the owner of this DorkOS.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The connected account’s id."
+            },
+            "required": true,
+            "description": "The connected account’s id.",
+            "name": "connectionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "label"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Rename a connected account result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connectionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "lifecycle": {
+                      "type": "string",
+                      "enum": [
+                        "connected",
+                        "paused",
+                        "disconnected"
+                      ]
+                    },
+                    "authenticationStatus": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "expired",
+                        "revoked",
+                        "pending"
+                      ]
+                    },
+                    "authoritySync": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "ready"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "pending"
+                              ]
+                            },
+                            "reason": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1000
+                            },
+                            "retryAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "failed"
+                              ]
+                            },
+                            "reason": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1000
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "reason"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "externalCleanup": {
+                      "type": "string",
+                      "enum": [
+                        "not_required",
+                        "pending",
+                        "complete",
+                        "failed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "connectionId",
+                    "lifecycle",
+                    "authenticationStatus",
+                    "authoritySync",
+                    "externalCleanup"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/connectors/apps/{toolkit}/actions": {
@@ -61824,127 +61916,6 @@
           }
         },
         "operationId": "connectors.getAppsActions"
-      }
-    },
-    "/api/connectors/connections/{connectionId}/disconnect-impact": {
-      "get": {
-        "tags": [
-          "Connectors"
-        ],
-        "summary": "Preview authority affected by disconnecting a connection",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": true,
-            "name": "connectionId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Current grant, session, and subscription impact",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "connectionId": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "affectedAgentCount": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "everyAgent": {
-                      "type": "boolean"
-                    },
-                    "affectedSessionCount": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "affectedSubscriptionCount": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "pendingDeliveryCount": {
-                      "type": "integer",
-                      "minimum": 0
-                    }
-                  },
-                  "required": [
-                    "connectionId",
-                    "affectedAgentCount",
-                    "everyAgent",
-                    "affectedSessionCount",
-                    "affectedSubscriptionCount",
-                    "pendingDeliveryCount"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Connection absent or owned by someone else",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "connectors.getConnectionsDisconnectImpact"
-      }
-    },
-    "/api/connectors/connections/{connectionId}/remove": {
-      "post": {
-        "tags": [
-          "Connectors"
-        ],
-        "summary": "Remove a disconnected account from Accounts while retaining its history",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": true,
-            "name": "connectionId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Account removed from the owner inventory"
-          },
-          "404": {
-            "description": "Account absent or owned by someone else",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Account must finish disconnecting before removal",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "connectors.removeConnections"
       }
     },
     "/api/connectors/connections/{connectionId}/reconnect": {
@@ -105412,6 +105383,303 @@
           },
           "204": {
             "description": "Undo an agent’s standing yes for an MCP server result"
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/connections/{connectionId}/disconnect-impact": {
+      "get": {
+        "operationId": "connectors.disconnect_impact",
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "See what disconnecting an account would touch",
+        "description": "How many agents, chats and notification choices use one connected account, so the owner sees what disconnecting it would end. Only the owner of this DorkOS.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The connected account’s id."
+            },
+            "required": true,
+            "description": "The connected account’s id.",
+            "name": "connectionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See what disconnecting an account would touch result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connectionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "affectedAgentCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "everyAgent": {
+                      "type": "boolean"
+                    },
+                    "affectedSessionCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "affectedSubscriptionCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "pendingDeliveryCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "connectionId",
+                    "affectedAgentCount",
+                    "everyAgent",
+                    "affectedSessionCount",
+                    "affectedSubscriptionCount",
+                    "pendingDeliveryCount"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/connections/{connectionId}/remove": {
+      "post": {
+        "operationId": "connectors.remove_connection",
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Remove a disconnected account",
+        "description": "Take a disconnected account off the list, keeping its history. Only the owner of this DorkOS.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The connected account’s id."
+            },
+            "required": true,
+            "description": "The connected account’s id.",
+            "name": "connectionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Remove a disconnected account result"
           },
           "400": {
             "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",

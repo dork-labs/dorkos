@@ -6,12 +6,14 @@
  * Each wave is read from the shipped `banned-terms.json`, so a test fails if
  * the data loses the field that scopes it (`roots`, `caseSensitive`,
  * `match`), not only if the matcher breaks. Every rule has a planted hit that
- * must fire and an allowed case that must stay silent. A separate file from
+ * must fire and an allowed case that must stay silent. Also the connection
+ * routes' API copy (DOR-2804, DOR-4978). A separate file from
  * `check-vocab-gate.test.ts` because that one is at its line ratchet.
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import ts from 'typescript';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadBannedTerms, runVocabGate, scanSource, termsForPath } from '../check-vocab-gate.ts';
 
@@ -102,5 +104,80 @@ describe('waves 9-11 apply to the client only', () => {
       ['apps/client/src/layers/features/foo/A.tsx', 'OK'],
       ['apps/client/src/layers/features/foo/A.tsx', 'we'],
     ]);
+  });
+});
+
+describe("the connection routes' API copy", () => {
+  it('checks literal API errors and owner-refusal messages in connector management', () => {
+    const repoRoot = join(import.meta.dirname, '../..');
+    // The owner refusals live beside the management routes, in the boundary
+    // every connector group shares (DOR-2804).
+    const routePaths = [
+      join(repoRoot, 'apps/server/src/routes/connector-management.ts'),
+      join(repoRoot, 'apps/server/src/routes/connector-owner-boundary.ts'),
+      // The fixed problem sentences for every connection refusal (DOR-4979).
+      join(repoRoot, 'apps/server/src/routes/connector-problems.ts'),
+      // The account-decision bar's sentences, shared by the hand routes and the
+      // capability mount (DOR-4978): its own refusals, and each area's owner_only.
+      join(repoRoot, 'apps/server/src/lib/http/account-decision-bar.ts'),
+      join(repoRoot, 'packages/shared/src/capabilities.ts'),
+    ];
+    const apiCopy: string[] = [];
+
+    function staticText(node: ts.Expression | undefined): string | undefined {
+      if (node && ts.isStringLiteralLike(node)) return node.text;
+      if (node && ts.isTemplateExpression(node)) {
+        return [node.head.text, ...node.templateSpans.map((span) => span.literal.text)].join(' ');
+      }
+      return undefined;
+    }
+
+    for (const routePath of routePaths) {
+      const sourceFile = ts.createSourceFile(
+        routePath,
+        readFileSync(routePath, 'utf8'),
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TS
+      );
+      const visit = (node: ts.Node): void => {
+        // `detail` since the routes answer problem documents (DOR-4979).
+        if (ts.isPropertyAssignment(node) && node.name.getText(sourceFile) === 'detail') {
+          const text = staticText(node.initializer);
+          if (text !== undefined) apiCopy.push(text);
+        }
+        // The account-decision bar's fixed sentence lists (ACCOUNT_DECISION_*).
+        if (
+          ts.isVariableDeclaration(node) &&
+          node.name.getText(sourceFile).startsWith('ACCOUNT_DECISION_') &&
+          node.initializer
+        ) {
+          const collect = (inner: ts.Node): void => {
+            // Values only: an object's keys name the check, they are never sent.
+            if (ts.isPropertyAssignment(inner)) collect(inner.initializer);
+            else if (ts.isStringLiteralLike(inner)) apiCopy.push(inner.text);
+            else ts.forEachChild(inner, collect);
+          };
+          collect(node.initializer);
+        }
+        if (ts.isCallExpression(node) && node.expression.getText(sourceFile) === 'ownerRefusal') {
+          const text = staticText(node.arguments[2]);
+          if (text !== undefined) apiCopy.push(text);
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(sourceFile);
+    }
+
+    const copySource = apiCopy
+      .map((text, index) => `const apiCopy${index} = { message: ${JSON.stringify(text)} };`)
+      .join('\n');
+    // Every refusal sentence the connection routes can send, found as `detail`
+    // values and `ownerRefusal` sentences (DOR-4979 moved them from `error`).
+    expect(apiCopy.length).toBeGreaterThan(40);
+    expect(apiCopy).toContain(
+      'Only the owner of this DorkOS can manage the connections on its DorkOS account.'
+    );
+    expect(scanSource(routePaths[0]!, copySource, loadBannedTerms())).toEqual([]);
   });
 });

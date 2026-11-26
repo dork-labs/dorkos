@@ -205,6 +205,10 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'connectors.undo_access_change': 'local',
   'connectors.list_access_changes': 'local',
   'connectors.cancel_held_action': 'local',
+  // The owner's connection doors (DOR-4978): agents are refused; counts and lifecycle states only.
+  'connectors.disconnect_impact': 'local',
+  'connectors.rename_connection': 'local',
+  'connectors.remove_connection': 'local',
   'mcp.list': 'local',
   'mcp.add': 'local',
   'mcp.import': 'local',

@@ -249,6 +249,20 @@ for (const [match, miss] of [
     'apps/server/src/services/session/chat-rows/chat-rows-port.ts',
     'apps/server/src/services/session/chat-rowsx/chat-rows-port.ts',
   ],
+  // The bars in lib/ every door asks (DOR-4978, Security t1j): who the caller is, and who may
+  // make an account decision. Each file by name; a look-alike stays off.
+  ['apps/server/src/lib/caller-authority.ts', 'apps/server/src/lib/caller-authority-extra.ts'],
+  ['apps/server/src/lib/caller-principal.ts', 'apps/server/src/lib/caller-principals.ts'],
+  ['apps/server/src/lib/file-route-guards.ts', 'apps/server/src/lib/file-route-guard.ts'],
+  [
+    'apps/server/src/lib/person-without-session.ts',
+    'apps/server/src/lib/person-without-sessions.ts',
+  ],
+  [
+    'apps/server/src/lib/http/account-decision-bar.ts',
+    'apps/server/src/lib/http/account-decision-bars.ts',
+  ],
+  ['apps/server/src/lib/http/own-origin-write.ts', 'apps/server/src/lib/http/own-origin-writes.ts'],
 ]) {
   test(`${match} is on the main list only`, () => {
     assert.ok(existsSync(resolve(root, match)), `${match} no longer exists`);
