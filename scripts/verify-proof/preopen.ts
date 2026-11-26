@@ -3,9 +3,9 @@ import { realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 /**
- * The lighter checks `pnpm verify:preopen` runs before a PR opens (DOR-4728).
+ * The lighter checks `pnpm check preopen` runs before a PR opens (DOR-4728).
  *
- * The full `pnpm verify` runs four steps. Preopen keeps the one that catches the
+ * The full `pnpm check verify` runs four steps. Preopen keeps the one that catches the
  * most, the affected typecheck and lint, and narrows the rest:
  *
  *   test:scripts      the whole scripts suite, when the change can reach it (the
@@ -18,7 +18,7 @@ import path from 'node:path';
  *   lint:changed      ESLint on the changed files from the root, in place of `eslint .`
  *   lint:root         the full `eslint .`, when the root lint setup itself changed or
  *                     too many files did to list
- *   typecheck-lint    `pnpm verify:preopen:turbo`, the same lock, base pin and heap
+ *   typecheck-lint    `pnpm check:preopen:turbo`, the same lock, base pin and heap
  *                     as the full gate's typecheck and lint step
  *
  * It never runs the package test sweep; CI's test shards do. So a preopen proof
@@ -72,7 +72,7 @@ export function preopenBase(cwd: string): string {
       // No such ref, or no shared history: try the next one.
     }
   }
-  throw new Error('pnpm verify:preopen found no merge base with origin/main or main');
+  throw new Error('pnpm check preopen found no merge base with origin/main or main');
 }
 
 /**
@@ -109,7 +109,7 @@ export function needsScriptsSuite(root: string, changed: readonly string[]): boo
   const verdict = result.stdout?.trim();
   if (result.status === 0 && verdict === 'false') return false;
   if (result.status !== 0 || verdict !== 'true') {
-    console.warn('pnpm verify:preopen could not read the scripts scope, so it runs test:scripts');
+    console.warn('pnpm check preopen could not read the scripts scope, so it runs test:scripts');
   }
   return true;
 }
@@ -170,7 +170,7 @@ export function planPreopen(cwd: string, root: string): PreopenStep[] {
   } else if (files.length > 0) {
     steps.push({ name: 'lint:changed', args: ['exec', 'eslint', '--no-warn-ignored', ...files] });
   }
-  steps.push({ name: 'typecheck-lint', args: ['run', 'verify:preopen:turbo'] });
+  steps.push({ name: 'typecheck-lint', args: ['run', 'check:preopen:turbo'] });
   return steps;
 }
 

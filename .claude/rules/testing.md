@@ -382,15 +382,15 @@ Failures that blame the wrong thing, each measured on this machine:
   in the table's third argument; read the generated SQL to confirm every index
   survived. Two branches minting the same migration number conflict in
   `drizzle/meta/_journal.json` — roll back and regenerate against updated main.
-- **`pnpm verify` and `pnpm verify:preopen` take no arguments** — each records a
-  proof for the exact commit, so `pnpm verify --force` (or any extra argument) is
+- **`pnpm check verify` and `pnpm check preopen` take no arguments** — each records a
+  proof for the exact commit, so `pnpm check verify --force` (or any extra argument) is
   refused with exit 2 before any check runs. Forced forms that work:
   `turbo run typecheck lint --force` and `turbo run test --force -- --run`
   (they record no proof).
 - **No local check is a step before opening a PR.** When the work is done, open
   it with `scripts/open-pr.sh`; CI runs the typecheck, lint and tests, and
-  auto-merge waits for every required check. `pnpm verify:preopen` and
-  `pnpm verify` are optional, for debugging a failure (`.github/` PRs included).
+  auto-merge waits for every required check. `pnpm check preopen` and
+  `pnpm check verify` are optional, for debugging a failure (`.github/` PRs included).
 - **Targeted server vitest runs read some `@dorkos/shared` subpaths from `dist`**
   (only aliased subpaths load from source), so a source-edited schema tests stale
   until `pnpm --filter @dorkos/shared build`. CI is safe via turbo `^build`;

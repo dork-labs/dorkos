@@ -58,10 +58,10 @@ Record the result as `PORTS_BUSY`. See tier 3 for why it matters.
 
 ---
 
-## Tier 1 — `pnpm verify`
+## Tier 1 — `pnpm check verify`
 
 ```bash
-pnpm verify 2>&1 | tee "$RESULTS_DIR/$TIMESTAMP-verify.log"
+pnpm check verify 2>&1 | tee "$RESULTS_DIR/$TIMESTAMP-verify.log"
 ```
 
 What it actually is (`package.json`): `pnpm test:scripts && export TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)" && turbo run typecheck lint --affected && turbo run test --affected -- --run`. So it is **affected-only** — it is the pre-PR loop-closer, not full coverage. That is exactly why tier 2 exists and why "verify passed" is never reported as "the suite passed".
@@ -155,13 +155,13 @@ Append to the report:
 ```markdown
 ## Summary — free tiers
 
-| #   | Tier                     | Verdict | Duration | Notes                     |
-| --- | ------------------------ | ------- | -------- | ------------------------- |
-| 1   | pnpm verify (affected)   |         |          |                           |
-| 2   | Full unit suite          |         |          | executed / cache-replayed |
-| 3   | Playwright (6 projects)  |         |          | site specs excluded       |
-| 4   | Evals — core, test-mode  |         |          |                           |
-| 4b  | Evals — rooms, test-mode |         |          | 4 gating + 8 wrong-tier   |
+| #   | Tier                         | Verdict | Duration | Notes                     |
+| --- | ---------------------------- | ------- | -------- | ------------------------- |
+| 1   | pnpm check verify (affected) |         |          |                           |
+| 2   | Full unit suite              |         |          | executed / cache-replayed |
+| 3   | Playwright (6 projects)      |         |          | site specs excluded       |
+| 4   | Evals — core, test-mode      |         |          |                           |
+| 4b  | Evals — rooms, test-mode     |         |          | 4 gating + 8 wrong-tier   |
 ```
 
 Then list every failure with: tier, the failing package/spec/case name, the first real error line, and the log file path. If everything passed, say so in one sentence and move on — no victory paragraphs.
@@ -212,7 +212,7 @@ Flip `Status: IN PROGRESS` → `COMPLETE`, append the total duration, and print 
 
 ## Technical Notes
 
-- `pnpm verify` runs `verify:checks` once (`pnpm test:scripts && pnpm lint:root && export TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)" && turbo run typecheck lint --affected --summarize && turbo run test --affected --summarize -- --run`, each turbo call under the host-wide lock) and, when HEAD and the tree stayed clean and unchanged, no signal stopped it, and each turbo run summary shows every started task finished, records a proof for that exact commit (`scripts/verify-proof/cli.ts`); it takes no arguments. It also runs the shell-script test battery (`scripts/test-*.sh`), which is why it is tier 1 and not a subset of tier 2. The `export` (not a per-command env prefix) is deliberate — a prefix would cover only the first turbo call.
+- `pnpm check verify` runs `check:verify:turbo` once (`pnpm test:scripts && pnpm lint:root && export TURBO_SCM_BASE="$(git rev-parse --verify --quiet origin/main || echo main)" && turbo run typecheck lint --affected --summarize && turbo run test --affected --summarize -- --run`, each turbo call under the host-wide lock) and, when HEAD and the tree stayed clean and unchanged, no signal stopped it, and each turbo run summary shows every started task finished, records a proof for that exact commit (`scripts/verify-proof/cli.ts`); it takes no arguments. It also runs the shell-script test battery (`scripts/test-*.sh`), which is why it is tier 1 and not a subset of tier 2. The `export` (not a per-command env prefix) is deliberate — a prefix would cover only the first turbo call.
 - **Turbo's task count is not a suite count.** A `turbo test` plan folds in the `build` and `generate:api-docs` tasks each suite depends on: the full monorepo plan is 57 tasks, of which 23 are `test`. Quote both, or quote suites and say so.
 - `pnpm test` = `dotenv -- turbo test`; the `-- --run` passes vitest's non-watch flag through.
 - A stale `@dorkos/shared` dist produces false-red type errors outside a running dev session — if tier 1 fails with import/type errors in packages you did not touch, run `pnpm --filter @dorkos/shared build` and re-run before reporting a FAIL. A `TS6053` on a `@dorkos/typescript-config` extends means stale `node_modules` — run `pnpm install`.

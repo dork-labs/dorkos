@@ -38,6 +38,8 @@ export const REPO_WIDE_SUITES = [
   // OpenAPI registry (DOR-4996).
   '__tests__/check-api-lint.test.ts',
   '__tests__/check-boundary.test.ts',
+  // Reads package.json, lefthook.yml and ci/required-checks.json (DOR-4947).
+  '__tests__/check-cli.test.ts',
   // Reads apps/server/src/services, the side map and the computer wall's baseline (DOR-5158).
   '__tests__/check-computer-wall.test.ts',
   '__tests__/check-design-tokens.test.ts',

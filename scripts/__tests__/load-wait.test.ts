@@ -135,7 +135,7 @@ describe('the entry points are wired', () => {
     expect(text).toContain("globalSetup: ['scripts/lib/load-wait.ts']");
   });
 
-  it.each(['test', 'verify:checks'])(
+  it.each(['test', 'check:verify:turbo'])(
     'the root `%s` script runs its tests through --tests',
     (name) => {
       const pkg = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {

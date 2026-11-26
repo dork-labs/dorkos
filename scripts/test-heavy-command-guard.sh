@@ -220,12 +220,12 @@ block pnpm vitest run apps/server/src/routes 2>&1
 allow pnpm heavy pnpm vitest run
 allow pnpm heavy turbo build
 allow bash scripts/heavy-run-lock.sh --job turbo build
-allow bash scripts/heavy-run-lock.sh --label pr1-verify pnpm verify
+allow bash scripts/heavy-run-lock.sh --label pr1-verify pnpm check verify
 allow pnpm build
 allow pnpm test -- --run
 allow pnpm typecheck
-allow pnpm verify
-allow pnpm verify:preopen
+allow pnpm check verify
+allow pnpm check preopen
 # --- light turbo and everything else. ---
 allow turbo dev
 allow turbo watch build
