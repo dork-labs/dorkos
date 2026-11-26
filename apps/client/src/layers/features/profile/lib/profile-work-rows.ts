@@ -75,8 +75,9 @@ function heartbeatRow(ctx: ProfileRowsContext): ProfileRowModel {
 }
 
 /**
- * Work: what this agent has been doing — its conversations, its schedules, its
- * promises, how it wakes, and every action on record.
+ * Work: what this agent has been doing — its conversations, the pull requests
+ * they worked on, its schedules, its promises, how it wakes, and every action
+ * on record.
  *
  * The same rows for an agent you manage and for DorkBot — what DorkBot
  * withholds is its identity, not its work.
@@ -94,6 +95,15 @@ export function workFold(ctx: ProfileRowsContext): ProfileRowGroup {
       value: countValue(facts?.sessions?.count, 'chat', 'chats'),
       meta: lastWords(facts?.sessions?.newestAt ?? null),
       page: 'sessions',
+    },
+    // The pull requests its chats opened or worked on (W5). No count: the read
+    // pages, and a first page's size is not how many there are.
+    {
+      id: 'pull-requests',
+      kind: 'nav',
+      label: 'Pull requests',
+      value: null,
+      page: 'pull-requests',
     },
   ];
   // Not "0 scheduled" and not a locked row: an install with the tasks tool off

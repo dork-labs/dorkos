@@ -409,6 +409,17 @@ describe('the one button', () => {
   });
 });
 
+/** The Work fold's rows, the same for an agent you manage and for DorkBot. */
+const WORK_FOLD_ROWS = [
+  'sessions',
+  'pull-requests',
+  'tasks',
+  'todos',
+  'work-queue',
+  'heartbeat',
+  'activity',
+];
+
 describe('the rows', () => {
   it('draws your four fields and what you belong to, as controls', async () => {
     await renderProfile(SELF);
@@ -467,12 +478,7 @@ describe('the rows', () => {
       'level',
       'reports-to',
       'rooms',
-      'sessions',
-      'tasks',
-      'todos',
-      'work-queue',
-      'heartbeat',
-      'activity',
+      ...WORK_FOLD_ROWS,
       'personality',
       'folder',
       'notifications',
@@ -558,12 +564,7 @@ describe('the rows', () => {
       'runs-on',
       'level',
       'rooms',
-      'sessions',
-      'tasks',
-      'todos',
-      'work-queue',
-      'heartbeat',
-      'activity',
+      ...WORK_FOLD_ROWS,
       'personality',
       'notifications',
       'skills',
