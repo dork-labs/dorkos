@@ -285,6 +285,7 @@ describe('a person reads an area agents are Blocked in (DOR-4978)', () => {
       'heldWifiOwner',
       'ownerOrNoAccount',
       'ownerProven',
+      'personOnRestPath',
     ]);
     expect(JSON.stringify(context)).not.toMatch(/sign-in:|address:|readGroup/);
   });

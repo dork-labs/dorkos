@@ -8,6 +8,7 @@
  * | `work-graph.chat_tree`    | `chat_tree`      | `GET /api/sessions/{id}/tree`     | A chat's ancestors and the chats below it        |
  * | `work-graph.agent_work`   | `work_for_agent` | `GET /api/agents/{agentId}/work`  | The PRs and tickets an agent's chats are linked to |
  * | `work-graph.chat_work`    | `work_for_chat`  | `GET /api/sessions/{id}/work`     | The same, for a chat and the chats below it      |
+ * | `work-graph.work_item_chats` | `work_item_chats` | `GET /api/work-items/chats?ref=` | The chats that claimed a ticket or PR, and when (DOR-4972) |
  *
  * **Doors that take a chat id (step 10's D13 census, PR #4460 §8.7):**
  * `work-graph.chat_tree` and `work-graph.chat_work` take one in their path, and
@@ -48,101 +49,34 @@ import {
 import {
   CapabilityToolError,
   defineCapability,
-  type CapabilityDeps,
   type CapabilityDomain,
 } from '../../core/capabilities/capability-definition.js';
 import type { CapabilityInvocationContext } from '../../core/capabilities/index.js';
 import type { AuditReader } from '../../audit/visibility.js';
-import {
-  chatStartersOf,
-  getWorkGraphDb,
-  getWorkLinkStore,
-  LINEAGE_MAX_DEPTH,
-  readChatLineage,
-  readLineageReads,
-} from '../index.js';
+import { chatStartersOf, LINEAGE_MAX_DEPTH, readChatLineage, readLineageReads } from '../index.js';
 import { LineageReads } from '../lineage-reads.js';
 import { readAgentChats } from './agent-chats.js';
 import { agentChatIds } from './chat-bindings.js';
 import { chatIdsOf, filterChatTree } from './chat-tree.js';
 import { idInput, idOf } from './id-input.js';
 import { readWork } from './work-for.js';
+import {
+  cursorInput,
+  limitInput,
+  READ_TOOL,
+  requireAuditDeps,
+  workGraphDb,
+  type AuditDeps,
+  type WorkGraphReadPorts,
+} from './read-tool-parts.js';
+import { workItemChatsCapability } from './work-item-chats-capability.js';
 
-type AuditDeps = NonNullable<CapabilityDeps['auditDeps']>;
-
-/**
- * What these reads take from other domains, passed in by the composition root
- * (`core/self-description/dorkos-registry.ts`), so the work graph imports none
- * of them (the services import rule, DOR-4924).
- */
-export interface WorkGraphReadPorts {
-  /** Who is reading, from the call's context: the audit read side's `readerFor`. */
-  readerOf: (
-    audit: Pick<AuditDeps, 'accounts'>,
-    context?: CapabilityInvocationContext
-  ) => AuditReader;
-  /** The chats among these the reader may read: the audit read side's one rule. */
-  readable: (reader: AuditReader, chatIds: readonly string[]) => ReadonlySet<string>;
-  /** A chat's title, or null. */
-  titleOf: (chatId: string) => Promise<string | null>;
-  /** Whether a chat holds outside words a title of it may quote (DOR-3969). */
-  holdsOutsideText: (chatId: string) => boolean;
-  /** Mark the calling turn as one that read outside words, from a chat. */
-  markOutside: (context: CapabilityInvocationContext) => void;
-}
-
-/**
- * The audit deps these reads take their reader and roster from, throwing if
- * the registry was composed without them (a wiring bug, caught at boot).
- *
- * @param deps - The capability bag.
- */
-function requireAuditDeps(deps: CapabilityDeps): AuditDeps {
-  if (!deps.auditDeps) {
-    throw new Error('Work graph read invoked without auditDeps in the registry bag.');
-  }
-  return deps.auditDeps;
-}
-
-/** Both MCP servers, read-only, safe to repeat. */
-const READ_TOOL = {
-  servers: ['in-session', 'external'] as ('in-session' | 'external')[],
-  annotations: { idempotentHint: true },
-};
-
-/** The page cursor field. */
-const cursorInput = z
-  .string()
-  .min(1)
-  .max(4096)
-  .optional()
-  .describe('The `nextCursor` of the page before; leave it out for the first page.');
-
-/** A page size field, 1 to `max`, 50 when left out. */
-function limitInput(max: number) {
-  return z.coerce
-    .number()
-    .int()
-    .min(1)
-    .max(max)
-    .default(50)
-    .describe(`How many this page holds, 1 to ${max}.`);
-}
+export type { WorkGraphReadPorts } from './read-tool-parts.js';
 
 /** The kind field of the work reads. */
 const kindInput = WorkKindSchema.optional().describe(
   'Only pull requests (`pr`) or only tickets (`ticket`); both when left out.'
 );
-
-/** Fail with "still starting" until startup installs the work graph. */
-function workGraphDb() {
-  const db = getWorkGraphDb();
-  const links = getWorkLinkStore();
-  if (!db || !links) {
-    throw new CapabilityToolError({ code: 'NOT_READY', error: 'DorkOS is still starting.' });
-  }
-  return { db, links };
-}
 
 /** The registered agent's folder, or a not-found refusal. */
 function agentFolder(audit: AuditDeps, agentInput: string): string {
@@ -391,6 +325,7 @@ export function createWorkGraphReadDomain(ports: WorkGraphReadPorts): Capability
           );
         },
       }),
+      workItemChatsCapability(ports),
     ],
   };
 }

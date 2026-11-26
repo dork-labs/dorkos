@@ -224,6 +224,7 @@
   "GET /api/todo-promises": "todos.view_promises",
   "GET /api/todos": "todos.view_list",
   "GET /api/todos/{id}": "todos.view_card",
+  "GET /api/work-items/chats": "work-graph.work_item_chats",
   "GET /api/workbench/serve/{token}/{splat}": "workbench.getServe",
   "GET /api/workspaces": "workspaces.list",
   "GET /api/workspaces/scan": "workspaces.scan",

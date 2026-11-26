@@ -322,6 +322,8 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'work-graph.chat_tree': 'local',
   'work-graph.agent_work': 'local',
   'work-graph.chat_work': 'local',
+  // Who claimed a ticket or PR, and when (DOR-4972): chat ids, times and fixed end words.
+  'work-graph.work_item_chats': 'local',
   // A chat's runtime id and its stored settings: DorkOS's own values, never a chat's words (DOR-4978).
   'sessions.get_runtime_type': 'local',
   'sessions.get_settings': 'local',

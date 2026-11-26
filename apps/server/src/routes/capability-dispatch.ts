@@ -295,7 +295,7 @@ async function invokeAs(
       ...(approvalToken ? { approvalToken } : {}),
       ...(person ? { person } : {}),
       ...(call.accountDecision ? { accountDecision: call.accountDecision } : {}),
-      request: capabilityRequestFacts(facts),
+      request: capabilityRequestFacts(facts, restRead && person !== undefined),
       retryChannel: 'http-header',
       ...(confirmed !== undefined ? { confirmed } : {}),
     });
@@ -339,9 +339,13 @@ async function invokeAs(
  * so it must run only for a handler that actually asks, as the hand routes did.
  *
  * @param facts - The request's facts.
+ * @param personOnRestPath - Whether the capability's own REST path minted a person proof for this read.
  * @returns The derived answers; no header value is in them.
  */
-export function capabilityRequestFacts(facts: RequestFacts): CapabilityRequestFacts {
+export function capabilityRequestFacts(
+  facts: RequestFacts,
+  personOnRestPath = false
+): CapabilityRequestFacts {
   let agentBar: boolean | undefined;
   let accountOwner: boolean | undefined;
   let ownerProven: boolean | undefined;
@@ -375,6 +379,7 @@ export function capabilityRequestFacts(facts: RequestFacts): CapabilityRequestFa
     get ownerOrNoAccount() {
       return isDocOperatorAccount(facts.user);
     },
+    personOnRestPath,
   };
 }
 

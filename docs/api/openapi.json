@@ -114116,6 +114116,275 @@
         }
       }
     },
+    "/api/work-items/chats": {
+      "get": {
+        "operationId": "work-graph.work_item_chats",
+        "tags": [
+          "Work-graph"
+        ],
+        "summary": "See who worked on a ticket or pull request",
+        "description": "The chats that claimed one ticket or pull request, and when: each span with the chat, when it was claimed, when it ended and how (released, lapsed, handed over), or still held. Every agent’s chats are listed. A chat you may not read shows only the days its span began and ended. ref is a ticket (DOR-1234) or a pull request (owner/repo#42 or PR #42). Page with `limit` and the returned `nextCursor`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300,
+              "description": "The ticket (DOR-1234) or pull request (owner/repo#42 or PR #42)."
+            },
+            "required": true,
+            "description": "The ticket (DOR-1234) or pull request (owner/repo#42 or PR #42).",
+            "name": "ref",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See who worked on a ticket or pull request result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ref": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "pr",
+                            "ticket"
+                          ]
+                        },
+                        "id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "id"
+                      ]
+                    },
+                    "spans": {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "relation": {
+                                "type": "string",
+                                "enum": [
+                                  "claims"
+                                ]
+                              },
+                              "chatId": {
+                                "type": "string"
+                              },
+                              "claimedAt": {
+                                "type": "string"
+                              },
+                              "endedAt": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "endedBy": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "enum": [
+                                  "released",
+                                  "lapsed",
+                                  "handed-over",
+                                  "unknown",
+                                  null
+                                ]
+                              }
+                            },
+                            "required": [
+                              "relation",
+                              "chatId",
+                              "claimedAt",
+                              "endedAt",
+                              "endedBy"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "relation": {
+                                "type": "string",
+                                "enum": [
+                                  "claims"
+                                ]
+                              },
+                              "startDay": {
+                                "type": "string"
+                              },
+                              "endDay": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "relation",
+                              "startDay",
+                              "endDay"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ref",
+                    "spans",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/agents/{agentId}/pause": {
       "post": {
         "operationId": "agent.pause",
