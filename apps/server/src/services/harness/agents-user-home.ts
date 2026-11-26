@@ -3,7 +3,7 @@
  * tools read, and the only directory outside DorkOS's own data folder that
  * Harness Sync at global scope ever writes a link into.
  *
- * This is the sixth carve-out from the `os.homedir()` ban (Hard Rule 3,
+ * This is a carve-out from the `os.homedir()` ban (Hard Rule 3,
  * `.claude/rules/dork-home.md`), and it is the same shape as the three beside it:
  * it mirrors ANOTHER program's documented resolution of its own directory 1:1,
  * and resolves nothing of DorkOS's own. `claude-config-dir.ts` mirrors the Claude

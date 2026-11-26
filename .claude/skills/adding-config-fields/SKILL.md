@@ -244,6 +244,8 @@ Add a row to the Settings Reference table at the top of the file:
 | `server.timeout` | integer (1000--300000) | `30000` | Request timeout in milliseconds before aborting a long-running agent call |
 ```
 
+`scripts/__tests__/config-guide-census.test.ts` fails on a schema leaf no row names (a row for an object covers its members; lists and records take one row).
+
 If the field warrants per-setting narrative (like `server.port` does), add a `### server.timeout` section with a `dorkos config set` example and any precedence notes.
 
 ### 7. Mirror the doc to `docs/getting-started/configuration.mdx`
