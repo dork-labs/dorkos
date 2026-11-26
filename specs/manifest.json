@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "261125-235613",
+      "slug": "cloud-agent-computers",
+      "title": "Cloud agent computers: started for work and stopped when idle, linked by the home for its owner, the computer entry they boot, OpenCode on DorkOS's own AI, the first computer and DorkBot, and a verdict for every older step",
+      "created": "2026-11-25",
+      "status": "specified",
+      "linearIssue": "DOR-2932"
+    },
+    {
       "id": "261125-225407",
       "slug": "your-dorkos-on-the-web",
       "title": "Your DorkOS on the web, re-baselined: one window onto your homes, the link the Mac controls, one list by home, the notice, search across homes, the cloud home's wake, and a verdict for every step of the three older plans",
