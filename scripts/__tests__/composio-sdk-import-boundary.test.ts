@@ -46,7 +46,7 @@ describe('Composio SDK import boundary', () => {
         '*.mjs',
         '*.cjs',
       ],
-      { encoding: 'utf8' }
+      { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
     )
       .trim()
       .split('\n')
