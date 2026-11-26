@@ -32,7 +32,6 @@ import { createRouteContext } from './marketplace/context.js';
 import { mountCacheRoutes } from './marketplace/cache.js';
 import { mountDevLinkRoutes } from './marketplace/dev-links.js';
 import { mountHeldBackRoutes } from './marketplace/held-back.js';
-import { mountInstalledRoutes } from './marketplace/installed.js';
 import { mountPackageActionRoutes } from './marketplace/package-actions.js';
 import { mountPackageRoutes } from './marketplace/packages.js';
 import { mountSourceRoutes } from './marketplace/sources.js';
@@ -119,26 +118,24 @@ export type MarketplaceRoutes = Hono<ApiEnv>;
 /**
  * Create the marketplace management routes.
  *
- * Registers the following endpoints under the caller-chosen mount point
- * (typically `/api/marketplace`):
+ * Registers the marketplace's writes, and one package's detail, under the
+ * caller-chosen mount point (typically `/api/marketplace`). The reads
+ * (`GET /sources`, `/cache`, `/packages`, `/installed`, `/installed/:name`,
+ * `/updates`, `/held-back`, `/dev-links`) are capabilities the mount serves
+ * (`services/marketplace/doors/marketplace-read-capabilities.ts`, DOR-4978).
  *
- * - `GET /sources` — list configured marketplace sources
  * - `POST /sources` — add a new source and fetch its listing once (operator-only; agents are refused)
  * - `DELETE /sources/:name` — remove a source (operator-only; agents are refused)
  * - `POST /sources/:name/refresh` — force refetch of a source's marketplace.json
- * - `GET /installed` — list installed packages across scopes (or one project via `?projectPath`)
- * - `GET /installed/:name` — every installation of a package, one entry per scope
- * - `GET /cache` — cache status
  * - `DELETE /cache` — clear cache
- * - `GET /packages` — aggregate packages from every enabled marketplace
+ * - `POST /cache/prune` — remove cached packages no install needs
  * - `GET /packages/:name` — fetch and validate a single package
  * - `POST /packages/:name/preview` — build a permission preview without installing
  * - `POST /packages/:name/install` — install a package
  * - `POST /packages/:name/uninstall` — uninstall a package
  * - `POST /packages/:name/update` — advisory update check of one package
- * - `GET /updates` — advisory update check of every installation in view, with what each new version runs
  * - `POST /updates` — reinstall exactly the installations a person was shown, held to what they saw
- * - `GET /dev-links` — every dev link and whether it is in force
+ * - `POST /held-back/:name/review`, `/decision` — raise a held-back package's card again; a person's decision
  * - `POST /dev-links/preview` — what linking a folder would do
  * - `POST /dev-links` — run a package from a folder (gated by `marketplace.link`)
  * - `POST /dev-links/:name/unlink` — switch back (the person only)
@@ -152,7 +149,6 @@ export function createMarketplaceRoutes(deps: MarketplaceRouteDeps): Marketplace
   // Registered in this order. No two groups share a path, so the order changes
   // no answer.
   mountSourceRoutes(app, deps, ctx);
-  mountInstalledRoutes(app, deps, ctx);
   mountCacheRoutes(app, deps, ctx);
   mountPackageRoutes(app, deps, ctx);
   mountPackageActionRoutes(app, deps, ctx);

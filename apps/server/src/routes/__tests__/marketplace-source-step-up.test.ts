@@ -10,6 +10,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMarketplaceRoutes, type MarketplaceRouteDeps } from '../marketplace.js';
+import { marketplaceReadsDomain } from '../../services/marketplace/doors/marketplace-read-capabilities.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
+import type { MarketplaceMcpDeps } from '../../services/marketplace-mcp/marketplace-mcp-tools.js';
 import { MarketplaceSourceManager } from '../../services/marketplace/sources/marketplace-source-manager.js';
 import { MarketplaceCache } from '../../services/marketplace/cache/marketplace-cache.js';
 import { frontDoorStepUpHarness } from './front-door-step-up-harness.js';
@@ -20,13 +23,18 @@ describe('package source confirmation', () => {
   const dorkHome = mkdtempSync(join(tmpdir(), 'marketplace-source-step-up-'));
   const sourceManager = new MarketplaceSourceManager(dorkHome);
   const add = vi.spyOn(sourceManager, 'add');
+  const cache = new MarketplaceCache(dorkHome);
   const owner = frontDoorStepUpHarness(() => [
+    // The source list is served by the capability mount (DOR-4978).
+    capabilityGroup(marketplaceReadsDomain, {
+      marketplaceDeps: { dorkHome, sourceManager, cache } as unknown as MarketplaceMcpDeps,
+    }),
     {
       path: '/api/marketplace',
       routes: createMarketplaceRoutes({
         dorkHome,
         sourceManager,
-        cache: new MarketplaceCache(dorkHome),
+        cache,
         fetcher: { fetchMarketplaceJson: vi.fn(async () => ({ name: 'northwind', plugins: [] })) },
         updateFlow: { clearMemos: vi.fn() },
         capabilityRegistry: () => undefined,

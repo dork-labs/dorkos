@@ -115,7 +115,7 @@ function shippedSources(): string[] {
   return execFileSync(
     'git',
     ['ls-files', '--cached', '--others', '--exclude-standard', '--', '*.ts', '*.tsx', '*.mts'],
-    { cwd: ROOT, encoding: 'utf8' }
+    { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
   )
     .trim()
     .split('\n')
