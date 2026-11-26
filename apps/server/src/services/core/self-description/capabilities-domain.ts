@@ -19,7 +19,7 @@
  *
  * @module services/core/self-description/capabilities-domain
  */
-import { defineCapability, type CapabilityDomain } from '../capabilities/index.js';
+import { defineCapability, type CapabilityDomain } from '../capabilities/capability-definition.js';
 import type { CapabilityDeps } from '../capabilities/index.js';
 import type { CapabilityRegistry } from '../capabilities/index.js';
 import {

@@ -32,7 +32,7 @@ import { logger } from '../lib/logger.js';
 import { classifyRequest, type RequestClass } from '../lib/request-classifier.js';
 import { currentServerRole } from '../lib/server-role.js';
 import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
 import { getAuth, readOwnerAccount, type Auth } from '../services/core/auth/index.js';
 import {

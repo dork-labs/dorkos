@@ -9,6 +9,7 @@
  * @vitest-environment node
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { resolveAgentIdentityFromHeaders } from '../../../../middleware/agent-identity.js';
 
 type Role = 'computer' | 'hub' | 'agent-computer';
 const role = vi.hoisted(() => ({ value: 'agent-computer' as Role }));
@@ -325,10 +326,12 @@ describe('/mcp on an agent computer', () => {
 describe('streams and exposure on an agent computer', () => {
   it('refuses a stream upgrade from this machine', async () => {
     const req = { headers: LOCAL.headers, socket: { remoteAddress: '127.0.0.1' } };
-    const decision = await authorizeStreamUpgrade(req as never);
+    const decision = await authorizeStreamUpgrade(req as never, resolveAgentIdentityFromHeaders);
     expect(decision.ok).toBe(false);
     role.value = 'computer';
-    expect((await authorizeStreamUpgrade(req as never)).ok).toBe(true);
+    expect((await authorizeStreamUpgrade(req as never, resolveAgentIdentityFromHeaders)).ok).toBe(
+      true
+    );
   });
 
   it('never allows a tunnel, Wi-Fi access or managed remote access', () => {

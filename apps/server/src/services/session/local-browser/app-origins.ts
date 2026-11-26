@@ -6,9 +6,9 @@ import {
   getStaticLocalOrigins,
   getTunnelHosts,
   isLoopbackHost,
+  parseTrustedHosts,
   resolveAuthTrustedOrigins,
 } from '../../../lib/trusted-origins.js';
-import { parseTrustedHosts } from '../../../middleware/host-guard.js';
 
 /** Marks a list entry that matches its host on any scheme and any port. */
 const ANY_PORT = 'dorkos-any-port:';

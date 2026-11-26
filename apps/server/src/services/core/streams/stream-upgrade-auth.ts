@@ -17,10 +17,11 @@
  *    relayed caller is refused. None of the session
  *    gate's exemptions apply here: they cover sign-in, the health probe and the
  *    signed-token workbench routes, none of which is a durable stream.
- * 2. **The attribution.** `X-DorkOS-Agent` is resolved the same additive way the
- *    middleware resolves it — never a rejection, only an identity when the token
- *    is good — because a room stream is membership-scoped and an agent reading
- *    one must resolve to itself rather than to the operator.
+ * 2. **The attribution.** `X-DorkOS-Agent` is resolved by the middleware's own
+ *    resolver, passed in ({@link ResolveAgentIdentity}) — never a rejection, only
+ *    an identity when the token is good — because a room stream is
+ *    membership-scoped and an agent reading one must resolve to itself rather
+ *    than to the operator.
  *
  * The result carries the same two identity fields a request's facts do
  * (`http/request-facts.ts`), so a socket handler passes
@@ -44,8 +45,16 @@ import { ingressOf } from '../remote/ingress-mark.js';
 import { verifyRequestAuth, type RequestUser } from '../auth/session-gate.js';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import type { RequestFacts } from '../../../http/request-facts.js';
-import { resolveAgentIdentityFromHeaders } from '../../../middleware/agent-identity.js';
 import type { UpgradeDecision } from './upgrade-router.js';
+
+/**
+ * Resolve `X-DorkOS-Agent` from an upgrade's headers: the chain's own resolver
+ * (`middleware/agent-identity.ts`), passed in by the composition root so this
+ * service imports no middleware (DOR-4922). Never rejects and never throws.
+ */
+export type ResolveAgentIdentity = (
+  headers: IncomingHttpHeaders
+) => Promise<AgentIdentity | undefined>;
 
 /**
  * The identity fields the chain resolves for a request (the session gate's
@@ -99,10 +108,12 @@ export function upgradeFacts(
  * Run the durable-stream credential gate over an upgrade.
  *
  * @param req - The upgrade request: headers, socket and its ingress mark.
+ * @param resolveAgentIdentity - Resolves `X-DorkOS-Agent`; see {@link ResolveAgentIdentity}.
  * @returns The resolved identity, or a `401` refusal for the router to write.
  */
 export async function authorizeStreamUpgrade(
-  req: Pick<IncomingMessage, 'headers' | 'socket'>
+  req: Pick<IncomingMessage, 'headers' | 'socket'>,
+  resolveAgentIdentity: ResolveAgentIdentity
 ): Promise<AuthorizedStreamUpgrade | Extract<UpgradeDecision, { ok: false }>> {
   const locals: StreamUpgradeLocals = {};
   const { headers } = req;
@@ -120,7 +131,7 @@ export async function authorizeStreamUpgrade(
     locals.user = user;
   }
 
-  const agentIdentity = await resolveAgentIdentityFromHeaders(headers);
+  const agentIdentity = await resolveAgentIdentity(headers);
   if (agentIdentity) locals.agentIdentity = agentIdentity;
 
   return { ok: true, locals };

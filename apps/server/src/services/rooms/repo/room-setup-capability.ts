@@ -11,7 +11,7 @@
  */
 import { z } from 'zod';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
-import { defineCapability } from '../../core/capabilities/index.js';
+import { defineCapability } from '../../core/capabilities/capability-definition.js';
 import type { AuthorRecord } from '../author-registry.js';
 import {
   answeringAsync,

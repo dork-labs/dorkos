@@ -22,7 +22,7 @@ import { problem, readJsonBody } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import { corsAllowsOrigin } from '../http/cors-policy.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 
 /** The header a call between apps carries its token in. */
 export const CALLER_TOKEN_HEADER = 'x-dorkos-caller-token';

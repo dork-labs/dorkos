@@ -45,6 +45,7 @@ import {
   closeRemoteStreams,
   resetRemoteStreamsForTests,
 } from '../../../../middleware/remote-access-switch.js';
+import { upgradeGuards } from '../../../../startup/upgrade-guards.js';
 
 const gate = vi.mocked(authorizeStreamUpgrade);
 const loginEnabled = (enabled: boolean): void => {
@@ -76,7 +77,7 @@ let port: number;
 /** Stand up a server with `routes` attached and return its port. */
 async function listen(routes: UpgradeRoute[]): Promise<void> {
   server = createServer((_req, res) => res.end('ok'));
-  attachUpgradeRouter(server, routes, new MainRequestAdmission());
+  attachUpgradeRouter(server, routes, new MainRequestAdmission(), upgradeGuards);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   port = (server.address() as AddressInfo).port;
 }

@@ -61,7 +61,7 @@ import {
 } from '../agent-identity/agent-identity-service.js';
 import { agentComputerRouteRefusal, type AgentComputerWriteRefusal } from './agent-writes.js';
 
-/** The header an agent presents its identity token in (`middleware/agent-identity.ts`). */
+/** The header an agent presents its identity token in (`lib/http/agent-identity-header.ts`). */
 const AGENT_IDENTITY_HEADER = 'x-dorkos-agent';
 
 /** Path prefixes an agent computer refuses to every caller. */

@@ -34,13 +34,13 @@ import {
   type TranscriptPage,
 } from '@dorkos/shared/audit-schemas';
 import { RunningChatsResponseSchema } from '@dorkos/shared/running-chats';
+import { type CapabilityInvocationContext } from '../core/capabilities/index.js';
 import {
   CapabilityToolError,
   defineCapability,
   type CapabilityDeps,
   type CapabilityDomain,
-  type CapabilityInvocationContext,
-} from '../core/capabilities/index.js';
+} from '../core/capabilities/capability-definition.js';
 import {
   listRunningChats,
   runningChatsHandOutsideWords,

@@ -35,12 +35,12 @@ import {
 import { CHAT_MESSAGE_MAX } from '@dorkos/shared/chat-client-id';
 import { dorkReferenceOrNull } from '@dorkos/shared/dork-ref';
 import { chatRefMarkdownLink } from '@dorkos/shared/session-link';
+import { type CapabilityHandlerContext } from '../../core/capabilities/index.js';
 import {
   defineCapability,
   type CapabilityDeps,
   type CapabilityDomain,
-  type CapabilityHandlerContext,
-} from '../../core/capabilities/index.js';
+} from '../../core/capabilities/capability-definition.js';
 import {
   CHAT_STOP_REASON_MAX,
   CHAT_SUMMARY_MAX,

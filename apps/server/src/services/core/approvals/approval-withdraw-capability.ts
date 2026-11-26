@@ -11,12 +11,12 @@
  */
 import { z } from 'zod';
 import type { Db } from '@dorkos/db';
+import { type CapabilityHandlerContext } from '../capabilities/index.js';
 import {
   defineCapability,
   type CapabilityDeps,
   type CapabilityDomain,
-  type CapabilityHandlerContext,
-} from '../capabilities/index.js';
+} from '../capabilities/capability-definition.js';
 import { CapabilityToolError } from '../capabilities/mcp-envelope.js';
 import { WITHDRAW_REFUSALS, withdrawOwnApproval } from './approval-withdrawal.js';
 

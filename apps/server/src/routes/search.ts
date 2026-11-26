@@ -55,7 +55,7 @@ import type { Db } from '@dorkos/db';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import { isOwnerRecord } from '../services/rooms/author-registry.js';
 import { getRoomService, type AuthorRecord } from '../services/rooms/index.js';

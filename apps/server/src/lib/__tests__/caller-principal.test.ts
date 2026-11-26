@@ -14,7 +14,7 @@ import { describe, it, expect } from 'vitest';
 import type { RequestFacts } from '../../http/request-facts.js';
 
 import { readCallerPrincipal } from '../caller-principal.js';
-import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
+import { AGENT_IDENTITY_HEADER } from '../http/agent-identity-header.js';
 
 /** The headers a caller sent. */
 function requestWith(headers: Record<string, string> = {}) {

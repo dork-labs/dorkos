@@ -14,13 +14,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ enabled: true, remoteAccess: true }));
 vi.mock('../../config-manager.js', () => ({
   configManager: {
-    get: vi.fn((key: string) =>
-      key === 'sessionRelay'
-        ? { enabled: state.enabled }
-        : key === 'remoteAccess'
-          ? { enabled: state.remoteAccess }
-          : undefined
-    ),
+    get: vi.fn((key: string) => (key === 'sessionRelay' ? { enabled: state.enabled } : undefined)),
   },
 }));
 
@@ -33,6 +27,7 @@ import {
   sessionRelayPresence,
   sessionRelayEnabled,
   watchSessionRelaySwitch,
+  wireSessionRelay,
 } from '../index.js';
 import { RelayDialer } from '../relay-dialer.js';
 import { readRelayPin, withRelayPinLock, writeRelayPin, type RelayPin } from '../pin-store.js';
@@ -52,6 +47,12 @@ const PIN: RelayPin = {
 beforeEach(() => {
   state.enabled = true;
   state.remoteAccess = true;
+  wireSessionRelay({
+    meshCore: () => undefined,
+    origins: {},
+    roomSessionPlace: () => undefined,
+    remoteAccessOn: () => state.remoteAccess,
+  });
 });
 
 describe('the pin the dialer may use', () => {

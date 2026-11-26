@@ -24,7 +24,8 @@ import {
   type TopologyView,
 } from '@dorkos/shared/mesh-schemas';
 
-import { defineCapability, type CapabilityHandlerContext } from '../../core/capabilities/index.js';
+import { type CapabilityHandlerContext } from '../../core/capabilities/index.js';
+import { defineCapability } from '../../core/capabilities/capability-definition.js';
 import { agentIsAsking, meshOf, type MeshCapabilityDeps } from './mesh-capability-deps.js';
 
 /**

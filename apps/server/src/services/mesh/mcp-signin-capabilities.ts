@@ -13,7 +13,10 @@
  */
 import { z } from 'zod';
 
-import { defineCapability, type CapabilityDefinition } from '../core/capabilities/index.js';
+import {
+  defineCapability,
+  type CapabilityDefinition,
+} from '../core/capabilities/capability-definition.js';
 import { CapabilityToolError } from '../core/capabilities/mcp-envelope.js';
 import { mcpOAuthCustodyDisclosure } from './agent-mcp-oauth-service.js';
 import { McpSigninStartError } from './mcp-signin-failure.js';
