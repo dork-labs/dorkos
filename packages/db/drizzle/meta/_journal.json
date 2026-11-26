@@ -1562,6 +1562,13 @@
       "when": 1795633553153,
       "tag": "20261125190553_dor5264_work_link_turn_marks",
       "breakpoints": true
+    },
+    {
+      "idx": 223,
+      "version": "6",
+      "when": 1795728922562,
+      "tag": "20261126213522_dor4972_claim_spans",
+      "breakpoints": true
     }
   ]
 }
