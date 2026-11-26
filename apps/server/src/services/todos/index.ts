@@ -15,6 +15,7 @@ export {
   type NewTodoPromise,
 } from './todo-promise-service.js';
 export { isOverdue, toTodoPromise } from './todo-promise-view.js';
+export { onTodoMadeInChat, type TodoMadeInChat } from './links/todo-made-in-chat.js';
 export { TODO_GRACE_MS } from './timing/todo-wake-plan.js';
 export {
   todoPromisesDomain,

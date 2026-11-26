@@ -20,11 +20,10 @@
  *
  * ## Wakes before anyone listens
  *
- * The heartbeat runner (DOR-2788 PR 3) subscribes after boot, so a wake that
- * fires while nobody is subscribed (startup finds promises already due) is
- * queued in memory and delivered to the FIRST `observe()` call. A queued wake
- * lost to a restart before anyone subscribed is not repeated, because
- * `due_notified_at` was already set; the missed mark still lands after the grace.
+ * The heartbeat runner (DOR-2788 PR 3) subscribes after boot, so a wake that fires while nobody is
+ * subscribed (startup finds promises already due) is queued in memory and delivered to the FIRST
+ * `observe()` call. A queued wake lost to a restart before anyone subscribed is not repeated,
+ * because `due_notified_at` was already set; the missed mark still lands after the grace.
  *
  * @module services/todos/todo-promise-service
  */
@@ -272,7 +271,8 @@ export class TodoPromiseService {
   }
 
   /**
-   * Record a promise for an agent.
+   * Record a promise for an agent. An agent's create door must also call
+   * `announceTodoMadeInChat`, or the work graph misses its link (DOR-5266).
    *
    * The caller decides whose it is: the capability passes the calling agent's
    * own id, the route the agent a person picked. Who made it decides the power it

@@ -64,6 +64,7 @@ import type { TodoActor } from './todo-authority.js';
 import type { TodoAssignee, TodoParent, TodoService, TodoSource } from './todo-service.js';
 import { titleIsFromSource, type TodoSourceFacts } from './todo-source.js';
 import { markTurnIfOutside } from './todo-word-marks.js';
+import { announceTodoMadeInChat } from './links/todo-made-in-chat.js';
 import { changeToTell, type TodoChangeNotice } from './notice/todo-recipient-notice.js';
 
 /** The MCP tool names. */
@@ -319,6 +320,8 @@ export const todosDomain: CapabilityDomain = {
         }));
         // A to-do made from a stranger's post hands their words back (DOR-4666).
         if (made.ok) markIfOutside(todoDeps, context, [made.todo.id]);
+        // The chat this turn runs, as the server knows it, produced it (DOR-5266).
+        if (made.ok) announceTodoMadeInChat(context, made.todo.id);
         return made;
       },
     }),

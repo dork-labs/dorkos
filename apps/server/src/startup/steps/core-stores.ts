@@ -78,7 +78,7 @@ import {
 } from '../../services/core/auth/sessions/signed-in-devices.js';
 import { env } from '../../env.js';
 import { initAgentIdentityService } from '../../services/core/agent-identity/index.js';
-import { wireProcessTokenPort, wireWorktreeLinks } from './work-graph.js';
+import { wireProcessTokenPort, wireTodoLinks, wireWorktreeLinks } from './work-graph.js';
 import { ActivityService } from '../../services/activity/activity-service.js';
 import { wireAuditTrail } from '../../services/audit/index.js';
 import { wireAgentPause } from '../../services/mesh/pause/index.js';
@@ -206,9 +206,11 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
 
   // The work graph's edges (DOR-4968), on the same beat: a first turn's re-key
   // is recorded as it happens, so the first turn must find the store in place.
-  // A worktree made for a chat is recorded the same way (DOR-5265).
+  // A worktree made for a chat (DOR-5265) and a to-do an agent makes in a chat
+  // (DOR-5266) are recorded the same way.
   installWorkLinkStore(db);
   wireWorktreeLinks();
+  wireTodoLinks();
 
   // The project registry's saved names (spec `flow-multiproject` §6.1). Loaded
   // here, before extensions start, because a name handed out earlier could
