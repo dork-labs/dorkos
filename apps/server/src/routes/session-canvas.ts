@@ -1,5 +1,5 @@
 /**
- * The HTTP half of a session's own canvas — six thin handlers over the one
+ * The HTTP half of a session's own canvas — five thin handlers over the one
  * writer (spec `canvas-agent-seat` §1.6).
  *
  * **Mounted under the sessions router**, so `:id` is the session and every route
@@ -210,7 +210,7 @@ async function sessionTreeOf(sessionId: string): Promise<CanvasTreePlacement | u
 }
 
 /**
- * The six canvas routes, mounted by `routes/sessions.ts` at `/:id/canvas`, so
+ * The five canvas routes, mounted by `routes/sessions.ts` at `/:id/canvas`, so
  * `:id` is the session.
  *
  * @param deps - See {@link SessionCanvasDeps}. A test that builds the routes
@@ -227,14 +227,8 @@ export function createSessionCanvasRoutes(deps: SessionCanvasDeps = {}): Hono<Ap
     return c.json({ documents: access.canvas.list(access.scope) });
   });
 
-  /** GET /:documentId — one document, content included. */
-  router.get('/:documentId', (c) => {
-    const access = requireCanvasAccess(c);
-    if (access instanceof Response) return access;
-    const document = access.canvas.get(access.scope, c.req.param('documentId'));
-    if (!document) return problem(c, 'not_found', { detail: 'No such document on this canvas' });
-    return c.json(document);
-  });
+  // GET /:documentId, one document, is the capability `sessions.get_canvas_document`
+  // the mount serves (`services/session/reads/session-read-capabilities.ts`, DOR-4978).
 
   /** POST / — put something on this session's canvas. */
   router.post('/', async (c) => {

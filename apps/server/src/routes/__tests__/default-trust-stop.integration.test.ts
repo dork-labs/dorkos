@@ -84,12 +84,26 @@ describe('a standing Full-autonomy default, end to end', () => {
     const configRouter = (await import('../config.js')).default;
     const { createSessionRoutes } = await import('../sessions.js');
     const { honoGroupListener } = await import('../../http/__tests__/hono-group-listener.js');
+    const { createCapabilityHttpRoutes } = await import('../capability-http.js');
+    const { composeRegistry } = await import('../../services/core/capabilities/index.js');
+    const { sessionReadsDomain } =
+      await import('../../services/core/self-description/dorkos-registry.js');
+    const { noopLogger } = await import('@dorkos/shared/logger');
+    // The stored-settings read is a capability the mount serves (DOR-4978).
+    const reads = composeRegistry([sessionReadsDomain], { logger: noopLogger });
     // Stands in for `sessionGate`'s resolved user — the cockpit's own posture,
     // which the operator-only write policy on these leaves requires.
     const user = { userId: 'user_cockpit', credential: 'cookie' } as const;
     fixtureTarget.mount(
       honoGroupListener(
         [
+          {
+            path: '/',
+            routes: createCapabilityHttpRoutes({
+              registry: () => reads,
+              capabilities: sessionReadsDomain.capabilities,
+            }),
+          },
           { path: '/api/config', routes: configRouter },
           { path: '/api/sessions', routes: createSessionRoutes() },
         ],

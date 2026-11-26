@@ -89,6 +89,11 @@ export function conformanceSampleInputs(
     'link.resolve': { uri: `dork:room:${fixture.roomId}` },
     // No such to-do, so the handler answers its own `TODO_NOT_FOUND`.
     'todos.view_card': { id: 'conformance-no-such-todo' },
+    // The chat reads (DOR-4978): an id that is not a chat id, so each answers its own
+    // `CHAT_ID_INVALID` without reading a store.
+    'sessions.get_runtime_type': { id: 'conformance-not-a-chat-id' },
+    'sessions.get_settings': { id: 'conformance-not-a-chat-id' },
+    'sessions.get_canvas_document': { id: 'conformance-not-a-chat-id', documentId: 'doc' },
     // No Tasks running in conformance, so the handler answers its own `TASKS_UNAVAILABLE`.
     'tasks.view_run': { id: 'conformance-no-such-run' },
     // A person's writes, valid input for each; the person-only door refuses the anonymous call.

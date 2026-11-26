@@ -55,6 +55,10 @@ import { workGraphDomain } from '../../work-graph/work-graph-capabilities.js';
 import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
 import { runsDomain } from '../../runs/run-capabilities.js';
 import { taskViewDomain } from '../../tasks/view/task-view-capabilities.js';
+import { createSessionReadsDomain } from '../../session/reads/session-read-capabilities.js';
+import { auditTrail } from '../../audit/audit-trail.js';
+import { peekCanvasService, sessionScope } from '../../canvas/index.js';
+import { runtimeRegistry } from '../runtime-registry.js';
 import { runtimeReadsDomain } from '../runtime-doors/runtime-read-capabilities.js';
 import { filesDomain } from '../directory/file-capabilities.js';
 import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
@@ -90,6 +94,22 @@ export const workGraphReadDomain = createWorkGraphReadDomain({
   titleOf: (chatId) => chatTitleOf(chatId),
   holdsOutsideText: (chatId) => chatHoldsOutsideText(chatId),
   markOutside: (context) => markCallerTurnOutsider(context, { kind: 'chat' }),
+});
+
+/**
+ * The app's chat reads (DOR-4978), handed the session read guard's rule, the
+ * runtime registry's two lookups and the canvas here, at the composition root.
+ * Each is read when a call runs, never when this module loads.
+ */
+export const sessionReadsDomain = createSessionReadsDomain({
+  mayRead: (context, chatId) =>
+    readableSessionIds(readerFor({ accounts: auditTrail()?.accounts }, context), [chatId]).has(
+      chatId
+    ),
+  runtimeTypeOf: (chatId) => runtimeRegistry.getSessionRuntimeType(chatId),
+  settingsOf: (chatId) => runtimeRegistry.getSessionSettings(chatId),
+  canvasDocument: (chatId, documentId) =>
+    peekCanvasService()?.get(sessionScope(chatId), documentId),
 });
 
 /**
@@ -175,6 +195,8 @@ export function composeDorkOsCapabilityRegistry(
   domains.push(runsDomain);
   // The app's task reads (DOR-4978); they say so themselves when Tasks is not running.
   domains.push(taskViewDomain);
+  // The app's simplest chat reads (DOR-4978); each folds in the session read guard.
+  domains.push(sessionReadsDomain);
   // The app's runtime setup reads (DOR-4978); they say so themselves before the runtimes start.
   domains.push(runtimeReadsDomain);
   // Unconditional too: the folder picker, the diff review and the workspace
@@ -263,6 +285,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     heartbeatDomain,
     runsDomain,
     taskViewDomain,
+    sessionReadsDomain,
     runtimeReadsDomain,
     directoryDomain,
     diffDomain,

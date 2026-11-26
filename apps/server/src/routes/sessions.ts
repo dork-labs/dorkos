@@ -26,11 +26,7 @@ import {
   RecentSessionsQuerySchema,
   SessionDailyCountsQuerySchema,
 } from '@dorkos/shared/schemas';
-import type {
-  InterruptReceipt,
-  SessionListResponse,
-  StoredSessionSettingsResponse,
-} from '@dorkos/shared/types';
+import type { InterruptReceipt, SessionListResponse } from '@dorkos/shared/types';
 import type { MeshCore } from '@dorkos/mesh';
 import { getChatMessageService } from '../services/session/chat-messages/chat-message-current.js';
 import type { ChatActivityResponse } from '@dorkos/shared/chat-messages';
@@ -321,52 +317,9 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
     return c.json({ interactions });
   });
 
-  // GET /api/sessions/:id/runtime-type — Lightweight endpoint for clients that
-  // need only the runtime owner. Uses getSessionRuntimeType, which infers on a
-  // miss ('claude-code' for legacy sessions predating the table) and NEVER
-  // writes: a read path that back-filled would mint a ghost row for any id it
-  // was handed, and first-write-wins would make that guess the binding (DOR-812).
-  router.get('/:id/runtime-type', async (c) => {
-    const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return invalidSessionId(c);
-    const runtime = await runtimeRegistry.getSessionRuntimeType(sessionId);
-    return c.json({ runtime });
-  });
-
-  // GET /api/sessions/:id/settings — the settings STORED for a session id, or
-  // `null`. The one read on this server that can see a row belonging to a session
-  // that has not started (DOR-2103).
-  //
-  // ## Why `GET /:id` could not answer this
-  //
-  // Every other session read resolves a session out of its RUNTIME's store
-  // (ADR-0310), so a session with a `session_metadata` row and no transcript is a
-  // 404 below and absent from the list. That row is the normal product of a
-  // settings change made before the first message (DOR-812's pre-launch picker),
-  // which means a person's own explicit choice — including one that LOWERS their
-  // power for this conversation — was invisible to the screen after a reload, and
-  // the trust dial fell back to showing the operator's configured default over
-  // it. Answering that with a synthesized `Session` would mean inventing a title
-  // and a `createdAt`, and reporting the registry's runtime INFERENCE in a field
-  // the client caches as a fact — the costume DOR-1693 took off PATCH's answer.
-  // So this answers the row, and the shape says so.
-  //
-  // Same posture as `/runtime-type` directly above, for the same reasons: no
-  // `?cwd=` and no boundary check, because nothing here touches the filesystem —
-  // it is one indexed read of a row keyed by session id. And it NEVER writes: a
-  // read that back-filled would mint a row for any id it was handed, and
-  // `persistSessionRuntime` is first-write-wins, so the guess would become the
-  // binding (DOR-812).
-  router.get('/:id/settings', async (c) => {
-    const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return invalidSessionId(c);
-    // Under the id as asked, deliberately: a session that has not started has no
-    // runtime to hold an alias, and `getInternalSessionId` needs a resolved
-    // runtime, which for an unbound id would be the inference. A started session
-    // is answered by the overlay on the session reads, not by this one.
-    const settings = await runtimeRegistry.getSessionSettings(sessionId);
-    return c.json({ settings } satisfies StoredSessionSettingsResponse);
-  });
+  // GET /api/sessions/:id/runtime-type and GET /api/sessions/:id/settings are
+  // capabilities the mount serves (`services/session/reads/session-read-capabilities.ts`,
+  // DOR-4978), each with the read guard folded in.
 
   // GET /api/sessions/:id - Get session details
   // Like `/:id/messages`, no `?cwd=` is required for a session the server can
@@ -658,7 +611,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
   router.post('/:id/command-intents/:intent', sessionCommandIntentHandler);
 
   // /api/sessions/:id/canvas — this session's own canvas (spec
-  // `canvas-agent-seat` §1.6). Six thin handlers over the one writer, in their own
+  // `canvas-agent-seat` §1.6). Five thin handlers over the one writer, in their own
   // file for the same reason the devtools sink is: this one stays under the size
   // rule. A person is the gate; an agent is refused `PEOPLE_ONLY` and reaches its
   // own canvas through `control_ui` and `read_canvas_document` instead.

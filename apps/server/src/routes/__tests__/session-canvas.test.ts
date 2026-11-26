@@ -42,6 +42,9 @@ vi.mock('../../services/core/config-manager.js', () => ({
 }));
 
 import { composedListener } from '../../http/__tests__/composed-listener.js';
+import { composeRegistry } from '../../services/core/capabilities/index.js';
+import { sessionReadsDomain } from '../../services/core/self-description/dorkos-registry.js';
+import { noopLogger } from '@dorkos/shared/logger';
 import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.js';
 import { setCanvasService } from '../../services/canvas/index.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
@@ -55,7 +58,12 @@ import {
 } from '../../services/audit/session-visibility.js';
 
 const admission = new MainRequestAdmission();
-const testServer = listeningServer(composedListener(admission));
+// One document's read is a capability the mount serves (DOR-4978); the rest are hand routes.
+const testServer = listeningServer(
+  composedListener(admission, {
+    capabilities: composeRegistry([sessionReadsDomain], { logger: noopLogger }),
+  })
+);
 
 /** A real session id — the routes refuse anything that is not a UUID. */
 const SESSION = '0e7270c6-5555-4666-8777-888888888888';
@@ -195,6 +203,8 @@ describe('the session canvas routes', () => {
       })) {
         expect(res.status, `${name} accepted a non-session id`).toBe(400);
         expect(res.body.code).toBe('invalid_request');
+        // The read the mount serves says what the hand routes say (DOR-4978).
+        expect(res.body.detail, name).toBe(listed.body.detail);
       }
     });
 
@@ -230,6 +240,7 @@ describe('the session canvas routes', () => {
       for (const [name, res] of Object.entries({ listed, read, opened })) {
         expect(res.status, `${name} answered an agent`).toBe(403);
         expect(res.body.code).toBe('person_only');
+        expect(res.body.detail, name).toBe('A chat’s canvas is the person’s own.');
         expect(JSON.stringify(res.body), `${name} leaked the document`).not.toContain(
           'example.test/private'
         );
@@ -247,9 +258,15 @@ describe('the session canvas routes', () => {
       const listed = await request(testServer)
         .get(`/api/sessions/${SESSION}/canvas`)
         .set('X-DorkOS-Agent', 'not-a-real-token');
+      const read = await request(testServer)
+        .get(`/api/sessions/${SESSION}/canvas/doc-1`)
+        .set('X-DorkOS-Agent', 'not-a-real-token');
 
       expect(listed.status).toBe(401);
       expect(listed.body.code).toBe('agent_identity_unverified');
+      // The one-document read the mount serves answers the same, word for word (DOR-4978).
+      expect(read.status).toBe(401);
+      expect(read.body).toEqual(listed.body);
     });
 
     it('404s a POST to an id that names no session', async () => {

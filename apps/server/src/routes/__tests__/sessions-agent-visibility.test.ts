@@ -90,6 +90,7 @@ import { recordDispatchStart } from '../../services/observability/dispatch-buffe
 import { noopLogger } from '@dorkos/shared/logger';
 import { composeRegistry } from '../../services/core/capabilities/index.js';
 import { diffDomain } from '../../services/diff/diff-capabilities.js';
+import { sessionReadsDomain } from '../../services/core/self-description/dorkos-registry.js';
 import { registerClaudeCodeFacts } from '../../startup/register-claude-code-facts.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
@@ -98,10 +99,10 @@ registerClaudeCodeFacts();
 
 const admission = new MainRequestAdmission();
 // Routed as the running server routes: the diff routes answer from Hono, and
-// all but the raw bytes are capabilities the mount serves.
+// all but the raw bytes are capabilities the mount serves, as are the chat reads.
 const server = listeningServer(
   composedListener(admission, {
-    capabilities: composeRegistry([diffDomain], { logger: noopLogger }),
+    capabilities: composeRegistry([diffDomain, sessionReadsDomain], { logger: noopLogger }),
   })
 );
 
@@ -287,6 +288,7 @@ const everyRoute = [
   ['get', '/chat-messages'],
   ['get', '/settings'],
   ['get', '/runtime-type'],
+  ['get', '/canvas/doc-1'],
   ['get', '/limit-history'],
   ['get', '/continue-options'],
   ['get', '/canvas'],
@@ -307,6 +309,36 @@ describe('the guard in front of every session route', () => {
 
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('session_not_found');
+  });
+
+  // The reads the mount serves fold the guard in (DOR-4978): the hand route's
+  // refusal, plus a `detail` that repeats its title, as every mount refusal has.
+  it.each([['/settings'], ['/runtime-type'], ['/canvas/doc-1']])(
+    'get /:id%s refuses a private chat as a hand route does',
+    async (tail) => {
+      const hand = await request(server).get(`/api/sessions/${PRIVATE}/queue`).set(AGENT);
+      const moved = await request(server).get(`/api/sessions/${PRIVATE}${tail}`).set(AGENT);
+
+      expect(moved.status).toBe(hand.status);
+      expect(moved.body).toEqual({ ...hand.body, detail: hand.body.title });
+    }
+  );
+
+  it.each([['/settings'], ['/runtime-type']])(
+    "get /:id%s refuses an id that is not a chat in the hand route's words",
+    async (tail) => {
+      const hand = await request(server).get('/api/sessions/not-a-chat/queue');
+      const moved = await request(server).get(`/api/sessions/not-a-chat${tail}`);
+
+      expect(moved.status).toBe(400);
+      expect(moved.body).toEqual(hand.body);
+    }
+  );
+
+  it("lets the app read a person's own chat through the moved reads", async () => {
+    const res = await request(server).get(`/api/sessions/${PRIVATE}/settings`);
+
+    expect(res.status).toBe(200);
   });
 
   // `/limit-history` answers its own 404 for a session that never hit a limit.

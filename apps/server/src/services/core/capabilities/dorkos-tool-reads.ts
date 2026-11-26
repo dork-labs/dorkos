@@ -126,6 +126,8 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   // The app's run reads (DOR-4978): a run's summary is its own words, which quote what it read.
   'tasks.view_runs': 'outside',
   'tasks.view_run': 'outside',
+  // A canvas document is whatever was opened on it: a page, a file, an app's view (DOR-4978).
+  'sessions.get_canvas_document': 'outside',
   relay_get_trace: 'outside',
   // ── Marks itself, when what it returned holds outside words ────────────────
   'rooms.read_history': 'self',
@@ -311,6 +313,9 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'work-graph.chat_tree': 'local',
   'work-graph.agent_work': 'local',
   'work-graph.chat_work': 'local',
+  // A chat's runtime id and its stored settings: DorkOS's own values, never a chat's words (DOR-4978).
+  'sessions.get_runtime_type': 'local',
+  'sessions.get_settings': 'local',
   // The rest of the registry's doors: ids, health, counts, folders and a person's changes.
   'mesh.status': 'local',
   'mesh.topology': 'local',

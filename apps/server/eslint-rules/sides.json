@@ -59,6 +59,7 @@
       "session/chat-messages",
       "session/claims",
       "session/private-messages",
+      "session/reads",
       "core/agent-created-hook.ts",
       "core/agent-creator.ts",
       "core/agent-home",

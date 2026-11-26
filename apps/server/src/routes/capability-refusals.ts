@@ -29,6 +29,7 @@ import {
   RUNTIME_TOOL_REFUSALS,
 } from '../services/core/runtime-doors/runtime-read-refusals.js';
 import { FILE_TOOL_REFUSALS } from '../services/core/directory/file-refusals.js';
+import { SESSION_READ_TOOL_REFUSALS } from '../services/session/reads/session-read-refusals.js';
 
 import type {
   TierDeniedPayload,
@@ -316,6 +317,8 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
   // The file browser kept the hand routes' codes and sentences
   // (`services/core/directory/file-refusals.ts`).
   ...FILE_TOOL_REFUSALS,
+  // The chat reads kept the hand routes' codes and sentences (`session/reads/session-read-refusals.ts`).
+  ...SESSION_READ_TOOL_REFUSALS,
 };
 
 /** How a tool code ends or starts, and the family that spelling means. */
