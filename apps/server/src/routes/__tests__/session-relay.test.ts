@@ -69,7 +69,7 @@ import {
   removeDamagedApprovalKeys,
 } from '../../services/core/session-relay/approval-key-store.js';
 import { PasskeyEnrolment } from '../../services/core/session-relay/passkeys/passkey-enrolment.js';
-import { createSessionRelayRoutes, type SessionRelayRouteDeps } from '../session-relay.js';
+import { sessionRelayGroups, type SessionRelayRouteDeps } from './session-relay-groups.js';
 
 /** The person-at-this-computer bar's refusal code. */
 const NEEDS_THIS_COMPUTER = 'operator_only';
@@ -161,7 +161,7 @@ function app(options: { user?: RequestUser; ingress?: IngressKind; bare?: boolea
   return target.mount(
     honoGroupListener(
       [
-        { path: '/api/session-relay', routes: createSessionRelayRoutes(deps) },
+        ...sessionRelayGroups(deps),
         stepUpFixtureRoutes({
           ownerId: () => state.ownerId,
           checkPassword: (password) => deps.checkPassword(password),
@@ -201,6 +201,9 @@ const WRITES: Array<
   ['DELETE /link', (a) => a.delete('/api/session-relay/link')],
   ['POST /presence/end', (a) => a.post('/api/session-relay/presence/end')],
 ];
+
+/** The writes the capability mount serves (DOR-4978); the rest ask for a password. */
+const ON_THE_MOUNT = ['POST /pause', 'DELETE /link', 'POST /presence/end'];
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -260,13 +263,7 @@ describe('who is using this computer from the web', () => {
     expect(devices.body).toEqual({ devices: PRESENCE.devices });
   });
 
-  it('refuses an agent: the browsers using this computer are the owner’s to see', async () => {
-    for (const path of ['/api/session-relay/presence', '/api/session-relay/devices']) {
-      const res = await request(app()).get(path).set('x-dorkos-agent', 'agent-token');
-      expect(res.status).toBe(403);
-      expect(JSON.stringify(res.body)).not.toContain('Safari on iPhone');
-    }
-  });
+  // An agent is refused both, person-only: `session-relay-doors.test.ts` (DOR-4978).
 
   it('is the /api 404 with the experiment off, or on a hub', async () => {
     deps = makeDeps({ enabled: () => false });
@@ -311,7 +308,7 @@ describe('the whole group is off', () => {
   });
 });
 
-describe.each(WRITES)('%s, the owner at this computer only', (_label, send) => {
+describe.each(WRITES)('%s, the owner at this computer only', (label, send) => {
   beforeEach(async () => {
     await writeRelayPin(PIN, home);
   });
@@ -330,8 +327,12 @@ describe.each(WRITES)('%s, the owner at this computer only', (_label, send) => {
       const res = await send(request(app({ user: OWNER_COOKIE, ingress })));
       expect(res.status).toBe(403);
       expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
-      expect(res.body.code).toBe(NEEDS_THIS_COMPUTER);
-      expect(res.body.detail).toBe('Change this on the computer DorkOS runs on.');
+      // The mount refuses a Wi-Fi sign-in's change before the bar (DOR-4978): no network mode.
+      const mounted = ingress === 'wifi' && ON_THE_MOUNT.includes(label);
+      expect(res.body.code).toBe(mounted ? 'not_from_wifi' : NEEDS_THIS_COMPUTER);
+      expect(res.body.detail).toBe(
+        mounted ? 'Do this at this computer.' : 'Change this on the computer DorkOS runs on.'
+      );
       unchanged();
     }
   );

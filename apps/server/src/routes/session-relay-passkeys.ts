@@ -4,8 +4,11 @@
  * Musts 2 and 3). Mounted inside `routes/session-relay.ts`, so the whole group
  * answers the `/api` 404 on a hub and while the experiment is off.
  *
- * - `GET /`: the pinned approve page and passkeys, labels and dates only,
- *   never key material. The person at this computer only.
+ * The list itself (`GET /`) is the mount's `session-relay.passkeys`
+ * (`services/core/session-relay-doors/session-relay-capabilities.ts`, DOR-4978).
+ * `/start` and `/finish` stay here as a WebAuthn ceremony, a challenge and its
+ * answer (`http/hand-routes/allowlist.ts`, `sign-in-handshake`).
+ *
  * - `POST /start`: the person at this computer, with the owner's password, on
  *   a linked computer. Writes an enrol statement
  *   (`services/core/session-relay/passkeys/passkey-enrolment.ts`) and answers the
@@ -46,7 +49,7 @@
 import { runFrontDoorWrite } from './front-door-step-up.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 
-import { Hono, type Context } from 'hono';
+import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import {
   SessionRelayPasskeyFinishBodySchema,
   SessionRelayPasskeyRemoveBodySchema,
@@ -145,6 +148,8 @@ export interface SessionRelayBars {
   ) => Promise<Response | undefined>;
   /** The stored pin. */
   readPin: () => RelayPin | null;
+  /** The group's own `/api` 404 on a hub or with the experiment off, run first by every route. */
+  on: MiddlewareHandler<ApiEnv>;
 }
 
 /** `/finish` from anywhere but a direct loopback caller. */
@@ -249,12 +254,7 @@ export function createSessionRelayPasskeyRoutes(
   const refuse = (c: Context<ApiEnv>, status: PasskeyRefusalStatus, detail: string) =>
     problem(c, CODE_BY_STATUS[status], { detail });
 
-  router.get(
-    '/',
-    (c) => bars.refusePerson(c) ?? c.json(listOf(deps.readKeys(), deps.keysUnreadable()))
-  );
-
-  router.post('/start', async (c) => {
+  router.post('/start', bars.on, async (c) => {
     const personRefusal = bars.refusePerson(c);
     if (personRefusal) return personRefusal;
     const parsed = SessionRelayPasskeyStartBodySchema.safeParse(readJsonBody(c));
@@ -307,7 +307,7 @@ export function createSessionRelayPasskeyRoutes(
     });
   });
 
-  router.post('/finish', async (c) => {
+  router.post('/finish', bars.on, async (c) => {
     // No session here (see the module doc): the strict loopback bar instead.
     const facts = honoRequestFacts(c);
     if (
@@ -364,7 +364,7 @@ export function createSessionRelayPasskeyRoutes(
   });
 
   // A damaged keys file, which cannot be read to remove one key from it.
-  router.delete('/', async (c) => {
+  router.delete('/', bars.on, async (c) => {
     const personRefusal = bars.refusePerson(c);
     if (personRefusal) return personRefusal;
     const parsed = SessionRelayPasskeyRemoveBodySchema.safeParse(readJsonBody(c) ?? {});
@@ -379,7 +379,7 @@ export function createSessionRelayPasskeyRoutes(
     return c.json(listOf(deps.readKeys(), false));
   });
 
-  router.delete('/:credentialId', async (c) => {
+  router.delete('/:credentialId', bars.on, async (c) => {
     const personRefusal = bars.refusePerson(c);
     if (personRefusal) return personRefusal;
     const parsed = SessionRelayPasskeyRemoveBodySchema.safeParse(readJsonBody(c) ?? {});

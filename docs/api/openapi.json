@@ -38997,318 +38997,6 @@
         "security": []
       }
     },
-    "/api/session-relay/status": {
-      "get": {
-        "tags": [
-          "Session relay"
-        ],
-        "summary": "Where chatting from the web stands",
-        "description": "Whether this computer is linked to a hub, its level and pause, and whether the relay is connected now. Never the relay secret.",
-        "responses": {
-          "200": {
-            "description": "Where the link stands now",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "linked": {
-                      "type": "boolean"
-                    },
-                    "hubOrigin": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "computerName": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "level": {
-                      "type": "string",
-                      "enum": [
-                        "chat",
-                        "full"
-                      ]
-                    },
-                    "paused": {
-                      "type": "boolean"
-                    },
-                    "connected": {
-                      "type": "boolean"
-                    },
-                    "pinnedAt": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "suggestedName": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "linked",
-                    "hubOrigin",
-                    "computerName",
-                    "level",
-                    "paused",
-                    "connected",
-                    "pinnedAt",
-                    "suggestedName"
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "sessionRelay.getStatus"
-      }
-    },
-    "/api/session-relay/presence": {
-      "get": {
-        "tags": [
-          "Session relay"
-        ],
-        "summary": "Whether someone is using this computer from the web",
-        "description": "Active while the relay is connected and the hub has at least one of its chats open, with when that began and the browsers seen since. Pushed as `session_relay_presence` on `GET /api/events` whenever it changes.",
-        "responses": {
-          "200": {
-            "description": "Whether someone is using this computer from the web",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "active": {
-                      "type": "boolean"
-                    },
-                    "since": {
-                      "type": "string"
-                    },
-                    "devices": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "label": {
-                            "type": "string"
-                          },
-                          "firstSeenAt": {
-                            "type": "string"
-                          },
-                          "lastSeenAt": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "label",
-                          "firstSeenAt",
-                          "lastSeenAt"
-                        ]
-                      }
-                    }
-                  },
-                  "required": [
-                    "active",
-                    "devices"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "`forbidden`: a caller presenting agent identity",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "sessionRelay.getPresence"
-      }
-    },
-    "/api/session-relay/devices": {
-      "get": {
-        "tags": [
-          "Session relay"
-        ],
-        "summary": "Browsers that used chat from the web here",
-        "description": "Every browser the hub named on a relayed request, by the hub's label, with when it was first and last seen. Most recent first; at most 50.",
-        "responses": {
-          "200": {
-            "description": "The browsers seen here",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "devices": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "label": {
-                            "type": "string"
-                          },
-                          "firstSeenAt": {
-                            "type": "string"
-                          },
-                          "lastSeenAt": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "label",
-                          "firstSeenAt",
-                          "lastSeenAt"
-                        ]
-                      }
-                    }
-                  },
-                  "required": [
-                    "devices"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "`forbidden`: a caller presenting agent identity",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "sessionRelay.getDevices"
-      }
-    },
-    "/api/session-relay/presence/end": {
-      "post": {
-        "tags": [
-          "Session relay"
-        ],
-        "summary": "End use from the web now",
-        "description": "Closes the live connection and pauses the link, as Pause does. Resuming needs the owner's password.",
-        "responses": {
-          "200": {
-            "description": "Whether someone is using this computer from the web",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "active": {
-                      "type": "boolean"
-                    },
-                    "since": {
-                      "type": "string"
-                    },
-                    "devices": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "label": {
-                            "type": "string"
-                          },
-                          "firstSeenAt": {
-                            "type": "string"
-                          },
-                          "lastSeenAt": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "label",
-                          "firstSeenAt",
-                          "lastSeenAt"
-                        ]
-                      }
-                    }
-                  },
-                  "required": [
-                    "active",
-                    "devices"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "`operator_only`: not the owner at this computer using the app: the relay, another device, an agent, an approval token, an API key or any other bearer",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "`conflict`: this computer is not linked",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "sessionRelay.createPresenceEnd"
-      }
-    },
     "/api/session-relay/link": {
       "post": {
         "tags": [
@@ -39486,15 +39174,15 @@
         "operationId": "sessionRelay.link"
       },
       "delete": {
-        "operationId": "sessionRelay.unlink",
+        "operationId": "session-relay.unlink",
         "tags": [
-          "Session relay"
+          "Session-relay"
         ],
-        "summary": "Unlink this computer",
-        "description": "Forgets the hub and closes the live link. Works with the network off.",
+        "summary": "Unlink this computer from its hub",
+        "description": "Forget the link and close the live relay. Works with the network off; the hub learns when the relay stops. A person’s only.",
         "responses": {
           "200": {
-            "description": "Where the link stands now",
+            "description": "Unlink this computer from its hub result",
             "content": {
               "application/json": {
                 "schema": {
@@ -39552,8 +39240,38 @@
               }
             }
           },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "`operator_only`: not the owner at this computer using the app: the relay, another device, an agent, an approval token, an API key or any other bearer",
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -39563,7 +39281,57 @@
             }
           },
           "404": {
-            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -39738,107 +39506,6 @@
         "operationId": "sessionRelay.updateLevel"
       }
     },
-    "/api/session-relay/pause": {
-      "post": {
-        "tags": [
-          "Session relay"
-        ],
-        "summary": "Pause chatting from the web",
-        "description": "Keeps the link, closes the live connection, and stops every dial until resumed.",
-        "responses": {
-          "200": {
-            "description": "Where the link stands now",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "linked": {
-                      "type": "boolean"
-                    },
-                    "hubOrigin": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "computerName": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "level": {
-                      "type": "string",
-                      "enum": [
-                        "chat",
-                        "full"
-                      ]
-                    },
-                    "paused": {
-                      "type": "boolean"
-                    },
-                    "connected": {
-                      "type": "boolean"
-                    },
-                    "pinnedAt": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "suggestedName": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "linked",
-                    "hubOrigin",
-                    "computerName",
-                    "level",
-                    "paused",
-                    "connected",
-                    "pinnedAt",
-                    "suggestedName"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "`operator_only`: not the owner at this computer using the app: the relay, another device, an agent, an approval token, an API key or any other bearer",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "`conflict`: this computer is not linked",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "sessionRelay.pause"
-      }
-    },
     "/api/session-relay/resume": {
       "post": {
         "tags": [
@@ -39959,229 +39626,6 @@
           }
         },
         "operationId": "sessionRelay.resume"
-      }
-    },
-    "/api/session-relay/passkeys": {
-      "get": {
-        "tags": [
-          "Session relay"
-        ],
-        "summary": "The approvals passkeys pinned here",
-        "description": "The approve page approvals from the web must come from, and each passkey by label, date and algorithm. Never key material. The owner at this computer only.",
-        "responses": {
-          "200": {
-            "description": "The pinned approve page and passkeys",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "damaged": {
-                      "type": "boolean"
-                    },
-                    "rpId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "origin": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "keys": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "credentialId": {
-                            "type": "string"
-                          },
-                          "label": {
-                            "type": "string"
-                          },
-                          "addedAt": {
-                            "type": "string"
-                          },
-                          "alg": {
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "credentialId",
-                          "label",
-                          "addedAt",
-                          "alg"
-                        ]
-                      }
-                    }
-                  },
-                  "required": [
-                    "rpId",
-                    "origin",
-                    "keys"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "`operator_only`: not the owner at this computer using the app: the relay, another device, an agent, an approval token, an API key or any other bearer",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "sessionRelay.listPasskeys"
-      },
-      "delete": {
-        "tags": [
-          "Session relay"
-        ],
-        "summary": "Remove a damaged passkeys file",
-        "description": "Needs the owner's password. Removes the passkeys file only when it is damaged (the list says `damaged: true`), so a passkey can be added again; a sound file is refused.",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "password": {
-                    "type": "string",
-                    "maxLength": 1024
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The pinned approve page and passkeys",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "damaged": {
-                      "type": "boolean"
-                    },
-                    "rpId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "origin": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "keys": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "credentialId": {
-                            "type": "string"
-                          },
-                          "label": {
-                            "type": "string"
-                          },
-                          "addedAt": {
-                            "type": "string"
-                          },
-                          "alg": {
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "credentialId",
-                          "label",
-                          "addedAt",
-                          "alg"
-                        ]
-                      }
-                    }
-                  },
-                  "required": [
-                    "rpId",
-                    "origin",
-                    "keys"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "`operator_only`, or `forbidden` when the owner's password was missing or wrong (`detail` says which)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "The file is not damaged: remove passkeys one at a time",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "`rate_limited`: too many wrong passwords lately, from anywhere",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "The file could not be read just now; nothing was removed",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "sessionRelay.deletePasskeys"
       }
     },
     "/api/session-relay/passkeys/start": {
@@ -40547,6 +39991,309 @@
         },
         "operationId": "sessionRelay.finishPasskeys",
         "security": []
+      }
+    },
+    "/api/session-relay/passkeys": {
+      "delete": {
+        "tags": [
+          "Session relay"
+        ],
+        "summary": "Remove a damaged passkeys file",
+        "description": "Needs the owner's password. Removes the passkeys file only when it is damaged (the list says `damaged: true`), so a passkey can be added again; a sound file is refused.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "maxLength": 1024
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The pinned approve page and passkeys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "damaged": {
+                      "type": "boolean"
+                    },
+                    "rpId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "origin": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "keys": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "credentialId": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "addedAt": {
+                            "type": "string"
+                          },
+                          "alg": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "credentialId",
+                          "label",
+                          "addedAt",
+                          "alg"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "rpId",
+                    "origin",
+                    "keys"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`operator_only`, or `forbidden` when the owner's password was missing or wrong (`detail` says which)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "On a hub, or while the `sessionRelay.enabled` experiment is off",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The file is not damaged: remove passkeys one at a time",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited`: too many wrong passwords lately, from anywhere",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The file could not be read just now; nothing was removed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "sessionRelay.deletePasskeys"
+      },
+      "get": {
+        "operationId": "session-relay.passkeys",
+        "tags": [
+          "Session-relay"
+        ],
+        "summary": "List the approvals passkeys",
+        "description": "The approve page and the passkeys web approvals are signed with: labels and dates, never key material. A person’s only, at this computer.",
+        "responses": {
+          "200": {
+            "description": "List the approvals passkeys result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "damaged": {
+                      "type": "boolean"
+                    },
+                    "rpId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "origin": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "keys": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "credentialId": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "addedAt": {
+                            "type": "string"
+                          },
+                          "alg": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "credentialId",
+                          "label",
+                          "addedAt",
+                          "alg"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "rpId",
+                    "origin",
+                    "keys"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/session-relay/passkeys/{credentialId}": {
@@ -104967,6 +104714,809 @@
         }
       }
     },
+    "/api/session-relay/status": {
+      "get": {
+        "operationId": "session-relay.status",
+        "tags": [
+          "Session-relay"
+        ],
+        "summary": "Read where chat from the web stands",
+        "description": "Whether this computer is linked to a hub for chatting from the web, at which level, and whether it is paused or connected. An agent reads it without the hub’s address, the linked name, when it was linked or this computer’s host name.",
+        "responses": {
+          "200": {
+            "description": "Read where chat from the web stands result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "linked": {
+                      "type": "boolean"
+                    },
+                    "hubOrigin": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "computerName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "level": {
+                      "type": "string",
+                      "enum": [
+                        "chat",
+                        "full"
+                      ]
+                    },
+                    "paused": {
+                      "type": "boolean"
+                    },
+                    "connected": {
+                      "type": "boolean"
+                    },
+                    "pinnedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "suggestedName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "linked",
+                    "hubOrigin",
+                    "computerName",
+                    "level",
+                    "paused",
+                    "connected",
+                    "pinnedAt",
+                    "suggestedName"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session-relay/presence": {
+      "get": {
+        "operationId": "session-relay.presence",
+        "tags": [
+          "Session-relay"
+        ],
+        "summary": "See who uses this computer from the web",
+        "description": "Whether someone is using this computer from the web now, and the browsers seen since. Labels and times only. A person’s only.",
+        "responses": {
+          "200": {
+            "description": "See who uses this computer from the web result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "since": {
+                      "type": "string"
+                    },
+                    "devices": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "firstSeenAt": {
+                            "type": "string"
+                          },
+                          "lastSeenAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "firstSeenAt",
+                          "lastSeenAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "active",
+                    "devices"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session-relay/devices": {
+      "get": {
+        "operationId": "session-relay.devices",
+        "tags": [
+          "Session-relay"
+        ],
+        "summary": "List the browsers seen here",
+        "description": "Every browser that used this computer from the web, most recent first. Labels and times only. A person’s only.",
+        "responses": {
+          "200": {
+            "description": "List the browsers seen here result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "devices": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "firstSeenAt": {
+                            "type": "string"
+                          },
+                          "lastSeenAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "firstSeenAt",
+                          "lastSeenAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "devices"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session-relay/pause": {
+      "post": {
+        "operationId": "session-relay.pause",
+        "tags": [
+          "Session-relay"
+        ],
+        "summary": "Pause chat from the web",
+        "description": "Pause this computer’s link to its hub and close the live relay. Resuming asks for the owner’s password. A person’s only.",
+        "responses": {
+          "200": {
+            "description": "Pause chat from the web result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "linked": {
+                      "type": "boolean"
+                    },
+                    "hubOrigin": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "computerName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "level": {
+                      "type": "string",
+                      "enum": [
+                        "chat",
+                        "full"
+                      ]
+                    },
+                    "paused": {
+                      "type": "boolean"
+                    },
+                    "connected": {
+                      "type": "boolean"
+                    },
+                    "pinnedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "suggestedName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "linked",
+                    "hubOrigin",
+                    "computerName",
+                    "level",
+                    "paused",
+                    "connected",
+                    "pinnedAt",
+                    "suggestedName"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/session-relay/presence/end": {
+      "post": {
+        "operationId": "session-relay.end_presence",
+        "tags": [
+          "Session-relay"
+        ],
+        "summary": "End use from the web now",
+        "description": "End all use of this computer from the web now: pause the link and close the live relay, as Pause does. A person’s only.",
+        "responses": {
+          "200": {
+            "description": "End use from the web now result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "since": {
+                      "type": "string"
+                    },
+                    "devices": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "firstSeenAt": {
+                            "type": "string"
+                          },
+                          "lastSeenAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "firstSeenAt",
+                          "lastSeenAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "active",
+                    "devices"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rooms/{roomId}/members/{agentId}/reseat-options": {
       "get": {
         "operationId": "rooms.reseat_options",
@@ -110665,6 +111215,334 @@
                   "required": [
                     "migrated"
                   ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/current": {
+      "get": {
+        "operationId": "agent.current",
+        "tags": [
+          "Agent"
+        ],
+        "summary": "Read the agent a folder belongs to",
+        "description": "The agent whose home a folder resolves to (its home, or a checkout of its repo), with its SOUL.md, NOPE.md, MEMORY.md and HEARTBEAT.md, or null when no agent lives there.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "A folder of the agent: its home, or a checkout of its repo."
+            },
+            "required": true,
+            "description": "A folder of the agent: its home, or a checkout of its repo.",
+            "name": "path",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read the agent a folder belongs to result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "ULID assigned at registration"
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "displayName": {
+                      "type": "string",
+                      "maxLength": 100,
+                      "description": "Human-readable display name. Falls back to name (slug) when absent.",
+                      "example": "My Cool Agent"
+                    },
+                    "description": {
+                      "type": "string",
+                      "default": ""
+                    },
+                    "runtime": {
+                      "$ref": "#/components/schemas/AgentRuntime"
+                    },
+                    "capabilities": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "default": []
+                    },
+                    "behavior": {
+                      "$ref": "#/components/schemas/AgentBehavior"
+                    },
+                    "namespace": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "registeredAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "registeredBy": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "persona": {
+                      "type": "string",
+                      "maxLength": 4000,
+                      "description": "System prompt persona text injected into Claude sessions",
+                      "example": "You are backend-bot, an expert in REST API design..."
+                    },
+                    "personaEnabled": {
+                      "type": "boolean",
+                      "default": true,
+                      "description": "Whether persona text is injected into system prompt"
+                    },
+                    "traits": {
+                      "$ref": "#/components/schemas/Traits"
+                    },
+                    "conventions": {
+                      "$ref": "#/components/schemas/Conventions"
+                    },
+                    "color": {
+                      "type": "string",
+                      "description": "CSS color override for visual identity (e.g., \"#6366f1\")",
+                      "example": "#6366f1"
+                    },
+                    "icon": {
+                      "type": "string",
+                      "description": "Emoji override for visual identity",
+                      "example": "🤖"
+                    },
+                    "isSystem": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "System agents are auto-managed and cannot be deleted"
+                    },
+                    "model": {
+                      "type": "string",
+                      "description": "Model new sessions for this agent start on, in its own runtime's id space. Absent = inherit the server default.",
+                      "example": "opus"
+                    },
+                    "effort": {
+                      "type": "string",
+                      "enum": [
+                        "none",
+                        "minimal",
+                        "low",
+                        "medium",
+                        "high",
+                        "max",
+                        "xhigh"
+                      ],
+                      "description": "Reasoning effort new sessions for this agent start at. Absent = inherit the server default.",
+                      "example": "high"
+                    },
+                    "account": {
+                      "type": "string",
+                      "description": "Claude Code account new sessions for this agent run and bill on, as a registry id (runtimes.claudeCode.accounts[].id). Absent = inherit the server default. Operator-only: agents cannot set this on themselves or on each other.",
+                      "example": "acme-corp"
+                    },
+                    "permissions": {
+                      "$ref": "#/components/schemas/AgentPermissions"
+                    },
+                    "mcpServers": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ManagedMcpServer"
+                      },
+                      "default": []
+                    },
+                    "workspace": {
+                      "type": "object",
+                      "description": "Where this agent works. Absent, or unreadable, means its own folder. 'managed' gives it a private checkout of a repository; 'none' means it uses whatever folder the session is opened in.",
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "home",
+                            "managed",
+                            "none"
+                          ]
+                        },
+                        "source": {
+                          "type": "string",
+                          "description": "Repository or directory the checkout is made from ('managed' only)."
+                        },
+                        "provider": {
+                          "type": "string",
+                          "enum": [
+                            "worktree",
+                            "clone"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ],
+                      "example": {
+                        "mode": "home"
+                      }
+                    },
+                    "reportsTo": {
+                      "type": "string",
+                      "description": "Account id this agent reports to: a mesh agent id, or a person’s account id. Absent or null = whoever created it, then the owner.",
+                      "example": "01HZY8Q0V6S3W1A2B3C4D5E6F7"
+                    },
+                    "readsOutsideText": {
+                      "type": "boolean",
+                      "description": "Set true when this agent reads mail, web pages or another app’s text. Every turn it runs is then treated as having read outside words. Only a person can set it back to false.",
+                      "example": true
+                    },
+                    "createdBy": {
+                      "type": "string",
+                      "description": "Account that created this agent (a person’s account id, or the creating agent’s mesh id). Written once at creation; null when unknown.",
+                      "example": "install:9f1c2d3e"
+                    },
+                    "soulContent": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "nopeContent": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "memoryContent": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "heartbeatContent": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "runtime",
+                    "registeredAt",
+                    "registeredBy"
+                  ],
+                  "description": "The agent, with its SOUL.md, NOPE.md, MEMORY.md and HEARTBEAT.md, or null when none lives there. Read by another agent, it leaves out persona, conventions, permissions, mcpServers, workspace, projectPath and the four files."
                 }
               }
             }

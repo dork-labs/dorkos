@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createSessionRelayRoutes, type SessionRelayRouteDeps } from '../session-relay.js';
+import { sessionRelayGroups, type SessionRelayRouteDeps } from './session-relay-groups.js';
 import { PasskeyEnrolment } from '../../services/core/session-relay/passkeys/passkey-enrolment.js';
 import type { RelayPin } from '../../services/core/session-relay/pin-store.js';
 import { frontDoorStepUpHarness } from './front-door-step-up-harness.js';
@@ -28,10 +28,11 @@ describe('chat from the web confirmation', () => {
     return pin;
   });
   const checkPassword = vi.fn(async () => 'wrong' as const);
+  let on = true;
   const enrolment = new PasskeyEnrolment();
   const deps: SessionRelayRouteDeps = {
     isHub: () => false,
-    enabled: () => true,
+    enabled: () => on,
     ownerExists: () => true,
     readPin: () => pin,
     updatePin,
@@ -58,10 +59,9 @@ describe('chat from the web confirmation', () => {
       },
     },
   };
-  const owner = frontDoorStepUpHarness(() => [
-    { path: '/api/session-relay', routes: createSessionRelayRoutes(deps) },
-  ]);
+  const owner = frontDoorStepUpHarness(() => [...sessionRelayGroups(deps)]);
   beforeEach(() => {
+    on = true;
     pin = { ...linked };
     vi.clearAllMocks();
   });
@@ -136,5 +136,43 @@ describe('chat from the web confirmation', () => {
       result: { code: 'conflict', detail: 'The link changed. Try again.' },
     });
     expect(updatePin).not.toHaveBeenCalled();
+  });
+
+  // The capability mount's doors (DOR-4978), behind the real chain and a real sign-in.
+  const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
+
+  it('gives an agent the status without addresses or names, and never caches it', async () => {
+    const person = await owner.call('get', '/api/session-relay/status');
+    expect(person.body).toMatchObject({
+      hubOrigin: linked.hubOrigin,
+      suggestedName: 'Northwind desk',
+    });
+    const asAgent = await owner.call('get', '/api/session-relay/status').set(AGENT);
+    expect(asAgent.status).toBe(200);
+    expect(asAgent.headers['cache-control']).toBe('no-store');
+    expect(asAgent.body).toMatchObject({ linked: true, hubOrigin: null, computerName: null });
+    expect(asAgent.body).toMatchObject({ pinnedAt: null, suggestedName: '' });
+  });
+
+  it.each(['/presence', '/devices', '/passkeys'])(
+    'refuses an agent %s, person-only',
+    async (door) => {
+      const res = await owner.call('get', `/api/session-relay${door}`).set(AGENT);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('person_only');
+      expect(res.headers['cache-control']).toBe('no-store');
+    }
+  );
+
+  // The registry has no check a door runs before its own refusals, so these come first.
+  it('is the /api 404 while off, after the mount’s own refusals', async () => {
+    on = false;
+    const off = await owner.call('get', '/api/session-relay/devices');
+    expect(off.status).toBe(404);
+    expect(off.body.detail).toBe('This server has no API route at that path.');
+    const asAgent = await owner.call('get', '/api/session-relay/devices').set(AGENT);
+    expect(asAgent.body.code).toBe('person_only');
+    const fromWifi = await owner.call('post', '/api/session-relay/pause', 'wifi');
+    expect(fromWifi.body.code).toBe('not_from_wifi');
   });
 });

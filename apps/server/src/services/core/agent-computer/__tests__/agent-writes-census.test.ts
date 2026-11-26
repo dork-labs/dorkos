@@ -354,7 +354,6 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
   [
     'remote access and sign-in are the hub’s',
     [
-      'ALL /api/session-relay/*',
       'ALL /api/sign-in-landings/*',
       'DELETE /api/session-relay/link',
       'PATCH /api/session-relay/level',

@@ -129,6 +129,7 @@ export function conformanceSampleInputs(
     // DorkOS is still starting (no reader set).
     'heartbeat.view_page': { id: 'conformance-agent' },
     'agent.migrate_persona': { path: '/conformance' },
+    'agent.current': { path: '/conformance' },
     'permissions.view_agent': { id: 'conformance-agent' },
     'permissions.view_agent_level': { id: 'conformance-agent' },
     // Valid input; each person-only door refuses the anonymous call before it runs.
