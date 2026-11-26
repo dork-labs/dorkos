@@ -51,10 +51,10 @@ This guide covers everything between an agent's edit and a change on `main`: the
 ## How a change reaches `main`
 
 ```
-EDIT     Claude Code hooks: four PreToolUse guards on every Bash call; typecheck, eslint and an any-ban on every edit
+EDIT     Claude Code hooks (.claude/settings.json): PreToolUse guards on every Bash call; eslint and an any-ban warning on every edit. No typecheck per edit
 TURN END prettier --write on changed files (Stop hook); checkpoint in worktrees
 COMMIT   lefthook pre-commit: prettier, drizzle generate, dir-size, turbo lint --affected (under the machine-wide slot cap). No typecheck at commit
-PUSH     lefthook pre-push: changed-file formatting, fragment validity, file-size ratchet, pipeline ledger coverage, CI still running from the last push. No tests run at push (DOR-2160)
+PUSH     lefthook pre-push: fast checks that each front-run a CI check (formatting, fragments, the ratchets, ledger coverage; lefthook.yml lists them), and CI still running from the last push. No tests run at push (DOR-2160)
 PR       ~19-25 Actions jobs; the required checks below must pass ON THE PR before it may enter the queue
 AUTO     open-pr.sh turns on auto-merge at open; GitHub queues the PR once every required check (pr-gates: Security) is green
 DOOR     queue-repeat-guard reads each queue entry and takes out a head that failed the same check twice
@@ -160,7 +160,7 @@ DOR-3181 / posture item 22 and DOR-3183 own that remaining identity boundary.
 
 **The local hooks are a smell test. The queue is the guarantee.** Say it that way round, because the two are not the same kind of thing and treating them as one is what made the local gates unusable (DOR-2160).
 
-There are exactly three things now, and no more:
+Checks run at three moments. The `pre-commit` and `pre-push` blocks of `lefthook.yml` are the list; this table says what kind of check belongs at each:
 
 | when      | what                                                                                                                        |
 | --------- | --------------------------------------------------------------------------------------------------------------------------- |
