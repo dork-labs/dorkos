@@ -22,10 +22,8 @@
  */
 import type { ApprovalServiceAction } from '@dorkos/shared/approval-schemas';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
-import {
-  isServerPrincipal,
-  type ServerPrincipalProof,
-} from '../../connectors/principal/server-principal.js';
+import { isServerPrincipal } from '../../connectors/principal/server-principal.js';
+import type { ServerPrincipalProof } from '../connections-lease/index.js';
 
 /** Actions that ask in a marked turn, by capability id or hand-registered tool name. */
 export const HELD_IN_A_MARKED_TURN: ReadonlySet<string> = new Set([

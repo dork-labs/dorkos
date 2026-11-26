@@ -8,7 +8,7 @@ import {
   invokeCapabilityAsMcpResult,
 } from '../../core/capabilities/mcp-projection.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
-import type { ServerPrincipalProof } from '../principal/server-principal.js';
+import type { ServerPrincipalProof } from '../../core/connections-lease/index.js';
 import { CONNECTOR_RUNTIME_CAPABILITY_IDS } from '../runtime-capability-scope.js';
 import { abortSignalOf } from '../../core/capabilities/index.js';
 

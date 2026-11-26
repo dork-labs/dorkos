@@ -46,7 +46,7 @@ import type {
   MintedConnectorThreadKey,
   RevokeConnectorThreadKeyReason,
   ThreadKeyToolListing,
-} from '../runtime-principal-port.js';
+} from '../../core/connections-lease/index.js';
 
 /** Prefix that marks a bearer as a thread key rather than a turn bearer. */
 export const THREAD_KEY_PREFIX = 'dtk_';

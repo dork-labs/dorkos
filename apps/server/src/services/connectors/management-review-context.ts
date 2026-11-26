@@ -18,7 +18,7 @@ import {
   type ConnectorManagementReviewContext,
 } from '@dorkos/shared/connector-schemas';
 import { everyAgentGrantFor, everyAgentGrantSubject } from './every-agent-grants.js';
-import type { ConnectorOwnerAuthority } from './principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../core/connections-lease/index.js';
 
 /** Resolve one verified owner agent into stable presentation data. */
 export type ConnectorReviewAgentPresentationResolver = (

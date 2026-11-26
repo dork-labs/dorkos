@@ -32,7 +32,7 @@ import {
   type ConnectorManagementReviewRequester,
   type ConnectorManagementReviewService,
 } from '../services/connectors/management-review-service.js';
-import type { ConnectorOwnerAuthority } from '../services/connectors/principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../services/core/connections-lease/index.js';
 import {
   ConnectorReconciliationError,
   type ConnectorReconciliationService,
