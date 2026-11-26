@@ -22,3 +22,5 @@ with the startup step that fills them (`startup/computer-asks.ts`,
 Added in `security-gate.yml`'s `SECURITY_PATH_PATTERN`, its regex fixture and
 `Policy.swift`, with a parity row each and a look-alike that stays off. Same
 shape as 261126-092714 (C5).
+
+Also on the main list, at Security's ask: `packages/cli/src/(consent-config-store|harness-consent|harness-[a-z-]+)\.ts$`, the CLI verbs that write or show consent (adopt, global, hooks, sync) and the store they write through. Six parity rows, each with a look-alike that stays off.

@@ -268,6 +268,13 @@ for (const [match, miss] of [
     'apps/server/src/services/core/approvals/computer-asks/consent-config.ts',
     'apps/server/src/services/core/approvalsx/computer-asks/consent-config.ts',
   ],
+  // C14 (DOR-5459): the CLI verbs that write or show consent, and the store they write through.
+  ['packages/cli/src/consent-config-store.ts', 'packages/cli/src/consent-config-stores.ts'],
+  ['packages/cli/src/harness-consent.ts', 'packages/cli/src/harness-consent.test.ts'],
+  ['packages/cli/src/harness-sync-command.ts', 'packages/cli/src/harnessx-sync-command.ts'],
+  ['packages/cli/src/harness-global-command.ts', 'packages/cli/src/lib/harness-global-command.ts'],
+  ['packages/cli/src/harness-adopt-command.ts', 'packages/cli/src/harness_adopt-command.ts'],
+  ['packages/cli/src/harness-hooks-command.ts', 'packages/cli/src/harness-hooks-command.tsx'],
 ]) {
   test(`${match} is on the main list only`, () => {
     assert.ok(existsSync(resolve(root, match)), `${match} no longer exists`);
