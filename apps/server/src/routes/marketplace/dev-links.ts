@@ -120,17 +120,6 @@ export function mountDevLinkRoutes(
     return { refused: validationFailed(c, parsed.error) };
   };
 
-  // GET /dev-links -- every dev link and whether it is in force.
-  app.get('/dev-links', async (c) => {
-    const devLinks = deps.devLinks;
-    if (!devLinks) return unavailable(c);
-    try {
-      return c.json(await devLinks.list());
-    } catch (err) {
-      return fail(c, err, 'list dev links');
-    }
-  });
-
   // POST /dev-links/preview -- what linking a folder would do. Changes nothing.
   app.post('/dev-links/preview', async (c) => {
     const devLinks = deps.devLinks;

@@ -48,19 +48,6 @@ export function mountHeldBackRoutes(
 ): void {
   const { dorkHome, heldBackCards } = deps;
 
-  // GET /held-back -- every global package held back from sessions, and why
-  // (DOR-2306): what it runs, and the content hash a decision is bound to.
-  app.get('/held-back', async (c) => {
-    try {
-      return c.json({ packages: await listHeldBackPackages(dorkHome) });
-    } catch (err) {
-      logger.error('[Marketplace] Failed to list held-back packages', err);
-      return problem(c, 'internal_error', {
-        detail: "Couldn't list held-back packages. Try again.",
-      });
-    }
-  });
-
   // POST /held-back/:name/review -- raise the approval card for a held-back
   // package again, because a person asked. Raising a card only ever asks a
   // person, so any caller may; deciding it is the person's.

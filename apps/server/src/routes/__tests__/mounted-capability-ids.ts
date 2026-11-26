@@ -9,6 +9,14 @@
 /** Every capability the mount serves, in the order it mounts them. */
 export const MOUNTED_CAPABILITY_IDS: readonly string[] = [
   'operator.activity_list',
+  'marketplace.list_sources',
+  'marketplace.cache_status',
+  'marketplace.browse',
+  'marketplace.list_installations',
+  'marketplace.read_installed',
+  'marketplace.check_updates',
+  'marketplace.list_held_back',
+  'marketplace.list_dev_links',
   'mcp.list',
   'mcp.add',
   'mcp.import',
