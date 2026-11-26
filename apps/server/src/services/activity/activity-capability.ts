@@ -14,8 +14,8 @@
 import { z } from 'zod';
 import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
 
-import { CapabilityToolError } from '../core/capabilities/index.js';
 import {
+  CapabilityToolError,
   defineCapability,
   type CapabilityDeps,
   type CapabilityDomain,

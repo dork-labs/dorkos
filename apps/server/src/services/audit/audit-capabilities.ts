@@ -34,11 +34,9 @@ import {
   type TranscriptPage,
 } from '@dorkos/shared/audit-schemas';
 import { RunningChatsResponseSchema } from '@dorkos/shared/running-chats';
+import { type CapabilityInvocationContext } from '../core/capabilities/index.js';
 import {
   CapabilityToolError,
-  type CapabilityInvocationContext,
-} from '../core/capabilities/index.js';
-import {
   defineCapability,
   type CapabilityDeps,
   type CapabilityDomain,

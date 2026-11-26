@@ -28,11 +28,9 @@ import {
   AgentPauseResultSchema,
 } from '@dorkos/shared/mesh-schemas';
 import { z } from 'zod';
+import { type CapabilityHandlerContext } from '../../core/capabilities/index.js';
 import {
   CapabilityToolError,
-  type CapabilityHandlerContext,
-} from '../../core/capabilities/index.js';
-import {
   defineCapability,
   type CapabilityDeps,
   type CapabilityDomain,

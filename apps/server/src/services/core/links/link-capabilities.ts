@@ -20,8 +20,8 @@ import {
   LINK_NOT_FOUND_CODE,
   ResolvedDorkLinkSchema,
 } from '@dorkos/shared/dork-link-schemas';
-import { CapabilityToolError } from '../capabilities/index.js';
 import {
+  CapabilityToolError,
   defineCapability,
   type CapabilityDeps,
   type CapabilityDomain,

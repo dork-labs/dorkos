@@ -196,8 +196,8 @@ import { resolveDorkHome } from '../../lib/dork-home.js';
 import { sweepUnboundAttachments } from './attachments/unbound-sweep.js';
 import { getAttachmentRowStore, getRoomAttachmentStore } from './attachments/attachment-stores.js';
 
-import { CapabilityToolError } from '../core/capabilities/index.js';
 import {
+  CapabilityToolError,
   defineCapability,
   type CapabilityDomain,
 } from '../core/capabilities/capability-definition.js';

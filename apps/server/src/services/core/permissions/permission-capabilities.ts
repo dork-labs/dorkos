@@ -55,13 +55,13 @@ import { APPROVAL_REQUEST_REASON_MAX_LENGTH } from '@dorkos/shared/approval-sche
 import type { ActionConsent, McpServerId } from '@dorkos/shared/capabilities';
 
 import {
-  CapabilityToolError,
   permissionGateSources,
   REQUEST_PERMISSION_TOOL,
   type CapabilityHandlerContext,
   type CapabilityRegistry,
 } from '../capabilities/index.js';
 import {
+  CapabilityToolError,
   defineCapability,
   type CapabilityDeps,
   type CapabilityDefinition,

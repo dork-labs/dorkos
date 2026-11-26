@@ -15,11 +15,9 @@
  */
 import { z } from 'zod';
 import { ChatRunsPageSchema, type ChatRunsPage } from '@dorkos/shared/run-schemas';
+import { type CapabilityInvocationContext } from '../core/capabilities/index.js';
 import {
   CapabilityToolError,
-  type CapabilityInvocationContext,
-} from '../core/capabilities/index.js';
-import {
   defineCapability,
   type CapabilityDomain,
 } from '../core/capabilities/capability-definition.js';

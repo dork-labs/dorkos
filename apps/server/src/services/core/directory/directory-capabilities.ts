@@ -22,8 +22,11 @@ import {
 } from '../../../lib/boundary.js';
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
-import { CapabilityToolError } from '../capabilities/index.js';
-import { defineCapability, type CapabilityDomain } from '../capabilities/capability-definition.js';
+import {
+  CapabilityToolError,
+  defineCapability,
+  type CapabilityDomain,
+} from '../capabilities/capability-definition.js';
 import { boundaryToolError } from './path-refusal.js';
 
 /** A refusal for a folder the system answered with an errno, or `null` for another failure. */
