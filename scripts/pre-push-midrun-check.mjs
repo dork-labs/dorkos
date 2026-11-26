@@ -1,6 +1,16 @@
 #!/usr/bin/env node
 // Pre-push guard: don't push while CI is still running from the last push.
 //
+// --help
+// Purpose: refuse a push while this branch's `test` or `browser-test` run is
+//          queued or running and under ten minutes old: the push would cancel it.
+//          It tests nothing; any trouble asking GitHub lets the push through.
+// Runs in: pre-push (`ci-midrun`).
+// To fix:  wait for the run, or push anyway with `CI_PUSH_ANYWAY=1 git push`
+//          (the override is logged in the common git dir's ci-midrun/).
+// Usage:   node scripts/pre-push-midrun-check.mjs   (CI_MIDRUN_TIMEOUT_MS, default 4000)
+// --help end
+//
 //   node scripts/pre-push-midrun-check.mjs
 //   CI_PUSH_ANYWAY=1 git push      # push anyway
 //
@@ -41,6 +51,9 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { exitOnHelp } from './lib/gate-help.mjs';
+
+exitOnHelp(import.meta.url);
 
 const WORKFLOWS = ['test.yml', 'browser-test.yml'];
 const WINDOW_MINUTES = 10;

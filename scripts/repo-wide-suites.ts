@@ -70,6 +70,7 @@ export const REPO_WIDE_SUITES = [
   '__tests__/dependabot-lockstep-families.test.ts',
   '__tests__/deprecated-removal.test.ts',
   '__tests__/extension-child-build-entry.test.ts',
+  '__tests__/gate-help.test.ts',
   '__tests__/gray-matter-import-boundary.test.ts',
   // Reads apps/server/eslint.config.js, server source and .claude/rules/dork-home.md (DOR-4940).
   '__tests__/homedir-carve-out-census.test.ts',

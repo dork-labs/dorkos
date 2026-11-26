@@ -1,6 +1,15 @@
 /**
  * Fail the build when retired vocabulary reappears in user-facing copy.
  *
+ * --help
+ * Purpose: fail when retired vocabulary reappears in copy a user reads (app,
+ *          site and server render paths, and docs prose).
+ * Runs in: the required `typecheck` job and the `harness` job; by hand.
+ * To fix:  reword the copy it names (meta/VOICE.md). To keep a word in one file,
+ *          add a scoped, reasoned entry to scripts/vocab-gate/allowlist.json.
+ * Usage:   pnpm check:vocab-gate [repo-root]
+ * --help end
+ *
  * WHY THIS EXISTS. DOR-855 spent a whole pass renaming every network-sense
  * "Connection" in the cockpit's copy so the word means one thing: the
  * Connections page. Nothing stops the next PR from typing "Connection failed"
@@ -163,6 +172,7 @@ import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { readSpaceServer } from './lib/space-server.mjs';
+import { exitOnHelp } from './lib/gate-help.mjs';
 
 /** `relative()`'s output with OS separators normalized to `/`, for portable path matching. */
 function toPosixRelative(from: string, to: string): string {
@@ -934,6 +944,7 @@ export function runVocabGate(
 const isMain = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1];
 
 if (isMain) {
+  exitOnHelp(import.meta.url);
   const repoRoot = process.argv[2] ?? join(SCRIPT_DIR, '..');
   const violations = runVocabGate(repoRoot);
 

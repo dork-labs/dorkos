@@ -2,6 +2,16 @@
  * Fail the build when something that belongs to the closed-source side of
  * DorkOS Cloud appears in this repository's source or prose.
  *
+ * --help
+ * Purpose: fail when something from the closed-source side of DorkOS Cloud
+ *          (prices, plan names, private hosts, paths) appears in this repo.
+ *          It never prints the match: a finding is `path:line  rule-id`.
+ * Runs in: the required `typecheck` job and the `harness` job; by hand.
+ * To fix:  take the term out of the named line. Exit 2 means the ruleset could
+ *          not load (BOUNDARY_REQUIRE_TERMS set, BOUNDARY_TERMS empty or bad).
+ * Usage:   pnpm check:boundary [repo-root]
+ * --help end
+ *
  * WHY THIS EXISTS. AGENTS.md ("## DorkOS Cloud") states the rule: the control
  * plane is closed-source, and prices, plan names, margins and supplier terms
  * never come here. A rule with no guard rots. A cold-start audit on 2026-09-13
@@ -107,6 +117,7 @@
 import { lstatSync, readFileSync, readdirSync, type Dirent } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { exitOnHelp } from './lib/gate-help.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -718,6 +729,7 @@ export function runBoundaryGuard(
 const isMain = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1];
 
 if (isMain) {
+  exitOnHelp(import.meta.url);
   const repoRoot = process.argv[2] ?? join(SCRIPT_DIR, '..');
 
   let mode: BoundaryMode;

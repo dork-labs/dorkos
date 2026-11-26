@@ -3,6 +3,15 @@
 # instead of written as its escape sequence. Canonical spelling in this
 # repo: `\u0000`.
 #
+# --help
+# Purpose: fail when a raw NUL byte sits in a tracked text file (git and grep then
+#          treat the whole file as binary).
+# Runs in: the required `typecheck` job; by hand.
+# To fix:  write the byte as `\u0000`. Content under test may keep a raw byte with
+#          `nul-byte-allow` and a reason on the same line.
+# Usage:   bash scripts/check-nul-bytes.sh   (ROOT=<dir> to scan another checkout)
+# --help end
+#
 # WHY THIS EXISTS. A raw NUL byte in a text file makes both git and grep treat
 # the WHOLE FILE as binary: `git diff`/`git show`/GitHub's PR view collapse to
 # "Binary files differ", and this repo's default `grep` (ugrep) silently
@@ -51,6 +60,11 @@
 # Pinned by scripts/test-check-nul-bytes.sh, which proves it goes red on a
 # seeded raw NUL byte, respects the `nul-byte-allow` marker, and stays green
 # on a file that spells the same separator as an escape.
+
+# --help (DOR-4950). A gate checked out alone, as the PR-side gates are, runs without it.
+gate_help="$(dirname "$0")/lib/gate-help.sh"
+# shellcheck source=lib/gate-help.sh
+[ ! -r "$gate_help" ] || . "$gate_help"
 
 set -uo pipefail
 
