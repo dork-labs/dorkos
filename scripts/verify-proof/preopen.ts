@@ -12,9 +12,9 @@ import path from 'node:path';
  *                     scope `scripts/scripts-test-scope.sh` holds, plus `.agents/`,
  *                     `.claude/`, `.github/` and the root `package.json`)
  *   scripts-repo      otherwise, the repo-wide scripts suites alone
- *                     (`scripts/vitest.repo.config.ts`): they read the whole tree, so
- *                     any change can break them, and the required `typecheck`
- *                     workflow runs them on every PR
+ *                     (the `scripts-repo` project of `scripts/vitest.config.ts`): they
+ *                     read the whole tree, so any change can break them, and the
+ *                     required `typecheck` workflow runs them on every PR
  *   lint:changed      ESLint on the changed files from the root, in place of `eslint .`
  *   lint:root         the full `eslint .`, when the root lint setup itself changed or
  *                     too many files did to list
@@ -153,7 +153,15 @@ export function planPreopen(cwd: string, root: string): PreopenStep[] {
       ? { name: 'test:scripts', args: ['run', 'test:scripts'] }
       : {
           name: 'scripts-repo',
-          args: ['exec', 'vitest', 'run', '--config', 'scripts/vitest.repo.config.ts'],
+          args: [
+            'exec',
+            'vitest',
+            'run',
+            '--config',
+            'scripts/vitest.config.ts',
+            '--project',
+            'scripts-repo',
+          ],
         },
   ];
   const files = lintableFiles(top, changed);

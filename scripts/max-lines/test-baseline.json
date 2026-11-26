@@ -372,6 +372,6 @@
     "scripts/__tests__/check-vocab-gate.test.ts": 925,
     "scripts/__tests__/pr-test-plan.test.ts": 518,
     "scripts/__tests__/text-only-scope.test.ts": 570,
-    "scripts/__tests__/verify-proof.test.ts": 1056
+    "scripts/__tests__/verify-proof.test.ts": 1052
   }
 }
