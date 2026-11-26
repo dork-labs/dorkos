@@ -52,7 +52,7 @@ import { getExtensionConnectionServices } from '../../services/connectors/extens
 import { isConnectorRuntimeCapabilityId } from '../../services/connectors/runtime-capability-scope.js';
 import { operationsListNote } from '../../services/connectors/access/level-gap-lines.js';
 import { env } from '../../env.js';
-import { workGraphCapabilityDeps } from '../../services/work-graph/work-graph-wiring.js';
+import { workGraphCapabilityDeps } from './work-graph.js';
 import { createDocFrameSdkProbe } from '../../services/runtimes/test-mode/doc-frame/doc-frame-sdk-probe.js';
 import { configureDocFrameSdkProbe } from '../../services/runtimes/test-mode/doc-frame/doc-frame-sdk-scenario.js';
 import type {

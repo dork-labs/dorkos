@@ -18,6 +18,13 @@ import {
   type PumpLaunchPlan,
 } from '../pump-launch.js';
 import { captureLaunchFingerprint } from '../launch-fingerprint.js';
+import { setProcessTokenPort } from '../../../shared/references/process-token-port.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import {
+  initAgentIdentityService,
+  resetAgentIdentityService,
+} from '../../../../core/agent-identity/agent-identity-service.js';
+import { wireProcessTokenPort } from '../../../../../startup/steps/work-graph.js';
 import { MCP_SERVERS_UNKNOWN } from '../launch-live-settings.js';
 import type { LaunchFingerprint } from '../launch-fingerprint.js';
 import type { AgentSession } from '../../agent-types.js';
@@ -98,6 +105,36 @@ describe('the persistent pump launch records its process', () => {
     expect(typeof passed?.options.spawnClaudeCodeProcess).toBe('function');
   });
 
+  it('reports the identity token its process holds while that process runs (DOR-5264)', async () => {
+    const reported: string[] = [];
+    setProcessTokenPort({
+      processStarted: (env, chatId) =>
+        reported.push(`started ${env?.DORKOS_AGENT_TOKEN} ${chatId}`),
+      processEnded: (env) => reported.push(`ended ${env?.DORKOS_AGENT_TOKEN}`),
+    });
+    try {
+      const { plan } = planWithSharedOptions({ env: { DORKOS_AGENT_TOKEN: 'tok-1' } });
+      launch(plan);
+      // A token reaches no process until one spawns: the turn's mint names nothing.
+      expect(reported).toEqual([]);
+      const passed = (queryMock.mock.calls as unknown as Array<[{ options: Options }]>)[0]![0];
+      const child = passed.options.spawnClaudeCodeProcess!({
+        command: process.execPath,
+        args: ['-e', 'setTimeout(() => {}, 30000)'],
+        cwd: ownedAccountRoot,
+        env: { ...process.env },
+        signal: new AbortController().signal,
+      });
+      expect(reported).toEqual(['started tok-1 sess-1']);
+      const exited = new Promise((resolve) => child.once('exit', resolve));
+      child.kill('SIGKILL');
+      await exited;
+      expect(reported).toEqual(['started tok-1 sess-1', 'ended tok-1']);
+    } finally {
+      setProcessTokenPort(undefined);
+    }
+  });
+
   it('leaves the resume-per-message path’s options untouched', () => {
     // The deliberate asymmetry: only a PERSISTENT process can outlive the
     // server, so only it is tracked. The seam must therefore be added to a COPY
@@ -110,6 +147,57 @@ describe('the persistent pump launch records its process', () => {
 
     expect(sharedOptions.spawnClaudeCodeProcess).toBeUndefined();
     expect(plan.sdkOptions.spawnClaudeCodeProcess).toBeUndefined();
+  });
+});
+
+describe('a warm process and the tokens turns mint for it (DOR-5264)', () => {
+  it('N turns on one launched process leave one entry, and a token no process got names nothing', async () => {
+    const identities = initAgentIdentityService(createTestDb());
+    wireProcessTokenPort();
+    let child: ReturnType<NonNullable<Options['spawnClaudeCodeProcess']>> | undefined;
+    try {
+      const minted = async () => ({
+        DORKOS_AGENT_TOKEN: await identities.mint({ agentPath: '/agents/ana', displayName: 'Ana' }),
+      });
+      // Each dispatch resolves a plan, and with it a freshly minted token.
+      let current = planWithSharedOptions({ env: await minted() }).plan;
+      const launcher = createPumpLauncher(
+        { hasStarted: false, sdkSessionId: undefined, eventQueue: [] } as unknown as AgentSession,
+        {} as MessageSenderOpts,
+        () => current,
+        { onLaunched: () => {}, onServersNotHeld: () => {} }
+      );
+      launcher({
+        sessionId: 'sess-1',
+        prompt: (async function* () {})() as never,
+        resuming: false,
+      });
+      const passed = (queryMock.mock.calls as unknown as Array<[{ options: Options }]>)[0]![0];
+      child = passed.options.spawnClaudeCodeProcess!({
+        command: process.execPath,
+        args: ['-e', 'setTimeout(() => {}, 30000)'],
+        cwd: ownedAccountRoot,
+        env: { ...process.env },
+        signal: new AbortController().signal,
+      });
+      const launched = current.sdkOptions.env!.DORKOS_AGENT_TOKEN!;
+
+      // Ten more turns ride the warm process: each mints, and none launches.
+      const neverLaunched: string[] = [];
+      for (let turn = 0; turn < 10; turn += 1) {
+        current = planWithSharedOptions({ env: await minted() }).plan;
+        neverLaunched.push(current.sdkOptions.env!.DORKOS_AGENT_TOKEN!);
+      }
+
+      expect(identities.chats.size).toBe(1);
+      expect((await identities.resolve(launched))?.chatId).toBe('sess-1');
+      for (const token of neverLaunched)
+        expect((await identities.resolve(token))?.chatId).toBeUndefined();
+    } finally {
+      if (child && child.exitCode === null && !child.killed) child.kill('SIGKILL');
+      setProcessTokenPort(undefined);
+      resetAgentIdentityService();
+    }
   });
 });
 

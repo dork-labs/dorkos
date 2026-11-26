@@ -43,13 +43,12 @@
 import { z } from 'zod';
 import { entityRef, parseEntityRef, type EntityRef } from '@dorkos/shared/entity-ref';
 import {
+  CapabilityToolError,
   defineCapability,
   type CapabilityDeps,
   type CapabilityDomain,
-  type CapabilityHandlerContext,
-} from '../core/capabilities/index.js';
-import { CapabilityToolError } from '../core/capabilities/mcp-envelope.js';
-import { isServerPrincipal } from '../connectors/principal/server-principal.js';
+} from '../core/capabilities/capability-definition.js';
+import type { CapabilityHandlerContext } from '../core/capabilities/registry.js';
 import type { TurnMarks } from '../core/turn-power/turn-marks.js';
 import type { WorkLinkStore } from './work-link-store.js';
 
@@ -110,11 +109,10 @@ async function callerChatOf(
   if (identity.inactive) throw notAChatTurn('this agent token is no longer active.');
   const bound = identity.chatId;
   if (!bound) throw notAChatTurn('this agent token names no chat.');
-  const principal = context.serverPrincipal;
-  const principalChat =
-    principal && isServerPrincipal(principal) && principal.claims.kind === 'runtime'
-      ? principal.claims.canonicalSessionId
-      : undefined;
+  // Read, not trusted: a principal that names another chat only ever adds a
+  // refusal, so its authenticity does not decide anything here.
+  const claims = context.serverPrincipal?.claims;
+  const principalChat = claims?.kind === 'runtime' ? claims.canonicalSessionId : undefined;
   for (const other of [context.sessionId, principalChat]) {
     if (other !== undefined && graph.resolveChat(other) !== graph.resolveChat(bound))
       throw notAChatTurn('the call names a different chat than its token.');

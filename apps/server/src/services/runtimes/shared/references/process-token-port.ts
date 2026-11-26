@@ -4,7 +4,7 @@
  * decides what that token may then say about its chat. The runtime never
  * learns what the space side does with it, and imports nothing from it.
  *
- * Wired once at startup by a composition step (`startup/steps/process-tokens.ts`),
+ * Wired once at startup by a composition step (`startup/steps/work-graph.ts`),
  * the way the turn port's facts sink is. Until then, and in any process that
  * composes none, both calls do nothing, which fails closed: a token no
  * provider was told about names no chat, so a capability that needs one

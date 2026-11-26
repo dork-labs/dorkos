@@ -18,7 +18,7 @@ import {
   processStarted,
   setProcessTokenPort,
 } from '../../../services/runtimes/shared/references/process-token-port.js';
-import { wireProcessTokenPort } from '../process-tokens.js';
+import { wireProcessTokenPort } from '../work-graph.js';
 
 const CHAT = '3f2a9c1e-7b4d-4e8a-9c2f-1a2b3c4d5e6f';
 let identities: AgentIdentityService;

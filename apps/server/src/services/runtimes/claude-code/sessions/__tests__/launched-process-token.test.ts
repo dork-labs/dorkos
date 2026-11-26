@@ -17,7 +17,7 @@ import {
   type AgentIdentityService,
 } from '../../../../core/agent-identity/agent-identity-service.js';
 import { setProcessTokenPort } from '../../../shared/references/process-token-port.js';
-import { wireProcessTokenPort } from '../../../../../startup/steps/process-tokens.js';
+import { wireProcessTokenPort } from '../../../../../startup/steps/work-graph.js';
 import { startLaunchedProcess } from '../pump-launch.js';
 import { createTrackedSpawn } from '../tracked-spawn.js';
 import { WarmProcessLedger } from '../warm-process-ledger.js';

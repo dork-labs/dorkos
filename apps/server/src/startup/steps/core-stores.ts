@@ -78,7 +78,7 @@ import {
 } from '../../services/core/auth/sessions/signed-in-devices.js';
 import { env } from '../../env.js';
 import { initAgentIdentityService } from '../../services/core/agent-identity/index.js';
-import { wireProcessTokenPort } from './process-tokens.js';
+import { wireProcessTokenPort } from './work-graph.js';
 import { ActivityService } from '../../services/activity/activity-service.js';
 import { wireAuditTrail } from '../../services/audit/index.js';
 import { wireAgentPause } from '../../services/mesh/pause/index.js';

@@ -96,7 +96,7 @@ export async function resolveAgentTokenEnv(
  * A process launched with `env` has started for `chatId`: its token names that
  * chat until the process ends (DOR-5264). The space side's half of the process
  * token port (`runtimes/shared/references/process-token-port.ts`), which
- * `startup/steps/process-tokens.ts` wires; pair it with {@link forgetTokenChatOf}.
+ * `startup/steps/work-graph.ts` wires; pair it with {@link forgetTokenChatOf}.
  * Never throws.
  *
  * @param env - The environment the process is launched with.

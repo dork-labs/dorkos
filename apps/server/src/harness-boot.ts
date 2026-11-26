@@ -33,7 +33,7 @@ import { logger } from './lib/logger.js';
 import { registerClaudeCodeFacts } from './startup/register-claude-code-facts.js';
 import { initConfigManager } from './services/core/config-manager.js';
 import { initAgentIdentityService } from './services/core/agent-identity/index.js';
-import { wireProcessTokenPort } from './startup/steps/process-tokens.js';
+import { wireProcessTokenPort } from './startup/steps/work-graph.js';
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
 import { runtimeRegistry } from './services/core/runtime-registry.js';
 import { setContinuationHoldDb } from './services/core/turn-power/continuation-hold.js';
