@@ -21,7 +21,7 @@
  * WHY A VITEST TEST RATHER THAN A SHELL FIXTURE — the same reasoning
  * `shell-suite-parity.test.ts` beside it gives: `scripts/vitest.config.ts` globs
  * every `*.test.ts` under a `__tests__` directory, and that run is the last link
- * of `test:scripts` (what `pnpm verify` runs) and the final `harness` step of
+ * of `test:scripts` (what `pnpm check verify` runs) and the final `harness` step of
  * `.github/workflows/scripts-test.yml`, so this file runs in both with no
  * wiring. (Since ledger fixture-suites-by-glob a `scripts/test-*.sh` needs none
  * either; when this was written it had to be listed in both.)
@@ -153,10 +153,10 @@ function writeStub(binDir: string, name: string, body: string): void {
 }
 
 /**
- * Execute the real root `verify:checks` script while replacing its external commands
+ * Execute the real root `check:verify:turbo` script while replacing its external commands
  * with deterministic stubs, returning the Turbo calls that reached the runner.
  */
-function captureVerifyTurboInvocations(script = 'verify:checks'): TurboInvocation[] {
+function captureVerifyTurboInvocations(script = 'check:verify:turbo'): TurboInvocation[] {
   const fixtureDir = mkdtempSync(path.join(tmpdir(), 'dorkos-verify-gate-'));
   const capturePath = path.join(fixtureDir, 'turbo-calls.jsonl');
 
@@ -171,7 +171,7 @@ function captureVerifyTurboInvocations(script = 'verify:checks'): TurboInvocatio
     );
 
     const scripts = JSON.parse(packageText) as { scripts?: Record<string, string> };
-    // `pnpm verify` wraps `verify:checks` to record proof; the checks are what reach Turbo.
+    // `pnpm check verify` wraps `check:verify:turbo` to record proof; the checks are what reach Turbo.
     const verify = scripts.scripts?.[script];
     expect(verify, `root package.json has no \`${script}\` script`).toBeTypeOf('string');
 
@@ -204,8 +204,8 @@ describe('local turbo --affected gates pin their diff base', () => {
   it('finds the call sites at all', () => {
     // Without this, every assertion below passes vacuously the day someone
     // renames a hook or the scanner stops matching — the exact way a guard
-    // dies quietly. THREE known sites today: pre-commit lint, `pnpm verify` and
-    // `pnpm verify:preopen`'s typecheck and lint step (DOR-4728).
+    // dies quietly. THREE known sites today: pre-commit lint, `pnpm check verify` and
+    // `pnpm check preopen`'s typecheck and lint step (DOR-4728).
     // There were four until DOR-2160 removed the pre-push `tests` command,
     // whose measured runs either proved nothing or could not finish, and three
     // until pre-commit typecheck left the hook (ci/ledger/260919-175506-*),
@@ -218,8 +218,8 @@ describe('local turbo --affected gates pin their diff base', () => {
     ]);
     expect(sites.map((s) => s.label).sort()).toEqual([
       'lefthook.yml pre-commit.lint',
-      'package.json scripts.verify:checks',
-      'package.json scripts.verify:preopen:turbo',
+      'package.json scripts.check:preopen:turbo',
+      'package.json scripts.check:verify:turbo',
     ]);
   });
 
@@ -284,7 +284,7 @@ describe('local turbo --affected gates pin their diff base', () => {
   });
 
   it('runs the preopen typecheck and lint through Turbo on the same pinned base', () => {
-    expect(captureVerifyTurboInvocations('verify:preopen:turbo')).toEqual([
+    expect(captureVerifyTurboInvocations('check:preopen:turbo')).toEqual([
       {
         args: ['run', 'typecheck', 'lint', '--affected', '--summarize'],
         base: 'test-origin-main',
