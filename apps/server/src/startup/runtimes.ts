@@ -136,14 +136,14 @@ export async function registerRuntimes(deps: RuntimeStartupDeps): Promise<Regist
     // page and a fake inference stream, all in-process, plus the DorkOS runtime
     // under DORKOS_TEST_RUNTIME_DOE (DOR-2783). Dynamic import keeps all of it
     // out of the production module graph — same pattern as TestModeRuntime above.
-    const { composeTestModeCloud } =
-      await import('../services/runtimes/test-mode/compose-test-cloud.js');
-    doeRuntime = composeTestModeCloud(runtimeRegistry);
-    // A beat on demand for seeded installs (`routes/test-heartbeat.ts`).
     const [{ addTestControlGroup }, { createTestHeartbeatRoutes }] = await Promise.all([
       import('../routes/test-control.js'),
       import('../routes/test-heartbeat.js'),
     ]);
+    const { composeTestModeCloud } =
+      await import('../services/runtimes/test-mode/compose-test-cloud.js');
+    doeRuntime = composeTestModeCloud(runtimeRegistry, addTestControlGroup);
+    // A beat on demand for seeded installs (`routes/test-heartbeat.ts`).
     addTestControlGroup('/heartbeat', createTestHeartbeatRoutes());
   } else {
     // Where images a turn produces live is chosen HERE and nowhere else: the

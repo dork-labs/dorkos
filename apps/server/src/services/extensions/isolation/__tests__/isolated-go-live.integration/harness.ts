@@ -23,6 +23,8 @@ import {
   resetPathTrustWriters,
 } from '../../../pin/path-trust-writers.js';
 import { createExtensionApiRoutes } from '../../../../../routes/extension-api.js';
+import { assessPerson } from '../../../../../routes/extensions-person-bar.js';
+import { setExtensionPersonBar } from '../../../inbox/extension-inbox-context.js';
 import { honoGroupListener } from '../../../../../http/__tests__/hono-group-listener.js';
 import type { ApiEnv } from '../../../../../http/api-chain.js';
 import { setAgentSendService, type AgentSendService } from '../../../agent-send/agent-send.js';
@@ -34,6 +36,9 @@ import {
   NotificationService,
   setNotificationService,
 } from '../../../../notifications/notification-service.js';
+
+// The person bar every extension route runs, wired as boot wires it.
+setExtensionPersonBar(assessPerson);
 
 /** What each test runs against; the hooks below reset it. */
 export const st = {

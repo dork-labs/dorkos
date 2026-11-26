@@ -11,10 +11,9 @@
  */
 import type { RequestHandler } from 'express';
 import { problemBody } from '@dorkos/http-kit';
-import { PROBLEM_CONTENT_TYPE } from '@dorkos/shared/problem';
+import { PROBLEM_CONTENT_TYPE, type Problem, type ProblemCode } from '@dorkos/shared/problem';
 import type { InboxApi, PersonCheck, ProjectSettingsReader } from '@dorkos/extension-api/server';
 import type { RequestFacts } from '../../../http/request-facts.js';
-import { assessPerson, type PersonBarCopy } from '../../../routes/extensions-person-bar.js';
 import { expressRequestFacts } from '../http/express-bridge.js';
 import { PERSON_APP_HEADER, PERSON_SESSION_REQUIRED_CODE } from '@dorkos/shared/person-session';
 import {
@@ -26,6 +25,49 @@ import { projectRegistry } from '../../projects/project-registry.js';
 import { getExtensionInbox, type ExtensionInboxService } from './extension-inbox.js';
 import { projectSettingsStore } from './extension-project-settings.js';
 import { runInPersonRequest } from '../person-record/person-record.js';
+
+/**
+ * What one surface says when the person bar refuses, so the reader is told
+ * what DorkOS did not do and what to do instead.
+ */
+export interface ExtensionPersonCopy {
+  /** Machine-readable code for the origin and agent bars. */
+  code: ProblemCode;
+  /** What the cookie bar names as the thing being changed, as a noun phrase. */
+  subject: string;
+  /** The `detail` for a request that arrived from another site, given its origin. */
+  crossSite: (origin: string) => string;
+  /** The `detail` for a caller that named itself an agent. */
+  agent: string;
+}
+
+/**
+ * The person bar's verdict on one request: the refusal to answer with, or
+ * `null` when a person is asking. Boot passes the extensions routes' own bar
+ * (`assessPerson`), so an extension's routes refuse exactly as DorkOS's do.
+ */
+export type AssessExtensionPerson = (
+  facts: RequestFacts,
+  copy: ExtensionPersonCopy
+) => { status: number; body: Problem } | null;
+
+let assessExtensionPerson: AssessExtensionPerson | undefined;
+
+/**
+ * Wire the person bar every extension route and fetch handler runs. Boot
+ * calls it once, before any extension serves a request.
+ *
+ * @param assess - The bar's verdict on one request.
+ */
+export function setExtensionPersonBar(assess: AssessExtensionPerson): void {
+  assessExtensionPerson = assess;
+}
+
+/** The person bar, or a plain error when boot has not wired one: never an open door. */
+function personBarOrThrow(): AssessExtensionPerson {
+  if (!assessExtensionPerson) throw new Error('The DorkOS person bar is not wired yet.');
+  return assessExtensionPerson;
+}
 
 /** The inbox, or a plain error when boot has not wired one. */
 function inboxOrThrow(): ExtensionInboxService {
@@ -91,7 +133,7 @@ export function createInboxApi(
  *
  * @param extensionName - The extension's manifest name.
  */
-export function requirePersonCopy(extensionName: string): PersonBarCopy {
+export function requirePersonCopy(extensionName: string): ExtensionPersonCopy {
   return {
     code: 'person_only',
     subject: `${extensionName}'s settings`,
@@ -125,7 +167,7 @@ export function personVerdict(request: RequestFacts, extensionName: string): Per
  */
 function extensionPersonRefusal(request: RequestFacts, extensionName: string) {
   const facts: RequestFacts = { ...request, method: undefined };
-  const refusal = assessPerson(facts, requirePersonCopy(extensionName));
+  const refusal = personBarOrThrow()(facts, requirePersonCopy(extensionName));
   const fromTheApp = facts.headers[PERSON_APP_HEADER] !== undefined;
   if (refusal && fromTheApp && personSessionWasMissing(facts) && isPersonWithoutSession(facts)) {
     const body = problemBody(PERSON_SESSION_REQUIRED_CODE, {
