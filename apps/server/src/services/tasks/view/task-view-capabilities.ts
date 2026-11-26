@@ -35,11 +35,11 @@ import {
   type Task,
   type TaskRun,
 } from '@dorkos/shared/schemas';
+import { type CapabilityHandlerContext } from '../../core/capabilities/index.js';
 import {
   defineCapability,
   type CapabilityDomain,
-  type CapabilityHandlerContext,
-} from '../../core/capabilities/index.js';
+} from '../../core/capabilities/capability-definition.js';
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 
 /** What the task reads ask, over the running Tasks service (`routes/task-view-reader.ts`). */

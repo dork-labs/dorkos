@@ -8,13 +8,15 @@ import {
   ConnectorExecutionTargetSchema,
 } from '@dorkos/shared/connector-schemas';
 import {
-  defineCapability,
-  type CapabilityDeps,
-  type CapabilityDomain,
   type CapabilityHandlerContext,
   type CapabilityInvocationContext,
   type CapabilityPreflightResult,
 } from '../../core/capabilities/index.js';
+import {
+  defineCapability,
+  type CapabilityDeps,
+  type CapabilityDomain,
+} from '../../core/capabilities/capability-definition.js';
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 import { isServerPrincipal, type ServerPrincipalProof } from '../principal/server-principal.js';
 import {

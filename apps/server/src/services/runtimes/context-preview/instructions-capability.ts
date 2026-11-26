@@ -26,7 +26,10 @@ import {
   type InstructionsRuntime,
 } from '@dorkos/shared/agent-instructions-schemas';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
-import { defineCapability, type CapabilityDomain } from '../../core/capabilities/index.js';
+import {
+  defineCapability,
+  type CapabilityDomain,
+} from '../../core/capabilities/capability-definition.js';
 import { homeOf, resolveAgentHome } from '../../core/agent-identity/index.js';
 
 /** The MCP tool name. */

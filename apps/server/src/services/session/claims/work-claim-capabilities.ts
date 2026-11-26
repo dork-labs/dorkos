@@ -12,12 +12,14 @@
  */
 import { z } from 'zod';
 import {
-  defineCapability,
-  type CapabilityDeps,
-  type CapabilityDomain,
   type CapabilityHandlerContext,
   type CapabilityInvocationContext,
 } from '../../core/capabilities/index.js';
+import {
+  defineCapability,
+  type CapabilityDeps,
+  type CapabilityDomain,
+} from '../../core/capabilities/capability-definition.js';
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 import { isServerPrincipal } from '../../connectors/principal/server-principal.js';
 import {

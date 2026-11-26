@@ -42,7 +42,13 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import { isTestPath } from '../../apps/server/eslint-rules/computer-wall.js';
-import { domainOf, edgeOf } from '../../apps/server/eslint-rules/import-boundary.js';
+import {
+  COMPOSITION_ROOTS,
+  PORTS,
+  domainOf,
+  edgeOf,
+  portLeak,
+} from '../../apps/server/eslint-rules/import-boundary.js';
 
 /** The server package, relative to the root. */
 const SERVER = 'apps/server';
@@ -64,9 +70,11 @@ export interface Baseline {
 /** One reason the check fails. */
 export interface Finding {
   /** Which rule of the ratchet was broken. */
-  kind: 'new' | 'grew' | 'stale' | 'raised';
-  /** The pair, `from -> to`. */
+  kind: 'new' | 'grew' | 'stale' | 'raised' | 'port' | 'list';
+  /** The pair, `from -> to`, or the listed path for a `list` finding. */
   pair: string;
+  /** The port file that leaks, or what is wrong with a list entry. */
+  detail?: string;
   /** Its count now, when it has one. */
   count?: number;
   /** The number the baseline (or the base's baseline) holds for it. */
@@ -183,6 +191,8 @@ export interface Measure {
   files: Record<string, string[]>;
   /** Every domain a non-test file is in; sorted. */
   domains: string[];
+  /** Pairs a port makes into another domain, which it never may. */
+  leaks: Finding[];
 }
 
 /**
@@ -194,16 +204,22 @@ export function measure(root: string): Measure {
   const edges: Edges = {};
   const files: Record<string, string[]> = {};
   const domains = new Set<string>();
+  const leaks: Finding[] = [];
   for (const file of serviceFiles(root)) {
     const absolute = resolve(root, file);
     const domain = domainOf(absolute);
     if (domain !== null) domains.add(domain);
-    for (const [pair, n] of Object.entries(countFile(absolute, readFileSync(absolute, 'utf8')))) {
+    const text = readFileSync(absolute, 'utf8');
+    for (const specifier of valueSpecifiers(absolute, text)) {
+      const leak = portLeak(absolute, specifier);
+      if (leak) leaks.push({ kind: 'port', pair: leak, detail: file.slice(SERVER.length + 1) });
+    }
+    for (const [pair, n] of Object.entries(countFile(absolute, text))) {
       edges[pair] = (edges[pair] ?? 0) + n;
       (files[pair] ??= []).push(file.slice(SERVER.length + 1));
     }
   }
-  return { edges: sortKeys(edges), files, domains: [...domains].sort() };
+  return { edges: sortKeys(edges), files, domains: [...domains].sort(), leaks };
 }
 
 /**
@@ -260,6 +276,24 @@ export function lowered(edges: Edges, baseline: Edges): Edges {
 }
 
 /**
+ * What is wrong with the named ports and composition roots: an entry whose file does not exist,
+ * or one with no reason or no record behind it.
+ *
+ * @param root - The tree whose `services/` the files must exist in.
+ */
+export function checkExceptions(root: string): Finding[] {
+  const findings: Finding[] = [];
+  for (const entry of [...PORTS, ...COMPOSITION_ROOTS]) {
+    const base = join(root, SERVER, 'src/services', entry.path);
+    if (!['.ts', '.tsx'].some((ext) => existsSync(`${base}${ext}`)))
+      findings.push({ kind: 'list', pair: entry.path, detail: 'no such file' });
+    if (!entry.reason.trim() || !entry.record.trim())
+      findings.push({ kind: 'list', pair: entry.path, detail: 'no reason or no record' });
+  }
+  return findings;
+}
+
+/**
  * One line a person can act on.
  *
  * @param f - The finding.
@@ -276,6 +310,10 @@ export function describe(f: Finding, files: Record<string, string[]> = {}): stri
       return f.count === 0
         ? `${f.pair}: gone. Run \`pnpm check:import-boundary -- --update\` to drop it from the baseline.`
         : `${f.pair}: down to ${f.count} (baseline ${f.baseline}). Run \`pnpm check:import-boundary -- --update\` to lock that in.`;
+    case 'port':
+      return `${f.detail}: makes ${f.pair}, and it is a port. A port imports no other domain (PORTS in apps/server/eslint-rules/import-boundary.js).`;
+    case 'list':
+      return `apps/server/eslint-rules/import-boundary.js: the port or composition root ${f.pair} has ${f.detail}.`;
     case 'raised':
       return f.baseline === undefined
         ? `${f.pair}: added to the baseline. A pair is never added by hand.`
@@ -357,12 +395,14 @@ function main(argv: string[]): number {
     return i === -1 ? undefined : argv[i + 1];
   };
   const root = resolve(value('--root') ?? process.cwd());
-  const { edges, files, domains } = measure(root);
+  const { edges, files, domains, leaks } = measure(root);
+  const problems = [...leaks, ...checkExceptions(root)];
 
   if (flag('--init')) {
     writeBaseline(root, edges);
     console.log(`import-boundary: wrote ${domains.length} domains, ${summary(edges)}`);
-    return 0;
+    for (const f of problems) console.error(`  ${describe(f, files)}`);
+    return problems.length ? 1 : 0;
   }
 
   let baselineText: string;
@@ -378,12 +418,12 @@ function main(argv: string[]): number {
     writeBaseline(root, next);
     console.log(`import-boundary: baseline holds ${summary(next)}`);
     // Lowering never excuses growth or a new pair; say so rather than hide it.
-    const left = compare(edges, next).filter((f) => f.kind !== 'stale');
+    const left = [...problems, ...compare(edges, next).filter((f) => f.kind !== 'stale')];
     for (const f of left) console.error(`  ${describe(f, files)}`);
     return left.length ? 1 : 0;
   }
 
-  const findings = compare(edges, baseline);
+  const findings = [...problems, ...compare(edges, baseline)];
   const base = value('--base');
   if (base) {
     const before = baselineAt(root, base);
