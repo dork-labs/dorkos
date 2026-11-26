@@ -60,9 +60,11 @@ import { HttpsOriginSchema } from './hub-assignment.js';
  * the cloud (a hub) ends its own wake: its program decides by its own idle
  * rule that it is idle and exits with status zero. The service treats a clean
  * exit as sleep: the hub is left stopped, never restarted, until something in
- * `hub-wake.ts` wakes it. Any other exit is a failure, and the service may
- * start the hub again. The hosting service never stops a running hub for
- * being idle and keeps no idle window for it. A home from a build that has no
+ * `hub-wake.ts` wakes it. Any other exit is a failure: the service starts the
+ * hub again a bounded number of times in a row
+ * (`HUB_FAILED_EXIT_RESTARTS_MAX`, in `hub-wake.ts`), and one that keeps
+ * failing stays stopped until the next allowed wake. The hosting service
+ * never stops a running hub for being idle and keeps no idle window for it. A home from a build that has no
  * idle rule never ends its wake: it stays awake until it is ended or it fails.
  * So keeping a home awake is the home's own duty: a home is not idle while a
  * start of one of its computers that it asked for is outstanding (for at most

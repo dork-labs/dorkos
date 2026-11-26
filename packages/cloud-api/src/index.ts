@@ -37,5 +37,6 @@ export * from './hub-assignment.js';
 export * from './published-pages.js';
 export * from './agent-computers.js';
 export * from './hub-wake.js';
+export * from './front-door.js';
 export * from './directory.js';
 export * from './step-up.js';

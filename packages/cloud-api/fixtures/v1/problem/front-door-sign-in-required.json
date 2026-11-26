@@ -1,0 +1,8 @@
+{
+  "code": "sign_in_required",
+  "status": 401,
+  "title": "Sign in to open your DorkOS in the cloud.",
+  "instance": "req_0a1b2c50",
+  "actionUrl": "https://sign-in.example.invalid/continue",
+  "actionLabel": "Sign in"
+}

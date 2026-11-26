@@ -1,0 +1,8 @@
+{
+  "code": "hub_starting_failed",
+  "status": 503,
+  "title": "Your DorkOS in the cloud did not start.",
+  "detail": "Try again in a minute.",
+  "instance": "req_0a1b2c51",
+  "retryAfterMs": 60000
+}

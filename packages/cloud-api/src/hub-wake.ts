@@ -3,19 +3,32 @@ import { z } from 'zod';
 import { TimestampSchema } from './primitives.js';
 
 /**
- * What wakes a person's DorkOS in the cloud (a hub) while it is asleep.
+ * What wakes a person's DorkOS in the cloud (a hub) while it is asleep, how
+ * often each may start it, and what happens when it stops.
  *
- * A hub may sleep when nobody is using it. Five things wake it, and nothing
- * else does:
+ * **When a hub may sleep.** A hub may sleep when nobody is using it, but never
+ * within `HUB_AWAKE_AFTER_LAST_REQUEST_SECONDS` of the last request it
+ * served, and never while a request is in flight (`front-door.ts` says what
+ * counts as in flight). What ends a hub's wake, and what keeps it awake, are in
+ * `agent-computers.ts`; this floor holds whatever the hub's own idle rule says.
+ *
+ * **What wakes it.** Six things, and nothing else:
  *
  * 1. **Its own next-wake time.** The hub says when its next schedule is due
  *    (`PUT /v1/hubs/self/next-wake`, {@link HubNextWakeRequestSchema}), and the
  *    service wakes it then.
  * 2. **A request for it from its signed-in owner**, such as opening the app on
  *    the web. It arrives through the hub's front door as a request for that hub.
- * 3. **A request for an agent that lives on it**, such as a message sent to
- *    that agent. It too arrives through the front door as a request for that
- *    hub.
+ * 3. **A request for an agent that lives on it, from its signed-in owner**,
+ *    such as a message sent to that agent. It too arrives through the front door as a request for that hub. The same
+ *    request from any other caller wakes nothing: while the hub sleeps it is
+ *    answered `503` with `Retry-After` (the `hub_unavailable` problem). Such a
+ *    caller carries a credential that only the hub itself issued and can
+ *    check, and the front door never holds or checks a credential a hub
+ *    issued, so it cannot tell that caller from anybody. Such a caller has no
+ *    door through the front door yet, awake or asleep (`FRONT_DOOR_UNSIGNED_PATHS`
+ *    says what reaches a hub without the owner's sign-in); a later contract
+ *    step adds one, and a way for it to wake the hub.
  * 4. **A request from a computer of its own**, signed with that computer's
  *    own instance key (`POST /v1/instances/hub-wake`,
  *    {@link HubWakeResponseSchema}): a person's own computer, to deliver a
@@ -24,30 +37,101 @@ import { TimestampSchema } from './primitives.js';
  *    hub or to keep a live run going.
  * 5. **A request for one of its published pages**, on its content host
  *    (`contentHost` in its assignment). A page is public by its link, so this
- *    is the one wake without a person's credential, and it is capped for each
- *    hub: at most {@link HUB_CONTENT_HOST_WAKE_MAX_PER_MINUTE} a minute and
- *    {@link HUB_CONTENT_HOST_WAKE_MAX_PER_HOUR} an hour, counted by the front
- *    door for that hub. Past either, the request answers `503` with
- *    `Retry-After` and the line "This page is starting. Try again in a
- *    minute." Only a request whose `Host` is a page's name under the content
- *    host counts; it reaches the hub's page server and nothing else.
+ *    is the one wake that carries no credential at all. Only a request whose
+ *    `Host` is a page's name under the content host counts; it reaches the
+ *    hub's page server and nothing else. Past its cap (below), the request
+ *    answers `503` with `Retry-After` and the line "This page is starting. Try
+ *    again in a minute.", and starts nothing new.
+ * 6. **A space's wake**, for a mention of one of the hub's agents in a space
+ *    it joined (`POST` to `FRONT_DOOR_WAKE_PATH` on the hub's own address).
+ *    It carries the space's wake token, a credential the hosted side issued and
+ *    the front door checks, never a person's. Its body and that token are
+ *    defined by the team spaces contract step that adds the space's wake.
  *
  * Nothing else a computer does wakes its hub. A computer that wants the hub's
- * list of agents reads it only while the hub is already awake. **On the hub's
- * own address, an unsigned request never wakes a hub;** the content host's
+ * list of agents reads it only while the hub is already awake, and the paths
+ * in `FRONT_DOOR_UNSIGNED_PATHS` never wake it. **On the hub's own address, an
+ * unsigned request never wakes a hub**, nor does a request whose caller the
+ * front door cannot check: the owner's wakes carry the owner's sign-in, and a
+ * space's wake carries a wake token the front door checks. The content host's
  * capped wake is the only exception, and only for a page.
  *
- * A wake grants nothing. It starts the hub and nothing more: the hub still
+ * **How often each may start it.** These caps count **starts**, not requests:
+ * a request that finds the hub already awake, or already starting, starts
+ * nothing and counts toward none of them.
+ *
+ * - The next-wake time and a space's wake are held to
+ *   {@link HUB_NEXT_WAKE_MIN_INTERVAL_SECONDS}: the next-wake time starts a
+ *   hub at most once in that interval, and a space's wake starts it at most
+ *   once in that interval for each of the space's wake tokens.
+ * - The other three reasons, the owner (its request for the hub and for an
+ *   agent on it, together), a page read and a computer, are each capped for
+ *   each hub on their own: at most {@link HUB_WAKE_STARTS_PER_MINUTE} start a
+ *   minute and {@link HUB_WAKE_STARTS_PER_HOUR} an hour for that reason. One
+ *   reason reaching its cap never holds back another. Past either, the
+ *   request that asked starts nothing new: the owner's is answered `503` with
+ *   `Retry-After` (`hub_unavailable`), a page's as its wake above says, and a
+ *   computer's as past its own cap (`429`, `rate_limited`). Apart from these, each computer has a cap
+ *   of its own on `POST /v1/instances/hub-wake`
+ *   ({@link HUB_WAKE_REQUEST_MIN_INTERVAL_SECONDS},
+ *   {@link HUB_WAKE_REQUEST_MAX_PER_HOUR}), which counts that computer's
+ *   accepted requests, not starts, and applies as well.
+ *
+ * **A wake grants nothing.** It starts the hub and nothing more: the hub still
  * checks a computer's dial against its own pin, and every other request as it
  * does while awake. For a computer's request, the service checks only that the
  * hub is the caller's own (its account's hub, or the hub a cloud agent
  * computer works for); it never reads the sleeping hub's pins or anything else
- * the hub holds.
+ * the hub holds. **The hosted side checks only what it issued itself.**
  *
- * What ends a hub's wake, and what keeps it awake, are in `agent-computers.ts`.
+ * When the front door wakes a hub for a request on the hub's own address (the
+ * owner's, or a page read) and the hub does not start, it answers that
+ * request `503` with `Retry-After` (the `hub_starting_failed` problem). The
+ * other wakes have no waiting request to answer that way: a computer's was
+ * already answered `202`, and the next-wake time has none.
+ *
+ * **When a hub stops.** A hub that exits with status zero is asleep: the
+ * service leaves it stopped, never restarted, until one of the six wakes above
+ * starts it. A hub that exits with any other status has failed, and the
+ * service starts it again, up to {@link HUB_FAILED_EXIT_RESTARTS_MAX} times
+ * in a row. A start that brings the hub back to `serving` in its health
+ * answer (`HubHealthSchema`) resets that count, and so does a start by a
+ * wake. A hub that fails that many times in a row stays stopped, and is
+ * started again only by the next wake that is allowed: its owner's request,
+ * a page read within its cap, a computer's wake, a space's wake, or its
+ * next-wake time. Such a start counts toward that reason's cap like any
+ * other, and if it fails too, the restarts begin again from zero; the
+ * restarts after a failure count toward no cap.
  */
 
-/** The shortest gap the service leaves between two wakes it makes for one hub. */
+/**
+ * The most times in a row the service starts a hub again after it exits with
+ * a status other than zero. After that many failed restarts the hub stays
+ * stopped until the next allowed wake. A clean exit (status zero) is sleep and
+ * is never restarted.
+ */
+export const HUB_FAILED_EXIT_RESTARTS_MAX = 3 as const;
+
+/**
+ * The most starts one reason may cause for one hub in any minute: the owner's
+ * request, a page read, or a computer's wake, each counted on its own. Counts
+ * starts, not requests.
+ */
+export const HUB_WAKE_STARTS_PER_MINUTE = 1 as const;
+
+/**
+ * The most starts one reason may cause for one hub in any hour: the owner's
+ * request, a page read, or a computer's wake, each counted on its own. Counts
+ * starts, not requests.
+ */
+export const HUB_WAKE_STARTS_PER_HOUR = 30 as const;
+
+/**
+ * The shortest gap between two starts of one hub by its next-wake time, and
+ * between two starts of one hub by a space's wake on the same wake token. The
+ * other wakes have their own caps ({@link HUB_WAKE_STARTS_PER_MINUTE},
+ * {@link HUB_WAKE_STARTS_PER_HOUR}).
+ */
 export const HUB_NEXT_WAKE_MIN_INTERVAL_SECONDS = 300 as const;
 
 /** How far ahead, at most, a hub's next wake may be. One further out is ignored. */
@@ -85,15 +169,19 @@ export type HubNextWakeRequest = z.infer<typeof HubNextWakeRequestSchema>;
 
 /**
  * The most wakes a hub's content host may cause in any minute, counted by the
- * front door for that hub. One more answers `503` with `Retry-After`.
+ * front door for that hub. One more answers `503` with `Retry-After`. It is
+ * the page read's share of {@link HUB_WAKE_STARTS_PER_MINUTE}, and counts
+ * starts, not requests.
  */
-export const HUB_CONTENT_HOST_WAKE_MAX_PER_MINUTE = 1 as const;
+export const HUB_CONTENT_HOST_WAKE_MAX_PER_MINUTE = HUB_WAKE_STARTS_PER_MINUTE;
 
 /**
  * The most wakes a hub's content host may cause in any hour, counted by the
- * front door for that hub. One more answers `503` with `Retry-After`.
+ * front door for that hub. One more answers `503` with `Retry-After`. It is
+ * the page read's share of {@link HUB_WAKE_STARTS_PER_HOUR}, and counts
+ * starts, not requests.
  */
-export const HUB_CONTENT_HOST_WAKE_MAX_PER_HOUR = 30 as const;
+export const HUB_CONTENT_HOST_WAKE_MAX_PER_HOUR = HUB_WAKE_STARTS_PER_HOUR;
 
 /**
  * The shortest gap the service leaves between two wakes it accepts from one
@@ -142,6 +230,12 @@ export const HUB_WAKE_REQUEST_MAX_PER_HOUR = 30 as const;
  *   Past either, the answer is `429` with the `rate_limited` problem and its
  *   `retryAfterMs`, and the computer keeps what it meant to deliver (a
  *   notice, a page's send, or a cloud agent computer's undelivered facts).
+ * - **A cap for each hub.** The hub's computers together start it at most
+ *   {@link HUB_WAKE_STARTS_PER_MINUTE} a minute and
+ *   {@link HUB_WAKE_STARTS_PER_HOUR} an hour. A request that would start it
+ *   past either is answered the same `429` `rate_limited`, even from a
+ *   computer within its own cap, with a `retryAfterMs` for whichever cap it
+ *   met. A request that finds the hub awake or starting counts toward none.
  * - **Accepted is not awake.** `202` says the service will wake the hub, or
  *   that it is already awake. The computer then dials the hub at the address
  *   it pinned, retrying as it does today until the hub answers.

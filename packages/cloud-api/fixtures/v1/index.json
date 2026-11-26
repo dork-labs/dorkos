@@ -8,6 +8,9 @@
     "problem/malformed-identifier.json": "ProblemSchema",
     "problem/malformed-request.json": "ProblemSchema",
     "problem/hub-wake-rate-limited.json": "ProblemSchema",
+    "problem/front-door-sign-in-required.json": "ProblemSchema",
+    "problem/front-door-hub-starting-failed.json": "ProblemSchema",
+    "problem/front-door-hub-unavailable.json": "ProblemSchema",
     "session/signed-in.json": "SessionSchema",
     "session/signed-out.json": "SessionSchema",
     "session/device-code.json": "DeviceCodeResponseSchema",
@@ -163,6 +166,7 @@
     "hubs/assignment-org-computer-only.json": "HubAssignmentSchema",
     "hubs/page-report-request.json": "PageReportRequestSchema",
     "hubs/page-report.json": "PageReportResponseSchema",
-    "remote/command-page-take-down.json": "RemoteCommandSchema"
+    "remote/command-page-take-down.json": "RemoteCommandSchema",
+    "hubs/health-serving.json": "HubHealthSchema"
   }
 }

@@ -28,6 +28,28 @@ import { HttpsUrlSchema, IdSchema, TimestampSchema } from './primitives.js';
  * `malformed_identifier` arrived after `malformed_request`. A service that
  * predates it sends `malformed_request` for both facts, so a client that meets
  * `malformed_request` from an older service cannot rule out the first fact.
+ *
+ * Three codes are the front door's answers for a person's DorkOS in the cloud
+ * (a hub), sent on the hub's own address rather than under `/v1`:
+ *
+ *   - `sign_in_required` (`401`): the request needs the owner's sign-in and
+ *     carries none the front door accepts. `actionUrl` says where to go to
+ *     sign in. The web app, meeting it, sends the whole page (a top-level
+ *     navigation) through sign-in again; it never signs in inside a frame or a
+ *     background request. Following `actionUrl` needs an app that reads it.
+ *   - `hub_starting_failed` (`503`): the front door woke the hub for this
+ *     request and it did not start. Sent with a `Retry-After` header and
+ *     `retryAfterMs`.
+ *   - `hub_unavailable` (`503`): the hub cannot take this request now, and the
+ *     front door will not wake it for this caller now: it is asleep and the
+ *     request is not one that wakes it, or the request's reason has met its
+ *     start cap (`hub-wake.ts`), or it cannot be reached. Sent with a `Retry-After` header and `retryAfterMs`.
+ *
+ * A reader that parses with this package from before these codes (its
+ * client included) does not read them as a `Problem`, because the code is not
+ * one it knows, and sees a plain error for the status. The web app on a
+ * hub's address reads any code, so an older app shows the refusal's own
+ * `title` and `detail`.
  */
 export const ProblemCodeSchema = z
   .enum([
@@ -71,6 +93,10 @@ export const ProblemCodeSchema = z
     'community_name_taken',
     'community_name_reserved',
     'import_too_large',
+    // The front door of a person's DorkOS in the cloud (`front-door.ts`).
+    'sign_in_required',
+    'hub_starting_failed',
+    'hub_unavailable',
     // The server's own faults.
     'internal_error',
     'temporarily_unavailable',

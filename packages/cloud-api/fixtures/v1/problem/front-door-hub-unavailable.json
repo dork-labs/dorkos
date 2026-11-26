@@ -1,0 +1,8 @@
+{
+  "code": "hub_unavailable",
+  "status": 503,
+  "title": "This DorkOS in the cloud is asleep.",
+  "detail": "Try again once it is awake.",
+  "instance": "req_0a1b2c52",
+  "retryAfterMs": 30000
+}
