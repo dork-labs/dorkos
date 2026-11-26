@@ -1,5 +1,4 @@
 /** Explicit session settings and title route. */
-import type { Db } from '@dorkos/db';
 import { UpdateSessionRequestSchema } from '@dorkos/shared/schemas';
 import type { Hono } from 'hono';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -33,6 +32,7 @@ import {
   sessionNotFound,
   wifiModeRaiseReply,
 } from './session-route-replies.js';
+import type { SessionLocationStore } from '../services/core/runtime-seam/session-location-store.js';
 import type { SessionRouteDeps } from './sessions.js';
 
 const PREPARED_SETTINGS_RUNTIMES = new Set([
@@ -49,12 +49,12 @@ const PREPARED_SETTINGS_RUNTIMES = new Set([
  *
  * @param router - The guarded session router.
  * @param deps - The session's live registration lookup.
- * @param personBirthDb - The mounted database that owns person allocations.
+ * @param personBirth - The saved folders and person allocations, when mounted.
  */
 export function mountSessionSettingsPatch(
   router: Hono<ApiEnv>,
-  deps: Pick<SessionRouteDeps, 'personBirthDb' | 'meshCore'>,
-  personBirthDb?: Db
+  deps: Pick<SessionRouteDeps, 'personBirth' | 'meshCore'>,
+  personBirth?: SessionLocationStore
 ): void {
   // PATCH /api/sessions/:id - Update session settings
   router.patch('/:id', personOnlyModeChange(), async (c) => {
@@ -76,12 +76,12 @@ export function mountSessionSettingsPatch(
       runtime: runtimeHint,
       account: accountHint,
     } = parsed.data;
-    const db = personBirthDb ?? deps.personBirthDb;
-    const source = db && observePersonChat(db, sessionId);
+    const store = personBirth ?? deps.personBirth;
+    const source = store && observePersonChat(store, sessionId);
     const prepared =
-      db && source
+      store && source
         ? await preparePersonChat(
-            db,
+            store,
             sessionId,
             honoRequestFacts(c),
             source,

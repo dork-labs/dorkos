@@ -9,6 +9,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionLocations } from '@dorkos/db';
 import { initBoundary } from '../../lib/boundary.js';
 import { createSessionLocationsRoutes, MAX_SESSION_LOCATIONS } from '../session-locations.js';
+import { sessionLocationStore } from '../../services/core/runtime-seam/session-location-store.js';
 import type { RequestFacts } from '../../http/request-facts.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
@@ -34,7 +35,10 @@ const listener = swappableServer();
 function app(owner = 'owner-a') {
   return listener.mount(
     honoGroupListener(
-      { path: '/api/session-locations', routes: createSessionLocationsRoutes(db) },
+      {
+        path: '/api/session-locations',
+        routes: createSessionLocationsRoutes(sessionLocationStore(db)),
+      },
       {
         // The signed-in person the session gate would have resolved.
         before: async (c, next) => {

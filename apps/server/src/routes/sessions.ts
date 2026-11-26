@@ -15,10 +15,10 @@
  * @module routes/sessions
  */
 import { Hono } from 'hono';
-import type { Db } from '@dorkos/db';
 import { mountSessionSettingsPatch } from './session-settings-patch.js';
 import { mountSessionSendMessage } from './session-send-message.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import type { SessionLocationStore } from '../services/core/runtime-seam/session-location-store.js';
 import { openedChatToolWarnings } from '../services/session/launch/session-tool-warnings.js';
 import {
   ForkSessionRequestSchema,
@@ -109,8 +109,8 @@ import { ControlRequestTimeoutError } from '../services/runtimes/claude-code/ses
  * left unset is a safe no-op.
  */
 export interface SessionRouteDeps extends SessionOriginResolvers, SessionCanvasDeps {
-  /** The database that owns the mounted saved-folder allocation routes. */
-  personBirthDb?: Db;
+  /** The saved folders and person allocations behind the mounted saved-folder routes. */
+  personBirth?: SessionLocationStore;
   /**
    * The agent registry: the project paths `/recent` and `/daily-counts` fan
    * out over (DOR-329), and what a message's launch and a handoff read.
@@ -138,10 +138,13 @@ const SWITCH_NOW = {
  *
  * @param deps - See {@link SessionRouteDeps}. A test that builds the server
  *   bare passes none.
- * @param personBirthDb - The database shared with the mounted session location routes.
+ * @param personBirth - The store shared with the mounted session location routes.
  * @returns The routes, for `http/hono-api.ts` to mount at `/api/sessions`.
  */
-export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?: Db): Hono<ApiEnv> {
+export function createSessionRoutes(
+  deps: SessionRouteDeps = {},
+  personBirth?: SessionLocationStore
+): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
 
   // The read guard, once, in front of every path under `/:id`: the routes below,
@@ -534,7 +537,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
     return read ? c.json(read) : problem(c, 'not_found', { detail: 'No message has that id.' });
   });
 
-  mountSessionSettingsPatch(router, deps, personBirthDb);
+  mountSessionSettingsPatch(router, deps, personBirth);
 
   // POST /api/sessions/:id/fork - Fork a session
   router.post('/:id/fork', async (c) => {
@@ -595,7 +598,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}, personBirthDb?:
     }
   });
 
-  mountSessionSendMessage(router, deps, personBirthDb);
+  mountSessionSendMessage(router, deps, personBirth);
 
   // POST /api/sessions/:id/opened — the chat page is showing this chat (spec
   // `your-activity-first` D3) — and POST /api/sessions/:id/stream-health — a

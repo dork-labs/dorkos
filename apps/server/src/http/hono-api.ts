@@ -26,7 +26,7 @@ import { mountWifiSignIn } from './sign-in/wifi-sign-in.js';
 import { mountOwnerPasskeySignIn } from './sign-in/owner-passkey-sign-in.js';
 import { createClientFiles } from './client-files.js';
 import { serveRouteCensus } from './route-census/census.js';
-import type { Db } from '@dorkos/db';
+import type { SessionLocationStore } from '../services/core/runtime-seam/session-location-store.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import type { CapabilityRegistry } from '../services/core/capabilities/index.js';
 import type { NotificationService } from '../services/notifications/notification-service.js';
@@ -170,8 +170,8 @@ export interface ComposedGroupDeps {
    * (`GET /api/capabilities`) needs none and is always mounted.
    */
   capabilities?: CapabilityRegistry;
-  /** The install's database, behind the saved chat folders (`/api/session-locations`). */
-  sessionLocations?: Db;
+  /** The saved chat folders and person allocations (`/api/session-locations`). */
+  sessionLocations?: SessionLocationStore;
   /** The data directory the user's own templates live in (`/api/templates`). */
   templates?: { dorkHome: string };
   /** The agent-file status and Sync now (`/api/harness`). */
