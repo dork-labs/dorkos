@@ -117,6 +117,9 @@ describe("the connection routes' API copy", () => {
       join(repoRoot, 'apps/server/src/routes/connector-owner-boundary.ts'),
       // The fixed problem sentences for every connection refusal (DOR-4979).
       join(repoRoot, 'apps/server/src/routes/connector-problems.ts'),
+      // Their home since the owner doors moved onto the mount (DOR-4978);
+      // connector-problems.ts re-exports them.
+      join(repoRoot, 'apps/server/src/services/connectors/resources/owner-refusals.ts'),
       // The account-decision bar's sentences, shared by the hand routes and the
       // capability mount (DOR-4978): its own refusals, and each area's owner_only.
       join(repoRoot, 'apps/server/src/lib/http/account-decision-bar.ts'),
