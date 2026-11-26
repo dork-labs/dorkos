@@ -39,6 +39,7 @@ import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { setStepUpExtensionRiskInputs } from '../../services/extensions/step-up/step-up-extension-risk.js';
 import { useStepUpRiskLedgerFile } from '../../services/extensions/step-up/step-up-risk-ledger.js';
 import { createExtensionsRoutes } from '../extensions.js';
+import { extensionDoorRoutes } from '../../services/extensions/http-capabilities/__tests__/extension-doors-fixture.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -126,14 +127,18 @@ function createApp(
   getCwd: () => string | null = () => TEST_CWD
 ): RequestListener {
   // Cast to satisfy the type -- our mock fulfills the interface structurally
-  return honoGroupListener({
-    path: '/api/extensions',
-    routes: createExtensionsRoutes({
-      manager: manager as unknown as Parameters<typeof createExtensionsRoutes>[0]['manager'],
-      dorkHome: DORK_HOME,
-      getCwd,
-    }),
-  });
+  return honoGroupListener([
+    {
+      path: '/api/extensions',
+      routes: createExtensionsRoutes({
+        manager: manager as unknown as Parameters<typeof createExtensionsRoutes>[0]['manager'],
+        dorkHome: DORK_HOME,
+        getCwd,
+      }),
+    },
+    // Turning one off is on the capability mount (DOR-4978).
+    { path: '/', routes: extensionDoorRoutes(manager as never) },
+  ]);
 }
 
 describe('Extension Routes', () => {

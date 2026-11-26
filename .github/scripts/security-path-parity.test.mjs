@@ -289,6 +289,7 @@ for (const [match, miss] of [
     'apps/server/src/lib/http/account-decision-bars.ts',
   ],
   ['apps/server/src/lib/http/own-origin-write.ts', 'apps/server/src/lib/http/own-origin-writes.ts'],
+  ['apps/server/src/lib/http/person-bar.ts', 'apps/server/src/lib/http/person-bars.ts'],
 ]) {
   test(`${match} is on the main list only`, () => {
     assert.ok(existsSync(resolve(root, match)), `${match} no longer exists`);

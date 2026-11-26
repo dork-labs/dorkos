@@ -1,19 +1,12 @@
 /**
- * The routes a PERSON uses to allow, or stop, one extension running its code
- * inside the DorkOS server process (DOR-516), plus the two the Activity inbox
- * asks with (DOR-2517): the list of extensions waiting for that decision, and
- * "Not now".
- *
- * Extracted from {@link module:routes/extensions} to keep route files under 500
- * lines, and because these two are a different KIND of route from the rest of
- * that file: everything there manages extensions, while these two record a human
- * security decision.
- *
- * They used to be the only routes on this router carrying a person bar, which is
- * how DOR-1507 got filed: `/enable` and `/disable` write the same `operator-only`
- * section and ran nothing at all. The bar now lives in
- * {@link module:routes/extensions-person-bar} and all four run it, so this file
- * keeps only the words it says when refusing.
+ * The route a PERSON uses to allow one extension to run its code inside the
+ * DorkOS server process (DOR-516), plus the list the Activity inbox asks with
+ * (DOR-2517), and the one that takes that yes back. Approving stays a hand
+ * route because a remote yes waits on "Confirm it's you"
+ * (`holdExtensionPowerChange`); revoking stays one for now (its path's verb is
+ * an API-lint ratchet). "Not now" is a person-only capability the mount serves
+ * behind the same person bar (`extensions.dismiss_approval`,
+ * `services/extensions/http-capabilities/`, DOR-4978).
  *
  * The record they write is `extensions.approvedToRun` in `~/.dork/config.json`,
  * classified `operator-only`. Why that home and not a project file or an
@@ -34,10 +27,7 @@ import { requestCodeForHash } from '../services/core/auth/step-up/request-code.j
 import { holdExtensionPowerChange } from './extension-decision-step-up.js';
 import type { RequestFacts } from '../http/request-facts.js';
 import type { Context, Hono } from 'hono';
-import {
-  ApproveExtensionRequestSchema,
-  DismissExtensionApprovalRequestSchema,
-} from '@dorkos/shared/extension-approval-schemas';
+import { ApproveExtensionRequestSchema } from '@dorkos/shared/extension-approval-schemas';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
 import { isExpectedCopy } from '../services/extensions/pin/extension-expected-copy.js';
 import {
@@ -56,27 +46,28 @@ import { logger } from '../lib/logger.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { broadcastExtensionReloaded } from './extensions.js';
 import { listPendingExtensionApprovals } from '../services/extensions/extension-approval-queue.js';
-import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { refusedNotAPerson } from './extensions-person-bar.js';
+import { APPROVAL_BAR } from '../services/extensions/http-capabilities/extension-door-words.js';
+import type { ExtensionPersonDeps } from '../services/extensions/http-capabilities/extension-person-capabilities.js';
 import { registerExtensionRemovalRoutes } from './extensions-removal.js';
 import { registerExtensionApprovalSetRoutes } from './extensions-approval-set.js';
 
 /**
- * What the two approval routes say when a bar refuses them.
+ * The person's extension doors on the capability mount (DOR-4978), over the
+ * same manager, feed and broadcast these routes use. Empty when this server
+ * runs no extensions, so the doors answer that no such action is here.
  *
- * The three bars themselves live in {@link module:routes/extensions-person-bar},
- * shared with `/enable` and `/disable` on the same router, because all four write
- * a leaf of the same `operator-only` section and a gate that covers two of four
- * is a gate an agent routes around (DOR-1507). What stays here is only the
- * VOCABULARY: approving is a security decision, so it answers `person_only`
- * and says who may make that decision, where turning an extension on answers
- * `operator_only`, the config code.
+ * @param manager - The extension manager, when extensions started.
+ * @param activity - The Activity feed each change is recorded in.
  */
-const APPROVAL_BAR: PersonBarCopy = {
-  code: 'person_only',
-  subject: 'which extensions may run',
-  crossSite: (origin) => `Nothing changed. ${origin} isn’t DorkOS. Allow extensions in the app.`,
-  agent: 'Nothing changed. Only a person allows an extension to run, in Settings.',
-};
+export function extensionPersonDoorDeps(
+  manager: ExtensionManager | undefined,
+  activity: Pick<ActivityService, 'emit'>
+): { extensionPersonDeps?: ExtensionPersonDeps } {
+  return manager
+    ? { extensionPersonDeps: { manager, activity, broadcastReloaded: broadcastExtensionReloaded } }
+    : {};
+}
 
 /** The answer for an id outside the router's pattern. */
 const invalidId = (c: Context<ApiEnv>) =>
@@ -103,7 +94,8 @@ const SEND_SHOWN = 'Send the path and version of the extension you were shown.';
 const CHANGED = 'This extension changed since you saw it. Nothing was turned on.';
 
 /**
- * Mount the approve and revoke routes onto the extensions router.
+ * Mount the approve and revoke routes, and the list of extensions waiting for
+ * a yes, onto the extensions router.
  *
  * @param router - The extensions router to mount onto.
  * @param extensionManager - ExtensionManager instance for lifecycle operations.
@@ -272,45 +264,6 @@ export function registerExtensionApprovalRoutes(
     }
   });
 
-  // POST /api/extensions/:id/dismiss-approval -- "Not now" (DOR-2517). Records
-  // that the person declined THIS copy at THIS version, so the inbox stops
-  // asking until either changes. Never destructive: nothing is uninstalled,
-  // turned off or revoked. Same person bar as approving, because it answers the
-  // same question.
-  router.post('/:id/dismiss-approval', async (c) => {
-    const id = c.req.param('id');
-    try {
-      if (!safeExtId.test(id)) return invalidId(c);
-      const refused = refusedNotAPerson(c, APPROVAL_BAR);
-      if (refused) return refused;
-
-      const body = DismissExtensionApprovalRequestSchema.safeParse(
-        readJsonBody(c, { emptyAs: {} })
-      );
-      if (!body.success) {
-        return problem(c, 'invalid_request', { detail: SEND_SHOWN });
-      }
-
-      const result = extensionManager.dismissApproval(id, body.data);
-      if (!result.ok) {
-        if (result.reason === 'not_found') {
-          return noSuchExtension(c, id);
-        }
-        if (result.reason === 'core') {
-          return problem(c, 'conflict', {
-            detail: `${id} ships with DorkOS and never asks to run.`,
-          });
-        }
-        return staleCopy(c, 'This extension changed since you saw it. Nothing changed.');
-      }
-
-      return c.body(null, 204);
-    } catch (err) {
-      logger.error(`[Extensions] Failed to dismiss the approval for ${id}`, err);
-      return problem(c, 'internal_error', { detail: 'Couldn’t save that. Try again.' });
-    }
-  });
-
   // POST /api/extensions/:id/revoke -- Withdraw that approval and stop the
   // extension's server-side code immediately.
   router.post('/:id/revoke', async (c) => {
@@ -351,9 +304,10 @@ export function registerExtensionApprovalRoutes(
     }
   });
 
-  // Remove and Forget answer the same kind of question, behind the same bar
-  // (DOR-3541, DOR-3372). Mounted from here so `extensions.ts` does not grow.
-  registerExtensionRemovalRoutes(router, extensionManager, safeExtId, activity);
+  // The approvals left behind by removed extensions (DOR-3372). Removing one and
+  // forgetting what it was allowed, and "Not now", are on the capability mount
+  // behind the same bar (DOR-4978).
+  registerExtensionRemovalRoutes(router, extensionManager);
   // "Allow all" for a plugin's extensions, behind this same bar (DOR-3583).
   registerExtensionApprovalSetRoutes(router, extensionManager, APPROVAL_BAR, activity);
 }

@@ -85,6 +85,7 @@ import {
   type ExtensionApprovalQueue,
 } from '../../extension-approval-queue.js';
 import { createExtensionsRoutes } from '../../../../routes/extensions.js';
+import { extensionDoorRoutes } from '../../http-capabilities/__tests__/extension-doors-fixture.js';
 import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 
 /** The suites' own folder (one up from this harness), which fixture paths are relative to. */
@@ -204,14 +205,18 @@ beforeEach(async () => {
   await h.queue.sync();
 
   target.mount(
-    honoGroupListener({
-      path: '/api/extensions',
-      routes: createExtensionsRoutes({
-        manager: h.manager,
-        dorkHome: h.dorkHome,
-        getCwd: () => null,
-      }),
-    })
+    honoGroupListener([
+      {
+        path: '/api/extensions',
+        routes: createExtensionsRoutes({
+          manager: h.manager,
+          dorkHome: h.dorkHome,
+          getCwd: () => null,
+        }),
+      },
+      // "Not now" and the rest of the person's doors are on the capability mount (DOR-4978).
+      { path: '/', routes: extensionDoorRoutes(h.manager) },
+    ])
   );
 });
 

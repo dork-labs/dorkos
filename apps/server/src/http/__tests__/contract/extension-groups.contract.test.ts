@@ -248,9 +248,8 @@ const CASES: ContractCase[] = [
     body: {},
     expect: {
       status: 400,
-      body: problemBody('invalid_request', {
-        detail: 'Send the path and version of the extension you were shown.',
-      }),
+      // On the capability mount (DOR-4978): the input check names the missing fields.
+      schema: z.object({ code: z.literal('invalid_request') }).loose(),
     },
   },
   {
@@ -322,7 +321,7 @@ const CASES: ContractCase[] = [
     path: `/api/extensions/${MISSING}/restart`,
     expect: {
       status: 404,
-      body: problemBody('not_found', { detail: `No app named ${MISSING} is installed.` }),
+      body: problemBody('not_found', { detail: 'No app with that id is installed.' }),
     },
   },
   {

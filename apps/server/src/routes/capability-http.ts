@@ -78,6 +78,14 @@ const SESSION_READS_FOLD_THE_GUARD =
   'The chat reads fold the session read guard in: an agent gets 404 for a chat it may not read.';
 
 /**
+ * Why an extension door may take `/api/extensions/media/<verb>`: an extension
+ * called `media` keeps its own doors, as on the hand routes, which the video
+ * route is mounted after on purpose (`http/hono-api.ts`).
+ */
+const EXTENSION_ID_BEFORE_MEDIA =
+  'The video route answers only a ticket, and is mounted after the extension routes on purpose.';
+
+/**
  * Hand middleware a capability path may skip, keyed `METHOD /path skips ALL
  * /pattern` (Hono paths), each with why it has nothing to do there. Every
  * other middleware registered after the mount on a capability path refuses the
@@ -119,6 +127,12 @@ export const SKIPPABLE_MIDDLEWARE: Readonly<Record<string, string>> = Object.fre
   'GET /api/tasks skips ALL /api/tasks/*': TASK_STEP_UP_WRITES_ONLY,
   'GET /api/tasks/runs skips ALL /api/tasks/*': TASK_STEP_UP_WRITES_ONLY,
   'GET /api/tasks/runs/:id skips ALL /api/tasks/*': TASK_STEP_UP_WRITES_ONLY,
+  ...Object.fromEntries(
+    ['dismiss-approval', 'remove', 'forget', 'restart'].map((verb) => [
+      `POST /api/extensions/:id/${verb} skips ALL /api/extensions/media/:ticket`,
+      EXTENSION_ID_BEFORE_MEDIA,
+    ])
+  ),
 });
 
 /** What a declared path answers when its capability did not start on this server. */
@@ -261,8 +275,10 @@ export function createCapabilityHttpRoutes(deps: CapabilityHttpDeps): Hono<ApiEn
 }
 
 /**
- * Refuse to start when the registry holds a capability behind an owner bar
- * (`http.ownerBar`) and the doors were given no policy to run it with. Without
+ * Refuse to start when the registry holds a capability behind the
+ * account-decision bar (`http.callerBar: 'account-decision'`) and the doors
+ * were given no policy to run it with. The person bar needs none: the mount
+ * runs `assessPerson` itself. Without
  * one the mount mints no proof and the registry refuses every such call, so
  * this is a wiring fault, said at boot rather than as a refusal on each request.
  *
@@ -270,13 +286,13 @@ export function createCapabilityHttpRoutes(deps: CapabilityHttpDeps): Hono<ApiEn
  * @param ports - What the doors were given.
  * @throws Naming the capabilities left without their bar.
  */
-export function assertOwnerBarWired(
+export function assertCallerBarWired(
   registry: Pick<CapabilityRegistry, 'capabilities'>,
   ports: CapabilityDoorPorts | undefined
 ): void {
   if (ports?.accountDecision) return;
   const barred = registry.capabilities
-    .filter((capability) => capability.surfaces.http?.ownerBar !== undefined)
+    .filter((capability) => capability.surfaces.http?.callerBar === 'account-decision')
     .map((capability) => capability.id);
   if (barred.length > 0) {
     throw new Error(

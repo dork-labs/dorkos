@@ -124,6 +124,7 @@ import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-a
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import { createExtensionsRoutes } from '../extensions.js';
+import { extensionDoorRoutes } from '../../services/extensions/http-capabilities/__tests__/extension-doors-fixture.js';
 import {
   ApprovalRefusedError,
   UNPINNABLE_SENTENCE,
@@ -240,6 +241,7 @@ describe('POST /api/extensions/:id/approve', () => {
             }),
           },
           { path: '/api/step-up', routes: approvalConfirmationRoutes('http://localhost:7777') },
+          { path: '/', routes: extensionDoorRoutes(manager as never) }, // the mount (DOR-4978)
         ],
         {
           before: async (c, next) => {
@@ -464,30 +466,23 @@ describe('POST /api/extensions/:id/approve', () => {
    * one.
    */
   /**
-   * Remove and Forget (DOR-3541, DOR-3372) answer the same kind of question as
-   * approving, so they carry the same bar: an agent could otherwise delete the
-   * record of what it was allowed, or take another extension off the computer.
+   * Remove and Forget (DOR-3541, DOR-3372) carry approving's bar: an agent could
+   * otherwise delete the record of what it was allowed, or take an extension off.
    */
   describe('remove and forget', () => {
-    it.each(['remove', 'forget'])('refuses an agent on /%s and changes nothing', async (verb) => {
+    it.each([
+      ['remove', { 'x-dorkos-agent': 'agent-token-abc' }],
+      ['forget', { 'x-dorkos-agent': 'agent-token-abc' }],
+      ['remove', { origin: 'https://evil.example' }],
+      ['forget', { origin: 'https://evil.example' }],
+    ] as const)('refuses /%s for %o and changes nothing', async (verb, headers) => {
       state.extensions = { ...state.extensions, approvedToRun: ['my-ext'] };
-
       const res = await request(fixtureServer)
         .post(`/api/extensions/my-ext/${verb}`)
-        .set('x-dorkos-agent', 'agent-token-abc')
+        .set(headers)
         .send({});
-
       expect(res.status).toBe(403);
       expect(state.extensions.approvedToRun).toEqual(['my-ext']);
-    });
-
-    it.each(['remove', 'forget'])('refuses another site on /%s', async (verb) => {
-      const res = await request(fixtureServer)
-        .post(`/api/extensions/my-ext/${verb}`)
-        .set('origin', 'https://evil.example')
-        .send({});
-
-      expect(res.status).toBe(403);
     });
 
     it('will not forget an extension that is still installed', async () => {

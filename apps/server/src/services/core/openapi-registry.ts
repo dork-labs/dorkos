@@ -205,7 +205,6 @@ import { SessionSnapshotSchema, SessionEventSchema } from '@dorkos/shared/sessio
 import { registerApprovalsOpenApi } from './approvals/approval-openapi.js';
 import {
   ApproveExtensionRequestSchema,
-  DismissExtensionApprovalRequestSchema,
   ExtensionTrustOfferSchema,
   PendingExtensionApprovalsResponseSchema,
   TrustedSourceRequestSchema,
@@ -4308,34 +4307,6 @@ registry.registerPath({
     409: problemResponse(
       '`conflict`: the extension ships with DorkOS, or its copy cannot be checked (`detail` says which)'
     ),
-    412: problemResponse('`precondition_failed`: the copy changed since the person saw it'),
-  },
-});
-
-registry.registerPath({
-  method: 'post',
-  path: '/api/extensions/{id}/dismiss-approval',
-  tags: ['Extensions'],
-  summary: 'Say "Not now" to an extension waiting to be turned on',
-  description:
-    'Records that a person declined this copy of the extension at this version, so the Activity ' +
-    'inbox stops asking until its path, plugin or version changes. Never destructive: nothing is ' +
-    'uninstalled, turned off or revoked, and Settings → Extensions can still turn it on. The body ' +
-    'names the copy the person was shown; if the copy on disk is no longer that one the answer is ' +
-    'refused with `412 precondition_failed`. The same person bar as approving applies: a caller naming ' +
-    'itself an agent is refused in every posture, and a signed-in person is required when login ' +
-    'is on. There is no MCP tool for this.',
-  request: {
-    params: z.object({ id: z.string() }),
-    body: { content: { 'application/json': { schema: DismissExtensionApprovalRequestSchema } } },
-  },
-  responses: {
-    204: { description: 'Declined for now' },
-    400: problemResponse('`invalid_request`: an invalid extension id or body'),
-    401: problemResponse('`unauthenticated`: login is on and the caller is not signed in'),
-    403: problemResponse('`person_only`: an agent or another site cannot answer this'),
-    404: problemResponse('`not_found`: no such extension'),
-    409: problemResponse('`conflict`: the extension ships with DorkOS'),
     412: problemResponse('`precondition_failed`: the copy changed since the person saw it'),
   },
 });

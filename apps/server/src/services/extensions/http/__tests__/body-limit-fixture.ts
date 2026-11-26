@@ -5,7 +5,7 @@ import { swappableServer, type SwappableServer } from '@dorkos/test-utils/listen
 import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 import { createExtensionApiRoutes } from '../../../../routes/extension-api.js';
 import { createFetchHandler } from '../fetch-handler.js';
-import { assessPerson } from '../../../../routes/extensions-person-bar.js';
+import { assessPerson } from '../../../../lib/http/person-bar.js';
 import { setExtensionPersonBar } from '../../inbox/extension-inbox-context.js';
 
 // The person bar every extension route runs, wired as boot wires it.

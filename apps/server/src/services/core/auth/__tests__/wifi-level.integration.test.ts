@@ -12,14 +12,19 @@ import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import type { RequestListener } from 'node:http';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createDb, runMigrations } from '@dorkos/db';
+import { createDb, eq, runMigrations, session, type Db } from '@dorkos/db';
 
 import { getAuth, initAuth } from '../index.js';
-import { NOT_FROM_WIFI, WIFI_REFUSED_ROUTES } from '../sessions/wifi-level.js';
+import {
+  matchWifiRefusedRoute,
+  NOT_FROM_WIFI,
+  WIFI_REFUSED_ROUTES,
+} from '../sessions/wifi-level.js';
+import { extensionDoorRoutes } from '../../../extensions/http-capabilities/__tests__/extension-doors-fixture.js';
 import { decideMcpAuth } from '../../../../middleware/mcp-auth.js';
 import { createApiApp } from '../../../../http/api-chain.js';
 import { mountBetterAuth } from '../../../../http/better-auth.js';
@@ -75,6 +80,17 @@ const ALLOWED: readonly [string, Method, string][] = [
   ['ordinary settings', 'patch', '/api/config'],
 ];
 
+/** The doors' manager: any call means a Wi-Fi request reached a door. */
+const doorManager = {
+  get: vi.fn(() => undefined),
+  dismissApproval: vi.fn(),
+  reloadExtension: vi.fn(),
+  listPublic: vi.fn(() => []),
+};
+
+/** The four doors that moved onto the mount, as they were refused from Wi-Fi on the hand routes. */
+const MOVED_DOORS = ['dismiss-approval', 'remove', 'forget', 'restart'] as const;
+
 /** The real chain and Better Auth, with a stub at every path above. */
 function buildApp(): RequestListener {
   const app = createApiApp({
@@ -82,6 +98,8 @@ function buildApp(): RequestListener {
     beforeBodyParsing: (early) => mountBetterAuth(early, { auth: getAuth()!, maxAttempts: 1000 }),
   });
   app.route('/api/step-up', createStepUpRoutes());
+  // The person's extension doors on the capability mount (DOR-4978).
+  app.route('/', extensionDoorRoutes(doorManager));
   for (const [, method, at] of [...REFUSED, ...ALLOWED]) {
     app.on(method.toUpperCase(), at, (c) => c.json({ reached: true }));
   }
@@ -150,13 +168,14 @@ describe('the Wi-Fi level, end to end', () => {
   let tmpDir: string;
   let wifi: string;
   let local: string;
+  let db: Db;
 
   beforeAll(async () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-wifi-level-'));
     initConfigManager(tmpDir);
     // Ask at this computer too, so every request here proves a sign-in.
     configManager.set('auth', { enabled: true });
-    const db = createDb(path.join(tmpDir, 'auth.db'));
+    db = createDb(path.join(tmpDir, 'auth.db'));
     runMigrations(db);
     initAuth(db, tmpDir);
     const listener = buildApp();
@@ -285,6 +304,25 @@ describe('the Wi-Fi level, end to end', () => {
 
   it("keeps a chat's stream socket for a Wi-Fi sign-in", async () => {
     expect(await openSocket('/api/sessions/s1/socket', 'wifi', wifi)).toBe('open');
+  });
+
+  // Today's answer, pinned (DOR-4978): the moved doors stay refused from Wi-Fi by the same
+  // refused-route entry the hand routes met, with its status, code and sentence, for a held
+  // device and for the owner's own device alike, and no door runs.
+  it.each(MOVED_DOORS)('refuses /%s from Wi-Fi as before the move, held or not', async (verb) => {
+    const at = `/api/extensions/my-ext/${verb}`;
+    const before = matchWifiRefusedRoute('POST', [at], false);
+    expect(before, at).toBeDefined();
+    for (const allowed of [false, true]) {
+      db.update(session)
+        .set({ wifiAgentTurnsAt: allowed ? new Date() : null })
+        .where(eq(session.route, 'wifi'))
+        .run();
+      const res = await call('post', at, 'wifi', wifi);
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: 'not_from_wifi', detail: before!.reason });
+    }
+    for (const method of Object.values(doorManager)) expect(method).not.toHaveBeenCalled();
   });
 
   it('names only routes that exist: every pattern matches a mounted route', () => {

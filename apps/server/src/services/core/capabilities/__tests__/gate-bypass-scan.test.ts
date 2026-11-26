@@ -262,9 +262,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     },
   },
   {
-    // Split from `enable` rather than folded into it, because the two are NOT
-    // symmetric in who calls them and a shared entry would hide that: uninstall
-    // reaches `disable` and nothing else.
+    // Split from `enable`: the two are NOT symmetric in who calls them, and a
+    // shared entry would hide that uninstall reaches `disable` and nothing else.
     //
     // Gated in the narrowing direction too, and that is a decision. The tunnel
     // route leaves `/stop` ungated because stopping only narrows exposure; the
@@ -733,8 +732,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'routes/config.ts': 'a person changing their own settings in their own cockpit',
       'routes/shapes.ts':
         'a person clicking a Shape in their own cockpit — applying one writes files, rewrites config and creates and deletes scheduled work, so an agent is asked first (DOR-625)',
-      'routes/extensions-person-bar.ts':
-        'the one person bar every WRITE on the extensions router runs — approving an extension to run its code inside DorkOS (DOR-516) and, since DOR-1507, turning one on or off. Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because every leaf those four routes write (`extensions.approvedToRun`, `extensions.enabled`, `extensions.disabled`) IS operator-only, plus a trusted-`Origin` bar the config route does not need because these routes are reachable by a plain cross-site POST. It is ONE module rather than a copy per route file precisely so a fifth write route cannot arrive with two of the three bars',
+      'lib/http/person-bar.ts':
+        "the one person bar every WRITE on the extensions router runs, the hand routes and the capability mount (`http.callerBar: 'person'`, DOR-4978) alike — approving an extension to run its code inside DorkOS (DOR-516) and, since DOR-1507, turning one on or off. Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because every leaf those four routes write (`extensions.approvedToRun`, `extensions.enabled`, `extensions.disabled`) IS operator-only, plus a trusted-`Origin` bar the config route does not need because these routes are reachable by a plain cross-site POST. It is ONE module rather than a copy per route file precisely so a fifth write route cannot arrive with two of the three bars",
       'routes/runtimes.ts':
         "two person bars on this router, each for a person in their own app. (1) `POST /claude-code/accounts/:id/probe`: checking an idle Claude account's usage (DOR-2381). Gated: the cookie bar under login, then this one, because the route starts the Claude binary in a registered account's folder; agents check usage with the `accounts_probe` MCP tool, which runs through the tool gate at the act tier. (2) `POST /claude-code/accounts/found/dismiss`: hiding a found Claude account folder, which writes the operator-only `runtimes.claudeCode.dismissedFolders`, so it runs both bars from `PATCH /api/config` for such a leaf, in the same order: the cookie bar under login, then this one. It writes only that fixed leaf (see its `configManager.setDot(` entry) and takes a JSON body, so a plain cross-site form POST cannot reach the write (it is refused at parsing)",
       'routes/tunnel.ts':
