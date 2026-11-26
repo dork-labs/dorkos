@@ -2,6 +2,7 @@
 covers:
   - 'fix(agents): more ways of running a script, searching a folder and naming a file mark the turn (DOR-5261)'
   - 'fix(agents): searches read past the attachments ignore file only when rg does (DOR-5261)'
+  - 'fix(agents): list variables with a default, shifted arguments, attached flags and named paths are read as the shell and rg use them (DOR-5261)'
 ---
 
 ### Fixed

@@ -83,6 +83,20 @@ describe('a for-list variable next to another variable', () => {
     }
   );
 
+  it.each([
+    (home: string) => `for d in ${home}; do echo > \${d:-x}/.dork/agent.json; done`,
+    (home: string) => `for d in ${home}; do echo > "\${d:-x}"/.dork/agent.json; done`,
+    (home: string) => `for d in ${home}; do echo > \${d:=x}/.dork/agent.json; done`,
+    (home: string) => `for d in ${home}; do echo > \${d-}/.dork/agent.json; done`,
+  ])('the guard sees the setup write through a list variable with a default (%#)', (command) => {
+    expect(shellWriteVerdict(command(agent), roots)).toBe('writes');
+  });
+
+  it('a list variable in a form whose value cannot be read is too much to check', () => {
+    const command = `for d in ${agent}; do echo > \${d#}/.dork/agent.json; done`;
+    expect(shellWriteVerdict(command, roots)).toBe('unreadable');
+  });
+
   it('the guard sees the protected read in a list', async () => {
     expect(
       await commandReachesProtectedRead('for k in id_ed25519; do cat "$KEYS$k"; done', roots)

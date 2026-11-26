@@ -156,10 +156,30 @@ function findRoots(args: readonly string[]): string[] {
   return roots.length > 0 ? roots : ['.'];
 }
 
+/**
+ * A short-flag group read letter by letter (`-lefoo` is `-l -e foo`): the first letter that takes a
+ * value, and the value when it is attached; `undefined` for a group of plain flags or a long flag.
+ */
+function shortGroup(
+  arg: string,
+  takesValue: (letter: string) => boolean
+): { letter: string; value: string | undefined } | undefined {
+  if (!/^-[^-]/.test(arg)) return undefined;
+  for (let at = 1; at < arg.length; at += 1) {
+    const letter = arg[at]!;
+    if (!takesValue(letter)) continue;
+    const rest = arg.slice(at + 1).replace(/^=/, '');
+    return { letter, value: rest === '' ? undefined : rest };
+  }
+  return undefined;
+}
+
 /** Where any other search starts: its positional words past its pattern, else where it stands. */
 function searchRoots(search: TreeSearch, args: readonly string[]): string[] {
   const words: string[] = [];
   let patternGiven = false;
+  // A group that might hold a pattern flag the reading above missed: the first word counts too.
+  let unsure = false;
   for (let at = 0; at < args.length; at += 1) {
     const arg = args[at]!;
     const flag = arg.split('=', 1)[0]!;
@@ -169,21 +189,52 @@ function searchRoots(search: TreeSearch, args: readonly string[]): string[] {
       words.push(...args.slice(at + 1));
       break;
     }
-    if (search.values.has(arg)) at += 1;
-    else if (!arg.startsWith('-')) words.push(arg);
+    if (search.values.has(arg)) {
+      at += 1;
+      continue;
+    }
+    if (!arg.startsWith('-')) {
+      words.push(arg);
+      continue;
+    }
+    const group =
+      arg.length > 2 ? shortGroup(arg, (letter) => search.values.has(`-${letter}`)) : undefined;
+    if (group) {
+      if (search.patternFlags.has(`-${group.letter}`)) patternGiven = true;
+      if (group.value === undefined) at += 1;
+    } else if (/^-[^-]*[ef]/.test(arg)) {
+      unsure = true;
+    }
   }
-  const roots = search.patternFirst && !patternGiven ? words.slice(1) : words;
+  const roots = search.patternFirst && !patternGiven && !unsure ? words.slice(1) : words;
   return roots.length > 0 ? roots : ['.'];
 }
 
-/** The values `rg` is given for its glob flags. */
-function rgGlobs(args: readonly string[]): string[] {
+/** The values `rg` is given for its glob flags; `null` when one cannot be read. */
+function rgGlobs(args: readonly string[]): string[] | null {
   const globs: string[] = [];
   for (let at = 0; at < args.length; at += 1) {
     const arg = args[at]!;
-    if (RG_GLOB_FLAGS.has(arg) && args[at + 1] !== undefined) globs.push(args[at + 1]!);
+    if (RG_GLOB_FLAGS.has(arg)) {
+      if (args[at + 1] === undefined) return null;
+      globs.push(args[at + 1]!);
+      at += 1;
+      continue;
+    }
     const joined = /^--i?glob=(.*)$/s.exec(arg)?.[1];
-    if (joined !== undefined) globs.push(joined);
+    if (joined !== undefined) {
+      globs.push(joined);
+      continue;
+    }
+    // `-g*.txt`, `-g=*`, `-lg*`: a glob attached to a short-flag group.
+    const group = shortGroup(arg, (letter) => RG.values.has(`-${letter}`));
+    if (group?.letter !== 'g') {
+      if (group?.value === undefined && group !== undefined) at += 1;
+      continue;
+    }
+    if (group.value !== undefined) globs.push(group.value);
+    else if (args[at + 1] !== undefined) globs.push(args[(at += 1)]!);
+    else return null;
   }
   return globs;
 }
@@ -195,7 +246,8 @@ function rgGlobs(args: readonly string[]): string[] {
 function rgKeepsIgnores(args: readonly string[], ripgrepConfig: boolean): boolean {
   if (args.some((arg) => RG_NO_IGNORE.test(arg))) return false;
   if (ripgrepConfig && !args.includes('--no-config')) return false;
-  return globsKeepIgnores(rgGlobs(args));
+  const globs = rgGlobs(args);
+  return globs !== null && globsKeepIgnores(globs);
 }
 
 /** How one command line's paths are read and tested. */

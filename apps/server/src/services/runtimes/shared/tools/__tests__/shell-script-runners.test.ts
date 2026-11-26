@@ -25,6 +25,10 @@ const FILES: Record<string, string> = {
   'local.py': 'print(sum([1, 2]))\n',
   'dispatch.sh': 'mode=$1\nshift\n"$@"\n',
   'evals.sh': 'eval "$1"\n',
+  'guarded.sh': '[ -n "$NOPE" ] && shift\n"$@"\n',
+  'either.sh': 'true || shift\n"$@"\n',
+  'branch.sh': 'if [ "$1" = made-up ]; then\n  shift\nfi\n"$@"\n',
+  'func.sh': 'drop() { shift; }\ndrop\n"$@"\n',
 };
 
 beforeEach(() => {
@@ -105,6 +109,14 @@ describe('a shell script’s own arguments', () => {
     expect(marks('bash dispatch.sh fetch curl -s made-up-host')).toBe(true);
     expect(marks('bash dispatch.sh list ls -la')).toBe(false);
   });
+
+  it.each(['guarded.sh', 'either.sh', 'branch.sh', 'func.sh'])(
+    'reads %s with the arguments a shift may or may not have dropped',
+    (script) => {
+      expect(marks(`bash ${script} gh api made-up`)).toBe(true);
+      expect(marks(`bash ${script} ls -la`)).toBe(false);
+    }
+  );
 
   it('reads eval with the arguments put in', () => {
     expect(marks("bash evals.sh 'gh issue list'")).toBe(true);

@@ -1,7 +1,8 @@
 /**
  * A shell script file read command by command for the network (DOR-5240), with its own variables:
  * `CURL=curl` then `$CURL …` runs curl, and `"$@"` or `$1` as the program runs the arguments the
- * script was given (after any `shift`), and `eval "$1"` runs what it was given. A program named by
+ * script was given (with every count of arguments a `shift` could have dropped), and `eval "$1"`
+ * runs what it was given. A program named by
  * a variable still unknown here, or by a `$(…)`, could be any program, so it marks
  * (`shell-network-commands.ts`).
  *
@@ -16,6 +17,8 @@ import { segmentFetches } from './shell-network-commands.js';
 const SETTERS: ReadonlySet<string> = new Set(['export', 'local', 'readonly', 'declare', 'typeset']);
 /** A variable set in place: `NAME=value`. */
 const ASSIGNMENT = /^([A-Za-z_]\w*)=(.+)$/s;
+/** How many counts of shifted arguments a script is read with before it marks. */
+const MAX_SHIFT_OFFSETS = 32;
 /** `$1` to `$9`, plain or braced. */
 const POSITIONAL = /\$\{?([1-9])\}?/g;
 
@@ -69,31 +72,39 @@ function withArguments(word: string, args: readonly string[]): string[] {
 export function shellFileFetches(text: string, args: readonly string[]): boolean {
   const home = expandTilde('~');
   const vars: Record<string, string | undefined> = { HOME: home };
-  let given = [...args];
+  // How many arguments may have been shifted off by here. A `shift` may sit behind `&&`, in an
+  // `if` or a function, so each count it could leave is read, from none on.
+  let offsets = [0];
   for (const segment of withNested(parseShell(withoutTests(text)))) {
-    const words: string[] = [];
-    let setting = true;
-    // `shift` drops the first arguments, so `mode=$1; shift; "$@"` runs the rest.
-    const [first, count] = segment.words;
-    if (first === 'shift') {
-      given = given.slice(/^\d+$/.test(count ?? '') ? Number(count) : 1);
+    const { verb, args: shiftArgs } = commandOf(segment);
+    if (verb === 'shift') {
+      const count = /^\d+$/.test(shiftArgs[0] ?? '') ? Number(shiftArgs[0]) : 1;
+      offsets = [
+        ...new Set([...offsets, ...offsets.map((at) => Math.min(at + count, args.length))]),
+      ];
+      // More ways to have shifted than are read: what runs could be any of the arguments.
+      if (offsets.length > MAX_SHIFT_OFFSETS) return true;
       continue;
     }
-    for (const raw of segment.words) {
-      for (const opened of withArguments(raw, given)) {
-        // A word variables would grow past the limit keeps its `$`, which reads as unknown.
-        const word = expandVariables(opened, home, vars) ?? opened;
-        words.push(word);
-        const assigned = ASSIGNMENT.exec(word);
-        // Only a value written here: `X=$(…)` arrives empty, and stays unknown.
-        if (setting && assigned) vars[assigned[1]!] = assigned[2];
-        else setting = SETTERS.has(word);
+    for (const [round, offset] of offsets.entries()) {
+      const words: string[] = [];
+      let setting = round === 0;
+      for (const raw of segment.words) {
+        for (const opened of withArguments(raw, args.slice(offset))) {
+          // A word variables would grow past the limit keeps its `$`, which reads as unknown.
+          const word = expandVariables(opened, home, vars) ?? opened;
+          words.push(word);
+          const assigned = ASSIGNMENT.exec(word);
+          // Only a value written here: `X=$(…)` arrives empty, and stays unknown.
+          if (setting && assigned) vars[assigned[1]!] = assigned[2];
+          else setting = round === 0 && SETTERS.has(word);
+        }
       }
+      // A `case` pattern (`*"$x"*)`) ends where its `)` is, so it reads as a command of its own.
+      if (commandOf({ ...segment, words }).verb.includes('*')) continue;
+      // Read again with the arguments put in: `eval "$1"` and `sh -c "$1"` run what they were given.
+      if (withNested([{ ...segment, words }]).some((one) => segmentFetches(one))) return true;
     }
-    // A `case` pattern (`*"$x"*)`) ends where its `)` is, so it reads as a command of its own.
-    if (commandOf({ ...segment, words }).verb.includes('*')) continue;
-    // Read again with the arguments put in: `eval "$1"` and `sh -c "$1"` run what they were given.
-    if (withNested([{ ...segment, words }]).some((one) => segmentFetches(one))) return true;
   }
   return false;
 }
