@@ -62,6 +62,7 @@ export const chooseTriageCreditsCapability = defineCapability({
   areaNote: 'a person’s own account choice; no agent can call it',
   wifi: 'person-held',
   confirmFirst: {
+    bar: 'account-owner',
     kind: 'cloud.credits',
     target: 'heartbeat-checks',
     reason: 'Use DorkOS credits for scheduled checks.',

@@ -6,6 +6,7 @@
  * @module services/core/capabilities/declarations/narrow-declarations
  */
 import type { CapabilityDefinition, CapabilityWifiMode } from '../capability-definition.js';
+import type { ConfirmFirstBar } from './confirm-first.js';
 
 /**
  * The only capabilities that may declare `cancelWindow`, the 60-second hold
@@ -39,13 +40,18 @@ export const WIFI_MODE_CAPABILITY_IDS: ReadonlyMap<string, CapabilityWifiMode> =
 
 /**
  * The only capabilities that may declare a confirm-first hold (`confirmFirst`,
- * ADR 261125-114705, decision 4), each a person's account write the person
- * confirms on the "Confirm it's you" sheet.
+ * ADR 261125-114705, decision 4), each with the one bar it must declare: a
+ * person's write the person confirms on the "Confirm it's you" sheet.
  *
- * - `heartbeat.choose_triage_credits`: using DorkOS credits for heartbeat checks.
+ * - `heartbeat.choose_triage_credits` (`account-owner`): using DorkOS credits
+ *   for heartbeat checks.
+ * - `mcp.add_global_server`, `mcp.replace_global_server` (`front-door`): what
+ *   an MCP server every agent gets runs (DOR-4978).
  */
-export const CONFIRM_FIRST_CAPABILITY_IDS: ReadonlySet<string> = new Set([
-  'heartbeat.choose_triage_credits',
+export const CONFIRM_FIRST_CAPABILITY_IDS: ReadonlyMap<string, ConfirmFirstBar> = new Map([
+  ['heartbeat.choose_triage_credits', 'account-owner'],
+  ['mcp.add_global_server', 'front-door'],
+  ['mcp.replace_global_server', 'front-door'],
 ]);
 
 /**
@@ -53,7 +59,7 @@ export const CONFIRM_FIRST_CAPABILITY_IDS: ReadonlySet<string> = new Set([
  *
  * @param capability - The capability being composed.
  * @throws When it declares `cancelWindow`, a `wifi` mode or `confirmFirst`
- *   without being listed for it, or `person-held` or `confirmFirst` on a
+ *   without being listed for it, a confirm-first bar other than its listed one, or `person-held` or `confirmFirst` on a
  *   capability any agent may call.
  */
 export function assertNarrowDeclarations(
@@ -67,8 +73,12 @@ export function assertNarrowDeclarations(
     throw new Error(`Capability registry: "${id}" may not declare a cancel window.`);
   }
   if (capability.confirmFirst) {
-    if (!CONFIRM_FIRST_CAPABILITY_IDS.has(id)) {
+    const bar = CONFIRM_FIRST_CAPABILITY_IDS.get(id);
+    if (bar === undefined) {
       throw new Error(`Capability registry: "${id}" may not declare a confirm-first hold.`);
+    }
+    if (capability.confirmFirst.bar !== bar) {
+      throw new Error(`Capability registry: "${id}" must declare the ${bar} confirm-first bar.`);
     }
     if (capability.surfaces.http?.audience !== 'person') {
       throw new Error(

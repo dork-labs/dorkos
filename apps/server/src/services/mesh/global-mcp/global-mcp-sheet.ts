@@ -12,12 +12,14 @@
  * - **The reason** ({@link serverReason}) goes to the audit log as well as the
  *   sheet, and agents can read that log. So it names the server, its package or
  *   program and who gets it, and leaves every other argument out: arguments can
- *   carry secrets (`postgres://user:pass@…`, `--token=…`).
+ *   carry secrets (`postgres://user:pass@…`, `--token=…`). Adding or replacing
+ *   a server (the confirm-first capabilities, DOR-4978) names only the server
+ *   and the package a runner runs: never a program path or an address.
  * - **The notes** ({@link serverNotes}) go to the sheet only. They show the whole
  *   command with what looks secret masked, and env and header names without
  *   their values.
  *
- * @module routes/mcp-server-step-up
+ * @module services/mesh/global-mcp/global-mcp-sheet
  */
 import {
   isSecretName,
@@ -26,8 +28,8 @@ import {
 } from '@dorkos/shared/global-mcp-schemas';
 import type { McpServerTransport } from '@dorkos/shared/mesh-schemas';
 
-import { flaggedEnvNames } from '../services/mesh/global-mcp/global-mcp-guard.js';
-import { maskedArgs, maskUrls } from '../services/mesh/global-mcp/global-mcp-mask.js';
+import { flaggedEnvNames } from './global-mcp-guard.js';
+import { maskedArgs, maskUrls } from './global-mcp-mask.js';
 
 /** The longest name, package or command line a sheet shows before cutting it. */
 const MAX_SHOWN = 400;
@@ -115,6 +117,20 @@ function subject(server: ServerForStepUp): string {
   return `${shown(server.name)} (${shown(maskedArgs([what])[0]!)})`;
 }
 
+/**
+ * The server for an add or replace sentence: its name, and the package a runner
+ * runs. Only names, so no address or program path reaches the audit log.
+ */
+function namedOnly(server: ServerForStepUp): string {
+  const { connection } = server;
+  const spec =
+    connection.transport === 'stdio'
+      ? runnerPackageSpec(connection.command, connection.args)
+      : undefined;
+  const name = shown(server.name);
+  return spec === undefined ? name : `${name} (${shown(maskedArgs([spec])[0]!)})`;
+}
+
 /** Who gets the server, as the sentence ends. */
 function scope(excludedAgents: readonly string[]): string {
   const left = excludedAgents.length;
@@ -196,7 +212,8 @@ function letMoreReason(server: ServerForStepUp, added: readonly (string | undefi
 
 /**
  * The sheet's sentence, which the audit log keeps too. No argument but the
- * package a runner runs, and for a remote server, its origin.
+ * package a runner runs; turning a server on also names a program or a remote
+ * server's origin.
  *
  * @param change - What the held change does.
  * @param server - The server as it will be.
@@ -207,15 +224,14 @@ export function serverReason(
   server: ServerForStepUp,
   added: readonly (string | undefined)[] = []
 ): string {
-  const named = subject(server);
   const everyone = scope(server.excludedAgents);
   switch (change) {
     case 'add':
-      return `Add ${named} ${everyone}.`;
+      return `Add ${namedOnly(server)} ${everyone}.`;
     case 'change':
-      return `Change ${named} ${everyone}.`;
+      return `Change ${namedOnly(server)} ${everyone}.`;
     case 'turn-on':
-      return `Turn on ${named} ${everyone}.`;
+      return `Turn on ${subject(server)} ${everyone}.`;
     case 'let-more':
       return letMoreReason(server, added);
   }
@@ -279,5 +295,51 @@ export function serverNotes(server: ServerForStepUp, retyped = false): string[] 
     notes.push('Not pinned to a version. What runs can change later.');
   }
   notes.push(...serverWarnings(server));
+  return notes;
+}
+
+/**
+ * The sheet's warnings for adding or replacing a server (DOR-4978): fixed
+ * sentences only, naming no setting, header, argument or address.
+ *
+ * @param server - The server as it will be.
+ */
+export function confirmFirstWarnings(server: ServerForStepUp): string[] {
+  const { connection, secretNames } = server;
+  const warnings: string[] = [];
+  if (
+    connection.transport !== 'stdio' &&
+    crossesInTheClear(connection.url) &&
+    Object.keys(connection.headers).some((name) => isSecretName(name, secretNames))
+  ) {
+    warnings.push('This address isn’t encrypted, so its secret values travel in the clear.');
+  }
+  if (flaggedEnvNames(connection).length > 0) {
+    warnings.push('One of its settings changes what the program loads. Check it’s yours.');
+  }
+  return warnings;
+}
+
+/**
+ * The sheet's lines for adding or replacing a server (DOR-4978, Security t1j):
+ * only the server's name and the package a runner runs, then fixed sentences.
+ * No command, argument, setting, header or address.
+ *
+ * @param server - The server as it will be.
+ * @param retyped - Whether a person just typed its secrets again.
+ */
+export function confirmFirstNotes(server: ServerForStepUp, retyped = false): string[] {
+  const { connection, secretNames } = server;
+  const notes = [`Server: ${shown(server.name)}`];
+  if (connection.transport === 'stdio') {
+    const spec = runnerPackageSpec(connection.command, connection.args);
+    if (spec !== undefined) notes.push(`Package: ${shown(maskedArgs([spec])[0]!)}`);
+    if (isUnpinnedPackage(connection.command, connection.args)) {
+      notes.push('Not pinned to a version. What runs can change later.');
+    }
+  }
+  const secrets = Object.keys(valuesOf(connection)).some((name) => isSecretName(name, secretNames));
+  if (retyped && secrets) notes.push('Its hidden values were typed again.');
+  notes.push(...confirmFirstWarnings(server));
   return notes;
 }
