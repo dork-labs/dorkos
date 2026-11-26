@@ -47,21 +47,21 @@ body is neither.
 
 ## What is in the contract
 
-| Group                     | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Session and account       | `GET /v1/session`, `GET /v1/account`, `POST /v1/account/export`, `POST /v1/account/deletion`                                                                                                                                                                                                                                                                                                                                                       |
-| Device link               | `POST /v1/device/code`, `POST /v1/device/token` (RFC 8628)                                                                                                                                                                                                                                                                                                                                                                                         |
-| Instances                 | heartbeat, revoke, list, organization re-link                                                                                                                                                                                                                                                                                                                                                                                                      |
-| Managed connections       | catalog, toolkits, connections, authentication flows, authority commands, executions, the lease-based event pull and acknowledgement, usage, who a grant covers (one agent or every agent)                                                                                                                                                                                                                                                         |
-| Billing                   | `GET /v1/entitlements`, `/v1/balance`, `/v1/usage`, `/v1/price-list`, `/v1/nudge`, `/v1/offers`, `POST /v1/checkout`, `/v1/topup`, `/v1/portal`, `GET /v1/statement`                                                                                                                                                                                                                                                                               |
-| Inference                 | `POST /v1/inference/tokens`, `GET /v1/inference/models`, token revocation                                                                                                                                                                                                                                                                                                                                                                          |
-| Seats, orgs and addresses | organizations, membership, invitations, agents and claims (an agent says whether a claim waits on approval, and which), seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event                                                                                                                                                                                                                                       |
-| Remote access             | status, open/close, wake tokens, enrolment and the enrolment request a person approves, canonical and custom addresses, designation and its read, usage against the published limits, instance credentials with their edge proof and self-revoke, the command stream and its acknowledgement, event batches                                                                                                                                        |
-| Hosted communities        | `GET`/`POST /v1/communities`, the short-name check, a fresh owner-claim link, keep (with a preview of what it holds) and restore, moves: start, list, poll, cancel, and the servers where the account signs a person in                                                                                                                                                                                                                            |
-| Hubs and agent computers  | a hub reads who it belongs to and confirms it (`/v1/hubs/self/assignment`) and says when to wake it next (`/v1/hubs/self/next-wake`); the account's cloud agent computers: list, make, start (with an optional reason), stop and delete; linking a computer to its hub (`link-code`, `/v1/agent-computers/self/assignment`); a computer saying it is busy (`/v1/agent-computers/self/activity`); asking a computer to dial its hub (`viewer-open`) |
-| Account directory         | `GET /v1/directory` (computers, agents and whether they are there, quiet hours and time zone, the spaces the account belongs to), an instance's own report, settings, forgetting a space                                                                                                                                                                                                                                                           |
-| Approvals from the web    | the statement a computer asks its owner to sign with a passkey (approving a tool call, adding an approvals passkey), its one canonical byte form and challenge, and the messages between a hub's page and the approve page                                                                                                                                                                                                                         |
-| Shared                    | the `Problem` envelope, bearer auth, cursor pagination, the `X-DorkOS-Wire: 1` header                                                                                                                                                                                                                                                                                                                                                              |
+| Group                     | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Session and account       | `GET /v1/session`, `GET /v1/account`, `POST /v1/account/export`, `POST /v1/account/deletion`                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Device link               | `POST /v1/device/code`, `POST /v1/device/token` (RFC 8628)                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Instances                 | heartbeat, revoke, list, organization re-link                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Managed connections       | catalog, toolkits, connections, authentication flows, authority commands, executions, the lease-based event pull and acknowledgement, usage, who a grant covers (one agent or every agent)                                                                                                                                                                                                                                                                                                                                            |
+| Billing                   | `GET /v1/entitlements`, `/v1/balance`, `/v1/usage`, `/v1/price-list`, `/v1/nudge`, `/v1/offers`, `POST /v1/checkout`, `/v1/topup`, `/v1/portal`, `GET /v1/statement`                                                                                                                                                                                                                                                                                                                                                                  |
+| Inference                 | `POST /v1/inference/tokens`, `GET /v1/inference/models`, token revocation                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Seats, orgs and addresses | organizations, membership, invitations, agents and claims (an agent says whether a claim waits on approval, and which), seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event                                                                                                                                                                                                                                                                                                                          |
+| Remote access             | status, open/close, wake tokens, enrolment and the enrolment request a person approves, canonical and custom addresses, designation and its read, usage against the published limits, instance credentials with their edge proof and self-revoke, the command stream and its acknowledgement, event batches                                                                                                                                                                                                                           |
+| Hosted communities        | `GET`/`POST /v1/communities`, the short-name check, a fresh owner-claim link, keep (with a preview of what it holds) and restore, moves: start, list, poll, cancel, and the servers where the account signs a person in                                                                                                                                                                                                                                                                                                               |
+| Hubs and agent computers  | a hub reads who it belongs to and confirms it (`/v1/hubs/self/assignment`) and says when to wake it next (`/v1/hubs/self/next-wake`); a person's own computer asks to wake its account's hub (`/v1/instances/hub-wake`); the account's cloud agent computers: list, make, start (with an optional reason), stop and delete; linking a computer to its hub (`link-code`, `/v1/agent-computers/self/assignment`); a computer saying it is busy (`/v1/agent-computers/self/activity`); asking a computer to dial its hub (`viewer-open`) |
+| Account directory         | `GET /v1/directory` (the person's homes and devices, whether each is reachable and whether a computer offers its own page, the spaces the account belongs to), an instance's own report, settings, forgetting a space                                                                                                                                                                                                                                                                                                                 |
+| Approvals from the web    | the statement a computer asks its owner to sign with a passkey (approving a tool call, adding an approvals passkey), its one canonical byte form and challenge, and the messages between a hub's page and the approve page                                                                                                                                                                                                                                                                                                            |
+| Shared                    | the `Problem` envelope, bearer auth, cursor pagination, the `X-DorkOS-Wire: 1` header                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 ### What is deliberately not in it
 
@@ -348,9 +348,13 @@ Every link to a community is a runtime value.
 
 ### Hubs: a person's own DorkOS in the cloud
 
-A **hub** is one person's DorkOS run by the service. It runs no agents. The service keeps a pool of
-hubs that belong to nobody, and gives one to a person the first time they open the full app.
-"Hub" is a word for the wire and for code: nothing a person reads says it.
+A **hub** is a person's DorkOS in the cloud, run by the service. For a person with no computer of
+their own it is the home of their private space; for a person with one, that computer is the home
+and the hub is their way in. Either way it is the home of the agents they run on cloud agent
+computers. It runs no agents itself. The service keeps a pool of hubs that belong to nobody, and
+gives one to a person the first time they open the full app. "Hub" is a word for the wire and for
+code: nothing a person reads says it. The app says "your DorkOS in the cloud", or "Private" where
+it is the home of the private space.
 
 - **A pooled hub has no owner.** `GET /v1/hubs/self/assignment` (that hub's own instance key; any
   other caller gets `not_found`) reads `{ state: 'pooled' }`, and the hub refuses every sign-in.
@@ -376,6 +380,13 @@ hubs that belong to nobody, and gives one to a person the first time they open t
 - **The hub makes its own auth secret.** The service never sends one and never holds one.
 - **Confirm before traffic.** `POST /v1/hubs/self/assignment/confirm` names the `assignmentId`
   applied; the front door sends a person's traffic only after that.
+- **Home or way in, decided once.** An assigned hub's `privateSpaceHome` is `true` when no computer
+  of the person's own (an instance with the role `computer`) was registered to the account when
+  the hub was first assigned, and `false` when one was. The service decides it once and never
+  changes it, except by a later move of the whole space; linking or unlinking a computer never
+  changes it. For a hub assigned before the field existed, the service decides it the same way
+  from the computers registered before that assignment. The hub keeps the first value it reads.
+  Absent, from an older service, means the hub has recorded nothing yet and behaves as before.
 
 ### Cloud agent computers
 
@@ -460,7 +471,20 @@ pollAfterSeconds }`. The service deletes the code once the computer has read it 
 - **`PUT /v1/hubs/self/next-wake`** (the hub's key) takes `{ at }`, a time or null, and answers 204. The service wakes the hub at `at` for its due schedules, at most once every
   `HUB_NEXT_WAKE_MIN_INTERVAL_SECONDS`. An `at` more than `HUB_NEXT_WAKE_MAX_AHEAD_DAYS` days ahead
   is ignored, not refused: a hub whose next schedule is that far out has done nothing wrong, and
-  it sends the time again the next time it is awake.
+  it sends the time again the next time it is awake. It carries a time and nothing else.
+- **What wakes a sleeping hub, and nothing else:** its own next-wake time; a request for it from
+  its signed-in owner; a request for an agent that lives on it (both through the hub's front
+  door); and a person's own computer asking, with its own instance key, so it can deliver a
+  notice. An unsigned request never wakes a hub, and a wake grants nothing: the hub still checks
+  every request and dial against its own pins.
+- **`POST /v1/instances/hub-wake`** (a person's own computer's key, no body) wakes the hub
+  that the key's own account owns, and no other; it answers 202 with `{ acceptedAt }`, also when
+  the hub is already awake. The service checks only that the key's account owns the hub and reads
+  none of the hub's pins. A hub's key, an agent computer's, one linked to an organization, or an
+  account with no hub is `not_found`; no key, or one not valid or revoked, is `unauthenticated`. At most one a minute
+  (`HUB_WAKE_REQUEST_MIN_INTERVAL_SECONDS`) and 30 an hour (`HUB_WAKE_REQUEST_MAX_PER_HOUR`) for
+  each computer; past either, `rate_limited` (429) with `retryAfterMs`. A service without the
+  route answers `not_found`, and the computer keeps its notice until the hub is awake anyway.
 - **Inference on an agent computer.** `POST /v1/inference/tokens` also takes an agent computer's
   instance key. Tokens stay short-lived, the limits apply per computer and per account, what it
   spends is billed to the account that owns it, and the preview gate applies as it does today.
@@ -487,9 +511,11 @@ open a linked computer's terminal, files and settings from the web; absent reads
 
 ### The account directory
 
-`GET /v1/directory` is what one account has across every DorkOS it uses: its instances (`role`:
-`computer`, `hub` or `agent-computer`), the agents on each and whether they are there, its quiet
-hours and time zone, and the spaces it belongs to. An empty account gets empty lists, never a 404.
+`GET /v1/directory` is the account's own list of where it lives: the person's homes and devices
+(`role`: `computer`, `hub` or `agent-computer`), whether each is reachable, whether each computer
+offers its own page, and the spaces the person has joined, by name and address. It holds no space
+data: no agents, chats, settings or inbox. Each home serves its own agents to the person's other
+homes over the session relay. An empty account gets empty lists, never a 404.
 
 | Caller                                    | Read | Own report | Settings | Forget a space |
 | ----------------------------------------- | ---- | ---------- | -------- | -------------- |
@@ -512,22 +538,26 @@ refused call, gets `not_found`.
 - **Forgetting a space sticks.** `DELETE /v1/directory/spaces/{spaceId}` keeps a quiet mark, so the
   next report does not add it straight back; only a fresh sign-in to it or a new join does. It
   never ends the membership.
-- **Agents.** `instanceId` is where an agent lives: a person's computer, or the hub for a cloud
-  agent. `worksOn` names the cloud agent computer a cloud agent works on.
+- **Agents: the app sends none and reads none.** `agents` and `DirectoryAgentSchema` stay in the
+  shape so an answer still parses; every report the app makes carries `agents: []`.
 - **Availability is the service's.** For a person's computer it comes from reports (`unknown` is
   never shown as offline). For a hub or an agent computer it comes from the machine's state: asleep
   but able to wake is `available`, and only stopped for credits, a hold or a suspension, or failed,
   is `offline`. Render it; never recompute it.
-- **Reports.** `PUT /v1/directory/instances/self` sends the instance's picture: its agents (id and
-  name), the spaces it joined (name and address) and its `reach` (`off`, `chat` or `full-control`).
-  A part that is present replaces that part (`spaces: []` means none); a part that is absent stays
-  as it was. `reportedAt` orders them: the service drops one older than the last it kept. Send one
-  every `reportEverySeconds`. `DELETE` the same route when its owner turns sync off.
+- **Reports.** `PUT /v1/directory/instances/self` names this computer, whether it is reachable,
+  whether it offers its own page, and the spaces its owner joined from it (name and address). It
+  holds nothing else of the computer. A computer sends it only while its owner has the link and
+  the report switch on at that computer. The app sends `agents: []` (the part stays required, so
+  every report clears agents stored before) and a `reach` of `chat` or `full-control`
+  (`DirectoryReportReachSchema`), never `off`. A part that is present replaces that part
+  (`spaces: []` means none); a part that is absent stays as it was. `reportedAt` orders them: the
+  service drops one older than the last it kept. Send one every `reportEverySeconds`. `DELETE` the
+  same route when its owner turns the link or the report off; the instance stays, as `unknown`.
 - **A link to a computer never comes from the computer.** `remoteAddress` is filled in by the
   service from the managed remote address it issued, and only when `reach` is `full-control`.
-- **Settings belong to the account.** `PATCH /v1/directory/settings` changes the time zone, quiet
-  hours (which may cross midnight) and `learnSpacesFromSignIn`. `onlyIfUnset: true` is for a
-  computer moving its own quiet hours up once: it applies only while the account has none.
+- **Settings.** `PATCH /v1/directory/settings` changes `learnSpacesFromSignIn`, an account setting.
+  The app does not read or write `timeZone` or `quietHours`, or send `onlyIfUnset`: a space's
+  settings stay on its home, and working hours stay on the person's computer.
 - **New values do not break a page.** `role`, `availability`, `reach`, a space's `sources`, `role`
   and `state`, and a computer's `state` and `stopReason` are tolerant: a value added later reads as
   `unrecognised`. Generate their JSON Schema with `{ io: 'input' }`.
