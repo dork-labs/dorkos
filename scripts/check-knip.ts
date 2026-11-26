@@ -1,11 +1,12 @@
 /**
  * Production knip ratchet. Existing findings are debt, never permission for new ones.
- * Build workspace package outputs first. CI activation is staged during the workflow freeze.
+ * Build workspace package outputs first. CI runs it as advisory until DOR-4629 decides.
  *
  * --help
  * Purpose: production knip ratchet: today's unused files, exports and
  *          dependencies are debt, never permission for new ones.
- * Runs in: by hand; not in CI yet. Build the workspace packages first.
+ * Runs in: `pnpm ratchet`, advisory (the required `typecheck` job); by hand.
+ *          Build the workspace packages first.
  * To fix:  delete what it names as unused. After a cleanup, `--update` lowers the
  *          allowances; it never raises them.
  * Usage:   pnpm check:knip [-- --base <commit> | --update | --init | --report <path>]

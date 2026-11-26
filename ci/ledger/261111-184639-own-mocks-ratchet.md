@@ -4,7 +4,7 @@ title: 'An own-module mock ratchet: no package may add vi.mock calls on our own 
 kind: experiment
 status: proposed
 actor: agent
-gates: [wf.test.test-shard, lefthook.pre-push.own-mocks]
+gates: [wf.test.test-shard, lefthook.pre-push.ratchets]
 prs: []
 hypothesis:
   metric: 'gate.wf.test.test-shard.duration_p90@merge_group'

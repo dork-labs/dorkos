@@ -89,6 +89,8 @@ export const REPO_WIDE_SUITES = [
   // Reads test.yml, browser-test.yml, docs-openapi-check.yml,
   // release-branch-contents.yml and changelog-fragment-check.yml (DOR-4639).
   '__tests__/pr-related-step.test.ts',
+  // Walks scripts/ and apps/server/eslint-rules/ for baselines and reads package.json (DOR-4948).
+  '__tests__/ratchets.test.ts',
   '__tests__/release-branch-ci.test.ts',
   // Reads release-publish.yml: publish needs the npm gate job (DOR-5123).
   '__tests__/release-publish-gate.test.ts',

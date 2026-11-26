@@ -5,7 +5,7 @@ kind: experiment
 status: proposed
 actor: agent
 gates:
-  - lefthook.pre-push.max-lines
+  - lefthook.pre-push.ratchets
   - lefthook.pre-push.ledger-coverage
 prs: []
 hypothesis:

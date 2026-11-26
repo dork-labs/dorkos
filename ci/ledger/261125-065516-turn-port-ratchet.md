@@ -4,7 +4,7 @@ title: "The turn port's ratchet: no space-side file may add an import of turn co
 kind: experiment
 status: proposed
 actor: agent
-gates: [wf.lint.lint, wf.typecheck.typecheck, lefthook.pre-push.turn-port]
+gates: [wf.lint.lint, wf.typecheck.typecheck, lefthook.pre-push.ratchets]
 prs: []
 hypothesis:
   metric: 'gate.wf.lint.lint.duration_p90@merge_group'

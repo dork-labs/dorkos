@@ -431,7 +431,7 @@ gates:
   # --- typecheck.yml ---
   - id: wf.typecheck.typecheck
     source: .github/workflows/typecheck.yml
-    purpose: Full-monorepo typecheck, plus the policy gates (retired words, copy a browser spec still quotes, boundary, the 500-line ratchet, the API lint ratchet, NUL bytes, dead doc paths, one-shot browser routes) and the CI Steward census and ledger checks.
+    purpose: Full-monorepo typecheck, plus the policy gates (retired words, copy a browser spec still quotes, boundary, every ratchet in scripts/ratchets/registry.ts through one `pnpm ratchet` step, NUL bytes, dead doc paths, one-shot browser routes) and the CI Steward census and ledger checks.
 
   # --- update-homebrew.yml ---
   - id: wf.update-homebrew.tag-is-on-main
@@ -467,27 +467,12 @@ gates:
     source: lefthook.yml
     purpose: Fails a push that carries a broken changelog fragment, usually an unedited seed, using fragment-present's own validity command.
 
-  - id: lefthook.pre-push.max-lines
+  - id: lefthook.pre-push.ratchets
     source: lefthook.yml
-    purpose: Refuses file-size ratchet growth before pushing.
-  - id: lefthook.pre-push.own-mocks
-    source: lefthook.yml
-    purpose: Refuses new vi.mock calls on our own modules before pushing.
-  - id: lefthook.pre-push.turn-port
-    source: lefthook.yml
-    purpose: Refuses an entry of the turn port's import baseline raised or added by hand before pushing.
-  - id: lefthook.pre-push.computer-wall
-    source: lefthook.yml
-    purpose: Refuses an entry of the computer wall's baseline raised or added by hand, or a side map that places a path twice or names one that is gone, before pushing.
+    purpose: Refuses a push that grows a ratchet marked for pre-push in scripts/ratchets/registry.ts (file size, own-module mocks, test budget, turn port, computer wall, import boundary) or raises its baseline by hand, through one `pnpm ratchet` run.
   - id: lefthook.pre-push.copy-spec-drift
     source: lefthook.yml
     purpose: Refuses a copy change that strands a string a browser spec still asserts, before pushing.
-  - id: lefthook.pre-push.import-boundary
-    source: lefthook.yml
-    purpose: Refuses a services/ domain-to-domain import past the import boundary's baseline, or a pair added or raised by hand, before pushing.
-  - id: lefthook.pre-push.test-ratio
-    source: lefthook.yml
-    purpose: Refuses a package adding tests faster than source past its test budget, or a budget loosened by hand, before pushing.
   - id: lefthook.pre-push.ledger-coverage
     source: lefthook.yml
     purpose: Requires a ledger entry for changed pipeline paths before pushing.

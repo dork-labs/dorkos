@@ -5,7 +5,7 @@
  * --help
  * Purpose: hold the HTTP API to a ratchet: the OpenAPI document and the route
  *          census may only get better, per rule and route group.
- * Runs in: the required `typecheck` job (`--queue` in the merge queue); by hand.
+ * Runs in: `pnpm ratchet` (the required `typecheck` job, `--queue` in the queue); by hand.
  * To fix:  fix the new finding it names (rules: contributing/api-reference.md).
  *          After a fix, run `pnpm check:api-lint -- --update` and commit the lower
  *          baseline. A lowered count in a group you never touched is a queue
