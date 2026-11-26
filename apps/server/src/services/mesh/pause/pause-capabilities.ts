@@ -30,11 +30,13 @@ import {
 import { z } from 'zod';
 import {
   CapabilityToolError,
+  type CapabilityHandlerContext,
+} from '../../core/capabilities/index.js';
+import {
   defineCapability,
   type CapabilityDeps,
   type CapabilityDomain,
-  type CapabilityHandlerContext,
-} from '../../core/capabilities/index.js';
+} from '../../core/capabilities/capability-definition.js';
 import { auditTrail } from '../../audit/audit-trail.js';
 import { currentAuditActor } from '../../audit/audit-context.js';
 import {

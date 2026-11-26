@@ -36,11 +36,13 @@ import {
 import { RunningChatsResponseSchema } from '@dorkos/shared/running-chats';
 import {
   CapabilityToolError,
+  type CapabilityInvocationContext,
+} from '../core/capabilities/index.js';
+import {
   defineCapability,
   type CapabilityDeps,
   type CapabilityDomain,
-  type CapabilityInvocationContext,
-} from '../core/capabilities/index.js';
+} from '../core/capabilities/capability-definition.js';
 import {
   listRunningChats,
   runningChatsHandOutsideWords,

@@ -12,12 +12,12 @@
  */
 import { z } from 'zod';
 import { CancelHeldActionResponseSchema } from '@dorkos/shared/connector-hold-schemas';
+import { type CapabilityHandlerContext } from '../../core/capabilities/index.js';
 import {
   defineCapability,
   type CapabilityDeps,
   type CapabilityDomain,
-  type CapabilityHandlerContext,
-} from '../../core/capabilities/index.js';
+} from '../../core/capabilities/capability-definition.js';
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 import type {
   CancelHoldResult,

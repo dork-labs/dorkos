@@ -24,7 +24,7 @@
  * @module services/heartbeats/triage/triage-credits-capability
  */
 import { TriageCreditsChoiceSchema } from '@dorkos/shared/heartbeat-schemas';
-import { defineCapability } from '../../core/capabilities/index.js';
+import { defineCapability } from '../../core/capabilities/capability-definition.js';
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 
 /** Where the choice lives, set by the running server (`triage-mount.ts`). */

@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { ESLint } from 'eslint';
 import { describe, expect, it } from 'vitest';
 import { countFile } from '../../../../scripts/import-boundary/check-import-boundary.js';
+import { portLeak } from '../../eslint-rules/import-boundary.js';
 
 const SERVER = fileURLToPath(new URL('../../', import.meta.url));
 const eslint = new ESLint({ cwd: SERVER });
@@ -157,5 +158,54 @@ describe('the services import boundary', { timeout: LINT_TIMEOUT_MS }, () => {
       'core/scratch-folder -> core': 1,
       'core/scratch-folder -> core/turn-power': 1,
     });
+  });
+});
+
+describe('ports and composition roots', { timeout: LINT_TIMEOUT_MS }, () => {
+  const from = `src/services/${NEW_DOMAIN}/scratch-example.ts`;
+  const PORT = 'src/services/core/capabilities/capability-definition.ts';
+  const ROOT = 'src/services/core/self-description/dorkos-registry.ts';
+
+  it('does not count an import into the port', async () => {
+    // Purpose: fails if every domain declaring a capability were counted as coupling.
+    const code =
+      "import { defineCapability } from '../core/capabilities/capability-definition.js';\nexport const d = defineCapability;";
+    expect(await boundary(from, code)).toEqual([]);
+    expect(countFile(`${SERVER}${from}`, code)).toEqual({});
+  });
+
+  it("still counts anything else in the port's folder", async () => {
+    // Purpose: fails if the port widened to its whole domain.
+    const code =
+      "import { CapabilityToolError } from '../core/capabilities/mcp-envelope.js';\nexport const e = CapabilityToolError;";
+    expect((await boundary(from, code)).map(pairOf)).toEqual([
+      `${NEW_DOMAIN} -> core/capabilities`,
+    ]);
+  });
+
+  it("still counts a domain importing the composition root, but not the root's own imports", async () => {
+    // Purpose: fails if the root's exemption ran both ways.
+    const into =
+      "import { registry } from '../core/self-description/dorkos-registry.js';\nexport const r = registry;";
+    expect((await boundary(from, into)).map(pairOf)).toEqual([
+      `${NEW_DOMAIN} -> core/self-description`,
+    ]);
+    const out = `import { x } from '../../${NEW_DOMAIN}/scratch.js';\nexport const y = x;`;
+    expect(await boundary(ROOT, out)).toEqual([]);
+    expect(countFile(`${SERVER}${ROOT}`, out)).toEqual({});
+  });
+
+  it('refuses a port that imports a domain', async () => {
+    // Purpose: fails if a port could stop being a leaf and pull its importers along.
+    const code =
+      "import { roomStore } from '../../rooms/room-store.js';\nexport const s = roomStore;";
+    const messages = await boundary(PORT, code);
+    expect(messages).toContainEqual(
+      expect.stringContaining('core/capabilities -> rooms from a port')
+    );
+    expect(portLeak(`${SERVER}${PORT}`, '../../rooms/room-store.js')).toBe(
+      'core/capabilities -> rooms'
+    );
+    expect(portLeak(`${SERVER}${PORT}`, './registry.js')).toBeNull();
   });
 });

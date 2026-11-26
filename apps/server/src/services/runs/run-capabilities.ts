@@ -17,10 +17,12 @@ import { z } from 'zod';
 import { ChatRunsPageSchema, type ChatRunsPage } from '@dorkos/shared/run-schemas';
 import {
   CapabilityToolError,
-  defineCapability,
-  type CapabilityDomain,
   type CapabilityInvocationContext,
 } from '../core/capabilities/index.js';
+import {
+  defineCapability,
+  type CapabilityDomain,
+} from '../core/capabilities/capability-definition.js';
 import { readerFor } from '../audit/audit-capabilities.js';
 import { auditTrail } from '../audit/audit-trail.js';
 import { readableSessionIds } from '../audit/session-visibility.js';

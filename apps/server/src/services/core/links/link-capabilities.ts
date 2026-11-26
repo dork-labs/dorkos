@@ -20,12 +20,12 @@ import {
   LINK_NOT_FOUND_CODE,
   ResolvedDorkLinkSchema,
 } from '@dorkos/shared/dork-link-schemas';
+import { CapabilityToolError } from '../capabilities/index.js';
 import {
-  CapabilityToolError,
   defineCapability,
   type CapabilityDeps,
   type CapabilityDomain,
-} from '../capabilities/index.js';
+} from '../capabilities/capability-definition.js';
 import { resolveDorkLink, type DorkLinkLookups } from './resolve-dork-link.js';
 
 declare module '../capabilities/capability-definition.js' {

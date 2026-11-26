@@ -25,7 +25,7 @@ import {
   defineCapability,
   type CapabilityDeps,
   type CapabilityDomain,
-} from '../capabilities/index.js';
+} from '../capabilities/capability-definition.js';
 
 declare module '../capabilities/capability-definition.js' {
   interface CapabilityDeps {

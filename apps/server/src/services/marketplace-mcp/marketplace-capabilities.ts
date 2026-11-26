@@ -31,11 +31,11 @@ import { z } from 'zod';
 
 import { trustPosture } from '@dorkos/shared/permissions';
 
+import { permissionGateSources } from '../core/capabilities/index.js';
 import {
   defineCapability,
-  permissionGateSources,
   type CapabilityDomain,
-} from '../core/capabilities/index.js';
+} from '../core/capabilities/capability-definition.js';
 import type { CapabilityDeps, CapabilityHandlerContext } from '../core/capabilities/index.js';
 import { unwrapMcpEnvelope } from '../core/capabilities/mcp-envelope.js';
 import { turnReadOutsideWords } from '../core/turn-power/outsider-turn.js';

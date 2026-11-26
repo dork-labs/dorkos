@@ -15,7 +15,8 @@
  * @module services/rooms/reseat/reseat-capabilities
  */
 import { z } from 'zod';
-import { defineCapability, type CapabilityHandlerContext } from '../../core/capabilities/index.js';
+import { type CapabilityHandlerContext } from '../../core/capabilities/index.js';
+import { defineCapability } from '../../core/capabilities/capability-definition.js';
 import { marksHold } from '../../core/turn-power/turn-marks.js';
 import { lastTurnLevelOf, marksOf } from '../../core/turn-power/turn-levels.js';
 import type { AuthorRecord } from '../author-registry.js';
