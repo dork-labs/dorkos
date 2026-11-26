@@ -1074,6 +1074,84 @@
       "terms": ["session"],
       "contains": "Session in",
       "reason": "DOR-3074. With the DM view on, a chat with one agent is the DM, and \"session\" names something else: the working layer behind that chat (its model, account, permissions and context). The Show sessions setting, the header's session chip and the session view's own header name that layer on purpose, for the people who turn it on. The chat itself is still never called a session."
+    },
+    {
+      "path": "apps/client/src/layers/features/auth/ui/OwnerFactorsSection.tsx",
+      "terms": ["Confirm"],
+      "contains": "Confirm",
+      "reason": "Seeded from the hits on the day wave 11 joined the gate (DOR-4943), so the gate started green and the list only shrinks. Name the exact action on the button, then delete this entry."
+    },
+    {
+      "path": "apps/client/src/layers/features/auth/ui/PersonStepUpHost.tsx",
+      "terms": ["I"],
+      "contains": "I’ve set one",
+      "reason": "Seeded from the hits on the day wave 10 joined the gate (DOR-4943), so the gate started green and the list only shrinks. The app has no speaker: say the action or talk to \"you\", then delete this entry."
+    },
+    {
+      "path": "apps/client/src/layers/features/cloud-plan/ui/CreditsNotices.tsx",
+      "terms": ["OK"],
+      "contains": "OK",
+      "reason": "Seeded from the hits on the day wave 11 joined the gate (DOR-4943), so the gate started green and the list only shrinks. Name the exact action on the button, then delete this entry."
+    },
+    {
+      "path": "apps/client/src/layers/features/community-hosting/ui/MoveCommunityDialog.tsx",
+      "terms": ["I"],
+      "contains": "I have the file",
+      "reason": "Seeded from the hits on the day wave 10 joined the gate (DOR-4943), so the gate started green and the list only shrinks. The app has no speaker: say the action or talk to \"you\", then delete this entry."
+    },
+    {
+      "path": "apps/client/src/layers/features/community-hosting/ui/claim-connect-step.tsx",
+      "terms": ["I"],
+      "contains": "I’ve finished",
+      "reason": "Seeded from the hits on the day wave 10 joined the gate (DOR-4943), so the gate started green and the list only shrinks. The app has no speaker: say the action or talk to \"you\", then delete this entry."
+    },
+    {
+      "path": "apps/client/src/layers/features/relay/ui/ConfigFieldInput.tsx",
+      "terms": ["I"],
+      "contains": "Where do I find this?",
+      "reason": "Seeded from the hits on the day wave 10 joined the gate (DOR-4943), so the gate started green and the list only shrinks. The app has no speaker: say the action or talk to \"you\", then delete this entry."
+    },
+    {
+      "path": "apps/client/src/layers/features/todos/ui/TodoPromiseRow.tsx",
+      "terms": ["Yes"],
+      "contains": "Yes",
+      "reason": "Seeded from the hits on the day wave 11 joined the gate (DOR-4943), so the gate started green and the list only shrinks. Name the exact action on the button, then delete this entry."
+    },
+    {
+      "path": "apps/client/src/layers/shared/ui/filter-bar/FilterBarAddFilter.tsx",
+      "terms": ["Yes"],
+      "contains": "Yes",
+      "reason": "Seeded from the hits on the day wave 11 joined the gate (DOR-4943), so the gate started green and the list only shrinks. These two buttons are the values of a yes-or-no filter, not actions, so they may stay until the filter shows its value another way (a switch, or the field name with on and off)."
+    },
+    {
+      "path": "apps/client/src/layers/shared/ui/filter-bar/FilterBarAddFilter.tsx",
+      "terms": ["No"],
+      "contains": "No",
+      "reason": "Seeded from the hits on the day wave 11 joined the gate (DOR-4943), so the gate started green and the list only shrinks. These two buttons are the values of a yes-or-no filter, not actions, so they may stay until the filter shows its value another way (a switch, or the field name with on and off)."
+    },
+    {
+      "path": "apps/client/src/space/CommunityApp.tsx",
+      "terms": ["we"],
+      "contains": "We could not open this space.",
+      "reason": "Seeded from the hits on the day wave 9 joined the gate (DOR-4943), so the gate started green and the list only shrinks. The app has no speaker: rewrite it with a named actor or \"you\", then delete this entry."
+    },
+    {
+      "path": "apps/client/src/space/components/Erasure.tsx",
+      "terms": ["we"],
+      "contains": "In 72 hours, we’ll remove your name, messages, files, and yo",
+      "reason": "Seeded from the hits on the day wave 9 joined the gate (DOR-4943), so the gate started green and the list only shrinks. The app has no speaker: rewrite it with a named actor or \"you\", then delete this entry."
+    },
+    {
+      "path": "apps/client/src/space/components/Erasure.tsx",
+      "terms": ["we"],
+      "contains": "In 72 hours, we’ll delete your account on this server and er",
+      "reason": "Seeded from the hits on the day wave 9 joined the gate (DOR-4943), so the gate started green and the list only shrinks. The app has no speaker: rewrite it with a named actor or \"you\", then delete this entry."
+    },
+    {
+      "path": "apps/client/src/space/sign-up/CheckYourEmail.tsx",
+      "terms": ["we"],
+      "contains": "We sent a link to",
+      "reason": "Seeded from the hits on the day wave 9 joined the gate (DOR-4943), so the gate started green and the list only shrinks. The app has no speaker: rewrite it with a named actor or \"you\", then delete this entry."
     }
   ]
 }
