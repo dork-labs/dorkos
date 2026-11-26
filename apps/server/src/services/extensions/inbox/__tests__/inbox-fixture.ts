@@ -9,6 +9,8 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { notifications, type Db } from '@dorkos/db';
 import type { ProjectInfo, ProjectRef } from '@dorkos/extension-api/server';
 import { eventFanOut } from '../../../core/event-fan-out.js';
+import { assessPerson } from '../../../../routes/extensions-person-bar.js';
+import { setExtensionPersonBar } from '../extension-inbox-context.js';
 import { NotificationStore } from '../../../notifications/notification-store.js';
 import {
   NotificationService,
@@ -69,6 +71,8 @@ export interface InboxFixture {
  * @param overrides - Service dependencies to replace.
  */
 export function createInboxFixture(overrides: Partial<ExtensionInboxDeps> = {}): InboxFixture {
+  // The person bar `ctx.requirePerson` runs, wired as boot wires it.
+  setExtensionPersonBar(assessPerson);
   const db = createTestDb();
   const store = new NotificationStore(db);
   setNotificationService(new NotificationService(store));

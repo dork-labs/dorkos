@@ -14,6 +14,7 @@
  * @module routes/__tests__/mesh-activity-actor
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { meshReadViews } from './mesh/mesh-read-views.js';
 
 /** The one token the faked identity service knows about. */
 const KNOWN_TOKEN = 'tok_known_agent';
@@ -134,7 +135,7 @@ function buildApp(): RequestListener {
 
   const deps = { meshCore: meshCore as unknown as MeshCore, activity: recordingActivity() };
   return honoGroupListener([
-    capabilityGroup(meshDomain, { meshDeps: deps }),
+    capabilityGroup(meshDomain, { meshDeps: { ...deps, views: meshReadViews } }),
     { path: '/api/mesh', routes: createMeshRoutes(deps) },
   ]);
 }

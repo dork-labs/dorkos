@@ -18,13 +18,13 @@ import { RoomRepoStore } from '../../../rooms/repo/room-repo-store.js';
 import { ApprovalService } from '../../../core/approvals/approval-service.js';
 import { randomUUID } from 'node:crypto';
 import { createServerPrincipal } from '../../../connectors/principal/server-principal.js';
-import { createDocChannelHttpComposition } from '../http-composition.js';
+import { composeDocChannelHttp } from './doc-channel-http.js';
 import { privateDocTurnBudget } from '../delivery/final-budget.js';
 
 let db: Db;
 let rooms: RoomSubsystem;
 let approvals: ApprovalService;
-let http: ReturnType<typeof createDocChannelHttpComposition>;
+let http: ReturnType<typeof composeDocChannelHttp>;
 let documentId: string;
 const actor = () => ({
   surface: 'http' as const,
@@ -41,7 +41,7 @@ beforeEach(() => {
   runMigrations(db);
   rooms = createRoomSubsystem({ db });
   approvals = new ApprovalService(db);
-  http = createDocChannelHttpComposition({
+  http = composeDocChannelHttp({
     db,
     documents: rooms.canvasDocuments,
     rooms: rooms.service,
@@ -253,7 +253,7 @@ it.each([undefined, 'old-user'] as const)(
 it('an agent’s own turn proof still holds once an owner account exists; another installation’s does not', async () => {
   // The connector runtime names this installation on every agent-turn proof,
   // account or not, so the account appearing must not lock the agent out.
-  const live = createDocChannelHttpComposition({
+  const live = composeDocChannelHttp({
     db,
     documents: rooms.canvasDocuments,
     rooms: rooms.service,

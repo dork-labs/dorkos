@@ -37,3 +37,5 @@ Kebab-case files with noun-style module names: `config-manager.ts`, `event-log.t
 ## Route Handlers
 
 Routes stay thin regardless of size: validate input with Zod, call a service, map errors to status codes. Never put business logic or direct data access in a route handler. Validation and error-shape patterns: `.claude/rules/api.md`.
+
+A route imports a service, never the reverse. Lint refuses a service that imports from `routes/` (`ROUTES_BAN` in `apps/server/eslint.config.js`, DOR-4922): a service that needs a route's function declares the narrow function type it needs, and its composition root (the startup or wiring code that builds it) passes the route's function in. Hold the same line by hand for `middleware/`.
