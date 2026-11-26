@@ -1226,6 +1226,10 @@ describe('the shipped banned-terms.json and allowlist.json', () => {
       join(repoRoot, 'apps/server/src/routes/connector-owner-boundary.ts'),
       // The fixed problem sentences for every connection refusal (DOR-4979).
       join(repoRoot, 'apps/server/src/routes/connector-problems.ts'),
+      // The account-decision bar's sentences, shared by the hand routes and the
+      // capability mount (DOR-4978): its own refusals, and each area's owner_only.
+      join(repoRoot, 'apps/server/src/lib/http/account-decision-bar.ts'),
+      join(repoRoot, 'packages/shared/src/capabilities.ts'),
     ];
     const apiCopy: string[] = [];
 
@@ -1250,6 +1254,20 @@ describe('the shipped banned-terms.json and allowlist.json', () => {
         if (ts.isPropertyAssignment(node) && node.name.getText(sourceFile) === 'detail') {
           const text = staticText(node.initializer);
           if (text !== undefined) apiCopy.push(text);
+        }
+        // The account-decision bar's fixed sentence lists (ACCOUNT_DECISION_*).
+        if (
+          ts.isVariableDeclaration(node) &&
+          node.name.getText(sourceFile).startsWith('ACCOUNT_DECISION_') &&
+          node.initializer
+        ) {
+          const collect = (inner: ts.Node): void => {
+            // Values only: an object's keys name the check, they are never sent.
+            if (ts.isPropertyAssignment(inner)) collect(inner.initializer);
+            else if (ts.isStringLiteralLike(inner)) apiCopy.push(inner.text);
+            else ts.forEachChild(inner, collect);
+          };
+          collect(node.initializer);
         }
         if (ts.isCallExpression(node) && node.expression.getText(sourceFile) === 'ownerRefusal') {
           const text = staticText(node.arguments[2]);

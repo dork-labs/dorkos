@@ -165,8 +165,8 @@ export type PersonOnlyAgentHint = (typeof PERSON_ONLY_AGENT_HINTS)[number];
  * check, run by the mount before the handler.
  *
  * - `account-decision`: who may make an account decision about this install's
- *   connections (`lib/account-decision-bar.ts`): a page on a trusted origin,
- *   never an agent, an approval token or any `Authorization` header, and with
+ *   connections (`lib/http/account-decision-bar.ts`): a page on a trusted origin,
+ *   never an agent, an approval token or any program credential header, and with
  *   login on, the owner's own browser session.
  */
 export type HttpOwnerBar = 'account-decision';
