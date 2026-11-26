@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "261125-225407",
+      "slug": "your-dorkos-on-the-web",
+      "title": "Your DorkOS on the web, re-baselined: one window onto your homes, the link the Mac controls, one list by home, the notice, search across homes, the cloud home's wake, and a verdict for every step of the three older plans",
+      "created": "2026-11-25",
+      "status": "specified",
+      "linearIssue": "DOR-2932"
+    },
+    {
       "id": "261125-210729",
       "slug": "member-checks",
       "title": "Member checks replace the Mac's owner checks: one predicate called by the registry, the space in every call, a member directory, the inventory in five classes, the computer-owner check and a ratchet that only falls",
