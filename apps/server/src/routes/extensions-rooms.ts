@@ -36,7 +36,7 @@ import { z } from 'zod';
 import type { ExtensionStatus } from '@dorkos/extension-api';
 import { getRoomService, type AuthorRecord } from '../services/rooms/index.js';
 import { getReadCursorService } from '../services/core/read-cursor-service.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
 import {

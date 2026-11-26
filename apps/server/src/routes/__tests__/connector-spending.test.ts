@@ -14,7 +14,7 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { StepUpRequiredBodySchema } from '@dorkos/shared/step-up';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
-import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
+import { AGENT_IDENTITY_HEADER } from '../../lib/http/agent-identity-header.js';
 import { resetHeldStepUpsForTests } from '../../services/core/auth/step-up/step-up-holds.js';
 import type { RequestUser } from '../../services/core/auth/session-gate.js';
 import { SpendingStore } from '../../services/connectors/spending/spending-store.js';

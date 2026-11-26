@@ -13,7 +13,7 @@ import { todoPromiseWriteDomain } from '../../services/todos/todo-write-capabili
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TodoPromiseService, TodoPromiseStore } from '../../services/todos/index.js';
 import { TodoConfirm } from '../../services/todos/notice/todo-confirm.js';
-import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
+import { AGENT_IDENTITY_HEADER } from '../../lib/http/agent-identity-header.js';
 import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import type { CapabilityRequestFacts } from '../../services/core/capabilities/index.js';
 import { todos, eq, type Db } from '@dorkos/db';

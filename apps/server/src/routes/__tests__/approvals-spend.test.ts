@@ -18,7 +18,7 @@ import { initConfigManager } from '../../services/core/config-manager.js';
 import { initAuth } from '../../services/core/auth/index.js';
 import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import { ApprovalService, hashApprovalInput } from '../../services/core/approvals/index.js';
-import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
+import { AGENT_IDENTITY_HEADER } from '../../lib/http/agent-identity-header.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import type { ActivityService } from '../../services/activity/activity-service.js';
 import { createApprovalsRoutes } from '../approvals.js';

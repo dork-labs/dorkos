@@ -34,6 +34,7 @@ import { createFrontDoorServer, frontDoorListener } from '../front-door.js';
 import type { ApiEnv } from '../api-chain.js';
 import { composeFrontDoor } from '../hono-api.js';
 import { streamToNodeResponse } from '../raw-node-stream.js';
+import { upgradeGuards } from '../../startup/upgrade-guards.js';
 
 const TWO_MB = 2 * 1024 * 1024;
 
@@ -318,7 +319,8 @@ describe('front door', () => {
           }),
         },
       ],
-      new MainRequestAdmission()
+      new MainRequestAdmission(),
+      upgradeGuards
     );
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');

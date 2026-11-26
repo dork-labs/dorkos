@@ -46,6 +46,11 @@ export interface SessionRelayWiring {
   origins: SessionOriginResolvers;
   /** The room binding port the send path takes. */
   roomSessionPlace: () => RoomSessionPlacePort | undefined;
+  /**
+   * Whether the Remote Access switch is on (`middleware/remote-access-switch.ts`):
+   * while it is off the relay neither dials nor stays open (DOR-3650).
+   */
+  remoteAccessOn: () => boolean;
 }
 
 /** The name the audit log gives the owner when no trail is set up. */

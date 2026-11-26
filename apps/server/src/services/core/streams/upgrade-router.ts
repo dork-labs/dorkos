@@ -23,22 +23,20 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { STREAM_CLOSE_CODE_BASE } from '@dorkos/shared/stream-socket';
 import {
   type BrowserOriginPolicy,
+  isHostAllowed,
   isTrustedBrowserOrigin,
   parseHostname,
+  parseTrustedHosts,
   getTunnelHosts,
 } from '../../../lib/trusted-origins.js';
+import type { ClassifierFacts } from '../../../lib/request-classifier.js';
 import { getLanAccessHosts } from '../lan-access/lan-trust.js';
-import { isHostAllowed, parseTrustedHosts } from '../../../middleware/host-guard.js';
-import { bypassesManagedIngress } from '../../../middleware/managed-host-guard.js';
 import { noteUpgradeAdmitted } from '../remote/ingress-mark.js';
-import {
-  refusedByRemoteAccessSwitch,
-  trackRemoteStream,
-} from '../../../middleware/remote-access-switch.js';
 import { env } from '../../../env.js';
 import {
   authorizeStreamUpgrade,
   upgradeFacts,
+  type ResolveAgentIdentity,
   type StreamUpgradeLocals,
 } from './stream-upgrade-auth.js';
 import { gateAccessFor } from '../auth/gate-policy.js';
@@ -47,6 +45,25 @@ import type { MainRequestAdmission } from '../lifecycle/main-request-admission.j
 import { admitHubRequest, trackHubConnection } from '../hub/hub-serving.js';
 import { registerLiveConnection } from '../auth/sessions/live-connections.js';
 import { refuseUpgradeFromWifi } from '../auth/sessions/wifi-level.js';
+
+/**
+ * The checks an upgrade shares with the `/api` chain's own steps, passed in by
+ * the composition root (`index.ts`) so this service imports no middleware
+ * (DOR-4922). Each is the chain step's own function, not a copy.
+ */
+export interface UpgradeGuards {
+  /** Whether a request names a managed hostname without having come through the managed ingress. */
+  readonly bypassesManagedIngress: (req: IncomingMessage) => boolean;
+  /** Whether the Remote Access switch refuses a request with these facts (DOR-3650). */
+  readonly refusedByRemoteAccessSwitch: (facts: ClassifierFacts) => boolean;
+  /** Register an open stream so turning Remote Access off closes it; returns unregister. */
+  readonly trackRemoteStream: (
+    req: Pick<IncomingMessage, 'headers' | 'socket'>,
+    close: () => void
+  ) => () => void;
+  /** Resolve `X-DorkOS-Agent` for the credential gate (`authorizeStreamUpgrade`). */
+  readonly resolveAgentIdentity: ResolveAgentIdentity;
+}
 
 /** What a route is given to decide on an upgrade, before any socket is bound. */
 export interface UpgradeAttempt {
@@ -235,11 +252,13 @@ function refuse(socket: Duplex, status: number, message: string): void {
  * @param server - The HTTP server to attach to.
  * @param routes - The claimants, in precedence order.
  * @param admission - The same main-listener gate the chain uses.
+ * @param guards - The chain steps an upgrade asks too; see {@link UpgradeGuards}.
  */
 export function attachUpgradeRouter(
   server: Server,
   routes: readonly UpgradeRoute[],
-  admission: MainRequestAdmission
+  admission: MainRequestAdmission,
+  guards: UpgradeGuards
 ): void {
   const wss = new WebSocketServer({ noServer: true });
 
@@ -250,12 +269,12 @@ export function attachUpgradeRouter(
     }
     // A managed hostname is served only through the managed ingress, which
     // checked the edge proof before handing the upgrade here.
-    if (bypassesManagedIngress(req)) {
+    if (guards.bypassesManagedIngress(req)) {
       refuse(socket, 403, 'Forbidden');
       return;
     }
     // With Remote Access off, another device opens no stream (DOR-3650).
-    if (refusedByRemoteAccessSwitch(upgradeFacts(req))) {
+    if (guards.refusedByRemoteAccessSwitch(upgradeFacts(req))) {
       refuse(socket, 403, 'Forbidden');
       return;
     }
@@ -320,7 +339,7 @@ export function attachUpgradeRouter(
         // The credential gate runs HERE rather than inside each route, so a new
         // route cannot forget it — see `UpgradeRoute.credential`.
         if (claimed.route.credential === 'required') {
-          const auth = await authorizeStreamUpgrade(req);
+          const auth = await authorizeStreamUpgrade(req, guards.resolveAgentIdentity);
           if (admission.isClosed) {
             return { ok: false, status: 503, message: 'Service Unavailable' };
           }
@@ -370,7 +389,7 @@ export function attachUpgradeRouter(
           decision.open(ws);
           closeOnSignOut(ws, locals);
           // Turning Remote Access off closes a socket another device holds (DOR-3650).
-          const untrack = trackRemoteStream(req, () =>
+          const untrack = guards.trackRemoteStream(req, () =>
             ws.close(STREAM_CLOSE_CODE_BASE + 403, 'Remote access is off')
           );
           ws.once('close', untrack);

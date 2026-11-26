@@ -100,7 +100,7 @@ export interface CapabilityInvocationContext {
    * The wider question than {@link identity}, and a different one: that field
    * answers "WHICH agent is this", which needs a token that verified; this
    * answers "is a machine calling", which a token that did NOT verify still
-   * says. It is the same fact `middleware/agent-identity.ts` exposes as
+   * says. It is the same fact `lib/http/agent-identity-header.ts` exposes as
    * `presentsAgentIdentity`, threaded here so the two HTTP surfaces
    * (`routes/capabilities-invoke.ts`, `routes/mcp.ts`) can state it — an
    * in-process surface resolves its caller structurally and leaves it absent.
