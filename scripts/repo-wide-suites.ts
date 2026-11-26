@@ -121,6 +121,7 @@ export const REPO_WIDE_SUITES = [
 export const HERMETIC_SUITES = [
   '__tests__/adr-corpus-checks.test.ts',
   '__tests__/agent-hours.test.ts',
+  '__tests__/check-api-lint-list-paging.test.ts',
   '__tests__/check-copy-length.test.ts',
   '__tests__/check-copy-spec-drift-replay.test.ts',
   '__tests__/check-copy-spec-drift.test.ts',
