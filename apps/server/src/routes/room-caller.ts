@@ -15,7 +15,7 @@ import {
   type AuthorRecord,
 } from '../services/rooms/index.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import type { RequestFacts } from '../http/request-facts.js';
 import type { CallerAccess } from './caller-access.js';
 import { notePersonSessionMissing } from '../lib/person-without-session.js';

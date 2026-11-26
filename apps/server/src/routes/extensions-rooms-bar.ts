@@ -43,7 +43,7 @@
  * @module routes/extensions-rooms-bar
  */
 import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import { personSessionRequired } from '../services/core/auth/gate-policy.js';
 import { notePersonSessionMissing } from '../lib/person-without-session.js';
 import { presentsProgramCredential } from '../lib/caller-authority.js';

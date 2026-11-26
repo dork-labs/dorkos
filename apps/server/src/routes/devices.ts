@@ -36,7 +36,7 @@ import { honoRequestFacts } from '../http/request-facts.js';
 import type { RequestFacts } from '../http/request-facts.js';
 import { requirePersonAtThisComputer } from '../lib/caller-authority.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import { getAuth, readOwnerAccount, type Auth } from '../services/core/auth/index.js';
 import { authRequiredBody, verifyRequestAuth } from '../services/core/auth/session-gate.js';
 import {

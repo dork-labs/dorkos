@@ -33,6 +33,7 @@ import { markIngress, type RequestIngress } from '../../remote/ingress-mark.js';
 import { attachUpgradeRouter } from '../../streams/upgrade-router.js';
 import { env } from '../../../../env.js';
 import census from '../../../../http/__tests__/route-census.baseline.json' with { type: 'json' };
+import { upgradeGuards } from '../../../../startup/upgrade-guards.js';
 
 const target = swappableServer();
 const EMAIL = 'owner' + '@' + 'dork.test';
@@ -181,7 +182,8 @@ describe('the Wi-Fi level, end to end', () => {
           authorize: () => ({ ok: true, open: () => {} }),
         },
       ],
-      new MainRequestAdmission()
+      new MainRequestAdmission(),
+      upgradeGuards
     );
     const signUp = await request(target.server)
       .post('/api/auth/sign-up/email')

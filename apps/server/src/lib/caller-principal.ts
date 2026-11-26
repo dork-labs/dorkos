@@ -17,7 +17,7 @@
  *
  * @module lib/caller-principal
  */
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from './http/agent-identity-header.js';
 import type { RequestFacts } from '../http/request-facts.js';
 
 /**

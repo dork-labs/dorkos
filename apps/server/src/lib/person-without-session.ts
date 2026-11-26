@@ -6,7 +6,7 @@
  *
  * @module lib/person-without-session
  */
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from './http/agent-identity-header.js';
 import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
 import {
   credentialGated,

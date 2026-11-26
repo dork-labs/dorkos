@@ -24,12 +24,8 @@ import {
   type TopologyView,
 } from '@dorkos/shared/mesh-schemas';
 
-import { defineCapability, type CapabilityHandlerContext } from '../../core/capabilities/index.js';
-import {
-  projectComputerPlacement,
-  projectComputerPlacementById,
-} from '../../../routes/computer-placement.js';
-import { enrichTopology } from '../../../routes/mesh-topology.js';
+import { type CapabilityHandlerContext } from '../../core/capabilities/index.js';
+import { defineCapability } from '../../core/capabilities/capability-definition.js';
 import { agentIsAsking, meshOf, type MeshCapabilityDeps } from './mesh-capability-deps.js';
 
 /**
@@ -106,7 +102,7 @@ export const meshListAgentsCapability = defineCapability({
     const readable = forReader(mesh, context);
     const agents = mesh.meshCore
       .listWithHealth(input)
-      .map((agent) => readable(projectComputerPlacementById(agent, paths)));
+      .map((agent) => readable(mesh.views.projectPlacementById(agent, paths)));
     return { agents };
   },
 });
@@ -151,13 +147,13 @@ export const meshTopologyCapability = defineCapability({
   surfaces: { http: { method: 'get', path: '/api/mesh/topology', query: ['namespace'] } },
   invoke: async (deps, input, context) => {
     const mesh = meshOf(deps);
-    const enriched = enrichTopology(
+    const enriched = mesh.views.enrichTopology(
       mesh.meshCore.getTopology(input.namespace ?? '*') as TopologyView,
       mesh
     );
     const readable = forReader(mesh, context);
     enriched.namespaces.forEach((ns) => {
-      ns.agents = ns.agents.map((agent) => readable(projectComputerPlacement(agent)));
+      ns.agents = ns.agents.map((agent) => readable(mesh.views.projectPlacement(agent)));
     });
     return enriched;
   },

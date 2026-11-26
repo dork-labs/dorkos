@@ -71,9 +71,6 @@ vi.mock('../mcp-local-token.js', () => ({
   getMcpLocalToken: () => 'local-token',
   getMcpLocalTokenPath: () => '/tmp/mcp-local-token',
 }));
-vi.mock('../../../../middleware/agent-identity.js', () => ({
-  resolveAgentIdentityFromHeaders: async () => undefined,
-}));
 
 import { decideSessionGate } from '../session-gate.js';
 import {
@@ -201,6 +198,9 @@ const CELLS = CALLERS.flatMap((caller) =>
   [false, true].flatMap((ask) => [false, true].map((exposure) => ({ caller, ask, exposure })))
 );
 
+/** The agent-token resolver, resolving nothing: this matrix is about the gate, not attribution. */
+const noAgentIdentity = async () => undefined;
+
 /** An upgrade request carrying the caller's facts, marked as its listener would mark it. */
 function upgradeRequest(facts: Facts): IncomingMessage {
   const req = { headers: facts.headers, socket: { remoteAddress: facts.peerAddress } };
@@ -246,7 +246,7 @@ async function askEverySurface(facts: Facts): Promise<SurfaceAnswers> {
     ).allowed,
     a2aCardTokenless: (await decideMcpAuth('a2a', { ...mcpBase, method: 'GET', body: undefined }))
       .allowed,
-    streamSocket: (await authorizeStreamUpgrade(upgradeRequest(facts))).ok,
+    streamSocket: (await authorizeStreamUpgrade(upgradeRequest(facts), noAgentIdentity)).ok,
   };
 }
 
@@ -357,7 +357,9 @@ describe('a credential lets another device in, only on its own route', () => {
       allowed: true,
       user: { userId: 'owner', credential: 'cookie', sessionId: `session-${route}`, route },
     });
-    expect(await authorizeStreamUpgrade(upgradeRequest(facts))).toMatchObject({ ok: true });
+    expect(await authorizeStreamUpgrade(upgradeRequest(facts), noAgentIdentity)).toMatchObject({
+      ok: true,
+    });
   });
 
   it.each(credentialed)(
@@ -373,7 +375,7 @@ describe('a credential lets another device in, only on its own route', () => {
         expect(await decideSessionGate('GET', '/api/sessions', facts)).toEqual({
           allowed: false,
         });
-        expect(await authorizeStreamUpgrade(upgradeRequest(facts))).toMatchObject({
+        expect(await authorizeStreamUpgrade(upgradeRequest(facts), noAgentIdentity)).toMatchObject({
           ok: false,
           status: 401,
         });

@@ -47,12 +47,12 @@ vi.mock('../../../../lib/logger.js', () => ({
 }));
 
 // The real limiter's behaviour is pinned in
-// `middleware/__tests__/extension-proxy-rate-limit.test.ts`. Here it stands in
+// `__tests__/extension-proxy-rate-limit.test.ts`. Here it stands in
 // as a spy so these tests can prove WHERE it is asked — ahead of the forwarder,
 // so a refusal costs no outbound request — without driving 120 requests.
 const limiterHoisted = vi.hoisted(() => ({ hits: 0, refuse: false }));
 
-vi.mock('../../../../middleware/extension-proxy-rate-limit.js', () => ({
+vi.mock('../extension-proxy-rate-limit.js', () => ({
   EXTENSION_PROXY_RATE_LIMIT_DEFAULT: 120,
   EXTENSION_PROXY_RATE_LIMITED_BODY: {
     type: 'urn:dorkos:problem:rate_limited',

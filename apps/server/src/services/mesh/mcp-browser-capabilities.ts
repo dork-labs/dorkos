@@ -14,7 +14,10 @@
 import { z } from 'zod';
 import { AgentBrowserPresetSchema } from '@dorkos/shared/agent-browser';
 
-import { defineCapability, type CapabilityDefinition } from '../core/capabilities/index.js';
+import {
+  defineCapability,
+  type CapabilityDefinition,
+} from '../core/capabilities/capability-definition.js';
 import { resolveDorkHome } from '../../lib/dork-home.js';
 import { readAgentBrowserPreset } from './agent-browser-preset.js';
 

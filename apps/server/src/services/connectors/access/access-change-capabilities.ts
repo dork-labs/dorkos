@@ -16,7 +16,10 @@
  */
 import { z } from 'zod';
 import { and, connectionGrantChanges, desc, eq, or, type Db } from '@dorkos/db';
-import { defineCapability, type CapabilityDeps } from '../../core/capabilities/index.js';
+import {
+  defineCapability,
+  type CapabilityDeps,
+} from '../../core/capabilities/capability-definition.js';
 import type {
   CapabilityHandlerContext,
   CapabilityInvocationContext,

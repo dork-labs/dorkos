@@ -40,7 +40,7 @@ vi.mock('../../../core/config-manager.js', () => ({
   configManager: { get: vi.fn(), getDot: vi.fn() },
 }));
 import { composeTestModeCloud } from '../compose-test-cloud.js';
-import { createTestControlRoutes } from '../../../../routes/test-control.js';
+import { addTestControlGroup, createTestControlRoutes } from '../../../../routes/test-control.js';
 import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 import type { RuntimeRegistry } from '../../../core/runtime-registry.js';
 
@@ -70,7 +70,7 @@ describe('composeTestModeCloud', () => {
 
   it('refuses to run outside test mode', () => {
     mockEnv.DORKOS_TEST_RUNTIME = false;
-    expect(() => composeTestModeCloud(registry().port)).toThrow(
+    expect(() => composeTestModeCloud(registry().port, addTestControlGroup)).toThrow(
       'composeTestModeCloud is test-mode only (DORKOS_TEST_RUNTIME)'
     );
     expect(v1.fetch).toBeUndefined();
@@ -79,7 +79,7 @@ describe('composeTestModeCloud', () => {
 
   it('fakes the link and /v1, mounts the local pages, and leaves Doe out by default', async () => {
     const { port, registered } = registry();
-    expect(composeTestModeCloud(port)).toBeNull();
+    expect(composeTestModeCloud(port, addTestControlGroup)).toBeNull();
     expect(registered).toEqual([]);
     expect(doe.constructed).toBe(0);
     expect(typeof v1.fetch).toBe('function');
@@ -104,14 +104,14 @@ describe('composeTestModeCloud', () => {
   it('registers the DorkOS runtime when DORKOS_TEST_RUNTIME_DOE is on', () => {
     mockEnv.DORKOS_TEST_RUNTIME_DOE = true;
     const { port, registered } = registry();
-    const runtime = composeTestModeCloud(port);
+    const runtime = composeTestModeCloud(port, addTestControlGroup);
     expect(runtime).not.toBeNull();
     expect(registered).toEqual([runtime]);
   });
 
   it('approves codes by itself only when DORKOS_TEST_CLOUD_AUTO_APPROVE is on', async () => {
     const pollThrice = async () => {
-      composeTestModeCloud(registry().port);
+      composeTestModeCloud(registry().port, addTestControlGroup);
       let last = 0;
       for (let i = 0; i < 3; i += 1) {
         const res = await link.fetchImpl!('https://cloud.example.invalid/api/auth/device/token', {

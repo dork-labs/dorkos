@@ -73,6 +73,9 @@ export interface McpToolSession {
   backgroundPermissionCeiling?: TurnPermissionCeiling;
 }
 
+/** Announce that these extensions have a new bundle ready, by id. */
+export type AnnounceExtensionsReloaded = (extensionIds: string[]) => void;
+
 /**
  * Explicit dependency interface for MCP tool handlers.
  * All service dependencies are typed here and injected at server startup.
@@ -199,6 +202,12 @@ export interface McpToolDeps {
   notifyDm?: NotifyDmDeps;
   /** Optional ExtensionManager — undefined when extensions are disabled */
   extensionManager?: ExtensionManager;
+  /**
+   * Tells every open app that these extensions have a new bundle ready, so it
+   * loads it. Boot passes `broadcastExtensionReloaded` (`routes/extensions.ts`);
+   * absent in a test that does not watch it, and then a reload is not announced.
+   */
+  announceExtensionsReloaded?: AnnounceExtensionsReloaded;
   /**
    * Optional multi-runtime `RuntimeRegistry` singleton — powers the external
    * MCP server's `dorkos://sessions` resources (ADR-0310 fan-out, mirroring

@@ -31,14 +31,15 @@
  * @module services/heartbeats/heartbeat-capabilities
  */
 import { z } from 'zod';
+import { type CapabilityInvocationObserver } from '../core/capabilities/index.js';
 import {
   defineCapability,
   type CapabilityDomain,
-  type CapabilityInvocationObserver,
-} from '../core/capabilities/index.js';
+} from '../core/capabilities/capability-definition.js';
 import { EndBeatInputSchema, type EndBeatInput } from '@dorkos/shared/heartbeat-schemas';
 import { endBeatTurn, liveBeatTurn, noteBeatBypass, noteBeatChatSend } from './beat-turns.js';
 import { heartbeatStatusCapability } from './measures/status-capability.js';
+import { heartbeatPageCapability } from './measures/page-capability.js';
 import { wakersOffCapability } from './wakers-off/wakers-off-capability.js';
 import { chooseTriageCreditsCapability } from './triage/triage-credits-capability.js';
 
@@ -148,6 +149,7 @@ export const heartbeatDomain: CapabilityDomain = {
       },
     }),
     heartbeatStatusCapability,
+    heartbeatPageCapability,
     wakersOffCapability,
     chooseTriageCreditsCapability,
   ],

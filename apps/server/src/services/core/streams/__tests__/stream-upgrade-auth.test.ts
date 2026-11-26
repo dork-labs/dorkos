@@ -11,21 +11,18 @@ vi.mock('../../auth/index.js', () => ({
 vi.mock('../../auth/session-gate.js', () => ({
   verifyRequestAuth: vi.fn(),
 }));
-vi.mock('../../../../middleware/agent-identity.js', () => ({
-  resolveAgentIdentityFromHeaders: vi.fn(),
-}));
 
 import type { IncomingHttpHeaders, IncomingMessage } from 'node:http';
 import type { AgentIdentity } from '../../agent-identity/agent-identity-service.js';
-import { authorizeStreamUpgrade } from '../stream-upgrade-auth.js';
+import { authorizeStreamUpgrade, type ResolveAgentIdentity } from '../stream-upgrade-auth.js';
 import { markIngress, type IngressKind } from '../../remote/ingress-mark.js';
 import { configManager } from '../../config-manager.js';
 import { verifyRequestAuth as verifyRequestAuthImport } from '../../auth/session-gate.js';
-import { resolveAgentIdentityFromHeaders as resolveAgentIdentityImport } from '../../../../middleware/agent-identity.js';
 
 const configGet = vi.mocked(configManager.get);
 const verifyRequestAuth = vi.mocked(verifyRequestAuthImport);
-const resolveAgentIdentityFromHeaders = vi.mocked(resolveAgentIdentityImport);
+/** The resolver the router passes in (`UpgradeGuards.resolveAgentIdentity`). */
+const resolveAgentIdentityFromHeaders = vi.fn<ResolveAgentIdentity>();
 
 /** A resolved agent identity, as the middleware would return one. */
 const ALPHA: AgentIdentity = {
@@ -68,7 +65,7 @@ describe('authorizeStreamUpgrade', () => {
   it('passes a person at this computer through with no identity when it asks for no password', async () => {
     configGet.mockReturnValue({ enabled: false });
 
-    const result = await authorizeStreamUpgrade(upgrade());
+    const result = await authorizeStreamUpgrade(upgrade(), resolveAgentIdentityFromHeaders);
 
     expect(result).toEqual({ ok: true, locals: {} });
     expect(verifyRequestAuth, 'no credential work when the gate is off').not.toHaveBeenCalled();
@@ -78,7 +75,10 @@ describe('authorizeStreamUpgrade', () => {
     configGet.mockReturnValue({ enabled: true });
     verifyRequestAuth.mockResolvedValue(null);
 
-    const result = await authorizeStreamUpgrade(upgrade({ cookie: 'nonsense=1' }));
+    const result = await authorizeStreamUpgrade(
+      upgrade({ cookie: 'nonsense=1' }),
+      resolveAgentIdentityFromHeaders
+    );
 
     expect(result).toEqual({ ok: false, status: 401, message: 'Unauthorized' });
   });
@@ -87,7 +87,10 @@ describe('authorizeStreamUpgrade', () => {
     configGet.mockReturnValue({ enabled: true });
     verifyRequestAuth.mockResolvedValue({ userId: 'user-1', credential: 'cookie' });
 
-    const result = await authorizeStreamUpgrade(upgrade({ cookie: 'session=good' }));
+    const result = await authorizeStreamUpgrade(
+      upgrade({ cookie: 'session=good' }),
+      resolveAgentIdentityFromHeaders
+    );
 
     expect(result).toEqual({
       ok: true,
@@ -99,7 +102,10 @@ describe('authorizeStreamUpgrade', () => {
     configGet.mockReturnValue({ enabled: true });
     verifyRequestAuth.mockResolvedValue({ userId: 'user-1', credential: 'api-key' });
 
-    const result = await authorizeStreamUpgrade(upgrade({ authorization: 'Bearer key' }));
+    const result = await authorizeStreamUpgrade(
+      upgrade({ authorization: 'Bearer key' }),
+      resolveAgentIdentityFromHeaders
+    );
 
     expect(result).toMatchObject({ ok: true, locals: { user: { credential: 'api-key' } } });
   });
@@ -111,7 +117,7 @@ describe('authorizeStreamUpgrade', () => {
     verifyRequestAuth.mockResolvedValue({ userId: 'user-1', credential: 'cookie' });
     const req = upgrade({ cookie: 'session=good', origin: 'http://localhost:4242' });
 
-    await authorizeStreamUpgrade(req);
+    await authorizeStreamUpgrade(req, resolveAgentIdentityFromHeaders);
 
     // With its peer and listener, so a session counts only on the route it was made on.
     expect(verifyRequestAuth).toHaveBeenCalledWith({
@@ -128,7 +134,10 @@ describe('authorizeStreamUpgrade', () => {
     configGet.mockReturnValue({ enabled: false });
     resolveAgentIdentityFromHeaders.mockResolvedValue(ALPHA);
 
-    const result = await authorizeStreamUpgrade(upgrade({ 'x-dorkos-agent': 'token' }));
+    const result = await authorizeStreamUpgrade(
+      upgrade({ 'x-dorkos-agent': 'token' }),
+      resolveAgentIdentityFromHeaders
+    );
 
     expect(result).toEqual({ ok: true, locals: { agentIdentity: ALPHA } });
   });
@@ -137,7 +146,10 @@ describe('authorizeStreamUpgrade', () => {
     configGet.mockReturnValue({ enabled: true });
     verifyRequestAuth.mockResolvedValue(null);
 
-    await authorizeStreamUpgrade(upgrade({ 'x-dorkos-agent': 'token' }));
+    await authorizeStreamUpgrade(
+      upgrade({ 'x-dorkos-agent': 'token' }),
+      resolveAgentIdentityFromHeaders
+    );
 
     expect(resolveAgentIdentityFromHeaders).not.toHaveBeenCalled();
   });
@@ -154,14 +166,19 @@ describe('authorizeStreamUpgrade', () => {
       { ingress: 'managed' as const },
       { peerAddress: '192.168.1.31' },
     ]) {
-      expect(await authorizeStreamUpgrade(upgrade({}, from))).toEqual({
+      expect(
+        await authorizeStreamUpgrade(upgrade({}, from), resolveAgentIdentityFromHeaders)
+      ).toEqual({
         ok: false,
         status: 401,
         message: 'Unauthorized',
       });
     }
     expect(
-      await authorizeStreamUpgrade(upgrade({ 'x-forwarded-for': '203.0.113.9' }))
+      await authorizeStreamUpgrade(
+        upgrade({ 'x-forwarded-for': '203.0.113.9' }),
+        resolveAgentIdentityFromHeaders
+      )
     ).toMatchObject({ ok: false, status: 401 });
   });
 
@@ -170,7 +187,8 @@ describe('authorizeStreamUpgrade', () => {
     verifyRequestAuth.mockResolvedValue({ userId: 'user-1', credential: 'cookie' });
 
     const result = await authorizeStreamUpgrade(
-      upgrade({ cookie: 'session=good' }, { ingress: 'own-tunnel' })
+      upgrade({ cookie: 'session=good' }, { ingress: 'own-tunnel' }),
+      resolveAgentIdentityFromHeaders
     );
 
     expect(result).toEqual({
@@ -184,7 +202,8 @@ describe('authorizeStreamUpgrade', () => {
     verifyRequestAuth.mockResolvedValue({ userId: 'user-1', credential: 'cookie' });
 
     const result = await authorizeStreamUpgrade(
-      upgrade({ cookie: 'session=good' }, { ingress: 'relay' })
+      upgrade({ cookie: 'session=good' }, { ingress: 'relay' }),
+      resolveAgentIdentityFromHeaders
     );
 
     expect(result).toEqual({ ok: false, status: 401, message: 'Unauthorized' });

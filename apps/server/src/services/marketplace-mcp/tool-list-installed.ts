@@ -100,6 +100,18 @@ function summaryOf(check: InstallationUpdateCheck): InstalledUpdateSummary {
 }
 
 /**
+ * An installation without the working folder its dev link runs from: what an
+ * agent reads.
+ *
+ * @param installation - The installation as a person reads it.
+ */
+function withoutDevLinkFolder<T extends InstalledPackage>(installation: T): T {
+  if (!installation.devLink) return installation;
+  const { path: _folder, ...devLink } = installation.devLink;
+  return { ...installation, devLink } as T;
+}
+
+/**
  * Build the `marketplace_list_installed` handler. Returns an async function
  * suitable for `McpServer.tool(...)` that scans every install scope under
  * `deps.dorkHome` plus each registered agent's `.dork/plugins` (via
@@ -112,13 +124,18 @@ function summaryOf(check: InstallationUpdateCheck): InstalledUpdateSummary {
  * the MCP SDK's `CallToolResult` shape (which has an index signature) accepts
  * the handler directly at the registration site.
  *
+ * The handler's second argument says who is reading: an agent's list leaves
+ * out the working folder a dev link runs from, as `GET /api/marketplace/installed`
+ * does (`marketplace/doors/marketplace-reader.ts`). The rows this tool lists
+ * carry no `heldBack`, so the dev link is the only folder to leave out.
+ *
  * @param deps - Marketplace MCP dependency bundle. Reads `dorkHome`, and, when
  *   present, `listAgentScopes` (absent → global installs only); `updateFlow`
  *   only with `checkUpdates`.
  * @returns An async handler accepting {@link ListInstalledInput}
  */
 export function createListInstalledHandler(deps: MarketplaceMcpDeps) {
-  return async (args: ListInstalledInput) => {
+  return async (args: ListInstalledInput, reader: { agentAsking?: boolean } = {}) => {
     // Filter before any check: a check nobody will see is a fetch for nothing.
     const records = (await scanUpdateView(deps, undefined)).filter(
       (r) => !args.type || r.package.type === args.type
@@ -141,7 +158,11 @@ export function createListInstalledHandler(deps: MarketplaceMcpDeps) {
       content: [
         {
           type: 'text' as const,
-          text: JSON.stringify({ installed }, null, 2),
+          text: JSON.stringify(
+            { installed: reader.agentAsking ? installed.map(withoutDevLinkFolder) : installed },
+            null,
+            2
+          ),
         },
       ],
     };

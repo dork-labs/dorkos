@@ -40,12 +40,12 @@ import {
   TodoSchema,
   UpdateTodoRequestSchema,
 } from '@dorkos/shared/todo-schemas';
+import { type CapabilityHandlerContext } from '../core/capabilities/index.js';
 import {
   defineCapability,
   type CapabilityDeps,
   type CapabilityDomain,
-  type CapabilityHandlerContext,
-} from '../core/capabilities/index.js';
+} from '../core/capabilities/capability-definition.js';
 import { CapabilityToolError } from '../core/capabilities/mcp-envelope.js';
 import type { TodoConfirm } from './notice/todo-confirm.js';
 import type { TodoActor } from './todo-authority.js';

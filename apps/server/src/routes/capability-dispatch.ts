@@ -47,7 +47,7 @@ import {
 } from '../services/core/capabilities/index.js';
 import { isFromWifi, WIFI_ACTION_REFUSAL } from '../services/core/auth/sessions/wifi-level.js';
 import { deviceIdOf } from '../services/core/auth/sessions/signed-in-devices.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { problem, sendProblem, validationProblem } from '@dorkos/http-kit';

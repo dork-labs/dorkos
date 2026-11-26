@@ -11,7 +11,7 @@
  */
 import { z } from 'zod';
 import { WakersOffSchema, type WakersOff } from '@dorkos/shared/waker-schemas';
-import { defineCapability } from '../../core/capabilities/index.js';
+import { defineCapability } from '../../core/capabilities/capability-definition.js';
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 
 /** Where the list comes from. */

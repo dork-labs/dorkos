@@ -34,7 +34,7 @@ import { defineUpdateAgentConfig } from './agent-config.js';
 import { CONFIG_PATCH_TOO_LARGE_MESSAGE } from './config-patch-card.js';
 import { CONFIG_PATCH_CARD, configPatchFitsStoredCard } from './config-patch-card-view.js';
 
-import { defineCapability, type CapabilityDomain } from '../capabilities/index.js';
+import { defineCapability, type CapabilityDomain } from '../capabilities/capability-definition.js';
 import type { CapabilityDeps } from '../capabilities/index.js';
 import { unwrapMcpEnvelope } from '../capabilities/mcp-envelope.js';
 import { activityListCapability } from '../../activity/activity-capability.js';

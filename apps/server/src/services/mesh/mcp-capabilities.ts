@@ -35,7 +35,10 @@ import {
   ManagedMcpServerViewSchema,
 } from '@dorkos/shared/mesh-schemas';
 
-import { defineCapability, type CapabilityDomain } from '../core/capabilities/index.js';
+import {
+  defineCapability,
+  type CapabilityDomain,
+} from '../core/capabilities/capability-definition.js';
 import {
   AgentServerInput,
   agentIdField,

@@ -31,7 +31,7 @@ import { lstat, mkdir, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path';
 import { z } from 'zod';
 import { readManifest } from '@dorkos/shared/manifest';
-import { defineCapability, type CapabilityDeps } from '../capabilities/index.js';
+import { defineCapability, type CapabilityDeps } from '../capabilities/capability-definition.js';
 import { unwrapMcpEnvelope } from '../capabilities/mcp-envelope.js';
 import { registerPreGateRefusal } from '../capabilities/pre-gate-refusals.js';
 import { marksOf } from '../turn-power/turn-levels.js';

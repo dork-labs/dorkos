@@ -30,7 +30,7 @@ import {
   requireOperatorCookieUnderLogin,
 } from '../lib/caller-authority.js';
 import { logger, logError } from '../lib/logger.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 
 const router = new Hono<ApiEnv>();
 

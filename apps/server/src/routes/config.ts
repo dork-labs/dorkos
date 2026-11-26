@@ -53,7 +53,7 @@ import {
   frontDoorSubjectOf,
 } from '../services/core/operator/front-door-settings.js';
 import { APPROVAL_TOKEN_HEADER, trustedCaller } from '../services/core/capabilities/index.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import {
   clearsTheAgentBar,
   readCallerAuthority,

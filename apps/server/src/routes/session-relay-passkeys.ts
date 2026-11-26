@@ -59,7 +59,7 @@ import type { ProblemCode } from '@dorkos/shared/problem';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { classifyRequest } from '../lib/request-classifier.js';
 import { currentServerRole } from '../lib/server-role.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/approval-wording.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import {

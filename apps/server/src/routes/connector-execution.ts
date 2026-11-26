@@ -9,7 +9,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { problem, readJsonBody, sendProblem, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import { logger } from '../lib/logger.js';
 import {
   APPROVAL_TOKEN_HEADER,

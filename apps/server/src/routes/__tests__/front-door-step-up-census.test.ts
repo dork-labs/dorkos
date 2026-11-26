@@ -196,7 +196,6 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
   'cloud-community-move-http.ts': 'Delegated cloud-communities POST /moves hold, checked below.',
   'account-signin.ts': 'Runtime account sign-in is N.',
   'computers.ts': 'Computer naming and removal; own separate owner checks.',
-  'heartbeats.ts': 'Beat preferences and schedule ownership; no front-door credentials.',
   'local-browser.ts':
     'Browser controls and handoff-state reads are local owner-only; actions retain their person checks.',
   'browser-viewers.ts':

@@ -37,7 +37,7 @@
 import type { IncomingHttpHeaders } from 'node:http';
 import type { AuditActor, AuditEvent, AuditSurface } from '@dorkos/shared/audit-schemas';
 import type { AuditActorContext } from '../services/audit/audit-context.js';
-import { AGENT_IDENTITY_HEADER, presentsAgentIdentity } from './agent-identity.js';
+import { AGENT_IDENTITY_HEADER, presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import type { AgentIdentity } from '../services/core/agent-identity/agent-identity-service.js';
 import type { RequestUser } from '../services/core/auth/session-gate.js';
 import { auditTrail, type AuditTrail } from '../services/audit/audit-trail.js';

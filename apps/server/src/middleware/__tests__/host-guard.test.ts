@@ -23,7 +23,8 @@ vi.mock('../../lib/logger.js', () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-import { isHostAllowed, parseTrustedHosts, refuseUntrustedHost } from '../host-guard.js';
+import { refuseUntrustedHost } from '../host-guard.js';
+import { isHostAllowed, parseTrustedHosts } from '../../lib/trusted-origins.js';
 import { setLanTrust } from '../../services/core/lan-access/lan-trust.js';
 import { createApiApp } from '../../http/api-chain.js';
 import { frontDoorListener } from '../../http/front-door.js';

@@ -14,10 +14,8 @@ vi.mock('../../../../lib/trusted-origins.js', () => ({
   getStaticLocalOrigins: () => live.localOrigins,
   getTunnelHosts: () => live.tunnelHosts,
   isLoopbackHost: (host: string) => ['localhost', '127.0.0.1', '::1'].includes(host),
-  resolveAuthTrustedOrigins: () => live.origins,
-}));
-vi.mock('../../../../middleware/host-guard.js', () => ({
   parseTrustedHosts: (raw: string | undefined) => (raw ? raw.split(',') : []),
+  resolveAuthTrustedOrigins: () => live.origins,
 }));
 vi.mock('node:os', () => ({
   hostname: () => 'fixture.local',

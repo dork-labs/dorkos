@@ -29,12 +29,12 @@ import {
   isReservedMcpServerName,
 } from '@dorkos/shared/global-mcp-schemas';
 
+import { type CapabilityHandlerContext } from '../../core/capabilities/index.js';
 import {
   defineCapability,
   type CapabilityDeps,
   type CapabilityDomain,
-  type CapabilityHandlerContext,
-} from '../../core/capabilities/index.js';
+} from '../../core/capabilities/capability-definition.js';
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 import { recordAudit } from '../../audit/audit-trail.js';
 import { notify } from '../../notifications/notification-service.js';

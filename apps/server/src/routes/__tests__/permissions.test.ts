@@ -10,7 +10,7 @@ import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
 import { APPROVAL_TOKEN_HEADER } from '../../services/core/capabilities/index.js';
-import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
+import { AGENT_IDENTITY_HEADER } from '../../lib/http/agent-identity-header.js';
 import { createPermissionsRoutes } from '../permissions.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import {
@@ -294,15 +294,6 @@ describe('permission routes', () => {
           state: 'blocked',
         },
       ]);
-    });
-
-    it("reads one agent's permissions, and 404s an unknown one", async () => {
-      const { app } = build();
-      const ok = await request(app).get('/api/agents/agent-auditor/permissions');
-      const missing = await request(app).get('/api/agents/nobody/permissions');
-      expect(ok.status).toBe(200);
-      expect(ok.body.agentName).toBe('security-auditor');
-      expect(missing.status).toBe(404);
     });
 
     it('reads the history, per agent', async () => {

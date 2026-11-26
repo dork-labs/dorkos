@@ -24,7 +24,7 @@ import { todoViewDomain } from '../../services/todos/todo-http-capabilities.js';
 import { todoWriteDomain } from '../../services/todos/todo-write-capabilities.js';
 import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
-import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
+import { AGENT_IDENTITY_HEADER } from '../../lib/http/agent-identity-header.js';
 import { TodoPromiseService } from '../../services/todos/todo-promise-service.js';
 import { TodoPromiseStore } from '../../services/todos/todo-promise-store.js';
 import { TodoService } from '../../services/todos/todo-service.js';
