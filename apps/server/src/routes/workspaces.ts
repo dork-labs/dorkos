@@ -130,6 +130,9 @@ router.post('/', async (c) => {
         name,
         carriesToken: true,
         ...(identity && { requestedBy: identity.displayName || identity.agentPath }),
+        // The chat an agent's own token names, never a body field: a worktree
+        // made for it is recorded as the chat's work (DOR-5265). A person has none.
+        ...(identity?.chatId && { chatId: identity.chatId }),
         ...(decision.data.approvedReviewHash && {
           approvedReviewHash: decision.data.approvedReviewHash,
         }),

@@ -220,10 +220,15 @@ export function workspaceBringsAnything(inspection: WorkspaceInspection): boolea
  * `fullChat` names the chat set to Full autonomy that asked, when one did:
  * its workspace is made even when the source's settings fail the audit, with
  * one Activity line (DOR-3343, the owner's rule that Full has no limits).
+ *
+ * `chatId` names the chat the workspace is made for, when one is: a worktree
+ * made for it is announced so the work graph records that the chat opened it
+ * (DOR-5265). Server-internal, never read from a request body.
  */
 export type WorkspaceGate = ((inspection: WorkspaceInspection) => Promise<void>) & {
   readonly person?: true;
   readonly fullChat?: { readonly sessionId: string; readonly agentPath?: string };
+  readonly chatId?: string;
 };
 
 /** A person has to see what the workspace brings first (409). */

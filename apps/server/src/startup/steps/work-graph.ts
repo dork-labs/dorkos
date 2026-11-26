@@ -1,10 +1,11 @@
 /**
  * The work graph's composition (DOR-5264): what `work-graph.record-pr` reads
- * from the rest of the server, and the process token port that tells it which
- * chat a token's process runs. Both are composed here, at the root, so the
- * work graph and the runtimes import none of the domains they read (the
- * services import boundary, DOR-4924, and the computer wall, spec
- * `computer-side-starts-alone` §4).
+ * from the rest of the server, the process token port that tells it which
+ * chat a token's process runs, and the worktrees the workspace service makes
+ * for a chat (DOR-5265). All are composed here, at the root, so the work
+ * graph, the workspace service and the runtimes import none of the domains
+ * they read (the services import boundary, DOR-4924, and the computer wall,
+ * spec `computer-side-starts-alone` §4).
  *
  * @module startup/steps/work-graph
  */
@@ -19,7 +20,8 @@ import { marksOf } from '../../services/core/turn-power/turn-levels.js';
 import { getRunRecord } from '../../services/runs/index.js';
 import { setProcessTokenPort } from '../../services/runtimes/shared/references/process-token-port.js';
 import { peekProjector } from '../../services/session/session-state-projector.js';
-import { getWorkLinkStore } from '../../services/work-graph/index.js';
+import { getWorkLinkStore, recordChatWorktree } from '../../services/work-graph/index.js';
+import { onWorkspaceWorktreeCreated } from '../../services/workspace/index.js';
 
 /**
  * Give the runtimes' process token port its provider: agent identity's
@@ -30,6 +32,16 @@ import { getWorkLinkStore } from '../../services/work-graph/index.js';
  */
 export function wireProcessTokenPort(): void {
   setProcessTokenPort({ processStarted: holdTokenChatOf, processEnded: forgetTokenChatOf });
+}
+
+/**
+ * Record each worktree the workspace service makes for a chat as the chat
+ * `opened` it and its branch (DOR-5265).
+ *
+ * @returns A function that stops recording them.
+ */
+export function wireWorktreeLinks(): () => void {
+  return onWorkspaceWorktreeCreated(recordChatWorktree);
 }
 
 /**

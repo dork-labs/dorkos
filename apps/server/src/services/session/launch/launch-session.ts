@@ -511,6 +511,8 @@ async function launchSessionMessage(
           }),
           // A chat set to Full autonomy has no limits (DOR-3343): see `fullChatOf`.
           fullChat: fullChatOf(sessionId),
+          // Made for this chat: the work graph records it opened the worktree (DOR-5265).
+          chatId: sessionId,
         })
       );
       effectiveCwd = workspace.path;
