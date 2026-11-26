@@ -422,6 +422,25 @@ jobs:
           fi
           pnpm run check:computer-wall -- --base "$base"
 
+      # The services import boundary (DOR-4924). The server's lint refuses a
+      # domain-to-domain pair apps/server/eslint-rules/import-boundary.baseline.json
+      # does not hold; this refuses a pair's count grown and a pair added or
+      # raised by hand, against the same base the steps above pick, for the
+      # same reasons. Static reads only, under a second.
+      - name: Import boundary (DOR-4924)
+        if: ${{ !cancelled() }}
+        env:
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
+        run: |
+          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
+          if [ -n "$QUEUE_BASE" ]; then
+            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
+            base="$QUEUE_BASE"
+          else
+            base="$(git rev-parse HEAD^1)"
+          fi
+          pnpm run check:import-boundary -- --base "$base"
+
       # The API lint gate (DOR-4996). Holds the committed OpenAPI document
       # (docs/api/openapi.json, kept fresh by docs-openapi-check) and the route
       # census (kept fresh by the booted census test) to
