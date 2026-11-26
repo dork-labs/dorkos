@@ -150,6 +150,7 @@ export const HERMETIC_SUITES = [
   '__tests__/neon-preview-sweep.test.ts',
   '__tests__/no-code-scope-step.test.ts',
   '__tests__/origin-branch-janitor.test.ts',
+  '__tests__/pr-test-plan-scriptless.test.ts',
   '__tests__/pr-test-plan.test.ts',
   '__tests__/pre-push-format-gate.test.ts',
   '__tests__/pre-push-midrun-check.test.ts',
