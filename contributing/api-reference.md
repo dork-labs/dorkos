@@ -927,6 +927,8 @@ Change one or more areas or single actions for everyone. `null` removes a change
 
 One agent's resolved permissions, with where each area's state and its Files & commands stop came from.
 
+Served by the capability mount as `permissions.view_agent`, beside `GET /api/agents/:id/level` (`permissions.view_agent_level`). Whoever could read it before still can, an agent included (DOR-4978).
+
 - `200` - `AgentPermissionsResponse`: `{ agentId, agentName, overrides, areas: [{ ...area, inherited, changedOutsideAt, lastChange? }], filesAndCommands: { stop, source, lastChange?, inherited: { stop, source, lastChange? } } }`. `source` is one of `agent | runtime | default | runtime-own`; `changedOutsideAt` is set when the area's most recent change was an edit to the agent's settings file DorkOS noticed rather than made.
 
 ### PATCH /api/agents/:id/permissions
