@@ -27,27 +27,18 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import type { SessionSettings, StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
+import { processEnded, processStarted } from '../../shared/references/process-token-port.js';
 import type { ConnectorThreadKeyPort } from '../../../core/connections-lease/index.js';
-import {
-  CONNECTOR_RUNTIME_MCP_SERVER_NAME,
-  CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS,
-  connectorRuntimeHeaders,
-} from '../../connector-tools.js';
-import { DORKOS_MCP_SERVER_NAME } from '../../shared/dorkos-tool-names.js';
-import { codexCreditsThreadConfig } from '../credits-launch.js';
-import { withLiteralHeaders } from '../mcp-server-config.js';
 import type { CodexTurnTools } from '../transport/codex-transport.js';
 import type { CodexAppServerProcess } from './process-pool.js';
-import { guardedMountTargetRecorder } from '../policy/writable-missing-targets.js';
-import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
 import { loadWithProtectedProfile } from './profile-load.js';
+import { buildLoadOverrides } from '../policy/load-overrides.js';
+export { buildLoadOverrides } from '../policy/load-overrides.js';
 import { withThreadLoadBinding } from './thread-load-binding.js';
 import { trustForLoad } from './thread-trust.js';
 import { credentialsOf } from './thread-credentials.js';
-import { approvalPolicyFor } from './turn-parts.js';
 import { isCodexRpcError } from './protocol/errors.js';
 import type { ThreadLoadOverrides } from './protocol/methods.js';
-import { codexShellEnv } from '../transport/shell-env.js';
 
 /** The copy a person reads when Codex lost the conversation (§6). */
 export const THREAD_STARTS_FRESH_NOTICE = 'Codex no longer has this chat, so it starts fresh.';
@@ -127,9 +118,21 @@ interface LoadedRecord {
   /** Digest of the credential VALUES it loaded with (see `credentialsOf`). */
   readonly credentials: string;
   readonly keyId: string | undefined;
+  /** The identity token env this load minted: its process holds it while this thread is loaded (DOR-5264). */
+  readonly agentTokenEnv?: Record<string, string>;
   /** Not yet persisted (no turn has started on it). */
   unbound: boolean;
   replaces: string | undefined;
+}
+
+/** The identity token env one load minted, once it has (DOR-5264). */
+interface LoadToken {
+  env?: Record<string, string>;
+}
+
+/** A load that failed never reached a thread: its process holds no token. */
+function forgetLoadToken(load: LoadToken): void {
+  if (load.env) processEnded(load.env);
 }
 
 /** Dependencies of {@link CodexThreadLoader}. */
@@ -255,13 +258,15 @@ export class CodexThreadLoader {
     }
     const threadId = input.boundThreadId;
     if (threadId === undefined) return 'empty';
+    const load: LoadToken = {};
     try {
-      const { params } = await this.overrides(input, undefined);
+      const { params } = await this.overrides(input, undefined, load);
       await loadWithProtectedProfile(input.process.client, 'thread/resume', {
         threadId,
         ...params,
       });
     } catch (err) {
+      forgetLoadToken(load);
       if (isCodexRpcError(err, 'no-rollout', 'thread-not-found', 'archived')) return 'gone';
       throw err;
     }
@@ -271,6 +276,7 @@ export class CodexThreadLoader {
       compactionOnly: true,
       credentials: credentialsOf(input.tools),
       keyId: undefined,
+      agentTokenEnv: load.env,
       unbound: false,
       replaces: undefined,
     });
@@ -341,10 +347,11 @@ export class CodexThreadLoader {
       void input.process.client.request('thread/unsubscribe', { threadId }).catch(() => undefined);
     };
     const key = this.mintKey(input, 'fork');
+    const load: LoadToken = {};
     let forked: string;
     let modelNote: string | undefined;
     try {
-      const { params, modelNote: note } = await this.overrides(input, key?.key);
+      const { params, modelNote: note } = await this.overrides(input, key?.key, load);
       modelNote = note;
       forked = (
         await withThreadLoadBinding(input, key?.keyId, this.options.threadKeys(), () =>
@@ -353,6 +360,7 @@ export class CodexThreadLoader {
       ).thread.id;
     } catch (err) {
       if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
+      forgetLoadToken(load);
       if (!isCodexRpcError(err, 'no-rollout')) throw err;
       retire();
       const fresh = await this.start(
@@ -370,6 +378,7 @@ export class CodexThreadLoader {
       fingerprint: this.fingerprintOf(input),
       credentials: credentialsOf(input.tools),
       keyId: key?.keyId,
+      agentTokenEnv: load.env,
       unbound: true,
       replaces,
     });
@@ -419,15 +428,17 @@ export class CodexThreadLoader {
       // Anything else: the resume below has the final word.
     }
     const key = this.mintKey(input, 'resume');
+    const load: LoadToken = {};
     let modelNote: string | undefined;
     try {
-      const { params, modelNote: note } = await this.overrides(input, key?.key);
+      const { params, modelNote: note } = await this.overrides(input, key?.key, load);
       modelNote = note;
       await withThreadLoadBinding(input, key?.keyId, this.options.threadKeys(), () =>
         loadWithProtectedProfile(input.process.client, 'thread/resume', { threadId, ...params })
       );
     } catch (err) {
       if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
+      forgetLoadToken(load);
       // Deleted (or its rollout removed) in Codex. DorkOS's own history stays visible.
       if (isCodexRpcError(err, 'no-rollout', 'thread-not-found'))
         return freshWith(THREAD_STARTS_FRESH_NOTICE);
@@ -439,6 +450,7 @@ export class CodexThreadLoader {
       fingerprint,
       credentials,
       keyId: key?.keyId,
+      agentTokenEnv: load.env,
       unbound: false,
       replaces: undefined,
     });
@@ -460,10 +472,11 @@ export class CodexThreadLoader {
     replaces: string | undefined
   ): Promise<LoadedThread> {
     const key = this.mintKey(input, 'start');
+    const load: LoadToken = {};
     let threadId: string;
     let modelNote: string | undefined;
     try {
-      const { params, modelNote: note } = await this.overrides(input, key?.key);
+      const { params, modelNote: note } = await this.overrides(input, key?.key, load);
       modelNote = note;
       threadId = (
         await withThreadLoadBinding(input, key?.keyId, this.options.threadKeys(), () =>
@@ -472,6 +485,7 @@ export class CodexThreadLoader {
       ).thread.id;
     } catch (err) {
       if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
+      forgetLoadToken(load);
       throw err;
     }
     records.set(threadId, {
@@ -479,6 +493,7 @@ export class CodexThreadLoader {
       fingerprint,
       credentials,
       keyId: key?.keyId,
+      agentTokenEnv: load.env,
       unbound: true,
       replaces,
     });
@@ -531,6 +546,7 @@ export class CodexThreadLoader {
     if (!record) return;
     records!.delete(threadId);
     if (record.keyId) this.options.threadKeys()?.revoke(record.keyId, 'thread_unloaded');
+    processEnded(record.agentTokenEnv);
   }
 
   /**
@@ -591,6 +607,7 @@ export class CodexThreadLoader {
       process.onExit(() => {
         if (this.byProcess.get(process.key) === created) this.byProcess.delete(process.key);
         this.options.threadKeys()?.revokeProcess(process.key, 'process_exited');
+        for (const record of created.values()) processEnded(record.agentTokenEnv);
       });
     }
     return records;
@@ -613,16 +630,23 @@ export class CodexThreadLoader {
   /** The load params, with real secrets, for the wire, and the load's line for the model. */
   private async overrides(
     input: ThreadLoadInput,
-    threadKey: string | undefined
+    threadKey: string | undefined,
+    load: LoadToken = {}
   ): Promise<{ params: ThreadLoadOverrides; modelNote: string | undefined }> {
     const realCwd = this.realpath(input.cwd);
     const { trust, modelNote } = await trustForLoad(input, realCwd);
     // The identity token is minted here, when a thread actually loads, not on
     // every turn: a loaded thread keeps the one it loaded with (spec §9).
+    // Its process holds it from this load (DOR-5264); `load` carries it to the
+    // thread's record, or to a failed load's catch, which gives it back.
     const agentTokenEnv =
       Object.keys(input.tools.agentTokenEnv).length === 0 && input.tools.mintAgentToken
         ? await input.tools.mintAgentToken()
         : input.tools.agentTokenEnv;
+    if (agentTokenEnv !== input.tools.agentTokenEnv) {
+      load.env = agentTokenEnv;
+      processStarted(agentTokenEnv, input.sessionId);
+    }
     const params = buildLoadOverrides(
       { ...input, tools: { ...input.tools, agentTokenEnv } },
       {
@@ -691,70 +715,4 @@ export class CodexThreadLoader {
     );
     return createHash('sha256').update(JSON.stringify(shape)).digest('hex');
   }
-}
-
-/**
- * Build one load's params from a read-only filesystem snapshot: sandbox mapping,
- * the mode's approval policy (`approvalPolicyFor`), and the reviewer always
- * the person — never a model (spec §18).
- *
- * @param input - The load inputs.
- * @param secrets - The thread key, the trust verdict and the cwd's realpath.
- */
-export function buildLoadOverrides(
-  input: Pick<
-    ThreadLoadInput,
-    'sessionId' | 'cwd' | 'settings' | 'tools' | 'creditsRelay' | 'preventIdleSleep'
-  >,
-  secrets: {
-    threadKey: string | undefined;
-    trust: 'trusted' | 'untrusted' | undefined;
-    realCwd: string;
-    onMissingTargets?: ((targets: string[]) => void) | undefined;
-  }
-): ThreadLoadOverrides {
-  const config: Record<string, unknown> = codexProtectedConfig(
-    input.cwd,
-    input.tools.filePolicy,
-    input.settings,
-    guardedMountTargetRecorder(input.settings, secrets.onMissingTargets, input.tools.filePolicy),
-    input.sessionId
-  );
-  const servers: Record<string, unknown> = { ...withLiteralHeaders(input.tools.managed) };
-  if (secrets.threadKey !== undefined) {
-    // Written LAST so a managed server can never shadow them.
-    const headers = connectorRuntimeHeaders({
-      bearer: secrets.threadKey,
-      runtime: 'codex',
-      canonicalCwd: input.cwd,
-    });
-    if (input.tools.dorkosTools) {
-      servers[DORKOS_MCP_SERVER_NAME] = { url: input.tools.dorkosTools.url, http_headers: headers };
-    }
-    if (input.tools.connectorTools) {
-      servers[CONNECTOR_RUNTIME_MCP_SERVER_NAME] = {
-        url: input.tools.connectorTools.url,
-        http_headers: headers,
-        tool_timeout_sec: CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS / 1000,
-      };
-    }
-  }
-  if (Object.keys(servers).length > 0) config.mcp_servers = servers;
-  // Vendor thread ids differ; shells always receive the server-owned DorkOS chat id.
-  config.shell_environment_policy = { set: codexShellEnv(input.tools, input.sessionId) };
-  if (secrets.trust !== undefined) {
-    config.projects = { [secrets.realCwd]: { trust_level: secrets.trust } };
-  }
-  if (input.creditsRelay) {
-    Object.assign(config, codexCreditsThreadConfig(input.creditsRelay));
-  }
-  if (input.preventIdleSleep) config.features = { prevent_idle_sleep: true };
-  return {
-    cwd: input.cwd,
-    ...(input.settings.model !== undefined ? { model: input.settings.model } : {}),
-    approvalPolicy: approvalPolicyFor(input.settings),
-    approvalsReviewer: 'user',
-    permissions: codexPermissionProfile(input.settings),
-    config,
-  };
 }
