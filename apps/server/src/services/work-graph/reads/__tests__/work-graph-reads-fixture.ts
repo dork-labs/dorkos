@@ -33,7 +33,7 @@ import { wireSessionVisibility } from '../../../audit/wire-session-visibility.js
 import { setSessionStartedByStore } from '../../../session/origin/session-started-by-store.js';
 import { getWorkLinkStore, type WorkLinkRelation } from '../../index.js';
 import { stores, useLineageStores } from '../../__tests__/lineage-fixture.js';
-import { workGraphReadDomain } from '../work-graph-read-capabilities.js';
+import { workGraphReadDomain } from '../../../core/self-description/dorkos-registry.js';
 
 export { start, stores } from '../../__tests__/lineage-fixture.js';
 

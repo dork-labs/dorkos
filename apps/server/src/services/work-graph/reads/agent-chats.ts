@@ -24,9 +24,7 @@
 import { dorkReferenceOrNull } from '@dorkos/shared/dork-ref';
 import { chatRefMarkdownLink } from '@dorkos/shared/session-link';
 import type { AgentChat, AgentChatsPage } from '@dorkos/shared/work-graph-reads';
-import { readableSessionIds } from '../../audit/session-visibility.js';
 import type { AuditReader } from '../../audit/visibility.js';
-import { getSessionStartedByStore } from '../../session/origin/session-started-by-store.js';
 import { decodePageCursor, encodePageCursor, pairOf } from './page-cursor.js';
 import { agentBindingsPage, type BindingCursor, type ChatBinding } from './chat-bindings.js';
 import type { Db } from '@dorkos/db';
@@ -43,6 +41,10 @@ export interface AgentChatsSources {
   db: Db;
   /** A chat's title, or null. */
   titleOf: (chatId: string) => Promise<string | null>;
+  /** The chats among these the reader may read: the audit read side's one rule. */
+  readable: (reader: AuditReader, chatIds: readonly string[]) => ReadonlySet<string>;
+  /** The chat that started each of these, when another chat did. */
+  startersOf: (chatIds: readonly string[]) => Map<string, string>;
 }
 
 /** What {@link readAgentChats} is asked. */
@@ -81,7 +83,7 @@ export async function readAgentChats(
     const step = Math.min(SCAN_STEP, AGENT_CHATS_SCAN_LIMIT - scannedSoFar);
     const scanned = agentBindingsPage(sources.db, query.agentPath, after, step);
     scannedSoFar += scanned.length;
-    const readable = readableSessionIds(
+    const readable = sources.readable(
       reader,
       scanned.map((binding) => binding.chatId)
     );
@@ -111,15 +113,8 @@ async function describeChats(
   reader: AuditReader,
   sources: AgentChatsSources
 ): Promise<AgentChat[]> {
-  const records = getSessionStartedByStore()?.getMany(page.map((b) => b.chatId)) ?? new Map();
-  const starterOf = new Map<string, string>();
-  for (const binding of page) {
-    const record = records.get(binding.chatId);
-    if (record?.kind === 'chat' && record.startedBySessionId !== null) {
-      starterOf.set(binding.chatId, record.startedBySessionId);
-    }
-  }
-  const readableStarters = readableSessionIds(reader, [...new Set(starterOf.values())]);
+  const starterOf = sources.startersOf(page.map((b) => b.chatId));
+  const readableStarters = sources.readable(reader, [...new Set(starterOf.values())]);
   return Promise.all(
     page.map(async (binding): Promise<AgentChat> => {
       const title = await sources.titleOf(binding.chatId);

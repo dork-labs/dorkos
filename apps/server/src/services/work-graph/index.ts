@@ -153,6 +153,23 @@ export function getWorkGraphDb(): Db | null {
 }
 
 /**
+ * The chat that started each of these, when another chat did, from
+ * `session_started_by` (a carry-over names the chat it continues). For the
+ * read tools, which reach the session's records only through this barrel.
+ *
+ * @param chatIds - Current chat ids.
+ * @returns Each started chat's starter; a chat no chat started is absent.
+ */
+export function chatStartersOf(chatIds: readonly string[]): Map<string, string> {
+  const starters = new Map<string, string>();
+  for (const [id, row] of getSessionStartedByStore()?.getMany(chatIds) ?? []) {
+    if (row.kind === 'chat' && row.startedBySessionId !== null)
+      starters.set(id, row.startedBySessionId);
+  }
+  return starters;
+}
+
+/**
  * A chat's ancestors and its subtree with depth, read from this server's
  * stores: the installed edge store, `session_started_by` and the run record.
  * See {@link ChatLineageReader} for what is shown and what is left out.

@@ -9,7 +9,7 @@
  */
 import { z } from 'zod';
 import { DORK_SCHEME, isDorkId, parseDorkReference } from '@dorkos/shared/dork-ref';
-import { CapabilityToolError } from '../../core/capabilities/index.js';
+import { CapabilityToolError } from '../../core/capabilities/capability-definition.js';
 
 /** The longest id input taken: a `dork:agent:` prefix and a 64-character id. */
 const ID_INPUT_MAX = 96;

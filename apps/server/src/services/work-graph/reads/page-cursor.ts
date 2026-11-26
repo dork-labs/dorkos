@@ -19,7 +19,7 @@
  * @module services/work-graph/reads/page-cursor
  */
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { CapabilityToolError } from '../../core/capabilities/index.js';
+import { CapabilityToolError } from '../../core/capabilities/capability-definition.js';
 import type { AuditReader } from '../../audit/visibility.js';
 
 /** This process's cursor key. */
