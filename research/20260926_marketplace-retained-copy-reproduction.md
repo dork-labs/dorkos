@@ -2,7 +2,7 @@
 
 Recorded on 2026-09-26 against `7168a5b7c69def16bb2cb48319b24285c9894a3f` on macOS. These are diagnostic fixtures, not passing regression tests or approved behavior. They call the real local carry, disclosure and scan functions. No server, credentials or network service is used; the historical-fetch failure is injected.
 
-See [the recovery evidence matrix](20260926-local-marketplace-recovery-evidence.md) for conclusions and dispositions. Run only in an isolated checkout with dependencies installed (`pnpm install --frozen-lockfile`, then `pnpm --filter @dorkos/server... build`). Save the two code blocks at the paths named below, preserving the directory depth used by their imports. Each fixture cleans up its own temporary directory in `finally`.
+See [the recovery evidence matrix](20260926_local-marketplace-recovery-evidence.md) for conclusions and dispositions. Run only in an isolated checkout with dependencies installed (`pnpm install --frozen-lockfile`, then `pnpm --filter @dorkos/server... build`). Save the two code blocks at the paths named below, preserving the directory depth used by their imports. Each fixture cleans up its own temporary directory in `finally`.
 
 ## Saved copies and discovery
 

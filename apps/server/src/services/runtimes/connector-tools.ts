@@ -12,7 +12,7 @@ import type {
   ConnectorRuntime,
   ConnectorRuntimePrincipalPort,
   ConnectorThreadKeyPort,
-} from '../connectors/runtime-principal-port.js';
+} from '../core/connections-lease/index.js';
 import type { ConnectorTurnLeaseSupervisorFactory } from './connectors/connector-turn-lease-supervisor.js';
 import { CONNECTOR_REQUEST_LIVE_HOLD_MS } from '../connectors/runtime-capability-scope.js';
 import { CAPABILITY_APPROVAL_HOLD_CAP_MS } from '../core/capabilities/capability-approval-hold.js';

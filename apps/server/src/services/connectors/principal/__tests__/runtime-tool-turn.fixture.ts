@@ -1,12 +1,12 @@
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { registerTestHomes } from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
 import type {
-  RuntimeToolTurnFacts,
   OpenConnectorTurnInput,
   OpenConnectorTurnResult,
-} from '../../runtime-principal-port.js';
+  RuntimeToolTurnFacts,
+  ServerPrincipalProof,
+} from '../../../core/connections-lease/index.js';
 import { CanonicalConnectorRuntimeAuthorityResolver } from '../runtime-authority-resolver.js';
-import type { ServerPrincipalProof } from '../server-principal.js';
 import { ConnectorThreadKeyRegistry } from '../thread-keys.js';
 import { ConnectorRuntimePrincipalService } from '../runtime-principal-service.js';
 

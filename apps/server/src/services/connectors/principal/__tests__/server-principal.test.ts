@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  createServerPrincipal,
-  isServerPrincipal,
-  type ServerPrincipalClaims,
-} from '../server-principal.js';
+import { createServerPrincipal, isServerPrincipal } from '../server-principal.js';
+import type { ServerPrincipalClaims } from '../../../core/connections-lease/index.js';
 import * as connectorService from '../../index.js';
 
 describe('server principal authenticity', () => {

@@ -45,23 +45,19 @@ vi.mock('../../lib/logger.js', () => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { createRuntimesRoutes } from '../runtimes.js';
-import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
-import type { ActivityService } from '../../services/activity/activity-service.js';
+import {
+  accountRulesListener,
+  seedAccountStore,
+  seedRuntimes,
+} from './runtimes-account-eligibility-fixtures.js';
 import { initBoundary } from '../../lib/boundary.js';
 import { setAccountUsageStore } from '../../services/core/usage/current-usage-store.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { projectRegistry } from '../../services/projects/project-registry.js';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
-import type { AccountUsageStore } from '../../services/core/usage/account-usage-store.js';
 
 const emit = vi.fn(async () => undefined);
-const server = listeningServer(
-  honoGroupListener({
-    path: '/api/runtimes',
-    routes: createRuntimesRoutes({ activity: { emit } as unknown as ActivityService }),
-  })
-);
+const server = listeningServer(accountRulesListener(emit));
 
 let tmp: string;
 /** A repository whose folder name contains a dot, as real roots do. */
@@ -96,24 +92,8 @@ beforeEach(() => {
   emit.mockClear();
   state.sets = 0;
   state.cloud = undefined;
-  state.runtimes = {
-    claudeCode: {
-      accounts: [
-        { id: 'work', path: '/claude-work', label: 'Work', onlyProjects: null },
-        { id: 'personal', path: '/claude-personal', label: null, onlyProjects: null },
-      ],
-      defaultAccountOnlyProjects: null,
-      projectAccounts: {},
-    },
-  };
-  setAccountUsageStore({
-    listAccounts: () => [
-      { id: 'work', label: 'Work', color: '#111111', implicit: false, routable: true },
-      { id: 'personal', label: null, color: '#222222', implicit: false, routable: true },
-      { id: 'default', label: 'Main', color: '#333333', implicit: true, routable: true },
-    ],
-    usageOfAccount: () => ({ state: 'ok', windows: [] }),
-  } as unknown as AccountUsageStore);
+  state.runtimes = seedRuntimes();
+  setAccountUsageStore(seedAccountStore());
 });
 
 function claudeCode(): Record<string, unknown> {
@@ -207,19 +187,31 @@ describe('GET /api/runtimes/claude-code/account-eligibility', () => {
     expect(row(res.body, 'default')).toMatchObject({ eligible: true });
   });
 
-  // Purpose: any caller may read this GET, so it must never be a way to make
-  // the registry remember a folder (DOR-2547).
-  it('names a folder the registry does not know without recording it, even for an agent', async () => {
+  // Purpose: a read must never be a way to make the registry remember a folder (DOR-2547).
+  it('names a folder the registry does not know without recording it', async () => {
     const unrecorded = path.join(tmp, 'unrecorded.repo');
     await fs.mkdir(unrecorded);
     gitInit(unrecorded);
     const res = await request(server)
       .get('/api/runtimes/claude-code/account-eligibility')
-      .set('x-dorkos-agent', 'agent-token-abc')
       .query({ project: path.join(unrecorded) });
     expect(res.status).toBe(200);
     expect(res.body.project).toEqual({ root: unrecorded, name: 'unrecorded.repo' });
     expect(projectRegistry.get(unrecorded)).toBeUndefined();
+  });
+
+  // Purpose: account labels and folder paths are the person's own (DOR-4978).
+  it('refuses an agent or a bearer: the read is person-only', async () => {
+    for (const [header, value] of [
+      ['x-dorkos-agent', 'agent-token-abc'],
+      ['authorization', 'Bearer fixture-token'],
+    ] as const) {
+      const res = await request(server)
+        .get('/api/runtimes/claude-code/account-eligibility')
+        .set(header, value);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('person_only');
+    }
   });
 
   it('a folder in no repository is also no project', async () => {

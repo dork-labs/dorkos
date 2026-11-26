@@ -2,7 +2,7 @@
 
 Research reports produced by contributors and the `research-expert` agent.
 
-Reports are saved here automatically using the naming convention `YYYYMMDD_topic-slug.md`. This directory is checked into the repo so research persists across sessions and is available to all contributors.
+Reports are saved here automatically using the naming convention `YYYYMMDD_topic-slug.md`; supporting material for one goes in a `YYYYMMDD_topic-slug/` folder. `scripts/__tests__/research-names-census.test.ts` enforces it. This directory is checked into the repo so research persists across sessions and is available to all contributors.
 
 Check the reports here before starting new research. Keep reports cited by current docs, guides, ADRs, specs, source, tests or scripts, along with their dependencies. Reports named by open issues, projects or pull requests also stay.
 

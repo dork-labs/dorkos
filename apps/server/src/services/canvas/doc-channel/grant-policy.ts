@@ -8,7 +8,7 @@ import {
   type CanvasChannelGrant,
 } from '@dorkos/shared/canvas-channel-schemas';
 import type { DbTransaction } from '@dorkos/db';
-import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
+import type { ServerPrincipalProof } from '../../core/connections-lease/index.js';
 import type { DocChannelRow, DocGrantRow } from './store.js';
 
 /** Verified server actor, structurally compatible with the lifecycle authority service. */

@@ -30,10 +30,21 @@ import { logConfigWrite } from '../../services/core/operator/config-write.js';
 import { storeDoeCredential } from '../../services/runtimes/connect/doe-credentials.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createDoeSetupRoutes } from '../runtimes-doe-setup.js';
+import { runtimeSettingsReader } from '../runtime-settings-reader.js';
+import {
+  runtimeReadsDomain,
+  setRuntimeSettingsReader,
+} from '../../services/core/runtime-doors/runtime-read-capabilities.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
 
+// The two reads are capabilities the mount serves (`runtimes.doe_*`, DOR-4978).
+setRuntimeSettingsReader(runtimeSettingsReader());
 const server = listeningServer(
   honoGroupListener(
-    { path: '/api/runtimes/doe', routes: createDoeSetupRoutes() },
+    [
+      capabilityGroup(runtimeReadsDomain),
+      { path: '/api/runtimes/doe', routes: createDoeSetupRoutes() },
+    ],
     {
       before: (c, next) => {
         const kind = c.req.header('x-fixture-user');

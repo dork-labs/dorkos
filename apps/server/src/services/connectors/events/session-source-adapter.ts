@@ -10,7 +10,7 @@ import {
   type SessionMessageAcceptanceReceipt,
 } from '@dorkos/db';
 import { stableStringify } from '@dorkos/shared/capabilities';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 import { readConnectorEventSessionOrigin } from './session-target.js';
 import { keepChatSession, readChatSession } from './subscription-delivery.js';
 import type { ConnectorEventProtectionPort } from './ingress-service.js';

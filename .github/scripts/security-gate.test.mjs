@@ -421,6 +421,12 @@ test('workflow path list covers Security’s complete list and both sides of ren
     'apps/server/src/routes/a.ts',
     'apps/server/src/middleware/mcp-auth.ts',
     'apps/server/src/middleware/host-guard.ts',
+    'apps/server/src/services/core/protected-paths/protected-paths.ts',
+    'apps/server/src/services/runtimes/claude-code/shell-guard/shell-check.ts',
+    'apps/server/src/services/runtimes/claude-code/secret-files/secret-read-deny.ts',
+    'apps/server/src/services/runtimes/codex/policy/protected-profile.ts',
+    'apps/server/src/services/runtimes/shared/tools/shell-outside-text.ts',
+    'packages/shared/src/git-hardening.ts',
     ...['connectors', 'relay', 'extensions', 'mesh', 'browser', 'session/local-browser'].map(
       (p) => `apps/server/src/services/${p}/a.ts`
     ),

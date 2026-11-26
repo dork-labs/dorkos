@@ -1,9 +1,7 @@
 /** Runtime-facing port for short-lived, turn-bound connector principals. */
-import type { ServerPrincipalProof, ConnectorRuntime } from './principal/server-principal.js';
-import type { AgentHome } from '../core/agent-identity/index.js';
-import type { CapabilityHoldSession } from '../core/capabilities/capability-approval-hold.js';
-
-export type { ConnectorRuntime } from './principal/server-principal.js';
+import type { ServerPrincipalProof, ConnectorRuntime } from './principal-types.js';
+import type { AgentHome } from '../agent-identity/index.js';
+import type { CapabilityHoldSession } from '../capabilities/capability-approval-hold.js';
 
 /** Canonical runtime context from which the server resolves live authority. */
 export interface OpenConnectorTurnInput {
@@ -17,28 +15,6 @@ export interface OpenConnectorTurnInput {
   readonly canonicalCwd?: string;
   /** Cancels setup before the binding becomes usable. */
   readonly signal: AbortSignal;
-}
-
-/** Typed setup refusal mapped by the runtime boundary without exposing private claims. */
-export class ConnectorRuntimeAuthorityError extends Error {
-  /**
-   * Stable internal refusal code. `agent_unrecorded` is the one refusal a turn
-   * may run on without connected apps: the chat has no recorded agent, so there
-   * is nothing to grant (DOR-2752). Every other refusal fails the turn.
-   */
-  readonly code: 'boot_not_initialized' | 'authority_refused' | 'agent_unrecorded';
-
-  /**
-   * Construct a safe runtime authority error.
-   *
-   * @param code - Stable setup refusal category.
-   * @param message - Secret-free diagnostic.
-   */
-  constructor(code: ConnectorRuntimeAuthorityError['code'], message: string) {
-    super(message);
-    this.name = 'ConnectorRuntimeAuthorityError';
-    this.code = code;
-  }
 }
 
 declare const connectorTurnRenewalPermitBrand: unique symbol;
@@ -74,16 +50,6 @@ export interface RuntimeToolCaller {
   read(): RuntimeToolTurnFacts;
   /** Revalidate durable authority and exact ownership after the asynchronous check. */
   assertCurrent(): Promise<void>;
-}
-
-/** A native tool cannot proceed without its current server-owned turn context. */
-export class RuntimeToolContextUnavailableError extends Error {
-  readonly code = 'CALLER_CONTEXT_UNAVAILABLE';
-
-  constructor() {
-    super('Tools are unavailable for this message.');
-    this.name = 'RuntimeToolContextUnavailableError';
-  }
 }
 
 /** Process-owned identity guard registered when a runtime turn opens. */

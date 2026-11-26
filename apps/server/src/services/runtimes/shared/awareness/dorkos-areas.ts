@@ -126,6 +126,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     can: 'add or remove MCP servers and packages; build mini apps a person approves. A change reaches you next turn, in this chat: no restart.',
     // `mcp.` also covers a person's doors for servers every agent gets
     // (`mcp.remove_global_server` and the rest, DOR-4978), which refuse agents.
+    // `marketplace.` also covers the marketplace's reads on `/api/marketplace/*` (DOR-4978);
+    // the dev links among them are a person's read.
     covers: ['mcp.', 'marketplace.', 'create_extension', 'reload_extensions', 'test_extension'],
     areas: ['packages'],
     gate: 'adding or changing an MCP server asks, and only a person adds one for all agents',
@@ -232,6 +234,14 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       'instructions.',
       'capabilities.list',
       'operator.feedback_draft',
+      // The app's runtime setup reads (DOR-4978) ride here with no words of their own: each is
+      // person-only, so no agent can call one.
+      'runtimes.account_usage',
+      'runtimes.found_accounts',
+      'runtimes.account_eligibility',
+      'runtimes.key_status',
+      'runtimes.opencode_key_setup',
+      'runtimes.doe_model_setup',
     ],
     areas: ['settings', 'permissions'],
   },

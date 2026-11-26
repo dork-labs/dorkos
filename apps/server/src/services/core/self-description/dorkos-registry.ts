@@ -32,6 +32,7 @@ import {
 import { operatorDomain } from '../operator/operator-capabilities.js';
 import { operatorActivityDomain } from '../../activity/activity-capability.js';
 import { marketplaceDomain } from '../../marketplace-mcp/marketplace-capabilities.js';
+import { marketplaceReadsDomain } from '../../marketplace/doors/marketplace-read-capabilities.js';
 import { connectorDomain } from '../../connectors/connector-capabilities.js';
 import { connectorExecutionDomain } from '../../connectors/execution/execution-capabilities.js';
 import { connectorHoldDomain } from '../../connectors/execution/hold-capabilities.js';
@@ -53,6 +54,7 @@ import { workClaimDomain } from '../../session/claims/work-claim-capabilities.js
 import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
 import { runsDomain } from '../../runs/run-capabilities.js';
 import { taskViewDomain } from '../../tasks/view/task-view-capabilities.js';
+import { runtimeReadsDomain } from '../runtime-doors/runtime-read-capabilities.js';
 import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
 import { instructionsDomain } from '../../runtimes/context-preview/instructions-capability.js';
@@ -90,7 +92,8 @@ export function composeDorkOsCapabilityRegistry(
   // The feed is on every server; `operatorDomain` carries it when it starts.
   if (deps.operatorDeps) domains.push(operatorDomain);
   else if (deps.activityDeps) domains.push(operatorActivityDomain);
-  if (deps.marketplaceDeps) domains.push(marketplaceDomain);
+  // The tools, and the reads on `/api/marketplace/*` over the same services (DOR-4978).
+  if (deps.marketplaceDeps) domains.push(marketplaceDomain, marketplaceReadsDomain);
   if (deps.connectorDeps) domains.push(connectorDomain);
   if (deps.connectorExecutionDeps) domains.push(connectorExecutionDomain, connectorHoldDomain);
   if (deps.mcpDeps) domains.push(mcpDomain);
@@ -145,6 +148,8 @@ export function composeDorkOsCapabilityRegistry(
   domains.push(runsDomain);
   // The app's task reads (DOR-4978); they say so themselves when Tasks is not running.
   domains.push(taskViewDomain);
+  // The app's runtime setup reads (DOR-4978); they say so themselves before the runtimes start.
+  domains.push(runtimeReadsDomain);
   // Unconditional too: the folder picker, the diff review and the workspace
   // reads read the filesystem and process-wide stores every server has, so
   // their paths answer wherever the hand routes used to.
@@ -194,6 +199,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
   const domains: CapabilityDomain[] = [
     operatorDomain,
     marketplaceDomain,
+    marketplaceReadsDomain,
     connectorDomain,
     connectorExecutionDomain,
     connectorHoldDomain,
@@ -226,6 +232,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     heartbeatDomain,
     runsDomain,
     taskViewDomain,
+    runtimeReadsDomain,
     directoryDomain,
     diffDomain,
     workspacesDomain,

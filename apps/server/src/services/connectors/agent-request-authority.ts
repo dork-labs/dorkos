@@ -1,6 +1,6 @@
 /** Canonical persisted origin authority for private agent service requests. */
 import { eq, sessionMetadata, type Db } from '@dorkos/db';
-import type { ConnectorOwnerAuthority } from './principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../core/connections-lease/index.js';
 import type {
   ConnectorAgentRequestAuthorityPort,
   ConnectorAgentRequestOrigin,

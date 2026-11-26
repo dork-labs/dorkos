@@ -4,7 +4,7 @@ import { ConnectorRuntimePrincipalService } from '../../../connectors/principal/
 import type {
   ConnectorRuntime,
   OpenConnectorTurnResult,
-} from '../../../connectors/runtime-principal-port.js';
+} from '../../../core/connections-lease/index.js';
 import {
   ConnectorTurnLeaseSupervisor,
   type ConnectorLeaseScheduler,

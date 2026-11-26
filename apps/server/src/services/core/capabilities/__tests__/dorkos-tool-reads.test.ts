@@ -321,3 +321,25 @@ describe('a DorkOS tool that returns outside text marks the turn', () => {
     });
   });
 });
+
+describe('the marketplace source lists (DOR-4978)', () => {
+  it('mark only when a source’s last fetch carries a reason, which can be git’s own words', () => {
+    // Purpose: a failed fetch's reason may hold `remote:` lines a stranger wrote, on REST and MCP.
+    const fetched = { state: 'fetched', checkedAt: 'x', packageCount: 1 };
+    const failed = { state: 'failed', checkedAt: 'x', reason: 'remote: go away' };
+    for (const id of ['marketplace.list_sources', 'marketplace.list_marketplaces']) {
+      const check = dorkosToolReadOf(id);
+      if (typeof check !== 'function') throw new Error(`${id} should be checked`);
+      expect(check({ sources: [{ name: 'a', lastFetch: fetched }] }), id).toBe(false);
+      expect(
+        check({
+          sources: [
+            { name: 'a', lastFetch: fetched },
+            { name: 'b', lastFetch: failed },
+          ],
+        }),
+        id
+      ).toBe(true);
+    }
+  });
+});

@@ -24,7 +24,7 @@ import {
 } from '../services/connectors/execution/access-query-service.js';
 import type { ConnectorExecutionAuthorizationService } from '../services/connectors/execution/authorization-service.js';
 import type { ConnectorProgramPrincipalService } from '../services/connectors/principal/program-principal-service.js';
-import type { ServerPrincipalProof } from '../services/connectors/principal/server-principal.js';
+import type { ServerPrincipalProof } from '../services/core/connections-lease/index.js';
 import {
   migrationHealthGate,
   requestUser,
