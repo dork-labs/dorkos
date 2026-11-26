@@ -155,14 +155,15 @@ describe('compose', () => {
     ['an MCP surface', { http, mcp: { inSession: true } }, {}],
     ['a network mode', { http }, { wifi: 'person-held' }],
     [
-      'a confirm-first hold',
+      'an account-owner confirm-first hold (front-door is the one it takes)',
       { http },
       {
         confirmFirst: {
-          bar: 'front-door',
+          bar: 'account-owner',
           kind: 'connection.grant',
-          subject: 'x',
-          sheet: () => ({}),
+          target: 'x',
+          reason: 'x',
+          accountOwner: { personOnly: 'x', action: 'x' },
         },
       },
     ],

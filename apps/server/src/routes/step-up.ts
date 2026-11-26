@@ -77,6 +77,7 @@ import {
 } from '../services/core/auth/owner-password.js';
 import {
   cancelHeldStepUp,
+  admitsConfirm,
   peekHeldStepUp,
   spendStepUpTry,
   takeHeldStepUp,
@@ -298,7 +299,10 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
 
   /** The live held action this caller held, or the refusal. */
   function heldOrRefusal(c: Context<ApiEnv>): HeldStepUp | Response {
-    const entry = peekHeldStepUp(c.req.param('heldActionId') ?? '');
+    const id = c.req.param('heldActionId') ?? '';
+    // A held call's own bars run first; a refusal reads as no hold and leaves it held (DOR-4978).
+    if (!admitsConfirm(id, honoRequestFacts(c))) return refuse(c, 'expired');
+    const entry = peekHeldStepUp(id);
     if (!entry) return refuse(c, 'expired');
     const sessionId = honoRequestFacts(c).user?.sessionId ?? null;
     if (entry.sessionId !== sessionId) return refuse(c, 'held_by_another_browser');

@@ -31,6 +31,7 @@
  *
  * @module routes/capability-dispatch
  */
+import { createHash } from 'node:crypto';
 import type { Context } from 'hono';
 import { z } from 'zod';
 import {
@@ -38,6 +39,7 @@ import {
   isExtensionCapabilityId,
   type HttpPrecheck,
   type HttpSuccessStatus,
+  type HttpSurface,
 } from '@dorkos/shared/capabilities';
 import type { Problem } from '@dorkos/shared/problem';
 
@@ -55,7 +57,7 @@ import { deviceIdOf } from '../services/core/auth/sessions/signed-in-devices.js'
 import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import { logger } from '../lib/logger.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { problem, sendProblem, validationProblem } from '@dorkos/http-kit';
+import { problem, problemBody, sendProblem, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import {
   clearsTheAgentBar,
@@ -73,7 +75,7 @@ import { gateResponse, loggableRefusal, toolRefusalProblem } from './capability-
 import { holdConfirmFirst } from './capability-confirm-first.js';
 import { isDocOperatorAccount } from '../services/canvas/doc-channel/doc-source-policy.js';
 import { problemRefusalUnlessOwner } from './cloud-owner-bar.js';
-import { frontDoorProblem } from './front-door-step-up.js';
+import { CONFIRM_ANOTHER_WAY, frontDoorProblem } from './front-door-step-up.js';
 import {
   accountDecisionBar,
   accountDecisionSentence,
@@ -172,36 +174,17 @@ export async function dispatchCapability(
   if (unavailable) return sendProblem(c, unavailable);
 
   const facts = honoRequestFacts(c);
-  // The account-decision bar, before the input is read (DOR-4978): the same
-  // function the hand routes run, so the order, codes and step-up note match.
-  let accountDecision: AccountDecisionPass | undefined;
-  const policy = dispatch.ports?.accountDecision;
-  if (http?.callerBar === 'account-decision' && policy) {
-    const outcome = accountDecisionBar(facts, policy);
-    if (!outcome.ok) {
-      const { code, which } = outcome.refusal;
-      // The sentence is the definition's own, never from the request; compose
-      // refuses an owner bar without one (`narrow-declarations.ts`).
-      const detail = accountDecisionSentence(which, http.ownerOnly!);
-      return problem(c, code, { detail });
-    }
-    accountDecision = accountDecisionPassed(outcome.owner);
-  }
-  // The person bar, before the input is read (DOR-4978): the same function the
-  // hand routes run, with the copy the definition declares (compose requires it).
-  let personBar: PersonBarPass | undefined;
-  if (http?.callerBar === 'person') {
-    const refused = assessPerson(facts, http.personCopy!);
-    if (refused) return sendProblem(c, refused.body);
-    // Who it let through, never more: a key is a program, even with login off.
-    const program = presentsProgramCredential(facts) || facts.user?.credential === 'api-key';
-    personBar = personBarPassed(program ? 'program' : 'person');
-  }
+  // The caller bar, before the input is read (DOR-4978): the same function the
+  // hand routes run, so the order, codes and step-up note match.
+  const bar = http ? callerBarOf(http, dispatch.ports?.accountDecision) : undefined;
+  const asked = bar?.(facts);
+  if (asked && !asked.ok) return sendProblem(c, asked.problem);
   // A front-door confirm-first capability runs its bar first, as its hand route
   // did, so a person not allowed to change it hears why before anything else.
   // A program or an agent is left to `registry.invoke`, which answers `person_only`.
+  // Behind a caller bar it runs where those hand routes ran it: at the hold.
   const hold = capability.confirmFirst;
-  if (hold?.bar === 'front-door' && !presentsProgram(facts)) {
+  if (hold?.bar === 'front-door' && !bar && !presentsProgram(facts)) {
     const refusal = refuseFrontDoorChange(facts, hold.subject);
     if (refusal) return frontDoorProblem(c, refusal);
   }
@@ -232,11 +215,132 @@ export async function dispatchCapability(
       input,
       success: dispatch.success ?? 200,
       ...(dispatch.rest ? { rest: true } : {}),
-      ...(accountDecision ? { accountDecision } : {}),
-      ...(personBar ? { personBar } : {}),
+      ...(asked?.ok ? asked.passes : {}),
+      ...(bar && asked?.ok ? { bar: { check: bar, tag: asked.tag } } : {}),
     },
     facts
   );
+}
+
+/** The passes a caller bar mints, as `registry.invoke` takes them. */
+interface CallerBarPasses {
+  accountDecision?: AccountDecisionPass;
+  personBar?: PersonBarPass;
+}
+
+/**
+ * What a caller bar decided for one request: its pass and the caller's kind
+ * tag, or its refusal. The tag is all a held call keeps (DOR-4978, Security
+ * t1j): `person` or `program` behind the person bar, the owner (hashed) behind
+ * the account-decision bar.
+ */
+type CallerBarOutcome =
+  | { readonly ok: true; readonly tag: string; readonly passes: CallerBarPasses }
+  | { readonly ok: false; readonly problem: Problem };
+
+/** A capability's caller bar, run in full on whichever request it is handed. */
+type CallerBarCheck = (facts: RequestFacts) => CallerBarOutcome;
+
+/**
+ * The caller bar a capability declares (`http.callerBar`), or `undefined`
+ * when it declares none, or the account-decision bar's policy was not handed
+ * over (the registry then refuses it `person_only`).
+ *
+ * @param http - The capability's HTTP surface.
+ * @param policy - The account-decision bar's policy, if handed over.
+ */
+function callerBarOf(
+  http: HttpSurface,
+  policy: AccountDecisionPolicy | undefined
+): CallerBarCheck | undefined {
+  if (http.callerBar === 'account-decision' && policy) {
+    return (facts) => {
+      const outcome = accountDecisionBar(facts, policy);
+      if (!outcome.ok) {
+        const { code, which } = outcome.refusal;
+        // The sentence is the definition's own, never from the request; compose
+        // refuses an owner bar without one (`narrow-declarations.ts`).
+        return {
+          ok: false,
+          problem: problemBody(code, { detail: accountDecisionSentence(which, http.ownerOnly!) }),
+        };
+      }
+      const { owner } = outcome;
+      const who =
+        owner.kind === 'user' ? `user:${owner.userId}` : `install:${owner.installationId}`;
+      const tag = `owner:${createHash('sha256').update(who).digest('hex')}`;
+      return { ok: true, tag, passes: { accountDecision: accountDecisionPassed(owner) } };
+    };
+  }
+  if (http.callerBar === 'person') {
+    // The copy is the definition's own (compose requires it).
+    return (facts) => {
+      const refused = assessPerson(facts, http.personCopy!);
+      if (refused) return { ok: false, problem: refused.body };
+      // Who it let through, never more: a key is a program, even with login off.
+      const program = presentsProgramCredential(facts) || facts.user?.credential === 'api-key';
+      const caller = program ? 'program' : 'person';
+      return {
+        ok: true,
+        tag: `person-bar:${caller}`,
+        passes: { personBar: personBarPassed(caller) },
+      };
+    };
+  }
+  return undefined;
+}
+
+/**
+ * Hold a refused confirm-first call for the sheet, keeping no pass: behind a
+ * caller bar only the asking caller's kind tag, and the bar to run afresh on
+ * the confirm, which earns its own pass (DOR-4978, Security t1j).
+ *
+ * @param c - The request that asked.
+ * @param registry - The composed registry.
+ * @param call - The call, without its passes.
+ * @param held - The registry's refusal.
+ * @param bar - The caller bar and the asking caller's tag, if any.
+ */
+function holdWithoutPass(
+  c: Context<ApiEnv>,
+  registry: CapabilityRegistry,
+  call: HeldCall,
+  held: ConfirmFirstRequired,
+  bar: { readonly check: CallerBarCheck; readonly tag: string } | undefined
+): Promise<Response> {
+  if (!bar) {
+    return holdConfirmFirst(c, call.id, held, (confirming, confirmation) =>
+      invokeAs(c, registry, call, confirming, confirmation)
+    );
+  }
+  const tagOf = (facts: RequestFacts) => {
+    const outcome = bar.check(facts);
+    return outcome.ok ? outcome.tag : undefined;
+  };
+  return holdConfirmFirst(
+    c,
+    call.id,
+    held,
+    (confirming, confirmation) => {
+      // The confirm's own pass, from the bar run afresh on it. Its step-up
+      // already ran the bar before the hold; this is the pass the call runs with.
+      const again = bar.check(confirming);
+      if (!again.ok) return Promise.resolve(sendProblem(c, again.problem));
+      if (again.tag !== bar.tag) {
+        return Promise.resolve(problem(c, 'operator_only', { detail: CONFIRM_ANOTHER_WAY }));
+      }
+      return invokeAs(c, registry, { ...call, ...again.passes }, confirming, confirmation);
+    },
+    { tag: bar.tag, tagOf }
+  );
+}
+
+/** One call as the mount runs it: the capability, its raw input, and how it answers. */
+interface HeldCall {
+  id: string;
+  input: unknown;
+  success: HttpSuccessStatus;
+  rest?: boolean;
 }
 
 /**
@@ -244,8 +348,9 @@ export async function dispatchCapability(
  *
  * @param c - The request the answer is for.
  * @param registry - The composed registry.
- * @param call - The capability, its raw input, its success status, and whether it came
- *   through the capability's own REST path (`rest`, never `/invoke`).
+ * @param call - The capability, its raw input, its success status, whether it came
+ *   through the capability's own REST path (`rest`, never `/invoke`), and the
+ *   caller bar's passes and check, if it declares one.
  * @param facts - The caller: the asking request's facts, or, when a held call
  *   commits, the confirming request's.
  * @param confirmed - The person's confirmation, only when a held call commits.
@@ -253,14 +358,10 @@ export async function dispatchCapability(
 async function invokeAs(
   c: Context<ApiEnv>,
   registry: CapabilityRegistry,
-  call: {
-    id: string;
-    input: unknown;
-    success: HttpSuccessStatus;
-    rest?: boolean;
-    accountDecision?: AccountDecisionPass;
-    personBar?: PersonBarPass;
-  },
+  call: HeldCall &
+    CallerBarPasses & {
+      bar?: { readonly check: CallerBarCheck; readonly tag: string };
+    },
   facts: RequestFacts,
   confirmed?: unknown
 ): Promise<Response> {
@@ -330,9 +431,9 @@ async function invokeAs(
       if (confirmed !== undefined) {
         return problem(c, 'precondition_failed', { detail: CONFIRMED_ANOTHER_CALL });
       }
-      return holdConfirmFirst(c, id, err, (confirming, confirmation) =>
-        invokeAs(c, registry, call, confirming, confirmation)
-      );
+      // The held call keeps no pass: the confirm earns its own.
+      const { accountDecision: _owner, personBar: _person, bar, ...held } = call;
+      return holdWithoutPass(c, registry, held, err, bar);
     }
     if (err instanceof z.ZodError) {
       return validationProblem(c, err);

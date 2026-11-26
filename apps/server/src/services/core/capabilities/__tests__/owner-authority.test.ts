@@ -130,14 +130,15 @@ describe('compose', () => {
     ['a network mode', { http }, { wifi: 'person-held' }],
     ['an owner sentence with no bar', { http: { ...http, callerBar: undefined } }, {}],
     [
-      'a confirm-first hold',
+      'an account-owner confirm-first hold (front-door is the one it takes)',
       { http },
       {
         confirmFirst: {
-          bar: 'front-door',
+          bar: 'account-owner',
           kind: 'connection.grant',
-          subject: 'x',
-          sheet: () => ({}),
+          target: 'x',
+          reason: 'x',
+          accountOwner: { personOnly: 'x', action: 'x' },
         },
       },
     ],

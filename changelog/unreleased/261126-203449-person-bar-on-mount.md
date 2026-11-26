@@ -6,6 +6,7 @@ covers:
   - 'fix(api): Wi-Fi stays refused on the extension doors, and revoke and disable stay hand routes (DOR-4978)'
   - 'fix(api): a restart that fails after its reload answers as before, and the extension notes match the routes (DOR-4978)'
   - "feat(api): one person bar for hand routes and the capability mount; four extension doors move onto it; its refusal no longer repeats the page's address (DOR-4978)"
+  - 'feat(api): a caller bar can take the front-door confirm-first hold; the confirm runs the bar afresh and must come from the same kind of caller (DOR-4978)'
 ---
 
 ### Changed
