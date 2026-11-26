@@ -7,7 +7,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
 import { CHAT_MESSAGE_LEAD, renderChatMessage } from '../../chat-message-fence.js';
 import { ChatMessageStore } from '../../chat-message-store.js';
-import { chatClientId } from '../../chat-client-id.js';
+import { chatClientId } from '@dorkos/shared/chat-client-id';
 import {
   noteRemovedByPerson,
   queuedChatRecordsOf,

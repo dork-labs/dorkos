@@ -75,13 +75,11 @@ export {
 } from './write-through.js';
 export { sweepFileSource, DUPLICATE_CONTAINERS_KEY } from './jsonl-frontier.js';
 export { discoverClaudeCodeTranscripts } from './claude-code-discovery.js';
-export { discoverCodexRollouts } from './codex-discovery.js';
 export { projectRoomEntries, type RoomEntrySourceRow } from './projections/rooms.js';
 export {
   projectClaudeCodeLines,
   type ClaudeCodeProjectionContext,
 } from './projections/claude-code.js';
-export { projectCodexLines, type CodexProjectionContext } from './projections/codex.js';
 export { projectOpenCodeMessages, type OpenCodeMessageRow } from './projections/opencode.js';
 export type {
   ContainerReader,

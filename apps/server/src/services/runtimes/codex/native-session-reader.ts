@@ -9,9 +9,9 @@ import { describeRuntimeError } from '@dorkos/shared/runtime-error-classificatio
 import type { Session, HistoryMessage, HistoryToolCall, MessagePart } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
 import { resolveCodexHome, codexRolloutRootsIn } from './codex-home.js';
-import { discoverCodexRollouts } from '../../search/codex-discovery.js';
-import { projectCodexLines } from '../../search/projections/codex.js';
-import type { FileContainer, KnownContainer } from '../../search/types.js';
+import { discoverCodexRollouts } from '../../core/codex-rollouts/codex-discovery.js';
+import { projectCodexLines } from '../../core/codex-rollouts/codex-projection.js';
+import type { FileContainer, KnownContainer } from '../../core/codex-rollouts/rollout-types.js';
 import {
   MAX_SESSION_ATTACHMENT_BYTES,
   deriveSessionAttachmentId,

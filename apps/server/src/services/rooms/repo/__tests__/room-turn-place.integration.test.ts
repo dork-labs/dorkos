@@ -42,6 +42,7 @@ import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomRepoMutex } from '../room-repo-mutex.js';
 import { RoomRepoService } from '../room-repo-service.js';
 import { RoomWorktreeManager } from '../room-worktree-manager.js';
+import { roomWorktreeSlug } from '../../../core/room-worktree-name/room-worktree-name.js';
 import { runGit } from '../room-repo-git.js';
 import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 
@@ -146,7 +147,7 @@ describe('a room turn stands at home with the room’s files granted', () => {
 
   /** Ana's worktree in `roomId`, as the manager names it. */
   function anaWorktree(roomId: string): string {
-    return path.join(repoStore.worktreesPath(roomId), RoomWorktreeManager.slugFor('Ana', anaPath));
+    return path.join(repoStore.worktreesPath(roomId), roomWorktreeSlug('Ana', anaPath));
   }
 
   it('stands the turn at home and grants the agent’s copy of the room’s files', async () => {
@@ -165,7 +166,7 @@ describe('a room turn stands at home with the room’s files granted', () => {
     expect(turn.worktree).toBe(anaWorktree(room.id));
     // A real checkout, on its own branch, not just a directory name.
     await expect(runGit(['branch', '--show-current'], turn.worktree!, dorkHome)).resolves.toBe(
-      `room/${RoomWorktreeManager.slugFor('Ana', anaPath)}`
+      `room/${roomWorktreeSlug('Ana', anaPath)}`
     );
     // Grants are realpath-resolved (a symlinked `/var` spelling would not match
     // what a backend compares), so the expectation is too.
@@ -178,7 +179,7 @@ describe('a room turn stands at home with the room’s files granted', () => {
       { path: path.join(gitDir, 'refs', 'heads', 'room'), access: 'write' },
       { path: path.join(gitDir, 'logs', 'refs', 'heads', 'room'), access: 'write' },
       {
-        path: path.join(gitDir, 'worktrees', RoomWorktreeManager.slugFor('Ana', anaPath)),
+        path: path.join(gitDir, 'worktrees', roomWorktreeSlug('Ana', anaPath)),
         access: 'write',
       },
     ]);
@@ -223,7 +224,7 @@ describe('a room turn stands at home with the room’s files granted', () => {
     expect(files!.worktreePath).toBe(runner.turns[0]!.worktree);
     expect(files!.worktreePath).not.toBe(runner.turns[0]!.cwd);
     expect(files!.repoPath).toBe(repoStore.repoPath(room.id));
-    expect(files!.branch).toBe(`room/${RoomWorktreeManager.slugFor('Ana', anaPath)}`);
+    expect(files!.branch).toBe(`room/${roomWorktreeSlug('Ana', anaPath)}`);
     // A tree just branched off `main` is level with it in both directions.
     expect(files).toMatchObject({ ahead: 0, behind: 0 });
   });
@@ -454,7 +455,7 @@ describe('a room turn stands at home with the room’s files granted', () => {
     const swept = await manager.reapRoom(room.id);
 
     expect(swept.reaped).toEqual([]);
-    expect(swept.spared).toEqual([RoomWorktreeManager.slugFor('Ana', anaPath)]);
+    expect(swept.spared).toEqual([roomWorktreeSlug('Ana', anaPath)]);
     expect(existsSync(worktree)).toBe(true);
 
     runner.releaseAll();

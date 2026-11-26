@@ -20,11 +20,8 @@ vi.mock('../../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-import {
-  extensionSkillPluginRoots,
-  reconcileRunningSkills,
-  selectRunningSkills,
-} from '../running-skills-ledger.js';
+import { extensionSkillPluginRoots } from '../../../core/skills-ledger/skill-plugin-roots.js';
+import { reconcileRunningSkills, selectRunningSkills } from '../running-skills-ledger.js';
 
 let dorkHome: string;
 let project: string;

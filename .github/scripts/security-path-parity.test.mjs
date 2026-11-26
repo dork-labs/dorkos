@@ -185,6 +185,16 @@ for (const [match, miss, deep] of [
   [`${S}/marketplace-mcp/tool-install.ts`, `${S}/marketplace-mcpx/tool-install.ts`, false],
   [`${S}/core-extensions/ensure-core-extensions.ts`, `${S}/core-extension/x.ts`, false],
   [`${S}/mcp-apps/mcp-app-resource-service.ts`, `${S}/mcp-app/mcp-app-resource-service.ts`, false],
+  // C2's new kernel homes (DOR-5303): code moved out of covered folders stays covered.
+  [`${S}/core/child-bundle/child-bundle.ts`, `${S}/core/child-bundles/child-bundle.ts`, false],
+  [`${S}/core/room-turn-ref/room-turn-ref.ts`, `${S}/core/room-turn-refs/room-turn-ref.ts`, false],
+  [`${S}/core/skills-ledger/skill-plugin-roots.ts`, `${S}/core/skills-ledgers/x.ts`, false],
+  [`${S}/core/room-conventions/room-conventions-block.ts`, `${S}/core/room-convention/x.ts`, true],
+  [
+    `${S}/core/room-worktree-name/room-worktree-name.ts`,
+    `${S}/core/room-worktree-names/x.ts`,
+    true,
+  ],
 ]) {
   test(`${match.slice(S.length + 1)} is on the main list${deep ? ' and the deep list' : ' only'}`, () => {
     assert.ok(existsSync(resolve(root, match)), `${match} no longer exists`);
@@ -196,6 +206,20 @@ for (const [match, miss, deep] of [
     assert.equal(touchesSecurity([{ filename: match }], deepPattern), deep, 'deep');
     assert.equal(touchesSecurity([{ filename: miss }], reference), false, miss);
     assert.equal(touchesSecurity([{ filename: miss }], deepPattern), false, miss);
+  });
+}
+
+// C2's shared homes (DOR-5303): main list only.
+for (const [match, miss] of [
+  ['packages/shared/src/chat-client-id.ts', 'packages/shared/src/chat-client-ids.ts'],
+  ['packages/shared/src/heartbeat-schemas.ts', 'packages/shared/src/heartbeat-schema.ts'],
+  ['packages/shared/src/room-attachment-paths.ts', 'packages/shared/src/room-attachment-path.ts'],
+]) {
+  test(`${match} is on the main list only`, () => {
+    assert.ok(existsSync(resolve(root, match)), `${match} no longer exists`);
+    assert.ok(touchesSecurity([{ filename: match }], reference), 'main');
+    assert.equal(touchesSecurity([{ filename: match }], securityDeepPathPattern()), false, 'deep');
+    assert.equal(touchesSecurity([{ filename: miss }], reference), false, miss);
   });
 }
 

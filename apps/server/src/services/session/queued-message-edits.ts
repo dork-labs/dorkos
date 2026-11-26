@@ -20,7 +20,7 @@
  *
  * @module services/session/queued-message-edits
  */
-import { isChatClientId } from './chat-messages/chat-client-id.js';
+import { isChatClientId } from '@dorkos/shared/chat-client-id';
 import type { QueuedMessage } from '@dorkos/shared/schemas';
 import { getMessageQueueStore, toQueuedMessage } from './message-queue-store.js';
 import type { MoveTarget } from './message-queue-store.js';

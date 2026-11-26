@@ -14,7 +14,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Session } from '@dorkos/shared/types';
 
-import { createProjectRootResolver } from '../../../projects/resolve-project-root.js';
+import { createProjectRootResolver } from '../../../core/project-root/resolve-project-root.js';
 import { runSafeGit as runGit } from '@dorkos/shared/safe-git';
 import { createFlowRunLink, parseFlowRunState, type FlowRunLinkDeps } from '../flow-run-link.js';
 

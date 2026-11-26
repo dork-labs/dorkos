@@ -19,7 +19,7 @@ import type { AssistantErrorContext } from '../sdk/sdk-error-mapping.js';
 import { mapSdkAnswersToIndices } from './question-answers.js';
 import { applyToolResult } from './tool-result-outcome.js';
 import { classifyOrigin } from './classify-origin.js';
-import { userHistoryMessage } from '../../../session/chat-messages/room-turn-ref.js';
+import { userHistoryMessage } from '../../../core/room-turn-ref/room-turn-ref.js';
 
 import type { TranscriptLine, ContentBlock } from './transcripts/transcript-records.js';
 

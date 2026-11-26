@@ -9,10 +9,8 @@ import { ApprovalService } from '../../../../core/approvals/approval-service.js'
 import { createRoomSubsystem } from '../../../../rooms/index.js';
 import { RoomRepoStore } from '../../../../rooms/repo/room-repo-store.js';
 import { createServerPrincipal } from '../../../../connectors/principal/server-principal.js';
-import {
-  createDocChannelHttpComposition,
-  readDocSourceDescriptor,
-} from '../../http-composition.js';
+import { readDocSourceDescriptor } from '../../http-composition.js';
+import { composeDocChannelHttp } from '../../__tests__/doc-channel-http.js';
 import { DocChannelGrants } from '../../grants.js';
 import { DocCheckboxAuthority } from '../authority.js';
 import { observeCheckboxSource } from '../authority-snapshot.js';
@@ -28,7 +26,7 @@ export interface AuthorityFixture {
   rooms: import('../../../../rooms/index.js').RoomSubsystem;
   roomRepos: RoomRepoStore;
   approvals: ApprovalService;
-  http: ReturnType<typeof createDocChannelHttpComposition>;
+  http: ReturnType<typeof composeDocChannelHttp>;
   grants: DocChannelGrants;
   granted: { kind: 'granted'; grant: import('../../store.js').DocGrantRow };
   actor: import('../../authorization.js').DocChannelActor;
@@ -114,7 +112,7 @@ export async function authorityFixture(
   const rooms = createRoomSubsystem({ db });
   const roomRepos = new RoomRepoStore(db, dir);
   const approvals = new ApprovalService(db);
-  const http = createDocChannelHttpComposition({
+  const http = composeDocChannelHttp({
     db,
     documents: rooms.canvasDocuments,
     rooms: rooms.service,

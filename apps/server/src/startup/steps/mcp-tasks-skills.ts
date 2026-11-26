@@ -49,6 +49,7 @@ import { homeOf, resolveAgentHome } from '../../services/core/agent-identity/ind
 import { createDorkOsToolServer } from '../../services/runtimes/claude-code/mcp-tools/index.js';
 import { configManager } from '../../services/core/config-manager.js';
 import type { McpServerFactory } from '../../routes/mcp.js';
+import { broadcastExtensionReloaded } from '../../routes/extensions.js';
 import { resolveToolVisibilityFor } from '../../services/runtimes/shared/permission-tool-filter.js';
 import { createExternalMcpServer } from '../../services/core/mcp-server.js';
 import type { HonoApiDeps } from '../../http/hono-api.js';
@@ -321,6 +322,8 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
       // extension tool on `/mcp` answers that the system is not available, so
       // no agent can build a mini app.
       ...(refs.extensionManager && { extensionManager: refs.extensionManager }),
+      // What a reload tells every open app, so it loads the new bundle.
+      announceExtensionsReloaded: broadcastExtensionReloaded,
       // The DorkOS-DM fallback, hoisted above so the notification pipeline's
       // relay channel shares this one seam rather than building a second.
       ...(notifyDm && { notifyDm }),

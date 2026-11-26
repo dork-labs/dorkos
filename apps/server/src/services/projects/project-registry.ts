@@ -65,7 +65,7 @@ import type {
 import { folderExists, holdsExtensionCopy } from './extension-copy.js';
 import { parseOriginRepo } from './origin-repo.js';
 import { assignProjectName } from './project-names.js';
-import { peekProjectRoot, resolveProjectRoot } from './resolve-project-root.js';
+import { peekProjectRoot, resolveProjectRoot } from '../core/project-root/resolve-project-root.js';
 
 /** How often a project's `lastSeenAt` is written, at most. */
 const LAST_SEEN_WRITE_INTERVAL_MS = 10 * 60_000;

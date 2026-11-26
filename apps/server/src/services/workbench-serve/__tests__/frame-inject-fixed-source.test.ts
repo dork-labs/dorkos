@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('../../canvas/doc-frame-shim.js', () => ({
+vi.mock('../../core/doc-frame-shim/doc-frame-shim.js', () => ({
   DOC_FRAME_SHIM_SCRIPT: 'window.a = 1; // <!-- an opener in our own source',
 }));
 

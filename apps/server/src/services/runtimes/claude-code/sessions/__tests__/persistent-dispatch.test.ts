@@ -147,7 +147,7 @@ vi.mock('../../../../marketplace/consent/global-plugin-consent.js', () => ({
 // The running global extensions' skill roots (DOR-2685); the extension-skills
 // cases move this between refreshes.
 const extensionRoots = vi.hoisted(() => ({ paths: [] as string[] }));
-vi.mock('../../../../extensions/agent-skills/running-skills-ledger.js', () => ({
+vi.mock('../../../../core/skills-ledger/skill-plugin-roots.js', () => ({
   extensionSkillPluginRoots: vi.fn(async (_dorkHome: string, _loaded?: ReadonlySet<string>) => [
     ...extensionRoots.paths,
   ]),
@@ -196,7 +196,7 @@ import { buildClaudeAgentSdkPluginsArray } from '../../messaging/plugin-activati
 import { buildSystemPromptAppend } from '../../messaging/context-builder.js';
 import { AUTO_DOWNGRADE_STATUS } from '../../messaging/permission-mode-guard.js';
 import { TURN_NOT_STARTED_CODE } from '../../../../session/launch/turn-not-started.js';
-import { extensionSkillPluginRoots } from '../../../../extensions/agent-skills/running-skills-ledger.js';
+import { extensionSkillPluginRoots } from '../../../../core/skills-ledger/skill-plugin-roots.js';
 import { validateBoundaryOrDorkHome } from '../../../../../lib/boundary.js';
 import { SESSIONS } from '../../../../../config/constants.js';
 import { takeTimersStopped } from '../../../../session/turn-cutoff/timers-stopped.js';

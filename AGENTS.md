@@ -95,7 +95,7 @@ Decided, and not built unless `meta/ROADMAP.md` lists it as built. Target shape:
 
 Rules today:
 
-1. A feature goes in the server core only if the core acts on it, only the core can see it, or a mini app can't do it right. Otherwise: a mini app (`contributing/extension-authoring.md`), or a schedule with a skill (ADR `261124-150519`).
+1. A feature goes in the server core only if the core acts on it, only the core can see it, or a mini app can't do it right. Otherwise: a mini app (`contributing/extension-authoring.md`), or a schedule with a skill (ADR `261124-150519`). A pull request watcher is the example: none of the three hold, so it is a mini app that calls the core's one wake. A PR that adds a folder under `apps/server/src/services/` answers the three questions in its body; review checks it (`REVIEW.md`, "Path-specific focus").
 2. No new service or process unless its lifetime or trust level differs.
 3. Never plan, rank or write work by a date or a launch (ADR `261124-150515`).
 4. Architecture work leaves the space server's code alone (`services/spaces`, `apps/space`, the community wire, `spaces/migrate.ts`) until the Community Space has opened and its opening checks are green. Fixes the opening needs are fine.
@@ -134,7 +134,7 @@ All enforced, so a break fails a check. Rules 1-5 ride `lint`, 6-7 are hooks, 9 
 6. **`git stash` and `git checkout -- <path>` are refused.** The stash is shared by every worktree, and the pathspec checkout silently drops uncommitted work. Park files in your scratchpad and restore with `cp`.
 7. **`pkill`, `killall` and group kills are refused.** Other agents and the operator's dev servers run the same code here. Stop only a process you started, by its PID or `lsof -ti :<port>`. The guards match command text, so a line that only mentions one is refused too.
 8. Path-specific rules in `.claude/rules/` load when you edit matching files.
-9. **No file over 500 lines may grow** (`scripts/check-max-lines.ts`). Split it instead. After shrinking one, run `pnpm check:max-lines -- --update`; CI refuses a raised baseline. The HTTP API has the same kind of ratchet: `pnpm check:api-lint` (DOR-4996, rules in `contributing/api-reference.md`).
+9. **No file over 500 lines may grow** (`scripts/check-max-lines.ts`), test files included; they have their own baseline. Split it instead. After shrinking or deleting one, run `pnpm check:max-lines -- --update`; CI refuses a raised baseline. The HTTP API has the same kind of ratchet: `pnpm check:api-lint` (DOR-4996, rules in `contributing/api-reference.md`).
 
 ## Testing
 

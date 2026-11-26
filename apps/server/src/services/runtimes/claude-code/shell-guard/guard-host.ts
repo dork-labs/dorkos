@@ -16,7 +16,7 @@
  */
 import { fork, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
-import { verifyDevChildBundle } from '../../../extensions/isolation/child-bundle.js';
+import { verifyDevChildBundle } from '../../../core/child-bundle/child-bundle.js';
 import { answerFrom, isGuardReady, type GuardRequest, type WireRoots } from './guard-protocol.js';
 import type { ShellCheckAnswer, ShellGuardRoots } from './shell-check.js';
 

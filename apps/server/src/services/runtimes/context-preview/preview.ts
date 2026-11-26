@@ -40,7 +40,7 @@ import { buildOpenCodeTurnParts } from '../opencode/messaging/turn-context.js';
 import { buildOpenCodeSystem } from '../opencode/messaging/turn-input.js';
 import { buildDoeContextParts } from '../doe/context.js';
 import { buildTaskAppend } from '../../tasks/task-append.js';
-import { renderRoomConventions } from '../../rooms/repo/room-conventions.js';
+import { renderRoomConventions } from '../../core/room-conventions/room-conventions-block.js';
 import {
   SESSION_BLOCKS,
   TURN_BLOCKS,

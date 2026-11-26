@@ -26,11 +26,14 @@
  * is skipped for a file whose `(size, mtime)` the frontier already recorded,
  * exactly as Claude Code's is.
  *
- * @module server/services/search/codex-discovery
+ * Kernel: the search index sweeps these files and the Codex runtime lists its own
+ * sessions from them, so both read one discovery (`services/core/codex-rollouts/`).
+ *
+ * @module services/core/codex-rollouts/codex-discovery
  */
 import fs from 'fs/promises';
 import path from 'path';
-import { logger } from '../../lib/logger.js';
+import { logger } from '../../../lib/logger.js';
 import { collapseRoots, walkJsonlFiles } from './jsonl-walk.js';
 import type {
   DiscoveryFailure,
@@ -38,7 +41,7 @@ import type {
   FileDiscovery,
   KnownContainer,
   SkippedFile,
-} from './types.js';
+} from './rollout-types.js';
 
 /**
  * The rollout filename, and the session id inside it.

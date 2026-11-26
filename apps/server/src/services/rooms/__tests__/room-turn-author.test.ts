@@ -21,7 +21,7 @@ import { stampEvent, stampHistory } from '../../session/chat-messages/chat-messa
 import { reconstructHistoryFromEvents } from '../../session/event-log-history.js';
 import { parseTranscript } from '../../runtimes/claude-code/sessions/__tests__/parse-transcript.js';
 import { renderContextEntry } from '../../runtimes/claude-code/messaging/context-builder.js';
-import { readRoomTurnRef } from '../../session/chat-messages/room-turn-ref.js';
+import { readRoomTurnRef } from '../../core/room-turn-ref/room-turn-ref.js';
 import { applyRoomMessages } from '../../session/overlays/room-message-overlay.js';
 
 const AT = '2026-10-12T10:00:00.000Z';

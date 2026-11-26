@@ -256,7 +256,10 @@ Severity is the gate here: `lint` passes no `--max-warnings 0`, so anything mean
   blank lines and comments. It is only a `warn`, so `pnpm check:max-lines` holds it as
   a ratchet in the required `typecheck` check: a file already over 500 is listed in
   `scripts/max-lines/baseline.json` and may shrink but never grow, and a new file may
-  not pass 500. Test files are exempt. After shrinking or moving one, run
+  not pass 500. TypeScript test files (`.ts`, `.tsx`) are held the same way, in
+  `scripts/max-lines/test-baseline.json`, with one difference: a shrink or deletion
+  is noted, not failed. `.mjs` tests are not measured. After shrinking, moving or
+  deleting one, run
   `pnpm check:max-lines -- --update`, which lowers its entry or carries it to the new
   path. Never raise an entry by hand.
 

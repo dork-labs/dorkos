@@ -70,7 +70,8 @@ vi.mock('../room-repo-git.js', async (importOriginal) => {
   };
 });
 
-import { RoomConventions, ROOM_CONVENTIONS_TAG } from '../room-conventions.js';
+import { ROOM_CONVENTIONS_TAG } from '../../../core/room-conventions/room-conventions-block.js';
+import { RoomConventions } from '../room-conventions.js';
 import { commitAll, initRepo, runGit } from '../room-repo-git.js';
 import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 import { ROOM_MD_FILENAME } from '../room-md.js';

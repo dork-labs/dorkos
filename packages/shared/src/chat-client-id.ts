@@ -4,9 +4,11 @@
  * which the dispatcher reads for two rules: the person's words run first, and
  * a row another chat sent is held to its sender's level when it launches.
  *
- * Leaf module: the dispatcher imports it, so it imports nothing of ours.
+ * A string format, so it lives here: the computer's dispatcher reads it and the
+ * space side's chat messages write it, and neither imports the other for it.
+ * Leaf module: it imports nothing.
  *
- * @module services/session/chat-messages/chat-client-id
+ * @module shared/chat-client-id
  */
 
 /** The prefix of every chat-message lock identity. */

@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import { createProjectRootResolver } from '../resolve-project-root.js';
+import { createProjectRootResolver } from '../../core/project-root/resolve-project-root.js';
 import { accountEligibility } from '../../core/usage/account-eligibility.js';
 import { resolveSessionCwd } from '../../workspace/resolve-session-cwd.js';
 

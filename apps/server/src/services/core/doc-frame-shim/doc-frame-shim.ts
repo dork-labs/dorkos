@@ -1,4 +1,11 @@
-/** Fixed Doc SDK source only. F2 owns real injection; CSP and parser execution order stay unchanged. */
+/**
+ * Fixed Doc SDK source only. F2 owns real injection; CSP and parser execution order stay unchanged.
+ *
+ * Kernel: the canvas defines the document channel and the workbench frame injects this script,
+ * so it sits where both sides may read it.
+ *
+ * @module services/core/doc-frame-shim/doc-frame-shim
+ */
 import { CANVAS_DOC_BOOT_PARAM } from '@dorkos/shared/canvas-doc-frame-wire';
 
 /**

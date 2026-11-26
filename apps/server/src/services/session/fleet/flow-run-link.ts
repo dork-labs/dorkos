@@ -29,7 +29,7 @@
  * ## Cost on the session list
  *
  * The main checkout comes from the one project-root rule
- * (`services/projects/resolve-project-root.ts`), cached per cwd for the life of
+ * (`services/core/project-root/resolve-project-root.ts`), cached per cwd for the life of
  * the process (a cwd that is not in a git repository is re-asked after 60 s),
  * and the file is re-read only when its mtime or size changes, so a list
  * refresh costs one `stat` per distinct project.
@@ -43,7 +43,10 @@ import { readTextFileWithin } from '@dorkos/shared/bounded-read';
 import type { Session } from '@dorkos/shared/types';
 
 import { logger } from '../../../lib/logger.js';
-import { peekProjectRoot, resolveProjectRoot } from '../../projects/resolve-project-root.js';
+import {
+  peekProjectRoot,
+  resolveProjectRoot,
+} from '../../core/project-root/resolve-project-root.js';
 
 /** The largest `flow-state.json` read, in bytes. */
 const FLOW_STATE_MAX_BYTES = 1024 * 1024;
@@ -190,7 +193,7 @@ function indexBySession(state: Record<string, FlowRunRecord>): Map<string, FlowR
 
 /** The collaborators a {@link FlowRunLinkReader} uses; tests replace them. */
 export interface FlowRunLinkDeps {
-  /** The main checkout a cwd belongs to (`services/projects/resolve-project-root.ts`). */
+  /** The main checkout a cwd belongs to (`services/core/project-root/resolve-project-root.ts`). */
   resolveRoot: (cwd: string) => Promise<string | null>;
   /**
    * The cached main checkout of a cwd without running git: the root, `null`

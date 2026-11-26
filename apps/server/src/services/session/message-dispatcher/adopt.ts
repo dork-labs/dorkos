@@ -21,7 +21,7 @@ import {
   getPrivateSessionMessageAcceptanceService,
   PrivateSessionMessageRefusalError,
 } from '../private-messages/acceptance.js';
-import { isChatClientId } from '../chat-messages/chat-client-id.js';
+import { isChatClientId } from '@dorkos/shared/chat-client-id';
 import { launching, pending } from './state.js';
 import { parkDispatch, unwatchedSettle } from './park.js';
 import { schedulePump } from './pump.js';

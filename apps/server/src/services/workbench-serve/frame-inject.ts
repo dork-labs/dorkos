@@ -1,7 +1,7 @@
 /** One conservative, bounded HTML/CSP decision for both fixed frame SDKs. */
 import type { FrameBridgeRefusal } from '@dorkos/shared/schemas';
 import { WORKBENCH } from '../../config/constants.js';
-import { DOC_FRAME_SHIM_SCRIPT } from '../canvas/doc-frame-shim.js';
+import { DOC_FRAME_SHIM_SCRIPT } from '../core/doc-frame-shim/doc-frame-shim.js';
 import { DEVTOOLS_AGENT_SCRIPT } from './devtools-shim.js';
 
 /** Actual outgoing content type and each enforcing policy; report-only is not enforcing. */

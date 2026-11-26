@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { projectCodexLines } from '../projections/codex.js';
-import { buildCodexPrompt } from '../../runtimes/codex/turn-input.js';
+import { projectCodexLines } from '../codex-projection.js';
+import { buildCodexPrompt } from '../../../runtimes/codex/turn-input.js';
 
 /**
  * The projection is a pure function over lines, so this is a table test and not

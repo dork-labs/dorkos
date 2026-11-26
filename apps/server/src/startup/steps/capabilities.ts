@@ -71,6 +71,11 @@ import type { WireSessionServicesResult } from './session-services.js';
 import type { WireMcpTasksAndSkillsResult } from './mcp-tasks-skills.js';
 import type { ServerRefs } from '../server-refs.js';
 import { globalMcpPersonDepsFor } from '../../services/mesh/global-mcp/global-mcp-person-capabilities.js';
+import { enrichTopology } from '../../routes/mesh-topology.js';
+import {
+  projectComputerPlacement,
+  projectComputerPlacementById,
+} from '../../routes/computer-placement.js';
 
 /** What {@link composeCapabilities} reads from the startup steps before it. */
 export interface ComposeCapabilitiesInput {
@@ -301,6 +306,11 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
           taskStore: refs.taskStore,
           relayCore: refs.relayCore,
           activity: activityService,
+          views: {
+            enrichTopology,
+            projectPlacement: projectComputerPlacement,
+            projectPlacementById: projectComputerPlacementById,
+          },
         },
       }),
       workClaimDeps: workClaims.capabilityDeps,

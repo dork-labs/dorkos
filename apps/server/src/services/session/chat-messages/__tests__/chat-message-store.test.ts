@@ -9,7 +9,7 @@ import { agents, sessionBirthAllocations, sessionMetadata, type Db } from '@dork
 import { bindSessionWrite } from '../../../core/runtime-seam/bind-session-write.js';
 import type { SessionBirthWriteContext } from '../../../core/runtime-seam/session-birth-write.js';
 import { MessageQueueStore } from '../../message-queue-store.js';
-import { chatClientId } from '../chat-client-id.js';
+import { chatClientId } from '@dorkos/shared/chat-client-id';
 import { ChatMessageStore, type NewChatMessage } from '../chat-message-store.js';
 
 let db: Db;

@@ -77,7 +77,7 @@
       "tables": 2
     },
     "src/services/core/runtime-seam/session-birth-write.ts": {
-      "space": 1,
+      "space": 0,
       "frontDoor": 0,
       "tables": 5
     },
@@ -124,11 +124,6 @@
     "src/services/core/session-relay/relay-link.ts": {
       "space": 0,
       "frontDoor": 2,
-      "tables": 0
-    },
-    "src/services/core/session-relay/relay-serves.ts": {
-      "space": 1,
-      "frontDoor": 0,
       "tables": 0
     },
     "src/services/core/streams/document-stream-delivery.ts": {
@@ -242,7 +237,7 @@
       "tables": 0
     },
     "src/services/runtimes/claude-code/claude-code-runtime.ts": {
-      "space": 11,
+      "space": 10,
       "frontDoor": 2,
       "tables": 0
     },
@@ -521,11 +516,6 @@
       "frontDoor": 0,
       "tables": 0
     },
-    "src/services/runtimes/claude-code/migrate-room-transcripts.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/runtimes/claude-code/repo-settings/launch-repo-config.ts": {
       "space": 1,
       "frontDoor": 0,
@@ -567,21 +557,6 @@
       "tables": 0
     },
     "src/services/runtimes/claude-code/sessions/session-crash-recovery.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/sessions/transcript-parser.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/shell-guard/guard-child-file.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/shell-guard/guard-host.ts": {
       "space": 1,
       "frontDoor": 0,
       "tables": 0
@@ -683,11 +658,6 @@
     },
     "src/services/runtimes/codex/mcp-server-config.ts": {
       "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/codex/native-session-reader.ts": {
-      "space": 3,
       "frontDoor": 0,
       "tables": 0
     },
@@ -797,7 +767,7 @@
       "tables": 0
     },
     "src/services/runtimes/context-preview/preview.ts": {
-      "space": 3,
+      "space": 2,
       "frontDoor": 0,
       "tables": 0
     },
@@ -936,11 +906,6 @@
       "frontDoor": 0,
       "tables": 0
     },
-    "src/services/runtimes/shared/tools/outside-file-places.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/runtimes/test-mode/browser-driving-scenarios.ts": {
       "space": 1,
       "frontDoor": 0,
@@ -1066,11 +1031,6 @@
       "frontDoor": 6,
       "tables": 0
     },
-    "src/services/session/fleet/flow-run-link.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/session/fleet/limit-plans.ts": {
       "space": 0,
       "frontDoor": 4,
@@ -1122,7 +1082,7 @@
       "tables": 0
     },
     "src/services/session/launch/launch-session.ts": {
-      "space": 5,
+      "space": 4,
       "frontDoor": 2,
       "tables": 0
     },
@@ -1172,12 +1132,12 @@
       "tables": 0
     },
     "src/services/session/message-dispatcher.ts": {
-      "space": 2,
+      "space": 1,
       "frontDoor": 0,
       "tables": 0
     },
     "src/services/session/message-dispatcher/adopt.ts": {
-      "space": 3,
+      "space": 2,
       "frontDoor": 0,
       "tables": 0
     },
@@ -1186,18 +1146,8 @@
       "frontDoor": 0,
       "tables": 0
     },
-    "src/services/session/message-dispatcher/join-chat-rows.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/session/message-dispatcher/launch.ts": {
       "space": 4,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/session/message-dispatcher/owner-send.ts": {
-      "space": 1,
       "frontDoor": 0,
       "tables": 0
     },
@@ -1211,17 +1161,7 @@
       "frontDoor": 0,
       "tables": 0
     },
-    "src/services/session/message-dispatcher/queue-upkeep.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/session/message-dispatcher/run-turn.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/session/message-dispatcher/state.ts": {
       "space": 1,
       "frontDoor": 0,
       "tables": 0
@@ -1265,11 +1205,6 @@
       "space": 0,
       "frontDoor": 0,
       "tables": 1
-    },
-    "src/services/session/queued-message-edits.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
     },
     "src/services/session/recovery/rekey-metadata.ts": {
       "space": 1,
@@ -1316,11 +1251,6 @@
       "frontDoor": 0,
       "tables": 0
     },
-    "src/services/workbench-serve/frame-inject.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/workspace/index.ts": {
       "space": 2,
       "frontDoor": 0,
@@ -1352,7 +1282,7 @@
       "tables": 0
     },
     "src/services/workspace/worktree-scan.ts": {
-      "space": 2,
+      "space": 1,
       "frontDoor": 0,
       "tables": 0
     }

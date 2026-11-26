@@ -18,7 +18,7 @@ import { authorityFixture } from './authority-fixtures.js';
 import { saveOriginalDocumentFile } from '../installation-file-writes.js';
 import { readSessionDocSourceDescriptor } from '../../doc-source-policy.js';
 import { sameOriginalFileSaveSource } from '../file-save-recovery/applied-source.js';
-import { createDocChannelHttpComposition } from '../../http-composition.js';
+import { composeDocChannelHttp } from '../../__tests__/doc-channel-http.js';
 import { saved } from './saved-outcome.js';
 import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
 
@@ -142,7 +142,7 @@ it('two successful canonical moves retain the original physical birth and never 
   await f.move('session-a', 'canonical-a');
   await f.move('canonical-a', 'canonical-b');
   await f.h.http.fileWrites.stop();
-  const restarted = createDocChannelHttpComposition({
+  const restarted = composeDocChannelHttp({
     db: f.h.db,
     documents: f.h.rooms.canvasDocuments,
     rooms: f.h.rooms.service,

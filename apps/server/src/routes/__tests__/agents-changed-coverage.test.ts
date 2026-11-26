@@ -46,6 +46,7 @@ import os from 'node:os';
 import path from 'node:path';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
+import { meshReadViews } from './mesh/mesh-read-views.js';
 
 // Passthrough boundary validation. Every entry point below validates the paths
 // it is handed, and the temp directories these cases use are outside whatever
@@ -156,7 +157,7 @@ beforeEach(async () => {
   setOnAgentCreated(null);
 
   app = honoGroupListener([
-    capabilityGroup(meshDomain, { meshDeps: { meshCore: mesh } }),
+    capabilityGroup(meshDomain, { meshDeps: { meshCore: mesh, views: meshReadViews } }),
     { path: '/api/mesh', routes: createMeshRoutes({ meshCore: mesh }) },
     { path: '/api/agents', routes: createAgentsRoutes({ meshCore: mesh }) },
   ]);

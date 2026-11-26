@@ -36,6 +36,7 @@ import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomRepoService } from '../room-repo-service.js';
 import { RoomRepoMutex } from '../room-repo-mutex.js';
 import { RoomWorktreeManager } from '../room-worktree-manager.js';
+import { roomWorktreeSlug } from '../../../core/room-worktree-name/room-worktree-name.js';
 import {
   assertRoomRepoConfigSafe,
   commitsAheadOfMain,
@@ -225,10 +226,7 @@ describe('room turn placement and grants', () => {
 
     const place = await resolveRoomTurnPlace(manager, ROOM_ID, ana, 'Ana');
 
-    const worktree = path.join(
-      store.worktreesPath(ROOM_ID),
-      RoomWorktreeManager.slugFor('Ana', ana)
-    );
+    const worktree = path.join(store.worktreesPath(ROOM_ID), roomWorktreeSlug('Ana', ana));
     const repo = store.repoPath(ROOM_ID);
     const git = path.join(repo, '.git');
     expect(place.cwd).toBe(ana);
@@ -369,7 +367,7 @@ describe('room turn placement and grants', () => {
 
     await mergeNoFf(
       repo,
-      `room/${RoomWorktreeManager.slugFor('Ana', ana)}`,
+      `room/${roomWorktreeSlug('Ana', ana)}`,
       'Merge the plan',
       { name: 'Dorian', email: 'operator@dorkos.local' },
       store.homeDir(ROOM_ID)
@@ -420,7 +418,7 @@ describe('room turn placement and grants', () => {
       await expect(
         mergeNoFf(
           store.repoPath(ROOM_ID),
-          `room/${RoomWorktreeManager.slugFor('Ana', ana)}`,
+          `room/${roomWorktreeSlug('Ana', ana)}`,
           'Merge the plan',
           { name: 'Dorian', email: 'operator@dorkos.local' },
           store.homeDir(ROOM_ID)
@@ -583,7 +581,7 @@ describe('room turn placement and grants', () => {
 
     await mergeNoFf(
       store.repoPath(ROOM_ID),
-      `room/${RoomWorktreeManager.slugFor('Ana', ana)}`,
+      `room/${roomWorktreeSlug('Ana', ana)}`,
       'Merge the plan',
       { name: 'Dorian', email: 'operator@dorkos.local' },
       store.homeDir(ROOM_ID)

@@ -44,12 +44,16 @@
  * project" but is asked again after the base minute, never backed off: it says
  * nothing about the folder.
  *
- * @module services/projects/resolve-project-root
+ * Kernel: the projects registry (space side) and the workspace scan and flow
+ * links (computer side) all ask it, so it sits where both sides may import it.
+ * Its caches are this process's own and hold no space data.
+ *
+ * @module services/core/project-root/resolve-project-root
  */
 import path from 'node:path';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
 
-import { Slots } from '../../lib/concurrency/slots.js';
+import { Slots } from '../../../lib/concurrency/slots.js';
 import { GitRepoConfigUnsafeError, runSafeGit } from '@dorkos/shared/safe-git';
 
 /** How long a folder in no repository first stays "no project" before git is asked again. */

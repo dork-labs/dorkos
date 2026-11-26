@@ -39,9 +39,10 @@
  */
 import { copyFile, link, mkdir, readdir, realpath, rm, stat, writeFile } from 'fs/promises';
 import path from 'path';
+import { PROJECTED_ATTACHMENTS_ROOT } from '@dorkos/shared/room-attachment-paths';
 import { logError, logger } from '../../../lib/logger.js';
 import type { ProjectableAttachment } from '../room-context.js';
-import { PROJECTED_ATTACHMENTS_ROOT, projectedAttachmentPath } from './attachment-paths.js';
+import { projectedAttachmentPath } from './attachment-paths.js';
 import type { RoomAttachmentStore } from './room-attachment-store.js';
 
 /**

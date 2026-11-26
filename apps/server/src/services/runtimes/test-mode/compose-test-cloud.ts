@@ -21,7 +21,8 @@
 import type { RuntimeRegistry } from '../../core/runtime-registry.js';
 import { initCloudLinkManager } from '../../core/auth/cloud-link.js';
 import { setCloudV1Fetch } from '../../core/cloud/v1-client.js';
-import { addTestControlGroup } from '../../../routes/test-control.js';
+import type { Hono } from 'hono';
+import type { ApiEnv } from '../../../http/api-chain.js';
 import { localDialHost } from '@dorkos/shared/local-dial-host';
 import { logger } from '../../../lib/logger.js';
 import { env } from '../../../env.js';
@@ -64,14 +65,25 @@ export function testModeDoeOptions(): DoeRuntimeOptions {
 }
 
 /**
+ * Hang a test-only group of routes under `/api/test` at `path`. Boot passes the
+ * test-control routes' own (`addTestControlGroup`).
+ */
+export type AddTestControlGroup = (path: string, routes: Hono<ApiEnv>) => void;
+
+/**
  * Wire the test-mode Cloud into this server, and register the DorkOS runtime
  * when `DORKOS_TEST_RUNTIME_DOE` asks for it.
  *
  * @param registry - The runtime registry the DorkOS runtime joins.
+ * @param addTestControlGroup - Where the approval page and inference stream
+ *   are served from, under `/api/test`.
  * @returns The DorkOS runtime when one was registered, else `null`.
  * @throws If called outside `DORKOS_TEST_RUNTIME`.
  */
-export function composeTestModeCloud(registry: RuntimeRegistry): DoeRuntime | null {
+export function composeTestModeCloud(
+  registry: RuntimeRegistry,
+  addTestControlGroup: AddTestControlGroup
+): DoeRuntime | null {
   if (!env.DORKOS_TEST_RUNTIME) {
     throw new Error('composeTestModeCloud is test-mode only (DORKOS_TEST_RUNTIME)');
   }

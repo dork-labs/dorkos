@@ -43,7 +43,7 @@ import { MessageQueueStore, setMessageQueueStore } from '../../../message-queue-
 import { disposeProjector } from '../../../session-state-projector.js';
 import { passedOnLevelOf } from '../../../../core/turn-power/turn-levels.js';
 import { chatCallerOf } from '../../chat-capabilities.js';
-import { chatClientId } from '../../chat-client-id.js';
+import { chatClientId } from '@dorkos/shared/chat-client-id';
 import { rowsCarryHold, rowsCarryWords } from '../../chat-message-ceiling.js';
 import { ChatMessageService, type ChatCaller } from '../../chat-message-service.js';
 import { ChatMessageStore } from '../../chat-message-store.js';

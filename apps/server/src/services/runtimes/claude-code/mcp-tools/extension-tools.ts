@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { EXTENSION_ID_REGEX } from '@dorkos/extension-api';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
-import { broadcastExtensionReloaded } from '../../../../routes/extensions.js';
 import {
   EXTENSION_TEXT_NOTE,
   extensionForAgents,
@@ -370,7 +369,7 @@ export function createReloadExtensionsHandler(deps: McpToolDeps) {
 
         // Broadcast SSE event only for successful compilations
         if (result.status === 'compiled') {
-          broadcastExtensionReloaded([result.id]);
+          deps.announceExtensionsReloaded?.([result.id]);
         }
 
         return jsonContent({ ok: true, extension: result });
@@ -381,7 +380,7 @@ export function createReloadExtensionsHandler(deps: McpToolDeps) {
       // Broadcast SSE event for all successfully compiled extensions
       const compiledIds = extensions.filter((ext) => ext.bundleReady).map((ext) => ext.id);
       if (compiledIds.length > 0) {
-        broadcastExtensionReloaded(compiledIds);
+        deps.announceExtensionsReloaded?.(compiledIds);
       }
 
       return jsonContent({ ok: true, extensions, count: extensions.length });

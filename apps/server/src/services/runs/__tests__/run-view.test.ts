@@ -24,7 +24,7 @@ import {
   moveQueueRowToSession,
   setMessageQueueStore,
 } from '../../session/message-queue-store.js';
-import { chatClientId } from '../../session/chat-messages/chat-client-id.js';
+import { chatClientId } from '@dorkos/shared/chat-client-id';
 import { disposeProjector, getOrCreateProjector } from '../../session/session-state-projector.js';
 import {
   adoptQueuedMessages,

@@ -16,6 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
+import { meshReadViews } from './mesh/mesh-read-views.js';
 
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
@@ -183,7 +184,7 @@ beforeEach(async () => {
   mesh.onAgentAdopted((agent) => void notifyAgentCreated({ ...agent, origin: 'registered' }));
   target.mount(
     honoGroupListener([
-      capabilityGroup(meshDomain, { meshDeps: { meshCore: mesh } }),
+      capabilityGroup(meshDomain, { meshDeps: { meshCore: mesh, views: meshReadViews } }),
       { path: '/api/mesh', routes: createMeshRoutes({ meshCore: mesh }) },
     ])
   );

@@ -36,6 +36,8 @@ for f in user-level-guards.sh run-node-hook.sh lib/shell-command.mjs file-guard.
   process-guard.mjs merge-guard.mjs pr-create-guard.mjs heavy-command-guard.mjs; do
   cp "$repo_root/.claude/hooks/$f" "$dorkos/.claude/hooks/$f"
 done
+# file-guard's deny rules come from the checkout's own settings.json.
+cp "$repo_root/.claude/settings.json" "$dorkos/.claude/settings.json"
 wrapper=$dorkos/.claude/hooks/user-level-guards.sh
 git -C "$dorkos" worktree add -q "$tmp/wt-x" -b x
 other=$tmp/other
@@ -53,6 +55,16 @@ verdict() {
   printf 'exit=%s said=%s' "$code" "$([ -n "$out" ] && echo yes || echo no)"
 }
 
+# The hook process as a session homed OUTSIDE DorkOS starts it: its working
+# folder and CLAUDE_PROJECT_DIR are the agent home, not the checkout (t2, Nov 25).
+verdict_from_home() {
+  local cwd=$1 command=$2 payload out code
+  payload=$(jq -cn --arg c "$command" --arg d "$cwd" '{tool_name: "Bash", cwd: $d, tool_input: {command: $c}}')
+  out=$(cd "$plain" && printf '%s' "$payload" | CLAUDE_PROJECT_DIR=$plain "$wrapper" 2>&1 >/dev/null)
+  code=$?
+  printf 'exit=%s said=%s' "$code" "$([ -n "$out" ] && echo yes || echo no)"
+}
+
 # --- each guard refuses in a DorkOS worktree ---
 check 'git-guard: git stash in a DorkOS worktree' 'exit=2 said=yes' "$(verdict "$tmp/wt-x" 'git stash')"
 check 'process-guard: pkill by name in a DorkOS worktree' 'exit=2 said=yes' "$(verdict "$tmp/wt-x" 'pkill -f node')"
@@ -60,6 +72,18 @@ check 'heavy-command-guard: turbo build in the main checkout' 'exit=2 said=yes' 
 check 'pr-create-guard: a raw gh pr create' 'exit=2 said=yes' "$(verdict "$tmp/wt-x" 'gh pr create --title x --body y')"
 check 'file-guard: reading a .env file' 'exit=2 said=yes' "$(verdict "$tmp/wt-x" 'cat .env')"
 check 'a leading cd into the worktree is followed' 'exit=2 said=yes' "$(verdict "$plain" "cd $tmp/wt-x && git stash")"
+check 'file-guard from an agent home: a leading cd, then cat .env' 'exit=2 said=yes' \
+  "$(verdict_from_home "$plain" "cd $tmp/wt-x && cat .env")"
+check 'file-guard from an agent home: payload cwd in a worktree, cat .env' 'exit=2 said=yes' \
+  "$(verdict_from_home "$tmp/wt-x" 'cat .env')"
+check 'file-guard from an agent home: an absolute .env path' 'exit=2 said=yes' \
+  "$(verdict_from_home "$tmp/wt-x" "cat $tmp/wt-x/apps/server/.env")"
+check 'from an agent home: .env.example stays readable' 'exit=0 said=no' \
+  "$(verdict_from_home "$tmp/wt-x" 'cat .env.example')"
+check 'from an agent home: git stash with a leading cd' 'exit=2 said=yes' \
+  "$(verdict_from_home "$plain" "cd $tmp/wt-x && git stash")"
+check 'from an agent home: cat .env in another repo is untouched' 'exit=0 said=no' \
+  "$(verdict_from_home "$other" 'cat .env')"
 # --- allowed in DorkOS ---
 check 'git status in DorkOS is allowed' 'exit=0 said=no' "$(verdict "$tmp/wt-x" 'git status')"
 check 'git stash list in DorkOS is allowed' 'exit=0 said=no' "$(verdict "$tmp/wt-x" 'git stash list')"

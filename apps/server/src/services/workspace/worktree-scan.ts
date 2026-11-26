@@ -29,7 +29,7 @@ import type {
   WorktreeScanResult,
   WorktreeScanWarning,
 } from '@dorkos/shared/workspace';
-import { readProjectRootUncached } from '../projects/resolve-project-root.js';
+import { readProjectRootUncached } from '../core/project-root/resolve-project-root.js';
 import { runSafeGit } from '@dorkos/shared/safe-git';
 import { mayRunGitHere } from '../core/agent-identity/index.js';
 
@@ -146,7 +146,7 @@ async function inspectCheckout(checkoutPath: string, project: string): Promise<W
       runSafeGit(['log', '-1', '--format=%cI'], checkoutPath, {
         timeoutMs: SCAN_GIT_TIMEOUT_MS,
       }).catch(() => ''),
-      // The one project-root rule (`services/projects/resolve-project-root.ts`),
+      // The one project-root rule (`services/core/project-root/resolve-project-root.ts`),
       // uncached: this walk visits folders that are not session cwds, and it
       // keeps its own concurrency cap. It never throws; no repository is null.
       readProjectRootUncached(checkoutPath),
