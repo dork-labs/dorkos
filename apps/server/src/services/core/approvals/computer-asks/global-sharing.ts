@@ -7,7 +7,7 @@
  * @module services/core/approvals/computer-asks/global-sharing
  */
 import type { HarnessId } from '@dorkos/shared/harness-schemas';
-import { readConsent, writeConsent } from './consent-config.js';
+import { readConsent, requireConsentConfig, writeConsent } from './consent-config.js';
 
 /**
  * Record which agent tools DorkOS shares globally installed packages with, and
@@ -34,6 +34,8 @@ export function writeGlobalSharing(
   reason: string,
   now: Date = new Date()
 ): void {
+  // A write with no store throws, so no decision is ever skipped or allowed.
+  requireConsentConfig();
   writeConsent('harness', reason, {
     ...readConsent('harness'),
     global: { harnesses: [...harnesses], askedAt: now.toISOString() },

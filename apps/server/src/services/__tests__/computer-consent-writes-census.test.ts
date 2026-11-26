@@ -114,9 +114,12 @@ describe('the computer side writes no consent decision (C14)', () => {
     ).toEqual([]);
   });
 
-  it('counts the space side’s own door as space side, not computer side', () => {
+  it('counts the space side’s own door as space side, and its store is built outside services', () => {
     const door = path.join(SERVICES, 'core/approvals/computer-asks/consent-config.ts');
     expect(sideOf(door)).toBe('space');
-    expect(consentWritesIn(door, fs.readFileSync(door, 'utf8'))).not.toEqual([]);
+    // The store over `configManager` is handed in by a composition root.
+    const root = path.join(SERVICES, '../startup/computer-asks.ts');
+    expect(consentWritesIn(root, fs.readFileSync(root, 'utf8'))).not.toEqual([]);
+    expect(sideOf(root)).not.toBe('computer');
   });
 });

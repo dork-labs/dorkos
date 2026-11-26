@@ -11,7 +11,7 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -65,6 +65,10 @@ import {
 } from '../../notifications/escalation-service.js';
 import type { WithheldHooks } from '../project-with-consent.js';
 import { _internal as askInternal } from '../ask-withheld-hooks.js';
+import { wireTestConsent } from '../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The space side's consent writes reach a config store, as at startup.
+beforeAll(() => wireTestConsent());
 
 /** The package as it was when its row went up, running `run.sh` at version a. */
 const V1: WithheldHooks = {

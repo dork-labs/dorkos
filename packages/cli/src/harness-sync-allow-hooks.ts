@@ -25,6 +25,7 @@ import {
 } from '@dorkos/harness';
 
 import { configPathFor, readStoredDecisions } from './harness-consent.js';
+import { openConsentConfig } from './consent-config-store.js';
 import type { HookProjectionRequest } from '../server/services/harness/hook-consent.js';
 
 /** The stored hook decisions, as `readStoredDecisions` returns them. */
@@ -119,10 +120,9 @@ export async function resolveAllowHooks(opts: {
     return { exitCode: 1 };
   }
 
-  const { initConfigManager } = await import('../server/services/core/config-manager.js');
   const { recordHookApproval } =
     await import('../server/services/core/approvals/computer-asks/hook-decisions.js');
-  initConfigManager(dorkHome);
+  await openConsentConfig(dorkHome);
   for (const request of requests) {
     if (allowHooks.includes(request.packageName)) recordHookApproval(request);
   }

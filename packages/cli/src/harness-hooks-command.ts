@@ -18,6 +18,7 @@
  */
 import { parseArgs } from 'node:util';
 import { rethrowUnknownOption } from './lib/parse-args-error.js';
+import { openConsentConfig } from './consent-config-store.js';
 import { configPathFor, readStoredDecisions, resolveDorkHome } from './harness-consent.js';
 
 /** Parsed arguments accepted by {@link runHarnessHooks}. */
@@ -166,10 +167,9 @@ async function listDecisions(dorkHome: string): Promise<number> {
  * @returns 0 when something was removed, 1 when there was nothing to remove.
  */
 async function revokeDecisions(dorkHome: string, packageName: string): Promise<number> {
-  const { initConfigManager } = await import('../server/services/core/config-manager.js');
   const { revokeHookDecisions } =
     await import('../server/services/core/approvals/computer-asks/hook-decisions.js');
-  initConfigManager(dorkHome);
+  await openConsentConfig(dorkHome);
   const removed = revokeHookDecisions(packageName);
 
   if (removed.length === 0) {

@@ -1,5 +1,5 @@
 /** @vitest-environment node */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, beforeAll } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -25,6 +25,10 @@ import {
 } from '../../core/approvals/computer-asks/hook-decisions.js';
 import type { HookProjectionRequest } from '../hook-consent.js';
 import { _internal as askInternal } from '../ask-withheld-hooks.js';
+import { wireTestConsent } from '../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The space side's consent writes reach a config store, as at startup.
+beforeAll(() => wireTestConsent());
 
 const config = {
   harness: { autoSync: true, approvedHooks: [] as string[], refusedHooks: [] as string[] },

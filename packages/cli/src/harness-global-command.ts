@@ -34,6 +34,7 @@ import { existsSync } from 'node:fs';
 import { sep } from 'node:path';
 import { parseArgs } from 'node:util';
 import { rethrowUnknownOption } from './lib/parse-args-error.js';
+import { openConsentConfig } from './consent-config-store.js';
 import { configPathFor, resolveDorkHome } from './harness-consent.js';
 import {
   GLOBAL_SKILLS_RESTART_NOTE,
@@ -266,7 +267,6 @@ async function enableTool(dorkHome: string, tool: HarnessId): Promise<number> {
   const { writeGlobalSharing } =
     await import('../server/services/core/approvals/computer-asks/global-sharing.js');
   const { boundaryWasConfigured } = await import('../server/lib/boundary.js');
-  const { initConfigManager } = await import('../server/services/core/config-manager.js');
   const {
     applyGlobalPlan,
     projectGlobal,
@@ -287,9 +287,9 @@ async function enableTool(dorkHome: string, tool: HarnessId): Promise<number> {
   const next = HARNESS_IDS.filter((id: HarnessId) => id === tool || before.harnesses.includes(id));
   const already = before.harnesses.includes(tool);
   /** Record the choice. Idempotent: an answer already on file is not re-stamped. */
-  const record = (): void => {
+  const record = async (): Promise<void> => {
     if (already) return;
-    initConfigManager(dorkHome);
+    await openConsentConfig(dorkHome);
     writeGlobalSharing(next, 'dorkos harness global --enable');
   };
 
@@ -298,7 +298,7 @@ async function enableTool(dorkHome: string, tool: HarnessId): Promise<number> {
     // The choice is still recorded — somebody confined the deployment, they did
     // not un-choose the tool — but nothing is linked, so the line may not say
     // "Sharing with X" over a home directory DorkOS never touched.
-    record();
+    await record();
     console.log(
       already
         ? `Already sharing with ${HARNESS_LABELS[tool]}.`
@@ -351,7 +351,7 @@ async function enableTool(dorkHome: string, tool: HarnessId): Promise<number> {
     (action) => !(action.target ?? '').startsWith(globalSkillsDir(dorkHome) + sep)
   );
   const recorded = wroteWhereTheToolLooks || conflicts.length === 0;
-  if (recorded) record();
+  if (recorded) await record();
 
   console.log('');
   if (applied.length > 0) {
@@ -413,7 +413,6 @@ async function disableTool(dorkHome: string, tool: HarnessId): Promise<number> {
   const { writeGlobalSharing } =
     await import('../server/services/core/approvals/computer-asks/global-sharing.js');
   const { boundaryWasConfigured } = await import('../server/lib/boundary.js');
-  const { initConfigManager } = await import('../server/services/core/config-manager.js');
   const { projectGlobal, sweepGlobalOrphans, findGlobalOrphans, globalBoundarySkipLine } =
     await import('@dorkos/harness');
 
@@ -461,7 +460,7 @@ async function disableTool(dorkHome: string, tool: HarnessId): Promise<number> {
 
   // Step 3, and only now: forget the tool. A failure above leaves the config
   // untouched, so the command is re-runnable and never half-done.
-  initConfigManager(dorkHome);
+  await openConsentConfig(dorkHome);
   writeGlobalSharing(remaining, 'dorkos harness global --disable');
 
   console.log('');

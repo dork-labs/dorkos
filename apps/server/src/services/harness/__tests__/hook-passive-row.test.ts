@@ -9,7 +9,7 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 
 vi.mock('../../../lib/logger.js', () => ({
@@ -49,6 +49,10 @@ import { notificationEntry, resolvePerKind } from '../../notifications/notificat
 import { capabilityApprovalPayload } from '../../notifications/emitters/capability-approval.js';
 import type { WithheldHooks } from '../project-with-consent.js';
 import { _internal as askInternal } from '../ask-withheld-hooks.js';
+import { wireTestConsent } from '../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The space side's consent writes reach a config store, as at startup.
+beforeAll(() => wireTestConsent());
 
 /** One package Full held back because DorkOS did not install it. */
 const HELD_BACK: WithheldHooks = {

@@ -30,7 +30,7 @@
  *
  * @vitest-environment node
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, beforeAll } from 'vitest';
 import { createHash } from 'node:crypto';
 import {
   lstatSync,
@@ -79,6 +79,10 @@ import {
 import { projectWithConsent } from '../project-with-consent.js';
 import type { HookApprovalGateway } from '../../core/approvals/computer-asks/index.js';
 import { _internal as askInternal } from '../ask-withheld-hooks.js';
+import { wireTestConsent } from '../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The space side's consent writes reach a config store, as at startup.
+beforeAll(() => wireTestConsent());
 
 /** The two packages installed into the same repo. */
 const PACKAGES = ['alpha', 'beta'] as const;

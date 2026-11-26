@@ -103,11 +103,7 @@ import {
   storedHookDecisions,
   type HookDecisions,
 } from '../../harness/hook-consent.js';
-import {
-  forgetApprovedEntries,
-  recordApprovedEntry,
-  recordRefusedEntry,
-} from '../../core/approvals/computer-asks/index.js';
+import { hookEntryWriters } from './hook-entry-writers.js';
 import { disclosedEffectsOf, type DisclosedEffects } from '../preview/disclosed-effects.js';
 import { listEnabledPluginNames } from '../installed-scanner.js';
 import { readInstallMetadata, writeInstallMetadata } from '../installed-metadata.js';
@@ -506,7 +502,7 @@ export function recordGlobalActivationApproval(
   effects: DisclosedEffects,
   bindsTo: string
 ): void {
-  recordApprovedEntry(
+  hookEntryWriters().recordApproved(
     globalActivationEntry(name, effects, bindsTo),
     'approving a global package to run in every chat',
     isGlobalActivationEntryFor(name)
@@ -525,7 +521,7 @@ export function recordGlobalActivationRefusal(
   effects: DisclosedEffects,
   bindsTo: string
 ): void {
-  recordRefusedEntry(
+  hookEntryWriters().recordRefused(
     globalActivationEntry(name, effects, bindsTo),
     'turning down a global package running in every chat'
   );
@@ -588,7 +584,7 @@ export async function recordHeldBackDecision(
  * @param name - The package's directory name.
  */
 export function forgetGlobalActivationApprovals(name: string): void {
-  forgetApprovedEntries(
+  hookEntryWriters().forgetApproved(
     isGlobalActivationEntryFor(name),
     'a global package was replaced or removed'
   );

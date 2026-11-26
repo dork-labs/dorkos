@@ -22,7 +22,7 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { missingGitignoreLines, project } from '@dorkos/harness';
@@ -65,6 +65,10 @@ vi.mock('../../../core/config-manager.js', () => ({
 
 import { runAutoProjection } from '../../auto-project.js';
 import { createComputerAsks } from '../../../core/approvals/computer-asks/index.js';
+import { wireTestConsent } from '../../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The space side's consent writes reach a config store, as at startup.
+beforeAll(() => wireTestConsent());
 
 /** The command the package wants Claude Code to run at the end of every turn. */
 const FLOW_HOOK = 'node "${CLAUDE_PLUGIN_ROOT}/hooks/flow-loop.mjs"';

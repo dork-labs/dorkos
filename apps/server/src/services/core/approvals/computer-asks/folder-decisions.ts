@@ -29,7 +29,7 @@ import type {
   FolderConfigDigests,
   FolderConfigPart,
 } from '@dorkos/shared/computer-asks';
-import { readConsent, writeConsent } from './consent-config.js';
+import { readConsent, requireConsentConfig, writeConsent } from './consent-config.js';
 
 // === The allow list ===
 
@@ -85,6 +85,8 @@ export function recordFolderAllowApproval(
   request: Pick<FolderAllowRequest, 'agentId' | 'home' | 'rules'>,
   reason = 'approving an agent folder allow list'
 ): void {
+  // A write with no store throws, so no decision is ever skipped or allowed.
+  requireConsentConfig();
   const entry = folderAllowEntry(request);
   const { approved, refused, rules } = storedAllows();
   writeAllows(
@@ -105,6 +107,8 @@ export function recordFolderAllowApproval(
 export function recordFolderAllowRefusal(
   request: Pick<FolderAllowRequest, 'agentId' | 'home' | 'rules'>
 ): void {
+  // A write with no store throws, so no decision is ever skipped or allowed.
+  requireConsentConfig();
   const entry = folderAllowEntry(request);
   const { approved, refused, rules } = storedAllows();
   const { [request.agentId]: _forgotten, ...kept } = rules;
@@ -174,6 +178,8 @@ export function recordFolderConfigApproval(
   state: FolderConfigState,
   reason = "allowing an agent's folder settings"
 ): void {
+  // A write with no store throws, so no decision is ever skipped or allowed.
+  requireConsentConfig();
   const entry = folderConfigEntry(state);
   const { approved, refused, parts } = storedFolderConfig();
   writeFolderConfig(reason, {
@@ -190,6 +196,8 @@ export function recordFolderConfigApproval(
  * @param state - The state that was turned down.
  */
 export function recordFolderConfigRefusal(state: FolderConfigState): void {
+  // A write with no store throws, so no decision is ever skipped or allowed.
+  requireConsentConfig();
   const entry = folderConfigEntry(state);
   const current = storedFolderConfig();
   writeFolderConfig("turning down an agent's folder settings", {
@@ -217,6 +225,8 @@ export function repinFolderConfigPart(move: {
   after: string;
   reason: string;
 }): boolean {
+  // A write with no store throws, so no decision is ever skipped or allowed.
+  requireConsentConfig();
   const { agentId, home, part, before, after, reason } = move;
   const { approved, parts } = storedFolderConfig();
   const previous = parts[agentId];
@@ -232,6 +242,8 @@ export function repinFolderConfigPart(move: {
 
 /** Record that the agents that already existed were pinned, so it never happens again. */
 export function markFolderConfigsPinned(): void {
+  // A write with no store throws, so no decision is ever skipped or allowed.
+  requireConsentConfig();
   const harness = readConsent('harness') as { folderConfigPinned?: boolean } | undefined;
   if (harness?.folderConfigPinned === true) return;
   writeConsent('harness', 'pinning the agents DorkOS already had', {

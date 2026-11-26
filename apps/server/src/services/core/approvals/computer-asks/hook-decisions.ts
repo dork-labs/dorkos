@@ -19,7 +19,7 @@ import {
   sameHookCommands,
 } from '@dorkos/shared/consent-entries';
 import type { HookProjectionRequest } from '@dorkos/shared/computer-asks';
-import { readConsent, writeConsent } from './consent-config.js';
+import { readConsent, requireConsentConfig, writeConsent } from './consent-config.js';
 
 /** Both stored lists, as the running server holds them. */
 function storedLists(): { approved: readonly string[]; refused: readonly string[] } {
@@ -87,6 +87,8 @@ export function isHookRefusedOnRecord(request: HookProjectionRequest): boolean {
  * @param request - The projection that was allowed.
  */
 export function recordHookApproval(request: HookProjectionRequest): void {
+  // A write with no store throws, so no decision is ever skipped or allowed.
+  requireConsentConfig();
   recordHookDecision(request, 'approved', 'approving a package hook');
 }
 
@@ -101,6 +103,8 @@ export function recordHookApproval(request: HookProjectionRequest): void {
  * @param request - The projection that was turned down.
  */
 export function recordHookRefusal(request: HookProjectionRequest): void {
+  // A write with no store throws, so no decision is ever skipped or allowed.
+  requireConsentConfig();
   recordHookDecision(request, 'refused', 'turning down a package hook');
 }
 
@@ -112,6 +116,8 @@ export function recordHookRefusal(request: HookProjectionRequest): void {
  * @param request - A projection `hookApprovalMatch` answered `unpinned` for.
  */
 export function pinLegacyHookApproval(request: HookProjectionRequest): void {
+  // A write with no store throws, so no decision is ever skipped or allowed.
+  requireConsentConfig();
   if ((request.scripts ?? []).length === 0) return;
   recordHookDecision(request, 'approved', 'pinning the files a package hook runs');
 }
@@ -133,6 +139,8 @@ export function recordApprovedEntry(
   reason: string,
   replacing: (stored: string) => boolean = () => false
 ): void {
+  // A write with no store throws, so no decision is ever skipped or allowed.
+  requireConsentConfig();
   const { approved, refused } = storedLists();
   const kept = approved.filter((stored) => stored === entry || !replacing(stored));
   writeDecisions(
@@ -151,6 +159,8 @@ export function recordApprovedEntry(
  * @param reason - What the audit log says was happening.
  */
 export function forgetApprovedEntries(matches: (stored: string) => boolean, reason: string): void {
+  // A write with no store throws, so no decision is ever skipped or allowed.
+  requireConsentConfig();
   const { approved, refused } = storedLists();
   writeDecisions(
     reason,
@@ -166,6 +176,8 @@ export function forgetApprovedEntries(matches: (stored: string) => boolean, reas
  * @param reason - What the audit log says was happening.
  */
 export function recordRefusedEntry(entry: string, reason: string): void {
+  // A write with no store throws, so no decision is ever skipped or allowed.
+  requireConsentConfig();
   const { approved, refused } = storedLists();
   writeDecisions(
     reason,
@@ -198,6 +210,8 @@ export interface RevokedHookDecision {
  * @returns What was removed, in the order the lists held it.
  */
 export function revokeHookDecisions(packageName: string): RevokedHookDecision[] {
+  // A write with no store throws, so no decision is ever skipped or allowed.
+  requireConsentConfig();
   const { approved, refused } = storedLists();
   const mine = (entry: string): boolean => hookEntryPackageName(entry) === packageName;
   const removed: RevokedHookDecision[] = [

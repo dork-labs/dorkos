@@ -11,7 +11,7 @@
  */
 import { repoConfigEntry } from '@dorkos/shared/consent-entries';
 import type { RecordedBaseline, RepoConfigKind } from '@dorkos/shared/computer-asks';
-import { readConsent, writeConsent } from './consent-config.js';
+import { readConsent, requireConsentConfig, writeConsent } from './consent-config.js';
 
 /** The most repos whose baseline is remembered; the oldest go first. */
 const MAX_BASELINES = 500;
@@ -73,6 +73,8 @@ export function recordRepoConfigApproval(
   digest: string,
   trust?: { commonDir: string; baseline: RecordedBaseline }
 ): void {
+  // A write with no store throws, so no decision is ever skipped or allowed.
+  requireConsentConfig();
   const entry = repoConfigEntry(kind, digest);
   const current = stored();
   const baselines = trust
@@ -92,6 +94,8 @@ export function recordRepoConfigApproval(
  * @param digest - The content digest.
  */
 export function recordRepoConfigRefusal(kind: RepoConfigKind, digest: string): void {
+  // A write with no store throws, so no decision is ever skipped or allowed.
+  requireConsentConfig();
   const entry = repoConfigEntry(kind, digest);
   const current = stored();
   write('turning down repo settings', {
@@ -108,6 +112,8 @@ export function recordRepoConfigRefusal(kind: RepoConfigKind, digest: string): v
  * @param baseline - The ref and commit.
  */
 export function recordBaseline(commonDir: string, baseline: RecordedBaseline): void {
+  // A write with no store throws, so no decision is ever skipped or allowed.
+  requireConsentConfig();
   const current = stored();
   write('comparing a repo against its default branch', {
     ...current,
@@ -117,6 +123,8 @@ export function recordBaseline(commonDir: string, baseline: RecordedBaseline): v
 
 /** Record that DorkOS pinned the repos it already knew, so it never does that again. */
 export function markRepoBaselinesPinned(): void {
+  // A write with no store throws, so no decision is ever skipped or allowed.
+  requireConsentConfig();
   const harness = readConsent('harness') as { repoBaselinesPinned?: boolean } | undefined;
   if (harness?.repoBaselinesPinned === true) return;
   writeConsent('harness', 'pinning the repos DorkOS already knew', {

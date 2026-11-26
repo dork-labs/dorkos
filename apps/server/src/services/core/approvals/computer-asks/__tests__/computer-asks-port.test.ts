@@ -32,6 +32,25 @@ import { pinRegisteredFolderConfigsOnce } from '../../../../runtimes/claude-code
 import { askForRepoConfig } from '../../../../runtimes/claude-code/repo-settings/repo-config-approval.js';
 import { setWorkspaceAsks, workspaceAsks } from '../../../../workspace/computer-asks.js';
 import { computerAsks, createComputerAsks } from '../index.js';
+import {
+  ConsentConfigUnwiredError,
+  readConsent,
+  setConsentConfigStore,
+} from '../consent-config.js';
+import { recordFolderAllowApproval, recordFolderConfigApproval } from '../folder-decisions.js';
+import {
+  isHookRefusedOnRecord,
+  recordHookApproval,
+  revokeHookDecisions,
+} from '../hook-decisions.js';
+import { markRepoBaselinesPinned, recordRepoConfigRefusal } from '../repo-decisions.js';
+import { writeGlobalSharing } from '../global-sharing.js';
+import {
+  HookEntryWritersUnwiredError,
+  hookEntryWriters,
+  setHookEntryWriters,
+} from '../../../../marketplace/consent/hook-entry-writers.js';
+import { memoryConsentStore, wireTestConsent } from './wire-test-asks.js';
 
 const DIGESTS = { hooks: 'h'.repeat(64), mcpJson: 'm'.repeat(64), manifest: 'f'.repeat(64) };
 const FOLDER_ALLOWS: FolderAllowRequest = {
@@ -198,5 +217,71 @@ describe('what crosses the port is plain data (D11)', () => {
       expect(StandingDecisionSchema.parse(decision)).toStrictEqual(decision);
       expect(JSON.parse(JSON.stringify(decision))).toStrictEqual(decision);
     }
+  });
+});
+
+describe('the consent door, before a config store is handed in', () => {
+  beforeEach(() => {
+    setConsentConfigStore(undefined);
+    setHookEntryWriters(undefined);
+  });
+
+  it('refuses every write, a yes, a pin, a no and a revoke alike, naming the wiring', () => {
+    const writes: Array<() => unknown> = [
+      () => recordFolderAllowApproval(FOLDER_ALLOWS),
+      () => recordFolderConfigApproval(FOLDER_CONFIG, 'pinned on first use'),
+      () => recordHookApproval(HOOK),
+      () => recordRepoConfigRefusal('hooks', 'd'.repeat(64)),
+      () => markRepoBaselinesPinned(),
+      () => writeGlobalSharing([], 'dorkos harness global --disable'),
+      // Nothing stored to revoke, and it still refuses rather than answer "nothing".
+      () => revokeHookDecisions('lunar-hooks'),
+    ];
+    for (const write of writes) {
+      expect(write).toThrow(ConsentConfigUnwiredError);
+      expect(write).toThrow(/startup\/computer-asks\.ts/);
+    }
+  });
+
+  it('refuses the marketplace’s writes too', () => {
+    expect(() => hookEntryWriters().recordApproved('pkg@global-x', 'approving')).toThrow(
+      HookEntryWritersUnwiredError
+    );
+    expect(() => hookEntryWriters().forgetApproved(() => true, 'removed')).toThrow(
+      HookEntryWritersUnwiredError
+    );
+  });
+
+  it('reads as nothing decided', () => {
+    expect(readConsent('harness').approvedHooks).toEqual([]);
+    expect(readConsent('harness').refusedHooks).toEqual([]);
+    expect(readConsent('permissions').approvedFolderAllows).toEqual([]);
+    expect(isHookRefusedOnRecord(HOOK)).toBe(false);
+  });
+
+  it('a yes on a card with no store is not granted: the ask fails, nothing allowed', async () => {
+    const granting = createComputerAsks({
+      request: () => ({
+        approvalId: 'a1',
+        token: 't1',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      }),
+      consume: () => ({ outcome: 'granted', approvalId: 'a1', capabilityId: 'x' }),
+    });
+    await expect(askForFolderAllows(granting, FOLDER_ALLOWS)).rejects.toThrow(
+      ConsentConfigUnwiredError
+    );
+  });
+
+  it('writes through the store it is handed', () => {
+    const store = memoryConsentStore();
+    wireTestConsent(store);
+    recordHookApproval(HOOK);
+    expect(store.sections.harness.approvedHooks).toHaveLength(1);
+    expect(revokeHookDecisions('lunar-hooks')).toHaveLength(1);
+    expect(store.sections.harness.approvedHooks).toEqual([]);
+    hookEntryWriters().recordApproved('pkg@global-x', 'approving');
+    expect(store.sections.harness.approvedHooks).toEqual(['pkg@global-x']);
+    wireTestConsent();
   });
 });

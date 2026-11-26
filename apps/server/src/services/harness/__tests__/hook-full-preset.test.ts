@@ -13,7 +13,7 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -66,6 +66,10 @@ import { recordProjectInstall } from '../../marketplace/lib/project-install-inde
 import { installFolderDigest } from '../../marketplace/lib/install-digest.js';
 import { findOperatorOnlyPaths } from '../../core/operator/config-write-policy.js';
 import { _internal as askInternal } from '../ask-withheld-hooks.js';
+import { wireTestConsent } from '../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The space side's consent writes reach a config store, as at startup.
+beforeAll(() => wireTestConsent());
 
 const COMMAND = 'echo done';
 
