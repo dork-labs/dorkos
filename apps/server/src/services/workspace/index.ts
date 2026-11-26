@@ -162,6 +162,12 @@ export interface WorkspaceCaller {
   carriesToken: boolean;
   /** The chat set to Full autonomy that asked, when one did (see {@link WorkspaceGate}). */
   fullChat?: { sessionId: string; agentPath?: string } | undefined;
+  /**
+   * The chat the workspace is made for, when one is (see {@link WorkspaceGate}).
+   * Server-held state only: a launched chat's own id, or the chat an agent's
+   * token names. Never read from a request body.
+   */
+  chatId?: string | undefined;
 }
 
 /**
@@ -171,7 +177,13 @@ export interface WorkspaceCaller {
  * @param caller - Who is asking, and what they sent back.
  */
 export function workspaceGateFor(caller: WorkspaceCaller): WorkspaceGate {
-  if (caller.trusted) return personWorkspaceGate(caller.approvedReviewHash, worktreeHookMemory);
+  const forChat = caller.chatId ? { chatId: caller.chatId } : {};
+  if (caller.trusted) {
+    return Object.assign(
+      personWorkspaceGate(caller.approvedReviewHash, worktreeHookMemory),
+      forChat
+    );
+  }
   const card = {
     provider: approvals(),
     name: caller.name,
@@ -183,7 +195,7 @@ export function workspaceGateFor(caller: WorkspaceCaller): WorkspaceGate {
         ...(caller.confirmationToken && { confirmationToken: caller.confirmationToken }),
       })
     : rememberedCards.gateFor(card);
-  return caller.fullChat ? Object.assign(gate, { fullChat: caller.fullChat }) : gate;
+  return Object.assign(gate, caller.fullChat ? { fullChat: caller.fullChat } : {}, forChat);
 }
 
 /**
@@ -226,6 +238,7 @@ export { WorkspaceStore } from './workspace-store.js';
 export { WorkspaceReconciler } from './workspace-reconciler.js';
 export { WorkspaceReconcilerLifecycle } from './workspace-reconciler-lifecycle.js';
 export { scanWorktrees } from './worktree-scan.js';
+export { onWorkspaceWorktreeCreated, type WorktreeCreatedForChat } from './worktree-created.js';
 export {
   WorkspaceApprovalPendingError,
   WorkspaceDeclinedError,
