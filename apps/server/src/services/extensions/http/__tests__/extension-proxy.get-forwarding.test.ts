@@ -14,7 +14,7 @@ import { PERSON_PROOF_HEADER } from '@dorkos/shared/person-session';
 import request from '@dorkos/test-utils/supertest';
 import type { DataProxyConfig } from '@dorkos/extension-api';
 import { STRIPPED_HEADERS } from '../extension-proxy.js';
-import { AGENT_IDENTITY_HEADER } from '../../../../middleware/agent-identity.js';
+import { AGENT_IDENTITY_HEADER } from '../../../../lib/http/agent-identity-header.js';
 
 // --- Tests ---
 

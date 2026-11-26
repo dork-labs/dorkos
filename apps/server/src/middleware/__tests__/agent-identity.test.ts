@@ -5,7 +5,8 @@ import {
   initAgentIdentityService,
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
-import { resolveAgentIdentityFromHeaders, presentsAgentIdentity } from '../agent-identity.js';
+import { resolveAgentIdentityFromHeaders } from '../agent-identity.js';
+import { presentsAgentIdentity } from '../../lib/http/agent-identity-header.js';
 import type { AgentIdentity } from '../../services/core/agent-identity/agent-identity-service.js';
 import { logger } from '../../lib/logger.js';
 import { requestFactsFor } from '../../http/__tests__/described-request.js';

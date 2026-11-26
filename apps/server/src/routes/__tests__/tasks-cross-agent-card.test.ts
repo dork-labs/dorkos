@@ -22,7 +22,7 @@ import {
   initCapabilityTierGate,
   resetCapabilityTierGate,
 } from '../../services/core/capabilities/index.js';
-import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
+import { AGENT_IDENTITY_HEADER } from '../../lib/http/agent-identity-header.js';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { gateHandRegisteredMcpTools, type SdkMcpTool } from '../../services/core/mcp-tool-gate.js';

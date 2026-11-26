@@ -10,7 +10,7 @@ import type {
   StepUpCommitResult,
 } from '../services/core/auth/step-up/step-up-holds.js';
 import { holdForStepUp } from './step-up-guard.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import {
   raiseAgentCard,
   type AgentRaiseWrite,

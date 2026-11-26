@@ -9,6 +9,20 @@ import turnPort from './eslint-rules/turn-port-boundary.js';
 import computerWall from './eslint-rules/computer-wall.js';
 import importBoundary from './eslint-rules/import-boundary.js';
 
+// Services never import middleware (DOR-4922): a middleware step calls a service,
+// never the reverse. A service that needs a step's function declares the function
+// type it needs, and its composition root passes the step's function in; a pure
+// helper both need lives in `lib/`. The pattern sees the specifier, not the
+// resolved path, so it refuses a climb of two or more `../` into a folder named
+// `middleware`: from `services/<domain>/` that is the top-level `src/middleware/`.
+// It rides `@typescript-eslint/no-restricted-imports`, a rule no other block sets,
+// so the many blocks that restate `no-restricted-imports` need not carry it.
+const MIDDLEWARE_BAN = {
+  regex: '^(?:\\.\\./){2,}middleware(?:/|$)',
+  message:
+    "A service never imports middleware (DOR-4922). Declare the function type it needs and have its composition root pass the step's function in, or move a pure helper to lib/.",
+};
+
 // SDK confinement (Hard Rule #2): each agent SDK is importable only inside its
 // own runtime adapter directory. Flat-config rule entries REPLACE (not merge),
 // so every block below that configures `no-restricted-imports` must restate
@@ -499,6 +513,17 @@ export default defineConfig([
     ignores: ['src/services/session/**/__tests__/**', 'src/services/session/**/*.test.{ts,tsx}'],
     plugins: { 'session-runtimes': sessionRuntimes },
     rules: { 'session-runtimes/no-runtimes': 'error' },
+  },
+
+  // The middleware ban (`MIDDLEWARE_BAN`) for every service. Not `services/spaces/**`: it is
+  // frozen until the Community Space opens (AGENTS.md, "Where the system is going", rule 4).
+  // Tests are exempt: they mount a chain step to drive a service.
+  {
+    files: ['src/services/**/*.{ts,tsx}'],
+    ignores: ['src/services/spaces/**', 'src/**/__tests__/**', 'src/**/*.test.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': ['error', { patterns: [MIDDLEWARE_BAN] }],
+    },
   },
 
   // Every error answer is a problem document (ADR 261123-170831): no hand-built `{ error }`

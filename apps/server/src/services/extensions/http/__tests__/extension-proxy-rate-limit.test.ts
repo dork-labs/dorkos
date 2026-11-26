@@ -5,7 +5,7 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { DataProxyConfig } from '@dorkos/extension-api';
 
 // Login off: the chain's session gate reads the `auth` section.
-vi.mock('../../services/core/config-manager.js', () => ({
+vi.mock('../../../core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
@@ -13,10 +13,10 @@ import {
   buildExtensionProxyRateLimiter,
   EXTENSION_PROXY_RATE_LIMIT_DEFAULT,
 } from '../extension-proxy-rate-limit.js';
-import type { RequestFacts } from '../../http/request-facts.js';
-import { createProxyHandler } from '../../services/extensions/http/extension-proxy.js';
-import { createExtensionApiRoutes } from '../../routes/extension-api.js';
-import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import type { RequestFacts } from '../../../../http/request-facts.js';
+import { createProxyHandler } from '../extension-proxy.js';
+import { createExtensionApiRoutes } from '../../../../routes/extension-api.js';
+import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 
 const fixtureTarget = swappableServer();
 

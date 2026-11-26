@@ -21,7 +21,7 @@ import { honoRequestFacts } from '../../../http/request-facts.js';
 import {
   buildExtensionProxyRateLimiter,
   EXTENSION_PROXY_RATE_LIMITED_BODY,
-} from '../../../middleware/extension-proxy-rate-limit.js';
+} from './extension-proxy-rate-limit.js';
 import type { ExtensionHttpHandler } from './extension-http.js';
 import { OUTBOUND_FORCED } from './reply-headers.js';
 import { isPersonalComputer } from '../../core/server-role/role-checks.js';
@@ -56,8 +56,7 @@ export const STRIPPED_HEADERS: ReadonlySet<string> = new Set([
   'x-dorkos-person',
   // A calling app's token (DOR-3293): the window's proof, never an upstream's.
   'x-dorkos-caller-token',
-  // `AGENT_IDENTITY_HEADER` from `middleware/agent-identity.ts`, spelled out
-  // rather than imported so this file does not pull in the identity service.
+  // `AGENT_IDENTITY_HEADER` from `lib/http/agent-identity-header.ts`, spelled out.
   // A test imports the real constant and asserts it is in this set, so a rename
   // there cannot silently start leaking the token again.
   'x-dorkos-agent',
@@ -369,7 +368,7 @@ export function proxyResponse(answer: ProxyAnswer, extra: Record<string, string>
  * it (any method), and passes every other path on.
  *
  * Each handler has its own per-minute budget
- * (`middleware/extension-proxy-rate-limit.ts`), checked before anything else,
+ * (`extension-proxy-rate-limit.ts`), checked before anything else,
  * so a refusal costs no secret read and no upstream request.
  *
  * @param extensionId - Extension identifier for logging and secret lookup

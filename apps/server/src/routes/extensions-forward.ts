@@ -56,7 +56,7 @@ import {
 } from '@dorkos/extension-api';
 import { getRoomService, type AuthorRecord } from '../services/rooms/index.js';
 import { getDirectChats } from '../services/rooms/direct-chat/index.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';

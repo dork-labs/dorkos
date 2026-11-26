@@ -12,7 +12,7 @@ import type { AccountUsageStore } from '../../services/core/usage/account-usage-
 import { setAccountUsageStore } from '../../services/core/usage/current-usage-store.js';
 import type { RuntimeAccount } from '../../services/core/usage/runtime-accounts.js';
 import { resetAccountProbeState } from '../../services/runtimes/claude-code/accounts/account-probe.js';
-import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
+import { AGENT_IDENTITY_HEADER } from '../../lib/http/agent-identity-header.js';
 
 const server = listeningServer(
   honoGroupListener({ path: '/api/runtimes', routes: createRuntimesRoutes() })

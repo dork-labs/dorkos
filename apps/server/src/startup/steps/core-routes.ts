@@ -79,6 +79,7 @@ import {
   wireSessionRelay,
 } from '../../services/core/session-relay/index.js';
 import { wireConnectorSpending } from '../../services/connectors/spending/spending-port.js';
+import { remoteAccessOn } from '../../middleware/remote-access-switch.js';
 
 /** What {@link mountCoreRoutes} reads from the startup steps before it. */
 export interface MountCoreRoutesInput {
@@ -384,6 +385,7 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     meshCore: () => refs.meshCore,
     origins,
     roomSessionPlace: () => refs.roomSessionPlacePort,
+    remoteAccessOn,
   });
   // Switching Chat from the web off closes a live relay at once.
   watchSessionRelaySwitch();

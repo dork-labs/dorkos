@@ -40,6 +40,7 @@ import {
   initAgentIdentityService,
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
+import { resolveAgentIdentityFromHeaders } from '../../middleware/agent-identity.js';
 
 /** A token shaped like the real thing that resolves to nobody: a revoked agent. */
 const UNVERIFIABLE = 'dork_agent_this-token-resolves-to-nothing';
@@ -104,7 +105,7 @@ describe('the room stream upgrade', () => {
       headers: { host: 'localhost:4242', ...headers },
       socket: { remoteAddress: '127.0.0.1' },
     } as unknown as IncomingMessage;
-    const gate = await authorizeStreamUpgrade(upgrade);
+    const gate = await authorizeStreamUpgrade(upgrade, resolveAgentIdentityFromHeaders);
     if (!gate.ok) throw new Error(`the credential gate refused: ${gate.status}`);
     return roomEventsRoute.authorize({
       url: new URL(`http://localhost${path}`),

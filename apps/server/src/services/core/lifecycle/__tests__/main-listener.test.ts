@@ -18,6 +18,7 @@ import { WorkspaceReconciler } from '../../../workspace/workspace-reconciler.js'
 import { WorkspaceReconcilerLifecycle } from '../../../workspace/workspace-reconciler-lifecycle.js';
 import { WorkspaceService } from '../../../workspace/workspace-service.js';
 import type { WorkspaceStore } from '../../../workspace/workspace-store.js';
+import { upgradeGuards } from '../../../../startup/upgrade-guards.js';
 
 vi.mock('../../config-manager.js', () => ({
   configManager: { get: vi.fn(() => ({ enabled: false })) },
@@ -181,7 +182,8 @@ describe('main listener acquisition under terminal admission', () => {
     attachUpgradeRouter(
       server,
       [{ name: 'probe', pattern: /^\/probe$/, credential: 'bearer-of-id', authorize }],
-      admission
+      admission,
+      upgradeGuards
     );
     // Test-only transport to exercise late attachment; production startMainListener would refuse listen.
     server.listen(0, '127.0.0.1');

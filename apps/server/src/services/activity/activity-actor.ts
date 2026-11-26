@@ -45,7 +45,7 @@
 import path from 'node:path';
 import type { ActorType } from '@dorkos/shared/activity-schemas';
 import type { AgentIdentity } from '../core/agent-identity/agent-identity-service.js';
-import { presentsAgentIdentity } from '../../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../../lib/http/agent-identity-header.js';
 import type { RequestFacts } from '../../http/request-facts.js';
 
 /** What the feed says about a caller DorkOS cannot name. */

@@ -28,6 +28,7 @@ apps/server/src/
 
 - Put it in the existing domain it belongs to: `services/<domain>/<name>.ts`, test in `services/<domain>/__tests__/<name>.test.ts`. No loose files at `services/` root.
 - Create a new domain directory only when the core test passes and a cohesive area emerges (several related services with a clear boundary), never for a single orphan file. Cross-cutting infrastructure (config, registries, stream helpers) lives in `core/`.
+- A middleware step calls a service, never the reverse: lint refuses a service that imports from `middleware/` (`MIDDLEWARE_BAN` in `apps/server/eslint.config.js`, DOR-4922). A pure helper both need (it reads headers or strings, and imports no service, config or Hono context) goes in `lib/`. For anything else, the service declares the narrow function type it needs and its composition root passes the step's function in.
 - Runtime adapters go under `services/runtimes/<runtime>/`; each must pass the shared conformance suite (`runtimeConformance` from `@dorkos/test-utils`) and its SDK import is ESLint-confined to that directory.
 
 ## Naming
@@ -38,4 +39,4 @@ Kebab-case files with noun-style module names: `config-manager.ts`, `event-log.t
 
 Routes stay thin regardless of size: validate input with Zod, call a service, map errors to status codes. Never put business logic or direct data access in a route handler. Validation and error-shape patterns: `.claude/rules/api.md`.
 
-A route imports a service, never the reverse. Lint refuses a service that imports from `routes/` (`ROUTES_BAN` in `apps/server/eslint.config.js`, DOR-4922): a service that needs a route's function declares the narrow function type it needs, and its composition root (the startup or wiring code that builds it) passes the route's function in. Hold the same line by hand for `middleware/`.
+A route imports a service, never the reverse. Lint refuses a service that imports from `routes/` (`ROUTES_BAN` in `apps/server/eslint.config.js`, DOR-4922): a service that needs a route's function declares the narrow function type it needs, and its composition root (the startup or wiring code that builds it) passes the route's function in. `middleware/` has the same rule (`MIDDLEWARE_BAN`, above).
