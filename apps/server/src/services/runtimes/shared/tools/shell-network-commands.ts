@@ -16,8 +16,10 @@
  *   `npm exec`, `bun x`), `pip download`, `pipx run`, `go run module@version`;
  * - an interpreter whose arguments or script hold a web address, or whose script or module flags
  *   (`perl -M`, `ruby -r`) make a common network call;
- * - an `alias` for any of these, or any of these behind a wrapper (`watch`, `busybox`, `xargs`)
- *   or `find -exec`;
+ * - an interpreter whose script names a network program at the start of a string
+ *   (`subprocess.run(["gh", …])`);
+ * - an `alias` for any of these, or any of these behind a wrapper (`watch`, `busybox`, `xargs`),
+ *   a launcher (`uv run`, `pnpm exec`) or `find -exec`;
  * - a redirection to or from `/dev/tcp` or `/dev/udp`, `openssl s_client`, or `osascript` whose
  *   script opens a web address or runs one of these through `do shell script`.
  *
@@ -26,6 +28,7 @@
 import path from 'node:path';
 import { commandOf, scriptTexts, withNested } from '../../claude-code/shell-guard/shell-command.js';
 import { parseShell, type ShellSegment } from '../../claude-code/shell-guard/shell-words.js';
+import { launchedCommand } from './script-launchers.js';
 
 /** Programs whose job is to talk to another computer: any use of one marks. */
 const NETWORK_PROGRAMS: ReadonlySet<string> = new Set([
@@ -60,6 +63,33 @@ const NETWORK_PROGRAMS: ReadonlySet<string> = new Set([
   'yt-dlp',
   'youtube-dl',
 ]);
+
+/** Network programs whose names are also common words in code (`'host'`, `"ftp"`). */
+const COMMON_WORDS: ReadonlySet<string> = new Set([
+  'http',
+  'https',
+  'host',
+  'links',
+  'ftp',
+  'sftp',
+  'tftp',
+]);
+
+/** The network programs whose name in a string reads as running them. */
+const QUOTED_NAMES = [...NETWORK_PROGRAMS]
+  .filter((name) => !COMMON_WORDS.has(name))
+  .map((name) => name.replace(/[.-]/g, '\\$&'))
+  .join('|');
+
+/**
+ * A network program named at the start of a string, as code that runs it spells it: a command
+ * line (`os.system("curl " + u)`, `execSync('gh issue view 1')`), or the first word of an
+ * argument list (`subprocess.run(["gh", …])`, `execFileSync('gh', args)`). A list of names, one
+ * to a line, is not one.
+ */
+export const QUOTED_NETWORK_PROGRAM = new RegExp(
+  `['"\`](?:${QUOTED_NAMES})[ \t]|[(\\[][ \t]*['"\`](?:${QUOTED_NAMES})['"\`][ \t]*,`
+);
 
 /** Programs that fetch a package and run it: any use of one marks. */
 const PACKAGE_RUNNERS: ReadonlySet<string> = new Set(['npx', 'pnpx', 'bunx', 'uvx']);
@@ -206,6 +236,7 @@ function scriptFetches(verb: string, segment: ShellSegment, args: readonly strin
   }
   // PowerShell's script is its arguments; the shell guard's reader does not know it.
   const scripts = POWERSHELLS.has(verb) ? args : scriptTexts(segment);
+  if (scripts.some((text) => QUOTED_NETWORK_PROGRAM.test(text))) return true;
   return [...scripts, ...modules].some((text) => NETWORK_CALL.test(text));
 }
 
@@ -233,6 +264,9 @@ function appleScriptFetches(texts: readonly string[], depth: number): boolean {
 /** Whether any command a wrapper or `find -exec` runs reaches the network. */
 function runsAFetch(verb: string, segment: ShellSegment, args: string[], depth: number): boolean {
   if (WRAPPERS.has(verb) && wrappedFetches(args, segment.scripts, depth)) return true;
+  // `uv run curl …`, `pnpm exec gh …`: the command a launcher starts.
+  const launched = launchedCommand(segment);
+  if (launched && segmentFetches(launched, depth + 1)) return true;
   // `xargs -a urls.txt curl`: the prefix's own flags hide the program from `commandOf`.
   const xargs = segment.words.findIndex((word) => path.basename(word) === 'xargs');
   if (xargs !== -1 && wrappedFetches(segment.words.slice(xargs + 1), [], depth)) return true;

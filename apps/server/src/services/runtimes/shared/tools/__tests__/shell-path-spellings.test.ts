@@ -102,14 +102,17 @@ describe('hidden folders on the way to outside files', () => {
     rmSync(project, { recursive: true, force: true });
   });
 
-  it.each(['grep -rn invoice .', 'grep -R invoice', 'find . -name "*.txt"', 'find -type f'])(
-    '%s enters them, so it marks',
-    (command) => {
-      expect(marks(command, place)).toBe(true);
-    }
-  );
+  it.each([
+    'grep -rn invoice .',
+    'grep -R invoice',
+    'find . -name "*.txt"',
+    'find -type f',
+    'ack invoice',
+  ])('%s enters them, so it marks', (command) => {
+    expect(marks(command, place)).toBe(true);
+  });
 
-  it.each(['rg invoice .', 'ag invoice', 'ack invoice', 'fd invoice', 'grep -rn invoice src'])(
+  it.each(['rg invoice .', 'ag invoice', 'fd invoice', 'grep -rn invoice src'])(
     '%s does not reach the data folder',
     (command) => {
       expect(marks(command, place)).toBe(false);
