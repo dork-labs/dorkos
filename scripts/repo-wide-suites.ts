@@ -47,6 +47,7 @@ export const REPO_WIDE_SUITES = [
   '__tests__/check-test-ratio.test.ts',
   // Reads apps/server/src/services and the turn port's baseline (DOR-5232).
   '__tests__/check-turn-port-boundary.test.ts',
+  '__tests__/check-vocab-gate-voice.test.ts',
   '__tests__/check-vocab-gate.test.ts',
   '__tests__/ci-apt-resilience.test.ts',
   '__tests__/code-only.test.ts',
