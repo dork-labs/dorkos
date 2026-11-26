@@ -734,7 +734,7 @@ See `.claude/commands/system/release.md` Phase 2 for the full flow.
 ### Anti-patterns
 
 - **Editing a migration body that has already merged.** Creates inconsistent state across users — including when no tag carries it yet, because a built CLI or the desktop app runs the version before it is tagged (DOR-1222). Append a new migration instead.
-- **Hardcoding `projectVersion` in the Conf constructor.** It's sourced from `SERVER_VERSION` — never pass a string literal. If the version resolver itself breaks, fix `lib/version.ts`, not `config-manager.ts`.
+- **Hardcoding `projectVersion` in the Conf constructor.** It's sourced from `SERVER_VERSION` — never pass a string literal. Lint refuses one anywhere in server source (`dorkos/restricted-syntax` in `apps/server/eslint.config.js`); tests may state one. If the version resolver itself breaks, fix `lib/version.ts`, not `config-manager.ts`.
 - **Non-idempotent migrations.** Always guard with `store.has()` / `store.get() === oldValue` so re-running the same migration (e.g., after a corrupt-recovery that reset the internal version tracker) is safe.
 - **Adding a required field without a default.** `USER_CONFIG_DEFAULTS = UserConfigSchema.parse({ version: 1 })` runs at import time — a missing required field crashes the server on startup for every new install.
 - **Changing `UserConfigSchema` without updating this doc or `docs/getting-started/configuration.mdx`.** Users read docs to discover what they can configure; leaving them stale is worse than not having them.
