@@ -349,8 +349,8 @@ describe('credential-free-build workflow', () => {
   // browser suite load node-pty the same way, so they carry the same store.
   // test.yml installs in three jobs that key it: community-pg, test-shard and
   // test-binary (DOR-4190).
-  // browser-test.yml installs in four jobs: browser-smoke, browser-shard,
-  // first-run and copy-spec-drift. app-frame-browser.yml and the Windows
+  // browser-test.yml installs in three jobs: browser-smoke, browser-shard and
+  // first-run (copy-spec-drift moved into typecheck, DOR-4937). app-frame-browser.yml and the Windows
   // harness-windows.yml install in one each, and so does every job that used
   // setup-node's `cache: pnpm` on a pull request or merge group until ledger
   // 261117-141554 (evals.yml has two).
@@ -382,7 +382,7 @@ describe('credential-free-build workflow', () => {
     for (const [rel, installs, saveCount] of [
       [WORKFLOW_REL, 1, 1],
       [TEST_WORKFLOW_REL, 3, 3],
-      [BROWSER_WORKFLOW_REL, 4, 4],
+      [BROWSER_WORKFLOW_REL, 3, 3],
       [APP_FRAME_WORKFLOW_REL, 1, 1],
       [HARNESS_WINDOWS_WORKFLOW_REL, 1, 1],
       ['.github/workflows/cli-smoke-test.yml', 1, 1],
