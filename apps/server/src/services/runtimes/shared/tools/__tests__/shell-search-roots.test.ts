@@ -142,6 +142,35 @@ describe('room attachments behind the ignore file written beside them', () => {
     expect(marksIn(ignored(), command)).toBe(true);
   });
 
+  it.each([
+    ['.dork/.temp', 'rg --hidden secret *'],
+    ['.dork/.temp', 'rg --hidden secret ./*'],
+    ['.dork/.temp', 'rg --hidden secret -- *'],
+    ['.', 'rg --hidden secret .dork/.temp/*'],
+    ['.', 'rg --hidden secret .dork/.temp/room-attachment?'],
+  ])('a wildcard in %s that names the folder itself, %s, reaches them', (where, command) => {
+    const agent = ignored();
+    expect(marksIn(path.join(agent, where), command, agent)).toBe(true);
+  });
+
+  it('a wildcard that names a folder above them leaves them to the ignore file', () => {
+    const agent = ignored();
+    expect(marksIn(agent, 'rg --hidden secret .dork/.t*')).toBe(false);
+  });
+
+  it.each([
+    'rg --hidden -g* secret',
+    "rg --hidden -g='*' secret",
+    'rg --hidden -lg* secret',
+    'rg --hidden secret -g',
+  ])('%s, a glob that includes paths or cannot be read, reaches them', (command) => {
+    expect(marksIn(ignored(), command)).toBe(true);
+  });
+
+  it('an attached glob that names a file extension leaves them to the ignore file', () => {
+    expect(marksIn(ignored(), 'rg --hidden -g*.txt secret')).toBe(false);
+  });
+
   it('a ripgrep config named in the environment reaches them unless rg is told to skip it', () => {
     const agent = ignored();
     vi.stubEnv('RIPGREP_CONFIG_PATH', '/made-up/rgrc');
@@ -195,6 +224,14 @@ describe('where a search starts', () => {
     const home = standIn(['Downloads']);
     expect(marksIn(home, command)).toBe(true);
   });
+
+  it.each(['rg -efoo ~', 'rg -lefoo ~', 'rg -fpats ~', 'grep -refoo ~', 'rg -l -e foo ~'])(
+    '%s, with its pattern given by a flag, searches the folder named',
+    (command) => {
+      const home = standIn(['Downloads', 'projects']);
+      expect(marksIn(path.join(home, 'projects'), command)).toBe(true);
+    }
+  );
 
   it.each(['grep -d skip invoice ~', 'grep invoice ~', 'fd -x cat {} invoice'])(
     '%s does not search the tree',

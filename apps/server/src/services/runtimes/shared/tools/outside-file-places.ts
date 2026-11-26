@@ -375,7 +375,11 @@ export function outsideFileTests(
         if (!isBelow(entry.folder, spelled)) return false;
         const below = path.relative(spelled, entry.folder).split(path.sep);
         if (!patternReachesFolder(rest, below, asRoot)) return false;
-        return !asRoot || (shownToSearch(rest, below, walk.skipsHidden) && found(entry, walk));
+        // rg reads a path it is given whatever its ignore files say: they leave out only what it
+        // finds walking below one, so they count only when the folder is below what is named.
+        const walked = !rest.includes('**') && below.length > rest.length;
+        const named = walked ? walk : { ...walk, ignoreFiles: false };
+        return !asRoot || (shownToSearch(rest, below, walk.skipsHidden) && found(entry, named));
       })
     );
   };
