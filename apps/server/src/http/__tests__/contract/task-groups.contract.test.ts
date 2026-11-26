@@ -27,8 +27,6 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, realpathSync, rmSync } from 'node:fs';
-import { createServer, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -48,6 +46,7 @@ import {
   confirmSetupAt,
 } from './harness.js';
 import { problemBody } from '@dorkos/http-kit';
+import { startOllamaStub } from './task-groups.fixtures.js';
 
 /** The repository root: the composed server's directory boundary. */
 const REPO_ROOT = realpathSync(
@@ -71,29 +70,6 @@ afterAll(() => rmSync(PROJECT, { recursive: true, force: true }));
 const NO_OLLAMA = { DORKOS_OLLAMA_URL: 'http://127.0.0.1:9' };
 /** Scripted execution with the declared modes the schedule file can hold. */
 const TASK_SERVER = fileURLToPath(new URL('./fixtures/task-runtime-server.ts', import.meta.url));
-
-/**
- * A stand-in for Ollama's pull endpoint: two progress lines, then the error
- * Ollama gives for a model it cannot find.
- */
-async function startOllamaStub(): Promise<{ url: string; close: () => Promise<void> }> {
-  const stub: Server = createServer((req, res) => {
-    if (req.method !== 'POST' || req.url !== '/api/pull') {
-      res.writeHead(404).end();
-      return;
-    }
-    req.resume();
-    res.writeHead(200, { 'Content-Type': 'application/x-ndjson' });
-    res.write('{"status":"pulling manifest"}\n');
-    res.write('{"status":"downloading","completed":1,"total":2}\n');
-    res.end('{"error":"pull model manifest: file does not exist"}\n');
-  });
-  await new Promise<void>((resolve) => stub.listen(0, '127.0.0.1', resolve));
-  return {
-    url: `http://127.0.0.1:${(stub.address() as AddressInfo).port}`,
-    close: () => new Promise((resolve) => stub.close(() => resolve())),
-  };
-}
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
 const NOT_FOUND = problemBody('not_found', {
@@ -381,7 +357,13 @@ contractSuite(
       expect: {
         status: 400,
         headers: PROBLEM_TYPE,
-        body: problemBody('invalid_request', { detail: 'Unknown runtime "not-a-runtime".' }),
+        // The mount's input check names the field and the runtimes it accepts (DOR-4978).
+        schema: z
+          .object({
+            code: z.literal('invalid_request'),
+            detail: z.string().startsWith('`runtime`: Invalid option'),
+          })
+          .loose(),
       },
     },
     {
@@ -1301,9 +1283,15 @@ describe('contract: the same groups with login on', () => {
       body: { inference: LOCAL_INFERENCE, secret: 'sk-contract' },
       expect: { status: 403, body: DOE_NOT_A_PERSON },
     });
+    // The model setup read is the person's own (DOR-4978): a key is not a person.
     await check(server, {
       path: '/api/runtimes/doe/inference',
       headers: apiKey,
+      expect: { status: 403, schema: PERSON_ONLY_HERE },
+    });
+    await check(server, {
+      path: '/api/runtimes/doe/inference',
+      headers: cookie,
       expect: { status: 200, body: { inference: null, hasKey: false, autoProtocol: null } },
     });
     await check(server, {

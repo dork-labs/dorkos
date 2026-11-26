@@ -1,18 +1,19 @@
 /**
- * Pins the split in `scripts/vitest.repo.config.ts` (ledger 261112-185148).
+ * Pins the split in `scripts/repo-wide-suites.ts` (ledger 261112-185148).
  *
  * The repo-wide suites run in the merge queue through `typecheck.yml`; the
  * rest run only in `scripts-test / harness`, which the queue skips. A suite
  * that is on neither list runs in no queue build, and a repo-wide guard left
  * off the first list is exactly the hole this split closes. So every test file
- * in the `scripts` project must be on exactly one list, and the queue config
- * must collect exactly the repo-wide one.
+ * in the `scripts` project must be on exactly one list, and the queue's
+ * `scripts-repo` project must collect exactly the repo-wide one.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
-import repoConfig, { HERMETIC_SUITES, REPO_WIDE_SUITES } from '../vitest.repo.config.ts';
+import { HERMETIC_SUITES, REPO_WIDE_SUITES } from '../repo-wide-suites.ts';
+import scriptsConfig from '../vitest.config.ts';
 
 const SCRIPTS = path.resolve(import.meta.dirname, '..');
 
@@ -48,7 +49,7 @@ describe('the scripts suites split between the queue and harness', () => {
 
     expect(
       unlisted,
-      'Add each new suite to REPO_WIDE_SUITES in scripts/vitest.repo.config.ts if any ' +
+      'Add each new suite to REPO_WIDE_SUITES in scripts/repo-wide-suites.ts if any ' +
         'test in it reads a file outside scripts/ (or runs git ls-files), else to ' +
         'HERMETIC_SUITES. When unsure, it is repo-wide.'
     ).toEqual([]);
@@ -66,8 +67,11 @@ describe('the scripts suites split between the queue and harness', () => {
     expect(repoWide).toContain('__tests__/repo-wide-suites.test.ts');
   });
 
-  it('has the queue config collect the repo-wide list and nothing else', () => {
-    expect(repoConfig.test?.include).toEqual(repoWide);
+  it('has the scripts-repo project collect the repo-wide list and nothing else', () => {
+    const inline = (scriptsConfig.test?.projects ?? []).flatMap((project) =>
+      typeof project === 'object' && 'test' in project ? [project.test] : []
+    );
+    expect(inline.find((test) => test?.name === 'scripts-repo')?.include).toEqual(repoWide);
   });
 
   it('is run by the required typecheck workflow on every event', () => {
@@ -77,6 +81,8 @@ describe('the scripts suites split between the queue and harness', () => {
       'utf8'
     );
 
-    expect(workflow).toContain('vitest run --config scripts/vitest.repo.config.ts');
+    expect(workflow).toContain(
+      'vitest run --config scripts/vitest.config.ts --project scripts-repo'
+    );
   });
 });

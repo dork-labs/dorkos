@@ -20,8 +20,6 @@ import { provisionClaudeCode } from '../services/runtimes/claude-code/tooling/pr
 import {
   storeRuntimeCredential,
   storeProviderCredential,
-  readOpenCodeDirectSetup,
-  readRuntimeKeyStatus,
   checkProviderCredential,
   checkRuntimeCredential,
 } from '../services/runtimes/connect/credentials.js';
@@ -45,21 +43,13 @@ import {
   assessOllamaModels,
   DEFAULT_OLLAMA_MODEL_ID,
 } from '../services/runtimes/opencode/providers/ollama-catalog.js';
-import {
-  DismissFoundFolderRequestSchema,
-  LEDGER_RUNTIMES,
-  type LedgerRuntime,
-} from '@dorkos/shared/account-usage';
-import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
+import { DismissFoundFolderRequestSchema } from '@dorkos/shared/account-usage';
 import {
   AccountUsageUnavailableError,
   probeAccount,
   UnknownAccountError,
 } from '../services/runtimes/claude-code/accounts/account-probe.js';
-import {
-  findUnregisteredClaudeFolders,
-  planDismissFoundFolder,
-} from '../services/runtimes/claude-code/accounts/found-claude-folders.js';
+import { planDismissFoundFolder } from '../services/runtimes/claude-code/accounts/found-claude-folders.js';
 import { configManager } from '../services/core/config-manager.js';
 import { logConfigWrite } from '../services/core/operator/config-write.js';
 import { logger } from '../lib/logger.js';
@@ -387,26 +377,6 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
   });
 
   /**
-   * GET /api/runtimes/opencode/provider — what the "your own key" form should show
-   * when it is reopened: the saved service, its base URL, and whether a key is
-   * already saved (last FOUR characters only, never more). Loopback-only.
-   *
-   * Reopening that form used to show three empty fields, which reads as "nothing
-   * is saved" even when something was (DOR-2123, report FB-48).
-   */
-  router.get('/opencode/provider', async (c) => {
-    const refused = refuseNonLoopback(c);
-    if (refused) return refused;
-    try {
-      return c.json(await readOpenCodeDirectSetup());
-    } catch {
-      // Never surface a store/config failure's detail — it can carry a path.
-      logger.error('[Runtimes] Reading the saved key setup failed unexpectedly');
-      return problem(c, 'internal_error', { detail: 'Could not read your saved settings.' });
-    }
-  });
-
-  /**
    * POST /api/runtimes/opencode/provider/credential/check — try a key against the
    * service it belongs to and save NOTHING. Backs the Test button, and runs the
    * same check a save runs. An omitted `secret` tries the key already saved for
@@ -483,27 +453,8 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
   router.route('/doe', createDoeSetupRoutes());
 
   // --- Generic per-runtime connect (Claude, Codex) ---------------------------
-
-  /**
-   * GET /api/runtimes/:runtime/accounts/usage — how much of each of this
-   * runtime's accounts is used, from the usage store's memory (spec
-   * `claude-account-fleet` D2). Registered accounts in registry order, the
-   * machine-wide `default` when it stands alone, then folders that are neither.
-   * Any runtime slug that keeps a ledger; anything else is a 400.
-   */
-  router.get('/:runtime/accounts/usage', (c) => {
-    const runtime = c.req.param('runtime');
-    if (!(LEDGER_RUNTIMES as readonly string[]).includes(runtime)) {
-      return problem(c, 'invalid_request', { detail: `Unknown runtime "${runtime}".` });
-    }
-    const store = getAccountUsageStore();
-    if (!store) {
-      return problem(c, 'temporarily_unavailable', {
-        detail: 'Account usage is not available yet.',
-      });
-    }
-    return c.json({ accounts: store.list(runtime as LedgerRuntime) });
-  });
+  // The reads (account usage, found folders, a key's status) are capabilities the
+  // mount serves (`services/core/runtime-doors`, DOR-4978).
 
   /**
    * POST /api/runtimes/claude-code/accounts/:id/probe — read an idle Claude
@@ -536,29 +487,6 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
         return problem(c, 'temporarily_unavailable', { detail: err.message });
       }
       throw err;
-    }
-  });
-
-  /**
-   * GET /api/runtimes/claude-code/accounts/found — the Claude account folders on
-   * this computer that are not registered, not the machine default and not
-   * dismissed (spec `claude-account-ui` §7.4). Read-only: it stats folders and
-   * never opens a file.
-   *
-   * Readable by any caller the API already lets in, with no operator bar: the
-   * answer is folder paths under the home folder, the same class of fact
-   * `GET /api/config` and the agent-facing config snapshot already disclose
-   * (`runtimes.claudeCode.accounts[].path`, `dismissedFolders`).
-   */
-  router.get('/claude-code/accounts/found', (c) => {
-    try {
-      const folders = findUnregisteredClaudeFolders({ runtimes: configManager.get('runtimes') });
-      return c.json({ folders });
-    } catch (err) {
-      logger.error('[Runtimes] Could not look for Claude account folders', { err: String(err) });
-      return problem(c, 'internal_error', {
-        detail: 'Could not look for Claude account folders.',
-      });
     }
   });
 
@@ -616,23 +544,6 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
     } catch (err) {
       logger.error('[Runtimes] Could not hide a Claude account folder', { err: String(err) });
       return problem(c, 'internal_error', { detail: 'Could not hide that folder. Try again.' });
-    }
-  });
-
-  /**
-   * GET /api/runtimes/:type/credential — whether this runtime's own key is already
-   * saved, and its last FOUR characters when it is. Never more of the key than
-   * that. Loopback-only.
-   */
-  router.get('/:type/credential', async (c) => {
-    const refused = refuseNonLoopback(c);
-    if (refused) return refused;
-    try {
-      return c.json(await readRuntimeKeyStatus(c.req.param('type')));
-    } catch (err) {
-      if (err instanceof ConnectError) return connectErrorProblem(c, err);
-      logger.error('[Runtimes] Reading the saved key status failed unexpectedly');
-      return problem(c, 'internal_error', { detail: 'Could not read your saved key.' });
     }
   });
 

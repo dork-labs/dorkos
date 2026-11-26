@@ -120,6 +120,10 @@ export function conformanceSampleInputs(
     'heartbeat.end_beat': { summary: 'A conformance beat.' },
     // A valid answer; the person-only door refuses the anonymous call before it runs.
     'heartbeat.choose_triage_credits': { useCredits: false },
+    // The runtime setup reads, each with its required field; the person-only door refuses
+    // the anonymous call before it runs.
+    'runtimes.account_usage': { runtime: 'claude-code' },
+    'runtimes.key_status': { type: 'claude-code' },
     // One agent's reads and a persona move on `/api/agents/*` (DOR-4978). The person-only
     // ones refuse the anonymous call before they run; the permission reads answer that
     // DorkOS is still starting (no reader set).

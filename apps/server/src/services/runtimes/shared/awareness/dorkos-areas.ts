@@ -243,6 +243,14 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       'instructions.',
       'capabilities.list',
       'operator.feedback_draft',
+      // The app's runtime setup reads (DOR-4978) ride here with no words of their own: each is
+      // person-only, so no agent can call one.
+      'runtimes.account_usage',
+      'runtimes.found_accounts',
+      'runtimes.account_eligibility',
+      'runtimes.key_status',
+      'runtimes.opencode_key_setup',
+      'runtimes.doe_model_setup',
     ],
     areas: ['settings', 'permissions'],
   },

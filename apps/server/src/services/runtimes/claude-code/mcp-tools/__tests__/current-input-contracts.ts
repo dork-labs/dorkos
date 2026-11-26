@@ -67,9 +67,10 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
         // +4 total for one agent's heartbeat page, permissions and level, and a persona move on
         // `/api/agents/*` (no MCP surface, DOR-4978).
         // +8 total for the marketplace's reads on `/api/marketplace/*` (no MCP surface, DOR-4978).
+        // +6 total for the app's runtime setup reads (person-only, no MCP surface, DOR-4978).
         // +4 total/relevant/ordinary/inSession/external for the work graph's reads (DOR-4970);
         // +4 defaultNodes/topDefaultFields/topDefaultCapabilities for their page sizes.
-        total: 196,
+        total: 202,
         relevant: 136,
         ordinary: 124,
         inSession: 123,
