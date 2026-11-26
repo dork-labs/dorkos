@@ -92,6 +92,10 @@ const ROUTE_BARS: Record<string, readonly string[]> = {
     'frontDoorOwner',
   ],
   'routes/capability-dispatch.ts': ['frontDoorRefusal(facts)'],
+  // A person's Heartbeat page and persona move are person-only capabilities (DOR-4978); the
+  // page shows held words only to the owner, a request fact the dispatcher works out.
+  'services/heartbeats/measures/page-capability.ts': ["audience: 'person'", 'accountOwner'],
+  'services/mesh/doors/agent-persona-capability.ts': ["audience: 'person'"],
   'startup/steps/core-routes.ts': ['loginEnabled: personSessionRequired'],
 };
 
