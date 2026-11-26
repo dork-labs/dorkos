@@ -388,6 +388,20 @@ export function presentsProgramCredential(facts: Pick<RequestFacts, 'headers'>):
 }
 
 /**
+ * Whether a program or an agent made this request: an agent token, an
+ * approval token or a {@link PROGRAM_CREDENTIAL_HEADERS} key. Never the app.
+ *
+ * @param facts - The request's headers and resolved agent.
+ */
+export function presentsProgram(facts: Pick<RequestFacts, 'headers' | 'agentIdentity'>): boolean {
+  return (
+    presentsAgentIdentity(facts) ||
+    facts.headers[APPROVAL_TOKEN_HEADER] !== undefined ||
+    presentsProgramCredential(facts)
+  );
+}
+
+/**
  * The strictest person bar: the owner, using the app, at this computer or on
  * an encrypted connection. For the switches that decide how this computer is
  * reached and who may sign in (the front door, the session relay's link,

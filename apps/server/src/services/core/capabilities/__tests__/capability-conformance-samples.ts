@@ -142,6 +142,15 @@ export function conformanceSampleInputs(
     'permissions.view_agent_level': { id: 'conformance-agent' },
     // Valid input; each person-only door refuses the anonymous call before it runs.
     'mcp.check_global_args': { args: ['--verbose'] },
+    'mcp.add_global_server': {
+      name: 'conformance-srv',
+      connection: { transport: 'stdio', command: 'npx', args: ['-y', 'conformance-mcp@1.0.0'] },
+    },
+    'mcp.replace_global_server': {
+      server: 'conformance-srv',
+      name: 'conformance-srv',
+      connection: { transport: 'stdio', command: 'npx', args: ['-y', 'conformance-mcp@1.0.0'] },
+    },
     'mcp.remove_global_server': { name: 'conformance-srv' },
     'mcp.check_global_tools': { name: 'conformance-srv' },
     'mcp.undo_global_allow': {

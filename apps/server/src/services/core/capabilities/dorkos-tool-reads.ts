@@ -219,6 +219,8 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   // A person's MCP servers for every agent: agents are refused, and all but the tool check
   // return what the person typed or the team's own settings.
   'mcp.check_global_args': 'local',
+  'mcp.add_global_server': 'local',
+  'mcp.replace_global_server': 'local',
   'mcp.remove_global_server': 'local',
   'mcp.undo_global_allow': 'local',
   'rooms.post': 'local',

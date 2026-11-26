@@ -76,6 +76,8 @@ const PASSWORD = 'correct horse battery';
 const OWNER: RequestUser = { userId: 'owner', credential: 'cookie', sessionId: 'sess-a' };
 const SECRET = 'ghp_made_up_secret_value';
 const ARG_SECRET = 'made-up-arg-secret';
+const NOT_PINNED = 'Not pinned to a version. What runs can change later.';
+const LOADS = 'One of its settings changes what the program loads. Check it’s yours.';
 
 const stepUpDeps: StepUpRouteDeps = {
   ownerId: () => (state.owner ? 'owner' : null),
@@ -493,9 +495,8 @@ describe('secrets', () => {
     const view = await sheet(id);
     expect(JSON.stringify(view)).not.toContain(SECRET);
     expect(JSON.stringify(view)).not.toContain(ARG_SECRET);
-    expect(view.reason).toBe('Add remote (https://mcp.example.test) for all your agents.');
-    expect(view.notes).toContain('Hidden values: Authorization');
-    expect(view.notes.join()).not.toContain('Headers:');
+    expect(view.reason).toBe('Add remote for all your agents.');
+    expect(view.notes).toEqual(['Server: remote']);
   });
 
   it('the hash binds what runs, not a secret: a resend with a new secret replaces the hold', async () => {
@@ -523,9 +524,8 @@ describe('what the sheet says', () => {
       'Add github (@modelcontextprotocol/server-github) for all your agents.'
     );
     expect(view.notes).toEqual([
-      'Runs: npx -y @modelcontextprotocol/server-github',
-      'Settings: LOG_LEVEL',
-      'Hidden values: GITHUB_TOKEN',
+      'Server: github',
+      'Package: @modelcontextprotocol/server-github',
       'Not pinned to a version. What runs can change later.',
     ]);
   });
@@ -552,8 +552,8 @@ describe('what the sheet says', () => {
         })
       )
     );
-    expect(view.reason).toBe('Add github (npx) for all your agents.');
-    expect(view.notes[0]).toBe('Runs: npx --package=made-up-other trusted-name');
+    expect(view.reason).toBe('Add github for all your agents.');
+    expect(view.notes).toEqual(['Server: github', NOT_PINNED]);
   });
 
   it('flags a secret header going over plain http to another computer', async () => {
@@ -562,7 +562,7 @@ describe('what the sheet says', () => {
       enabled: true,
       connection: { transport: 'http', url, headers: { Authorization: SECRET } },
     });
-    const line = 'This address isn’t encrypted, so Authorization travels in the clear.';
+    const line = 'This address isn’t encrypted, so its secret values travel in the clear.';
     expect((await sheet(heldId(await post(remote('http://mcp.example.test'))))).notes).toContain(
       line
     );
@@ -586,8 +586,8 @@ describe('what the sheet says', () => {
       )
     );
     expect(view.reason).toContain('for all your agents except 2.');
-    expect(view.notes).toContain("NODE_OPTIONS changes what the program loads. Check it's yours.");
-    expect(JSON.stringify(view)).not.toContain('--inspect');
+    expect(view.notes).toContain(LOADS);
+    expect(JSON.stringify(view)).not.toMatch(/--inspect|NODE_OPTIONS/);
   });
 
   it('marks the lines to look at twice, each still in its place among the notes', async () => {
@@ -599,9 +599,7 @@ describe('what the sheet says', () => {
         })
       )
     );
-    expect(flagged.warnings).toEqual([
-      "NODE_OPTIONS changes what the program loads. Check it's yours.",
-    ]);
+    expect(flagged.warnings).toEqual([LOADS]);
     expect(flagged.notes).toEqual(expect.arrayContaining(flagged.warnings!));
     const quiet = await sheet(heldId(await post()));
     expect(quiet.warnings).toBeUndefined();
@@ -619,67 +617,45 @@ describe('what the sheet says', () => {
       )
     );
     expect(plainHttp.warnings).toEqual([
-      'This address isn’t encrypted, so Authorization travels in the clear.',
+      'This address isn’t encrypted, so its secret values travel in the clear.',
     ]);
   });
 
-  it('says how many names a long list left out, and never cuts one off unsaid', async () => {
-    const env = Object.fromEntries(
-      Array.from({ length: 60 }, (_, index) => [`SETTING_NUMBER_${index}`, 'x'])
-    );
-    const view = await sheet(
-      heldId(await post({ ...SERVER, connection: { ...SERVER.connection, env } }))
-    );
-    const line = view.notes.find((note: string) => note.startsWith('Settings: '))!;
-    const more = Number(/ and (\d+) more$/.exec(line)![1]);
-    const listed = line
-      .replace(/^Settings: /, '')
-      .replace(/ and \d+ more$/, '')
-      .split(', ');
-    expect(listed.length + more).toBe(60);
-    expect(listed.at(-1)).toBe(`SETTING_NUMBER_${listed.length - 1}`);
-  });
-
-  it('names every setting and header once, under one heading or the other', async () => {
+  // Security t1j (DOR-4978): only the server's name and the runner's package, nothing else it was sent.
+  it('names no command, argument, setting, header or address', async () => {
     const stdio = await sheet(
       heldId(
         await post({
           ...SERVER,
-          secretNames: ['MADE_UP_MARKED'],
           connection: {
             ...SERVER.connection,
-            env: { GITHUB_TOKEN: SECRET, MADE_UP_MARKED: 'x', LOG_LEVEL: 'info', REGION: 'eu' },
+            args: ['-y', '@made-up/pkg@1.0.0', '--made-up-flag', 'made-up-arg'],
+            env: { MADE_UP_SETTING: 'made-up-plain', GITHUB_TOKEN: SECRET },
           },
         })
       )
     );
-    expect(stdio.notes).toContain('Settings: LOG_LEVEL, REGION');
-    expect(stdio.notes).toContain('Hidden values: GITHUB_TOKEN, MADE_UP_MARKED');
-    const mixed = await sheet(
+    expect(stdio.notes).toEqual(['Server: github', 'Package: @made-up/pkg@1.0.0']);
+    const remote = await sheet(
       heldId(
         await post({
           name: 'remote',
           enabled: true,
           connection: {
             transport: 'http',
-            url: 'https://mcp.example.test',
-            headers: { Authorization: SECRET, 'X-Region': 'eu' },
+            url: 'https://mcp.example.test/made-up-path',
+            headers: { 'X-Made-Up': 'made-up-header' },
           },
         })
       )
     );
-    expect(mixed.notes).toContain('Headers: X-Region');
-    expect(mixed.notes).toContain('Hidden values: Authorization');
-    const onlyPlain = await sheet(
-      heldId(
-        await post({
-          ...SERVER,
-          connection: { ...SERVER.connection, env: { REGION: 'eu' } },
-        })
-      )
-    );
-    expect(onlyPlain.notes).toContain('Settings: REGION');
-    expect(onlyPlain.notes.join()).not.toContain('Hidden values');
+    const said = JSON.stringify([stdio, remote]);
+    for (const word of ['npx', 'made-up-flag', 'made-up-arg', 'MADE_UP_SETTING', 'made-up-plain']) {
+      expect(said).not.toContain(word);
+    }
+    for (const word of ['mcp.example.test', 'made-up-path', 'X-Made-Up', 'made-up-header']) {
+      expect(said).not.toContain(word);
+    }
   });
 });
 
@@ -724,7 +700,7 @@ describe('replacing a server', () => {
     const id = heldId(res);
     const view = await sheet(id);
     expect(view.reason).toContain('Change github');
-    expect(view.notes).toContain('New values for: GITHUB_TOKEN');
+    expect(view.notes).toContain('Its hidden values were typed again.');
     expect((await confirm(id)).body).toMatchObject({ ok: true, status: 200 });
     expect(store.injectableFor('agent-a').github).toMatchObject({
       env: { GITHUB_TOKEN: 'typed-again' },

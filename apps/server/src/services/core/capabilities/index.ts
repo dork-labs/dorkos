@@ -29,7 +29,9 @@ export {
   ConfirmFirstRequired,
   personConfirmed,
   type CapabilityConfirmFirst,
+  type ConfirmFirstBar,
   type ConfirmFirstOwnerWording,
+  type ConfirmFirstSheet,
 } from './declarations/confirm-first.js';
 export {
   isPersonCaller,
