@@ -5,7 +5,7 @@ kind: hygiene
 status: proposed
 actor: agent
 gates:
-  - lefthook.pre-push.max-lines
+  - lefthook.pre-push.ratchets
 prs: []
 ratchet-release: []
 field-changes: []

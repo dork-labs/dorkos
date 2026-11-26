@@ -24,7 +24,7 @@ import {
   diskEvidence,
 } from '../../services/rooms/manage/departed-agents.js';
 import { logger, logError } from '../../lib/logger.js';
-import { wireLiveChangeBroadcasts } from '../../services/core/streams/live-change-broadcasts.js';
+import { wireLiveChangeBroadcasts } from '../../services/core/streams/screen/live-change-broadcasts.js';
 import {
   getRemoteConnectionStore,
   isConnectionVisible,

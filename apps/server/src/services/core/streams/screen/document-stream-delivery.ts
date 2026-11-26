@@ -1,9 +1,9 @@
 /** Document frames have their own cursor and share the existing stream's serialized sink. */
 import type { CanvasChannelNotification } from '@dorkos/shared/canvas-channel-schemas';
 import type { StreamFrame } from '@dorkos/shared/stream-socket';
-import type { DocScopeNotifications } from '../../canvas/doc-channel/streams/registry.js';
-import type { DurableStreamSink } from './durable-stream-sink.js';
-import { logger } from '../../../lib/logger.js';
+import type { DocScopeNotifications } from '../../../canvas/doc-channel/streams/registry.js';
+import type { DurableStreamSink } from '../durable-stream-sink.js';
+import { logger } from '../../../../lib/logger.js';
 /** Document authority is refreshed after queued ordinary frames finish, before any wire effect. */
 export interface SerializedStreamSink extends DurableStreamSink {
   sendCurrent(frame: StreamFrame, prepare: () => StreamFrame): Promise<void>;

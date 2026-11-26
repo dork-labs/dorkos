@@ -11,10 +11,11 @@
  * owner at this computer (the front-door bar, read from `context.request`),
  * because a global server runs in every agent's session.
  *
+ * Adding and replacing a server are confirm-first capabilities behind the
+ * front-door bar (`global-mcp-write-capabilities.ts`), served on the same domain.
  * The rest stay hand routes for now (`routes/mcp-servers.ts`): the two lists
- * until they page by cursor, and adding, replacing and widening a server
- * because they wait on "Confirm it's you" with a sheet built from the server's
- * own state, which the capability confirm-first hold can't express yet.
+ * until they page by cursor, and widening a server, whose hold its store
+ * raises inside its write queue.
  *
  * Secret values never come back out: every server answer is a view that
  * carries a secret's name and nothing else.
@@ -50,18 +51,18 @@ import {
   standingAllowBreadth,
   type StandingAllowAgent,
 } from './global-mcp-standing-allows.js';
-import { GlobalMcpStoreError, type GlobalMcpStore } from './global-mcp-store.js';
+import type { GlobalMcpStore } from './global-mcp-store.js';
+import { globalMcpDepsOf, globalMcpStoreRefusal } from './global-mcp-capability-support.js';
 import {
   checkServerTools,
   type GlobalMcpToolLedger,
   type ServerToolsCheck,
 } from './global-mcp-tools.js';
+import { GLOBAL_MCP_FRONT_DOOR, GLOBAL_MCP_UNDO, NO_SUCH_SERVER } from './global-mcp-refusals.js';
 import {
-  GLOBAL_MCP_FRONT_DOOR,
-  GLOBAL_MCP_TOOL_REFUSALS,
-  GLOBAL_MCP_UNDO,
-  NO_SUCH_SERVER,
-} from './global-mcp-refusals.js';
+  addGlobalServerCapability,
+  replaceGlobalServerCapability,
+} from './global-mcp-write-capabilities.js';
 
 /** What the person's MCP server doors read. */
 export interface GlobalMcpPersonDeps {
@@ -90,12 +91,6 @@ declare module '../../core/capabilities/capability-definition.js' {
 /** The most Inbox lines one check says; the sheet lists the rest as new. */
 export const MAX_TOOL_NOTICES_PER_CHECK = 3;
 
-/** The deps, or a fault: the domain is composed only with them. */
-function depsOf(deps: CapabilityDeps): GlobalMcpPersonDeps {
-  if (!deps.globalMcpPersonDeps) throw new Error('MCP servers for every agent are unavailable.');
-  return deps.globalMcpPersonDeps;
-}
-
 /**
  * Refuse anyone but the owner at this computer, in the front-door bar's words.
  * The person bar itself is the mount's (`audience: 'person'`).
@@ -114,30 +109,6 @@ function assertFrontDoor(context: CapabilityHandlerContext): void {
 /** A server name that names nothing. */
 function noSuchServer(): CapabilityToolError {
   return new CapabilityToolError({ code: 'GLOBAL_MCP_NOT_FOUND', error: NO_SUCH_SERVER });
-}
-
-/** The tool code each store refusal a removal can meet answers with. */
-const STORE_REFUSAL: Partial<Record<GlobalMcpStoreError['code'], string>> = {
-  not_found: 'GLOBAL_MCP_NOT_FOUND',
-  unreadable: 'GLOBAL_MCP_UNREADABLE',
-  changed: 'GLOBAL_MCP_CHANGED',
-  secret_left: 'GLOBAL_MCP_SECRET_LEFT',
-};
-
-/**
- * A store refusal as a tool refusal carrying its code's fixed sentence. The
- * store's own message can name a file it read, so it goes to the debug log
- * only, never into the error, which the audit observer records.
- */
-function storeRefusal(err: unknown): never {
-  const code = err instanceof GlobalMcpStoreError ? STORE_REFUSAL[err.code] : undefined;
-  const refusal = code ? GLOBAL_MCP_TOOL_REFUSALS[code] : undefined;
-  if (!code || !refusal) throw err;
-  logger.debug('[mcp-servers] store refused', {
-    code: (err as GlobalMcpStoreError).code,
-    error: (err as Error).message,
-  });
-  throw new CapabilityToolError({ code, error: refusal.detail });
 }
 
 /** One Inbox line per added tool; the dedupe key makes each one say it once. */
@@ -192,9 +163,9 @@ export const removeGlobalServerCapability = defineCapability({
   invoke: async (deps, { name }, context) => {
     assertFrontDoor(context);
     try {
-      await depsOf(deps).store.remove(name);
+      await globalMcpDepsOf(deps).store.remove(name);
     } catch (err) {
-      storeRefusal(err);
+      globalMcpStoreRefusal(err);
     }
     logger.info('[mcp-servers] removed a server for every agent', { name });
   },
@@ -216,7 +187,7 @@ export const checkGlobalToolsCapability = defineCapability({
     http: { method: 'post', path: '/api/mcp-servers/{name}/tools', audience: 'person' },
   },
   invoke: async (deps, { name }) => {
-    const mcp = depsOf(deps);
+    const mcp = globalMcpDepsOf(deps);
     if (!mcp.store.has(name)) throw noSuchServer();
     const check = mcp.check ?? checkServerTools;
     const checked: ServerToolsCheck = await check(
@@ -270,7 +241,7 @@ export const undoGlobalAllowCapability = defineCapability({
   },
   invoke: async (deps, { name, agentId, rule }, context) => {
     assertFrontDoor(context);
-    const mcp = depsOf(deps);
+    const mcp = globalMcpDepsOf(deps);
     if (!mcp.store.has(name)) throw noSuchServer();
     const names = mcp.store.list().map((server) => server.name);
     if (!UNDOABLE_RULE.test(rule) || standingAllowBreadth(rule, name, names) === null) {
@@ -371,9 +342,11 @@ export function globalMcpPersonDepsFor(
 /** The person's MCP server doors; on every server that keeps MCP servers for every agent. */
 export const globalMcpPersonDomain: CapabilityDomain = {
   name: 'mcp',
-  assertDeps: depsOf,
+  assertDeps: globalMcpDepsOf,
   capabilities: [
     checkGlobalArgsCapability,
+    addGlobalServerCapability,
+    replaceGlobalServerCapability,
     removeGlobalServerCapability,
     checkGlobalToolsCapability,
     undoGlobalAllowCapability,

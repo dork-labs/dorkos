@@ -163,9 +163,9 @@ pre-commit:
       fail_text: 'Lint failed — see the errors above, or turbo could not resolve the diff base / is not installed.'
 
 pre-push:
-  # Push checks formatting, fragments, file size, copy a browser spec quotes and
-  # pipeline ledger coverage, and refuses a push that would cancel CI still
-  # running from the last one.
+  # Push checks formatting, fragments, the ratchets (`pnpm ratchet`), copy a
+  # browser spec quotes and pipeline ledger coverage, and refuses a push that
+  # would cancel CI still running from the last one.
   # No tests or typecheck run here (DOR-2160; ledger 261101-191731).
   #
   # THE TEST GATE IS GONE. It ran `turbo test --affected` here for months, and
@@ -239,41 +239,22 @@ pre-push:
         [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push fragments
         bash scripts/pre-push-fragment-check.sh
       fail_text: 'Changelog fragment check failed — rewrite or delete the fragment named above, commit, and push again.'
-    max-lines:
-      # The branch point, as ledger-coverage below uses: a baseline main lowered
-      # after this branch was cut is not this branch raising it (DOR-3643).
+    ratchets:
+      # Every ratchet marked `prePush` in scripts/ratchets/registry.ts (DOR-4948): the
+      # file-size, own-module mock, test budget, turn port, computer wall and
+      # import boundary ratchets, which were six commands here until then. One
+      # command, `pnpm ratchet`, runs each one's own script at once, as lefthook
+      # ran the six, and prints a line per ratchet. All compare with the branch
+      # point, as ledger-coverage below does: a baseline main lowered after this
+      # branch was cut is not this branch raising it (DOR-3643). Pure file
+      # reads, about 17 s, bound by max-lines, as the six were in parallel.
+      # design-tokens and api-lint stay CI-only (the registry says why), and
+      # knip, which needs a build, runs only in CI and by hand.
       run: |
-        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push max-lines
-        max_lines_base=$(git merge-base origin/main HEAD) || exit 1
-        pnpm check:max-lines -- --base "$max_lines_base"
-      fail_text: File-size ratchet failed — fix the files listed above.
-    own-mocks:
-      # The own-module mock ratchet (DOR-4190), on the same branch point as
-      # max-lines above. Pure file reads, well under a second.
-      run: |
-        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push own-mocks
-        own_mocks_base=$(git merge-base origin/main HEAD) || exit 1
-        pnpm check:own-mocks -- --base "$own_mocks_base"
-      fail_text: Own-module mock ratchet failed — fix the packages listed above.
-    turn-port:
-      # The turn port's ratchet (DOR-5232), on the same branch point as
-      # max-lines above. The lint rule holds each file to its entry; this
-      # refuses an entry raised or added by hand. Pure file reads, under a second.
-      run: |
-        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push turn-port
-        turn_port_base=$(git merge-base origin/main HEAD) || exit 1
-        pnpm check:turn-port -- --base "$turn_port_base"
-      fail_text: Turn port ratchet failed — fix the files listed above.
-    computer-wall:
-      # The computer wall (DOR-5158), on the same branch point as max-lines
-      # above. The lint rule holds each computer-side file to its entry; this
-      # refuses an entry raised or added by hand and a side map that places a
-      # path twice or names one that is gone. Pure file reads, under a second.
-      run: |
-        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push computer-wall
-        computer_wall_base=$(git merge-base origin/main HEAD) || exit 1
-        pnpm check:computer-wall -- --base "$computer_wall_base"
-      fail_text: Computer wall failed — fix the files listed above.
+        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push ratchets
+        ratchet_base=$(git merge-base origin/main HEAD) || exit 1
+        pnpm ratchet --pre-push --base "$ratchet_base"
+      fail_text: A ratchet failed — fix what the lines above name; `pnpm ratchet --help` says how.
     copy-spec-drift:
       # Copy a browser spec still quotes (DOR-4937), on the same branch point
       # as max-lines above. The specs run only in the merge queue, so a copy
@@ -285,24 +266,6 @@ pre-push:
         copy_spec_base=$(git merge-base origin/main HEAD) || exit 1
         pnpm check:copy-spec-drift "$copy_spec_base"
       fail_text: Copy-spec drift — update the browser specs listed above to the new copy.
-    import-boundary:
-      # The services import boundary (DOR-4924), on the same branch point as
-      # max-lines above. The lint rule refuses a pair the baseline does not
-      # hold; this refuses a pair's count grown, and a pair added or raised by
-      # hand. Pure file reads, under a second.
-      run: |
-        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push import-boundary
-        import_boundary_base=$(git merge-base origin/main HEAD) || exit 1
-        pnpm check:import-boundary -- --base "$import_boundary_base"
-      fail_text: Import boundary failed — fix the imports listed above.
-    test-ratio:
-      # The per-package test budget, on the same branch point as max-lines
-      # above. Pure file reads, a few seconds.
-      run: |
-        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push test-ratio
-        test_ratio_base=$(git merge-base origin/main HEAD) || exit 1
-        pnpm check:test-ratio -- --base "$test_ratio_base"
-      fail_text: Test budget failed — each line above says whether to delete weaker tests or restore the baseline.
     ledger-coverage:
       # Coverage discovers gate scripts and checks only changed pipeline paths.
       # Use the branch point so later main changes are not charged to this PR.

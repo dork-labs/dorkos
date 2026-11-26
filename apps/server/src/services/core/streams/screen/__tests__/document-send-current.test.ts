@@ -1,5 +1,5 @@
 import type { StreamFrame } from '@dorkos/shared/stream-socket';
-import type { DurableStreamSink } from '../durable-stream-sink.js';
+import type { DurableStreamSink } from '../../durable-stream-sink.js';
 import {
   attachDocumentStream,
   serializedStreamSink,
@@ -9,17 +9,17 @@ import {
 import { randomUUID } from 'node:crypto';
 import { afterEach, expect, it, vi } from 'vitest';
 import { type Db } from '@dorkos/db';
-import { createServerPrincipal } from '../../../connectors/principal/server-principal.js';
-import { DocChannelAuthorization } from '../../../canvas/doc-channel/authorization.js';
-import { DocChannelService } from '../../../canvas/doc-channel/service.js';
-import { DocChannelLiveBuffer } from '../../../canvas/doc-channel/streams/live-buffer.js';
-import { DocScopeStream } from '../../../canvas/doc-channel/streams/scope-stream.js';
+import { createServerPrincipal } from '../../../../connectors/principal/server-principal.js';
+import { DocChannelAuthorization } from '../../../../canvas/doc-channel/authorization.js';
+import { DocChannelService } from '../../../../canvas/doc-channel/service.js';
+import { DocChannelLiveBuffer } from '../../../../canvas/doc-channel/streams/live-buffer.js';
+import { DocScopeStream } from '../../../../canvas/doc-channel/streams/scope-stream.js';
 import {
   harness,
   FROM,
   NOW,
   TO,
-} from '../../../canvas/doc-channel/__tests__/lifecycle-fixtures.js';
+} from '../../../../canvas/doc-channel/__tests__/lifecycle-fixtures.js';
 const databases: Db[] = [];
 afterEach(() => {
   vi.restoreAllMocks();

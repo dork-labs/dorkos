@@ -7,7 +7,7 @@
  * --help
  * Purpose: hold the turn port's baseline to its rules: space-side imports of
  *          turn code may only go, and entries only fall.
- * Runs in: pre-push (`turn-port`); the required `typecheck` job.
+ * Runs in: `pnpm ratchet` (pre-push; the required `typecheck` job).
  * To fix:  remove the import it names. After removing some, run
  *          `pnpm check:turn-port -- --update`. Never raise or add an entry.
  * Usage:   pnpm check:turn-port [-- --base <ref> | --update | --init | --root <dir>]

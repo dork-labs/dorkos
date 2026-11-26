@@ -35,6 +35,7 @@
     "load-gate/**/*.ts",
     "release/**/*.ts",
     "check-knip.ts",
+    "ratchets/**/*.ts",
     "knip/**/*.ts",
     "api-lint/**/*.ts",
     "sharding/**/*.ts",

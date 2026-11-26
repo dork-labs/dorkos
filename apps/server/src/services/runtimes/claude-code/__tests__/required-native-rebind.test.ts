@@ -9,7 +9,6 @@ import {
   SessionLimitStore,
   setSessionLimitStore,
 } from '../../../session/fleet/session-limit-store.js';
-import { HeartbeatStore } from '../../../heartbeats/heartbeat-store.js';
 import {
   getOrCreateProjector,
   peekProjector,
@@ -53,7 +52,8 @@ import type { SessionLockManager } from '../../../session/session-lock.js';
 import { RoomStore } from '../../../rooms/room-store.js';
 import { SessionEventStore } from '../../../session/session-event-store.js';
 import { claudeTranscriptPath } from '../sessions/project-slug.js';
-import { TaskStore } from '../../../tasks/task-store.js';
+import { seedScheduledChats } from './required-native-rebind.scheduled.js';
+import { wireScheduledChatMoves } from '../../../../startup/space-views.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(() => {
@@ -90,6 +90,7 @@ beforeEach(async () => {
   ]);
   config.setDot('runtimes.claudeCode.defaultAccount', 'actual-account');
   await initBoundary(scratch);
+  wireScheduledChatMoves(); // as startup does: a scheduled chat's rows move with its rekey
 });
 afterEach(async () => {
   await registeredRuntime?.endSessionsWhere(() => true);
@@ -216,24 +217,7 @@ function fixture(occupied = true) {
       updatedAt: 'now',
     })
     .run();
-  const beats = new HeartbeatStore(db);
-  beats.insertBeat({
-    id: 'real-beat',
-    agentId: 'fixture-agent',
-    startedAt: 'now',
-    kind: 'pulse',
-    wake: 'timer',
-  });
-  beats.setBeatChat('real-beat', source);
-  const tasks = new TaskStore(db);
-  const task = tasks.createTask({
-    name: 'Required rebind fixture',
-    description: 'test',
-    prompt: 'test',
-    filePath: '/tmp/4328-required-rebind/SKILL.md',
-  });
-  const run = tasks.createRun(task.id, 'manual');
-  tasks.updateRun(run.id, { sessionId: source });
+  const { tasks, run } = seedScheduledChats(db, source);
   const store = new SessionStore();
   store.configureSettings(registry, 'default');
   store.ensureSession(source, { cwd: home, permissionMode: 'plan', hasStarted: true });

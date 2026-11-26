@@ -113,7 +113,7 @@
       "git": 1,
       "lan-access": 1,
       "mcp-config": 1,
-      "mcp-servers": 5,
+      "mcp-servers": 3,
       "mesh": 4,
       "openapi.json": 1,
       "owner-sign-in": 2,

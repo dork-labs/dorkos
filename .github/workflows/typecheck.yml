@@ -311,8 +311,8 @@ jobs:
       # rewrite that strands one is green on the PR and ejected in the queue.
       # This was an advisory job in browser-test.yml; it rides THIS job for the
       # vocab gate's reason above (required, unfiltered, reports on
-      # `merge_group`), so no new required check. Same base as the file-size
-      # ratchet below, for the same reasons: the merge commit's first parent on
+      # `merge_group`), so no new required check. Same base as the ratchets
+      # step below, for the same reasons: the merge commit's first parent on
       # `pull_request` and the canary, `merge_group.base_sha` in the queue, so
       # a queue build is judged against main, not the previous entry. Static
       # reads, a few seconds. Pin suites: scripts/__tests__/check-copy-spec-drift*.test.ts.
@@ -379,154 +379,6 @@ jobs:
           BOUNDARY_REQUIRE_TERMS: ${{ (vars.BOUNDARY_TERMS_REQUIRED != '' && github.event.pull_request.head.repo.fork != true && github.actor != 'dependabot[bot]' && github.triggering_actor != 'dependabot[bot]') && '1' || '' }}
         run: pnpm run check:boundary
 
-      # The 500-line ratchet (DOR-2822). `max-lines` is `warn`, and a warning
-      # fails nothing, so files over the limit kept growing. This holds them to
-      # scripts/max-lines/baseline.json: none may grow, no new file may pass 500,
-      # a shrink must lower its entry. TypeScript test files are held the same
-      # way in scripts/max-lines/test-baseline.json, except that a test shrink
-      # or deletion is printed as a note, not failed. Rides THIS job for the
-      # reason every gate above does: `typecheck` is required, unfiltered and
-      # reports on `merge_group`, so no new required check. `--base` refuses a baseline
-      # raised by hand. On `pull_request` and the canary the base is the merge
-      # commit's first parent, fetched one level deep. On `merge_group` it is
-      # `merge_group.base_sha` (main), NOT `HEAD^1`: there `HEAD^1` is the
-      # previous queue entry, so a raise in an earlier entry would be judged
-      # only in that entry's own build, which a HEADGREEN queue does not await
-      # (ci/proposals/2026-10-31-queue-batching.md, ledger 261031-091600).
-      - name: File-size ratchet (DOR-2822)
-        if: ${{ !cancelled() }}
-        env:
-          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
-        run: |
-          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
-          if [ -n "$QUEUE_BASE" ]; then
-            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
-            base="$QUEUE_BASE"
-          else
-            base="$(git rev-parse HEAD^1)"
-          fi
-          pnpm run check:max-lines -- --base "$base"
-
-      # The turn port's ratchet (DOR-5232, spec turns-survive-restarts §3.4).
-      # The server's lint holds each space-side file to its entry in
-      # apps/server/eslint-rules/turn-port-boundary.baseline.json; this refuses
-      # an entry raised or added by hand, against the same base the step above
-      # picks, for the same reasons. Static reads only, under a second.
-      - name: Turn port ratchet (DOR-5232)
-        if: ${{ !cancelled() }}
-        env:
-          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
-        run: |
-          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
-          if [ -n "$QUEUE_BASE" ]; then
-            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
-            base="$QUEUE_BASE"
-          else
-            base="$(git rev-parse HEAD^1)"
-          fi
-          pnpm run check:turn-port -- --base "$base"
-
-      # The computer wall (DOR-5158, spec computer-side-starts-alone §4). The
-      # server's lint holds each computer-side file to its entry in
-      # apps/server/eslint-rules/computer-wall.baseline.json; this refuses an
-      # entry raised or added by hand and a side map (sides.json) that places a
-      # path twice or names one that is gone, against the same base the steps
-      # above pick, for the same reasons. Static reads only, under a second.
-      - name: Computer wall (DOR-5158)
-        if: ${{ !cancelled() }}
-        env:
-          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
-        run: |
-          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
-          if [ -n "$QUEUE_BASE" ]; then
-            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
-            base="$QUEUE_BASE"
-          else
-            base="$(git rev-parse HEAD^1)"
-          fi
-          pnpm run check:computer-wall -- --base "$base"
-
-      # The services import boundary (DOR-4924). The server's lint refuses a
-      # domain-to-domain pair apps/server/eslint-rules/import-boundary.baseline.json
-      # does not hold; this refuses a pair's count grown and a pair added or
-      # raised by hand, against the same base the steps above pick, for the
-      # same reasons. Static reads only, under a second.
-      - name: Import boundary (DOR-4924)
-        if: ${{ !cancelled() }}
-        env:
-          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
-        run: |
-          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
-          if [ -n "$QUEUE_BASE" ]; then
-            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
-            base="$QUEUE_BASE"
-          else
-            base="$(git rev-parse HEAD^1)"
-          fi
-          pnpm run check:import-boundary -- --base "$base"
-
-      # The API lint gate (DOR-4996). Holds the committed OpenAPI document
-      # (docs/api/openapi.json, kept fresh by docs-openapi-check) and the route
-      # census (kept fresh by the booted census test) to
-      # scripts/api-lint/baseline.json: per rule and route group, no count may
-      # grow, no group may gain a first finding, a drop must lower its entry,
-      # and two operations may never share an operationId (hand-registered-path
-      # is advisory until the DOR-4978 mount merges and only prints). The rules are in
-      # scripts/api-lint/rules.ts and contributing/api-reference.md. Rides THIS
-      # job for the file-size ratchet's reason: `typecheck` is required,
-      # unfiltered and reports on `merge_group`, so no new required check.
-      # Static reads only (two JSON files and the hand registry's source), no
-      # build. `--base` refuses a baseline
-      # raised by hand, with the base chosen exactly as the step above does:
-      # the merge commit's first parent on `pull_request` and the canary, and
-      # `merge_group.base_sha` (main) in the queue, NOT `HEAD^1`, which there
-      # is the previous queue entry. In the queue it also passes `--queue`, so a
-      # stale entry (two queued PRs that each fixed a finding in one group) only
-      # prints instead of ejecting the second; on a PR a stale entry fails.
-      - name: API lint gate (DOR-4996)
-        if: ${{ !cancelled() }}
-        env:
-          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
-        run: |
-          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
-          if [ -n "$QUEUE_BASE" ]; then
-            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
-            base="$QUEUE_BASE"
-            pnpm run check:api-lint -- --base "$base" --queue
-          else
-            base="$(git rev-parse HEAD^1)"
-            pnpm run check:api-lint -- --base "$base"
-          fi
-
-      # The design-token gate (UI overhaul). The rules are `RULES` in
-      # scripts/check-design-tokens.ts: a `hard` rule may not match at all, and
-      # a `ratchet` is held to scripts/design-tokens/baseline.json, where a
-      # count may only fall. `--base` refuses a raised baseline, and a rule the
-      # base defined that is now removed or changed in any way, unless the PR
-      # has a `guard-rule-change` label a person added after its last push
-      # (DOR-3557; in `merge_group`, each queued PR that touches the script).
-      # The label says when, not who: that only Security adds it is a team rule
-      # GitHub does not enforce. The canary and a dispatch skip the rule check,
-      # since neither merges. Rides THIS job and takes `--base` for the
-      # file-size ratchet's reasons above: on `pull_request` and the canary the
-      # base is the merge commit's first parent, and on `merge_group` it is
-      # `merge_group.base_sha` (main), NOT `HEAD^1`, which there is the
-      # previous queue entry. A label added after this ran needs a re-run.
-      - name: Design-token gate
-        if: ${{ !cancelled() }}
-        env:
-          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
-          if [ -n "$QUEUE_BASE" ]; then
-            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
-            base="$QUEUE_BASE"
-          else
-            base="$(git rev-parse HEAD^1)"
-          fi
-          pnpm run check:design-tokens -- --base "$base"
-
       # The config migration gate (DOR-5123). The daily release has no person
       # to ask "does this schema change need a conf migration?", so the PR that
       # makes the change answers it.
@@ -536,7 +388,7 @@ jobs:
       # existing section, a removal or a narrowed type fails unless the PR
       # adds a CONFIG_MIGRATIONS key or adds a reason to
       # scripts/config-migration/no-migration.json. Rides THIS job for the
-      # file-size ratchet's reason: `typecheck` is required, unfiltered and
+      # ratchets step's reason: `typecheck` is required, unfiltered and
       # reports on `merge_group`, so no new required check. The base is chosen
       # as that step chooses it: the merge commit's first parent on
       # `pull_request` and the canary, `merge_group.base_sha` (main) in the
@@ -690,3 +542,52 @@ jobs:
           sampler=$!
           trap 'kill "$sampler" 2>/dev/null' EXIT
           pnpm exec turbo typecheck --continue --concurrency=3
+
+      # Every ratchet (DOR-4948): a count in a baseline file that may only fall.
+      # scripts/ratchets/registry.ts lists them, each with the role that keeps it and the
+      # ticket that lowers it; `pnpm ratchet` runs each one's own script with
+      # the arguments below and prints a line per ratchet. Six of them were
+      # separate steps here, with the base chosen exactly as below: the file-size
+      # ratchet (DOR-2822: a file over 500 lines may not grow, no new file may
+      # pass 500, test files in their own baseline), the turn port (DOR-5232),
+      # the computer wall (DOR-5158), the services import boundary (DOR-4924),
+      # the API lint gate (DOR-4996) and the design-token gate. own-mocks and
+      # test-ratio ran in CI only as their repo-wide tests, which compare the
+      # tree with the baseline but cannot see a baseline raised by hand; here
+      # they take `--base` too. knip is advisory (reported, never failing)
+      # until DOR-4629 decides, and the reason this step sits AFTER the
+      # typecheck step: knip loads every workspace config, and those import the
+      # package output that `turbo typecheck`'s `^build` leaves behind. A red
+      # here names its ratchet; `node <script> --help` says how to fix it.
+      #
+      # Rides THIS job for the reason every gate above does: `typecheck` is
+      # required, unfiltered and reports on `merge_group`, so no new required
+      # check. `--base` refuses a baseline raised by hand. On `pull_request`
+      # and the canary the base is the merge commit's first parent, fetched one
+      # level deep. On `merge_group` it is `merge_group.base_sha` (main), NOT
+      # `HEAD^1`: there `HEAD^1` is the previous queue entry, so a raise in an
+      # earlier entry would be judged only in that entry's own build, which a
+      # HEADGREEN queue does not await (ci/proposals/2026-10-31-queue-batching.md,
+      # ledger 261031-091600). In the queue it also passes `--queue`, which only
+      # api-lint takes: a stale entry (two queued PRs that each fixed a finding
+      # in one group) only prints instead of ejecting the second.
+      #
+      # GH_TOKEN is for the design-token gate's rule guard: `--base` refuses a
+      # rule the base defined that is now removed or changed, unless the PR has
+      # a `guard-rule-change` label a person added after its last push
+      # (DOR-3557; in `merge_group`, each queued PR that touches the script).
+      # The canary and a dispatch skip the rule check, since neither merges. A
+      # label added after this ran needs a re-run.
+      - name: Ratchets (DOR-4948)
+        if: ${{ !cancelled() }}
+        env:
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
+          if [ -n "$QUEUE_BASE" ]; then
+            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
+            pnpm ratchet --base "$QUEUE_BASE" --queue
+          else
+            pnpm ratchet --base "$(git rev-parse HEAD^1)"
+          fi

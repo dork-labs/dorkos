@@ -33,7 +33,8 @@
  * matched to a marker by the same window. A matched marker is dropped, because
  * the chat draws its own "Stopped by" line from that row, and the tool the stop
  * cut short reads as stopped by that chat. A stop with no marker adds nothing
- * here: the chat already shows its line.
+ * here: the chat already shows its line. The stops are read through the chat
+ * rows' port (`session/chat-rows/chat-rows-port.ts`), which the space side hands over.
  *
  * @module services/runtimes/claude-code/history/turn-cutoff-overlay
  */
@@ -41,18 +42,9 @@ import type { HistoryMessage, HistoryToolCall, ToolCallPart } from '@dorkos/shar
 import { logger } from '../../../../lib/logger.js';
 import type { RecordedTurnCutoff } from '../../../session/session-event-store.js';
 import { getSessionEventStore } from '../../../session/session-state-projector.js';
-import { getChatMessageStore } from '../../../session/chat-messages/chat-message-store.js';
-import { chatStopByLine } from '../../../session/chat-messages/stops/chat-stop-record.js';
+import { chatRowsPort, type RecordedChatStop } from '../../../session/chat-rows/chat-rows-port.js';
 import { spliceByCreatedAt } from '../../../session/overlays/splice-by-created-at.js';
 import { isCliInterruptText } from '../sessions/tool-result-outcome.js';
-
-/** One stop another chat made on this chat, as its "Stopped by" line reads. */
-export interface RecordedChatStop {
-  /** ISO-8601 wall-clock the stop was recorded at, just after the interrupt. */
-  createdAt: string;
-  /** "Stopped by <agent> · <chat>". */
-  byLine: string;
-}
 
 /** The index of the first entry recorded inside a marker's window, or -1. */
 function matchIn(
@@ -177,16 +169,6 @@ export function applyTurnCutoffs(
   return spliceByCreatedAt(merged, unmatched, (cutoff) => cutoffMessage(cutoff));
 }
 
-/** A session's delivered stops by other chats, as the overlay reads them. */
-function chatStopsOf(sessionId: string): RecordedChatStop[] {
-  return (getChatMessageStore()?.listStopsOf(sessionId) ?? [])
-    .filter((row) => row.status === 'delivered')
-    .map((row) => ({
-      createdAt: row.createdAt,
-      byLine: chatStopByLine(row.fromAgentName, row.fromChatTitle),
-    }));
-}
-
 /**
  * Overlay a session's recorded cutoffs, and its stops by other chats, onto its
  * Claude Code history.
@@ -207,7 +189,7 @@ export function overlayTurnCutoffs(
   let chatStops: RecordedChatStop[];
   try {
     cutoffs = getSessionEventStore()?.readTurnCutoffs(sessionId) ?? [];
-    chatStops = chatStopsOf(sessionId);
+    chatStops = chatRowsPort()?.stopsOf(sessionId) ?? [];
   } catch (err) {
     logger.warn('[turn-cutoffs] could not read recorded cutoffs — history unannotated', {
       sessionId,

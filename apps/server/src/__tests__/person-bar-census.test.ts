@@ -39,7 +39,7 @@ const CREDENTIAL_GATED_ALLOWED: Record<string, string> = {
   'lib/person-without-session.ts': 'tells the open gate apart, to answer with the step-up',
   'routes/debug.ts': 'a read: which owner-only flags a view shows',
   'routes/relay-delivery-receipts.ts': 'a read: whose receipts a view shows',
-  'services/core/browser-registry/owner-scope.ts':
+  'services/core/browser-registry/owner/owner-scope-resolver.ts':
     'a locality check beside refuseUnlessAccountOwner, which asks the person question',
 };
 

@@ -20,7 +20,7 @@ import { getRoomService, RoomError } from '../services/rooms/index.js';
 import {
   deliverRoomStream,
   type RoomStreamPlan,
-} from '../services/core/streams/room-stream-delivery.js';
+} from '../services/core/streams/screen/room-stream-delivery.js';
 import { SseStreamSink } from '../services/core/streams/durable-stream-sink.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';

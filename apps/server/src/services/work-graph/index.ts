@@ -36,6 +36,13 @@
  *   the caller's identity token, never from the call, and the link carries
  *   the turn's marks. Unlike the others, this one refuses: it is a capability
  *   call, and its caller is told when nothing was recorded.
+ * - **A worktree DorkOS made for a chat** (DOR-5265): the workspace service
+ *   announces a git worktree it made for a chat (`onWorkspaceWorktreeCreated`,
+ *   wired at the composition root in `startup/steps/work-graph.ts`), and
+ *   {@link recordChatWorktree} records the chat `opened` the worktree (by its
+ *   folder name) and `opened` its branch (as given). A clone, a reused
+ *   workspace and a create with no chat (a person in the app, an agent's own
+ *   managed checkout) announce nothing, so record nothing.
  * - **A to-do or a promise an agent made in a chat** (DOR-5266): the to-do
  *   tools announce one an agent made from a chat's turn (`onTodoMadeInChat`,
  *   wired at the composition root in `startup/steps/work-graph.ts`), and
@@ -295,6 +302,51 @@ export function recordChatFork(sourceId: string, forkId: string): void {
  */
 function recordChatStart(starterId: string, chatId: string): void {
   recordChatLink('started', starterId, chatId, { starterId, chatId });
+}
+
+/**
+ * Record that a chat opened the git worktree DorkOS made for it and that
+ * worktree's branch (DOR-5265), so "what did this chat make" includes where
+ * its work is. The chat is resolved through recorded re-keys; an exact repeat
+ * adds nothing. Never throws.
+ *
+ * @param made - The chat, the worktree's folder name and its branch, as given.
+ */
+export function recordChatWorktree(made: {
+  chatId: string;
+  worktree: string;
+  branch: string;
+}): void {
+  if (store === null) return;
+  let chatId = made.chatId;
+  try {
+    chatId = store.resolveRekey(made.chatId);
+  } catch {
+    // Unresolved, the chat's id as its caller gave it still names it.
+  }
+  const ids = { chatId, worktree: made.worktree };
+  const chat = entityRef('chat', chatId);
+  if (!chat.ok) {
+    logger.warn('[work-graph] a chat id has no reference form; edge not recorded', {
+      relation: 'opened',
+      ...ids,
+    });
+    return;
+  }
+  for (const [kind, id] of [
+    ['worktree', made.worktree],
+    ['branch', made.branch],
+  ] as const) {
+    const to = entityRef(kind, id);
+    if (!to.ok) {
+      logger.warn(`[work-graph] a ${kind} has no reference form; edge not recorded`, {
+        relation: 'opened',
+        ...ids,
+      });
+      continue;
+    }
+    recordLink({ from: chat.value, relation: 'opened', to: to.value, source: 'server' }, ids);
+  }
 }
 
 /**

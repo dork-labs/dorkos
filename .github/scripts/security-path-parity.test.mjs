@@ -234,6 +234,19 @@ for (const [match, miss] of [
     'apps/server/src/startup/test-composition/fake-cloud-link.ts',
     'apps/server/src/startup/test-compositions/fake-cloud-link.ts',
   ],
+  // C5 (DOR-5457): visibility homes. Whose browser an agent may use, and who sees which chats.
+  [
+    'apps/server/src/services/core/browser-registry/owner/owner-scope-resolver.ts',
+    'apps/server/src/services/core/browser-registry-x/owner-scope-resolver.ts',
+  ],
+  [
+    'apps/server/src/services/session/catalog/session-list-space-view.ts',
+    'apps/server/src/services/session/catalog/session-list-space-views.ts',
+  ],
+  [
+    'apps/server/src/services/session/chat-rows/chat-rows-port.ts',
+    'apps/server/src/services/session/chat-rowsx/chat-rows-port.ts',
+  ],
 ]) {
   test(`${match} is on the main list only`, () => {
     assert.ok(existsSync(resolve(root, match)), `${match} no longer exists`);

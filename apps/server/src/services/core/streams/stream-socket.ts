@@ -4,8 +4,8 @@
  *
  * It owns framing, liveness and backpressure for a socket; the snapshot /
  * replay / live sequencing above it is protocol-blind and lives in
- * `services/session/session-stream-delivery.ts` and
- * `services/rooms/room-stream-delivery.ts`.
+ * `services/core/streams/screen/session-stream-delivery.ts` and
+ * `services/core/streams/screen/room-stream-delivery.ts`.
  *
  * @module services/core/streams/stream-socket
  */

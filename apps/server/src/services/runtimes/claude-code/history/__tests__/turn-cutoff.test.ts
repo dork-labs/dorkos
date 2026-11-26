@@ -15,6 +15,8 @@ import {
   ChatMessageStore,
   setChatMessageStore,
 } from '../../../../session/chat-messages/chat-message-store.js';
+import { computerChatRows } from '../../../../session/chat-messages/computer-chat-rows.js';
+import { setChatRowsPort } from '../../../../session/chat-rows/chat-rows-port.js';
 import { withStallGuard } from '../../../../session/stall-guard.js';
 import { resetTurnCutoffs, takeTurnCutoff } from '../../../../session/turn-cutoff/turn-cutoff.js';
 import type { RecordedTurnCutoff } from '../../../../session/session-event-store.js';
@@ -266,10 +268,16 @@ describe('another chat stopping the turn (DOR-4668)', () => {
 });
 
 describe('the recorded stops the overlay reads (DOR-4668)', () => {
-  afterEach(() => setChatMessageStore(undefined));
+  afterEach(() => {
+    setChatMessageStore(undefined);
+    setChatRowsPort(undefined);
+  });
 
-  /** A store whose clock reads `at`, holding one stop row of the given status. */
-  function storeWithStop(at: string, status: 'delivered' | 'failed'): void {
+  /**
+   * A store whose clock reads `at`, holding one stop row of the given status,
+   * handed to the computer side as startup does unless `handOver` is false.
+   */
+  function storeWithStop(at: string, status: 'delivered' | 'failed', handOver = true): void {
     const store = new ChatMessageStore(createTestDb(), () => new Date(at));
     store.insert({
       id: `stop-${status}`,
@@ -290,6 +298,8 @@ describe('the recorded stops the overlay reads (DOR-4668)', () => {
       replyToId: null,
     });
     setChatMessageStore(store);
+    // What startup hands the computer side beside the store (session-services.ts).
+    if (handOver) setChatRowsPort(computerChatRows(store));
   }
 
   it('reads a delivered stop from the store and drops the matching marker', () => {
@@ -297,6 +307,12 @@ describe('the recorded stops the overlay reads (DOR-4668)', () => {
     const history = overlayTurnCutoffs(SESSION_ID, parseTranscript(CUT_TRANSCRIPT));
     expect(shown(history)).not.toMatch(PERSON_WORDING);
     expect(shown(history)).toContain('Stopped by Ana · Planning');
+  });
+
+  it('reads no stop before the chat rows are handed over (spec computer-side-starts-alone §5.12)', () => {
+    storeWithStop('2026-10-26T00:41:50.600Z', 'delivered', false);
+    const parsed = parseTranscript(CUT_TRANSCRIPT);
+    expect(overlayTurnCutoffs(SESSION_ID, parsed)).toBe(parsed);
   });
 
   it('ignores a stop that stopped nothing, and hands the history back unchanged', () => {

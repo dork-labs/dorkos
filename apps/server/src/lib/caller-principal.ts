@@ -79,3 +79,16 @@ export function readCallerPrincipal(
 
   return { kind: 'operator' };
 }
+
+/**
+ * The audience a computer-side broadcast falls back to before the space side
+ * has handed it the real one: the operator at this computer, and nobody else.
+ * Every audience the space side hands in lets the operator hear, so this one
+ * can only ever be narrower than the rule it stands in for, never wider
+ * (spec `computer-side-starts-alone` §5.12).
+ *
+ * @param principal - What the connection registered itself as.
+ */
+export function ownerOnlyAudience(principal: CallerPrincipal): boolean {
+  return principal.kind === 'operator';
+}

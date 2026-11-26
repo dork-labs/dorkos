@@ -15,7 +15,7 @@
  * the sink faked — the runtime because §1.4's whole point is that a runtime does
  * NOT own this storage, and the sink because the frames are the observation.
  *
- * @module services/core/streams/tests/session-stream-canvas
+ * @module services/core/streams/screen/tests/session-stream-canvas
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
@@ -23,11 +23,11 @@ import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { SessionOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamFrame } from '@dorkos/shared/stream-socket';
 import type { SessionSnapshot } from '@dorkos/shared/session-stream';
-import { CanvasDocumentStore } from '../../../canvas/canvas-document-store.js';
-import { CanvasService } from '../../../canvas/canvas-service.js';
-import { setCanvasService } from '../../../canvas/index.js';
-import { sessionScope, SESSION_OWNER_AUTHOR } from '../../../canvas/scopes.js';
-import type { DurableStreamSink } from '../durable-stream-sink.js';
+import { CanvasDocumentStore } from '../../../../canvas/canvas-document-store.js';
+import { CanvasService } from '../../../../canvas/canvas-service.js';
+import { setCanvasService } from '../../../../canvas/index.js';
+import { sessionScope, SESSION_OWNER_AUTHOR } from '../../../../canvas/scopes.js';
+import type { DurableStreamSink } from '../../durable-stream-sink.js';
 import { deliverSessionStream } from '../session-stream-delivery.js';
 
 const SESSION = 'sess-streamed';
@@ -125,7 +125,7 @@ describe('the snapshot a cold connect receives', () => {
     // nothing" is expressed — there is deliberately no unregister.
     vi.resetModules();
     const fresh = await import('../session-stream-delivery.js');
-    const { peekCanvasService } = await import('../../../canvas/index.js');
+    const { peekCanvasService } = await import('../../../../canvas/index.js');
     expect(peekCanvasService()).toBeUndefined();
     const sink = new CollectingSink();
 

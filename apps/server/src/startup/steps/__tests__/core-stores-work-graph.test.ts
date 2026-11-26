@@ -2,10 +2,13 @@
  * The real core-stores startup step wires the work graph's write sites: after
  * `wireCoreStores` runs, with no wiring call of the test's own, a to-do an
  * agent makes through its tool from a chat's turn records the chat `produced`
- * it (DOR-5266). A boot that forgot `wireTodoLinks()` would lose every link
- * while the write-site tests, which wire it themselves, stayed green.
+ * it (DOR-5266), and a worktree the workspace service makes for a chat records
+ * the chat `opened` it and its branch (DOR-5265). A boot that forgot
+ * `wireTodoLinks()` or `wireWorktreeLinks()` would lose every such link while
+ * the write-site tests, which wire them themselves, stayed green.
  */
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
@@ -20,6 +23,7 @@ import { TodoPromiseStore } from '../../../services/todos/todo-promise-store.js'
 import { TodoService } from '../../../services/todos/todo-service.js';
 import { TodoStore } from '../../../services/todos/todo-store.js';
 import { todosDomain } from '../../../services/todos/todo-capabilities.js';
+import { createWorkspaceSubsystem, workspaceGateFor } from '../../../services/workspace/index.js';
 import type { ServerRefs } from '../../server-refs.js';
 import { wireCoreStores } from '../core-stores.js';
 
@@ -88,4 +92,46 @@ it('records the chat produced a to-do its agent made, with no wiring but the boo
       .all()
       .map((row) => `${row.fromRef} ${row.toRef}`)
   ).toEqual([`dork:chat:${CHAT} dork:todo:${made.todo.id}`]);
+});
+
+it('records the chat opened a worktree made for it and its branch, with no wiring but the boot’s', async () => {
+  const git = (args: string[], cwd: string) => execFileSync('git', args, { cwd, stdio: 'pipe' });
+  const source = path.join(root, 'source');
+  const origin = path.join(root, 'origin.git');
+  git(['init', '--bare', '-b', 'main', origin], root);
+  git(['clone', origin, source], root);
+  git(['config', 'user.email', 't@example.com'], source);
+  git(['config', 'user.name', 'Test'], source);
+  await writeFile(path.join(source, 'README.md'), '# source\n');
+  git(['add', '.'], source);
+  git(['commit', '-m', 'init'], source);
+  git(['push', '-u', 'origin', 'main'], source);
+  const sub = createWorkspaceSubsystem({
+    db,
+    dorkHome: root,
+    config: {
+      enabled: true,
+      rootPath: path.join(root, 'workspaces'),
+      portBase: 4250,
+      portBlockSize: 10,
+      defaultProvider: 'worktree',
+      retentionCap: null,
+    },
+  });
+
+  const ws = await sub.service.ensure(
+    { projectKey: 'core', key: 'DOR-1', source },
+    workspaceGateFor({ trusted: true, name: 'core/w', carriesToken: false, chatId: CHAT })
+  );
+
+  expect(ws.status).toBe('ready');
+  expect(
+    db
+      .select()
+      .from(workLinks)
+      .where(eq(workLinks.relation, 'opened'))
+      .all()
+      .map((row) => `${row.fromRef} ${row.toRef}`)
+      .sort()
+  ).toEqual([`dork:chat:${CHAT} branch:dork/DOR-1`, `dork:chat:${CHAT} worktree:DOR-1`]);
 });

@@ -4,7 +4,7 @@ title: 'The services import boundary: no new domain-to-domain import under servi
 kind: experiment
 status: proposed
 actor: agent
-gates: [wf.lint.lint, wf.typecheck.typecheck, lefthook.pre-push.import-boundary]
+gates: [wf.lint.lint, wf.typecheck.typecheck, lefthook.pre-push.ratchets]
 prs: []
 hypothesis:
   metric: 'tracked.import-boundary-allowance'

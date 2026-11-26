@@ -129,10 +129,8 @@ import {
 import { ApprovalService } from '../../../../core/approvals/index.js';
 import { eventFanOut } from '../../../../core/event-fan-out.js';
 import { registerAgentModeEscalators } from '../../../../tasks/agent-mode/agent-mode-escalation.js';
-import { recordTurnLevels } from '../../../../core/turn-power/turn-levels.js';
-import { CLAUDE_CODE_CAPABILITIES } from '../../runtime-constants.js';
-import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
-import type { StreamEvent, Task } from '@dorkos/shared/types';
+import type { Task } from '@dorkos/shared/types';
+import { ranTurn } from './task-tools-file-cap.fixtures.js';
 import {
   TaskSchedulerService,
   type SchedulerAgentManager,
@@ -165,10 +163,12 @@ import {
   resetChatStartedTurns,
 } from '../../../../session/chat-messages/chat-started-turns.js';
 import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
+import { wireScheduledChatMoves } from '../../../../../startup/space-views.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
-// refuses every path and turn code knows no Claude transcript.
+// refuses every path and turn code knows no Claude transcript, and a rekey moves no run's row.
 registerClaudeCodeFacts();
+wireScheduledChatMoves();
 
 beforeEach(() => registerEveryFolderAsHome());
 afterEach(() => clearTestHomes());
@@ -179,26 +179,6 @@ interface SessionTool {
     args: Record<string, unknown>,
     extra: unknown
   ) => Promise<{ content: { type: string; text: string }[]; isError?: boolean }>;
-}
-
-/**
- * Run one turn in a chat set to `stored`, so the chat has a real recorded level
- * (S-B), and its marks when `opts` carries them.
- */
-async function ranTurn(sessionId: string, stored: string, opts?: Record<string, unknown>) {
-  const runtime = recordTurnLevels(
-    {
-      type: 'claude-code',
-      getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
-      async *sendMessage(): AsyncGenerator<StreamEvent> {
-        yield { type: 'done', data: {} } as StreamEvent;
-      },
-    } as unknown as AgentRuntime,
-    () => stored
-  );
-  for await (const _event of runtime.sendMessage(sessionId, 'hi', opts as never)) {
-    // drain
-  }
 }
 
 describe('tasks_update and a SKILL file changed outside the tools (M4)', () => {

@@ -104162,7 +104162,831 @@
         }
       }
     },
+    "/api/mcp-servers": {
+      "post": {
+        "operationId": "mcp.add_global_server",
+        "tags": [
+          "Mcp"
+        ],
+        "summary": "Add an MCP server every agent gets",
+        "description": "Add a server to every agent, with its secret values. Held until the owner confirms it’s them, at this computer; secret values never come back out.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-zA-Z0-9_-]+$"
+                  },
+                  "connection": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "transport": {
+                            "type": "string",
+                            "enum": [
+                              "stdio"
+                            ]
+                          },
+                          "command": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "args": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "default": []
+                          },
+                          "env": {
+                            "type": "object",
+                            "properties": {},
+                            "default": {},
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "transport",
+                          "command"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "transport": {
+                            "type": "string",
+                            "enum": [
+                              "http"
+                            ]
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "headers": {
+                            "type": "object",
+                            "properties": {},
+                            "default": {},
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
+                          "authKind": {
+                            "type": "string",
+                            "enum": [
+                              "oauth2"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "transport",
+                          "url"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "transport": {
+                            "type": "string",
+                            "enum": [
+                              "sse"
+                            ]
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "headers": {
+                            "type": "object",
+                            "properties": {},
+                            "default": {},
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
+                          "authKind": {
+                            "type": "string",
+                            "enum": [
+                              "oauth2"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "transport",
+                          "url"
+                        ]
+                      }
+                    ]
+                  },
+                  "secretNames": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "maxItems": 64,
+                    "default": []
+                  },
+                  "excludedAgents": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "maxItems": 500,
+                    "default": []
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                },
+                "required": [
+                  "name",
+                  "connection"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Add an MCP server every agent gets result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "transport": {
+                      "type": "string",
+                      "enum": [
+                        "stdio",
+                        "http",
+                        "sse"
+                      ]
+                    },
+                    "command": {
+                      "type": "string"
+                    },
+                    "args": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "env": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "secret": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "secret"
+                        ]
+                      }
+                    },
+                    "headers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "secret": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "secret"
+                        ]
+                      }
+                    },
+                    "excludedAgents": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "addedAt": {
+                      "type": "string"
+                    },
+                    "skippedOn": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "codex",
+                          "opencode"
+                        ]
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "note": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "note"
+                        ]
+                      }
+                    },
+                    "reservedName": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "enabled",
+                    "transport",
+                    "env",
+                    "headers",
+                    "excludedAgents",
+                    "addedAt",
+                    "skippedOn",
+                    "warnings",
+                    "reservedName"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Always `no-store`: the held action is for this request only.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpRequired"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/mcp-servers/{name}": {
+      "put": {
+        "operationId": "mcp.replace_global_server",
+        "tags": [
+          "Mcp"
+        ],
+        "summary": "Replace an MCP server every agent gets",
+        "description": "Replace a server every agent gets; its secret values are typed again. Held until the owner confirms it’s them, at this computer. A change made while the sheet is up refuses it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "The name of the server to replace."
+            },
+            "required": true,
+            "description": "The name of the server to replace.",
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-zA-Z0-9_-]+$"
+                  },
+                  "connection": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "transport": {
+                            "type": "string",
+                            "enum": [
+                              "stdio"
+                            ]
+                          },
+                          "command": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "args": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "default": []
+                          },
+                          "env": {
+                            "type": "object",
+                            "properties": {},
+                            "default": {},
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "transport",
+                          "command"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "transport": {
+                            "type": "string",
+                            "enum": [
+                              "http"
+                            ]
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "headers": {
+                            "type": "object",
+                            "properties": {},
+                            "default": {},
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
+                          "authKind": {
+                            "type": "string",
+                            "enum": [
+                              "oauth2"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "transport",
+                          "url"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "transport": {
+                            "type": "string",
+                            "enum": [
+                              "sse"
+                            ]
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "headers": {
+                            "type": "object",
+                            "properties": {},
+                            "default": {},
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
+                          "authKind": {
+                            "type": "string",
+                            "enum": [
+                              "oauth2"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "transport",
+                          "url"
+                        ]
+                      }
+                    ]
+                  },
+                  "secretNames": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "maxItems": 64,
+                    "default": []
+                  },
+                  "excludedAgents": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "maxItems": 500,
+                    "default": []
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                },
+                "required": [
+                  "name",
+                  "connection"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Replace an MCP server every agent gets result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "transport": {
+                      "type": "string",
+                      "enum": [
+                        "stdio",
+                        "http",
+                        "sse"
+                      ]
+                    },
+                    "command": {
+                      "type": "string"
+                    },
+                    "args": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "env": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "secret": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "secret"
+                        ]
+                      }
+                    },
+                    "headers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "secret": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "secret"
+                        ]
+                      }
+                    },
+                    "excludedAgents": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "addedAt": {
+                      "type": "string"
+                    },
+                    "skippedOn": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "codex",
+                          "opencode"
+                        ]
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "note": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "note"
+                        ]
+                      }
+                    },
+                    "reservedName": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "enabled",
+                    "transport",
+                    "env",
+                    "headers",
+                    "excludedAgents",
+                    "addedAt",
+                    "skippedOn",
+                    "warnings",
+                    "reservedName"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Always `no-store`: the held action is for this request only.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpRequired"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "operationId": "mcp.remove_global_server",
         "tags": [

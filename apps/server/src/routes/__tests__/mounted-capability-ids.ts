@@ -27,6 +27,8 @@ export const MOUNTED_CAPABILITY_IDS: readonly string[] = [
   'mcp.test',
   'mcp.set_client',
   'mcp.check_global_args',
+  'mcp.add_global_server',
+  'mcp.replace_global_server',
   'mcp.remove_global_server',
   'mcp.check_global_tools',
   'mcp.undo_global_allow',

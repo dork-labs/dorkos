@@ -3,7 +3,7 @@ import type { RoomRevisionEvent } from '@dorkos/shared/room-schemas';
 import type { StreamFrame } from '@dorkos/shared/stream-socket';
 import { describe, expect, it, vi } from 'vitest';
 import { eventFanOut } from '../../../../core/event-fan-out.js';
-import { deliverRoomStream } from '../../../../core/streams/room-stream-delivery.js';
+import { deliverRoomStream } from '../../../../core/streams/screen/room-stream-delivery.js';
 import { setRoomService } from '../../../../rooms/index.js';
 
 describe('RemoteRedactionSync', () => {
