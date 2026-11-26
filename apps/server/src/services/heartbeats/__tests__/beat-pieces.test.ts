@@ -7,7 +7,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { authors, rooms, sessionMetadata } from '@dorkos/db';
 import type { Session } from '@dorkos/shared/types';
-import { applyHeartbeatOriginOverlay, beatChatTitle, resolveBeatChat } from '../beat-chat.js';
+import { beatChatTitle, resolveBeatChat } from '../beat-chat.js';
+import { applyHeartbeatOriginOverlay } from '../../session/origin/heartbeat-origin-overlay.js';
 import { BUILT_IN_CHECKLIST, URGENT_DEFINITION, buildBeatPrompt } from '../beat-prompt.js';
 import {
   beatChatResolver,

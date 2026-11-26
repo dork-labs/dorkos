@@ -21,7 +21,7 @@ import {
   type BrowserInstance,
   type BrowserProfile,
 } from '@dorkos/shared/browser-schemas';
-import type { BrowserOwnerScope, createBrowserOwnerScopeResolver } from './owner-scope.js';
+import type { BrowserOwnerScope, BrowserOwnerScopeResolver } from './owner-scope.js';
 
 /** Fixed private metadata refusal; database errors retain their original cause. */
 export class BrowserRegistryConflict extends Error {
@@ -74,10 +74,7 @@ const instanceProjection = (row: BrowserInstanceRow): Readonly<BrowserInstance> 
  * Attachment target visibility is the caller's separate obligation; no grant is issued here.
  * There is deliberately no stop-success or quarantine-release operation.
  */
-export function createBrowserRegistryStore(
-  db: Db,
-  resolver: ReturnType<typeof createBrowserOwnerScopeResolver>
-) {
+export function createBrowserRegistryStore(db: Db, resolver: BrowserOwnerScopeResolver) {
   function owner(scope: BrowserOwnerScope | null): string {
     const namespace = resolver.consume(scope);
     if (!namespace) return conflict();

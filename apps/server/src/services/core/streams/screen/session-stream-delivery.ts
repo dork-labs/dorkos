@@ -14,57 +14,32 @@
  * exists: the cursor arithmetic and the cold-connect race are the parts worth
  * getting right once.
  *
- * @module services/core/streams/session-stream-delivery
+ * @module services/core/streams/screen/session-stream-delivery
  */
-import type { AgentRuntime, SessionOpts } from '@dorkos/shared/agent-runtime';
 import {
   StaleResumeCursorError,
   isBlockingInteractionEventType,
   UNOWNED_STREAM_GENERATION,
 } from '@dorkos/shared/session-stream';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
-import { newestHistoryWindow } from '../../session/history/history-window.js';
+import { newestHistoryWindow } from '../../../session/chat-messages/screen/history-window.js';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
-import { stampEvent, stampHistory } from '../../session/chat-messages/chat-message-stamps.js';
-import type { DurableStreamSink } from './durable-stream-sink.js';
-import type { DocScopeNotifications } from '../../canvas/doc-channel/streams/registry.js';
+import { stampEvent, stampHistory } from '../../../session/chat-messages/chat-message-stamps.js';
+import type { DurableStreamSink } from '../durable-stream-sink.js';
+import type { DocScopeNotifications } from '../../../canvas/doc-channel/streams/registry.js';
 import { attachDocumentStream, serializedStreamSink } from './document-stream-delivery.js';
-import {
-  cursorMatchesGeneration,
-  streamFrameId,
-  type ResumeCursor,
-} from '../../../lib/stream-cursor.js';
-import type { CallerPrincipal } from '../../../lib/caller-principal.js';
-import { askEntitlement } from '../../session/asks/ask-entitlement.js';
-import { logger } from '../../../lib/logger.js';
-import { peekCanvasService, sessionScope } from '../../canvas/index.js';
-import { chatRuns } from '../../runs/index.js';
-import { openSessionStream, openSessionStreamCount } from './session-stream-watch.js';
+import { cursorMatchesGeneration, streamFrameId } from '../../../../lib/stream-cursor.js';
+import type { SessionStreamRequest } from '../session-stream-plan.js';
+import { askEntitlement } from '../../../session/asks/ask-entitlement.js';
+import { logger } from '../../../../lib/logger.js';
+import { peekCanvasService, sessionScope } from '../../../canvas/index.js';
+import { chatRuns } from '../../../runs/index.js';
+import { openSessionStream, openSessionStreamCount } from '../session-stream-watch.js';
 
 /** Everything a caller must resolve before a session stream can be delivered. */
-export interface SessionStreamPlan {
+export interface SessionStreamPlan extends SessionStreamRequest {
   /** Document notifications remain independent of the scope history cursor. */
   documentNotifications?: DocScopeNotifications;
-  /** The session being streamed. */
-  sessionId: string;
-  /** The runtime that owns it. */
-  runtime: AgentRuntime;
-  /** The boundary-validated cwd plus the effective permission mode. */
-  ctx: SessionOpts;
-  /** The parsed resume signal, or `undefined` for a cold connect. */
-  resume: ResumeCursor | undefined;
-  /**
-   * Who is reading, so an Ask's detail reaches only a caller entitled to it
-   * (spec `ask-entitlement`, review finding 2).
-   *
-   * **Required, never defaulted.** `askEntitlement` says an agent gets `none` —
-   * "the Ask does not exist for this caller" — and the fleet-wide list and the
-   * global stream both enforce that. This stream is the third door onto the
-   * same detail, and one that defaulted to the operator would be an allow for
-   * whatever opens it next. Both transports read the principal from the same
-   * request facts.
-   */
-  principal: CallerPrincipal;
 }
 
 /**

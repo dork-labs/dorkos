@@ -628,7 +628,7 @@ router.post('/:id/holds/:authorId/promote', (c) =>
  * The same path is also served over a WebSocket (`room-events-socket.ts`),
  * which is what the app connects to; this SSE route stays as the public
  * integration contract. Both share their sequencing — see
- * `services/rooms/room-stream-delivery.ts`.
+ * `services/core/streams/screen/room-stream-delivery.ts`.
  */
 router.get('/:id/events', roomEventsHandler);
 

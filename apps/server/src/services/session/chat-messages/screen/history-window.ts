@@ -13,11 +13,15 @@
  * at. History only ever grows at its end, which is what keeps everything before
  * a given message stable.
  *
- * @module services/session/history/history-window
+ * Filed with the chat messages on the space side: it shapes what a person's
+ * window is sent, and only the session stream and the messages route read it
+ * (spec `computer-side-starts-alone` §5.12).
+ *
+ * @module services/session/chat-messages/screen/history-window
  */
 import type { HistoryMessage, HistoryRead } from '@dorkos/shared/types';
 import { HISTORY_PAGE_LIMIT, HISTORY_WINDOW_LIMIT } from '@dorkos/shared/schemas';
-import { historyRead } from '../chat-messages/history-read.js';
+import { historyRead } from '../history-read.js';
 /**
  * The newest `limit` messages, and how many come before them.
  *

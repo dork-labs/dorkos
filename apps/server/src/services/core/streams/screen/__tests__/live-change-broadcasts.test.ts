@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 import { z } from 'zod';
 
-import { composeRegistry } from '../../capabilities/registry.js';
+import { composeRegistry } from '../../../capabilities/registry.js';
 import {
   connectorAgentRequestsChangedAnnouncer,
   localBrowserChangedAnnouncer,
@@ -24,8 +24,8 @@ import {
   type ConfigChange,
   type ConfigChangeSource,
 } from '../live-change-broadcasts.js';
-import { encodeBroadcast, type BroadcastAudience } from '../../event-fan-out.js';
-import type { CallerPrincipal } from '../../../../lib/caller-principal.js';
+import { encodeBroadcast, type BroadcastAudience } from '../../../event-fan-out.js';
+import type { CallerPrincipal } from '../../../../../lib/caller-principal.js';
 import type { AgentIdentityChange } from '@dorkos/mesh';
 
 /** One broadcast as the fan-out received it, audience included. */

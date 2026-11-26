@@ -130,4 +130,43 @@ describe('liveRelayDeps', () => {
       ownedBy: { room: false, task: false, beat: false },
     });
   });
+
+  describe('the chat stream the space side serves (spec computer-side-starts-alone §5.12)', () => {
+    /** A sink that records whether anything was sent and whether it was ended. */
+    function sink() {
+      return { send: vi.fn(async () => undefined), end: vi.fn(), closed: false };
+    }
+    const plan = {
+      sessionId: CHAT,
+      runtime: runtime as never,
+      ctx: { cwd: '/work/acme', permissionMode: 'default' as const },
+      resume: undefined,
+      principal: { kind: 'relayed' as const },
+    };
+
+    it('ends the stream with nothing sent before the server wires the relay', async () => {
+      const out = sink();
+      await liveRelayDeps(() => null).deliverSessionStream(out as never, plan);
+      expect(out.end).toHaveBeenCalledOnce();
+      expect(out.send).not.toHaveBeenCalled();
+    });
+
+    it('ends the stream with nothing sent when the wiring hands no stream over', async () => {
+      const out = sink();
+      await liveRelayDeps(() => wiring()).deliverSessionStream(out as never, plan);
+      expect(out.end).toHaveBeenCalledOnce();
+      expect(out.send).not.toHaveBeenCalled();
+    });
+
+    it('serves the stream through what the wiring hands over, plan unchanged', async () => {
+      const out = sink();
+      const deliver = vi.fn(async () => undefined);
+      await liveRelayDeps(() => wiring({ deliverSessionStream: deliver })).deliverSessionStream(
+        out as never,
+        plan
+      );
+      expect(deliver).toHaveBeenCalledWith(out, plan);
+      expect(out.end).not.toHaveBeenCalled();
+    });
+  });
 });

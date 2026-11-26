@@ -45,7 +45,7 @@ import {
   listRunningChats,
   runningChatsHandOutsideWords,
   type RunningChatSources,
-} from '../session/running-chats/running-chats.js';
+} from '../session/chat-messages/screen/running-chats.js';
 import { markCallerTurnOutsider } from '../core/capabilities/mark-caller-turn.js';
 import type { MeshCore } from '@dorkos/mesh';
 import type { AuditLog } from './audit-log.js';

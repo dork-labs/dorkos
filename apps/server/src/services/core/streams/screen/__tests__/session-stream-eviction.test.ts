@@ -14,7 +14,7 @@
  * and the real `disposeProjector` eviction calls; only the runtime (a thin
  * adapter over the registry, the way Claude Code's is) and the sink are faked.
  *
- * @module services/core/streams/tests/session-stream-eviction
+ * @module services/core/streams/screen/tests/session-stream-eviction
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import type { AgentRuntime, SessionOpts } from '@dorkos/shared/agent-runtime';
@@ -25,17 +25,17 @@ import {
   peekProjector,
   streamGenerationOf,
   type RawSessionEvent,
-} from '../../../session/session-state-projector.js';
-import { parseResumeCursor } from '../../../../lib/stream-cursor.js';
-import { logger } from '../../../../lib/logger.js';
-import type { DurableStreamSink } from '../durable-stream-sink.js';
+} from '../../../../session/session-state-projector.js';
+import { parseResumeCursor } from '../../../../../lib/stream-cursor.js';
+import { logger } from '../../../../../lib/logger.js';
+import type { DurableStreamSink } from '../../durable-stream-sink.js';
 import { deliverSessionStream } from '../session-stream-delivery.js';
 import {
   __resetSessionStreamWatchForTests,
   openSessionStream,
   openSessionStreamCount,
   watchSessionStreamHealth,
-} from '../session-stream-watch.js';
+} from '../../session-stream-watch.js';
 
 const SESSION = 'eviction-session';
 const ctx = { cwd: '/tmp/project' } as SessionOpts;

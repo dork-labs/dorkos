@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IncomingHttpHeaders } from 'node:http';
-import type { RequestFacts } from '../../../../http/request-facts.js';
-import { createBrowserOwnerScopeResolver } from '../owner-scope.js';
+import type { RequestFacts } from '../../../../../http/request-facts.js';
+import { createBrowserOwnerScopeResolver } from '../owner-scope-resolver.js';
 
 const state = vi.hoisted(() => ({
   login: true,
@@ -13,7 +13,7 @@ const state = vi.hoisted(() => ({
   authorOverride: undefined as unknown,
   overrideAuthor: false,
 }));
-vi.mock('../../config-manager.js', () => ({
+vi.mock('../../../config-manager.js', () => ({
   configManager: {
     get: () => {
       if (state.failConfig) throw new Error('unreadable config');
@@ -21,17 +21,17 @@ vi.mock('../../config-manager.js', () => ({
     },
   },
 }));
-vi.mock('../../auth/index.js', () => ({
+vi.mock('../../../auth/index.js', () => ({
   readOwnerAccount: () => (state.ownerId === null ? null : { id: state.ownerId }),
 }));
-vi.mock('../../capabilities/index.js', () => ({ APPROVAL_TOKEN_HEADER: 'x-dorkos-approval' }));
-vi.mock('../../agent-identity/agent-identity-service.js', () => ({
+vi.mock('../../../capabilities/index.js', () => ({ APPROVAL_TOKEN_HEADER: 'x-dorkos-approval' }));
+vi.mock('../../../agent-identity/agent-identity-service.js', () => ({
   agentTokenDigestPrefix: () => 'test-digest',
   getAgentIdentityService: () => undefined,
 }));
-vi.mock('../../../../env.js', () => ({ env: { DORKOS_ALLOW_INSECURE_BIND: false } }));
-vi.mock('../../tunnel-manager.js', () => ({ tunnelManager: { status: { url: null } } }));
-vi.mock('../../../rooms/index.js', () => ({
+vi.mock('../../../../../env.js', () => ({ env: { DORKOS_ALLOW_INSECURE_BIND: false } }));
+vi.mock('../../../tunnel-manager.js', () => ({ tunnelManager: { status: { url: null } } }));
+vi.mock('../../../../rooms/index.js', () => ({
   getRoomService: () => ({
     authorRegistry: {
       bindOwner: (id: string) => {

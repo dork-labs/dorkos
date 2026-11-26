@@ -12,7 +12,7 @@ import {
   type Db,
 } from '@dorkos/db';
 import { AuthorRegistry } from '../../../rooms/author-registry.js';
-import { createBrowserOwnerScopeResolver } from '../owner-scope.js';
+import { createBrowserOwnerScopeResolver } from '../owner/owner-scope-resolver.js';
 import { BrowserRegistryConflict, createBrowserRegistryStore } from '../registry-store.js';
 
 const state = vi.hoisted(() => ({

@@ -75,12 +75,8 @@ import type { ClaimDataDirectoryResult } from './data-directory.js';
 import type { ServerRefs } from '../server-refs.js';
 import { appScreenRunsIn } from '../../routes/app-screen-runs.js';
 import { personSessionRequired } from '../../services/core/auth/gate-policy.js';
-import {
-  watchSessionRelaySwitch,
-  wireSessionRelay,
-} from '../../services/core/session-relay/index.js';
 import { wireConnectorSpending } from '../../services/connectors/spending/spending-port.js';
-import { remoteAccessOn } from '../../middleware/remote-access-switch.js';
+import { wireSessionListSpaceView, wireSessionRelayStep } from '../space-views.js';
 
 /** What {@link mountCoreRoutes} reads from the startup steps before it. */
 export interface MountCoreRoutesInput {
@@ -341,6 +337,8 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   // agent sees agent work, never a person's own chat.
   const { resolveTaskOrigins, resolveStartedBy } = origins;
   wireSessionVisibility({ db, accounts: auditAccounts, resolveTaskOrigins, resolveStartedBy });
+  // And the session-list stream reads that rule from the space side (§5.12).
+  wireSessionListSpaceView();
   // Live session upserts carry the flow items a chat works on, exactly as
   // `GET /api/sessions` does, so the first upsert after a list read no longer
   // wipes them from the client's cache (spec `flow-multiproject` §6.8, D10).
@@ -377,18 +375,12 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     sessionRuntime: (sessionId) => runtimeRegistry.resolveForSession(sessionId),
   });
 
-  // The session relay answers the owner's own DorkOS on the web with the same
-  // origin lookups and room port the session routes use, so a room turn, a
-  // task run or a beat reads the same there as here (spec
-  // `everything-is-a-space` B2). Read per request, never copied.
-  wireSessionRelay({
+  // The session relay, with the session routes' origin lookups and room port (B2).
+  wireSessionRelayStep({
     meshCore: () => refs.meshCore,
     origins,
     roomSessionPlace: () => refs.roomSessionPlacePort,
-    remoteAccessOn,
   });
-  // Switching Chat from the web off closes a live relay at once.
-  watchSessionRelaySwitch();
 
   // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).
   // ALWAYS ON: fans every registered runtime's transition-only session-list

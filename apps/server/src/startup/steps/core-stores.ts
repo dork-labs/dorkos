@@ -87,6 +87,7 @@ import { isAgentLaunchCapFull } from '../../services/session/launch/launch-cap.j
 import type { ClaimDataDirectoryResult } from './data-directory.js';
 import type { OpenConfigAndDatabaseResult } from './config-and-database.js';
 import type { ServerRefs } from '../server-refs.js';
+import { wireScheduledChatMoves } from '../space-views.js';
 
 /** What {@link wireCoreStores} reads from the startup steps before it. */
 export interface WireCoreStoresInput {
@@ -254,6 +255,8 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   // and write the `session_metadata` table. Must happen before any route or
   // service uses these methods. See ADR 0255.
   runtimeRegistry.setDb(db);
+  // A scheduled chat's task run and beat rows move with its rekey (DOR-3703, §5.12).
+  wireScheduledChatMoves();
   // Whether each chat's latest turn was held, for the turns that pick it up on their own (DOR-3037).
   setContinuationHoldDb(db);
   // Whether each chat's latest turn read outside words, so a restart cannot clear it (DOR-4148).

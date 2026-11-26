@@ -31,7 +31,7 @@ import type { AgentRuntime, SessionOpts } from '@dorkos/shared/agent-runtime';
 import { STREAM_RESUME_PARAM } from '@dorkos/shared/stream-socket';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { resolveSessionCwdOrDefault, resolveSettingsKey } from '../services/session/index.js';
-import { deliverSessionStream } from '../services/core/streams/session-stream-delivery.js';
+import { deliverSessionStream } from '../services/core/streams/screen/session-stream-delivery.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { DurableStreamSocket } from '../services/core/streams/stream-socket.js';
 import type { UpgradeDecision, UpgradeRoute } from '../services/core/streams/upgrade-router.js';
