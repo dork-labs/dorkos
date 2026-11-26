@@ -12,7 +12,7 @@ import type { Context } from 'hono';
 import { env } from '../env.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import { marksOf } from '../services/core/turn-power/turn-levels.js';
 import { marksHold } from '../services/core/turn-power/turn-marks.js';
 import { markedTurnSecretRefusal } from '../services/relay/secrets/marked-turn-secret-gate.js';

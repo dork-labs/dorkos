@@ -34,7 +34,7 @@ import { problem } from '@dorkos/http-kit';
 import { gateResponse } from '../capability-refusals.js';
 import { isAtThisComputer, personSessionRequired } from '../../services/core/auth/gate-policy.js';
 import { notePersonSessionMissing } from '../../lib/person-without-session.js';
-import { presentsAgentIdentity } from '../../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../../lib/http/agent-identity-header.js';
 import type { ApiEnv } from '../../http/api-chain.js';
 import { honoRequestFacts } from '../../http/request-facts.js';
 import { readQuery } from '../../http/request-query.js';

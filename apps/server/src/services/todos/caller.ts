@@ -20,7 +20,7 @@ import {
   wifiTurnHeld,
   type WifiTurnFacts,
 } from '../core/auth/sessions/wifi-turn-ceiling.js';
-import { presentsAgentIdentity } from '../../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../../lib/http/agent-identity-header.js';
 
 /** The verified identity a caller presented, as the capability context and request facts carry it. */
 export interface CallerIdentity {

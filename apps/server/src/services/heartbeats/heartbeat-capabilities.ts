@@ -31,11 +31,11 @@
  * @module services/heartbeats/heartbeat-capabilities
  */
 import { z } from 'zod';
+import { type CapabilityInvocationObserver } from '../core/capabilities/index.js';
 import {
   defineCapability,
   type CapabilityDomain,
-  type CapabilityInvocationObserver,
-} from '../core/capabilities/index.js';
+} from '../core/capabilities/capability-definition.js';
 import { EndBeatInputSchema, type EndBeatInput } from '@dorkos/shared/heartbeat-schemas';
 import { endBeatTurn, liveBeatTurn, noteBeatBypass, noteBeatChatSend } from './beat-turns.js';
 import { heartbeatStatusCapability } from './measures/status-capability.js';

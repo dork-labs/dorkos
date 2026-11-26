@@ -30,6 +30,7 @@ import { markIngress, type RequestIngress } from '../../remote/ingress-mark.js';
 import { authorizeStreamUpgrade } from '../../streams/stream-upgrade-auth.js';
 import { decideMcpAuth } from '../../../../middleware/mcp-auth.js';
 import { env } from '../../../../env.js';
+import { resolveAgentIdentityFromHeaders } from '../../../../middleware/agent-identity.js';
 
 const target = swappableServer();
 const EMAIL = 'owner' + '@' + 'dork.test';
@@ -173,7 +174,9 @@ describe('a sign-in works only on the route it was made on', () => {
     for (const elsewhere of ['own-tunnel', 'managed', 'direct'] as const) {
       expect((await callVia('get', elsewhere, cookie)).status).toBe(401);
       expect((await callVia('post', elsewhere, cookie)).status).toBe(401);
-      expect(await authorizeStreamUpgrade(upgradeVia(elsewhere, cookie))).toMatchObject({
+      expect(
+        await authorizeStreamUpgrade(upgradeVia(elsewhere, cookie), resolveAgentIdentityFromHeaders)
+      ).toMatchObject({
         ok: false,
         status: 401,
       });
@@ -184,7 +187,9 @@ describe('a sign-in works only on the route it was made on', () => {
       });
       expect(mcp.allowed).toBe(false);
     }
-    expect(await authorizeStreamUpgrade(upgradeVia('wifi', cookie))).toMatchObject({ ok: true });
+    expect(
+      await authorizeStreamUpgrade(upgradeVia('wifi', cookie), resolveAgentIdentityFromHeaders)
+    ).toMatchObject({ ok: true });
     const mcp = await decideMcpAuth('mcp', {
       method: 'POST',
       body: undefined,
@@ -375,7 +380,9 @@ describe('a sign-in works only on the route it was made on', () => {
     expect((await callVia('post', 'direct', cookie)).status).toBe(200);
     expect((await callVia('get', 'wifi', cookie)).status).toBe(401);
     expect((await callVia('post', 'wifi', cookie)).status).toBe(401);
-    expect(await authorizeStreamUpgrade(upgradeVia('wifi', cookie))).toMatchObject({
+    expect(
+      await authorizeStreamUpgrade(upgradeVia('wifi', cookie), resolveAgentIdentityFromHeaders)
+    ).toMatchObject({
       ok: false,
     });
   });

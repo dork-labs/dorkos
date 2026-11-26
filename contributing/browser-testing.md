@@ -349,16 +349,16 @@ When a stale test is detected:
 
 Tests whose `relatedCode` files no longer exist are flagged as orphaned. The maintenance command asks for confirmation before removing them.
 
-### Copy Drift — the PR-time guard (DOR-1647)
+### Copy Drift — the copy-spec guard (DOR-1647, DOR-4937)
 
 This suite quotes real product copy on purpose, and the copy moves. Because `browser-test` reports an instant pass-through on pull requests and only runs the shards in the merge queue (see the header of `.github/workflows/browser-test.yml`), a PR that rewrites a string used to be green everywhere until the queue ran it — and a failure there ejects the PR from the queue _and_ switches off auto-merge. It happened twice in one day on 2026-08-31.
 
-`scripts/check-copy-spec-drift.ts` is the cheap signal that closes most of that hole, running as the `copy-spec-drift` job on every pull request. It compares two things statically, without a browser:
+`scripts/check-copy-spec-drift.ts` is the cheap check that closes most of that hole. It runs as a step of the required `typecheck` job on every pull request and queue build, and as a pre-push command. It compares two things statically, without a browser:
 
 1. the runs of authored text your change deleted from `apps/client/src`, `apps/site/src`, `apps/server/src` and `packages/shared/src` — parsed with the TypeScript compiler, so strings, template pieces and JSX text all count and comments never do;
 2. every string, template piece and regular expression under `apps/e2e`.
 
-If a browser-suite string still spans copy your change deleted, and nothing in the app covers that string more specifically any more, the job goes red and names the spec file and line. The fix is nearly always to update the assertion in the same change.
+If a browser-suite string still spans copy your change deleted, and nothing in the app covers that string more specifically any more, the check goes red and names the spec file and line. The fix is nearly always to update the assertion in the same change. When the change deletes a whole file, a string that still renders from any other file clears (DOR-4009).
 
 Run it yourself before pushing — it reads your working tree, so uncommitted edits count:
 
@@ -367,7 +367,7 @@ pnpm check:copy-spec-drift            # against origin/main
 pnpm check:copy-spec-drift <base-ref> # against something else
 ```
 
-What it does **not** catch: assertions that count things rather than read them (`toHaveCount`), copy assembled from a lookup table, and specs that build their expected text the same dynamic way the component does. Those still only surface in the queue. The job is advisory — it is not a required check — so a red blocks neither auto-merge nor the merge queue: read it yourself before the PR merges.
+What it does **not** catch: assertions that count things rather than read them (`toHaveCount`), copy assembled from a lookup table, and specs that build their expected text the same dynamic way the component does. Those still only surface in the queue. A red blocks the merge: when the copy really does still render from somewhere the check cannot see, change the spec to a locator that does not quote it (a role or a test id).
 
 ## Test-Mode Server (Mock Browser Tests)
 

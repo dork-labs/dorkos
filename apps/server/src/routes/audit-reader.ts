@@ -16,7 +16,7 @@
 import { auditTrail } from '../services/audit/audit-trail.js';
 import { OWNER_READER, type AuditReader } from '../services/audit/visibility.js';
 import { readableSessionIds } from '../services/audit/session-visibility.js';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import type { Context } from 'hono';
 import { problem } from '@dorkos/http-kit';
 import type { RequestFacts } from '../http/request-facts.js';

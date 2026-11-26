@@ -50,12 +50,12 @@ import {
   TodoPromiseSchema,
   TodoStateSchema,
 } from '@dorkos/shared/todo-promise-schemas';
+import { type CapabilityHandlerContext } from '../core/capabilities/index.js';
 import {
   defineCapability,
   type CapabilityDeps,
   type CapabilityDomain,
-  type CapabilityHandlerContext,
-} from '../core/capabilities/index.js';
+} from '../core/capabilities/capability-definition.js';
 import { changeToTell, type TodoChangeNotice } from './notice/todo-recipient-notice.js';
 import { markTurnIfOutside } from './todo-word-marks.js';
 import {

@@ -26,6 +26,8 @@
  * more text blocks carrying the JSON-encoded payload, plus an optional
  * `isError` flag set on failure paths.
  */
+import { CapabilityToolError } from './capability-definition.js';
+
 export interface McpTextEnvelope {
   /** One or more text blocks carrying the JSON-encoded payload. */
   content: { type: 'text'; text: string }[];
@@ -33,27 +35,9 @@ export interface McpTextEnvelope {
   isError?: boolean;
 }
 
-/**
- * A capability handler outcome that must surface to the MCP client as an
- * `isError` result. Carries the plain payload the handler produced (already the
- * structured `{ error, code, ... }` shape) so the transport adapter re-wraps it
- * verbatim.
- *
- * A capability's `invoke` throws this (via {@link unwrapMcpEnvelope}) instead of
- * returning it, so the registry's plain-data contract holds while the exact
- * error payload and the `isError` flag are preserved for the wire.
- */
-export class CapabilityToolError extends Error {
-  /**
-   * Wrap an error payload a capability handler returned.
-   *
-   * @param payload - The plain error payload the handler produced.
-   */
-  constructor(public readonly payload: unknown) {
-    super('Capability invocation returned an error result.');
-    this.name = 'CapabilityToolError';
-  }
-}
+// The refusal half of the capability contract lives in the port file (capability-definition.ts),
+// so a domain takes it from there; this plain re-export keeps existing callers working.
+export { CapabilityToolError } from './capability-definition.js';
 
 /**
  * A capability result that carries PIXELS beside its JSON.

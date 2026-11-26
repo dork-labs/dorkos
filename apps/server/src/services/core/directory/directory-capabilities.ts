@@ -26,7 +26,7 @@ import {
   CapabilityToolError,
   defineCapability,
   type CapabilityDomain,
-} from '../capabilities/index.js';
+} from '../capabilities/capability-definition.js';
 import { boundaryToolError } from './path-refusal.js';
 
 /** A refusal for a folder the system answered with an errno, or `null` for another failure. */

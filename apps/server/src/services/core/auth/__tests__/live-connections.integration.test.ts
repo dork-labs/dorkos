@@ -51,6 +51,7 @@ import { configManager, initConfigManager } from '../../config-manager.js';
 import { markIngress, type RequestIngress } from '../../remote/ingress-mark.js';
 import { attachUpgradeRouter } from '../../streams/upgrade-router.js';
 import { env } from '../../../../env.js';
+import { upgradeGuards } from '../../../../startup/upgrade-guards.js';
 
 const target = swappableServer();
 const EMAIL = 'owner' + '@' + 'dork.test';
@@ -256,7 +257,8 @@ describe('signing out ends what that sign-in had open', () => {
           authorize: () => ({ ok: true, open: () => {} }),
         },
       ],
-      new MainRequestAdmission()
+      new MainRequestAdmission(),
+      upgradeGuards
     );
     const signUp = await request(target.server)
       .post('/api/auth/sign-up/email')

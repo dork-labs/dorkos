@@ -17,6 +17,7 @@ import { capabilityGroup } from '../../../http/__tests__/capability-group.js';
 import { meshDomain } from '../../../services/mesh/doors/mesh-capabilities.js';
 import type { ActivityService } from '../../../services/activity/activity-service.js';
 import { initConfigManager } from '../../../services/core/config-manager.js';
+import { meshReadViews } from './mesh-read-views.js';
 
 /** ONE listener per test file, with the app behind it swapped per test. */
 export const fixtureTarget = swappableServer();
@@ -89,7 +90,11 @@ export const MOCK_MANIFEST = {
  * two hand routes.
  */
 export function mountMesh(meshCore: MockMeshCore, activity?: ActivityService): void {
-  const meshDeps = { meshCore: meshCore as unknown as MeshCore, ...(activity && { activity }) };
+  const meshDeps = {
+    meshCore: meshCore as unknown as MeshCore,
+    views: meshReadViews,
+    ...(activity && { activity }),
+  };
   fixtureTarget.mount(
     honoGroupListener([
       capabilityGroup(meshDomain, { meshDeps }),

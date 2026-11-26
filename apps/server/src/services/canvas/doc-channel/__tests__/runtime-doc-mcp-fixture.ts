@@ -13,7 +13,7 @@ import { ConnectorRuntimePrincipalService } from '../../../connectors/principal/
 import type { ConnectorRuntime } from '../../../connectors/runtime-principal-port.js';
 import { createRoomSubsystem } from '../../../rooms/index.js';
 import { RoomRepoStore } from '../../../rooms/repo/room-repo-store.js';
-import { createDocChannelHttpComposition } from '../http-composition.js';
+import { composeDocChannelHttp } from './doc-channel-http.js';
 import { createDocChannelDownstreamCapabilities } from '../downstream/capabilities.js';
 import { createDocChannelGrantCapabilities } from '../grant-capabilities.js';
 
@@ -24,7 +24,7 @@ export interface RuntimeDocMcpFixture {
   runtime: Extract<ConnectorRuntime, 'claude-code' | 'codex' | 'opencode'>;
   doc: { id: string };
   otherDoc: { id: string };
-  http: ReturnType<typeof createDocChannelHttpComposition>;
+  http: ReturnType<typeof composeDocChannelHttp>;
   canvas: ReturnType<typeof createRoomSubsystem>['canvas'];
   principals: ConnectorRuntimePrincipalService;
   registry: CapabilityRegistry;
@@ -152,7 +152,7 @@ export async function runtimeDocMcpFixture(
       type: 'markdown',
       content: 'Private document',
     });
-    const http = createDocChannelHttpComposition({
+    const http = composeDocChannelHttp({
       db,
       documents: rooms.canvasDocuments,
       rooms: rooms.service,

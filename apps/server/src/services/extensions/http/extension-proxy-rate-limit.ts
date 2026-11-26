@@ -1,5 +1,5 @@
-import { factsRateLimit, type RateLimitVerdict } from '../http/rate-limiter.js';
-import type { RequestFacts } from '../http/request-facts.js';
+import { factsRateLimit, type RateLimitVerdict } from '../../../http/rate-limiter.js';
+import type { RequestFacts } from '../../../http/request-facts.js';
 import { problemBody } from '@dorkos/http-kit';
 
 /** Default requests per minute per IP through one extension's data proxy. */

@@ -27,7 +27,7 @@ import {
 } from '@dorkos/shared/mesh-schemas';
 import { probeManifest, removeDorkDirectory } from '@dorkos/shared/manifest';
 
-import { defineCapability } from '../../core/capabilities/index.js';
+import { defineCapability } from '../../core/capabilities/capability-definition.js';
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 import { validateBoundary, validateBoundaryOrDorkHome } from '../../../lib/boundary.js';
 import { logger } from '../../../lib/logger.js';

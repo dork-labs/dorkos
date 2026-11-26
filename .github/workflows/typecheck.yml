@@ -306,6 +306,30 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm run check:one-shot-routes
 
+      # Copy a browser spec still quotes (DOR-4937, DOR-1647). The Playwright
+      # specs assert literal copy and run only in the merge queue, so a copy
+      # rewrite that strands one is green on the PR and ejected in the queue.
+      # This was an advisory job in browser-test.yml; it rides THIS job for the
+      # vocab gate's reason above (required, unfiltered, reports on
+      # `merge_group`), so no new required check. Same base as the file-size
+      # ratchet below, for the same reasons: the merge commit's first parent on
+      # `pull_request` and the canary, `merge_group.base_sha` in the queue, so
+      # a queue build is judged against main, not the previous entry. Static
+      # reads, a few seconds. Pin suites: scripts/__tests__/check-copy-spec-drift*.test.ts.
+      - name: Copy-spec drift (DOR-4937)
+        if: ${{ !cancelled() }}
+        env:
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
+        run: |
+          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
+          if [ -n "$QUEUE_BASE" ]; then
+            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
+            base="$QUEUE_BASE"
+          else
+            base="$(git rev-parse HEAD^1)"
+          fi
+          pnpm run check:copy-spec-drift "$base"
+
       # The public/private boundary (DOR-2024): a control-plane hostname, a
       # price or plan name, or anything else that belongs to the closed-source
       # side of DorkOS Cloud, reaching this repository's source or prose.
@@ -421,6 +445,25 @@ jobs:
             base="$(git rev-parse HEAD^1)"
           fi
           pnpm run check:computer-wall -- --base "$base"
+
+      # The services import boundary (DOR-4924). The server's lint refuses a
+      # domain-to-domain pair apps/server/eslint-rules/import-boundary.baseline.json
+      # does not hold; this refuses a pair's count grown and a pair added or
+      # raised by hand, against the same base the steps above pick, for the
+      # same reasons. Static reads only, under a second.
+      - name: Import boundary (DOR-4924)
+        if: ${{ !cancelled() }}
+        env:
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
+        run: |
+          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
+          if [ -n "$QUEUE_BASE" ]; then
+            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
+            base="$QUEUE_BASE"
+          else
+            base="$(git rev-parse HEAD^1)"
+          fi
+          pnpm run check:import-boundary -- --base "$base"
 
       # The API lint gate (DOR-4996). Holds the committed OpenAPI document
       # (docs/api/openapi.json, kept fresh by docs-openapi-check) and the route

@@ -7,11 +7,12 @@ import { createMeshRoutes, type MeshRouterDeps } from '../mesh.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { capabilityGroup } from '../../http/__tests__/capability-group.js';
 import { meshDomain } from '../../services/mesh/doors/mesh-capabilities.js';
+import { meshReadViews } from './mesh/mesh-read-views.js';
 
 /** The registry's doors as the app serves them: the capability mount, then the hand routes. */
 function meshListener(deps: MeshRouterDeps) {
   return honoGroupListener([
-    capabilityGroup(meshDomain, { meshDeps: deps }),
+    capabilityGroup(meshDomain, { meshDeps: { ...deps, views: meshReadViews } }),
     { path: '/api/mesh', routes: createMeshRoutes(deps) },
   ]);
 }

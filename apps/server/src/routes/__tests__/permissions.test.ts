@@ -10,7 +10,7 @@ import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
 import { APPROVAL_TOKEN_HEADER } from '../../services/core/capabilities/index.js';
-import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
+import { AGENT_IDENTITY_HEADER } from '../../lib/http/agent-identity-header.js';
 import { createPermissionsRoutes } from '../permissions.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import {

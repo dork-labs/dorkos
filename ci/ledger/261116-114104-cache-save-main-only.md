@@ -11,7 +11,6 @@ gates:
   - wf.browser-test.browser-smoke
   - wf.browser-test.browser-shard
   - wf.browser-test.first-run
-  - wf.browser-test.copy-spec-drift
   - wf.app-frame-browser.gesture-spec
   - wf.credential-free-build.credential-free-build
   - wf.harness-windows.harness-windows
@@ -59,3 +58,5 @@ than "Cache not found". Watch beside it: `gate.wf.harness-windows.harness-window
 (cold Windows installs) and the pnpm install step time on queue builds right after a lockfile
 change. Revert if the cache stays over budget after 7 days, or if cold installs in the queue cost
 more than the evicted build cache saved.
+
+`wf.browser-test.copy-spec-drift` left `gates:` on 2026-11-25: 261126-024020 removed that job and moved its check into `typecheck`, which already saves its store the same main-only way.

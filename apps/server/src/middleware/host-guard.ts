@@ -43,61 +43,17 @@
  */
 import { env } from '../env.js';
 import { logger } from '../lib/logger.js';
-import { getTunnelHosts, isLoopbackHost, parseHostname } from '../lib/trusted-origins.js';
+import {
+  getTunnelHosts,
+  isHostAllowed,
+  parseHostname,
+  parseTrustedHosts,
+} from '../lib/trusted-origins.js';
 import { getLanAccessHosts } from '../services/core/lan-access/lan-trust.js';
 import { configManager } from '../services/core/config-manager.js';
 import { redactLogPath } from './request-logger.js';
 import { problemBody } from '@dorkos/http-kit';
 import type { Problem } from '@dorkos/shared/problem';
-
-/** No allocation on the common path, where `DORKOS_TRUSTED_HOSTS` is unset. */
-const NO_TRUSTED_HOSTS: readonly string[] = [];
-
-/**
- * Split the `DORKOS_TRUSTED_HOSTS` value into comparable host names: comma
- * separated, whitespace and empty entries dropped, lower-cased.
- *
- * @param raw - The raw env value, or `undefined` when it is not set.
- */
-export function parseTrustedHosts(raw: string | undefined): readonly string[] {
-  if (!raw) return NO_TRUSTED_HOSTS;
-  return raw
-    .split(',')
-    .map((host) => host.trim().toLowerCase())
-    .filter((host) => host.length > 0);
-}
-
-/** The facts the host decision depends on, all resolved by the caller. */
-export interface HostPolicy {
-  /** The request's host name, from `parseHostname` in `lib/trusted-origins.ts`. */
-  hostname: string | null;
-  /** Operator-configured extra host names, from {@link parseTrustedHosts}. */
-  trustedHosts: readonly string[];
-  /**
-   * Host names of every live tunnel address — the person's own tunnel, or each
-   * hostname managed remote access serves. Empty when no tunnel is open.
-   */
-  tunnelHosts: readonly string[];
-  /**
-   * This computer's own Bonjour names and network addresses while Wi-Fi access
-   * is open (DOR-2930), from `getLanAccessHosts`. Empty while it is closed.
-   */
-  lanHosts: readonly string[];
-}
-
-/**
- * Pure predicate: whether a request's host name is one this instance answers to.
- *
- * @param policy - The resolved {@link HostPolicy}.
- */
-export function isHostAllowed(policy: HostPolicy): boolean {
-  const { hostname } = policy;
-  if (!hostname) return false;
-  if (isLoopbackHost(hostname)) return true;
-  if (policy.trustedHosts.includes(hostname)) return true;
-  if (policy.lanHosts.includes(hostname)) return true;
-  return policy.tunnelHosts.includes(hostname);
-}
 
 /**
  * The operator-facing 403 sentence. It names `DORKOS_TRUSTED_HOSTS` so someone

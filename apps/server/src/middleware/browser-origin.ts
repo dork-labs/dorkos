@@ -15,9 +15,14 @@
  */
 import type { RequestFacts } from '../http/request-facts.js';
 import { env } from '../env.js';
-import { type BrowserOriginFacts, getTunnelHosts, parseHostname } from '../lib/trusted-origins.js';
+import {
+  type BrowserOriginFacts,
+  getTunnelHosts,
+  isHostAllowed,
+  parseHostname,
+  parseTrustedHosts,
+} from '../lib/trusted-origins.js';
 import { getLanAccessHosts } from '../services/core/lan-access/lan-trust.js';
-import { isHostAllowed, parseTrustedHosts } from './host-guard.js';
 
 /** What {@link resolveBrowserOriginFacts} cannot read off the request itself. */
 export interface BrowserOriginContext {

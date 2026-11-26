@@ -7,12 +7,14 @@ import {
   WorkQueueSchema,
 } from '@dorkos/shared/work-queue-schemas';
 import {
-  defineCapability,
-  type CapabilityDeps,
-  type CapabilityDomain,
   type CapabilityHandlerContext,
   type CapabilityInvocationContext,
 } from '../core/capabilities/index.js';
+import {
+  defineCapability,
+  type CapabilityDeps,
+  type CapabilityDomain,
+} from '../core/capabilities/capability-definition.js';
 import { CapabilityToolError } from '../core/capabilities/mcp-envelope.js';
 import { lastTurnLevelOf, marksOf } from '../core/turn-power/turn-levels.js';
 import { isServerPrincipal } from '../connectors/principal/server-principal.js';

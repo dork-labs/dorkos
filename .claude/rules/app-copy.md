@@ -10,7 +10,7 @@ The rules in one breath: dry and calm, a control panel and not a consumer app. N
 
 **Length, per block** (one label, title, body, toast or tooltip): 1-3 words preferred, 4-6 good, 7-15 flagged, 16+ never. Too much to say? Cut, then split into title and body, then disclose in place (expandable section, popover, info tip), and link to docs last. `pnpm check:copy-length` lists the long blocks, and any 16+ block fails the `typecheck` CI job.
 
-Before changing an existing string, `grep -rn "<old text>" apps/e2e`: browser specs assert literal copy, and they run only in the merge queue.
+Browser specs assert literal copy and run only in the merge queue. `pnpm check:copy-spec-drift` names any spec your change strands; it also runs at pre-push and fails the `typecheck` CI job.
 
 Words for DorkOS's own ideas (mini apps, access levels, Connections, space, co-workers) and the retired ones come from `meta/VOICE.md`; the vocab gate enforces the machine-checkable part.
 

@@ -37,7 +37,7 @@ import {
   validationProblem,
 } from '@dorkos/http-kit';
 import type { Problem } from '@dorkos/shared/problem';
-import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { env } from '../env.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
