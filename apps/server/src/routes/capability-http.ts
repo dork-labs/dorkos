@@ -69,6 +69,10 @@ export const HAND_SERVED_CAPABILITIES: Readonly<Record<string, string>> = Object
 /** Why the task reads may skip the task step-up middleware. */
 const TASK_STEP_UP_WRITES_ONLY = 'The task step-up asks only before a write, and this is a read.';
 
+/** Why the chat reads (`session/reads/session-read-capabilities.ts`) may skip the session read guard. */
+const SESSION_READS_FOLD_THE_GUARD =
+  'The chat reads fold the session read guard in: an agent gets 404 for a chat it may not read.';
+
 /**
  * Hand middleware a capability path may skip, keyed `METHOD /path skips ALL
  * /pattern` (Hono paths), each with why it has nothing to do there. Every
@@ -86,6 +90,8 @@ export const SKIPPABLE_MIDDLEWARE: Readonly<Record<string, string>> = Object.fre
     '`work-graph.chat_tree` folds the session read guard in: an agent gets 404 for a chat it may not read.',
   'GET /api/sessions/:id/work skips ALL /api/sessions/:id/*':
     '`work-graph.chat_work` folds the session read guard in: an agent gets 404 for a chat it may not read.',
+  'GET /api/sessions/:id/runtime-type skips ALL /api/sessions/:id/*': SESSION_READS_FOLD_THE_GUARD,
+  'GET /api/sessions/:id/settings skips ALL /api/sessions/:id/*': SESSION_READS_FOLD_THE_GUARD,
   // `askForPersonBeforeTaskWrite` asks for the step-up only before a write; these are reads.
   'GET /api/tasks skips ALL /api/tasks': TASK_STEP_UP_WRITES_ONLY,
   'GET /api/tasks skips ALL /api/tasks/*': TASK_STEP_UP_WRITES_ONLY,

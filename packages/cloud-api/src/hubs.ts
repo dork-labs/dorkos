@@ -12,10 +12,13 @@ import { RemoteEdgeProofSchema } from './remote.js';
 /**
  * A person's own DorkOS in the cloud, and the agent computers it runs agents on.
  *
- * A **hub** is one person's DorkOS: their private space, their agents' brains
- * and the account directory view. It runs no agents. Cloud keeps a warm pool of
- * hubs that belong to nobody; one is **assigned** to a person the first time
- * they open the full app. An **agent computer** is where a cloud agent runs.
+ * A **hub** is a person's DorkOS in the cloud. For a person with no computer
+ * of their own it is the home of their private space; for a person with one,
+ * that computer is the home and the hub is their way in. Either way it is the
+ * home of the agents they run on cloud agent computers. It runs no agents
+ * itself. Cloud keeps a warm pool of hubs that belong to nobody; one is
+ * **assigned** to a person the first time they open the full app. An **agent
+ * computer** is where a cloud agent runs.
  * A hub never holds a hosting supplier's credentials: it asks this service to
  * start or stop its own computers, and the service makes the call, so a hub
  * that is compromised cannot reach anybody else's machines.
@@ -25,7 +28,11 @@ import { RemoteEdgeProofSchema } from './remote.js';
  * caller's own hub and its own account's computers.
  *
  * "Hub" is a word for this wire and for code. Nothing a person reads says it:
- * the app says "Private" or "space".
+ * the app says "your DorkOS in the cloud", or "Private" where it is the home of
+ * the private space.
+ *
+ * What wakes a hub that is asleep, and its next-wake time, are in
+ * `hub-wake.ts`.
  *
  * **How an agent computer boots.** The service starts it with three values and
  * nothing else that grants anything:
@@ -169,6 +176,20 @@ export type HubSignInClient = z.infer<typeof HubSignInClientSchema>;
  * credential, this read repeats, because a hub that restarts must serve again.
  * It still carries the one-time marker: never log it, never relay it, never
  * return it to a browser.
+ *
+ * **Home or way in, decided once.** `privateSpaceHome` says whether this hub
+ * is the home of its owner's private space (`true`) or their way in (`false`).
+ * It is `true` when no computer of the person's own (an instance with the role
+ * `computer`) was registered to the account when the hub was first assigned,
+ * and `false` when one was. The service decides it once, at that first
+ * assignment, and never changes it, except by a later move of the whole
+ * space. For a hub assigned before this field existed, the service decides it
+ * the same way, from the account's instances with the role `computer`
+ * registered before that assignment. Linking or unlinking a computer never
+ * changes it. The hub keeps the first value it reads and never reads it
+ * again. **Absent** (a service from before this field) means the hub has not
+ * recorded anything yet: it keeps behaving as it did before the field existed
+ * until a read carries a value.
  */
 export const HubAssignmentSchema = z
   .discriminatedUnion('state', [
@@ -207,6 +228,12 @@ export const HubAssignmentSchema = z
         signIn: HubSignInClientSchema.optional().describe(
           'The sign-in client registered for this hub. Absent until the service registers one.'
         ),
+        privateSpaceHome: z
+          .boolean()
+          .optional()
+          .describe(
+            'True when this hub is the home of its owner`s private space (no computer of their own was registered to the account when it was first assigned); false when it is their way in. Decided once, never changed by linking or unlinking a computer. The hub keeps the first value it reads. Absent from an older service: the hub records nothing and behaves as before until a read carries a value.'
+          ),
       })
       .describe(
         'This hub is one person`s, and never anybody else`s: an assigned hub is never reassigned. Serve only them, at this address, behind this proof.'
@@ -631,38 +658,3 @@ export const AgentComputerActivityRequestSchema = z
 
 /** Whether an agent computer is in the middle of work. */
 export type AgentComputerActivityRequest = z.infer<typeof AgentComputerActivityRequestSchema>;
-
-/** The shortest gap the service leaves between two wakes it makes for one hub. */
-export const HUB_NEXT_WAKE_MIN_INTERVAL_SECONDS = 300 as const;
-
-/** How far ahead, at most, a hub's next wake may be. One further out is ignored. */
-export const HUB_NEXT_WAKE_MAX_AHEAD_DAYS = 31 as const;
-
-/**
- * `PUT /v1/hubs/self/next-wake` — when the hub next has a schedule due, so a
- * hub that is asleep is woken for it. The hub's own instance key only;
- * answered `204` with no body.
- *
- * - The service wakes the hub at `at`, and at most once every
- *   {@link HUB_NEXT_WAKE_MIN_INTERVAL_SECONDS}, however often it is asked. A
- *   hub that wakes sends its next time again before it sleeps.
- * - `at: null` means nothing is due: the service keeps no wake for the hub.
- * - An `at` more than {@link HUB_NEXT_WAKE_MAX_AHEAD_DAYS} days ahead is
- *   **ignored**, not refused: the service keeps no wake for it, as for `null`.
- *   It is ignored because a schema has no clock to refuse it with, and because
- *   a hub whose next schedule really is that far out has done nothing wrong; it
- *   sends the time again the next time it is awake. An `at` in the past wakes
- *   the hub as soon as the interval allows.
- */
-export const HubNextWakeRequestSchema = z
-  .object({
-    at: TimestampSchema.nullable().describe(
-      'When the hub next has a schedule due, or null when nothing is. More than 31 days ahead is ignored.'
-    ),
-  })
-  .describe(
-    'When a hub next needs waking for a due schedule. Hub instance key only; answered 204.'
-  );
-
-/** When a hub next needs waking. */
-export type HubNextWakeRequest = z.infer<typeof HubNextWakeRequestSchema>;

@@ -90,6 +90,8 @@ export const MOUNTED_CAPABILITY_IDS: readonly string[] = [
   'tasks.view_list',
   'tasks.view_runs',
   'tasks.view_run',
+  'sessions.get_runtime_type',
+  'sessions.get_settings',
   'runtimes.account_usage',
   'runtimes.found_accounts',
   'runtimes.account_eligibility',

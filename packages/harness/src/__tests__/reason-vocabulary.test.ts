@@ -434,7 +434,12 @@ function withoutFixturePaths(text: string): string {
  */
 function retiredTermsIn(text: string, terms: readonly BannedTerm[]): BannedTerm[] {
   const searchable = withoutQuotedLayerNames(withoutFixturePaths(text));
-  return terms.filter((term) => termMatcher(term.term).test(searchable));
+  // A term scoped to other folders (the app-copy voice waves, DOR-4943) or
+  // matched only as a button's whole label is not a retired word for these
+  // sentences: "No" is banned as a button, never as a word.
+  return terms
+    .filter((term) => !term.roots && !term.match)
+    .filter((term) => termMatcher(term.term).test(searchable));
 }
 
 /**

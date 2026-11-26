@@ -43,6 +43,7 @@ There is no exception marker. A block that "has to" be long has not been split y
 - **Dry and calm.** No jokes, no exclamation marks, no cheerleading.
 - **Never "we" or "I".** The app has no speaker. Name the actor: DorkOS, your agent, Scout, Telegram. Talk to "you".
 - **No "please", "sorry" or "oops".** With no speaker, there is nobody to apologize.
+- The vocab gate (`scripts/check-vocab-gate.ts`, waves 9 and 10) fails on all five words in `apps/client/src`.
 - **No blame words:** failed, invalid, illegal, fatal, abort, kill. Say what did not happen: "Couldn’t save".
 - **Plain words.** Gloss a technical term in the same sentence or cut it.
 - **No code names.** Relay, Mesh, Pulse, Harness Sync and "runtime" never appear. Say what it does: "Messages can’t be delivered right now", "Runs on: Codex". A name the person chose, like an agent's name, is fine. One carve-out: "Runtimes" stays as the name of its Settings tab and rows (`plans/language-ia-simplification.md` D3, kept by the operator on 2026-10-02). A sentence still says "Runs on: Codex", never "Runtime: codex".
@@ -66,7 +67,7 @@ There is no exception marker. A block that "has to" be long has not been split y
 
 - **Name the exact action:** "Delete agent", "Connect Telegram", "Send".
 - **Generic labels allowed:** Cancel, Close, Done. These mean "leave".
-- **Banned:** OK, Yes, No, Submit, Confirm.
+- **Banned:** OK, Yes, No, Submit, Confirm. The vocab gate (wave 11) fails on a button whose whole label is one of them.
 - The destructive button is never the default or the autofocused one.
 - A disabled control explains why in a tooltip, unless the reason is on screen.
 
