@@ -15,7 +15,7 @@ The original inventory below records September 28 source and test evidence. At p
 
 See [forwarding](../apps/site/src/lib/cloud-accounts/forward.ts), [managed configuration](../apps/site/src/lib/connectors/managed/config.ts) and the current [atlas](../contributing/system-architecture.md). Both local maintenance routes stand down when account forwarding is active, regardless of the managed-forward switch. Route reachability, actual schedule ownership, local dependencies and migration history still need reconciliation before deletion.
 
-The required full production release after handover without rollback remains the retirement gate. This update inspected public source; it did not rerun the historical tests or establish live configuration, current destination acceptance or the release prerequisite. The [October 4 assessment](20261004-architecture-assessment.md) and [roadmap](../plans/architecture-improvement-roadmap.md) describe the next bounded inventory work under existing owners.
+The required full production release after handover without rollback remains the retirement gate. This update inspected public source; it did not rerun the historical tests or establish live configuration, current destination acceptance or the release prerequisite. The [October 4 assessment](20261004_architecture-assessment.md) and [roadmap](../plans/architecture-improvement-roadmap.md) describe the next bounded inventory work under existing owners.
 
 ## September 28 decision and evidence limit
 

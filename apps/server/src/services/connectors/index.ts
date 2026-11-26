@@ -98,17 +98,6 @@ export {
   type ConnectorRuntimeCapabilityId,
   type ConnectorRuntimeExecutionCapabilityId,
 } from './runtime-capability-scope.js';
-export type {
-  ConnectorRuntime,
-  ConnectorRuntimeBindingBootPort,
-  ConnectorRuntimePrincipalPort,
-  ConnectorTurnRefusalReason,
-  OpenConnectorTurnInput,
-  OpenConnectorTurnResult,
-  ResolveConnectorTurnInput,
-  ResolveConnectorTurnResult,
-  RevokeConnectorTurnReason,
-} from './runtime-principal-port.js';
 export {
   ComposioConnectorProvider,
   maybeCreateComposioProvider,
@@ -166,9 +155,4 @@ export {
 // is resolved, never a per-account token ref).
 export type { CredentialProvider, CredentialResolution } from '../core/credential-provider.js';
 
-export {
-  isServerPrincipal,
-  type ConnectorOwnerAuthority,
-  type ServerPrincipalClaims,
-  type ServerPrincipalProof,
-} from './principal/server-principal.js';
+export { isServerPrincipal } from './principal/server-principal.js';

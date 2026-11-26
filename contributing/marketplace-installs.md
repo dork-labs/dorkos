@@ -835,7 +835,7 @@ Hard-coded forward-slash path literals (`'a/b/c'`) work on macOS and Linux and b
 
 The required `test` check in [the test workflow](../.github/workflows/test.yml) aggregates affected PR suites and full sharded merge-queue suites on Ubuntu. Marketplace recovery tests belong to the server Vitest project. Docs-only path selection can skip execution, so a green check alone does not say every recovery suite ran.
 
-This is not a Linux/macOS/Windows recovery matrix. Local macOS proof and the current guarantee-to-test map are recorded in [the local recovery evidence audit](../research/20260926-local-marketplace-recovery-evidence.md). That audit distinguishes deterministic crash tests, prior real-process SIGKILL proof, retained-file defects and deliberate recovery limits. No required-gate change is implied.
+This is not a Linux/macOS/Windows recovery matrix. Local macOS proof and the current guarantee-to-test map are recorded in [the local recovery evidence audit](../research/20260926_local-marketplace-recovery-evidence.md). That audit distinguishes deterministic crash tests, prior real-process SIGKILL proof, retained-file defects and deliberate recovery limits. No required-gate change is implied.
 
 ## 14. Testing strategy
 

@@ -24,9 +24,11 @@ import type { ApprovalService } from '../../core/approvals/approval-service.js';
 import {
   createServerPrincipal,
   isServerPrincipal,
-  type ServerPrincipalProof,
-  type ServerPrincipalClaims,
 } from '../../connectors/principal/server-principal.js';
+import type {
+  ServerPrincipalClaims,
+  ServerPrincipalProof,
+} from '../../core/connections-lease/index.js';
 import { queueKeyOf } from '../../session/resolution/session-key-registry.js';
 import type { RoomService } from '../../rooms/room-service.js';
 import type { RoomStore } from '../../rooms/room-store.js';

@@ -4,8 +4,8 @@ import type { MiddlewareHandler } from 'hono';
 import type {
   ConnectorRuntime,
   ConnectorRuntimePrincipalPort,
-} from '../../connectors/runtime-principal-port.js';
-import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
+  ServerPrincipalProof,
+} from '../../core/connections-lease/index.js';
 import type { RequestFactsVariables } from '../../../http/request-facts.js';
 import { CONNECTOR_RUNTIME_CWD_HEADER, CONNECTOR_RUNTIME_KIND_HEADER } from '../connector-tools.js';
 

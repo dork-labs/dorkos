@@ -324,6 +324,13 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   tasks_update: 'local',
   tasks_delete: 'local',
   'tasks.view_list': 'local',
+  // The app's runtime setup reads (DOR-4978): settings, labels, folder names, key hints.
+  'runtimes.account_usage': 'local',
+  'runtimes.found_accounts': 'local',
+  'runtimes.account_eligibility': 'local',
+  'runtimes.key_status': 'local',
+  'runtimes.opencode_key_setup': 'local',
+  'runtimes.doe_model_setup': 'local',
   relay_list_endpoints: 'local',
   relay_notify_user: 'local',
   relay_list_adapters: 'local',

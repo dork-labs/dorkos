@@ -60,6 +60,8 @@ export const REPO_WIDE_SUITES = [
   '__tests__/community-release-workflow.test.ts',
   '__tests__/composio-sdk-import-boundary.test.ts',
   '__tests__/config-glob-scope.test.ts',
+  // Reads UserConfigSchema and contributing/configuration.md (DOR-4940).
+  '__tests__/config-guide-census.test.ts',
   '__tests__/connector-legacy-authority-absence.test.ts',
   '__tests__/connector-public-copy.test.ts',
   '__tests__/credential-free-workflow.test.ts',
@@ -69,6 +71,8 @@ export const REPO_WIDE_SUITES = [
   '__tests__/deprecated-removal.test.ts',
   '__tests__/extension-child-build-entry.test.ts',
   '__tests__/gray-matter-import-boundary.test.ts',
+  // Reads apps/server/eslint.config.js, server source and .claude/rules/dork-home.md (DOR-4940).
+  '__tests__/homedir-carve-out-census.test.ts',
   // Reads ci/config.yaml, the root package.json and vitest.config.ts.
   '__tests__/load-wait.test.ts',
   '__tests__/loopback-dial-boundary.test.ts',
@@ -89,7 +93,13 @@ export const REPO_WIDE_SUITES = [
   // The guard over these two lists. It reads only scripts/, but a new suite
   // can land from any PR, so it must run in the queue too (DOR-4224).
   '__tests__/repo-wide-suites.test.ts',
+  // Reads the top level of research/ (DOR-4940).
+  '__tests__/research-names-census.test.ts',
   '__tests__/root-eslint-output-scope.test.ts',
+  // Reads apps/server/src/services/runtimes (DOR-4940).
+  '__tests__/runtime-conformance-census.test.ts',
+  // Reads apps/server/vitest.config.ts and every server test file (DOR-4940).
+  '__tests__/server-test-location-census.test.ts',
   '__tests__/session-link-boundary.test.ts',
   '__tests__/space-page-versions.test.ts',
   '__tests__/space-server.test.ts',

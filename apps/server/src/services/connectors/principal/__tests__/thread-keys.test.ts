@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { logger } from '../../../../lib/logger.js';
-import type { OpenConnectorTurnInput } from '../../runtime-principal-port.js';
+import type { OpenConnectorTurnInput } from '../../../core/connections-lease/index.js';
 import {
   ConnectorRuntimePrincipalService,
   type ConnectorRuntimeAuthorityResolver,

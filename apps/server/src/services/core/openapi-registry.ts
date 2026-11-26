@@ -273,12 +273,7 @@ import {
   SetPermissionPresetBodySchema,
 } from '@dorkos/shared/permissions';
 import { z } from 'zod';
-import {
-  AccountUsageSchema,
-  DismissFoundFolderRequestSchema,
-  FoundClaudeFolderSchema,
-  LEDGER_RUNTIMES,
-} from '@dorkos/shared/account-usage';
+import { AccountUsageSchema, DismissFoundFolderRequestSchema } from '@dorkos/shared/account-usage';
 import { PackageTypeSchema } from '@dorkos/marketplace';
 import { DisclosedEffectsSchema } from '../marketplace/preview/disclosed-effects.js';
 import { INTERNAL_ERROR_RESPONSE, problemResponse } from './openapi/problem-openapi.js';
@@ -1435,34 +1430,6 @@ registry.registerPath({
 // --- Account usage ---
 
 registry.registerPath({
-  method: 'get',
-  path: '/api/runtimes/{runtime}/accounts/usage',
-  tags: ['Runtimes'],
-  summary: "List how much of each of a runtime's accounts is used",
-  description:
-    "Every account of the runtime with its usage windows, from the server's memory: registered " +
-    'accounts in registry order, the machine-wide `default` account when it is not another ' +
-    'name for a registered one, then folders that are neither (with a null `accountId`). A ' +
-    'window with no current reading is left out, and an account with nothing to go on reads ' +
-    '`state: "unknown"`, never zero.',
-  request: {
-    params: z.object({
-      runtime: z.enum(LEDGER_RUNTIMES).openapi({ description: 'The runtime slug.' }),
-    }),
-  },
-  responses: {
-    200: {
-      description: "The runtime's accounts and their usage",
-      content: {
-        'application/json': { schema: z.object({ accounts: z.array(AccountUsageSchema) }) },
-      },
-    },
-    400: problemResponse('`invalid_request`: an unknown runtime slug'),
-    503: problemResponse('`temporarily_unavailable`: the usage store is not running yet'),
-  },
-});
-
-registry.registerPath({
   method: 'post',
   path: '/api/runtimes/claude-code/accounts/{id}/probe',
   tags: ['Runtimes'],
@@ -1495,27 +1462,6 @@ registry.registerPath({
     },
     404: problemResponse('`not_found`: no Claude Code account has that id'),
     503: problemResponse('`temporarily_unavailable`: the usage store is not running yet'),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/runtimes/claude-code/accounts/found',
-  tags: ['Runtimes'],
-  summary: 'List the Claude account folders found on this computer',
-  description:
-    'Every `.claude*` folder in the home folder that holds a `projects/` folder and is not a ' +
-    'registered account, the machine default or a dismissed folder, sorted by name. Read-only: ' +
-    'folders are listed and statted, and no file is ever opened. Settings offers each one with ' +
-    'an Add button; nothing is registered until a person clicks it.',
-  responses: {
-    500: INTERNAL_ERROR_RESPONSE,
-    200: {
-      description: 'The folders to offer, possibly none',
-      content: {
-        'application/json': { schema: z.object({ folders: z.array(FoundClaudeFolderSchema) }) },
-      },
-    },
   },
 });
 

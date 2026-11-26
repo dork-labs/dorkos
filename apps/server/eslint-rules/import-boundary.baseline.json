@@ -417,7 +417,7 @@
     "runtimes -> audit": 6,
     "runtimes -> browser": 1,
     "runtimes -> canvas": 7,
-    "runtimes -> connectors": 6,
+    "runtimes -> connectors": 4,
     "runtimes -> core": 46,
     "runtimes -> core/agent-identity": 24,
     "runtimes -> core/approvals": 6,

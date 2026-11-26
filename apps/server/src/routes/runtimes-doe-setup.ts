@@ -1,6 +1,8 @@
 /**
- * Owner-only, loopback DorkOS model setup, mounted at `/api/runtimes/doe` by
- * `routes/runtimes.ts`; metadata reads never resolve secrets.
+ * Owner-only, loopback DorkOS model setup writes, mounted at `/api/runtimes/doe`
+ * by `routes/runtimes.ts`, and the credits model list. The setup read is a
+ * capability the mount serves (`runtimes.doe_model_setup`, DOR-4978); the list
+ * stays here until it can answer in pages (the API lint's `list-paging` rule).
  *
  * Every route is refused to a caller that is not at this computer. The two
  * writes also need the install's owner (`refuseUnlessAccountOwner`): an
@@ -27,7 +29,6 @@ import { configManager } from '../services/core/config-manager.js';
 import { logConfigWrite } from '../services/core/operator/config-write.js';
 import { storeDoeCredential } from '../services/runtimes/connect/doe-credentials.js';
 import { ConnectError } from '../services/runtimes/connect/connect-error.js';
-import { doeCreditsInUse, peekDoeCreditsPick } from '../services/runtimes/doe/auto-model.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import { frontDoorProblem } from './front-door-step-up.js';
 import { connectErrorProblem } from './runtimes-http.js';
@@ -98,18 +99,6 @@ export function createDoeSetupRoutes(): Hono<ApiEnv> {
         detail: 'DorkOS credits models are unavailable.',
       });
     }
-  });
-
-  router.get('/inference', (c) => {
-    const refused = refuseNonLoopback(c);
-    if (refused) return refused;
-    const inference = configManager.get('runtimes').doe.inference;
-    // Which format DorkOS picks a model in when nothing is configured: only while
-    // credits are in use here, and with no request made.
-    const autoProtocol = doeCreditsInUse() ? (peekDoeCreditsPick()?.protocol ?? null) : null;
-    if (!inference) return c.json({ inference: null, hasKey: false, autoProtocol });
-    const { credentialRef, credentialEndpoint: _endpoint, ...metadata } = inference;
-    return c.json({ inference: metadata, hasKey: Boolean(credentialRef), autoProtocol });
   });
 
   router.put('/inference', (c) => {
