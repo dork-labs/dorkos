@@ -24,7 +24,7 @@
  *
  * @module server/services/rooms/handoff/seat-stand-in
  */
-import { newDispatchId } from '@dorkos/shared/dispatch-id';
+import { newDispatchId } from '../../../lib/identity/dispatch-id.js';
 import type { TurnPermissionBound } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../lib/logger.js';
 import { mergeMarks, NO_MARKS, type TurnMarks } from '../../core/turn-power/turn-marks.js';

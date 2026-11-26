@@ -77,14 +77,6 @@
       "types": "./src/sign-in-landing.ts",
       "default": "./dist/sign-in-landing.js"
     },
-    "./transport-sign-in-landing": {
-      "types": "./src/transport-sign-in-landing.ts",
-      "default": "./dist/transport-sign-in-landing.js"
-    },
-    "./transport-onboarding": {
-      "types": "./src/transport-onboarding.ts",
-      "default": "./dist/transport-onboarding.js"
-    },
     "./types": {
       "types": "./src/types.ts",
       "default": "./dist/types.js"
@@ -124,10 +116,6 @@
     "./atomic-write": {
       "types": "./src/atomic-write.ts",
       "default": "./dist/atomic-write.js"
-    },
-    "./secret-file": {
-      "types": "./src/secret-file.ts",
-      "default": "./dist/secret-file.js"
     },
     "./node-pty-spawn-helper": {
       "types": "./src/node-pty-spawn-helper.ts",
@@ -377,10 +365,6 @@
       "types": "./src/workspace.ts",
       "default": "./dist/workspace.js"
     },
-    "./harness-ids": {
-      "types": "./src/harness-ids.ts",
-      "default": "./dist/harness-ids.js"
-    },
     "./additional-context": {
       "types": "./src/additional-context.ts",
       "default": "./dist/additional-context.js"
@@ -412,14 +396,6 @@
     "./dorkbot-templates": {
       "types": "./src/dorkbot-templates.ts",
       "default": "./dist/dorkbot-templates.js"
-    },
-    "./extension-secrets": {
-      "types": "./src/extension-secrets.ts",
-      "default": "./dist/extension-secrets.js"
-    },
-    "./extension-settings": {
-      "types": "./src/extension-settings.ts",
-      "default": "./dist/extension-settings.js"
     },
     "./activity-schemas": {
       "types": "./src/activity-schemas.ts",
@@ -465,10 +441,6 @@
       "types": "./src/doc-links.ts",
       "default": "./dist/doc-links.js"
     },
-    "./transport-doc-links": {
-      "types": "./src/transport-doc-links.ts",
-      "default": "./dist/transport-doc-links.js"
-    },
     "./person-session": {
       "types": "./src/person-session.ts",
       "default": "./dist/person-session.js"
@@ -480,10 +452,6 @@
     "./session-relay-link": {
       "types": "./src/session-relay-link.ts",
       "default": "./dist/session-relay-link.js"
-    },
-    "./session-relay-agent-computer": {
-      "types": "./src/session-relay-agent-computer.ts",
-      "default": "./dist/session-relay-agent-computer.js"
     },
     "./run-schemas": {
       "types": "./src/run-schemas.ts",
@@ -529,17 +497,9 @@
       "types": "./src/diff-tools.ts",
       "default": "./dist/diff-tools.js"
     },
-    "./dispatch-id": {
-      "types": "./src/dispatch-id.ts",
-      "default": "./dist/dispatch-id.js"
-    },
     "./dork-ref": {
       "types": "./src/dork-ref.ts",
       "default": "./dist/dork-ref.js"
-    },
-    "./dork-address": {
-      "types": "./src/dork-address.ts",
-      "default": "./dist/dork-address.js"
     },
     "./entity-ref": {
       "types": "./src/entity-ref.ts",
@@ -625,10 +585,6 @@
       "types": "./src/mention-addressing.ts",
       "default": "./dist/mention-addressing.js"
     },
-    "./canonical-directory": {
-      "types": "./src/canonical-directory.ts",
-      "default": "./dist/canonical-directory.js"
-    },
     "./paths": {
       "types": "./src/paths.ts",
       "default": "./dist/paths.js"
@@ -684,10 +640,6 @@
     "./canvas-doc-frame-wire": {
       "types": "./src/canvas-doc-frame-wire.ts",
       "default": "./dist/canvas-doc-frame-wire.js"
-    },
-    "./canvas-app-manifest": {
-      "types": "./src/canvas-app-manifest.ts",
-      "default": "./dist/canvas-app-manifest.js"
     },
     "./browser-frame-wire": {
       "types": "./src/browser-frame-wire.ts",
@@ -769,10 +721,6 @@
       "types": "./src/file-save/recovery.ts",
       "default": "./dist/file-save/recovery.js"
     },
-    "./prompts/prompt-kinds": {
-      "types": "./src/prompts/prompt-kinds.ts",
-      "default": "./dist/prompts/prompt-kinds.js"
-    },
     "./space-page": {
       "types": "./src/space-page/index.ts",
       "default": "./dist/space-page/index.js"
@@ -799,7 +747,6 @@
     "@dork-labs/connector-providers": "workspace:*",
     "ajv": "^8.20.0",
     "tldts": "7.0.28",
-    "ulidx": "^2.4.1",
     "zod": "^4.6.6"
   },
   "devDependencies": {

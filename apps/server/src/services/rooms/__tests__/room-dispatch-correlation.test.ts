@@ -12,7 +12,7 @@
  * stands in, because the alternative is a model call.
  */
 import { describe, it, expect } from 'vitest';
-import { isDispatchId } from '@dorkos/shared/dispatch-id';
+import { isDispatchId } from '../../../lib/identity/dispatch-id.js';
 import { currentDispatch } from '../../../lib/dispatch-context.js';
 import { recentRefusals, resetDispatchBuffers } from '../../observability/dispatch-buffers.js';
 import {

@@ -50,7 +50,7 @@ Span attributes are **allowlisted** in `services/observability/attributes.ts`. T
 
 ### What it is
 
-`dsp_<ULID>` — opaque, random, monotonic, and derived from nothing. `packages/shared/src/dispatch-id.ts`.
+`dsp_<ULID>` — opaque, random, monotonic, and derived from nothing. `apps/server/src/lib/identity/dispatch-id.ts`.
 
 - **Prefixed** so `grep dsp_` finds every correlated line and a bare id pasted into an issue is self-describing.
 - **A monotonic ULID** so a plain `sort` over ids recovers dispatch order, even within one millisecond.

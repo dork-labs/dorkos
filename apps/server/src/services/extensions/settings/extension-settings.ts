@@ -5,12 +5,12 @@
  * Unlike secrets, settings are not encrypted — they hold non-sensitive
  * configuration values (refresh intervals, display toggles, filter selections).
  *
- * @module shared/extension-settings
+ * @module services/extensions/settings/extension-settings
  */
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { withFileLock } from './atomic-write.js';
-import { assertValidExtensionId } from './extension-id.js';
+import { withFileLock } from '@dorkos/shared/atomic-write';
+import { assertValidExtensionId } from '@dorkos/shared/extension-id';
 
 /**
  * Plaintext per-extension settings store using JSON files.

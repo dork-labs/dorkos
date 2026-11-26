@@ -18,7 +18,7 @@
  * connection switch has one writer, reached only from an operator-only route. The server's
  * census test fails when a switch appears that an agent could reach.
  *
- * @module shared/prompts/prompt-kinds
+ * @module services/core/prompts/prompt-kinds
  */
 
 /** Which part of the server decides a kind. */

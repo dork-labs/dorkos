@@ -795,6 +795,9 @@ importers:
       '@simplewebauthn/server':
         specifier: 14.0.3
         version: 14.0.3
+      ajv:
+        specifier: ^8.20.0
+        version: 8.20.0
       better-auth:
         specifier: 1.7.7
         version: 1.7.7(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.3(@electric-sql/pglite@0.5.8)(@neondatabase/serverless@1.1.0)(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.23.0))(next@16.4.5(@opentelemetry/api@1.9.1)(@playwright/test@1.64.1)(@types/node@24.13.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(pg@8.23.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(solid-js@1.9.17)(vitest@4.1.11)(vue@3.5.44(typescript@5.9.3))
@@ -1985,9 +1988,6 @@ importers:
       tldts:
         specifier: 7.0.28
         version: 7.0.28
-      ulidx:
-        specifier: ^2.4.1
-        version: 2.4.1
       zod:
         specifier: ^4.6.6
         version: 4.6.7

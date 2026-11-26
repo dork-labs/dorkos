@@ -11,8 +11,8 @@ import os from 'node:os';
  */
 let beforeQuarantine: ((filePath: string) => void) | null = null;
 
-vi.mock('@dorkos/shared/secret-file', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@dorkos/shared/secret-file')>();
+vi.mock('../../../lib/secret-store/secret-file.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../lib/secret-store/secret-file.js')>();
   return {
     ...actual,
     quarantineSecretFile: (filePath: string) => {

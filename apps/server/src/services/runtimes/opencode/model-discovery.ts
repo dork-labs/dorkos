@@ -1,7 +1,7 @@
 /** Host model discovery extracted without changing its availability filters. */
 import type { ProviderListResponse } from '@opencode-ai/sdk';
 import type { ModelOption } from '@dorkos/shared/types';
-import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
+import { canonicalDirectory } from '../../../lib/fs/canonical-directory.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { unwrap, type OpenCodeClientProvider } from './sessions/session-mapper.js';
 import { detectOllama } from './providers/ollama.js';

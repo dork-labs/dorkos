@@ -28,7 +28,7 @@ import {
 } from './batch-authority.js';
 import { DocRouteGrantError } from '../grant-policy.js';
 import { DocChannelNotFoundError, DocChannelArchivedError } from '../authorization.js';
-import { CanvasAppManifestError } from '@dorkos/shared/canvas-app-manifest';
+import { CanvasAppManifestError } from '../../canvas-app-manifest.js';
 import { sessionMessageAcceptanceReceipts } from '@dorkos/db';
 import { appendDocStatus } from '../status.js';
 import { requireSynchronous } from '../../../session/private-messages/synchronous-source.js';

@@ -34,7 +34,7 @@ import type {
   Unsubscribe,
 } from '@dorkos/relay';
 import { runtimeSessionSubject, legacyAgentSubject } from '@dorkos/relay';
-import { isDispatchId, newDispatchId } from '@dorkos/shared/dispatch-id';
+import { isDispatchId, newDispatchId } from '../../lib/identity/dispatch-id.js';
 import { logError, logger } from '../../lib/logger.js';
 import { currentDispatchId, runInDispatch } from '../../lib/dispatch-context.js';
 import { describeSession, parseSessionEntry, type SessionRecord } from './binding-session-map.js';

@@ -50,7 +50,7 @@
  * kernel rather than in any in-process lock — so unlike
  * {@link module:shared/atomic-write}, this holds across processes.
  *
- * @module shared/secret-file
+ * @module lib/secret-store/secret-file
  */
 import { randomUUID } from 'node:crypto';
 import {

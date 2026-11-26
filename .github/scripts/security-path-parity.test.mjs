@@ -227,6 +227,15 @@ for (const [match, miss] of [
     'apps/server/src/startup/test-composition/fake-cloud-link.ts',
     'apps/server/src/startup/test-compositions/fake-cloud-link.ts',
   ],
+  // DOR-4931: the secret files (host key, extension secrets) left @dorkos/shared for the server's lib/.
+  [
+    'apps/server/src/lib/secret-store/secret-file.ts',
+    'apps/server/src/lib/secret-stores/secret-file.ts',
+  ],
+  [
+    'apps/server/src/lib/secret-store/extension-secrets.ts',
+    'apps/server/src/lib/secret-store-notes/extension-secrets.ts',
+  ],
 ]) {
   test(`${match} is on the main list only`, () => {
     assert.ok(existsSync(resolve(root, match)), `${match} no longer exists`);

@@ -103,6 +103,8 @@ export const REPO_WIDE_SUITES = [
   // Reads apps/server/vitest.config.ts and every server test file (DOR-4940).
   '__tests__/server-test-location-census.test.ts',
   '__tests__/session-link-boundary.test.ts',
+  // Reads packages/shared/package.json and every import of @dorkos/shared in the tree (DOR-4931).
+  '__tests__/shared-export-importers.test.ts',
   '__tests__/space-page-versions.test.ts',
   '__tests__/space-server.test.ts',
   // Reads .github/workflows/security-gate.yml through the classifier (DOR-4834).

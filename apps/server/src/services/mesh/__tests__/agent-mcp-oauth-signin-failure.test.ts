@@ -19,7 +19,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { resetKeyCache } from '@dorkos/shared/extension-secrets';
+import { resetKeyCache } from '../../../lib/secret-store/extension-secrets.js';
 
 vi.mock('node:crypto', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:crypto')>();

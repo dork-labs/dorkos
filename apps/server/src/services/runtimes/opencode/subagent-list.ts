@@ -12,7 +12,7 @@
  * @module services/runtimes/opencode/subagent-list
  */
 import type { SubagentInfo } from '@dorkos/shared/types';
-import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
+import { canonicalDirectory } from '../../../lib/fs/canonical-directory.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { unwrap, type OpenCodeClientProvider } from './sessions/session-mapper.js';
 

@@ -14,7 +14,10 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { auth } from '@modelcontextprotocol/sdk/client/auth.js';
-import { ExtensionSecretStore, resetKeyCache } from '@dorkos/shared/extension-secrets';
+import {
+  ExtensionSecretStore,
+  resetKeyCache,
+} from '../../../lib/secret-store/extension-secrets.js';
 
 import { McpOAuthClientProvider } from '../agent-mcp-oauth-provider.js';
 import { McpOAuthSecretStore } from '../agent-mcp-oauth-secret-store.js';

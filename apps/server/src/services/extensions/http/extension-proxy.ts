@@ -13,7 +13,7 @@
  */
 import type { IncomingHttpHeaders } from 'node:http';
 import type { DataProxyConfig } from '@dorkos/extension-api';
-import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
+import { ExtensionSecretStore } from '../../../lib/secret-store/extension-secrets.js';
 import { PROBLEM_CONTENT_TYPE, type Problem } from '@dorkos/shared/problem';
 import { problemBody } from '@dorkos/http-kit';
 import { logger } from '../../../lib/logger.js';
