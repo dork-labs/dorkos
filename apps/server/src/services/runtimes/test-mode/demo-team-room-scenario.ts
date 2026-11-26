@@ -34,10 +34,10 @@
  * @module services/runtimes/test-mode/demo-team-room-scenario
  */
 import type { StreamEvent } from '@dorkos/shared/types';
-import { getRoomService } from '../../rooms/index.js';
 import { DEMO_MODEL, DEMO_SESSION_ID } from './demo-scenario-shared.js';
 import { sayInRoom } from './room-reply-scenarios.js';
 import type { ScenarioFn } from './scenario-store.js';
+import { worldOf, type ScenarioWorld } from './scenario-world.js';
 
 /** The scenario key the capture selects. */
 export const DEMO_TEAM_ROOM_SCENARIO = 'demo-team-room';
@@ -76,12 +76,18 @@ const ORDER_POLL_LIMIT = 60;
  * Whether the room already holds a post with exactly this text, optionally from
  * one author.
  *
+ * @param world - The server the turn runs against.
  * @param roomId - The room to read.
  * @param text - The exact text to look for.
  * @param authorId - Only count posts by this author, when given.
  */
-function roomHasPost(roomId: string, text: string, authorId?: string): boolean {
-  return getRoomService()
+function roomHasPost(
+  world: ScenarioWorld,
+  roomId: string,
+  text: string,
+  authorId?: string
+): boolean {
+  return world.rooms
     .entriesAfter(roomId, 0)
     .some(
       (entry) =>
@@ -103,18 +109,24 @@ const demoTeamRoom: ScenarioFn = async function* (_content, ctx, opts) {
   } as StreamEvent;
 
   const roomTurn = opts?.roomTurn;
-  const author = roomTurn ? getRoomService().authorRegistry.getById(roomTurn.authorId) : null;
+  const world = roomTurn ? worldOf(ctx) : undefined;
+  const author = roomTurn ? world?.rooms.authorOf(roomTurn.authorId) : null;
   const index = TEAM_ROOM_REPLIES.findIndex((reply) => reply.agent === author?.displayName);
   const reply = index === -1 ? undefined : TEAM_ROOM_REPLIES[index];
 
-  if (roomTurn && reply && !roomHasPost(roomTurn.roomId, reply.text, roomTurn.authorId)) {
+  if (
+    world &&
+    roomTurn &&
+    reply &&
+    !roomHasPost(world, roomTurn.roomId, reply.text, roomTurn.authorId)
+  ) {
     const before = index > 0 ? TEAM_ROOM_REPLIES[index - 1] : undefined;
     for (let poll = 0; before && poll < ORDER_POLL_LIMIT && !ctx.signal.aborted; poll += 1) {
-      if (roomHasPost(roomTurn.roomId, before.text)) break;
+      if (roomHasPost(world, roomTurn.roomId, before.text)) break;
       await ctx.delay(ORDER_POLL_MS);
     }
     await ctx.delay(REPLY_BEAT_MS);
-    const said = await sayInRoom(opts, ctx.sessionId, reply.text);
+    const said = await sayInRoom(opts, ctx, reply.text);
     // A refused post must not read as an answer: the turn fails, the room
     // reports it, and the capture's check of the conversation skips the shot.
     if (said !== true) {

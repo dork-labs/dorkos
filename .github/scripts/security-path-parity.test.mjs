@@ -222,6 +222,11 @@ for (const [match, miss] of [
   ['packages/shared/src/room-attachment-paths.ts', 'packages/shared/src/room-attachment-path.ts'],
   // C3 (DOR-5403): the Connections lease's plain values left services/connectors/.
   ['packages/shared/src/connections-lease.ts', 'packages/shared/src/connections-leases.ts'],
+  // C4 (DOR-5444): the test-mode scenario world and its stand-in cloud link left runtimes/test-mode/.
+  [
+    'apps/server/src/startup/test-composition/fake-cloud-link.ts',
+    'apps/server/src/startup/test-compositions/fake-cloud-link.ts',
+  ],
 ]) {
   test(`${match} is on the main list only`, () => {
     assert.ok(existsSync(resolve(root, match)), `${match} no longer exists`);

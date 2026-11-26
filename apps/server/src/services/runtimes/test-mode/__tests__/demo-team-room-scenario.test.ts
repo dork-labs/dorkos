@@ -11,9 +11,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
+import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import type { ScenarioContext } from '../interaction-gate.js';
+import type { ScenarioWorld } from '../scenario-world.js';
 
-/** The room log the stand-in service answers with. */
+/** The room log the stand-in world answers with. */
 let entries: { kind: string; authorId: string; body: { text?: string } }[] = [];
 
 /** Author id → display name, as the room's author registry would answer. */
@@ -24,14 +26,14 @@ const AUTHORS: Record<string, string> = {
   'a-dorkbot': 'DorkBot',
 };
 
-vi.mock('../../../rooms/index.js', () => ({
-  getRoomService: () => ({
-    authorRegistry: {
-      getById: (id: string) => (AUTHORS[id] ? { displayName: AUTHORS[id] } : null),
-    },
-    entriesAfter: () => entries,
-  }),
-}));
+/** The rooms the turn reads, standing in for the server's. */
+const world = {
+  rooms: {
+    authorOf: (id: string) =>
+      AUTHORS[id] ? { naturalKey: `/agents/${id}`, displayName: AUTHORS[id] } : undefined,
+    entriesAfter: () => entries as unknown as RoomEntry[],
+  },
+} as unknown as ScenarioWorld;
 
 const sayInRoom = vi.fn(async (): Promise<true | false | string> => true);
 vi.mock('../room-reply-scenarios.js', () => ({
@@ -49,6 +51,7 @@ const SEAT = 'team-seat';
 function context(onDelay?: () => void): ScenarioContext {
   return {
     sessionId: SEAT,
+    world,
     signal: new AbortController().signal,
     delay: vi.fn(async () => {
       onDelay?.();
@@ -88,7 +91,11 @@ describe('demo-team-room', () => {
 
   it('posts the pinned line for the agent answering', async () => {
     await run(context(), roomTurn('a-lens'));
-    expect(sayInRoom).toHaveBeenCalledWith(expect.anything(), SEAT, replyOf('Lens'));
+    expect(sayInRoom).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ sessionId: SEAT }),
+      replyOf('Lens')
+    );
   });
 
   it('says nothing for an agent it has no line for', async () => {
@@ -115,12 +122,20 @@ describe('demo-team-room', () => {
     await run(ctx, roomTurn('a-forge'));
     // Three polls before Lens landed, then the beat before posting.
     expect(waits).toBe(4);
-    expect(sayInRoom).toHaveBeenCalledWith(expect.anything(), SEAT, replyOf('Forge'));
+    expect(sayInRoom).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ sessionId: SEAT }),
+      replyOf('Forge')
+    );
   });
 
   it('still answers when the reply before it never comes', async () => {
     await run(context(), roomTurn('a-sentinel'));
-    expect(sayInRoom).toHaveBeenCalledWith(expect.anything(), SEAT, replyOf('Sentinel'));
+    expect(sayInRoom).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ sessionId: SEAT }),
+      replyOf('Sentinel')
+    );
   });
 
   it('fails the turn, saying nothing, when the room refuses the post', async () => {

@@ -129,8 +129,13 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
 
   // Register the deterministic TestModeRuntime as default — a dynamic import so
   // it never enters a production module graph (the guard index.ts uses too).
-  const { TestModeRuntime } = await import('./services/runtimes/test-mode/test-mode-runtime.js');
-  runtimeRegistry.register(new TestModeRuntime());
+  const [{ TestModeRuntime }, { composeScenarioWorld }] = await Promise.all([
+    import('./services/runtimes/test-mode/test-mode-runtime.js'),
+    import('./startup/test-composition/scenario-world.js'),
+  ]);
+  const testRuntime = new TestModeRuntime();
+  testRuntime.useScenarioWorld(composeScenarioWorld());
+  runtimeRegistry.register(testRuntime);
   runtimeRegistry.setDefault('test-mode');
 
   // Mesh, then rooms. A room resolves an agent through the mesh cache

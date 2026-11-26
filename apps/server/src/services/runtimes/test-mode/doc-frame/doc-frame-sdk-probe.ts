@@ -2,7 +2,6 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { z } from 'zod';
-import type { DocChannelStore } from '../../../canvas/doc-channel/store.js';
 import type { ConnectorRuntimeTools } from '../../connector-tools.js';
 import { openConnectorTurn } from '../../connectors/open-connector-turn.js';
 
@@ -18,10 +17,19 @@ export interface DocFrameSdkReady {
   eventType: typeof DOC_FRAME_FIXTURE_EVENT;
   grantEvidence: 'verified_opener';
 }
+/** The fields of a stored route grant the fixtures check; the boot's Doc channel store answers it. */
+export interface DocFrameStoredGrant {
+  documentId: string;
+  routeId: string;
+  normalizedRoute: unknown;
+  approvalId: string | null;
+  approvalEvidence: unknown;
+  allowedTypes: string[];
+}
 /** What a workflow can do inside the managed turn: call tools as the agent, read grants, wait. */
 export interface DocFrameSdkSteps {
   call(name: string, args: Record<string, unknown>): Promise<unknown>;
-  grant(grantId: string): ReturnType<DocChannelStore['getGrant']>;
+  grant(grantId: string): DocFrameStoredGrant | undefined;
   /** Hold the turn until the browser test steps it. */
   waitForBrowser(): Promise<void>;
 }
@@ -42,7 +50,7 @@ export type DocFrameSdkProbe = (input: DocFrameSdkProbeInput) => Promise<void>;
 export interface DocFrameSdkProbeOptions {
   enabled: boolean;
   tools: ConnectorRuntimeTools;
-  channels: Pick<DocChannelStore, 'getGrant'>;
+  channels: { getGrant(grantId: string): DocFrameStoredGrant | undefined };
   /**
    * Bind the probe session to Claude Code. The host names the origin (the
    * test harness); this port has no origin to choose, so the session-binding

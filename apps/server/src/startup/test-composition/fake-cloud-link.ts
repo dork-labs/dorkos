@@ -13,15 +13,15 @@
  * only when `DORKOS_TEST_RUNTIME=true`, and only via the gated dynamic
  * `import()` in `index.ts`'s composition root.
  *
- * @module services/runtimes/test-mode/fake-cloud-link
+ * @module startup/test-composition/fake-cloud-link
  */
 import { Hono } from 'hono';
-import type { ApiEnv } from '../../../http/api-chain.js';
-import { readQuery } from '../../../http/request-query.js';
+import type { ApiEnv } from '../../http/api-chain.js';
+import { readQuery } from '../../http/request-query.js';
 import { ManagedConnectorAccountListResponseSchema } from '@dorkos/shared/connector-managed-discovery-schemas';
 import { ManagedConnectorEventPullResponseSchema } from '@dorkos/shared/connector-event-schemas';
-import type { FetchLike, DeviceCodeResponse } from '../../core/auth/cloud-link-client.js';
-import { env } from '../../../env.js';
+import type { FetchLike, DeviceCodeResponse } from '../../services/core/auth/cloud-link-client.js';
+import { env } from '../../env.js';
 
 /** Pending code shown in the panel (8 chars, hyphen-grouped like RFC 8628 user codes). */
 const FAKE_USER_CODE = 'DORK-2F7Q';
