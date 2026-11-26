@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261124-003748",
+ "file": "ci/ledger/261124-003748-test-file-size-ratchet.md",
+ "pr": 4216,
+ "merged_at": "2026-11-25T23:02:06Z",
+ "sha": "b5b400ee41098001197db64e1b6ae495b1153990",
+ "resolved_at": "2026-11-26T14:55:46.997Z"
+}

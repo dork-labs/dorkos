@@ -2,9 +2,9 @@
  "schema": 1,
  "id": "261101-191731",
  "verdict": "inconclusive",
- "reason": "Confounded: 261102-072625 changed the same gate inside the after-window (2026-11-01T20:47:42Z to 2026-11-13T20:47:42Z), so the movement cannot be attributed to this change alone.",
- "computed_at": "2026-11-23T15:49:44.163Z",
- "hypothesis_hash": "f0933c70a4a2e30d",
+ "reason": "Confounded: 261102-072625, 261111-184639 changed the same gate inside the after-window (2026-11-01T20:47:42Z to 2026-11-13T20:47:42Z), so the movement cannot be attributed to this change alone.",
+ "computed_at": "2026-11-26T14:55:46.997Z",
+ "hypothesis_hash": "d753e2396a1ff41b",
  "metric": "tracked.first-try-pr-pass-rate",
  "anchor": "2026-11-01T20:47:42Z",
  "prs": [
@@ -29,7 +29,8 @@
   "value": null
  },
  "confounders": [
-  "261102-072625"
+  "261102-072625",
+  "261111-184639"
  ],
  "slo": null
 }

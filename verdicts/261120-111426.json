@@ -3,7 +3,7 @@
  "id": "261120-111426",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-12-04T20:40:21Z; the verdict is computed on 2026-12-05.",
- "computed_at": "2026-11-25T15:25:27.387Z",
+ "computed_at": "2026-11-26T14:55:46.997Z",
  "hypothesis_hash": "e111696a50d798c6",
  "metric": "gate.wf.cli-smoke-test.codex-docker-sandbox.failure_rate",
  "anchor": "2026-11-20T20:40:21Z",
@@ -25,7 +25,7 @@
  "after": {
   "from": "2026-11-20T20:40:21Z",
   "to": "2026-12-04T20:40:21Z",
-  "n": 412,
+  "n": 469,
   "value": 0
  },
  "confounders": [],
@@ -33,7 +33,7 @@
   "id": "main-green",
   "stat": "red_episodes",
   "before": 28,
-  "after": 31,
+  "after": 34,
   "movement": "worse"
  }
 }

@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261125-005206",
+ "file": "ci/ledger/261125-005206-queue-reentry-same-repo.md",
+ "pr": 4340,
+ "merged_at": "2026-11-25T02:00:24Z",
+ "sha": "c273f658cf539893f07972a32290c50e499e68d8",
+ "resolved_at": "2026-11-26T14:55:46.997Z"
+}

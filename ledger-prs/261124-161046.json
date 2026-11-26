@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261124-161046",
+ "file": "ci/ledger/261124-161046-queue-reentry-security-path.md",
+ "pr": 4284,
+ "merged_at": "2026-11-24T17:10:32Z",
+ "sha": "ada44f8c7684049c5885cac59d0df40ee8854e1b",
+ "resolved_at": "2026-11-26T14:55:46.997Z"
+}

@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261125-010058",
+ "file": "ci/ledger/261125-010058-after-merge-alert-pr-comments.md",
+ "pr": 4343,
+ "merged_at": "2026-11-25T02:05:05Z",
+ "sha": "94db4553db8fe5517e5398bfbc41226b03cc640f",
+ "resolved_at": "2026-11-26T14:55:46.997Z"
+}

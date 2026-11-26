@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261124-001240",
+ "file": "ci/ledger/261124-001240-fix-retire-arming.md",
+ "pr": 4201,
+ "merged_at": "2026-11-24T00:25:15Z",
+ "sha": "633a8e5ed9d4a9c690038f02319e8f3740378f3e",
+ "resolved_at": "2026-11-26T14:55:46.997Z"
+}

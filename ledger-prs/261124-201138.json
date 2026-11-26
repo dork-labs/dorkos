@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261124-201138",
+ "file": "ci/ledger/261124-201138-queue-reentry-conflicts.md",
+ "pr": 4322,
+ "merged_at": "2026-11-24T21:07:43Z",
+ "sha": "547bfdf1f3b7a10492119012ced1feaf9d39ccb2",
+ "resolved_at": "2026-11-26T14:55:46.997Z"
+}

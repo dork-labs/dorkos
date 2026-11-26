@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261124-013953",
+ "file": "ci/ledger/261124-013953-smoke-after-merge.md",
+ "pr": 4207,
+ "merged_at": "2026-11-24T14:56:51Z",
+ "sha": "909386966d0e52344cefde888105a72395c691c9",
+ "resolved_at": "2026-11-26T14:55:46.997Z"
+}

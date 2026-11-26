@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261124-121336",
+ "file": "ci/ledger/261124-121336-api-lint-reads-problem-documents.md",
+ "pr": 4247,
+ "merged_at": "2026-11-24T19:58:31Z",
+ "sha": "ddca19ae6692c2bd861c88b2455014af2e15569d",
+ "resolved_at": "2026-11-26T14:55:46.997Z"
+}

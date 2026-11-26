@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261124-003500",
+ "file": "ci/ledger/261124-003500-require-pr-gates.md",
+ "pr": 4198,
+ "merged_at": "2026-11-23T23:34:54Z",
+ "sha": "ba427c6b6034e0faed231703579eef195e8554cc",
+ "resolved_at": "2026-11-26T14:55:46.997Z"
+}

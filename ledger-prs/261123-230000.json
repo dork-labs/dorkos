@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261123-230000",
+ "file": "ci/ledger/261123-230000-pr-gates-check.md",
+ "pr": 4169,
+ "merged_at": "2026-11-23T20:14:20Z",
+ "sha": "e628ded3bfcde92839e7b035d91f67e6fb965d77",
+ "resolved_at": "2026-11-26T14:55:46.997Z"
+}

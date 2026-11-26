@@ -1,9 +1,9 @@
 {
  "schema": 1,
  "id": "261117-175500",
- "verdict": "pending",
- "reason": "The after-window runs to 2026-11-25T07:02:38Z; the verdict is computed on 2026-11-26.",
- "computed_at": "2026-11-25T15:25:27.387Z",
+ "verdict": "inconclusive",
+ "reason": "Confounded: 261118-130500 changed the same gate inside the after-window (2026-11-18T07:02:38Z to 2026-11-25T07:02:38Z), so the movement cannot be attributed to this change alone.",
+ "computed_at": "2026-11-26T14:55:46.997Z",
  "hypothesis_hash": "d7472154d265507f",
  "metric": "tracked.cache-hit-rate",
  "anchor": "2026-11-18T07:02:38Z",

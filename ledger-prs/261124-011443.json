@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261124-011443",
+ "file": "ci/ledger/261124-011443-advisory-out-of-queue.md",
+ "pr": 4205,
+ "merged_at": "2026-11-24T02:18:57Z",
+ "sha": "4f9d297bf00e3ec26ae0ca8a9b18b353908aa108",
+ "resolved_at": "2026-11-26T14:55:46.997Z"
+}

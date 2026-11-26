@@ -1026,7 +1026,7 @@
           </tr><tr>
             <td class="measure name"><div>merge-tail: ask GitHub again when mergeability is still being computed</div><div class="note mono">261117-174608 · reverted</div></td>
             <td data-label="Result"><span class="tag pending">pending</span></td>
-            <td data-label="Why">The after-window runs to 2026-11-25T14:18:12Z; the verdict is computed on 2026-11-26.</td>
+            <td data-label="Why">Waiting: 2 of 8 after-window days not collected (2026-11-24, 11-25); backfill reaches them first.</td>
           </tr><tr>
             <td class="measure name"><div>the merge queue takes out an entry whose head lacks Security&#39;s label or a verify proof, whoever queued it</div><div class="note mono">261118-183332 · reverted</div></td>
             <td data-label="Result"><span class="tag pending">pending</span></td>
@@ -1048,13 +1048,13 @@
           <li>Machines sending hook timings: clone-040654d45a (retired, 2026-10-26), clone-2c3dde293a (retired, 2026-10-25), clone-71ebf1f648 (stale, 2026-11-17), clone-b07d4e241e (retired, 2026-10-31), clone-f76554a380 (stale, 2026-11-17).</li>
           <li>Data-branch protections: in place.</li>
         </ul>
-        <p><strong>Problems:</strong></p><ul class="plain"><li>The local export from clone clone-71ebf1f648 is 7 days old (last 2026-11-17) and no clone exported in the last 3 days;…</li><li>The local export from clone clone-f76554a380 is 7 days old (last 2026-11-17) and no clone exported in the last 3 days;…</li><li>The local export from clone clone-71ebf1f648 is 8 days old (last 2026-11-17) and no clone exported in the last 3 days;…</li><li>The local export from clone clone-f76554a380 is 8 days old (last 2026-11-17) and no clone exported in the last 3 days;…</li></ul>
+        <p><strong>Problems:</strong></p><ul class="plain"><li>The local export from clone clone-71ebf1f648 is 7 days old (last 2026-11-17) and no clone exported in the last 3 days;…</li><li>The local export from clone clone-f76554a380 is 7 days old (last 2026-11-17) and no clone exported in the last 3 days;…</li><li>The local export from clone clone-71ebf1f648 is 9 days old (last 2026-11-17) and no clone exported in the last 3 days;…</li><li>The local export from clone clone-f76554a380 is 9 days old (last 2026-11-17) and no clone exported in the last 3 days;…</li></ul>
         <p class="note">Also: Required workflow live comparison failed: Command failed: gh api orgs/dork-labs/rulesets?per_page=100&amp;page=1
 gh:… Thin sample: review-recovery (n=1 &lt; 5); those SLOs read as insufficient, not as a breach or a win.</p>
         <p class="note">Blind spot: <span class="mono">--no-verify</span> commits and pushes skip the local timer, so they never show up here.</p>
       </div>
 
-      <footer>Rendered 2026-11-25T15:25:27.387Z by ci-steward from the ci-steward-data branch. Machine-readable: latest.json, triggers.json, verdicts/*.json, and the Monday deep summary reports/YYYY-Www.md.</footer>
+      <footer>Rendered 2026-11-26T14:55:46.997Z by ci-steward from the ci-steward-data branch. Machine-readable: latest.json, triggers.json, verdicts/*.json, and the Monday deep summary reports/YYYY-Www.md.</footer>
     </main>
   </body>
 </html>

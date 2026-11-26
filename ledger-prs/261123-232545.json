@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261123-232545",
+ "file": "ci/ledger/261123-232545-heavy-insert-by-rank.md",
+ "pr": 4210,
+ "merged_at": "2026-11-24T04:41:42Z",
+ "sha": "49bd46f9b94fc64a37cfd1111874e700e09cf7c4",
+ "resolved_at": "2026-11-26T14:55:46.997Z"
+}

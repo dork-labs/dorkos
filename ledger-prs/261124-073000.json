@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261124-073000",
+ "file": "ci/ledger/261124-073000-rolling-bisect.md",
+ "pr": 4259,
+ "merged_at": "2026-11-24T15:08:26Z",
+ "sha": "11eeab61a98b97c89317bee87e3d6972ce537cd6",
+ "resolved_at": "2026-11-26T14:55:46.997Z"
+}

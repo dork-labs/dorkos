@@ -3,7 +3,7 @@
  "id": "261109-060757",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-12-07T07:16:48Z; the verdict is computed on 2026-12-08.",
- "computed_at": "2026-11-25T15:25:27.387Z",
+ "computed_at": "2026-11-26T14:55:46.997Z",
  "hypothesis_hash": "544e812e9f14f9e8",
  "metric": "gate.wf.desktop-release.build-macos.failure_rate",
  "anchor": "2026-11-09T07:16:48Z",

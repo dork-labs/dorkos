@@ -1,0 +1,33 @@
+{
+ "schema": 1,
+ "id": "261124-184623",
+ "verdict": "pending",
+ "reason": "The after-window runs to 2026-12-08T20:35:27Z; the verdict is computed on 2026-12-09.",
+ "computed_at": "2026-11-26T14:55:46.997Z",
+ "hypothesis_hash": "f165e1855af663fe",
+ "metric": "gate.wf.windows-custody-witness.x64-producer.duration_p90@pull_request",
+ "anchor": "2026-11-24T20:35:27Z",
+ "prs": [
+  4310
+ ],
+ "baseline": {
+  "value": 2.1,
+  "source": "ledger"
+ },
+ "target": 6,
+ "min_n": 10,
+ "before": {
+  "from": "2026-11-17T20:35:27Z",
+  "to": "2026-11-24T20:35:27Z",
+  "n": 5,
+  "value": 3.2
+ },
+ "after": {
+  "from": "2026-11-24T20:35:27Z",
+  "to": "2026-12-08T20:35:27Z",
+  "n": 0,
+  "value": null
+ },
+ "confounders": [],
+ "slo": null
+}

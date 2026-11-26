@@ -3,7 +3,7 @@
  "id": "261117-143945",
  "verdict": "pending",
  "reason": "Waiting: 1 of 8 after-window days not collected (2026-11-24); backfill reaches them first.",
- "computed_at": "2026-11-25T15:25:27.387Z",
+ "computed_at": "2026-11-26T14:55:46.997Z",
  "hypothesis_hash": "7db8461653b57cc7",
  "metric": "gate.wf.credential-free-build.credential-free-build.duration_p90@pull_request",
  "anchor": "2026-11-17T19:38:57Z",
