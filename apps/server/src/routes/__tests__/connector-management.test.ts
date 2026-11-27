@@ -932,7 +932,6 @@ describe('connector management routes', () => {
           registry: { migrationHealth: () => ({ status: 'ready', migrated: false }) },
           reviews,
           reconciliation,
-          exclusions,
           agentRequests,
           resolveOwner: (user) => (user ? { kind: 'user', userId: user.userId } : undefined),
           loginEnabled: () => false,

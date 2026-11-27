@@ -110,7 +110,7 @@
     "apps/server/src/routes/__tests__/cloud-communities.test.ts": 993,
     "apps/server/src/routes/__tests__/cloud-owner-bar.test.ts": 690,
     "apps/server/src/routes/__tests__/community-connections.test.ts": 1091,
-    "apps/server/src/routes/__tests__/connector-management.test.ts": 893,
+    "apps/server/src/routes/__tests__/connector-management.test.ts": 892,
     "apps/server/src/routes/__tests__/debug.test.ts": 599,
     "apps/server/src/routes/__tests__/doc-channel-metrics-http.test.ts": 501,
     "apps/server/src/routes/__tests__/extension-decisions.test.ts": 668,

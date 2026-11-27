@@ -4,6 +4,7 @@ covers:
   - 'fix(api): full-list reads stop on a repeated cursor; agents’ requests keep their oldest-first order (DOR-4982)'
   - "feat(api): the owner's connection lists come a page at a time; five move onto the capability mount (DOR-4982)"
   - "fix(api): full-list reads stop on a repeated cursor; agents' requests keep their oldest-first order (DOR-4982)"
+  - 'fix(api): the management routes no longer take the exclusions service, which every exclusion door left after #4551 (DOR-4982)'
 ---
 
 ### Changed
