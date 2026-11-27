@@ -83,6 +83,13 @@ function byLabel(left: { label: string; connectionId: string }, right: typeof le
   );
 }
 
+/** Oldest asked first, then by id: the order an agent's requests wait in. */
+function oldestFirst(left: ConnectorAgentRequestItem, right: ConnectorAgentRequestItem): number {
+  return (
+    left.createdAt.localeCompare(right.createdAt) || left.requestId.localeCompare(right.requestId)
+  );
+}
+
 /** Create the connector methods bound to a base URL. */
 export function createConnectorMethods(baseUrl: string) {
   return {
@@ -453,7 +460,8 @@ export function createConnectorMethods(baseUrl: string) {
         '/connectors/agent-requests',
         { state, sessionId },
         (page: Page) => page.requests
-      ).then(({ rows }) => rows);
+        // Oldest first, as the cards have always queued: the one asked longest ago leads.
+      ).then(({ rows }) => rows.sort(oldestFirst));
     },
 
     getConnectorAgentRequest(requestId: string): Promise<ConnectorAgentRequestItem> {

@@ -32,7 +32,7 @@ import { FILE_TOOL_REFUSALS } from '../services/core/directory/file-refusals.js'
 import { SESSION_READ_TOOL_REFUSALS } from '../services/session/reads/session-read-refusals.js';
 import { CONNECTION_OWNER_TOOL_REFUSALS } from '../services/connectors/resources/owner-refusals.js';
 import { EXTENSION_DOOR_TOOL_REFUSALS } from '../services/extensions/http-capabilities/extension-door-words.js';
-import { INVALID_CURSOR_DETAIL } from '../lib/paging/keyset-page.js';
+import { INVALID_CURSOR_DETAIL } from '@dorkos/shared/paging';
 
 import type {
   TierDeniedPayload,

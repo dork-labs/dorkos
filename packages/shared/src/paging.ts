@@ -48,3 +48,7 @@ export const nextCursorOutput = z
   .string()
   .nullable()
   .describe('Pass as `cursor` for the next page; null on the last one.');
+
+/** The sentence a refused page cursor answers with over HTTP, on hand routes and the mount alike. */
+export const INVALID_CURSOR_DETAIL =
+  'That cursor wasn’t given by this list. Leave it out to start again.';

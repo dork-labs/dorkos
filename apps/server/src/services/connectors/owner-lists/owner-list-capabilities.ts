@@ -25,6 +25,7 @@ import { ConnectorGrantExclusionPageSchema } from '@dorkos/shared/connector-excl
 
 import {
   defineCapability,
+  invalidCursor,
   type CapabilityDeps,
   type CapabilityDomain,
 } from '../../core/capabilities/capability-definition.js';
@@ -64,7 +65,8 @@ function accountPage<T extends { connectionId: string }>(
     list,
     rows,
     (row) => [ages.get(row.connectionId) ?? '', row.connectionId],
-    query
+    query,
+    invalidCursor
   );
 }
 
@@ -190,7 +192,8 @@ export const reviewsCapability = defineCapability({
       `reviews:${state ?? 'all'}`,
       all,
       (row) => [row.createdAt, row.reviewRequestId],
-      query
+      query,
+      invalidCursor
     );
     return { reviews: page.items, nextCursor: page.nextCursor };
   },
@@ -227,7 +230,8 @@ export const exclusionsCapability = defineCapability({
       `exclusions:${connectionId}`,
       all,
       (row) => [row.createdAt, row.agentId],
-      query
+      query,
+      invalidCursor
     );
     return heldTo(ConnectorGrantExclusionPageSchema, {
       connectionId,

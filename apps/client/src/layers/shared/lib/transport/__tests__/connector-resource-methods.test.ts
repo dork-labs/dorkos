@@ -107,6 +107,23 @@ describe('connector resource transport methods', () => {
     expect(init.body).toBe(JSON.stringify({ on: false }));
   });
 
+  it('stops a list whose server hands back the same cursor again, with a clear error', async () => {
+    stubFetch({ connections: [], nextCursor: 'again' });
+    await expect(setup().getConnectorConnections()).rejects.toThrow(
+      '/connectors/connections kept giving more pages; stopped after 2.'
+    );
+  });
+
+  it('lists agents’ requests oldest first, as the cards have always queued', async () => {
+    const asked = (requestId: string, day: number) => ({
+      requestId,
+      createdAt: `2026-11-0${day}T00:00:00.000Z`,
+    });
+    stubFetch({ requests: [asked('c', 3), asked('b', 1), asked('a', 1)], nextCursor: null });
+    const requests = await setup().getConnectorAgentRequests('pending');
+    expect(requests.map((request) => request.requestId)).toEqual(['a', 'b', 'c']);
+  });
+
   it('uses owner-only agent request routes and forwards the exact decision body', async () => {
     stubFetch({ requests: [], nextCursor: null });
     await setup().getConnectorAgentRequests('pending');

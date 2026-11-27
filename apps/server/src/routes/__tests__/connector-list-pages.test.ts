@@ -11,7 +11,7 @@ import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { initConfigManager } from '../../services/core/config-manager.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
-import { INVALID_CURSOR_DETAIL } from '../../lib/paging/keyset-page.js';
+import { INVALID_CURSOR_DETAIL } from '@dorkos/shared/paging';
 import { createConnectorManagementRoutes } from '../connector-management.js';
 import { createConnectorResourcesRoutes } from '../connector-resources.js';
 import { withOwnerDoors } from './connector-owner-doors.js';
@@ -54,11 +54,12 @@ describe('the owner’s connection lists, a page at a time', () => {
       reviews,
     } as unknown as Parameters<typeof createConnectorManagementRoutes>[0])
   );
+  const refresh = vi.fn(async () => undefined);
   const ages = new Map([1, 2, 3].map((day) => [`c${day}`, at(day)]));
   const hand = honoGroupListener(
     withOwnerDoors(createConnectorResourcesRoutes, {
       ...base,
-      signIns: { refreshOnDemand: async () => undefined },
+      signIns: { refreshOnDemand: refresh },
       query: {
         listConnections: async () => ['c2', 'c1', 'c3'].map((connectionId) => ({ connectionId })),
         createdAtOf: () => ages,
@@ -84,6 +85,7 @@ describe('the owner’s connection lists, a page at a time', () => {
     const pending = await request(fixtureTarget.mount(mount))
       .get('/api/connectors/reviews?state=pending&limit=1')
       .expect(200);
+    refresh.mockClear();
     const refusals = [
       await request(fixtureTarget.mount(mount)).get(
         `/api/connectors/reviews?limit=1&cursor=${pending.body.nextCursor}`
@@ -97,5 +99,7 @@ describe('the owner’s connection lists, a page at a time', () => {
         detail: INVALID_CURSOR_DETAIL,
       });
     }
+    // Refused before the sign-in check is paid for.
+    expect(refresh).not.toHaveBeenCalled();
   });
 });

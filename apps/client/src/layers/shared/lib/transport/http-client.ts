@@ -176,6 +176,9 @@ export function buildQueryString(
 /** The most one page of a list holds; the full-list reads below ask for this many at a time. */
 const LIST_PAGE_LIMIT = 200;
 
+/** The most pages one full-list read follows: 10,000 rows, far past any list the app shows. */
+const LIST_PAGE_CAP = 50;
+
 /**
  * Every row of a paged list (`cursor` and `limit` in, `nextCursor` back), read
  * page by page, for a surface that shows the whole list.
@@ -185,6 +188,7 @@ const LIST_PAGE_LIMIT = 200;
  * @param params - The list's own query fields.
  * @param rowsOf - The rows one page holds.
  * @returns The first page, as the server sent it, and every row in server order.
+ * @throws {Error} When a cursor comes back twice, or past {@link LIST_PAGE_CAP} pages.
  */
 export async function fetchAllPages<P extends { nextCursor: string | null }, T>(
   baseUrl: string,
@@ -199,7 +203,13 @@ export async function fetchAllPages<P extends { nextCursor: string | null }, T>(
     );
   const first = await read();
   const rows: T[] = [...rowsOf(first)];
-  for (let cursor = first.nextCursor; cursor;) {
+  const seen = new Set<string>();
+  for (let cursor = first.nextCursor, pages = 1; cursor; pages++) {
+    // A server that hands back a cursor twice, or never ends, must not spin the app forever.
+    if (seen.has(cursor) || pages >= LIST_PAGE_CAP) {
+      throw new Error(`${path} kept giving more pages; stopped after ${pages}.`);
+    }
+    seen.add(cursor);
     const page = await read(cursor);
     rows.push(...rowsOf(page));
     cursor = page.nextCursor;

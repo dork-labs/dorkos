@@ -14,8 +14,12 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { ConnectorGrantExclusionError } from '../services/connectors/access/grant-exclusions.js';
 import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
-import { PageQuerySchema } from '@dorkos/shared/paging';
-import { INVALID_CURSOR_DETAIL, isInvalidCursor, keysetPage } from '../lib/paging/keyset-page.js';
+import { INVALID_CURSOR_DETAIL, PageQuerySchema } from '@dorkos/shared/paging';
+import { keysetPage } from '../lib/paging/keyset-page.js';
+import {
+  invalidCursor,
+  isInvalidCursor,
+} from '../services/core/capabilities/capability-definition.js';
 import { verifyRequestAuth, type RequestUser } from '../services/core/auth/session-gate.js';
 import {
   ConnectorManagementReviewError,
@@ -261,7 +265,8 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
         `agent-requests:${state ?? 'all'}:${sessionId ?? ''}`,
         requests.listForOwner(owner, state, sessionId),
         (row) => [row.createdAt, row.requestId],
-        page
+        page,
+        invalidCursor
       );
       return c.json({ requests: found.items.map(withApproval), nextCursor: found.nextCursor });
     } catch (error) {

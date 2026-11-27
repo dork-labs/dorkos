@@ -23,8 +23,12 @@ import {
 import type { ApiEnv } from '../http/api-chain.js';
 import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
-import { PageQuerySchema } from '@dorkos/shared/paging';
-import { INVALID_CURSOR_DETAIL, isInvalidCursor, keysetPage } from '../lib/paging/keyset-page.js';
+import { INVALID_CURSOR_DETAIL, PageQuerySchema } from '@dorkos/shared/paging';
+import { assertPageCursor, keysetPage } from '../lib/paging/keyset-page.js';
+import {
+  invalidCursor,
+  isInvalidCursor,
+} from '../services/core/capabilities/capability-definition.js';
 import {
   requestAbortSignal,
   resolveConnectorOperator,
@@ -241,6 +245,8 @@ export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDep
     const query = PageQuerySchema.safeParse(readQuery(c));
     if (!query.success) return validationProblem(c, query.error);
     try {
+      // A bad cursor is refused before the sign-in check and the list are paid for.
+      assertPageCursor('connections', query.data.cursor, invalidCursor);
       await deps.signIns.refreshOnDemand();
       const all = await withSignal(c, (signal) => deps.query.listConnections(operator, signal));
       const ages = deps.query.createdAtOf(all.map((row) => row.connectionId));
@@ -248,7 +254,8 @@ export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDep
         'connections',
         all,
         (row) => [ages.get(row.connectionId) ?? '', row.connectionId],
-        query.data
+        query.data,
+        invalidCursor
       );
       return c.json({ connections: page.items, nextCursor: page.nextCursor });
     } catch (error) {

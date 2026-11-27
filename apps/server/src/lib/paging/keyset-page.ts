@@ -9,37 +9,12 @@
  * to some readers seals its cursor to the reader instead
  * (`services/work-graph/reads/page-cursor.ts`). A cursor of another list, or
  * one that does not read as a position, is refused `INVALID_CURSOR`, never
- * read as the first page.
+ * read as the first page: the caller passes the refusal to throw
+ * (`invalidCursor` from the capability port), so this file needs no service.
  *
  * @module lib/paging/keyset-page
  */
 import type { PageQuery } from '@dorkos/shared/paging';
-import { CapabilityToolError } from '../../services/core/capabilities/capability-definition.js';
-
-/** The sentence a refused cursor answers with, on hand routes and the mount alike. */
-export const INVALID_CURSOR_DETAIL =
-  'That cursor wasn’t given by this list. Leave it out to start again.';
-
-/** The refusal for a cursor a list can't go on from. */
-export function invalidCursor(): CapabilityToolError {
-  return new CapabilityToolError({
-    code: 'INVALID_CURSOR',
-    error: 'That cursor was not given by this list. Leave it out to start again.',
-  });
-}
-
-/**
- * Whether an error is the refusal {@link invalidCursor} makes, for a hand
- * route to answer `400` with {@link INVALID_CURSOR_DETAIL}.
- *
- * @param error - What was thrown.
- */
-export function isInvalidCursor(error: unknown): boolean {
-  return (
-    error instanceof CapabilityToolError &&
-    (error.payload as { code?: unknown } | null)?.code === 'INVALID_CURSOR'
-  );
-}
 
 /** A row's place in the order: a key that never changes (a time, as ISO 8601), then its id. */
 export type PageKey = readonly [at: string, id: string];
@@ -63,7 +38,7 @@ function encode(list: string, key: PageKey): string {
   return Buffer.from(JSON.stringify([list, key[0], key[1]]), 'utf8').toString('base64url');
 }
 
-function decode(list: string, cursor: string): PageKey {
+function decode(list: string, cursor: string): PageKey | null {
   try {
     const parsed: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
     if (
@@ -78,7 +53,19 @@ function decode(list: string, cursor: string): PageKey {
   } catch {
     // Falls through to the refusal.
   }
-  throw invalidCursor();
+  return null;
+}
+
+/**
+ * Refuse a cursor this list did not give, before the list is read: a route
+ * whose read has a cost (a sign-in check, a provider call) checks first.
+ *
+ * @param list - The list's name, as {@link keysetPage} is given it.
+ * @param cursor - The cursor as sent, if any.
+ * @param refuse - The error to throw for a cursor this list did not give.
+ */
+export function assertPageCursor(list: string, cursor: string | undefined, refuse: () => Error) {
+  if (cursor !== undefined && decode(list, cursor) === null) throw refuse();
 }
 
 /**
@@ -88,15 +75,17 @@ function decode(list: string, cursor: string): PageKey {
  * @param rows - Every row the reader may see, already filtered.
  * @param keyOf - A row's fixed key.
  * @param query - The cursor, if any, and the page size.
- * @throws {CapabilityToolError} `INVALID_CURSOR` for a cursor this list did not give.
+ * @param refuse - The error for a cursor this list did not give, thrown instead of page one.
  */
 export function keysetPage<T>(
   list: string,
   rows: readonly T[],
   keyOf: (row: T) => PageKey,
-  query: PageQuery
+  query: PageQuery,
+  refuse: () => Error
 ): KeysetPage<T> {
   const after = query.cursor === undefined ? null : decode(list, query.cursor);
+  if (query.cursor !== undefined && after === null) throw refuse();
   const keyed = rows
     .map((row) => ({ row, key: keyOf(row) }))
     .filter(({ key }) => after === null || newestFirst(after, key) < 0)
