@@ -1,7 +1,12 @@
 {
  "schema": 1,
- "updated_at": "2026-11-26T14:55:46.997Z",
+ "updated_at": "2026-11-27T14:52:12.594Z",
  "days": [
+  {
+   "date": "2026-11-26",
+   "light": "red",
+   "headline": "Collector unhealthy 3 of 3 days (2026-11-24, 2026-11-25, 2026-11-26): The local export from clone clone-71ebf1f648 is 8 days old (last 2026-11-17) and no clone exported in the last 3 days; local-commit and local-push are going stale. Approve or re-run the ci-local-export scheduled skill on that machine (Schedules page, Full autonomy)."
+  },
   {
    "date": "2026-11-23",
    "light": "red",

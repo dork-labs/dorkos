@@ -3,7 +3,7 @@
  "id": "261124-201138",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-12-01T21:07:43Z; the verdict is computed on 2026-12-02.",
- "computed_at": "2026-11-26T14:55:46.997Z",
+ "computed_at": "2026-11-27T14:52:12.594Z",
  "hypothesis_hash": "841243a21eb6a671",
  "metric": "tracked.conflict-untold",
  "anchor": "2026-11-24T21:07:43Z",

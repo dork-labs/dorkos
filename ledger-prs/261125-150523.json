@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261125-150523",
+ "file": "ci/ledger/261125-150523-pnpm-no-self-switch.md",
+ "pr": 4417,
+ "merged_at": "2026-11-25T22:00:20Z",
+ "sha": "2ea9ddbee046863d94958a135e2a591def73e33e",
+ "resolved_at": "2026-11-27T14:52:12.594Z"
+}

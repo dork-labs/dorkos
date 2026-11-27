@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261125-145439",
+ "file": "ci/ledger/261125-145439-retire-typecheck-hook.md",
+ "pr": 4414,
+ "merged_at": "2026-11-25T17:27:05Z",
+ "sha": "4fb1e3fd7263888af750c260aba4b775838a41c6",
+ "resolved_at": "2026-11-27T14:52:12.594Z"
+}

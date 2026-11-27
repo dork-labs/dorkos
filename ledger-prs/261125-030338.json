@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261125-030338",
+ "file": "ci/ledger/261125-030338-release-smoke-job.md",
+ "pr": 4366,
+ "merged_at": "2026-11-25T05:21:26Z",
+ "sha": "5c7c3f0e7d757f02a741c2e86fd77b0b9074672c",
+ "resolved_at": "2026-11-27T14:52:12.594Z"
+}

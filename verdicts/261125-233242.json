@@ -1,0 +1,37 @@
+{
+ "schema": 1,
+ "id": "261125-233242",
+ "verdict": "pending",
+ "reason": "The after-window runs to 2026-12-10T00:28:24Z; the verdict is computed on 2026-12-11.",
+ "computed_at": "2026-11-27T14:52:12.594Z",
+ "hypothesis_hash": "22791a3ee55ceb05",
+ "metric": "tracked.import-boundary-allowance",
+ "anchor": "2026-11-26T00:28:24Z",
+ "prs": [
+  4483
+ ],
+ "baseline": {
+  "value": 2143,
+  "source": "ledger"
+ },
+ "target": 2143,
+ "min_n": 10,
+ "before": {
+  "from": "2026-11-19T00:28:24Z",
+  "to": "2026-11-26T00:28:24Z",
+  "n": 0,
+  "value": null
+ },
+ "after": {
+  "from": "2026-11-26T00:28:24Z",
+  "to": "2026-12-10T00:28:24Z",
+  "n": 0,
+  "value": null
+ },
+ "confounders": [
+  "261126-024020",
+  "261126-032354",
+  "261126-033340"
+ ],
+ "slo": null
+}

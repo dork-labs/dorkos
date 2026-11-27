@@ -1,0 +1,33 @@
+{
+ "schema": 1,
+ "id": "261125-170411",
+ "verdict": "pending",
+ "reason": "The after-window runs to 2026-12-02T17:50:22Z; the verdict is computed on 2026-12-03.",
+ "computed_at": "2026-11-27T14:52:12.594Z",
+ "hypothesis_hash": "a2d3226f0b7cfa53",
+ "metric": "tracked.timed-slot-misses",
+ "anchor": "2026-11-25T17:50:22Z",
+ "prs": [
+  4429
+ ],
+ "baseline": {
+  "value": 1,
+  "source": "ledger"
+ },
+ "target": 0,
+ "min_n": 10,
+ "before": {
+  "from": "2026-11-18T17:50:22Z",
+  "to": "2026-11-25T17:50:22Z",
+  "n": 0,
+  "value": null
+ },
+ "after": {
+  "from": "2026-11-25T17:50:22Z",
+  "to": "2026-12-02T17:50:22Z",
+  "n": 0,
+  "value": null
+ },
+ "confounders": [],
+ "slo": null
+}

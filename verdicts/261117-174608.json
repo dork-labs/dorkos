@@ -3,7 +3,7 @@
  "id": "261117-174608",
  "verdict": "pending",
  "reason": "Waiting: 2 of 8 after-window days not collected (2026-11-24, 11-25); backfill reaches them first.",
- "computed_at": "2026-11-26T14:55:46.997Z",
+ "computed_at": "2026-11-27T14:52:12.594Z",
  "hypothesis_hash": "b8665ad69e26d469",
  "metric": "tracked.merge-tail-unknown-skips",
  "anchor": "2026-11-18T14:18:12Z",

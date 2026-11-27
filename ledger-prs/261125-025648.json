@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261125-025648",
+ "file": "ci/ledger/261125-025648-config-migration-gate.md",
+ "pr": 4363,
+ "merged_at": "2026-11-25T04:09:31Z",
+ "sha": "3822b46f27ddcde31bef5ca2f29d1697671a45b6",
+ "resolved_at": "2026-11-27T14:52:12.594Z"
+}

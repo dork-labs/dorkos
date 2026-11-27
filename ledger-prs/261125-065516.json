@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261125-065516",
+ "file": "ci/ledger/261125-065516-turn-port-ratchet.md",
+ "pr": 4401,
+ "merged_at": "2026-11-25T13:24:13Z",
+ "sha": "8e3f3d132c8fd9b00151ae48d45c082fad42d1ff",
+ "resolved_at": "2026-11-27T14:52:12.594Z"
+}

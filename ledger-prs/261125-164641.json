@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261125-164641",
+ "file": "ci/ledger/261125-164641-guard-heredoc-false-positive.md",
+ "pr": 4436,
+ "merged_at": "2026-11-25T18:40:59Z",
+ "sha": "7f11944d088c1f3fe4714a4e3bc7745423283ddc",
+ "resolved_at": "2026-11-27T14:52:12.594Z"
+}

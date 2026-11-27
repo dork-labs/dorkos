@@ -3,7 +3,7 @@
  "id": "261121-181823",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-12-06T17:22:03Z; the verdict is computed on 2026-12-07.",
- "computed_at": "2026-11-26T14:55:46.997Z",
+ "computed_at": "2026-11-27T14:52:12.594Z",
  "hypothesis_hash": "0fbfc626edbd7795",
  "metric": "local-commit",
  "anchor": "2026-11-22T17:22:03Z",
@@ -39,7 +39,9 @@
   "261124-122114",
   "261124-150512",
   "261124-151529",
-  "261125-005730"
+  "261125-005730",
+  "261125-175705",
+  "261125-224135"
  ],
  "slo": {
   "id": "local-commit",

@@ -1,9 +1,9 @@
 {
  "schema": 1,
  "id": "261119-163437",
- "verdict": "pending",
- "reason": "The after-window runs to 2026-11-26T18:14:24Z; the verdict is computed on 2026-11-27.",
- "computed_at": "2026-11-26T14:55:46.997Z",
+ "verdict": "inconclusive",
+ "reason": "Confounded: 261119-175030, 261120-024456, 261120-040300, 261121-023503, 261121-025202, 261121-060732, 261124-013953 changed the same gate inside the after-window (2026-11-19T18:14:24Z to 2026-11-26T18:14:24Z), so the movement cannot be attributed to this change alone.",
+ "computed_at": "2026-11-27T14:52:12.594Z",
  "hypothesis_hash": "5f3267faab336925",
  "metric": "gate.wf.desktop-smoke.packaged-runtime.failure_rate",
  "anchor": "2026-11-19T18:14:24Z",

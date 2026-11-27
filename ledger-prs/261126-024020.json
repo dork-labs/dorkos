@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261126-024020",
+ "file": "ci/ledger/261126-024020-copy-spec-drift-in-typecheck.md",
+ "pr": 4495,
+ "merged_at": "2026-11-26T03:35:40Z",
+ "sha": "da06db13db1e0727e55519ae716b45732618a6b3",
+ "resolved_at": "2026-11-27T14:52:12.594Z"
+}

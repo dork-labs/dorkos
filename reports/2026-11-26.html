@@ -1,0 +1,1116 @@
+<!doctype html>
+<!--
+  The daily CI report's template. The engine (packages/ci-steward/src/html.ts
+  and daily-report.ts) fills the {{slots}} below and writes the result to
+  reports/YYYY-MM-DD.html on the ci-steward-data branch.
+
+  RESTYLE THIS FILE, NOT THE ENGINE. All the CSS is right here, inline, and the
+  engine only emits elements that carry the class names this stylesheet
+  defines. There is no build step and no network: no web fonts, no CDN, no
+  script, and the favicon is an inline data URI, so the page opens from a
+  file:// URL with no internet and makes no request at all.
+
+  LAYOUT CONTRACT, in order of importance:
+    1. The page NEVER scrolls sideways, at any width. `.scroll-x` is the
+       last-resort guard: a table too wide to fit scrolls inside its own panel
+       instead of dragging the document with it.
+    2. Prose stays readable: `main` is 960px. A section that earns more room
+       goes in `.wide`, which breaks out to min(1440px, 100vw - 2rem) and stays
+       centred. The SLO table and the trigger list use it.
+    3. Under 720px the table becomes cards, with no script: the header row is
+       hidden and each cell prints its own label from `data-label`.
+
+  The slots:
+    {{name}}    a value, HTML-escaped when it is filled in
+    {{{name}}}  a block of markup the engine built (already escaped inside)
+
+  An unknown slot is left alone rather than silently emptied, so a typo here
+  shows up on the page instead of deleting a section.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CI report for 2026-11-26</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%233f4ea8'/%3E%3C/svg%3E"
+    />
+    <style>
+      :root {
+        --bg: #fbfbfa;
+        --panel: #ffffff;
+        --ink: #1d1d1f;
+        --muted: #6b6b70;
+        --line: #e4e4e2;
+        --green: #2f7d4f;
+        --amber: #9a6400;
+        --red: #b3261e;
+        --accent: #3f4ea8;
+        --radius: 10px;
+        --prose: 960px;
+        --wide: 1440px;
+        --gutter: 1.5rem;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #16171a;
+          --panel: #1e2024;
+          --ink: #ececee;
+          --muted: #9fa0a6;
+          --line: #2e3137;
+          --green: #6ddc9b;
+          --amber: #ecb44a;
+          --red: #ff8f85;
+          --accent: #9aa7f5;
+        }
+      }
+      * {
+        box-sizing: border-box;
+        min-width: 0;
+      }
+      html,
+      body {
+        max-width: 100%;
+      }
+      body {
+        margin: 0;
+        padding: 32px var(--gutter) 72px;
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          15px/1.55 ui-sans-serif,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          Helvetica,
+          Arial,
+          sans-serif;
+      }
+      main {
+        max-width: var(--prose);
+        margin: 0 auto;
+      }
+      /* Break out of the prose column, stay centred, and keep the SAME gutter
+         as the narrow column: a wide block flush to the window edge while the
+         prose above it starts 240px in reads as two different pages. Each
+         section's heading sits inside its own .wide block, so a heading always
+         lines up with the panel it belongs to. */
+      .wide {
+        width: min(var(--wide), calc(100vw - var(--gutter) * 2));
+        margin-left: 50%;
+        transform: translateX(-50%);
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+      }
+      h2 {
+        font-size: 15px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        margin: 36px 0 12px;
+      }
+      p {
+        margin: 0 0 10px;
+      }
+      a {
+        color: var(--accent);
+      }
+      .sub {
+        color: var(--muted);
+        font-size: 13px;
+        margin-bottom: 24px;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 16px 18px;
+      }
+      /* The guard: a table wider than its panel scrolls here, not on the page. */
+      .scroll-x {
+        overflow-x: auto;
+        max-width: 100%;
+      }
+      .headline {
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+        border-left: 4px solid var(--line);
+      }
+      .headline.green {
+        border-left-color: var(--green);
+      }
+      .headline.amber {
+        border-left-color: var(--amber);
+      }
+      .headline.red {
+        border-left-color: var(--red);
+      }
+      .lamp {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        margin-top: 5px;
+        flex: none;
+        background: var(--muted);
+      }
+      .green .lamp {
+        background: var(--green);
+      }
+      .amber .lamp {
+        background: var(--amber);
+      }
+      .red .lamp {
+        background: var(--red);
+      }
+      .headline-text {
+        font-size: 17px;
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      .headline-why {
+        color: var(--muted);
+        font-size: 13px;
+        margin-top: 4px;
+        overflow-wrap: anywhere;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      th {
+        font-weight: 600;
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        white-space: nowrap;
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      td.num {
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      td.measure {
+        min-width: 11rem;
+      }
+      code,
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+      .tag {
+        display: inline-block;
+        padding: 1px 7px;
+        border-radius: 999px;
+        font-size: 11px;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        border: 1px solid currentColor;
+        white-space: nowrap;
+      }
+      .tag.met,
+      .tag.ok,
+      .tag.green,
+      .tag.verified {
+        color: var(--green);
+      }
+      .tag.amber,
+      .tag.partial,
+      .tag.insufficient,
+      .tag.unmeasured,
+      .tag.pending,
+      .tag.inconclusive {
+        color: var(--amber);
+      }
+      .tag.red,
+      .tag.breach,
+      .tag.failed {
+        color: var(--red);
+      }
+      .trend.better {
+        color: var(--green);
+      }
+      .trend.worse {
+        color: var(--red);
+      }
+      .trend.flat {
+        color: var(--muted);
+      }
+      svg.spark {
+        display: block;
+      }
+      svg.spark path {
+        fill: none;
+        stroke: var(--accent);
+        stroke-width: 1.5;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+      }
+      .trigger {
+        border-left: 3px solid var(--line);
+        padding: 2px 0 2px 12px;
+        margin: 0 0 16px;
+      }
+      .trigger.red {
+        border-left-color: var(--red);
+      }
+      .trigger.amber {
+        border-left-color: var(--amber);
+      }
+      .trigger-head {
+        font-weight: 600;
+      }
+      .trigger div {
+        overflow-wrap: anywhere;
+      }
+      .trigger-meta,
+      .note {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      ul.plain {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      ul.plain li {
+        padding: 6px 0;
+        border-bottom: 1px solid var(--line);
+        overflow-wrap: anywhere;
+      }
+      ul.plain li:last-child {
+        border-bottom: none;
+      }
+      .days {
+        columns: 240px;
+      }
+      footer {
+        margin-top: 48px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      /* A laptop still fits the table: tighter padding, a narrower name column.
+         Past that it scrolls inside .scroll-x rather than on the page. */
+      @media (max-width: 1100px) {
+        th,
+        td {
+          padding: 6px 7px;
+        }
+        td.measure {
+          min-width: 9rem;
+        }
+      }
+
+      /* A phone gets cards, not a table. CSS only. */
+      @media (max-width: 720px) {
+        :root {
+          --gutter: 1.5rem;
+        }
+        body {
+          padding: 20px var(--gutter) 56px;
+        }
+        .wide {
+          width: 100%;
+          margin-left: 0;
+          transform: none;
+        }
+        table.cards,
+        table.cards tbody,
+        table.cards tr,
+        table.cards td {
+          display: block;
+          width: 100%;
+        }
+        table.cards thead {
+          display: none;
+        }
+        table.cards tr {
+          border: 1px solid var(--line);
+          border-radius: var(--radius);
+          padding: 10px 12px;
+          margin-bottom: 12px;
+        }
+        table.cards td {
+          border-bottom: none;
+          padding: 3px 0;
+          white-space: normal;
+        }
+        table.cards td[data-label]::before {
+          content: attr(data-label) ': ';
+          color: var(--muted);
+          font-size: 12px;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+        table.cards td.measure::before {
+          content: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>CI report for 2026-11-26</h1>
+      <p class="sub">Computed by ci-steward from real runs. Daily run. 13 red, 93 amber open. Collected 2026-11-27T14:52:12.594Z.</p>
+
+      <div class="panel headline red">
+        <span class="lamp"></span>
+        <div>
+          <div class="headline-text">Collector unhealthy 3 of 3 days (2026-11-24, 2026-11-25, 2026-11-26): The local export from clone clone-71ebf1f648 is 8 days old (last 2026-11-17) and no clone exported in the last 3 days; local-commit and local-push are going stale. Approve or re-run the ci-local-export scheduled skill on that machine (Schedules page, Full autonomy).</div>
+          <div class="headline-why">Fix this first. Every other number comes from the same run.</div>
+        </div>
+      </div>
+
+      <h2>Merge to release</h2>
+      <div class="panel">
+        <p><strong>p50 18.6 h</strong> · p90 29.1 h from merge to release.</p>
+        <p class="note">140 merged PRs shipped in 4 releases, 7 days to 2026-11-26. A PR counts once, in the first release that holds it.</p>
+      </div>
+
+      <h2>What to work on</h2>
+      <div class="panel">
+        <p><strong class="mono">collector-health</strong></p>
+        <p>The collector&#39;s own health failed (2 problems); no other number can be trusted until it is fixed. First: The local export from clone clone-71ebf1f648 is 10 days old (last 2026-11-17) and no clone exported in the last 3 days; local-commit and local-push are going stale. Approve or re-run the ci-local-export scheduled skill on that machine (Schedules page, Full autonomy).</p>
+        <p class="note">Tripwires outrank everything: nothing else is trustworthy while this is true.</p>
+      </div>
+
+      <div class="wide">
+        <h2>How the pipeline is doing</h2>
+        <div class="panel">
+      <div class="scroll-x"><table class="cards">
+        <thead><tr>
+          <th>Measure</th><th>Now</th><th>Standing</th><th>Floor</th><th>Goal</th><th>Trend</th><th>14 days</th>
+        </tr></thead>
+        <tbody><tr>
+          <td class="measure">
+            <div>Jobs finish well inside their timeouts</div>
+            <div class="note mono">headroom · %</div>
+          </td>
+          <td class="num" data-label="Now">90.7%</td>
+          <td data-label="Standing"><span class="tag breach" title="under floor">breach</span></td>
+          <td class="num" data-label="Floor">≤ 90%</td>
+          <td class="num" data-label="Goal">≤ 60%</td>
+          <td class="num trend worse" data-label="Trend" title="worse than a week ago">worse: 83.4% → 90.7%</td>
+          <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="Jobs finish well inside their timeouts, last 14 days"><path d="M1.0 20.3 L8.2 21.0 L15.5 18.7 L22.7 18.1 L29.9 15.6 L37.2 12.7 L44.4 11.7 L51.6 11.1 L58.8 11.5 L66.1 7.6 L73.3 6.7 L80.5 6.1 L87.8 5.5 L95.0 1.0" /></svg></td>
+        </tr><tr>
+          <td class="measure">
+            <div>Merge-queue builds come back green</div>
+            <div class="note mono">queue-green · %</div>
+          </td>
+          <td class="num" data-label="Now">76.6%</td>
+          <td data-label="Standing"><span class="tag ok" title="ok, short of goal">ok</span></td>
+          <td class="num" data-label="Floor">≥ 75%</td>
+          <td class="num" data-label="Goal">≥ 97%</td>
+          <td class="num trend worse" data-label="Trend" title="worse than a week ago">worse: 87% → 76.6%</td>
+          <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="Merge-queue builds come back green, last 14 days"><path d="M1.0 12.1 L8.2 10.6 L15.5 5.4 L22.7 6.9 L29.9 4.9 L37.2 3.6 L44.4 1.0 L51.6 1.3 L58.8 5.2 L66.1 4.3 L73.3 6.2 L80.5 10.8 L87.8 17.4 L95.0 21.0" /></svg></td>
+        </tr><tr>
+          <td class="measure">
+            <div>Queue builds are not thrown away on flakes</div>
+            <div class="note mono">wasted-queue-builds · %</div>
+          </td>
+          <td class="num" data-label="Now">4.7%</td>
+          <td data-label="Standing"><span class="tag ok" title="ok, short of goal">ok</span></td>
+          <td class="num" data-label="Floor">≤ 11.5%</td>
+          <td class="num" data-label="Goal">≤ 3%</td>
+          <td class="num trend better" data-label="Trend" title="better than a week ago">better: 5.1% → 4.7%</td>
+          <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="Queue builds are not thrown away on flakes, last 14 days"><path d="M1.0 1.6 L8.2 1.0 L15.5 11.3 L22.7 17.5 L29.9 19.3 L37.2 19.0 L44.4 16.6 L51.6 15.3 L58.8 14.0 L66.1 9.2 L73.3 6.5 L80.5 13.8 L87.8 21.0 L95.0 18.2" /></svg></td>
+        </tr><tr>
+          <td class="measure">
+            <div>Tests pass without needing a retry</div>
+            <div class="note mono">flaky-test-runs · %</div>
+          </td>
+          <td class="num" data-label="Now">0% · failed_jobs 112 · unreported_failed_jobs 25</td>
+          <td data-label="Standing"><span class="tag unmeasured" title="not measured">unmeasured</span></td>
+          <td class="num" data-label="Floor">none</td>
+          <td class="num" data-label="Goal">≤ 1.5%</td>
+          <td class="num trend flat" data-label="Trend" title="nothing measured yet">no data</td>
+          <td data-label="14 days"><span class="note">not enough days yet</span></td>
+        </tr><tr>
+          <td class="measure">
+            <div>main stays green</div>
+            <div class="note mono">main-green · count per 28d</div>
+          </td>
+          <td class="num" data-label="Now">spells 41 · fix p90 225.7</td>
+          <td data-label="Standing"><span class="tag breach" title="under floor">breach</span></td>
+          <td class="num" data-label="Floor">spells ≤ 3</td>
+          <td class="num" data-label="Goal">spells ≤ 1 · fix p90 &lt; 30</td>
+          <td class="num trend worse" data-label="Trend" title="worse than a week ago">worse: 28 → 41</td>
+          <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="main stays green, last 14 days"><path d="M1.0 21.0 L8.2 21.0 L15.5 21.0 L22.7 17.5 L29.9 16.7 L37.2 14.0 L44.4 12.3 L51.6 12.3 L58.8 8.8 L66.1 8.0 L73.3 7.1 L80.5 5.3 L87.8 2.7 L95.0 1.0" /></svg></td>
+        </tr><tr>
+          <td class="measure">
+            <div>The automated review finishes the first time</div>
+            <div class="note mono">review-completes · %</div>
+          </td>
+          <td class="num" data-label="Now">95%</td>
+          <td data-label="Standing"><span class="tag ok" title="ok, short of goal">ok</span></td>
+          <td class="num" data-label="Floor">≥ 94.5%</td>
+          <td class="num" data-label="Goal">≥ 99%</td>
+          <td class="num trend worse" data-label="Trend" title="worse than a week ago">worse: 97.8% → 95%</td>
+          <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="The automated review finishes the first time, last 14 days"><path d="M1.0 11.1 L8.2 9.8 L15.5 1.0 L22.7 3.6 L29.9 2.5 L37.2 2.3 L44.4 2.2 L51.6 12.8 L58.8 17.2 L66.1 19.8 L73.3 21.0 L80.5 19.7 L87.8 14.7 L95.0 13.8" /></svg></td>
+        </tr><tr>
+          <td class="measure">
+            <div>A failed review is re-run quickly</div>
+            <div class="note mono">review-recovery · minutes</div>
+          </td>
+          <td class="num" data-label="Now">p90 330.1</td>
+          <td data-label="Standing"><span class="tag breach" title="under floor">breach</span></td>
+          <td class="num" data-label="Floor">p90 ≤ 120</td>
+          <td class="num" data-label="Goal">p90 ≤ 30</td>
+          <td class="num trend flat" data-label="Trend" title="nothing to compare with yet">no prior week</td>
+          <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="A failed review is re-run quickly, last 14 days"><path d="M87.8 21.0 L95.0 21.0" /></svg></td>
+        </tr><tr>
+          <td class="measure">
+            <div>A PR hears back from CI fast</div>
+            <div class="note mono">pr-feedback · minutes</div>
+          </td>
+          <td class="num" data-label="Now">p50 24.7 · p90 26.1</td>
+          <td data-label="Standing"><span class="tag breach" title="under floor">breach</span></td>
+          <td class="num" data-label="Floor">p90 ≤ 26</td>
+          <td class="num" data-label="Goal">p50 ≤ 7 · p90 ≤ 12</td>
+          <td class="num trend better" data-label="Trend" title="better than a week ago">better: 25 → 24.7</td>
+          <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="A PR hears back from CI fast, last 14 days"><path d="M1.0 3.7 L8.2 3.7 L15.5 1.0 L22.7 3.2 L29.9 6.9 L37.2 15.1 L44.4 17.2 L51.6 18.3 L58.8 18.3 L66.1 20.5 L73.3 21.0 L80.5 19.9 L87.8 19.4 L95.0 18.8" /></svg></td>
+        </tr><tr>
+          <td class="measure">
+            <div>A clean queue build is quick</div>
+            <div class="note mono">queue-build · minutes</div>
+          </td>
+          <td class="num" data-label="Now">p50 26.3 · p90 34.9</td>
+          <td data-label="Standing"><span class="tag ok" title="ok, short of goal">ok</span></td>
+          <td class="num" data-label="Floor">p90 ≤ 55</td>
+          <td class="num" data-label="Goal">p50 ≤ 12 · p90 ≤ 18</td>
+          <td class="num trend better" data-label="Trend" title="better than a week ago">better: 29 → 26.3</td>
+          <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="A clean queue build is quick, last 14 days"><path d="M1.0 1.6 L8.2 2.1 L15.5 1.0 L22.7 2.1 L29.9 3.2 L37.2 5.4 L44.4 6.0 L51.6 14.9 L58.8 17.7 L66.1 19.9 L73.3 18.2 L80.5 16.6 L87.8 14.3 L95.0 21.0" /></svg></td>
+        </tr><tr>
+          <td class="measure">
+            <div>A PR merges soon after it opens</div>
+            <div class="note mono">lead-time · minutes</div>
+          </td>
+          <td class="num" data-label="Now">p50 92.6 · p90 1451.8</td>
+          <td data-label="Standing"><span class="tag breach" title="under floor">breach</span></td>
+          <td class="num" data-label="Floor">p90 ≤ 180</td>
+          <td class="num" data-label="Goal">p50 ≤ 30 · p90 ≤ 60</td>
+          <td class="num trend better" data-label="Trend" title="better than a week ago">better: 167.5 → 92.6</td>
+          <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="A PR merges soon after it opens, last 14 days"><path d="M1.0 6.1 L8.2 2.1 L15.5 6.7 L22.7 7.4 L29.9 7.8 L37.2 7.5 L44.4 7.6 L51.6 1.0 L58.8 1.6 L66.1 3.0 L73.3 9.2 L80.5 9.5 L87.8 10.9 L95.0 21.0" /></svg></td>
+        </tr><tr>
+          <td class="measure">
+            <div>git commit is quick</div>
+            <div class="note mono">local-commit · seconds</div>
+          </td>
+          <td class="num" data-label="Now">-</td>
+          <td data-label="Standing"><span class="tag unmeasured" title="not measured">unmeasured</span></td>
+          <td class="num" data-label="Floor">p90 ≤ 115</td>
+          <td class="num" data-label="Goal">p90 ≤ 20</td>
+          <td class="num trend worse" data-label="Trend" title="worse than a week ago">worse: 166 → 203</td>
+          <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="git commit is quick, last 14 days"><path d="M1.0 21.0 L8.2 20.8 L15.5 15.9 L22.7 12.6 L29.9 12.4 L37.2 10.5 L44.4 8.8 L51.6 5.4 L58.8 2.3 L66.1 1.0" /></svg></td>
+        </tr><tr>
+          <td class="measure">
+            <div>git push is quick and never killed</div>
+            <div class="note mono">local-push · seconds</div>
+          </td>
+          <td class="num" data-label="Now">-</td>
+          <td data-label="Standing"><span class="tag unmeasured" title="not measured">unmeasured</span></td>
+          <td class="num" data-label="Floor">p90 ≤ 240 · killed ≤ 3.8%</td>
+          <td class="num" data-label="Goal">p90 ≤ 120 · killed ≤ 0%</td>
+          <td class="num trend worse" data-label="Trend" title="worse than a week ago">worse: 30 → 37</td>
+          <td data-label="14 days"><svg class="spark" width="96" height="22" viewBox="0 0 96 22" role="img" aria-label="git push is quick and never killed, last 14 days"><path d="M1.0 21.0 L8.2 21.0 L15.5 12.4 L22.7 8.6 L29.9 8.6 L37.2 7.7 L44.4 7.7 L51.6 4.8 L58.8 2.9 L66.1 1.0" /></svg></td>
+        </tr></tbody>
+      </table></div>
+      <p class="note">7 days to 2026-11-26. p50 is the middle run, p90 the slow end: 9 in 10 are faster. The floor is the line we promise not to fall below; it tightens after four good weeks. Too few runs judges nothing.</p></div>
+
+        <h2>Open triggers</h2>
+        <div class="panel"><div class="trigger red">
+          <div class="trigger-head">Collector unhealthy 3 of 3 days (2026-11-24, 2026-11-25, 2026-11-26): The local export from clone clone-71ebf1f648 is 8 days old (last 2026-11-17) and no clone exported in the last 3 days; local-commit and local-push are going stale. Approve or re-run the ci-local-export scheduled skill on that machine (Schedules page, Full autonomy).</div>
+          <div>Fix: Fix this first. Every other number comes from the same run.</div>
+          <div class="trigger-meta mono">collector-health · since 2026-11-20</div>
+        </div><div class="trigger red">
+          <div class="trigger-head">main canary red on 563b3aa since 2026-11-25 09:31Z: browser-test.yml ×1.</div>
+          <div>Fix: Fix main first. Everything merging behind it inherits the red, and the queue will eject PRs that did nothing wrong.</div>
+          <div class="trigger-meta mono">main-canary:563b3aa9c3cf · main-green · since 2026-11-26 · proposed: 260919-175509</div>
+        </div><div class="trigger red">
+          <div class="trigger-head">main red since 6309440, still red.</div>
+          <div>Fix: Fix main first. Everything merging behind it inherits the red.</div>
+          <div class="trigger-meta mono">main-red-open:6309440d73d1 · main-green · since 2026-11-26 · proposed: 260919-175509</div>
+        </div><div class="trigger red">
+          <div class="trigger-head">wf.desktop-smoke.packaged-runtime p95 uses 90.7% of its time limit (n=225).</div>
+          <div>Fix: Make it faster. Raising the limit hides it; the next green run still gets killed.</div>
+          <div class="trigger-meta mono">headroom:wf.desktop-smoke.packaged-runtime · wf.desktop-smoke.packaged-runtime · since 2026-11-26 · proposed: 261002-161720</div>
+        </div><div class="trigger red">
+          <div class="trigger-head">headroom under floor: 90.7% (n=65035, 2026-11-20 to 2026-11-26).</div>
+          <div>Fix: Take its path from ci/slos.yaml.</div>
+          <div class="trigger-meta mono">slo-floor:headroom · headroom · since 2026-11-26 · proposed: 261013-144138</div>
+        </div><div class="trigger red">
+          <div class="trigger-head">main-green under floor: red_episodes 41, restore_p90 225.7 (n=1071, 2026-10-30 to 2026-11-26).</div>
+          <div>Fix: Take its path from ci/slos.yaml.</div>
+          <div class="trigger-meta mono">slo-floor:main-green · main-green · since 2026-09-20 · open 67d · proposed: 260919-175509</div>
+        </div><div class="trigger red">
+          <div class="trigger-head">review-recovery under floor: p90 330.1 (n=5, 2026-11-20 to 2026-11-26).</div>
+          <div>Fix: Take its path from ci/slos.yaml.</div>
+          <div class="trigger-meta mono">slo-floor:review-recovery · review-recovery · since 2026-11-26</div>
+        </div><div class="trigger red">
+          <div class="trigger-head">260923-220553 failed: gate.wf.test.community-pg.failure_rate@pull_request 0.0363 vs target 0.</div>
+          <div>Fix: Revert it (status: reverted, name the PR), or re-state the hypothesis.</div>
+          <div class="trigger-meta mono">verdict:260923-220553 · 260923-220553 · since 2026-10-08 · open 49d</div>
+        </div><div class="trigger red">
+          <div class="trigger-head">261004-203003 failed: gate.wf.harness-windows.harness-windows.failure_rate@pull_request 0.031 vs target 0.03.</div>
+          <div>Fix: Revert it (status: reverted, name the PR), or re-state the hypothesis.</div>
+          <div class="trigger-meta mono">verdict:261004-203003 · 261004-203003 · since 2026-11-20</div>
+        </div><div class="trigger red">
+          <div class="trigger-head">261005-201839 failed: tracked.desktop-release-wall-clock 25 vs target 18.</div>
+          <div>Fix: Revert it (status: reverted, name the PR), or re-state the hypothesis.</div>
+          <div class="trigger-meta mono">verdict:261005-201839 · 261005-201839 · since 2026-11-02 · open 24d</div>
+        </div><div class="trigger red">
+          <div class="trigger-head">261016-194918 failed: gate.wf.publish-docker.build-and-push-hub.failure_rate 0.125 vs target 0.</div>
+          <div>Fix: Revert it (status: reverted, name the PR), or re-state the hypothesis.</div>
+          <div class="trigger-meta mono">verdict:261016-194918 · 261016-194918 · since 2026-11-21</div>
+        </div><div class="trigger red">
+          <div class="trigger-head">261031-091500 failed: wasted-queue-builds 0.1056 vs target 0.03.</div>
+          <div>Fix: Revert it (status: reverted, name the PR), or re-state the hypothesis.</div>
+          <div class="trigger-meta mono">verdict:261031-091500 · 261031-091500 · since 2026-11-21</div>
+        </div><div class="trigger red">
+          <div class="trigger-head">261115-173750 failed: tracked.job-minutes-per-merged-pr 1062.2 vs target 25.</div>
+          <div>Fix: Revert it (status: reverted, name the PR), or re-state the hypothesis.</div>
+          <div class="trigger-meta mono">verdict:261115-173750 · 261115-173750 · since 2026-11-23</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">main red 100 min (1443463).</div>
+          <div>Fix: Why did the queue miss it? If nothing did, this one is history.</div>
+          <div class="trigger-meta mono">main-red:14434634ff15 · main-green · since 2026-11-21 · proposed: 260919-175509</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">main red 113 min (2016fb6).</div>
+          <div>Fix: Why did the queue miss it? If nothing did, this one is history.</div>
+          <div class="trigger-meta mono">main-red:2016fb61288f · main-green · since 2026-11-26 · proposed: 260919-175509</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">main red 88 min (214262d).</div>
+          <div>Fix: Why did the queue miss it? If nothing did, this one is history.</div>
+          <div class="trigger-meta mono">main-red:214262d12103 · main-green · since 2026-11-26 · proposed: 260919-175509</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">main red 18 min (2ea9ddb).</div>
+          <div>Fix: Why did the queue miss it? If nothing did, this one is history.</div>
+          <div class="trigger-meta mono">main-red:2ea9ddbee046 · main-green · since 2026-11-26 · proposed: 260919-175509</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">main red 38 min (336542f).</div>
+          <div>Fix: Why did the queue miss it? If nothing did, this one is history.</div>
+          <div class="trigger-meta mono">main-red:336542f74108 · main-green · since 2026-11-22 · proposed: 260919-175509</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">main red 1234 min (3565364).</div>
+          <div>Fix: Why did the queue miss it? If nothing did, this one is history.</div>
+          <div class="trigger-meta mono">main-red:35653640fe13 · main-green · since 2026-11-26 · proposed: 260919-175509</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">main red 21 min (3abe260).</div>
+          <div>Fix: Why did the queue miss it? If nothing did, this one is history.</div>
+          <div class="trigger-meta mono">main-red:3abe26077356 · main-green · since 2026-11-20 · proposed: 260919-175509</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">main red 324 min (79c234f).</div>
+          <div>Fix: Why did the queue miss it? If nothing did, this one is history.</div>
+          <div class="trigger-meta mono">main-red:79c234fdb020 · main-green · since 2026-11-26 · proposed: 260919-175509</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">main red 12 min (7af7212).</div>
+          <div>Fix: Why did the queue miss it? If nothing did, this one is history.</div>
+          <div class="trigger-meta mono">main-red:7af72129e295 · main-green · since 2026-11-21 · proposed: 260919-175509</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">main red 39 min (c00d40a).</div>
+          <div>Fix: Why did the queue miss it? If nothing did, this one is history.</div>
+          <div class="trigger-meta mono">main-red:c00d40a4662f · main-green · since 2026-11-26 · proposed: 260919-175509</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">main red 35 min (c90b139).</div>
+          <div>Fix: Why did the queue miss it? If nothing did, this one is history.</div>
+          <div class="trigger-meta mono">main-red:c90b139fbb01 · main-green · since 2026-11-21 · proposed: 260919-175509</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">main red 27 min (dc43009).</div>
+          <div>Fix: Why did the queue miss it? If nothing did, this one is history.</div>
+          <div class="trigger-meta mono">main-red:dc4300954438 · main-green · since 2026-11-26 · proposed: 260919-175509</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">main red 128 min (f899939).</div>
+          <div>Fix: Why did the queue miss it? If nothing did, this one is history.</div>
+          <div class="trigger-meta mono">main-red:f899939071e6 · main-green · since 2026-11-21 · proposed: 260919-175509</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">lead-time under floor: p50 92.6, p90 1451.8 (n=233, 2026-11-20 to 2026-11-26).</div>
+          <div>Fix: Take its path from ci/slos.yaml.</div>
+          <div class="trigger-meta mono">slo-floor:lead-time · lead-time · since 2026-09-20 · open 67d · proposed: 261030-233825</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">pr-feedback under floor: p50 24.7, p90 26.1 (n=129, 2026-11-20 to 2026-11-26).</div>
+          <div>Fix: Take its path from ci/slos.yaml.</div>
+          <div class="trigger-meta mono">slo-floor:pr-feedback · pr-feedback · since 2026-11-26 · proposed: 260919-175502</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">260919-175501 partial: gate.wf.credential-free-build.credential-free-build.failure_rate@merge_group 0.0227 vs target 0.015.</div>
+          <div>Fix: Worth another change? If not, close it with a follow-up entry.</div>
+          <div class="trigger-meta mono">verdict:260919-175501 · 260919-175501 · since 2026-09-30 · open 57d</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">260919-175503 partial: headroom 0.908 vs target 0.8.</div>
+          <div>Fix: Worth another change? If not, close it with a follow-up entry.</div>
+          <div class="trigger-meta mono">verdict:260919-175503 · 260919-175503 · since 2026-10-04 · open 53d</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261115-180313 partial: gate.wf.security-gate.security-gate.failure_rate 0.078 vs target 0.05.</div>
+          <div>Fix: Worth another change? If not, close it with a follow-up entry.</div>
+          <div class="trigger-meta mono">verdict:261115-180313 · 261115-180313 · since 2026-11-23</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.browser-test.browser-shard failed 3.9%, was 0.4% (9.24x). 7d vs 7d, n=1962/2826.</div>
+          <div>Fix: What changed for it in 7 days? Usually one flaky test or one new step.</div>
+          <div class="trigger-meta mono">gate-failure-spike:wf.browser-test.browser-shard · wf.browser-test.browser-shard · since 2026-11-26 · proposed: 261013-144138</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.browser-test.browser-smoke failed 3.3%, was 0.8% (4.41x). 7d vs 7d, n=3906/2914.</div>
+          <div>Fix: What changed for it in 7 days? Usually one flaky test or one new step.</div>
+          <div class="trigger-meta mono">gate-failure-spike:wf.browser-test.browser-smoke · wf.browser-test.browser-smoke · since 2026-11-26 · proposed: 261112-190000</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.browser-test.browser-test failed 13.6%, was 7.9% (1.72x). 7d vs 7d, n=1459/1240.</div>
+          <div>Fix: What changed for it in 7 days? Usually one flaky test or one new step.</div>
+          <div class="trigger-meta mono">gate-failure-spike:wf.browser-test.browser-test · wf.browser-test.browser-test · since 2026-11-23 · proposed: 261107-203000</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.claude-code-review.review failed 7.1%, was 2.2% (3.22x). 7d vs 7d, n=618/362.</div>
+          <div>Fix: What changed for it in 7 days? Usually one flaky test or one new step.</div>
+          <div class="trigger-meta mono">gate-failure-spike:wf.claude-code-review.review · wf.claude-code-review.review · since 2026-11-21</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.cli-smoke-test.hub-smoke-test failed 3.2%, was 0.1% (30.17x). 7d vs 7d, n=648/931.</div>
+          <div>Fix: What changed for it in 7 days? Usually one flaky test or one new step.</div>
+          <div class="trigger-meta mono">gate-failure-spike:wf.cli-smoke-test.hub-smoke-test · wf.cli-smoke-test.hub-smoke-test · since 2026-11-23 · proposed: 261016-192347</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.cli-smoke-test.integration-test failed 3.1%, was 0.1% (28.73x). 7d vs 7d, n=648/931.</div>
+          <div>Fix: What changed for it in 7 days? Usually one flaky test or one new step.</div>
+          <div class="trigger-meta mono">gate-failure-spike:wf.cli-smoke-test.integration-test · wf.cli-smoke-test.integration-test · since 2026-11-23</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.credential-free-build.credential-free-build failed 4%, was 1.9% (2.16x). 7d vs 7d, n=1236/1226.</div>
+          <div>Fix: What changed for it in 7 days? Usually one flaky test or one new step.</div>
+          <div class="trigger-meta mono">gate-failure-spike:wf.credential-free-build.credential-free-build · wf.credential-free-build.credential-free-build · since 2026-11-22 · proposed: 261031-012000</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.desktop-smoke.packaged-runtime failed 13.8%, was 11.1% (1.24x). 7d vs 7d, n=225/297.</div>
+          <div>Fix: What changed for it in 7 days? Usually one flaky test or one new step.</div>
+          <div class="trigger-meta mono">gate-failure-spike:wf.desktop-smoke.packaged-runtime · wf.desktop-smoke.packaged-runtime · since 2026-11-19 · proposed: 261002-161720</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.docs-openapi-check.openapi-fresh failed 2.3%, was 1.3% (1.79x). 7d vs 7d, n=1249/1234.</div>
+          <div>Fix: What changed for it in 7 days? Usually one flaky test or one new step.</div>
+          <div class="trigger-meta mono">gate-failure-spike:wf.docs-openapi-check.openapi-fresh · wf.docs-openapi-check.openapi-fresh · since 2026-11-26 · proposed: 261127-012037</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.harness-windows.harness-windows failed 8.2%, was 1.5% (5.45x). 7d vs 7d, n=911/1059.</div>
+          <div>Fix: What changed for it in 7 days? Usually one flaky test or one new step.</div>
+          <div class="trigger-meta mono">gate-failure-spike:wf.harness-windows.harness-windows · wf.harness-windows.harness-windows · since 2026-11-22 · proposed: 261004-203003</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.scripts-test.fixtures failed 3.6%, was 0.2% (18.52x). 7d vs 7d, n=1466/1537.</div>
+          <div>Fix: What changed for it in 7 days? Usually one flaky test or one new step.</div>
+          <div class="trigger-meta mono">gate-failure-spike:wf.scripts-test.fixtures · wf.scripts-test.fixtures · since 2026-11-23 · proposed: 261118-065705</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.security-gate.security-gate failed 22.3%, was 18.5% (1.21x). 7d vs 7d, n=1906/2432.</div>
+          <div>Fix: What changed for it in 7 days? Usually one flaky test or one new step.</div>
+          <div class="trigger-meta mono">gate-failure-spike:wf.security-gate.security-gate · wf.security-gate.security-gate · since 2026-11-26 · proposed: 261115-180313</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.test.community-packaged failed 0.2%, was 0.1% (2.67x). 7d vs 7d, n=1440/1281.</div>
+          <div>Fix: What changed for it in 7 days? Usually one flaky test or one new step.</div>
+          <div class="trigger-meta mono">gate-failure-spike:wf.test.community-packaged · wf.test.community-packaged · since 2026-11-26 · proposed: 261018-131608</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.test.community-pg failed 1.9%, was 0.8% (2.27x). 7d vs 7d, n=518/471.</div>
+          <div>Fix: What changed for it in 7 days? Usually one flaky test or one new step.</div>
+          <div class="trigger-meta mono">gate-failure-spike:wf.test.community-pg · wf.test.community-pg · since 2026-11-26</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.test.test failed 21.6%, was 18.3% (1.18x). 7d vs 7d, n=1451/1288.</div>
+          <div>Fix: What changed for it in 7 days? Usually one flaky test or one new step.</div>
+          <div class="trigger-meta mono">gate-failure-spike:wf.test.test · wf.test.test · since 2026-09-23 · open 64d</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.test.test-shard failed 4.7%, was 2.8% (1.66x). 7d vs 7d, n=9600/7376.</div>
+          <div>Fix: What changed for it in 7 days? Usually one flaky test or one new step.</div>
+          <div class="trigger-meta mono">gate-failure-spike:wf.test.test-shard · wf.test.test-shard · since 2026-11-26 · proposed: 260921-011949</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.typecheck.typecheck failed 7.9%, was 4% (1.98x). 7d vs 7d, n=1334/1224.</div>
+          <div>Fix: What changed for it in 7 days? Usually one flaky test or one new step.</div>
+          <div class="trigger-meta mono">gate-failure-spike:wf.typecheck.typecheck · wf.typecheck.typecheck · since 2026-11-26 · proposed: 260919-175502</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">Checks the collector could not identify failed on 4 of 41 queue ejections in 7d; 1 real.</div>
+          <div>Fix: Find which job fails these. An ejection with nothing to blame cannot be fixed.</div>
+          <div class="trigger-meta mono">repeat-ejection:unattributed · since 2026-11-26</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.browser-test.browser-test (with wf.browser-test.browser-shard) failed on 16 of 41 queue ejections in 7d; 4 real.</div>
+          <div>Fix: Quarantine or fix what fails without the code being wrong. The rest are wasted builds.</div>
+          <div class="trigger-meta mono">repeat-ejection:wf.browser-test.browser-test · wf.browser-test.browser-test · since 2026-09-20 · open 67d · proposed: 261107-203000</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.credential-free-build.credential-free-build failed on 4 of 41 queue ejections in 7d; 0 real.</div>
+          <div>Fix: Quarantine or fix what fails without the code being wrong. The rest are wasted builds.</div>
+          <div class="trigger-meta mono">repeat-ejection:wf.credential-free-build.credential-free-build · wf.credential-free-build.credential-free-build · since 2026-11-17 · proposed: 261031-012000</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.pr-gates.pr-gates failed on 4 of 41 queue ejections in 7d; 0 real.</div>
+          <div>Fix: Quarantine or fix what fails without the code being wrong. The rest are wasted builds.</div>
+          <div class="trigger-meta mono">repeat-ejection:wf.pr-gates.pr-gates · wf.pr-gates.pr-gates · since 2026-11-23</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.scripts-test.fixtures failed on 3 of 41 queue ejections in 7d; 1 real.</div>
+          <div>Fix: Quarantine or fix what fails without the code being wrong. The rest are wasted builds.</div>
+          <div class="trigger-meta mono">repeat-ejection:wf.scripts-test.fixtures · wf.scripts-test.fixtures · since 2026-11-23 · proposed: 261118-065705</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.security-gate.security-gate failed on 10 of 41 queue ejections in 7d; 2 real.</div>
+          <div>Fix: Quarantine or fix what fails without the code being wrong. The rest are wasted builds.</div>
+          <div class="trigger-meta mono">repeat-ejection:wf.security-gate.security-gate · wf.security-gate.security-gate · since 2026-11-18 · proposed: 261115-180313</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.test.test (with wf.test.community-pg and wf.test.test-shard) failed on 13 of 41 queue ejections in 7d; 3 real.</div>
+          <div>Fix: Quarantine or fix what fails without the code being wrong. The rest are wasted builds.</div>
+          <div class="trigger-meta mono">repeat-ejection:wf.test.test · wf.test.test · since 2026-09-20 · open 67d</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.typecheck.typecheck failed on 7 of 41 queue ejections in 7d; 2 real.</div>
+          <div>Fix: Quarantine or fix what fails without the code being wrong. The rest are wasted builds.</div>
+          <div class="trigger-meta mono">repeat-ejection:wf.typecheck.typecheck · wf.typecheck.typecheck · since 2026-11-26 · proposed: 260919-175502</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">Job minutes per merged PR 1688.1, was 1056.8 (+59.7%). 7d vs 7d.</div>
+          <div>Fix: A job added to a required path, or more runs thrown away. Both land here.</div>
+          <div class="trigger-meta mono">gate-cost:job-minutes-per-merged-pr · tracked.job-minutes-per-merged-pr · since 2026-11-26 · proposed: 261115-173750</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">wf.scripts-test.fixtures p90 5.2 min, was 2.2 (+139.3%). 7d vs 7d.</div>
+          <div>Fix: Find the step that grew. Cheaper now than a timeout raise later.</div>
+          <div class="trigger-meta mono">gate-cost:wf.scripts-test.fixtures · wf.scripts-test.fixtures · since 2026-11-20 · proposed: 261118-065705</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">260919-175500 proposed 30+ days ago, untouched: Quarantine lane: a test data has classified flaky runs and reports, but cannot eject a queue build</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:260919-175500 · queue-green · since 2026-10-20 · open 37d · proposed: 260919-175500</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">260919-175502 proposed 30+ days ago, untouched: Turbo remote cache through Vercel Remote Cache</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:260919-175502 · pr-feedback · since 2026-10-20 · open 37d · proposed: 260919-175502</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">260919-175504 proposed 30+ days ago, untouched: Affected-only PR typecheck and lint, and a single prettier check</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:260919-175504 · pr-feedback · since 2026-10-20 · open 37d · proposed: 260919-175502</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">260919-175507 proposed 30+ days ago, untouched: Cache-scope fix for the Windows pnpm store and the Playwright browsers</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:260919-175507 · tracked.cache-hit-rate · since 2026-10-20 · open 37d · proposed: 260919-175507</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">260919-175508 proposed 30+ days ago, untouched: The six CI-only checks join pnpm verify</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:260919-175508 · gate.wf.typecheck.typecheck.failure_rate · since 2026-10-20 · open 37d · proposed: 260919-175508</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">260919-175509 proposed 30+ days ago, untouched: Retire push-to-main legs that re-test the queue tree</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:260919-175509 · main-green · since 2026-10-20 · open 37d · proposed: 260919-175509</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">260919-175510 proposed 30+ days ago, untouched: Homebrew tap token, and a release-publishing token that triggers the cask</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:260919-175510 · gate.wf.update-homebrew.update-formula.failure_rate · since 2026-10-20 · open 37d · proposed: 260919-175510</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">260919-175511 proposed 30+ days ago, untouched: The automated review becomes a blocking review-gate (plan §5.3)</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:260919-175511 · tracked.review-findings-unfixed-share · since 2026-10-20 · open 37d · proposed: 260919-175511</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">260919-175512 proposed 30+ days ago, untouched: A zero-cost second-opinion reviewer, only if escape data calls for it</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:260919-175512 · tracked.escaped · since 2026-10-20 · open 37d · proposed: 260919-175512</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">260919-175513 proposed 30+ days ago, untouched: Visual and runtime checks for the escapes a diff review cannot see</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:260919-175513 · tracked.escaped · since 2026-10-20 · open 37d · proposed: 260919-175512</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">260920-175925 proposed 30+ days ago, untouched: The automated review finishes the first time (plan §5.3 reliability half)</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:260920-175925 · review-completes · since 2026-10-21 · open 36d · proposed: 260920-175925</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">260920-180654 proposed 30+ days ago, untouched: Fix or delete rooms/canvas/room-follow.spec.ts › moves this window onto the document the person you follow is on</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:260920-180654 · since 2026-10-21 · open 36d</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">260921-011949 proposed 30+ days ago, untouched: Client tests that never touch the DOM run on node, not jsdom</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:260921-011949 · queue-build · since 2026-10-22 · open 35d · proposed: 260921-011949</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">260921-023128 proposed 30+ days ago, untouched: Two relay tests are deadline-sensitive under in-run contention</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:260921-023128 · since 2026-10-22 · open 35d</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">260925-225053 proposed 30+ days ago, untouched: The banned-words guard reads the operating skills</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:260925-225053 · since 2026-10-26 · open 31d</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">260926-165100 proposed 30+ days ago, untouched: Session start keeps the main checkout&#39;s main level with origin/main</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:260926-165100 · since 2026-10-27 · open 30d</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">260928-162613 proposed 30+ days ago, untouched: check-vocab-gate.ts covers docs/**/*.mdx prose</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:260928-162613 · since 2026-10-29 · open 28d</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">260929-130905 proposed 30+ days ago, untouched: The executed-suite gate knows the Connections session-access browser module</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:260929-130905 · since 2026-10-30 · open 27d</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261001-083006 proposed 30+ days ago, untouched: check-vocab-gate.ts scans the space server&#39;s copy (apps/community/src)</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261001-083006 · since 2026-11-01 · open 25d</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261001-130114 proposed 30+ days ago, untouched: Close the failed four-shard queue sweep verdict, keep the shards, and keep withdrawn merges as confounders</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261001-130114 · since 2026-11-01 · open 25d</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261002-161720 proposed 30+ days ago, untouched: The desktop build gets a heap ceiling its Vite builds fit under</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261002-161720 · gate.wf.desktop-smoke.packaged-runtime.failure_rate · since 2026-11-02 · open 24d · proposed: 261002-161720</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261003-181424 proposed 30+ days ago, untouched: Allow sleep and read-only gh commands in the repo allowlist</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261003-181424 · since 2026-11-03 · open 23d</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261004-203003 proposed 30+ days ago, untouched: Run the isolated-extension suite on the Windows runner</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261004-203003 · gate.wf.harness-windows.harness-windows.failure_rate@pull_request · since 2026-11-04 · open 22d · proposed: 261004-203003</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261005-010857 proposed 30+ days ago, untouched: Build connector-providers before shared wherever shared is built standalone</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261005-010857 · since 2026-11-05 · open 21d</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261005-151421 proposed 30+ days ago, untouched: Rerun the runtime capabilities census when its generated doc changes</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261005-151421 · since 2026-11-05 · open 21d</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261005-194801 proposed 30+ days ago, untouched: Rerun the chat capabilities census when its doc or any test title changes</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261005-194801 · since 2026-11-05 · open 21d</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261005-233000 proposed 30+ days ago, untouched: Package the original native browser workers with the CLI</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261005-233000 · since 2026-11-05 · open 21d</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261005-235000 proposed 30+ days ago, untouched: Bind the Mac browser observer to the Linux-built CLI</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261005-235000 · since 2026-11-05 · open 21d</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261010-125652 proposed 30+ days ago, untouched: A 500-line ratchet in the typecheck job: no file over the limit may grow</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261010-125652 · gate.wf.typecheck.typecheck.duration_p90 · since 2026-11-10 · open 16d · proposed: 261010-125652</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261011-050222 proposed 30+ days ago, untouched: The typecheck step gets an 8 GB Node heap, so the server tsc stops running out of memory</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261011-050222 · gate.wf.typecheck.typecheck.failure_rate · since 2026-11-11 · open 15d · proposed: 260919-175508</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261012-212337 proposed 30+ days ago, untouched: The one-minute first run gates the merge queue, so a broken first run cannot land silently</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261012-212337 · gate.wf.browser-test.first-run.failure_rate@merge_group · since 2026-11-12 · open 14d · proposed: 261012-212337</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261013-144138 proposed 30+ days ago, untouched: Browser legs stop rebuilding the workspace because VITE_PORT was in the build hash</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261013-144138 · headroom · since 2026-11-13 · proposed: 261013-144138</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261015-131044 proposed 30+ days ago, untouched: Keep local browser proof output out of root lint</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261015-131044 · since 2026-11-15</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261016-192347 proposed 30+ days ago, untouched: The hub image boots in CI against a stand-in for Cloud</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261016-192347 · headroom · since 2026-11-16 · proposed: 261013-144138</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261016-194918 proposed 30+ days ago, untouched: The hub image is published and attested with each release</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261016-194918 · gate.wf.publish-docker.build-and-push-hub.failure_rate · since 2026-11-16 · proposed: 261016-194918</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261018-131608 proposed 30+ days ago, untouched: Where the space server lives is one file, read by CI</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261018-131608 · gate.wf.test.community-packaged.duration_p50@pull_request · since 2026-11-18 · proposed: 261018-131608</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261018-141736 proposed 30+ days ago, untouched: The CLI and the release manifest compute the migration compatibility id with one function</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261018-141736 · since 2026-11-18</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261018-161426 proposed 30+ days ago, untouched: The space server&#39;s code runs in the server package; caches see both halves</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261018-161426 · since 2026-11-18</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261018-175703 proposed 30+ days ago, untouched: The packaged Community proof also runs for the shared space-page module</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261018-175703 · since 2026-11-18</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261019-110109 proposed 30+ days ago, untouched: The space&#39;s web pages build from apps/client; the gates see them there</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261019-110109 · since 2026-11-19</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261019-123526 proposed 30+ days ago, untouched: The space image is the root Dockerfile&#39;s space target, and installs no machine store</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261019-123526 · since 2026-11-19</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261019-135749 proposed 30+ days ago, untouched: The space server&#39;s package folder is apps/space</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261019-135749 · since 2026-11-19</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261020-185026 proposed 30+ days ago, untouched: The executed-suite gate knows the sidebar&#39;s renamed browser module</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261020-185026 · since 2026-11-20</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261022-045936 proposed 30+ days ago, untouched: Bind Security approval to each PR head before it can merge</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261022-045936 · since 2026-11-22</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261022-080201 proposed 30+ days ago, untouched: Track main-sourced security workflow and org-rule drift</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261022-080201 · since 2026-11-22</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261022-083317 proposed 30+ days ago, untouched: Bind Security approval to a dedicated GitHub App</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261022-083317 · since 2026-11-22</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261022-084338 proposed 30+ days ago, untouched: Cover approval and remote trust paths in the security preflight</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261022-084338 · since 2026-11-22</div>
+        </div><div class="trigger amber">
+          <div class="trigger-head">261024-185346 proposed 30+ days ago, untouched: The executed-suite gate knows the canvas browser&#39;s page-channel modules</div>
+          <div>Fix: Do it, or withdraw it. A proposal nobody will do is noise in every report.</div>
+          <div class="trigger-meta mono">stale-ledger:261024-185346 · since 2026-11-26</div>
+        </div>
+      <p class="note">Computed from the data, never written by a model. Nothing here opens a pull request or changes anything; a person or an agent decides, and proposes the narrowest change that could move the number.</p><p class="note">Cleared: main-red-open:79c234fdb020, slo-floor:review-completes, main-red:265f4ab88076, main-red:43908073ff48, main-red:7b4a33bc2f87, main-red:906b49cbef68, main-red:aa217a0649e3, main-red:f3aac21608c2, gate-failure-spike:wf.browser-test.copy-spec-drift, gate-failure-spike:wf.operating-skills-version-check.version-outranks-base, gate-failure-spike:wf.security-review-initialize.initialize.</p></div>
+      </div>
+
+      <h2>That day (2026-11-26)</h2>
+      <div class="panel"><ul class="plain"><li><strong>63</strong> pull requests merged.</li><li><strong>97</strong> queue builds, 69 green.</li><li><strong>14</strong> thrown out of the queue on a failed check; 11 passed next time unchanged, so that work was wasted.</li><li><strong>65614</strong> job minutes, 1041.5 per merged PR.</li><li><strong>18</strong> red commits on main (2016fb61288f, 6309440d73d1, 9ee55454aa13, dcd518a4fab1, d7a30ed15cd1, ff32dc5cfe05, 23a0cd655938, 5007b603339b, 1238cb8e926d, ea608aee1964, 6aea33b3a5b5, 796bb909e383, 8c998ae8fe7c, b98af74ca44b, 6beaf7c27a97, 836c6f701b1d, 6ba6b74b7a83, cca926eedd26).</li><li><strong>2</strong> main-canary runs against main, 0 red; 21 job minutes, not charged to a merged PR.</li></ul><p>Failing on those 14:</p>
+        <ul class="plain"><li><span class="mono">wf.security-gate.security-gate</span>: <strong>7</strong> of 14, 2 a real problem in the code.</li><li><span class="mono">wf.typecheck.typecheck</span>: <strong>6</strong> of 14, 2 a real problem in the code.</li><li><span class="mono">Checks the collector could not identify</span>: <strong>4</strong> of 14, 1 a real problem in the code.</li><li><span class="mono">wf.test.test (with wf.test.test-shard)</span>: <strong>3</strong> of 14, 0 a real problem in the code.</li><li><span class="mono">wf.pr-gates.pr-gates</span>: <strong>1</strong> of 14, 0 a real problem in the code.</li></ul>
+        <p class="note">A pull request usually fails more than one check, so these add up to more than 14. A fan-in job is red whenever a job it waits on is red, so it is shown with those folded in, not counted twice.</p></div>
+
+      <h2>Experiments</h2>
+      <div class="panel">
+      <div class="scroll-x"><table class="cards">
+        <thead><tr><th>Change</th><th>Result</th><th>Why</th></tr></thead>
+        <tbody><tr>
+            <td class="measure name"><div>Browser suite runs in three shards behind one browser-test gate (#1135)</div><div class="note mono">260819-235925 · active</div></td>
+            <td data-label="Result"><span class="tag inconclusive">inconclusive</span></td>
+            <td data-label="Why">Confounded: 260824-121951 changed the same gate inside the after-window (2026-08-19T23:59:25Z to…</td>
+          </tr><tr>
+            <td class="measure name"><div>Heavy suites run once per PR in the merge queue, and the queue batches up to 5 (#1246)</div><div class="note mono">260824-121951 · active</div></td>
+            <td data-label="Result"><span class="tag inconclusive">inconclusive</span></td>
+            <td data-label="Why">Confounded: 260830-213616 changed the same gate inside the after-window (2026-08-24T12:19:51Z to…</td>
+          </tr><tr>
+            <td class="measure name"><div>credential-free-build stops re-running the unit suites, keeping build, typecheck and boot</div><div class="note mono">260919-175501 · active</div></td>
+            <td data-label="Result"><span class="tag partial">partial</span></td>
+            <td data-label="Why">gate.wf.credential-free-build.credential-free-build.failure_rate@merge_gro…<div class="note">wasted-queue-builds better: 0.1782 → 0.0942.</div></td>
+          </tr><tr>
+            <td class="measure name"><div>Browser suite to six shards</div><div class="note mono">260919-175503 · active</div></td>
+            <td data-label="Result"><span class="tag partial">partial</span></td>
+            <td data-label="Why">headroom moved from 1.159 to 0.908, 70% of the way to the target of 0.8, but did not…<div class="note">queue-build better: 29.7 → 24.1.</div></td>
+          </tr><tr>
+            <td class="measure name"><div>The test gate leaves pre-push</div><div class="note mono">260919-175505 · active</div></td>
+            <td data-label="Result"><span class="tag inconclusive">inconclusive</span></td>
+            <td data-label="Why">Confounded: 260919-175506, 260921-022119 changed the same gate inside the after-window…<div class="note">local-push better: 1410 → 4.</div></td>
+          </tr><tr>
+            <td class="measure name"><div>Typecheck leaves pre-commit, staying in pnpm verify and CI</div><div class="note mono">260919-175506 · active</div></td>
+            <td data-label="Result"><span class="tag verified">verified</span></td>
+            <td data-label="Why">hook.pre-commit.duration_p90 reached 131.2 against a target of 150 (baseline 282.3).<div class="note">local-commit better: 246 → 140.</div></td>
+          </tr><tr>
+            <td class="measure name"><div>A main canary — the required suites run against main HEAD four times a day</div><div class="note mono">260920-184120 · active</div></td>
+            <td data-label="Result"><span class="tag inconclusive">inconclusive</span></td>
+            <td data-label="Why">Confounded: 260919-175503, 260921-011949, 260921-023128, 260921-040000, 260921-051500, 260923-095643, 260923-220553,…</td>
+          </tr><tr>
+            <td class="measure name"><div>Local vitest runs capped at four workers</div><div class="note mono">260921-022119 · active</div></td>
+            <td data-label="Result"><span class="tag inconclusive">inconclusive</span></td>
+            <td data-label="Why">Confounded: 260919-175505, 260919-175506 changed the same gate inside the after-window…<div class="note">local-commit better: 327 → 161.</div></td>
+          </tr><tr>
+            <td class="measure name"><div>openapi-fresh and scripts-test fixtures become required, so a red on either stops merging</div><div class="note mono">260923-094812 · active</div></td>
+            <td data-label="Result"><span class="tag inconclusive">inconclusive</span></td>
+            <td data-label="Why">Confounded: 260924-003842, 261007-085018, 261018-193709 changed the same gate inside the after-window…</td>
+          </tr><tr>
+            <td class="measure name"><div>merge-tail stops re-arming a PR the queue rejected twice for the same check</div><div class="note mono">260923-095512 · reverted</div></td>
+            <td data-label="Result"><span class="tag inconclusive">inconclusive</span></td>
+            <td data-label="Why">Confounded: 260923-165836 changed the same gate inside the after-window…<div class="note">wasted-queue-builds better: 0.1782 → 0.0885.</div></td>
+          </tr><tr>
+            <td class="measure name"><div>Cut the browser shards by measured duration</div><div class="note mono">260923-095643 · active</div></td>
+            <td data-label="Result"><span class="tag inconclusive">inconclusive</span></td>
+            <td data-label="Why">Confounded: 260919-175503, 260927-094251 changed the same gate inside the after-window…<div class="note">headroom better: 1.171 → 1.119.</div></td>
+          </tr><tr>
+            <td class="measure name"><div>merge-tail refuses a GraphQL error body instead of reading it as a clean answer</div><div class="note mono">260923-165836 · reverted</div></td>
+            <td data-label="Result"><span class="tag verified">verified</span></td>
+            <td data-label="Why">gate.wf.merge-tail.arm.failure_rate@schedule reached 0 against a target of 0 (baseline…<div class="note">lead-time better: 110.6 → 70.2.</div></td>
+          </tr><tr>
+            <td class="measure name"><div>Build shared UI before Community browser and image checks</div><div class="note mono">260923-220553 · active</div></td>
+            <td data-label="Result"><span class="tag failed">failed</span></td>
+            <td data-label="Why">gate.wf.test.community-pg.failure_rate@pull_request is 0.0363 against a target of…<div class="note">queue-green better: 0.6392 → 0.7692.</div></td>
+          </tr><tr>
+            <td class="measure name"><div>The packaged Community proof runs on pull requests that touch the community slice</div><div class="note mono">260924-003842 · active</div></td>
+            <td data-label="Result"><span class="tag inconclusive">inconclusive</span></td>
+            <td data-label="Why">Confounded: 260923-220553 changed the same gate inside the after-window…<div class="note">queue-green better: 0.6392 → 0.7285.</div></td>
+          </tr><tr>
+            <td class="measure name"><div>Six browser shards must not slow the queue build</div><div class="note mono">260927-170236 · active</div></td>
+            <td data-label="Result"><span class="tag verified">verified</span></td>
+            <td data-label="Why">queue-build reached 24.1 against a target of 29.7 (baseline 29.7).<div class="note">queue-build better: 29.7 → 24.1.</div></td>
+          </tr><tr>
+            <td class="measure name"><div>Boot the marketing-site leg on one browser shard, and print leg output</div><div class="note mono">260928-075416 · active</div></td>
+            <td data-label="Result"><span class="tag inconclusive">inconclusive</span></td>
+            <td data-label="Why">Confounded: 260928-075417 changed the same gate inside the after-window…<div class="note">queue-green better: 0.715 → 0.7803.</div></td>
+          </tr><tr>
+            <td class="measure name"><div>Site leg on one shard must not slow the browser shards</div><div class="note mono">260928-075417 · active</div></td>
+            <td data-label="Result"><span class="tag inconclusive">inconclusive</span></td>
+            <td data-label="Why">Confounded: 260928-075416 changed the same gate inside the after-window…<div class="note">queue-build better: 29.7 → 24.</div></td>
+          </tr><tr>
+            <td class="measure name"><div>Desktop Release: verify and publish inside the build jobs</div><div class="note mono">261005-201839 · active</div></td>
+            <td data-label="Result"><span class="tag failed">failed</span></td>
+            <td data-label="Why">tracked.desktop-release-wall-clock is 25 against a target of 18, less than halfway from the baseline of 19.6.</td>
+          </tr><tr>
+            <td class="measure name"><div>community-pg gets a 25-minute limit, so its browser leg stops timing out</div><div class="note mono">261016-150940 · active</div></td>
+            <td data-label="Result"><span class="tag inconclusive">inconclusive</span></td>
+            <td data-label="Why">Confounded: 261018-131608, 261018-161426, 261019-110109, 261019-135749 changed the same…<div class="note">headroom worse: 1.02 → 1.039.</div></td>
+          </tr><tr>
+            <td class="measure name"><div>The typecheck step runs at most three tasks at once, so it fits in the runner&#39;s memory</div><div class="note mono">261019-173057 · active</div></td>
+            <td data-label="Result"><span class="tag inconclusive">inconclusive</span></td>
+            <td data-label="Why">Confounded: 261022-080201 changed the same gate inside the after-window…<div class="note">queue-green worse: 0.7358 → 0.6056.</div></td>
+          </tr><tr>
+            <td class="measure name"><div>Pull requests that touch the UI run the @smoke browser set</div><div class="note mono">261030-180020 · reverted</div></td>
+            <td data-label="Result"><span class="tag verified">verified</span></td>
+            <td data-label="Why">gate.wf.browser-test.browser-shard.failure_rate@merge_group reached 0.0386 against a target of 0.1 (baseline 0.1362).</td>
+          </tr><tr>
+            <td class="measure name"><div>Two advisory workflows stop starting on pull requests that can&#39;t reach them</div><div class="note mono">261030-193801 · active</div></td>
+            <td data-label="Result"><span class="tag verified">verified</span></td>
+            <td data-label="Why">tracked.job-minutes-per-merged-pr reached 1100.1 against a target of 1140 (baseline…<div class="note">pr-feedback worse: 25.9 → 26.2.</div></td>
+          </tr><tr>
+            <td class="measure name"><div>test-shard gets a 45-minute limit, so a slow checkout stops cutting finished shards</div><div class="note mono">261103-182757 · active</div></td>
+            <td data-label="Result"><span class="tag inconclusive">inconclusive</span></td>
+            <td data-label="Why">Confounded: 261103-193614, 261103-214142, 261104-040000, 261111-163545, 261111-184639,…<div class="note">headroom better: 5.716 → 0.815.</div></td>
+          </tr><tr>
+            <td class="measure name"><div>Test shards and openapi-fresh stop fetching every branch and tag</div><div class="note mono">261103-193614 · active</div></td>
+            <td data-label="Result"><span class="tag inconclusive">inconclusive</span></td>
+            <td data-label="Why">Confounded: 261103-214142, 261104-040000 changed the same gate inside the after-window…<div class="note">headroom better: 5.716 → 0.865.</div></td>
+          </tr><tr>
+            <td class="measure name"><div>CI archive checks use installed readers without Ubuntu mirrors</div><div class="note mono">261111-163545 · active</div></td>
+            <td data-label="Result"><span class="tag inconclusive">inconclusive</span></td>
+            <td data-label="Why">Confounded: 261115-201939, 261116-091832, 261116-114104 changed the same…<div class="note">wasted-queue-builds better: 0.1458 → 0.0413.</div></td>
+          </tr><tr>
+            <td class="measure name"><div>test shards restore the main canary&#39;s turbo builds instead of rebuilding 19 packages each</div><div class="note mono">261115-201939 · active</div></td>
+            <td data-label="Result"><span class="tag pending">pending</span></td>
+            <td data-label="Why">The after-window runs to 2026-11-30T11:03:24Z; the verdict is computed on 2026-12-01.<div class="note">queue-build better: 30 → 26.3.</div></td>
+          </tr><tr>
+            <td class="measure name"><div>queue shards restore main&#39;s newest build cache even after a lockfile change</div><div class="note mono">261116-091832 · active</div></td>
+            <td data-label="Result"><span class="tag inconclusive">inconclusive</span></td>
+            <td data-label="Why">Confounded: 261115-201939, 261115-205154, 261116-114104, 261116-114302, 261116-214202,…<div class="note">queue-build better: 30 → 26.8.</div></td>
+          </tr><tr>
+            <td class="measure name"><div>merge-tail: ask GitHub again when mergeability is still being computed</div><div class="note mono">261117-174608 · reverted</div></td>
+            <td data-label="Result"><span class="tag pending">pending</span></td>
+            <td data-label="Why">Waiting: 2 of 8 after-window days not collected (2026-11-24, 11-25); backfill reaches them first.</td>
+          </tr><tr>
+            <td class="measure name"><div>the merge queue takes out an entry whose head lacks Security&#39;s label or a verify proof, whoever queued it</div><div class="note mono">261118-183332 · reverted</div></td>
+            <td data-label="Result"><span class="tag pending">pending</span></td>
+            <td data-label="Why">The after-window runs to 2026-12-03T00:19:05Z; the verdict is computed on 2026-12-04.</td>
+          </tr><tr>
+            <td class="measure name"><div>the merge queue takes out a config or migration head queued without QA&#39;s real-data label after it</div><div class="note mono">261121-191243 · reverted</div></td>
+            <td data-label="Result"><span class="tag pending">pending</span></td>
+            <td data-label="Why">The after-window runs to 2026-12-06T01:32:28Z; the verdict is computed on 2026-12-07.</td>
+          </tr></tbody>
+      </table></div>
+      <p class="note">Pending means the wait after the change is not over; the reason says when it will be judged. Computed from the recorded data, never written by hand.</p></div>
+
+      <h2>Data health</h2>
+      <div class="panel">
+        <p>The collector found a problem with its own numbers. Treat everything above with suspicion until it is fixed.</p>
+        <ul class="plain">
+          <li><strong>700</strong> of 700 GitHub requests used (GitHub allows 1,000 an hour).</li>
+          <li><strong>7</strong> of 7 days recorded; 2 days still finishing (2026-11-24, 11-25).</li>
+          <li>Machines sending hook timings: clone-040654d45a (retired, 2026-10-26), clone-2c3dde293a (retired, 2026-10-25), clone-71ebf1f648 (stale, 2026-11-17), clone-b07d4e241e (retired, 2026-10-31), clone-f76554a380 (stale, 2026-11-17).</li>
+          <li>Data-branch protections: in place.</li>
+        </ul>
+        <p><strong>Problems:</strong></p><ul class="plain"><li>The local export from clone clone-71ebf1f648 is 10 days old (last 2026-11-17) and no clone exported in the last 3…</li><li>The local export from clone clone-f76554a380 is 10 days old (last 2026-11-17) and no clone exported in the last 3…</li></ul>
+        <p class="note">Also: Required workflow live comparison failed: Command failed: gh api orgs/dork-labs/rulesets?per_page=100&amp;page=1
+gh:… Secret environments: not checked that CSC_LINK, CSC_KEY_PASSWORD, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD,…</p>
+        <p class="note">Blind spot: <span class="mono">--no-verify</span> commits and pushes skip the local timer, so they never show up here.</p>
+      </div>
+
+      <footer>Rendered 2026-11-27T14:52:12.594Z by ci-steward from the ci-steward-data branch. Machine-readable: latest.json, triggers.json, verdicts/*.json, and the Monday deep summary reports/YYYY-Www.md.</footer>
+    </main>
+  </body>
+</html>

@@ -1,9 +1,9 @@
 {
  "schema": 1,
  "id": "261112-190000",
- "verdict": "pending",
- "reason": "The after-window runs to 2026-11-26T21:07:22Z; the verdict is computed on 2026-11-27.",
- "computed_at": "2026-11-26T14:55:46.997Z",
+ "verdict": "inconclusive",
+ "reason": "Confounded: 261111-193622, 261113-011220, 261113-012626, 261116-114104, 261117-170155, 261117-184500, 261118-141016, 261120-043306, 261120-223425, 261123-194610, 261123-194934, 261123-195020, 261124-014413 changed the same gate inside the after-window (2026-11-12T21:07:22Z to 2026-11-26T21:07:22Z), so the movement cannot be attributed to this change alone.",
+ "computed_at": "2026-11-27T14:52:12.594Z",
  "hypothesis_hash": "f73d4b2af9188f16",
  "metric": "gate.wf.browser-test.browser-smoke.failure_rate",
  "anchor": "2026-11-12T21:07:22Z",

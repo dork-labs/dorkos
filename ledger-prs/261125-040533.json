@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261125-040533",
+ "file": "ci/ledger/261125-040533-api-lint-hand-route-allowlist.md",
+ "pr": 4367,
+ "merged_at": "2026-11-25T05:26:06Z",
+ "sha": "51b5b5069aad6845e0b971ac4cea01aebed22c10",
+ "resolved_at": "2026-11-27T14:52:12.594Z"
+}

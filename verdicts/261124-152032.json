@@ -3,7 +3,7 @@
  "id": "261124-152032",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-12-01T16:29:24Z; the verdict is computed on 2026-12-02.",
- "computed_at": "2026-11-26T14:55:46.997Z",
+ "computed_at": "2026-11-27T14:52:12.594Z",
  "hypothesis_hash": "a831d143026f1fa8",
  "metric": "tracked.ejection-idle-share",
  "anchor": "2026-11-24T16:29:24Z",
@@ -36,7 +36,7 @@
   "id": "queue-green",
   "stat": "share",
   "before": 0.8275,
-  "after": 0.7343,
+  "after": 0.727,
   "movement": "worse"
  }
 }

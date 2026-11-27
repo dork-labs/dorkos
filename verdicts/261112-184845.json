@@ -3,7 +3,7 @@
  "id": "261112-184845",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-12-10T20:40:01Z; the verdict is computed on 2026-12-11.",
- "computed_at": "2026-11-26T14:55:46.997Z",
+ "computed_at": "2026-11-27T14:52:12.594Z",
  "hypothesis_hash": "0538b0712f8c6706",
  "metric": "gate.wf.desktop-smoke.packaged-runtime.failure_rate",
  "anchor": "2026-11-12T20:40:01Z",
@@ -25,8 +25,8 @@
  "after": {
   "from": "2026-11-12T20:40:01Z",
   "to": "2026-12-10T20:40:01Z",
-  "n": 492,
-  "value": 0.124
+  "n": 522,
+  "value": 0.1226
  },
  "confounders": [
   "261115-143124",
