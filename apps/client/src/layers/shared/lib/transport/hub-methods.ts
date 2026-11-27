@@ -28,8 +28,6 @@ import { fetchJSON } from './http-client';
  */
 export function createHubMethods(baseUrl: string) {
   const api = createTransportApiClient(baseUrl);
-  // The computer waits up to 15 s for its hub; leave room past that.
-  const linkApi = createTransportApiClient(baseUrl, 30_000);
   // The document also lists the capability mount's 202 approval answer for the
   // relay reads, which a person's own call never gets; the casts keep today's types.
   return {
@@ -46,8 +44,9 @@ export function createHubMethods(baseUrl: string) {
     async getSessionRelayStatus(): Promise<SessionRelayStatus> {
       return (await api.call('session-relay.status', {})) as SessionRelayStatus;
     },
+    // The computer waits up to 15 s for its hub; the usual 30 s leaves room past that.
     async linkSessionRelay(body: SessionRelayLinkBody): Promise<SessionRelayStatus> {
-      return (await linkApi.call('sessionRelay.link', { body })) as SessionRelayStatus;
+      return (await api.call('sessionRelay.link', { body })) as SessionRelayStatus;
     },
     async setSessionRelayLevel(level: SessionRelayLevel): Promise<SessionRelayStatus> {
       return (await api.call('sessionRelay.updateLevel', {
