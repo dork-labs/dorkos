@@ -7,6 +7,7 @@
     "problem/handle-tombstoned.json": "ProblemSchema",
     "problem/malformed-identifier.json": "ProblemSchema",
     "problem/malformed-request.json": "ProblemSchema",
+    "problem/hub-wake-rate-limited.json": "ProblemSchema",
     "session/signed-in.json": "SessionSchema",
     "session/signed-out.json": "SessionSchema",
     "session/device-code.json": "DeviceCodeResponseSchema",
@@ -94,6 +95,7 @@
     "billing/entitlements-communities.json": "EntitlementsSchema",
     "communities/list.json": "HostedCommunityListResponseSchema",
     "communities/start-request.json": "CommunityStartRequestSchema",
+    "communities/start-request-team.json": "CommunityStartRequestSchema",
     "communities/start.json": "CommunityStartResponseSchema",
     "communities/start-replay.json": "CommunityStartResponseSchema",
     "communities/name-check-free.json": "CommunityNameCheckResponseSchema",
@@ -131,6 +133,7 @@
     "remote/credential-revoke.json": "RemoteCredentialRevokeResponseSchema",
     "hubs/assignment-pooled.json": "HubAssignmentSchema",
     "hubs/assignment.json": "HubAssignmentSchema",
+    "hubs/assignment-private-space-home.json": "HubAssignmentSchema",
     "hubs/assignment-confirm-request.json": "HubAssignmentConfirmRequestSchema",
     "hubs/assignment-confirm.json": "HubAssignmentConfirmResponseSchema",
     "hubs/computers.json": "CloudComputerListResponseSchema",
@@ -154,6 +157,12 @@
     "hubs/agent-computer-assignment-linked.json": "AgentComputerAssignmentSchema",
     "hubs/agent-computer-activity-request.json": "AgentComputerActivityRequestSchema",
     "hubs/next-wake-request.json": "HubNextWakeRequestSchema",
-    "remote/command-agent-computer-assignment-changed.json": "RemoteCommandSchema"
+    "hubs/hub-wake.json": "HubWakeResponseSchema",
+    "remote/command-agent-computer-assignment-changed.json": "RemoteCommandSchema",
+    "hubs/assignment-content-host.json": "HubAssignmentSchema",
+    "hubs/assignment-org-computer-only.json": "HubAssignmentSchema",
+    "hubs/page-report-request.json": "PageReportRequestSchema",
+    "hubs/page-report.json": "PageReportResponseSchema",
+    "remote/command-page-take-down.json": "RemoteCommandSchema"
   }
 }

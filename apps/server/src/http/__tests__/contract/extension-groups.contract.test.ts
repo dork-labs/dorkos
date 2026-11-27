@@ -110,17 +110,17 @@ const CASES: ContractCase[] = [
   {
     name: 'lists the installed extensions: none but what DorkOS ships',
     path: '/api/extensions',
-    expect: { status: 200, headers: JSON_TYPE, schema: EXTENSION_LIST },
+    expect: { status: 200, headers: JSON_TYPE, schema: z.object({ extensions: EXTENSION_LIST }) },
   },
   {
     name: 'a trailing slash reaches the same list',
     path: '/api/extensions/',
-    expect: { status: 200, schema: EXTENSION_LIST },
+    expect: { status: 200, schema: z.object({ extensions: EXTENSION_LIST }) },
   },
   {
     name: 'nothing is waiting for approval',
     path: '/api/extensions/pending-approvals',
-    expect: { status: 200, body: { approvals: [] } },
+    expect: { status: 200, body: { approvals: [], nextCursor: null } },
   },
   {
     name: 'no source is trusted yet',
@@ -248,9 +248,8 @@ const CASES: ContractCase[] = [
     body: {},
     expect: {
       status: 400,
-      body: problemBody('invalid_request', {
-        detail: 'Send the path and version of the extension you were shown.',
-      }),
+      // On the capability mount (DOR-4978): the input check names the missing fields.
+      schema: z.object({ code: z.literal('invalid_request') }).loose(),
     },
   },
   {
@@ -322,7 +321,7 @@ const CASES: ContractCase[] = [
     path: `/api/extensions/${MISSING}/restart`,
     expect: {
       status: 404,
-      body: problemBody('not_found', { detail: `No app named ${MISSING} is installed.` }),
+      body: problemBody('not_found', { detail: 'No app with that id is installed.' }),
     },
   },
   {
@@ -734,7 +733,7 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
     const deadline = Date.now() + 30_000;
     for (;;) {
       const listed = await setup(server, 'GET', '/api/extensions');
-      const ids = (listed.json as unknown as { id: string }[]).map((e) => e.id);
+      const ids = (listed.json.extensions as { id: string }[]).map((e) => e.id);
       if ([ROUTED, PROXIED, ISOLATED].every((id) => ids.includes(id))) break;
       if (Date.now() > deadline) throw new Error(`Never listed: ${ids.join(', ')}`);
       await new Promise((resolve) => setTimeout(resolve, 250));
@@ -805,7 +804,7 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
 
   it('lists them as approved', async () => {
     const listed = await setup(server, 'GET', '/api/extensions');
-    const mine = (listed.json as unknown as { id: string; approvedToRun: boolean }[]).filter((e) =>
+    const mine = (listed.json.extensions as { id: string; approvedToRun: boolean }[]).filter((e) =>
       [ROUTED, PROXIED, ISOLATED].includes(e.id)
     );
     expect(mine.map((e) => e.approvedToRun)).toEqual([true, true, true]);
@@ -1200,29 +1199,30 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
     });
   });
 
-  it('streams the deprecated lifecycle events', async () => {
-    const opened = await new Promise<{
-      status: number;
-      headers: http.IncomingHttpHeaders;
-      first: string;
-    }>((resolve, reject) => {
-      const req = http.get(
-        new URL('/api/extensions/events', server!.baseUrl),
-        { agent: false },
-        (res) => {
-          res.setEncoding('utf8');
-          res.once('data', (chunk: string) => {
-            resolve({ status: res.statusCode ?? 0, headers: res.headers, first: chunk });
-            req.destroy();
-          });
+  it('tells a reader of /api/events when an extension reloads', async () => {
+    // `/api/extensions/events` is gone; its one event rides the global stream.
+    const req = http.get(new URL('/api/events', server!.baseUrl), { agent: false });
+    let text = '';
+    try {
+      const res = (await once(req, 'response'))[0] as http.IncomingMessage;
+      res.setEncoding('utf8');
+      for await (const chunk of res) {
+        const connecting = !text.includes('event: connected');
+        text += chunk as string;
+        if (/event: extension_reloaded\ndata: [^\n]*"contract-routed"/.test(text)) break;
+        if (connecting && text.includes('event: connected')) {
+          const answer = await call(server, 'POST', `/api/extensions/${ROUTED}/enable`, {});
+          expect(answer.status, answer.text).toBe(200);
         }
-      );
-      req.on('error', reject);
+      }
+    } finally {
+      req.destroy();
+    }
+    expect(JSON.parse(/event: extension_reloaded\ndata: (.*)\n/.exec(text)![1]!)).toEqual({
+      type: 'extension_reloaded',
+      extensionIds: [ROUTED],
+      timestamp: expect.any(Number),
     });
-    expect(opened.status).toBe(200);
-    expect(opened.headers['content-type']).toBe('text/event-stream; charset=utf-8');
-    expect(opened.headers['cache-control']).toBe('no-cache');
-    expect(opened.first).toBe(':ok\n\n');
   });
 });
 
@@ -1291,7 +1291,7 @@ describe('contract: an extension served with a fetch handler (login off)', () =>
     const deadline = Date.now() + 30_000;
     for (;;) {
       const listed = await setup(server, 'GET', '/api/extensions');
-      const ids = (listed.json as unknown as { id: string }[]).map((e) => e.id);
+      const ids = (listed.json.extensions as { id: string }[]).map((e) => e.id);
       if ([FETCHED, FETCH_DEFAULT, ISOLATED_FETCHED].every((id) => ids.includes(id))) break;
       if (Date.now() > deadline) throw new Error(`Never listed: ${ids.join(', ')}`);
       await new Promise((resolve) => setTimeout(resolve, 250));
@@ -1501,7 +1501,7 @@ describe('contract: the extension routes with login on', () => {
     await check(server, {
       path: '/api/extensions',
       headers: apiKey,
-      expect: { status: 200, schema: EXTENSION_LIST },
+      expect: { status: 200, schema: z.object({ extensions: EXTENSION_LIST }) },
     });
     await check(server, {
       path: `/api/ext/${MISSING}/anything`,

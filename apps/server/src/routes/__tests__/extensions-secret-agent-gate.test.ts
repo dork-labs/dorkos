@@ -11,7 +11,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
+import { ExtensionSecretStore } from '../../lib/secret-store/extension-secrets.js';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import {

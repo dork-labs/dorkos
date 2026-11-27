@@ -15,20 +15,24 @@
  * The stream is written straight to the Node response
  * (`http/raw-node-stream.ts`), so the frames are the same bytes Express wrote.
  *
+ * Every broadcast frame carries an `id:`, `events-<epoch>-<generation>-<seq>`.
+ * A reader that reconnects with it as `Last-Event-ID` is sent what it missed
+ * from the bounded window (`routes/global-events-connect.ts`).
+ *
  * @module routes/events
  */
 import type { ServerResponse } from 'node:http';
 import { Hono } from 'hono';
+import { STREAM_RESUME_PARAM } from '@dorkos/shared/stream-socket';
 import { problem } from '@dorkos/http-kit';
 import { SSE } from '../config/constants.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { initSSEStream } from '../services/core/streams/stream-adapter.js';
-import { eventFanOut, encodeBroadcast, type FanOutClient } from '../services/core/event-fan-out.js';
+import { eventFanOut, type FanOutClient } from '../services/core/event-fan-out.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
-import { sendSessionStatusSnapshot } from '../services/session/catalog/session-list-broadcaster.js';
-import { connectedFramePayload } from '../services/session/catalog/session-list-reset.js';
+import { openGlobalStream } from './global-events-connect.js';
 
 /**
  * Adapt a Node response to the fan-out's {@link FanOutClient} port.
@@ -54,7 +58,8 @@ const router = new Hono<ApiEnv>();
 
 /**
  * GET / — Open a unified SSE stream for all real-time events, opening with the
- * `connected` frame and the fleet's current session lifecycles. Held open until
+ * `connected` frame, the events missed since `Last-Event-ID` when the window
+ * still holds them, and the fleet's current session lifecycles. Held open until
  * the client leaves.
  */
 router.get('/', (c) => {
@@ -69,16 +74,19 @@ router.get('/', (c) => {
   // The principal comes from the chain that already ran the session gate and
   // agent identity, so an addressed event (`interaction_pending`,
   // `config_changed`) can tell this connection apart from an agent's.
-  const principal = readCallerPrincipal(honoRequestFacts(c));
+  const facts = honoRequestFacts(c);
+  const principal = readCallerPrincipal(facts);
+  // The header an EventSource re-sends, or `?resume=`, which the socket uses.
+  const header = facts.headers['last-event-id'];
+  const cursor =
+    (typeof header === 'string' ? header : undefined) ?? c.req.query(STREAM_RESUME_PARAM);
 
   return streamToNodeResponse(c, async (res, { signal }) => {
     initSSEStream(res);
     const client = sseFanOutClient(res);
-    // Registration comes BEFORE the preamble below, and that ordering is the
-    // one that matters: it is what makes it impossible to MISS a transition
-    // that fires while the connect is being served. The reverse — snapshot,
-    // then register — has a window in which a transition reaches nobody.
-    const unsubscribe = eventFanOut.addClient(client, principal);
+    // Registers, then sends the preamble and any replay in the same tick, so no
+    // transition fired while the connect is served is missed or misordered.
+    const unsubscribe = openGlobalStream(client, principal, cursor);
 
     // Keepalive heartbeat to prevent proxies/browsers from closing the connection
     const heartbeat = setInterval(() => {
@@ -94,9 +102,6 @@ router.get('/', (c) => {
     }, SSE.HEARTBEAT_INTERVAL_MS);
 
     try {
-      // The connect preamble: `connected`, then the fleet's current lifecycles.
-      client.send(encodeBroadcast('connected', connectedFramePayload()));
-      sendSessionStatusSnapshot(client, principal);
       if (!signal.aborted) {
         await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
       }

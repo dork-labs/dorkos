@@ -249,9 +249,10 @@ export interface RightPanelContribution extends BaseContribution {
    * Tab-strip icon. Optional: extension-contributed tabs register through
    * `api.registerComponent('right-panel', …)`, which lets an author supply an
    * icon but does not require one, so the tab strip falls back to a default (a
-   * puzzle-piece) when this is absent. Built-in tabs always set it.
+   * puzzle-piece) when this is absent. Built-in tabs always set it. Any
+   * component that takes a `className` will do, a lucide icon or not.
    */
-  icon?: LucideIcon;
+  icon?: ComponentType<{ className?: string }>;
   /** The panel content component rendered when this tab is active. */
   component: ComponentType;
   /**

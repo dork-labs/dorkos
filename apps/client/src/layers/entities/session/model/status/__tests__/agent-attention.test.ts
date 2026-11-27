@@ -27,6 +27,7 @@ vi.mock('../../query/use-recent-sessions', () => ({
       ({
         data: {
           sessions: [],
+          nextCursor: null,
           agentActivity: fakeAgentActivity,
           warnings: [],
         } satisfies RecentSessionsResponse,

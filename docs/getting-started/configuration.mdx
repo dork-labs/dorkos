@@ -236,9 +236,9 @@ The Mac app ignores the `NODE_EXTRA_CA_CERTS` environment variable on purpose, b
 
 ### A2A Gateway
 
-The A2A gateway lets agents built by other people, on other systems, send work to the agents here — anything that speaks Google's Agent-to-Agent protocol. Agent messaging (Relay) has to be on for it to do anything.
+The A2A gateway lets agents built by other people, on other systems, send work to the agents here: anything that speaks Google's Agent-to-Agent protocol. Agent messaging (Relay) has to be on for it to do anything.
 
-It is off until you turn it on, and there are two ways to do that. In DorkOS, open **Settings → Advanced → Experiments** and flip "Let outside agents reach yours". On a server you run headless, set the environment variable instead — that wins over the setting either way, and the switch says so rather than pretending it decides.
+It is off until you turn it on, and there are two ways to do that. In DorkOS, open **Settings → Advanced → Experiments** and flip "Let outside agents reach yours". On a server you run headless, set the environment variable instead. That wins over the setting either way, and the switch says so rather than pretending it decides.
 
 It is still early alpha. Only turn it on when you know what is on the other side of the door.
 
@@ -246,7 +246,7 @@ It is still early alpha. Only turn it on when you know what is on the other side
   type={{
     DORKOS_A2A_ENABLED: {
       description:
-        'Enable the A2A external gateway for cross-vendor agent communication. Requires `DORKOS_RELAY_ENABLED=true`. Auth reuses the MCP credentials — the local token, a per-user API key, or the `MCP_API_KEY` override. When set, it overrules the `a2a.enabled` setting in both directions.',
+        'Enable the A2A external gateway for cross-vendor agent communication. Requires `DORKOS_RELAY_ENABLED=true`. Auth reuses the MCP credentials: the local token, a per-user API key, or the `MCP_API_KEY` override. When set, it overrules the `a2a.enabled` setting in both directions.',
       type: 'boolean',
       default: 'false',
     },
@@ -257,19 +257,19 @@ It is still early alpha. Only turn it on when you know what is on the other side
 
 Most DorkOS tools carry a safety level DorkOS checks before the tool runs. Auto
 mode in Claude Code cannot see that check, so it used to stop and ask you about
-calls DorkOS had already decided — two questions for one decision. DorkOS now
+calls DorkOS had already decided: two questions for one decision. DorkOS now
 tells it which level the call passed, and it asks you less often.
 
-This covers the tools that carry a declared safety level. DorkOS's other tools —
-the ones it also offers as named capabilities, such as `config_get`,
-`memory_write`, `list_capabilities` and the `marketplace_*` tools — are checked a
+This covers the tools that carry a declared safety level. DorkOS's other tools
+(the ones it also offers as named capabilities, such as `config_get`,
+`memory_write`, `list_capabilities` and the `marketplace_*` tools) are checked a
 different way and say nothing to auto mode, so it keeps asking about those
 exactly as it did before.
 
 The note only ever says what DorkOS itself decided, and only one thing: which of
 DorkOS's three safety levels the tool sits at. It never carries anything from the
 tool's arguments, its output, or your conversation, and it cannot let an agent do
-anything it could not do already — Claude Code is still free to ask you about
+anything it could not do already. Claude Code is still free to ask you about
 anything, any time. Codex and OpenCode have no way to be told, so this changes
 nothing for them.
 
@@ -290,15 +290,15 @@ Mesh is always on. It scans your projects for agent-capable directories and buil
 
 ### Memory
 
-Each of your agents keeps a small file of notes — things it learned that are
-worth keeping — and reads it at the start of every conversation it joins. The
+Each of your agents keeps a small file of notes (things it learned that are
+worth keeping) and reads it at the start of every conversation it joins. The
 file lives beside the agent, on this machine, and you can open it in any editor.
 
 <TypeTable
   type={{
     'memory.provider': {
       description:
-        'Where your agents keep what they remember. "builtin" is the notes file on this machine, which is the only one DorkOS ships today. If you point this at something that is not installed, or at something that stops answering, DorkOS goes back to the notes file and says so once in the log — your agents keep working either way, though while that is happening they read the notes file, so anything kept only in the backend that stopped answering is out of view until you fix it and restart. Changing this takes effect the next time DorkOS starts. Only you can change this.',
+        'Where your agents keep what they remember. "builtin" is the notes file on this machine, which is the only one DorkOS ships today. If you point this at something that is not installed, or at something that stops answering, DorkOS goes back to the notes file and says so once in the log. Your agents keep working either way, though while that is happening they read the notes file, so anything kept only in the backend that stopped answering is out of view until you fix it and restart. Changing this takes effect the next time DorkOS starts. Only you can change this.',
       type: 'string',
       default: 'builtin',
     },
@@ -307,9 +307,9 @@ file lives beside the agent, on this machine, and you can open it in any editor.
 
 ### Rooms
 
-A room is a conversation more than one agent can be in. When you post, every agent the message addresses answers — and because an answer is itself a message, agents can end up replying to each other. This setting is where that stops.
+A room is a conversation more than one agent can be in. When you post, every agent the message addresses answers, and because an answer is itself a message, agents can end up replying to each other. This setting is where that stops.
 
-You do not have to edit the file for these. **Settings → Advanced → Room limits** has the switch and all four numbers, and a single room can be given limits of its own from the panel beside it — open a room, choose Members, then Automatic replies. A room you have not touched follows what you set here.
+You do not have to edit the file for these. **Settings → Advanced → Room limits** has the switch and all four numbers, and a single room can be given limits of its own from the panel beside it: open a room, choose Members, then Automatic replies. A room you have not touched follows what you set here.
 
 <TypeTable
   type={{
@@ -357,7 +357,7 @@ You do not have to edit the file for these. **Settings → Advanced → Room lim
     },
     'rooms.engagedWindowMinutes': {
       description:
-        'How long your messages in a channel keep going to the agent you are talking to, before it needs an @mention again. The clock starts when the agent last answered you, or when you last @mentioned it — whichever happened more recently. Set it to 0 to require an @mention every time. Only you can change this.',
+        'How long your messages in a channel keep going to the agent you are talking to, before it needs an @mention again. The clock starts when the agent last answered you, or when you last @mentioned it, whichever happened more recently. Set it to 0 to require an @mention every time. Only you can change this.',
       type: 'integer (0--1440)',
       default: '60',
     },
@@ -369,7 +369,7 @@ You do not have to edit the file for these. **Settings → Advanced → Room lim
     },
     'rooms.collectDebounceMs': {
       description:
-        'How long a room waits for people to stop talking before an agent answers. Messages that arrive inside this pause are answered together, so several people talking at once get one considered reply instead of one rushed reply each. Nothing is dropped — a message that arrives later simply starts the next answer. Only you can change this.',
+        'How long a room waits for people to stop talking before an agent answers. Messages that arrive inside this pause are answered together, so several people talking at once get one considered reply instead of one rushed reply each. Nothing is dropped: a message that arrives later simply starts the next answer. Only you can change this.',
       type: 'integer (0--10000)',
       default: '500',
     },
@@ -381,7 +381,7 @@ You do not have to edit the file for these. **Settings → Advanced → Room lim
     },
     'rooms.responseGate': {
       description:
-        "Whether an agent may skip a message that was plainly meant for somebody else instead of reading it properly first. 'routing' skips a message that named a different agent, and the replies in an exchange the agent is not part of. 'off' goes back to thinking about every overheard message. A skipped message is not lost — the agent still sees it as background next time it replies — and nothing that names the agent, or anything in a direct message, is ever skipped. Only you can change this.",
+        "Whether an agent may skip a message that was plainly meant for somebody else instead of reading it properly first. 'routing' skips a message that named a different agent, and the replies in an exchange the agent is not part of. 'off' goes back to thinking about every overheard message. A skipped message is not lost (the agent still sees it as background next time it replies), and nothing that names the agent, or anything in a direct message, is ever skipped. Only you can change this.",
       type: "'off' | 'routing'",
       default: "'routing'",
     },
@@ -393,13 +393,13 @@ You do not have to edit the file for these. **Settings → Advanced → Room lim
     },
     'rooms.repo.enabled': {
       description:
-        'Whether a room may have files of its own: a git repo your agents can read, write, and run commands in together. Off, every room behaves the way it always has, and nothing already saved is deleted — turn it back on and everything is still there. Only you can change this.',
+        'Whether a room may have files of its own: a git repo your agents can read, write, and run commands in together. Off, every room behaves the way it always has, and nothing already saved is deleted. Turn it back on and everything is still there. Only you can change this.',
       type: 'boolean',
       default: 'true',
     },
     'rooms.repo.worktreeReapDays': {
       description:
-        "How many days an agent's own working copy of a room's files may sit untouched before DorkOS clears it away. Only a copy with nothing unsaved and nothing unmerged is ever removed — work in progress is left alone, however long it sits. Only you can change this.",
+        "How many days an agent's own working copy of a room's files may sit untouched before DorkOS clears it away. Only a copy with nothing unsaved and nothing unmerged is ever removed. Work in progress is left alone, however long it sits. Only you can change this.",
       type: 'integer (1--365)',
       default: '14',
     },
@@ -432,9 +432,9 @@ You do not have to edit the file for these. **Settings → Advanced → Room lim
 <Callout type="warn">
   The reply limit reads **who wrote the message** to decide whether to start the count over. If you
   leave **Ask for a password on this computer too** off, which is the default, DorkOS cannot tell
-  you apart from a program running on your own computer — so a program that does not say it is an
+  you apart from a program running on your own computer, so a program that does not say it is an
   agent counts as you, and can reset that limit. The hourly limits are the ones that hold either
-  way, because they never ask who is calling — and the *total* one is the real ceiling, since rooms
+  way, because they never ask who is calling, and the *total* one is the real ceiling, since rooms
   are free to make. Turn on **Ask for a password on this computer too** to close the gap.
 </Callout>
 
@@ -497,7 +497,7 @@ room's next turn.
 
 When you come back after a few hours away, the agents that got something done while you were gone can post a line about it in your team channel. The rule is news, not noise: an agent with nothing new to say says nothing, and only a few post at all.
 
-A note can also end with one thing the agent wants you to decide — "want me to open the PR?". That part is on to start with, and it is the one piece of this that costs anything: there is no way to know an agent has a next step without asking it, and asking runs it for a turn. Only the agents that already left you a note are asked, and each of them only once. The switch says all of this next to itself, and turning it off stays off.
+A note can also end with one thing the agent wants you to decide, like "want me to open the PR?". That part is on to start with, and it is the one piece of this that costs anything: there is no way to know an agent has a next step without asking it, and asking runs it for a turn. Only the agents that already left you a note are asked, and each of them only once. The switch says all of this next to itself, and turning it off stays off.
 
 Both switches are in the app, at Settings → Preferences → **Welcome-back notes** and **Next-step offers**; they change `welcomeBack.enabled` and `welcomeBack.offersEnabled` below. The two numbers are file-only for now. See [When you come back after being away](/docs/concepts/rooms#when-you-come-back-after-being-away) for what the notes look like.
 
@@ -586,7 +586,7 @@ DorkOS only does this for things that are actually blocked on you: an agent wait
 
 Two things have to be true for it to reach you. You need at least one device added, a chat app connected, or both. And a phone only works if its browser can receive notifications, which means opening DorkOS there over a secure connection.
 
-On a phone, open DorkOS using your tunnel address (see [Tunnel Setup](/docs/self-hosting/tunnel-setup)), then choose "Add to Home Screen." It installs like an app: full screen, with its own icon, no browser bar. On iPhone this step is not optional — it only shows notifications from an app installed this way, never from a browser tab. Once it is installed, open Settings there and add the phone under Notifications, and it joins the list above.
+On a phone, open DorkOS using your tunnel address (see [Tunnel Setup](/docs/self-hosting/tunnel-setup)), then choose "Add to Home Screen." It installs like an app: full screen, with its own icon, no browser bar. On iPhone this step is not optional: it only shows notifications from an app installed this way, never from a browser tab. Once it is installed, open Settings there and add the phone under Notifications, and it joins the list above.
 
 ### Connections
 
@@ -704,19 +704,19 @@ DorkOS runs three agent runtimes: Claude Code (the default), Codex, and OpenCode
 
 You do not have to edit this file. Open Settings and go to Runtimes: you can add your accounts there, name them, and choose the one in use. Once you have more than one, the account also shows in the status bar at the bottom of a new session, so you can switch before you send.
 
-**You can also say which model a new chat should start with, and how hard it should think.** Each runtime has its own pair of settings — `defaultModel` and `defaultEffort` — because a model name only means something to the runtime that offers it. Leave them `null`, which is how they ship, and each runtime keeps picking for itself, exactly as before. Set one and every new chat on that runtime starts there; chats you already have keep what they are running with. Effort is one of `none`, `minimal`, `low`, `medium`, `high`, `max`, or `xhigh`. OpenCode has a model setting but no effort setting: OpenCode gives no way to ask for more or less thinking, so DorkOS does not pretend to offer one. If you edit the file by hand, only add settings that exist. A setting DorkOS has never heard of, like `runtimes.opencode.defaultEffort`, is left alone and skipped: it stays in your file, and nothing reads it, so it will not do what you hoped. Settings is the safer place to change any of this.
+**You can also say which model a new chat should start with, and how hard it should think.** Each runtime has its own pair of settings (`defaultModel` and `defaultEffort`) because a model name only means something to the runtime that offers it. Leave them `null`, which is how they ship, and each runtime keeps picking for itself, exactly as before. Set one and every new chat on that runtime starts there; chats you already have keep what they are running with. Effort is one of `none`, `minimal`, `low`, `medium`, `high`, `max`, or `xhigh`. OpenCode has a model setting but no effort setting: OpenCode gives no way to ask for more or less thinking, so DorkOS does not pretend to offer one. If you edit the file by hand, only add settings that exist. A setting DorkOS has never heard of, like `runtimes.opencode.defaultEffort`, is left alone and skipped: it stays in your file, and nothing reads it, so it will not do what you hoped. Settings is the safer place to change any of this.
 
 **Claude Code chats keep their agent running between messages.** Your next message reaches an agent that is already awake instead of one that has to start from scratch, so replies from the second message on come back about four times faster. That is `runtimes.claudeCode.persistentSession`. New setups start with it on; if you have been running DorkOS for a while, an upcoming update turns it on for you.
 
-Changing it applies to the next message you send in each chat — nothing you have open changes underneath you. That is true in both directions, with one wrinkle worth knowing: a chat whose agent is already running keeps it until that agent goes away on its own, which happens after five quiet minutes, when the chat is closed, or when you restart DorkOS. An agent that has been sitting idle is shut down automatically, and you will not notice — your next message simply picks the conversation up where it left off. DorkOS keeps a limited number of these running at once and gives back the one you have used least when it needs room.
+Changing it applies to the next message you send in each chat. Nothing you have open changes underneath you. That is true in both directions, with one wrinkle worth knowing: a chat whose agent is already running keeps it until that agent goes away on its own, which happens after five quiet minutes, when the chat is closed, or when you restart DorkOS. An agent that has been sitting idle is shut down automatically, and you will not notice: your next message simply picks the conversation up where it left off. DorkOS keeps a limited number of these running at once and gives back the one you have used least when it needs room.
 
 **How many agents can run at once is sized to your computer.** That is `runtimes.claudeCode.maxWarmProcesses`. Left empty, which is how it ships, DorkOS allows one per 2 GB of memory: never fewer than 12, never more than 32. A 48 GB machine gets 24. Set a number to pin it. When every one of them is busy, a new message does not fail: it waits for one to finish, and the chat or room says it is waiting. If nothing finishes for 45 minutes, it stops waiting and says why.
 
 **Chats your agents start on their own have a separate limit.** That is `runtimes.maxAgentChats`, and it ships at 8. It counts the chats an agent spins off, or sends a first message into, while their turn is running, on every runtime. When it is full, the agent is told to try again later and nothing is started. If your computer has room for more, raise it with `dorkos config set runtimes.maxAgentChats 12`; the next chat an agent starts uses the new number. An agent cannot change this one itself.
 
-**What it costs is memory** — up to about a gigabyte per waiting agent. If your machine is tight on it, turn **Warm agents** off in the Control Center (`⌘⇧L`, or `Ctrl+Shift+L`) and every message goes back to starting its own agent. Nothing about what your agents may DO changes either way: the same program runs with the same permissions, and every action is checked the same way.
+**What it costs is memory**: up to about a gigabyte per waiting agent. If your machine is tight on it, turn **Warm agents** off in the Control Center (`⌘⇧L`, or `Ctrl+Shift+L`) and every message goes back to starting its own agent. Nothing about what your agents may DO changes either way: the same program runs with the same permissions, and every action is checked the same way.
 
-The switch used to sit in Settings under Experiments and moved to the Control Center when it stopped being an experiment; `dorkos config set runtimes.claudeCode.persistentSession false` does the same thing from a terminal. Once you turn it off it stays off — your agents cannot turn it back on for you. One more thing worth saying plainly: if you had turned this off yourself while it was an experiment, the update that turns it on will turn yours on too. DorkOS has no way to tell an off you chose from the off it shipped with — they are the same word in the same file.
+The switch used to sit in Settings under Experiments and moved to the Control Center when it stopped being an experiment; `dorkos config set runtimes.claudeCode.persistentSession false` does the same thing from a terminal. Once you turn it off it stays off. Your agents cannot turn it back on for you. One more thing worth saying plainly: if you had turned this off yourself while it was an experiment, the update that turns it on will turn yours on too. DorkOS has no way to tell an off you chose from the off it shipped with. They are the same word in the same file.
 
 **And you can say how much a new chat may do before it checks with you.** That is `runtimes.defaultTrustStop`, and it takes one of three words: `ask` (stop before changing anything), `act` (get on with the work, stop for the risky parts), or `autonomy` (never stop). It ships as `autonomy`: a new chat edits files and runs commands without stopping to ask, and everything it does is recorded in Activity. Set it to `ask` if you want to approve each change first, or to `null` to let each runtime start where it used to, which is asking first. One setting covers every runtime, because those three words mean the same thing whichever agent you are talking to; each runtime works out its own equivalent. If you want something different for just one of them, set `defaultTrustStop` inside that runtime's own block and it wins there.
 
@@ -1022,7 +1022,7 @@ Allowed proxy, SSH, and model settings can themselves carry credentials. An allo
 
 Harness Sync projects your `.agents/` definitions and installed marketplace plugins out to every agent harness. By default, installing or uninstalling a marketplace plugin re-runs this projection automatically.
 
-It also keeps up on its own while DorkOS is running. When an agent writes a new skill into `.agents/skills/` during a session, it shows up in your other coding tools within a few seconds — no command to run and no restart. Most tools read that folder directly, so they see it the moment the file lands; Claude Code reads `.claude/skills/` instead, so DorkOS puts a link there for you. One caveat, and DorkOS says it when it applies: Claude Code only notices new skills in a folder that already existed when the session started. If DorkOS had to create `.claude/skills/` for this project, restart any Claude Code session you have open.
+It also keeps up on its own while DorkOS is running. When an agent writes a new skill into `.agents/skills/` during a session, it shows up in your other coding tools within a few seconds, with no command to run and no restart. Most tools read that folder directly, so they see it the moment the file lands; Claude Code reads `.claude/skills/` instead, so DorkOS puts a link there for you. One caveat, and DorkOS says it when it applies: Claude Code only notices new skills in a folder that already existed when the session started. If DorkOS had to create `.claude/skills/` for this project, restart any Claude Code session you have open.
 
 Deleting a skill is the one thing this does not follow. DorkOS adds links while you work and never removes them on its own, so a skill you delete leaves a dead link behind. `dorkos harness sync --check` lists them and `dorkos harness sync --fix` clears them out.
 
@@ -1030,13 +1030,13 @@ Some packages ship hooks: commands your coding agent runs on its own, before or 
 
 Running `dorkos harness sync --fix` yourself follows the same answers. It sets up everything else the package brought, holds its hooks back, and prints each command it did not install. If DorkOS cannot read your settings file at all, it says so and holds every package's hooks back rather than guessing. To install them, run `dorkos harness sync --fix --allow-hooks <package>`, which saves your answer in the same list. `dorkos harness hooks --list` shows every package you have decided about, and `dorkos harness hooks --revoke <package>` forgets one so DorkOS asks again.
 
-`dorkos harness sync --check` now lists everything else in your `.claude/` folder too, so nothing in it goes unmentioned. Your rules (`.claude/rules/`), your subagents (`.claude/agents/`), your MCP servers (`.mcp.json`), the hooks you keep to yourself in `.claude/settings.local.json`, and any hooks a skill declares in its own front matter each get a line saying they stay in Claude Code — and, for every other agent you run, where that agent would keep the same thing. Nothing new is written for any of them: the list tells you what does not travel yet and why. Some of it already travels — Cursor reads `.claude/agents/` itself, and Cursor, OpenCode and Copilot all read `.claude/skills/` — so those are listed as kept rather than dropped, including the skills you marked Claude-Code-only. And where a skill's name would break an agent's own naming rule, the line says which rule, instead of promising it works.
+`dorkos harness sync --check` now lists everything else in your `.claude/` folder too, so nothing in it goes unmentioned. Your rules (`.claude/rules/`), your subagents (`.claude/agents/`), your MCP servers (`.mcp.json`), the hooks you keep to yourself in `.claude/settings.local.json`, and any hooks a skill declares in its own front matter each get a line saying they stay in Claude Code and, for every other agent you run, where that agent would keep the same thing. Nothing new is written for any of them: the list tells you what does not travel yet and why. Some of it already travels: Cursor reads `.claude/agents/` itself, and Cursor, OpenCode and Copilot all read `.claude/skills/`, so those are listed as kept rather than dropped, including the skills you marked Claude-Code-only. And where a skill's name would break an agent's own naming rule, the line says which rule, instead of promising it works.
 
-Your agent's profile has a **Skills** page that shows all of this without a terminal. It lists every skill in the agent's folder — the ones you wrote, the ones a package brought, and the ones your coding tools keep in their own folders — with a small tag per tool saying what that tool does with each: reads it, has a copy, out of date, or can't see it. Where a tool can't see something, the page gives you the same sentence `dorkos harness sync` prints, word for word. When files are out of date, a line at the top offers to fix them, and before you press it, it names every file the fix would delete and why each one is going. Afterwards it lists them again, so nothing disappears without being said.
+Your agent's profile has a **Skills** page that shows all of this without a terminal. It lists every skill in the agent's folder (the ones you wrote, the ones a package brought, and the ones your coding tools keep in their own folders) with a small tag per tool saying what that tool does with each: reads it, has a copy, out of date, or can't see it. Where a tool can't see something, the page gives you the same sentence `dorkos harness sync` prints, word for word. When files are out of date, a line at the top offers to fix them, and before you press it, it names every file the fix would delete and why each one is going. Afterwards it lists them again, so nothing disappears without being said.
 
-It reads your other tools' folders too, so a project that never used Claude Code is not handed an empty list. Skills you keep in `.opencode/skills/`, `.cursor/skills/`, `.gemini/skills/`, `.github/skills/` or `.codex/skills/` each get a line saying which tools read them where they are and which do not, and the Skills page says to move one to `.agents/skills/`, where every tool can read it — it is a sentence, not a button, and nothing is moved for you. And if your MCP servers are declared in `opencode.json`, `.codex/config.toml` or `.cursor/mcp.json` rather than `.mcp.json`, you get one line saying how many are in there and that DorkOS only passes on the ones in `.mcp.json`. It counts them and reads nothing else, so nothing from those files ever gets printed or stored.
+It reads your other tools' folders too, so a project that never used Claude Code is not handed an empty list. Skills you keep in `.opencode/skills/`, `.cursor/skills/`, `.gemini/skills/`, `.github/skills/` or `.codex/skills/` each get a line saying which tools read them where they are and which do not, and the Skills page says to move one to `.agents/skills/`, where every tool can read it. It is a sentence, not a button, and nothing is moved for you. And if your MCP servers are declared in `opencode.json`, `.codex/config.toml` or `.cursor/mcp.json` rather than `.mcp.json`, you get one line saying how many are in there and that DorkOS only passes on the ones in `.mcp.json`. It counts them and reads nothing else, so nothing from those files ever gets printed or stored.
 
-If you wrote your own hooks file — `.codex/hooks.json` or `.cursor/hooks.json`, say — DorkOS never overwrites it and never deletes it. It names the file, leaves it exactly as you left it, and tells you where to put those hooks instead: `.claude/settings.json`, the one file it reads hooks from and copies out to every agent you run. The single exception is a `.codex/hooks.json` holding nothing but a bare list of events, which is what older versions of DorkOS wrote there and Codex never read; that one it replaces with a file Codex does read.
+If you wrote your own hooks file (`.codex/hooks.json` or `.cursor/hooks.json`, say), DorkOS never overwrites it and never deletes it. It names the file, leaves it exactly as you left it, and tells you where to put those hooks instead: `.claude/settings.json`, the one file it reads hooks from and copies out to every agent you run. The single exception is a `.codex/hooks.json` holding nothing but a bare list of events, which is what older versions of DorkOS wrote there and Codex never read; that one it replaces with a file Codex does read.
 
 Hooks in a project or worktree get the same care in Claude Code chats, even when the folder isn't an agent's own. Codex and OpenCode don't have this check yet. Four things wait for your yes there:
 
@@ -1057,7 +1057,7 @@ Each one shows a card with the change, and a line in Activity naming the files. 
     },
     'harness.autoAdopt': {
       description:
-        'Let DorkOS move a skill that only one of your coding tools can see into the shared folder every tool reads — but only inside the agent folders DorkOS owns, and only for skills whose settings hold nothing one tool alone understands. Off everywhere until you turn it on with `dorkos config set harness.autoAdopt true`. Everything else is reported and left where it is. Only a person can change this.',
+        'Let DorkOS move a skill that only one of your coding tools can see into the shared folder every tool reads, but only inside the agent folders DorkOS owns, and only for skills whose settings hold nothing one tool alone understands. Off everywhere until you turn it on with `dorkos config set harness.autoAdopt true`. Everything else is reported and left where it is. Only a person can change this.',
       type: 'boolean',
       default: 'false',
     },
@@ -1159,7 +1159,7 @@ The `approvals` section is gone. Its settings (`approvals.standingGrants`, `appr
 
 ### Agent permissions
 
-What your agents may do on their own, what waits for your yes, and what they cannot do at all — across thirteen areas (Rooms, Tasks & schedules, Other agents, Messages, Chat connections, Tools & packages, Extension tools, Own chat, To-dos, DorkOS settings, Safety limits, Permissions, Reach & secrets) plus **Files & commands**, how often an agent stops to check with you while it edits files and runs commands. See the [Permissions guide](/docs/guides/permissions).
+What your agents may do on their own, what waits for your yes, and what they cannot do at all, across thirteen areas (Rooms, Tasks & schedules, Other agents, Messages, Chat connections, Tools & packages, Extension tools, Own chat, To-dos, DorkOS settings, Safety limits, Permissions, Reach & secrets) plus **Files & commands**, how often an agent stops to check with you while it edits files and runs commands. See the [Permissions guide](/docs/guides/permissions).
 
 These are changed on the Permissions page (Settings → Permissions, or an agent's own Permissions page), never here, so that every change DorkOS makes is recorded in the history. (An edit made straight to an agent's settings file is recorded too, as changed outside DorkOS.) `PATCH /api/config` and `dorkos config set` refuse any `permissions` key and say where to go instead.
 
@@ -1200,7 +1200,7 @@ At Full autonomy, a conversation's agent no longer stops for your approval befor
 
 The same goes for any other setting that will not stop to ask. Some agents cannot pause mid-turn to ask permission, so their middle setting ("Act") edits files and runs commands in your project without checking with you.
 
-You can also make Full autonomy where every new chat starts, in Settings under the defaults for new sessions, or right after you change a chat's setting — a quiet line offers it there for a few seconds. From then on new chats start with the approval prompts off, and Settings keeps a note saying so with a link to change it back. **Scheduled runs follow the same level.** A task you create without picking a level starts at whatever you chose here, worked out for the agent that will run it; that is Full autonomy unless you changed it. If you set it to `null`, a task starts where scheduled runs have always started — able to edit files, stopping for anything riskier. Picking a level on the task itself always wins. Chat apps and rooms still have their own settings and their own, stricter rules, and a task file on disk can never hand itself the never-ask level — that is refused whatever your default says.
+You can also make Full autonomy where every new chat starts, in Settings under the defaults for new sessions, or right after you change a chat's setting: a quiet line offers it there for a few seconds. From then on new chats start with the approval prompts off, and Settings keeps a note saying so with a link to change it back. **Scheduled runs follow the same level.** A task you create without picking a level starts at whatever you chose here, worked out for the agent that will run it; that is Full autonomy unless you changed it. If you set it to `null`, a task starts where scheduled runs have always started: able to edit files, stopping for anything riskier. Picking a level on the task itself always wins. Chat apps and rooms still have their own settings and their own, stricter rules, and a task file on disk can never hand itself the never-ask level. That is refused whatever your default says.
 
 <TypeTable
   type={{
@@ -1336,7 +1336,7 @@ Linking this computer again with the same DorkOS account can bring back the apps
 
 Files you attach in a chat or the workbench are stored under `.dork/.temp/uploads/` in that
 project's working directory. Files you attach in a room are kept with DorkOS itself rather than in
-any project, because a room isn't tied to one — a channel can be about several projects, or none.
+any project, because a room isn't tied to one: a channel can be about several projects, or none.
 
 Either way the limits below apply to both:
 
@@ -1387,7 +1387,7 @@ Tell DorkBot what kind of work you do, and every agent on this machine knows who
     },
     'profile.displayNameSource': {
       description:
-        'Who chose the name above: you, an agent that suggested it, or nobody DorkOS can name. Set automatically; you never edit it. When an agent picked the name, your team page and account menu say "Suggested by DorkBot" until you save a name yourself in Settings › Profile. It stays empty for a name DorkOS has no record of — one you had before this was tracked, or one saved from the command line or the settings API, where DorkOS cannot tell it was you. An empty value shows no note. Local-only; never included in any telemetry payload.',
+        'Who chose the name above: you, an agent that suggested it, or nobody DorkOS can name. Set automatically; you never edit it. When an agent picked the name, your team page and account menu say "Suggested by DorkBot" until you save a name yourself in Settings › Profile. It stays empty for a name DorkOS has no record of: one you had before this was tracked, or one saved from the command line or the settings API, where DorkOS cannot tell it was you. An empty value shows no note. Local-only; never included in any telemetry payload.',
       type: 'object | null',
       default: 'null',
     },

@@ -162,7 +162,7 @@ Turning a copy on for one project leaves the others alone, and it runs in that p
 
 `projectFile` must be a path inside the project. An absolute path, a `~` or a `..` makes the task wait with a note saying what's wrong. A link that points outside the project counts as missing.
 
-A skill without a `schedule:` block is simply a skill, and DorkOS leaves it alone. New files are picked up within seconds of you saving them, so you never restart anything — including the first one you put in a folder you have only just made.
+A skill without a `schedule:` block is simply a skill, and DorkOS leaves it alone. New files are picked up within seconds of you saving them, so you never restart anything, including the first one you put in a folder you have only just made.
 
 <Callout type="info">
   DorkOS never reads `.claude/skills/` for scheduled tasks. That folder is a copy DorkOS writes for
@@ -244,9 +244,9 @@ An agent whose chat runs at **Full autonomy** can schedule and change tasks for 
 
 A schedule that comes from a file, or that an agent makes without being allowed to set its mode, is held back to the careful setting: it may edit files on its own and stops before anything riskier. That is deliberate: nothing an agent writes should be able to hand a job that runs at 3am more power than the agent has itself.
 
-You can lift it, one job at a time, as you approve it. DorkOS looks at your own level in **Control Center** to work out what to offer: if it is higher than the one the job was held to, the approval card puts a second button beside the plain Approve naming that level — "Approve at Full autonomy", say. The card tells you what each one will run the job at.
+You can lift it, one job at a time, as you approve it. DorkOS looks at your own level in **Control Center** to work out what to offer: if it is higher than the one the job was held to, the approval card puts a second button beside the plain Approve naming that level, "Approve at Full autonomy" for example. The card tells you what each one will run the job at.
 
-What the button changes is the **job's own Permissions setting**, not your Control Center level and not anything about the next job. Approving at a higher level is a shortcut for opening the task afterwards and raising that setting by hand — the same dial, set at the moment you were already looking.
+What the button changes is the **job's own Permissions setting**, not your Control Center level and not anything about the next job. Approving at a higher level is a shortcut for opening the task afterwards and raising that setting by hand: the same dial, set at the moment you were already looking.
 
 Because a job on a timer runs with nobody watching, giving it a level that never stops to ask puts one confirmation in front of you first, the same one you get when you choose that level anywhere else. Plain Approve asks nothing, because it changes nothing. And lifting one job never lifts the next one: the next schedule an agent proposes arrives held back exactly the same way.
 
@@ -335,7 +335,7 @@ Needs attention covers two cases. A run that lost a tool and got on with the res
 
 A schedule set to **Never ask** runs only what you allowed and turns down the rest without asking. Those refusals count the same way, and the run's summary says the schedule is set to Never ask.
 
-A run that finished its work and only then asked you a question still counts as Completed — being unable to reach you is not the same as being unable to act.
+A run that finished its work and only then asked you a question still counts as Completed. Being unable to reach you is not the same as being unable to act.
 
 ### Failing schedules
 
@@ -349,15 +349,15 @@ When you pick a permission level that asks, such as **Accept edits**, the schedu
 
 The agent knows this before it starts, so a well-written task tells you at the end what it skipped. If the same task keeps getting turned down, you have two ways to fix it: change the task so it does not need that tool, or open the task and raise its own **Permissions** setting, which is the dial that decides how much its runs may do on their own.
 
-It has to be the task's own setting. A task's power is decided once, when the task is created, and stored on the task — so changing your **Control Center** level afterwards does not reach a task that already exists. That matters most for a task an agent proposed for you, which is created at the careful end of the dial and stays there until you move it.
+It has to be the task's own setting. A task's power is decided once, when the task is created, and stored on the task, so changing your **Control Center** level afterwards does not reach a task that already exists. That matters most for a task an agent proposed for you, which is created at the careful end of the dial and stays there until you move it.
 
-There is one moment you can move it without opening the task: the approval itself. The card that asks you to approve an agent's proposal can also set the task's Permissions in the same click — see [Approving can also set how much it may do](#approving-can-also-set-how-much-it-may-do). That still writes the task's own setting; it is only a quicker way to reach it.
+There is one moment you can move it without opening the task: the approval itself. The card that asks you to approve an agent's proposal can also set the task's Permissions in the same click. See [Approving can also set how much it may do](#approving-can-also-set-how-much-it-may-do). That still writes the task's own setting; it is only a quicker way to reach it.
 
 Clicking **Run now** is different. You are watching, so its cards work normally and you can answer them.
 
 <Callout type="info">
   This is only about requests that were waiting on **you**. A tool your agent is not allowed to use
-  at all — because you wrote a rule against it, or because the safety check turned it down — is
+  at all (because you wrote a rule against it, or because the safety check turned it down) is
   refused the same way it would be in any other chat, and raising the task's Permissions setting
   will not change that.
 </Callout>

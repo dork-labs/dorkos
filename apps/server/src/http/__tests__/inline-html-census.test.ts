@@ -157,7 +157,7 @@ const REVIEWED: Record<string, { why: Why; note: string }> = {
     why: 'test-runtime-only',
     note: 'Mounted only with DORKOS_TEST_RUNTIME.',
   },
-  'services/runtimes/test-mode/fake-cloud-link.ts': {
+  'startup/test-composition/fake-cloud-link.ts': {
     why: 'test-runtime-only',
     note: 'The test runtime’s fake DorkOS Cloud.',
   },

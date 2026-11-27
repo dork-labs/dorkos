@@ -1,7 +1,4 @@
 import type { ReactNode } from 'react';
-import { CommandPaletteTrigger } from '@/layers/features/top-nav';
-import { RightPanelToggle } from '@/layers/features/right-panel';
-import { InboxBell } from '@/layers/widgets/inbox-bell';
 
 interface OneBarProps {
   /**
@@ -24,7 +21,7 @@ interface OneBarProps {
 /**
  * The one header row every route gets:
  * `[identity] [chips] [fill / flex space] [actions]`, with the shell's
- * {@link BarFixedCluster} always after it.
+ * `BarFixedCluster` (`src/app/header/BarFixedCluster.tsx`) always after it.
  *
  * **Truncation priority (I2), and the one thing to get right here.** `identity`
  * and `fill` are direct flex children of the bar, not siblings inside a wrapper.
@@ -112,33 +109,5 @@ export function BarTitle({ children }: BarTitleProps) {
     <span className="min-w-0 truncate text-sm font-medium" title={children}>
       {children}
     </span>
-  );
-}
-
-/**
- * Search, the inbox, and the right-panel toggle — the last three controls of
- * every bar, in that order, on every route (I1).
- *
- * Mounted once by the shell, as a sibling *after* the route bar's cross-fade.
- * Two things follow from that placement, and both are the point of it. The
- * controls do not animate when the route changes, so the corner a person reaches
- * for never blinks. And a route bar cannot render past them: its whole output is
- * confined to the preceding sibling, so "nothing ever renders between search and
- * the right-panel toggle" is a fact about the DOM rather than a rule each page
- * has to remember.
- *
- * `shrink-0`, so a long room name eats the identity zone and never the controls.
- */
-export function BarFixedCluster() {
-  return (
-    // `data-slot` so the ordering invariant (I1) is targetable by name: a test
-    // or a browser check asks this element for its children rather than
-    // guessing at the header's last div.
-    // 4px gaps below `lg`, like the rest of the header row (DOR-2524).
-    <div data-slot="bar-fixed-cluster" className="flex shrink-0 items-center gap-1 lg:gap-2">
-      <CommandPaletteTrigger />
-      <InboxBell />
-      <RightPanelToggle />
-    </div>
   );
 }

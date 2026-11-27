@@ -23,10 +23,8 @@ import { createConnectorRuntimeMcpServer } from '../runtime-mcp-server.js';
 import { ConnectorRegistry } from '../../registry.js';
 import { ConnectorAgentRequestService } from '../../agent-request-service.js';
 import { ConnectorRuntimePrincipalService } from '../../principal/runtime-principal-service.js';
-import {
-  createServerPrincipal,
-  type ConnectorOwnerAuthority,
-} from '../../principal/server-principal.js';
+import { createServerPrincipal } from '../../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../../core/connections-lease/index.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const TEST_TURN_OWNERSHIP = { isCurrent: () => true } as const;

@@ -63,9 +63,21 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     // Work claims ride here with no words of their own: a claim is a chat saying
     // "I have this", and the block has no room left under its token cap.
     can: 'spin off long work; message, read or stop chats; summarize yours.',
-    // A chat's change review (diff.*) and its run list (runs.*, DOR-5212) ride
-    // here with no words of their own (DOR-4978).
-    covers: ['chat.', 'session_start', 'session.compact', 'work-claims.', 'diff.', 'runs.'],
+    // A chat's change review (diff.*), its run list (runs.*, DOR-5212), recording the
+    // pull request it opened (work-graph.record-pr, DOR-5264) and the work graph's reads
+    // of an agent's chats, a chat's tree and the work linked to either (DOR-4970), and
+    // the app's chat reads (sessions.*: a chat's runtime and stored settings) ride here
+    // with no words of their own (DOR-4978).
+    covers: [
+      'chat.',
+      'session_start',
+      'session.compact',
+      'work-claims.',
+      'diff.',
+      'runs.',
+      'work-graph.',
+      'sessions.',
+    ],
     areas: ['agents', 'messages', 'own_chat'],
   },
   {
@@ -114,6 +126,17 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   {
     name: 'Connected apps',
     can: 'use them, ask for one, or give access up.',
+    // `connectors.` also covers the owner's own account doors on `/api/connectors`
+    // (`connectors.disconnect_impact`, `connectors.rename_connection`,
+    // `connectors.remove_connection`, `connectors.get_sign_in`, `connectors.get_review`,
+    // `connectors.get_agent_request_sign_in`, `connectors.stop_every_agent_share`,
+    // `connectors.leave_agent_out`, `connectors.list_usage`, `connectors.let_agent_back_in`,
+    // `connectors.answer_agent_request`, `connectors.start_agent_request_sign_in`, DOR-4978;
+    // and the paged lists `connectors.list_every_agent_grants`, `connectors.list_agent_connections`,
+    // `connectors.list_session_connections`, `connectors.list_reviews`,
+    // `connectors.list_exclusions`, DOR-4982), behind the account-decision bar, which refuse
+    // agents; let_agent_back_in, answer_agent_request and start_agent_request_sign_in also
+    // wait for the owner to confirm it's them.
     covers: ['connector.', 'connectors.'],
     areas: ['permissions'],
     gate: 'per-app grant',
@@ -125,8 +148,21 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     // `create_extension` and `get_extension_api` carry all of it (`mini-app-story.ts`).
     can: 'add or remove MCP servers and packages; build mini apps a person approves. A change reaches you next turn, in this chat: no restart.',
     // `mcp.` also covers a person's doors for servers every agent gets
-    // (`mcp.remove_global_server` and the rest, DOR-4978), which refuse agents.
-    covers: ['mcp.', 'marketplace.', 'create_extension', 'reload_extensions', 'test_extension'],
+    // (`mcp.add_global_server`, `mcp.replace_global_server`, which wait on the
+    // owner's "Confirm it's you", `mcp.remove_global_server` and the rest,
+    // DOR-4978), which refuse agents.
+    // `marketplace.` also covers the marketplace's reads on `/api/marketplace/*` (DOR-4978);
+    // the dev links among them are a person's read.
+    // `extensions.` covers a person's doors for mini apps on `/api/extensions` (restart,
+    // remove, forget a yes, "Not now", DOR-4978), behind the person bar, which refuse agents.
+    covers: [
+      'mcp.',
+      'marketplace.',
+      'extensions.',
+      'create_extension',
+      'reload_extensions',
+      'test_extension',
+    ],
     areas: ['packages'],
     gate: 'adding or changing an MCP server asks, and only a person adds one for all agents',
   },
@@ -152,7 +188,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     can: 'create, change, delete schedules; read runs; end a heartbeat.',
     // Also the team page's list of what cannot wake (`heartbeat.wakers_off`, DOR-4978), and the
     // owner's answer to the credits offer (`heartbeat.choose_triage_credits`), person-only, so no
-    // agent can call it. And the app's task and run reads (`tasks.view_*`, DOR-4978).
+    // agent can call it. And the app's task and run reads (`tasks.view_*`, DOR-4978), and a
+    // person's Heartbeat page (`heartbeat.view_page`), person-only: agents use heartbeat_status.
     covers: ['tasks_', 'tasks.', 'heartbeat.'],
     areas: ['tasks'],
   },
@@ -167,6 +204,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       'mesh.',
       'create_agent',
       'get_agent',
+      // Also a person's move of an old persona into SOUL.md (`agent.migrate_persona`,
+      // person-only, DOR-4978), and the agent a folder belongs to (`agent.current`).
       'agent.',
       'operator.update_agent',
       'operator.sidebar_',
@@ -208,9 +247,11 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       // Opening a /r/ link is a read that names nothing new, so it rides here with no words of its
       // own (DOR-5046): the block has no room left under its token cap.
       'link.resolve',
-      // Folder and workspace reads ride here with no words of their own (DOR-4978).
+      // Folder, workspace and file reads ride here with no words of their own (DOR-4978).
+      // The file browser's writes are person-only, so no agent can call one.
       'directory.',
       'workspaces.',
+      'files.',
     ],
     areas: [],
     gate: 'read only',
@@ -224,10 +265,22 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       'approvals.withdraw',
       'operator.config_',
       'operator.check_update',
+      // One agent's permissions and level (`permissions.view_agent*`, DOR-4978), any agent's.
       'permissions.',
       'instructions.',
       'capabilities.list',
       'operator.feedback_draft',
+      // The app's runtime setup reads (DOR-4978) ride here with no words of their own: each is
+      // person-only, so no agent can call one.
+      'runtimes.account_usage',
+      'runtimes.found_accounts',
+      'runtimes.account_eligibility',
+      'runtimes.key_status',
+      'runtimes.opencode_key_setup',
+      'runtimes.doe_model_setup',
+      // Chat from the web (`session-relay.*`, DOR-4978) rides here with no words of its own:
+      // an agent reads only its status; the rest is person-only.
+      'session-relay.',
     ],
     areas: ['settings', 'permissions'],
   },

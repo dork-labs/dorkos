@@ -124,7 +124,7 @@ import { discoverOpenCodeModels } from './model-discovery.js';
 import { OpenCodeContextWindows } from './providers/context-windows.js';
 import { turnProtectedRoots } from '../shared/policy/turn-protected-roots.js';
 import { OpenCodeMcpManager, type EnsureManagedResult } from './mcp/mcp-manager.js';
-import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
+import { canonicalDirectory } from '../../../lib/fs/canonical-directory.js';
 import { listOpenCodeSubagents } from './subagent-list.js';
 import { captureOpenCodeMedia } from './events/media-capture.js';
 import { mapLiveOpenCodeTurn } from './events/model-wait-liveness.js';
@@ -135,9 +135,10 @@ import {
   type ConnectorRuntimeTools,
 } from '../connector-tools.js';
 import type {
+  ConnectorRuntime,
   OpenConnectorTurnResult,
   RevokeConnectorTurnReason,
-} from '../../connectors/runtime-principal-port.js';
+} from '../../core/connections-lease/index.js';
 import { ConnectorTurnLeaseManager, type ConnectorTurnLease } from './mcp/connector-turn-lease.js';
 import {
   OPENCODE_LABEL,
@@ -160,7 +161,6 @@ import { creditsModelIdOf, creditsPromptModel, creditsSelection } from './credit
 import type { ConnectorTurnLeaseSupervisorHandle } from '../connectors/connector-turn-lease-supervisor.js';
 import { openTurnOrSkip, startConnectorLease } from '../connectors/open-connector-turn.js';
 
-import type { ConnectorRuntime } from '../../connectors/runtime-principal-port.js';
 import type { OpenCodeRuntimeOptions } from './runtime-options.js';
 export type { OpenCodeRuntimeOptions } from './runtime-options.js';
 

@@ -53,14 +53,13 @@ import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { approveExtensionSet } from '../../services/extensions/groups/extension-approval-set.js';
 import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import { registerExtensionApprovalSetRoutes } from '../extensions-approval-set.js';
-import type { PersonBarCopy } from '../extensions-person-bar.js';
+import type { PersonBarCopy } from '../../lib/http/person-bar.js';
 
 const target = swappableServer();
 
 const BAR: PersonBarCopy = {
   code: 'person_only',
   subject: 'extensions',
-  crossSite: () => 'refused',
   agent: 'refused',
 };
 

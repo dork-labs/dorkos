@@ -28,7 +28,7 @@
  */
 import { z } from 'zod';
 
-import { HttpsOriginSchema } from './hubs.js';
+import { HttpsOriginSchema } from './hub-assignment.js';
 
 // === Limits ===
 

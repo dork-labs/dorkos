@@ -67,6 +67,7 @@ import {
   chatAlreadyBound,
 } from './relay-problems.js';
 import { registerSettingRoutes } from './relay-adapter-setting-routes.js';
+import { registerAdapterListRoutes } from './relay-adapter-lists.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { bindingChanged, registerBindingWrites } from './relay-binding-step-up.js';
@@ -189,14 +190,8 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
   const { adapterManager, traceStore, activity } = deps;
   const router = new Hono<ApiEnv>();
 
-  router.get('/adapters/catalog', (c) => {
-    try {
-      return c.json(adapterManager.getCatalog());
-    } catch (err) {
-      logger.error('[relay] GET /adapters/catalog failed', { err });
-      return problem(c, 'internal_error', { detail: 'Couldn’t list connections. Try again.' });
-    }
-  });
+  // The three lists, a page at a time (DOR-4982), before the `/:id` reads.
+  registerAdapterListRoutes(router, adapterManager);
 
   router.post('/adapters/reload', async (c) => {
     try {
@@ -207,8 +202,6 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
       return problem(c, 'internal_error', { detail: 'Couldn’t reload connections. Try again.' });
     }
   });
-
-  router.get('/adapters', (c) => c.json(adapterManager.listAdapters()));
 
   router.get('/adapters/:id', (c) => {
     const adapter = adapterManager.getAdapter(c.req.param('id'));
@@ -286,12 +279,6 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
   });
 
   // --- Binding Management Routes ---
-  router.get('/bindings', (c) => {
-    const bindingStore = adapterManager.getBindingStore();
-    if (!bindingStore) return problem(c, 'temporarily_unavailable', { detail: BINDINGS_STARTING });
-    return c.json({ bindings: bindingStore.getAll() });
-  });
-
   router.get('/bindings/:id', (c) => {
     const bindingStore = adapterManager.getBindingStore();
     if (!bindingStore) return problem(c, 'temporarily_unavailable', { detail: BINDINGS_STARTING });

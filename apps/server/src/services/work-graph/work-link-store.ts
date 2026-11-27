@@ -41,6 +41,7 @@ import {
 import { isDorkId } from '@dorkos/shared/dork-ref';
 import type { EntityKind, EntityRef } from '@dorkos/shared/entity-ref';
 import { monotonicFactory } from 'ulidx';
+import type { TurnMarks } from '../core/turn-power/turn-marks.js';
 import { decodeWorkLinkRef, encodeWorkLinkRef } from './work-link-ref.js';
 
 export { WORK_LINK_RELATIONS, type WorkLinkRelation } from '@dorkos/db';
@@ -57,14 +58,20 @@ const SOURCE_PATTERN = new RegExp(`^[a-z][a-z0-9-]{0,${WORK_LINK_SOURCE_MAX_LENG
 /**
  * The kinds each end must have, for the relations that fix them. Both
  * relations from the address design (ADR 261122-124821) join a chat to a chat,
- * and so does a start (DOR-5263); the rest are left open until their write
- * sites land.
+ * and so does a start (DOR-5263). A chat opens a pull request, a branch or a
+ * worktree, and works on a ticket, a pull request or a branch (DOR-5264, as
+ * the table's own doc reads them). A chat produces a to-do (DOR-5266; a
+ * promise is a to-do); a room entry joins `produced` when its write site lands.
+ * The rest are left open until their write sites land.
  */
 const RELATION_KINDS: Partial<
   Record<WorkLinkRelation, { from: readonly EntityKind[]; to: readonly EntityKind[] }>
 > = {
   forked_from: { from: ['chat'], to: ['chat'] },
+  opened: { from: ['chat'], to: ['pr', 'branch', 'worktree'] },
+  works_on: { from: ['chat'], to: ['ticket', 'pr', 'branch'] },
   started: { from: ['chat'], to: ['chat'] },
+  produced: { from: ['chat'], to: ['todo'] },
   rekeyed_from: { from: ['chat'], to: ['chat'] },
 };
 
@@ -80,6 +87,8 @@ export interface WorkLinkInput {
   source: string;
   /** The chat whose action recorded it, when a chat's action did. */
   recordingChatId?: string | null;
+  /** The marks of the turn that recorded it, read live when it is written. */
+  turnMarks?: TurnMarks | null;
 }
 
 /** One recorded edge. */
@@ -98,6 +107,8 @@ export interface WorkLink {
   recordingChatId: string | null;
   /** What wrote it. */
   source: string;
+  /** The marks of the turn that recorded it, or `null` when no turn did or they are unreadable. */
+  turnMarks: TurnMarks | null;
 }
 
 /** Why an edge was not recorded. Stable codes, for tests and logs. */
@@ -146,7 +157,21 @@ function toLink(row: WorkLinkRow): WorkLink | null {
     recordedAt: row.recordedAt,
     recordingChatId: row.recordingChatId,
     source: row.source,
+    turnMarks: readMarks(row.turnMarks),
   };
+}
+
+/** A stored `turn_marks` value, or `null` when absent or not a JSON object. */
+function readMarks(stored: string | null): TurnMarks | null {
+  if (stored === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(stored);
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as TurnMarks)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function toLinks(rows: WorkLinkRow[]): WorkLink[] {
@@ -211,6 +236,7 @@ export class WorkLinkStore {
         recordedAt: new Date(this.now()).toISOString(),
         recordingChatId,
         source: input.source,
+        turnMarks: input.turnMarks ? JSON.stringify(input.turnMarks) : null,
       })
       .onConflictDoNothing({ target: [workLinks.fromRef, workLinks.relation, workLinks.toRef] })
       .returning()

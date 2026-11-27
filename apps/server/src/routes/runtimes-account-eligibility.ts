@@ -3,9 +3,9 @@
  * and the flow extension's settings use (spec `flow-multiproject` §8.6).
  *
  * - `GET /api/runtimes/claude-code/account-eligibility?project=<folder>` —
- *   every account as the folder's project sees it. Any caller may read it,
- *   so it records nothing: a folder the registry does not know is named the
- *   way the registry would name it, and no `known_projects` row is written.
+ *   every account as the folder's project sees it. The capability mount
+ *   serves it (`runtimes.account_eligibility`, DOR-4978), from
+ *   {@link readAccountEligibility} here; it records nothing.
  * - `PUT /api/runtimes/claude-code/project-accounts` — set or remove one
  *   project's allow list.
  * - `PUT /api/runtimes/claude-code/accounts/:id/only-projects` — keep one
@@ -40,7 +40,6 @@ import type { Context, Hono } from 'hono';
 import { IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { KEPT_FROM_AUTO_MOVES } from '@dorkos/shared/permissions';
 import {
-  AccountEligibilityQuerySchema,
   NoAutoMoveSchema,
   OnlyProjectsRequestSchema,
   ProjectAccountsRequestSchema,
@@ -84,8 +83,7 @@ import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { problem, readJsonBody, sendProblem, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
-import { readQuery } from '../http/request-query.js';
-import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { assessPerson, type PersonBarCopy } from '../lib/http/person-bar.js';
 import { writerForPosture } from './permissions.js';
 import {
   ACCOUNT_RULES_BAR,
@@ -213,6 +211,23 @@ async function launchFor(
     : { ok: false, message: launch.error.message };
 }
 
+/**
+ * Every Claude account as the project a folder belongs to sees it, and what a
+ * new chat there would run on: the read behind `runtimes.account_eligibility`
+ * (DOR-4978). Records nothing: a folder the registry does not know is named
+ * the way the registry would name it.
+ *
+ * @param folder - Any folder, or undefined for a folder in no project.
+ * @returns The answer, or `outside` for a folder outside the directory boundary.
+ */
+export async function readAccountEligibility(
+  folder: string | undefined
+): Promise<AccountEligibilityResponse | 'outside'> {
+  const project = folder ? await peekProjectOfNamedFolder(folder) : null;
+  if (project === 'outside') return 'outside';
+  return { ...eligibilityFor(project), launch: await launchFor(folder, project) };
+}
+
 /** The Claude account ids a rule may name: every routable row, and Main. */
 function knownAccountIds(): Set<string> {
   return new Set([...listedAccounts().map((a) => a.id), IMPLICIT_ACCOUNT_ID]);
@@ -251,28 +266,6 @@ export function mountAccountEligibilityRoutes(
   router: Hono<ApiEnv>,
   activity: ActivityService | undefined
 ): void {
-  router.get('/claude-code/account-eligibility', async (c) => {
-    const parsed = AccountEligibilityQuerySchema.safeParse(readQuery(c));
-    if (!parsed.success) {
-      return validationProblem(c, parsed.error);
-    }
-    try {
-      const project = parsed.data.project
-        ? await peekProjectOfNamedFolder(parsed.data.project)
-        : null;
-      if (project === 'outside') return outsideBoundary(c);
-      return c.json({
-        ...eligibilityFor(project),
-        launch: await launchFor(parsed.data.project, project),
-      });
-    } catch (err) {
-      logger.error('[Runtimes] could not read account eligibility', { err: String(err) });
-      return problem(c, 'internal_error', {
-        detail: 'Could not read which accounts may work here.',
-      });
-    }
-  });
-
   router.put('/claude-code/project-accounts', async (c) => {
     const caller = honoRequestFacts(c);
     const refused = refuseIfNotAPerson(c, caller);

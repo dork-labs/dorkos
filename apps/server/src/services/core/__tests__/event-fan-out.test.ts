@@ -83,12 +83,16 @@ describe('EventFanOut', () => {
 
     expect(eventFanOut.clientCount).toBe(1);
 
-    eventFanOut.broadcast('session:update', { id: '123' });
+    eventFanOut.broadcast('tasks_changed', { id: '123' });
 
-    expect(client.send).toHaveBeenCalledWith({
-      event: 'session:update',
-      json: '{"event":"session:update","data":{"id":"123"}}',
-      sse: 'event: session:update\ndata: {"id":"123"}\n\n',
+    // Numbered for replay: the same frame id on both wires.
+    const sent = client.send.mock.calls[0]![0];
+    const id = /^id: (events-\d+-g\d+-\d+)\n/.exec(sent.sse)?.[1];
+    expect(id).toBeDefined();
+    expect(sent).toEqual({
+      event: 'tasks_changed',
+      json: `{"event":"tasks_changed","data":{"id":"123"},"id":"${id}"}`,
+      sse: `id: ${id}\nevent: tasks_changed\ndata: {"id":"123"}\n\n`,
     });
   });
 
@@ -101,13 +105,15 @@ describe('EventFanOut', () => {
     addTrackedClient(socketReader);
     addTrackedClient(sseReader);
 
-    eventFanOut.broadcast('ping', { n: 1 });
+    eventFanOut.broadcast('tasks_changed', { n: 1 });
 
     const first = socketReader.send.mock.calls[0]?.[0];
     const second = sseReader.send.mock.calls[0]?.[0];
     expect(first, 'both readers get the identical object, not two encodings').toBe(second);
-    expect(first?.json).toBe('{"event":"ping","data":{"n":1}}');
-    expect(first?.sse).toBe('event: ping\ndata: {"n":1}\n\n');
+    expect(first?.json).toMatch(/^\{"event":"tasks_changed","data":\{"n":1\},"id":"events-/);
+    expect(first?.sse).toMatch(
+      /^id: events-\d+-g\d+-\d+\nevent: tasks_changed\ndata: \{"n":1\}\n\n$/
+    );
   });
 
   it('addClient rejects when MAX_TOTAL_CLIENTS is reached', () => {
@@ -139,7 +145,7 @@ describe('EventFanOut', () => {
 
     expect(eventFanOut.clientCount).toBe(2);
 
-    eventFanOut.broadcast('ping', {});
+    eventFanOut.broadcast('tasks_changed', {});
 
     // Dead client removed during broadcast
     expect(eventFanOut.clientCount).toBe(1);
@@ -160,7 +166,7 @@ describe('EventFanOut', () => {
 
     expect(eventFanOut.clientCount).toBe(2);
 
-    eventFanOut.broadcast('test', { value: 1 });
+    eventFanOut.broadcast('tasks_changed', { value: 1 });
 
     expect(eventFanOut.clientCount).toBe(1);
     expect(good.send).toHaveBeenCalled();
@@ -173,7 +179,7 @@ describe('EventFanOut', () => {
 
     addTrackedClient(client);
 
-    eventFanOut.broadcast('data', { chunk: 'large' });
+    eventFanOut.broadcast('tasks_changed', { chunk: 'large' });
 
     expect(client.send).toHaveBeenCalled();
     expect(client.drop).not.toHaveBeenCalled();
@@ -188,7 +194,7 @@ describe('EventFanOut', () => {
 
     addTrackedClient(client);
 
-    eventFanOut.broadcast('data', { chunk: 'large' });
+    eventFanOut.broadcast('tasks_changed', { chunk: 'large' });
 
     expect(client.drop).toHaveBeenCalled();
     expect(eventFanOut.clientCount).toBe(0);
@@ -259,17 +265,16 @@ describe('EventFanOut', () => {
       expect(encodeSpy, 'one encode per broadcast, not one per client').toHaveBeenCalledTimes(1);
     });
 
-    it('does not encode at all when the audience admits nobody', () => {
-      // A frame with no readers costs nothing to render, and that is what makes
-      // the two-rendering path below affordable: the redacted variant is never
-      // built on the ordinary install where only the cockpit is connected.
+    it('encodes once even when the audience admits nobody now, for a reader who resumes', () => {
+      // A reader who reconnects with a cursor is owed this frame if the
+      // audience admits it, so it is rendered once, at broadcast, and kept.
       addTrackedClient(createMockClient(), { kind: 'agent' });
       addTrackedClient(createMockClient(), { kind: 'agent' });
       encodeSpy.mockClear();
 
       eventFanOut.broadcast('interaction_pending', { sessionId: 's1' }, operatorOnly);
 
-      expect(encodeSpy).not.toHaveBeenCalled();
+      expect(encodeSpy).toHaveBeenCalledTimes(1);
     });
 
     it('never measures or drops a client the audience skipped', () => {
@@ -360,23 +365,10 @@ describe('EventFanOut', () => {
       }
     });
 
-    it('renders each variant once, and skips the one nobody is going to read', () => {
-      const cockpit = createMockClient();
-      addTrackedClient(cockpit, { kind: 'operator' });
-      addTrackedClient(createMockClient(), { kind: 'operator' });
-      encodeSpy.mockClear();
-
-      eventFanOut.broadcastRedacted('session_status', { a: 1 }, { b: 2 }, operatorOnly);
-
-      expect(
-        encodeSpy,
-        'two entitled clients, one full frame, no redacted one'
-      ).toHaveBeenCalledTimes(1);
-    });
-
-    it('renders both when both kinds of reader are connected', () => {
-      addTrackedClient(createMockClient(), { kind: 'operator' });
-      addTrackedClient(createMockClient(), { kind: 'agent' });
+    it('renders each variant once, however many readers each has', () => {
+      for (const kind of ['operator', 'operator', 'agent'] as const) {
+        addTrackedClient(createMockClient(), { kind });
+      }
       encodeSpy.mockClear();
 
       eventFanOut.broadcastRedacted('session_status', { a: 1 }, { b: 2 }, operatorOnly);

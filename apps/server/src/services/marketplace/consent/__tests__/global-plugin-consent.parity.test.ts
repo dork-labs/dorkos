@@ -11,7 +11,7 @@
  *
  * @vitest-environment node
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, beforeAll } from 'vitest';
 import { chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -57,6 +57,10 @@ import { buildInstallerForTests } from '../../__tests__/installer-harness.js';
 import { DisclosureChangedError, InvalidPackageError } from '../../installer/errors.js';
 import { packageContentHash, ShipsRuntimeStateError } from '../../lib/content-hash.js';
 import { readInstallMetadata } from '../../installed-metadata.js';
+import { wireTestConsent } from '../../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The space side's consent writes reach a config store, as at startup.
+beforeAll(() => wireTestConsent());
 
 const FIXTURE = path.join(
   path.dirname(fileURLToPath(import.meta.url)),

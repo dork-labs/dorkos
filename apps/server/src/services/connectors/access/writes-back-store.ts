@@ -33,7 +33,7 @@ import type {
 } from '@dorkos/shared/connector-exclusion-schemas';
 import { logger } from '../../../lib/logger.js';
 import { writesBackSupported } from '../../core/prompts/writes-back-toolkits.js';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 
 /** A connection that does not exist here, or belongs to someone else. */
 export class WritesBackConnectionNotFoundError extends Error {

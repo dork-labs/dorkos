@@ -374,7 +374,6 @@ const MOUNTS: Readonly<Record<string, string>> = {
   'ALL /api/runtimes/claude-code/signins/*':
     'Group middleware; the person only, and its writes are refused under /api/runtimes.',
   'ALL /api/session-locations/*': 'Group middleware for where chats live.',
-  'ALL /api/session-relay/*': 'Group middleware; its writes are refused by path.',
   'ALL /api/sessions/:id/*': 'Group middleware for a chat.',
   'ALL /api/sign-in-landings/*': 'Group middleware for sign-in landing pages.',
   'ALL /api/test/mcp-oauth/mcp': 'Test runtime only.',

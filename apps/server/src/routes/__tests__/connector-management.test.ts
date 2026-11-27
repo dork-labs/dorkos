@@ -12,6 +12,7 @@ import { initConfigManager } from '../../services/core/config-manager.js';
 import { getStaticLocalOrigins } from '../../lib/trusted-origins.js';
 import { createConnectorManagementRoutes } from '../connector-management.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { withOwnerDoors } from './connector-owner-doors.js';
 import { ConnectorSubscriptionError } from '../../services/connectors/events/subscription-store.js';
 import { ConnectorAgentRequestError } from '../../services/connectors/agent-request-service.js';
 import { ConnectorGrantExclusionError } from '../../services/connectors/access/grant-exclusions.js';
@@ -133,27 +134,24 @@ describe('connector management routes', () => {
     } = {}
   ) {
     return honoGroupListener(
-      {
-        path: '/api/connectors',
-        routes: createConnectorManagementRoutes({
-          registry: {
-            migrationHealth: () =>
-              options.migrationFailed
-                ? { status: 'migration_failed', error: 'connector migration failed' }
-                : { status: 'ready', migrated: false },
-          },
-          reviews,
-          reconciliation,
-          exclusions,
-          agentRequests,
-          ...(options.agentApprovals ? { agentApprovals: options.agentApprovals } : {}),
-          resolveOwner: () => (options.ownerUnavailable ? undefined : OWNER),
-          loginEnabled: () => options.loginEnabled ?? false,
-          trustedOrigins: () => ['http://localhost:4242'],
-          verifyUser: async () => options.verifyUser ?? null,
-          isAccountOwner: (user) => user?.userId === (options.ownerUserId ?? 'user-a'),
-        }),
-      },
+      withOwnerDoors(createConnectorManagementRoutes, {
+        registry: {
+          migrationHealth: () =>
+            options.migrationFailed
+              ? { status: 'migration_failed', error: 'connector migration failed' }
+              : { status: 'ready', migrated: false },
+        },
+        reviews,
+        reconciliation,
+        exclusions,
+        agentRequests,
+        ...(options.agentApprovals ? { agentApprovals: options.agentApprovals } : {}),
+        resolveOwner: () => (options.ownerUnavailable ? undefined : OWNER),
+        loginEnabled: () => options.loginEnabled ?? false,
+        trustedOrigins: () => ['http://localhost:4242'],
+        verifyUser: async () => options.verifyUser ?? null,
+        isAccountOwner: (user) => user?.userId === (options.ownerUserId ?? 'user-a'),
+      }),
       {
         before: async (c, next) => {
           if (options.user) c.set('user', options.user);
@@ -167,7 +165,7 @@ describe('connector management routes', () => {
     const app = fixtureTarget.mount(buildApp());
     await request(app)
       .get('/api/connectors/agent-requests?state=pending')
-      .expect(200, { requests: [] });
+      .expect(200, { requests: [], nextCursor: null });
     expect(agentRequests.listForOwner).toHaveBeenCalledWith(OWNER, 'pending', undefined);
 
     await request(app)
@@ -190,11 +188,7 @@ describe('connector management routes', () => {
 
   // Security M1 on #3575: the owner's request items carry who approved them, read by request.
   it('adds who approved each request to the owner’s list and to one request', async () => {
-    const approvedBy = {
-      agentId: 'pm',
-      displayName: 'DorkOS PM',
-      approvedAt: '2026-11-09T01:00:00.000Z',
-    };
+    const approvedBy = { agentId: 'pm', displayName: 'PM', approvedAt: '2026-11-09T01:00:00.000Z' };
     agentRequests.listForOwner.mockReturnValue([{ requestId: 'request-a' }, { requestId: 'b' }]);
     const app = fixtureTarget.mount(
       buildApp({
@@ -204,7 +198,10 @@ describe('connector management routes', () => {
     );
     await request(app)
       .get('/api/connectors/agent-requests')
-      .expect(200, { requests: [{ requestId: 'request-a', approvedBy }, { requestId: 'b' }] });
+      .expect(200, {
+        requests: [{ requestId: 'request-a', approvedBy }, { requestId: 'b' }],
+        nextCursor: null,
+      });
     await request(app)
       .get('/api/connectors/agent-requests/request-a')
       .expect(200, { requestId: 'request-a', approvedBy });
@@ -214,7 +211,7 @@ describe('connector management routes', () => {
     const app = fixtureTarget.mount(buildApp());
     await request(app)
       .get('/api/connectors/agent-requests?sessionId=session-a')
-      .expect(200, { requests: [] });
+      .expect(200, { requests: [], nextCursor: null });
     expect(agentRequests.listForOwner).toHaveBeenCalledWith(OWNER, undefined, 'session-a');
 
     await request(app).get('/api/connectors/agent-requests?sessionId=').expect(400);
@@ -584,7 +581,7 @@ describe('connector management routes', () => {
     expect(exclusions.list).not.toHaveBeenCalled();
     await request(fixtureTarget.mount(buildApp()))
       .get('/api/connectors/connections/connection-a/exclusions')
-      .expect(200, { connectionId: 'connection-a', exclusions: [] });
+      .expect(200, { connectionId: 'connection-a', exclusions: [], nextCursor: null });
 
     exclusions.leaveOut.mockRejectedValueOnce(
       new ConnectorGrantExclusionError('connection_not_found', 'Connection not found.')
@@ -622,7 +619,7 @@ describe('connector management routes', () => {
     const list = await request(fixtureTarget.mount(buildApp()))
       .get('/api/connectors/reviews?state=pending')
       .expect(200);
-    expect(list.body).toEqual({ reviews: [] });
+    expect(list.body).toEqual({ reviews: [], nextCursor: null });
     expect(reviews.list).toHaveBeenCalledWith(OWNER, 'pending');
 
     const response = await request(
@@ -935,7 +932,6 @@ describe('connector management routes', () => {
           registry: { migrationHealth: () => ({ status: 'ready', migrated: false }) },
           reviews,
           reconciliation,
-          exclusions,
           agentRequests,
           resolveOwner: (user) => (user ? { kind: 'user', userId: user.userId } : undefined),
           loginEnabled: () => false,

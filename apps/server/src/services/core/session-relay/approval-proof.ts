@@ -24,7 +24,7 @@ import { createHash } from 'node:crypto';
 import { verifyAuthenticationResponse } from '@simplewebauthn/server';
 import { StepUpStatementError, decodeStepUpBase64url } from '@dork-labs/cloud-api';
 import type { RelayApprovalProof } from '@dorkos/shared/session-relay';
-import { hashApprovalInput } from '../approvals/approval-input-hash.js';
+import { hashApprovalInput } from '@dorkos/shared/approval-text';
 import {
   pendingApprovalInput,
   type ApprovalDecision,

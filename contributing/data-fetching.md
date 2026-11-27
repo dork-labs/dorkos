@@ -10,6 +10,7 @@ This guide covers data fetching patterns in DorkOS. The client uses TanStack Que
 | ------------------------ | ---------------------------------------------------------------- |
 | Transport interface      | `packages/shared/src/transport.ts`                               |
 | HttpTransport            | `apps/client/src/layers/shared/lib/transport/http-transport.ts`  |
+| Generated API client     | `packages/api-client/` (`@dorkos/api-client`)                    |
 | TransportContext         | `apps/client/src/layers/shared/model/TransportContext.tsx`       |
 | EventStreamProvider      | `apps/client/src/layers/shared/model/event-stream-context.tsx`   |
 | Session entity hooks     | `apps/client/src/layers/entities/session/`                       |
@@ -128,6 +129,36 @@ const sessions = await transport.listSessions();
 
 This keeps React code independent of network details and lets tests supply a mock transport.
 
+### Calling the API Through the Generated Client
+
+`@dorkos/api-client` is generated from `docs/api/openapi.json` and typed by operationId: a call names an operation and gets that operation's path, query and body types, and its answer's type. `HttpTransport` methods move onto it one slice at a time; `extension-restart-methods.ts` was the first (DOR-4981). Components still call the `Transport`, never the client.
+
+To add a call:
+
+1. Find the operation's id in `docs/api/openapi.json` (the `operationId` under its path and method), such as `extensions.restart`.
+2. In the slice's `*-methods.ts`, take a client bound to the transport's base URL and call the operation:
+
+   ```typescript
+   import { createTransportApiClient } from './api-client';
+
+   export function createExtensionRestartMethods(baseUrl: string) {
+     const api = createTransportApiClient(baseUrl);
+     return {
+       async restartExtension(id: string): Promise<void> {
+         await api.call('extensions.restart', { path: { id } });
+       },
+     };
+   }
+   ```
+
+3. Keep the `Transport` method's signature and the slice's tests as they are. `createTransportApiClient` sends through `fetchResponse` in `http-client.ts`, so the request carries the same cookie, timeout and headers, and a refusal throws the same `ResponseError` as a hand-written call.
+
+Outside the app (a script, a test, another package), `createApiClient({ baseUrl, fetch })` sends with the `fetch` you give it and rejects a non-2xx answer with `ApiProblemError`, whose `problem` is the shared `Problem` type (`@dorkos/shared/problem`).
+
+Keep these hand-written for now: calls that stream (SSE, WebSocket), upload files (multipart or octet-stream bodies), send their own request headers, or read `ETag`/`304`. The client sends JSON bodies and query values only.
+
+When a route or schema changes, `pnpm docs:export-api` rewrites the API document and then the client (`pnpm api-client:generate`). Commit `packages/api-client/src/generated/` with `docs/api/`: the `openapi-fresh` check fails when either is stale. Never edit the generated files by hand.
+
 ### SSE Streaming Protocol
 
 `POST /api/sessions/:id/messages` is trigger-only (`202 { sessionId }`); the turn's events arrive on a separate durable per-session connection. The following is the SSE representation, still supported for external clients:
@@ -233,7 +264,7 @@ export function useRelayConversations(enabled = true) {
 
 Put the subscription in the hook that owns the query, so the list stays live on every surface that shows it. A poll stays only as a backstop for changes no event announces, and `QUERY_TIMING.EVENT_BACKSTOP_REFETCH_MS` is the default for that.
 
-> **Migration note**: The unified stream replaces raw `new EventSource('/api/tunnel/stream')` and per-endpoint SSE hooks that each opened a dedicated HTTP connection. Use `useEventSubscription('event_name', handler)` instead for all system-wide events. The per-session durable stream (`GET /api/sessions/:id/events`) is owned by `StreamManager` — do not open ad-hoc per-session streams.
+> **Migration note**: The unified stream replaced the per-resource streams (`/api/tunnel/stream`, `/api/extensions/events`, `/api/relay/stream`), which are gone, and the per-endpoint SSE hooks that each opened a dedicated HTTP connection. A new connection gets the current `tunnel_status` in its opening frames (never an agent's connection). Use `useEventSubscription('event_name', handler)` instead for all system-wide events. The per-session durable stream (`GET /api/sessions/:id/events`) is owned by `StreamManager` — do not open ad-hoc per-session streams.
 
 ### ETag Caching on Messages
 

@@ -100,6 +100,7 @@ beforeEach(() => {
   // agent with none has never run anything this window can see — so without
   // this the untyped palette would have no agent row to lead with.
   vi.mocked(mockTransport.listRecentSessions).mockResolvedValue({
+    nextCursor: null,
     sessions: [],
     agentActivity: { '/projects/ana': '2026-07-26T09:00:00.000Z' },
     warnings: [],

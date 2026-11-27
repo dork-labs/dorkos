@@ -1,0 +1,418 @@
+/**
+ * The REAL wiring of `agents_changed`, `config_changed` and
+ * `community_connections_changed`, not a copy of it.
+ *
+ * Every case is a mutation probe: dropping the `config_changed` audience, spreading
+ * the in-process change instead of picking fields, dropping a subscription, or
+ * letting a config value, Community owner or ref onto the wire turns one red.
+ * That `index.ts` calls this function is checked by `event-union-census.test.ts`.
+ *
+ * @vitest-environment node
+ */
+import { describe, it, expect, beforeEach } from 'vitest';
+
+import { z } from 'zod';
+
+import { composeRegistry } from '../../../capabilities/registry.js';
+import {
+  connectorAgentRequestsChangedAnnouncer,
+  localBrowserChangedAnnouncer,
+  wireCapabilitiesChangedBroadcast,
+  wireLiveChangeBroadcasts,
+  type AgentsChangedSource,
+  type CommunityConnectionsSource,
+  type ConfigChange,
+  type ConfigChangeSource,
+} from '../live-change-broadcasts.js';
+import { encodeBroadcast, type BroadcastAudience } from '../../../event-fan-out.js';
+import type { CallerPrincipal } from '../../../../../lib/caller-principal.js';
+import type { AgentIdentityChange } from '@dorkos/mesh';
+
+/** One broadcast as the fan-out received it, audience included. */
+interface Recorded {
+  event: string;
+  data: unknown;
+  audience: BroadcastAudience | undefined;
+}
+
+/** A fan-out that keeps what it was handed, including the audience predicate. */
+function recordingFanOut() {
+  const sent: Recorded[] = [];
+  return {
+    sent,
+    broadcast(event: string, data: unknown, audience?: BroadcastAudience) {
+      sent.push({ event, data, audience });
+    },
+    /** The single broadcast of `event`, failing loudly if there is not exactly one. */
+    only(event: string): Recorded {
+      const matches = sent.filter((entry) => entry.event === event);
+      expect(matches, `expected exactly one ${event}`).toHaveLength(1);
+      return matches[0]!;
+    },
+    /** Whether `principal` would have received that broadcast. */
+    reaches(event: string, principal: CallerPrincipal): boolean {
+      const { audience } = this.only(event);
+      return audience === undefined || audience(principal);
+    },
+  };
+}
+
+/** A mesh core that just holds its subscriber, so a test can fire one. */
+function fakeMesh() {
+  const callbacks: Array<(change: AgentIdentityChange) => void> = [];
+  const source: AgentsChangedSource = {
+    onAgentsChanged: (callback) => void callbacks.push(callback),
+  };
+  return {
+    source,
+    fire: (change: AgentIdentityChange) => callbacks.forEach((callback) => callback(change)),
+  };
+}
+
+/** A config manager that just holds its subscriber. */
+function fakeConfig() {
+  const listeners: Array<(change: ConfigChange) => void> = [];
+  const source: ConfigChangeSource = {
+    onChange: (listener) => {
+      listeners.push(listener);
+      return () => {};
+    },
+  };
+  return {
+    source,
+    fire: (change: ConfigChange) => listeners.forEach((listener) => listener(change)),
+  };
+}
+
+/** A Community connection store that just holds its subscriber. */
+function fakeCommunityConnections() {
+  type Change = {
+    ownerKey: string;
+    ref: string;
+    status: string;
+    pinnedOrigin: string;
+    remoteCommunityId: string;
+  };
+  const listeners: Array<(changes: readonly Change[]) => void> = [];
+  const source: CommunityConnectionsSource = {
+    onChange: (listener) => {
+      listeners.push(listener);
+      return () => {};
+    },
+  };
+  return {
+    source,
+    /** One committed write carrying `changes`. */
+    fire: (...changes: Change[]) => listeners.forEach((listener) => listener(changes)),
+  };
+}
+
+const AGENT_CHANGE: AgentIdentityChange = {
+  kind: 'registered',
+  agentId: '01JKAGENT0000000000000000',
+  projectPath: '/Users/somebody/projects/secret-client-work',
+  name: 'backend',
+  displayName: 'Backend',
+};
+
+let mesh: ReturnType<typeof fakeMesh>;
+let config: ReturnType<typeof fakeConfig>;
+let communities: ReturnType<typeof fakeCommunityConnections>;
+let fanOut: ReturnType<typeof recordingFanOut>;
+
+beforeEach(() => {
+  mesh = fakeMesh();
+  config = fakeConfig();
+  communities = fakeCommunityConnections();
+  fanOut = recordingFanOut();
+  wireLiveChangeBroadcasts({
+    meshCore: mesh.source,
+    configManager: config.source,
+    communityConnections: communities.source,
+    eventFanOut: fanOut,
+    now: () => '2026-09-15T00:00:00.000Z',
+  });
+});
+
+describe('agents_changed', () => {
+  it('carries names, ids and a stamp — and NOT the project path', () => {
+    mesh.fire(AGENT_CHANGE);
+
+    const { data } = fanOut.only('agents_changed');
+    expect(Object.keys(data as object).sort()).toEqual([
+      'agentId',
+      'changedAt',
+      'displayName',
+      'kind',
+      'name',
+    ]);
+    // The in-process event carried it; the wire does not.
+    expect(AGENT_CHANGE.projectPath).toBeDefined();
+    expect(JSON.stringify(data)).not.toContain('secret-client-work');
+  });
+
+  it('goes to everyone, an agent included — it is roster news, not private detail', () => {
+    mesh.fire(AGENT_CHANGE);
+
+    expect(fanOut.only('agents_changed').audience).toBeUndefined();
+    for (const principal of PRINCIPALS) {
+      expect(fanOut.reaches('agents_changed', principal), principal.kind).toBe(true);
+    }
+  });
+});
+
+/** One connection of every kind the fan-out can hold. */
+const PRINCIPALS: CallerPrincipal[] = [
+  { kind: 'operator' },
+  { kind: 'program', userId: 'user-1' },
+  { kind: 'agent' },
+  { kind: 'bridged', platform: 'telegram', platformUserId: '42' },
+];
+
+/** Which of {@link PRINCIPALS} receive the single broadcast of `event`. */
+const reachedKinds = (event: string): string[] =>
+  PRINCIPALS.filter((principal) => fanOut.reaches(event, principal)).map((p) => p.kind);
+
+describe('config_changed', () => {
+  it('carries section names and a stamp, and nothing else', () => {
+    config.fire({ sections: ['tunnel'], paths: ['tunnel'] });
+
+    const { data } = fanOut.only('config_changed');
+    expect(Object.keys(data as object).sort()).toEqual(['changedAt', 'sections']);
+    expect((data as { sections: string[] }).sections).toEqual(['tunnel']);
+  });
+
+  it('is ADDRESSED: a person and a program receive it, an agent never does', () => {
+    // The mutation probe for `operatorAudience`. Deleting the audience argument
+    // from the wiring turns the agent case green-to-red here, which is exactly
+    // what the verbatim-copy version of this suite could not do.
+    config.fire({ sections: ['ui'], paths: ['ui'] });
+
+    expect(reachedKinds('config_changed')).toEqual(['operator', 'program']);
+  });
+
+  it('puts no config value on either wire format', () => {
+    // `ConfigManager` only ever hands over section names, so this is really a
+    // guard on the wiring not reaching back for values — checked against the
+    // encoded frames, which is what a connection actually receives.
+    config.fire({ sections: ['tunnel', 'profile'], paths: ['tunnel', 'profile'] });
+
+    const { event, data } = fanOut.only('config_changed');
+    const encoded = encodeBroadcast(event, data);
+    expect(`${encoded.json}\n${encoded.sse}`).toMatch(/^[^]*tunnel[^]*$/);
+    expect(`${encoded.json}\n${encoded.sse}`).not.toContain('authtoken');
+  });
+
+  describe('remembered Community navigation (DOR-2227)', () => {
+    it('stays quiet for a write that stored nothing but navigation state', () => {
+      // Moving between Communities saves where the person was. Broadcasting
+      // that made every open window refetch the whole config on ordinary
+      // movement.
+      config.fire({ sections: ['ui'], paths: ['ui.communityNavigation'] });
+      config.fire({ sections: ['ui'], paths: ['ui.communityNavigation.owners'] });
+
+      expect(fanOut.sent).toEqual([]);
+    });
+
+    it.each([
+      ['navigation AND something else', ['ui.communityNavigation', 'ui.theme']],
+      ['the whole `ui` section, as the Settings screen sends', ['ui']],
+      ['a sibling that shares the navigation prefix', ['ui.communityNavigationHint']],
+      ['no paths at all', []],
+    ])('still broadcasts a write that stored %s', (_label, paths) => {
+      config.fire({ sections: ['ui'], paths });
+
+      expect(fanOut.sent.map((entry) => entry.event)).toEqual(['config_changed']);
+    });
+  });
+});
+
+describe('community_connections_changed', () => {
+  const ENDED = {
+    ownerKey: 'owner-author-7f3a',
+    ref: 'remote_0123456789abcdef0123456789abcdef',
+    status: 'reconnect-required',
+    pinnedOrigin: 'https://space.example',
+    remoteCommunityId: '11111111-1111-4111-8111-111111111111',
+  };
+
+  it('sends one frame per write, however many rows that write changed', () => {
+    // A sweep of three expired rows is one write; three frames would cost
+    // every open window three list reads, each re-verifying every connection.
+    communities.fire(ENDED);
+    communities.fire(
+      { ...ENDED, ref: 'remote_1', status: 'removed' },
+      { ...ENDED, ref: 'remote_2', status: 'removed' }
+    );
+
+    expect(fanOut.sent.map((entry) => entry.event)).toEqual([
+      'community_connections_changed',
+      'community_connections_changed',
+    ]);
+  });
+
+  it('carries a stamp and nothing else — no owner, no ref, no status', () => {
+    // The global stream cannot tell one local owner's windows from another's,
+    // so anything about the connection on this frame would reach them all.
+    communities.fire(ENDED);
+
+    const { event, data } = fanOut.only('community_connections_changed');
+    expect(data).toEqual({ changedAt: '2026-09-15T00:00:00.000Z' });
+    const encoded = encodeBroadcast(event, data);
+    for (const secret of [ENDED.ownerKey, ENDED.ref, ENDED.status]) {
+      expect(`${encoded.json}\n${encoded.sse}`).not.toContain(secret);
+    }
+  });
+
+  // Spec `official-community-space` D5: with spaces off the global stream carries only the
+  // official row. Fails if the filter is dropped (the other space's frame goes out) or if it
+  // drops the official space's frame too.
+  it('with spaces off, says nothing about a space the windows cannot see', () => {
+    const visibleCommunities = fakeCommunityConnections();
+    const visibleFanOut = recordingFanOut();
+    wireLiveChangeBroadcasts({
+      meshCore: undefined,
+      configManager: fakeConfig().source,
+      communityConnections: visibleCommunities.source,
+      connectionVisible: (change) => change.pinnedOrigin === 'https://official.example',
+      eventFanOut: visibleFanOut,
+    });
+
+    visibleCommunities.fire(ENDED);
+    expect(visibleFanOut.sent).toEqual([]);
+
+    visibleCommunities.fire(ENDED, { ...ENDED, pinnedOrigin: 'https://official.example' });
+    expect(visibleFanOut.sent.map((entry) => entry.event)).toEqual([
+      'community_connections_changed',
+    ]);
+  });
+
+  it('is ADDRESSED: a person and a program receive it, an agent never does', () => {
+    communities.fire(ENDED);
+
+    expect(reachedKinds('community_connections_changed')).toEqual(['operator', 'program']);
+  });
+});
+
+describe('a server with no mesh', () => {
+  it('still broadcasts settings changes', () => {
+    // Mesh init is allowed to fail without taking the server down. Losing
+    // `config_changed` with it would be a second, unrelated outage.
+    const soloConfig = fakeConfig();
+    const soloFanOut = recordingFanOut();
+    wireLiveChangeBroadcasts({
+      meshCore: undefined,
+      configManager: soloConfig.source,
+      communityConnections: fakeCommunityConnections().source,
+      eventFanOut: soloFanOut,
+    });
+
+    soloConfig.fire({ sections: ['ui'], paths: ['ui'] });
+
+    expect(soloFanOut.sent.map((entry) => entry.event)).toEqual(['config_changed']);
+  });
+});
+
+describe('the stamp', () => {
+  it('is an ISO timestamp taken at broadcast time', () => {
+    // The default clock, rather than the injected one, so the real path is what
+    // is being checked.
+    const realMesh = fakeMesh();
+    const realFanOut = recordingFanOut();
+    wireLiveChangeBroadcasts({
+      meshCore: realMesh.source,
+      configManager: fakeConfig().source,
+      communityConnections: fakeCommunityConnections().source,
+      eventFanOut: realFanOut,
+    });
+    const before = Date.now();
+
+    realMesh.fire(AGENT_CHANGE);
+
+    const { changedAt } = realFanOut.only('agents_changed').data as { changedAt: string };
+    expect(Date.parse(changedAt)).toBeGreaterThanOrEqual(before - 1);
+    expect(changedAt).toBe(new Date(changedAt).toISOString());
+  });
+});
+
+describe('connector_agent_requests_changed', () => {
+  it('reaches an operator window with a stamp and nothing about the request, never an agent', () => {
+    // An agent must not learn what another agent asked for.
+    const fanOut = recordingFanOut();
+    connectorAgentRequestsChangedAnnouncer(fanOut, () => '2026-09-26T12:00:00Z')();
+
+    expect(fanOut.only('connector_agent_requests_changed').data).toEqual({
+      changedAt: '2026-09-26T12:00:00Z',
+    });
+    expect(fanOut.reaches('connector_agent_requests_changed', { kind: 'operator' })).toBe(true);
+    expect(fanOut.reaches('connector_agent_requests_changed', { kind: 'agent' })).toBe(false);
+  });
+});
+
+describe('capabilities_changed (DOR-2685)', () => {
+  /** A real registry with no core domains, so only the live layer moves. */
+  function liveRegistry() {
+    return composeRegistry([], { logger: { debug() {}, info() {}, warn() {}, error() {} } });
+  }
+
+  /** One extension's contribution with a single observe tool. */
+  const mail = {
+    owner: 'mail-app',
+    displayName: 'Mail',
+    tools: [
+      {
+        name: 'list_inbox',
+        title: 'List the inbox',
+        description: 'Read the newest messages.',
+        tier: 'observe' as const,
+        input: z.object({}),
+        invoke: async () => [],
+      },
+    ],
+  };
+
+  it('reaches every window, agents included, with the version after each change', () => {
+    // An open permissions page re-reads on this, and the catalog an agent lists
+    // is the same catalog, so it is global; the payload is a counter only.
+    const registry = liveRegistry();
+    const fanOut = recordingFanOut();
+    wireCapabilitiesChangedBroadcast(registry, fanOut);
+
+    const added = registry.contribute(mail);
+    expect(fanOut.only('capabilities_changed')).toEqual({
+      event: 'capabilities_changed',
+      data: { version: 1 },
+      audience: undefined,
+    });
+    expect(fanOut.reaches('capabilities_changed', { kind: 'agent' })).toBe(true);
+
+    if (added.ok) added.remove();
+    expect(fanOut.sent.map((entry) => entry.data)).toEqual([{ version: 1 }, { version: 2 }]);
+  });
+
+  it('says nothing for a refused contribution, and stops when unwired', () => {
+    // A refusal changed nothing; announcing it would make every window re-read.
+    const registry = liveRegistry();
+    const fanOut = recordingFanOut();
+    const stop = wireCapabilitiesChangedBroadcast(registry, fanOut);
+
+    registry.contribute({ ...mail, tools: [] });
+    expect(fanOut.sent).toEqual([]);
+
+    stop();
+    registry.contribute(mail);
+    expect(fanOut.sent).toEqual([]);
+  });
+});
+
+describe('local_browser_changed', () => {
+  it('carries a stamp and nothing about the site, and reaches a person but never an agent', () => {
+    const fanOut = recordingFanOut();
+    localBrowserChangedAnnouncer(fanOut, () => '2026-11-03T12:00:00Z')();
+    expect(fanOut.only('local_browser_changed').data).toEqual({
+      changedAt: '2026-11-03T12:00:00Z',
+    });
+    expect(fanOut.reaches('local_browser_changed', { kind: 'operator' })).toBe(true);
+    expect(fanOut.reaches('local_browser_changed', { kind: 'agent' })).toBe(false);
+  });
+});

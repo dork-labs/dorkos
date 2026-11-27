@@ -9,7 +9,7 @@
  * response, and never passed across the `CommunityAdapter` port.
  *
  * Precedence: environment override → persisted file → generate-and-persist. The
- * generated file is created exclusively (`@dorkos/shared/secret-file`), so two
+ * generated file is created exclusively (`lib/secret-store/secret-file`), so two
  * first uses at once settle on one credential rather than overwriting each
  * other's.
  *
@@ -22,7 +22,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
-import { claimSecretText } from '@dorkos/shared/secret-file';
+import { claimSecretText } from '../../lib/secret-store/secret-file.js';
 import { logger } from '../../lib/logger.js';
 
 /** Directory under the dork home that holds one subdirectory per community. */

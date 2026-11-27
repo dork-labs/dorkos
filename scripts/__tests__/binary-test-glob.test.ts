@@ -1,5 +1,5 @@
 /**
- * `pnpm verify` leaves the real-CLI suites (`*.binary.test.ts`) to CI (DOR-4501).
+ * `pnpm check verify` leaves the real-CLI suites (`*.binary.test.ts`) to CI (DOR-4501).
  *
  * Those suites spawn whichever Codex, Claude or OpenCode binary the host has
  * installed, so a local pass or fail says nothing about the branch. The globs
@@ -33,6 +33,7 @@ describe('the binary-test glob file', () => {
     const tracked = execFileSync('git', ['ls-files', '--', '*.binary.test.ts'], {
       cwd: root,
       encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
     })
       .split('\n')
       .filter(Boolean);
@@ -54,9 +55,9 @@ describe('the binary-test glob file', () => {
   });
 
   it('reaches vitest: the excludes the wrapper appends land after the test step', () => {
-    // pnpm appends `pnpm run verify:checks <args>` to the END of the script, so
+    // pnpm appends `pnpm run check:verify:turbo <args>` to the END of the script, so
     // the test step must stay last for the excludes to reach every package.
     const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
-    expect(pkg.scripts['verify:checks']).toMatch(/&& [^&]*turbo run test [^&]*-- --run$/);
+    expect(pkg.scripts['check:verify:turbo']).toMatch(/&& [^&]*turbo run test [^&]*-- --run$/);
   });
 });

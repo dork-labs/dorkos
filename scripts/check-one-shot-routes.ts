@@ -1,6 +1,15 @@
 /**
  * Refuse Playwright's `{ times: n }` route option in the browser suites (DOR-2228).
  *
+ * --help
+ * Purpose: refuse Playwright's `{ times: n }` route option in the browser suites;
+ *          a later request to the same URL can hang (DOR-2228).
+ * Runs in: the required `typecheck` job; by hand.
+ * To fix:  use `interceptNext` from `@dorkos/test-utils/playwright-routes`, or mark
+ *          the line with `// one-shot-route-allow: <reason>`.
+ * Usage:   pnpm check:one-shot-routes [repo-root]
+ * --help end
+ *
  * WHAT WAS OBSERVED. PR #1999 found that after a `page.route(url, handler,
  * { times: 1 })` route had run, a later request the page sent to the same URL
  * could hang: it never reached the server, and the test waited out its timeout.
@@ -38,6 +47,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readSpaceServer } from './lib/space-server.mjs';
+import { exitOnHelp } from './lib/gate-help.mjs';
 
 /** The space server's folder, from `ci/space-server.env` (DOR-3007). */
 const { spaceDir } = readSpaceServer(join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -101,7 +111,7 @@ export function scannedFiles(repoRoot: string): string[] {
         ['ts', 'tsx', 'js', 'mjs'].map((ext) => `${root}/*.${ext}`)
       ),
     ],
-    { cwd: repoRoot, encoding: 'utf8' }
+    { cwd: repoRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
   )
     .trim()
     .split('\n')
@@ -137,6 +147,7 @@ export function runOneShotRouteGate(repoRoot: string): OneShotRouteReport {
 const isMain = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1];
 
 if (isMain) {
+  exitOnHelp(import.meta.url);
   const repoRoot = process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..');
   const { files, emptyRoots, violations } = runOneShotRouteGate(repoRoot);
 

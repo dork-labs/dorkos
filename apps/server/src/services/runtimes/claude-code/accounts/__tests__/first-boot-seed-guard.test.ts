@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, beforeAll } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   env: { DORKOS_TEST_RUNTIME: false },
@@ -45,6 +45,10 @@ import { initAccountSigninPolicy } from '../../../../health/account-signin-polic
 import { pinKnownRepoBaselinesOnce } from '../../repo-settings/pin-repo-baselines.js';
 import { firstBootSeedsMayRun } from '../first-boot-seed-guard.js';
 import { seedAccountSigninPolicy } from '../seed-signin-policy.js';
+import { wireTestAsks } from '../../../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The computer side records consent through the space side, as at startup.
+beforeAll(() => wireTestAsks());
 
 let root: string;
 let dorkHome: string;

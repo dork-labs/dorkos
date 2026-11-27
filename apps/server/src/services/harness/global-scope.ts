@@ -51,8 +51,6 @@ import {
 import type { HarnessId } from '@dorkos/shared/harness-schemas';
 import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import { boundaryWasConfigured, type BoundaryConfigReader } from '../../lib/boundary.js';
-import { configManager } from '../core/config-manager.js';
-import { logConfigWrite } from '../core/operator/config-write.js';
 import { inheritedClaudeRoot } from '../runtimes/claude-code/claude-config-dir.js';
 import { agentsUserSkillsDir, byNameUserSkillDirs } from './agents-user-home.js';
 
@@ -318,37 +316,4 @@ export function globalRootsFor(
 ): GlobalPlanRoots {
   if (boundaryWasConfigured(env, config)) return { dorkHome };
   return userTierRoots(dorkHome, harnesses);
-}
-
-/**
- * Record which agent tools DorkOS shares globally installed packages with, and
- * stamp when the question was answered.
- *
- * Needs `initConfigManager` to have run: this OPENS the store and writes, which
- * is why only the two explicit verbs (`dorkos harness global --enable` and
- * `--disable`) reach it, and never a read-only path (DOR-678).
- *
- * `askedAt` is stamped on every write, including one that empties the list. A
- * decline is a timestamp with an empty list, and it is remembered — which is
- * what stops the ask printing again for somebody who already said no.
- *
- * The list is REPLACED rather than merged, and every caller passes a list it
- * derived from the stored one. One explicit verb, one array element, nothing
- * round-tripped, which is the shape ADR-0302's amendment established.
- *
- * @param harnesses - the new list, already deduplicated and ordered by the caller.
- * @param reason - the subsystem name for the config-write log line.
- * @param now - the timestamp to stamp; injected so a test can pin it.
- */
-export function writeGlobalSharing(
-  harnesses: readonly HarnessId[],
-  reason: string,
-  now: Date = new Date()
-): void {
-  const harness = configManager.get('harness');
-  configManager.set('harness', {
-    ...harness,
-    global: { harnesses: [...harnesses], askedAt: now.toISOString() },
-  });
-  logConfigWrite(reason, 'harness', harness, configManager.get('harness'));
 }

@@ -3,7 +3,9 @@
  *
  * The two WRITE routes here (`/:id/enable`, `/:id/disable`) run the same person
  * bar as the approval routes mounted alongside them, because they move the same
- * `operator-only` config section — see
+ * `operator-only` config section; restarting and removing one are capabilities
+ * the mount serves behind that bar (`services/extensions/http-capabilities/`,
+ * DOR-4978) — see
  * {@link module:routes/extensions-person-bar} for the three bars, the residual
  * they leave in the login-off posture, and why the narrowing direction is barred
  * too (DOR-1507).
@@ -26,7 +28,6 @@
  *
  * @module routes/extensions
  */
-import type { ServerResponse } from 'node:http';
 import fs from 'fs/promises';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
@@ -36,13 +37,12 @@ import type { ActivityService } from '../services/activity/activity-service.js';
 import { logger } from '../lib/logger.js';
 import { eventFanOut } from '../services/core/event-fan-out.js';
 import { writeFileAtomic } from '@dorkos/shared/atomic-write';
-import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
-import { ExtensionSettingsStore } from '@dorkos/shared/extension-settings';
+import { ExtensionSecretStore } from '../lib/secret-store/extension-secrets.js';
+import { ExtensionSettingsStore } from '../services/extensions/settings/extension-settings.js';
 import { resolveBlobPath } from '../services/extensions/extension-data-paths.js';
 import { noteStepUpRisksBeforeServing } from '../services/extensions/step-up/step-up-extension-risk.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { registerExtensionApprovalRoutes } from './extensions-approval.js';
@@ -52,45 +52,30 @@ import { registerExtensionInboxRoutes } from './extensions-inbox.js';
 import { registerExtensionStartWorkRoute } from './extensions-start-work.js';
 import { registerExtensionRoomRoutes } from './extensions-rooms.js';
 import { registerExtensionPrefsRoutes } from './extensions-prefs.js';
-import { registerExtensionRestartRoute } from './extensions-restart.js';
 import { liveForwardDeps, registerExtensionForwardRoutes } from './extensions-forward.js';
 import type { PersonForwardDeps } from '../services/extensions/forward/person-forward.js';
-import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { refusedNotAPerson } from './extensions-person-bar.js';
+import { answerExtensionList } from '../services/extensions/listing/extension-list-pages.js';
+import {
+  EXTENSION_TOGGLE_BAR,
+  SAFE_EXT_ID,
+} from '../services/extensions/http-capabilities/extension-door-words.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 import { markedExtensionSecretRefusal } from './extension-secret-agent-gate.js';
 
-/** Connected SSE clients for extension lifecycle events. */
-const sseClients = new Set<ServerResponse>();
-
 /**
- * Broadcast an `extension_reloaded` event to all connected SSE clients.
- * Only call this after at least one extension has compiled successfully.
+ * Tell every reader of `GET /api/events` that extensions were reloaded, as
+ * `extension_reloaded`. Only call this after at least one extension has
+ * compiled successfully.
  *
  * @param extensionIds - IDs of the extensions that were reloaded
  */
 export function broadcastExtensionReloaded(extensionIds: string[]): void {
-  const data = JSON.stringify({
-    type: 'extension_reloaded',
-    extensionIds,
-    timestamp: Date.now(),
-  });
-
-  // Broadcast to unified stream
   eventFanOut.broadcast('extension_reloaded', {
     type: 'extension_reloaded',
     extensionIds,
     timestamp: Date.now(),
   });
-
-  // Backward compat: also broadcast to old SSE clients (deprecated endpoint)
-  for (const client of sseClients) {
-    try {
-      client.write(`event: extension_reloaded\ndata: ${data}\n\n`);
-    } catch {
-      // Client disconnected — will be removed on close event
-      sseClients.delete(client);
-    }
-  }
 }
 
 const CwdChangedBodySchema = z.object({
@@ -104,30 +89,6 @@ const SetSecretBodySchema = z.object({
 const SetSettingBodySchema = z.object({
   value: z.union([z.string(), z.number(), z.boolean()]),
 });
-
-/** Validates extension IDs match the manifest schema pattern (kebab-case alphanumeric). */
-export const SAFE_EXT_ID = /^[a-z0-9][a-z0-9-]*$/;
-
-/**
- * What `/enable` and `/disable` say when a bar refuses them (DOR-1507).
- *
- * They write `extensions.enabled` / `extensions.disabled`, both `operator-only`
- * in `config-write-policy.ts`, straight through `configManager` — around the
- * door that enforces that classification. They answer `person_only`: a refusal
- * of an agent is not about where the caller is, so never `operator_only`.
- *
- * The messages talk about which code DorkOS runs rather than about a config
- * key, because that is what a person reading a refusal actually needs to know.
- * The three bars themselves live in
- * {@link module:routes/extensions-person-bar}, shared with the approval routes.
- */
-const EXTENSION_TOGGLE_BAR: PersonBarCopy = {
-  code: 'person_only',
-  subject: 'which extensions are turned on',
-  crossSite: (origin) =>
-    `Nothing changed. ${origin} isn’t DorkOS. Turn extensions on or off in the app.`,
-  agent: 'Nothing changed. Only a person turns extensions on or off, in Settings.',
-};
 
 /** What the `/api/extensions` routes read. */
 export interface ExtensionsRouterDeps {
@@ -165,36 +126,11 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
   const { manager: extensionManager, dorkHome, getCwd, activity } = deps;
   const router = new Hono<ApiEnv>();
 
-  // GET /api/extensions/events -- SSE stream for extension lifecycle events
-  router.get('/events', (c) =>
-    streamToNodeResponse(c, (res, { signal }) => {
-      logger.warn('[DEPRECATED] GET /api/extensions/events — use GET /api/events instead');
-      res.writeHead(200, {
-        'Content-Type': 'text/event-stream; charset=utf-8',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      });
-      // Send initial heartbeat so the client knows the connection is live
-      res.write(':ok\n\n');
-      sseClients.add(res);
-      // Clean up on disconnect
-      return new Promise<void>((resolve) => {
-        const leave = (): void => {
-          sseClients.delete(res);
-          resolve();
-        };
-        if (signal.aborted) leave();
-        else signal.addEventListener('abort', leave, { once: true });
-      });
-    })
-  );
-
-  // GET /api/extensions -- List all discovered extensions with status: every
-  // copy that runs, then each older copy a newer one of the same trusted
-  // source shadows, with `shadowedBy` set (spec `flow-multiproject` §9.2).
-  router.get('/', (c) => {
+  // GET /api/extensions -- Every discovered extension, a page at a time (DOR-4982;
+  // the order: `services/extensions/listing/extension-list-pages.ts`).
+  router.get('/', async (c) => {
     try {
-      return c.json([...extensionManager.listPublic(), ...extensionManager.listShadowedPublic()]);
+      return await answerExtensionList(c, extensionManager);
     } catch (err) {
       logger.error('[Extensions] Failed to list extensions', err);
       return failed(c, 'list extensions');
@@ -709,7 +645,5 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
     safeId: SAFE_EXT_ID,
   });
   registerExtensionForwardRoutes(router, extensionManager, SAFE_EXT_ID, liveForwardDeps(deps.mesh));
-  registerExtensionRestartRoute(router, extensionManager, SAFE_EXT_ID, broadcastExtensionReloaded);
-
   return router;
 }

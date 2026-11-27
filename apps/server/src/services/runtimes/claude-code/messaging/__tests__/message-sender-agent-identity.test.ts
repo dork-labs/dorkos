@@ -29,6 +29,8 @@ import {
   initAgentIdentityService,
   resetAgentIdentityService,
 } from '../../../../core/agent-identity/index.js';
+import { setProcessTokenPort } from '../../../shared/references/process-token-port.js';
+import { wireProcessTokenPort } from '../../../../../startup/steps/work-graph.js';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import { resolveLaunch } from '../launch-resolver.js';
 import type { AgentSession } from '../../agent-types.js';
@@ -169,6 +171,36 @@ describe('executeSdkQuery — who the session token is minted for', () => {
 
     // Nothing is invented: the slug is the only name this agent has.
     expect(identity?.displayName).toBe('docs-writer');
+  });
+
+  it('names its chat with the token only while the per-message turn runs (DOR-5264)', async () => {
+    const identities = initAgentIdentityService(db);
+    wireProcessTokenPort();
+    try {
+      let during: string | undefined;
+      let token = '';
+      vi.mocked(query).mockImplementation((args) => {
+        token = (args.options!.env as Record<string, string>)[AGENT_TOKEN_ENV_VAR]!;
+        return {
+          async *[Symbol.asyncIterator]() {
+            during = (await identities.resolve(token))?.chatId;
+          },
+        } as unknown as ReturnType<typeof query>;
+      });
+      const opts: MessageSenderOpts = {
+        cwd: AGENT_CWD,
+        meshCore: meshWithAgent(),
+        requiredLaunches,
+        onSdkSessionRebind: async () => {},
+      };
+      for await (const _event of executeSdkQuery('s1', 'hello', makeSession(), opts)) {
+        // The token's chat is read during the turn and after it.
+      }
+      expect(during).toBe('s1');
+      expect((await identities.resolve(token))?.chatId).toBeUndefined();
+    } finally {
+      setProcessTokenPort(undefined);
+    }
   });
 
   it('leaves a directory that hosts no agent unattributed, exactly as before', async () => {

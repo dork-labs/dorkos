@@ -27,13 +27,11 @@ import { createAlwaysSuggestion } from '../../services/core/permissions/index.js
 import { setMarkedFullActivity } from '../../services/core/turn-power/full-autonomy.js';
 import { setShouldAskActivity } from '../../services/core/prompts/should-ask.js';
 import { projectRegistry } from '../../services/projects/project-registry.js';
-import { describeHookProjectionCapability } from '../../services/harness/hook-approval.js';
 import {
-  describeFolderAllowCapability,
-  setFolderAllowApprovalGateway,
-} from '../../services/runtimes/claude-code/folder-settings/folder-allow-approval.js';
-import { describeFolderConfigCapability } from '../../services/runtimes/claude-code/folder-settings/folder-config-approval.js';
-import { describeRepoConfigCapability } from '../../services/runtimes/claude-code/repo-settings/repo-config-approval.js';
+  createComputerAsks,
+  describeComputerAskCapability,
+  setAskApprovals,
+} from '../../services/core/approvals/computer-asks/index.js';
 import { describeGlobalActivationCapability } from '../../services/marketplace/consent/ask-withheld-global-plugins.js';
 import {
   describeTemplateCreationCapability,
@@ -188,10 +186,7 @@ export async function wireConnectorEventsAndApprovals(
       // programs load into every session (DOR-2306). Without these the card
       // would show the raw id.
       return (
-        describeHookProjectionCapability(capabilityId) ??
-        describeFolderAllowCapability(capabilityId) ??
-        describeFolderConfigCapability(capabilityId) ??
-        describeRepoConfigCapability(capabilityId) ??
+        describeComputerAskCapability(capabilityId) ??
         describeGlobalActivationCapability(capabilityId) ??
         describeTemplateCreationCapability(capabilityId) ??
         describeWorkspaceCreationCapability(capabilityId) ??
@@ -263,13 +258,15 @@ export async function wireConnectorEventsAndApprovals(
   setMarkedFullActivity(activityService);
   // And the line a prompt kind writes when it lets an agent act with no card (DOR-4794).
   setShouldAskActivity(activityService);
-  // The card that lets an agent's own folder allow list apply (DOR-3039). The
-  // runtime starts before this step, so the launch is handed the service here.
-  setFolderAllowApprovalGateway(approvalService);
+  // The cards computer-side code asks for through the asks port: a package's
+  // hooks, an agent folder's allow list and settings, a repo's settings (spec
+  // computer-side-starts-alone §5.7). The runtime starts before this step, so
+  // the asks are handed the service here.
+  setAskApprovals(approvalService);
   // A quiet Needs-you row a restart left open is waited on again, so a yes given
   // after it records and projects (DOR-3427). Here, not with the marketplace,
   // because this step runs on every server, relay on or off.
-  resumeQuietRowsAtStartup(approvalService, resolveDorkHome());
+  resumeQuietRowsAtStartup(createComputerAsks(approvalService), resolveDorkHome());
   // Hand back the delivery claims that only a hold in a DEAD process could still
   // hold. A hold lives in process memory and holds a turn open, so none survives
   // a restart — and without this sweep, a restart while somebody was deciding

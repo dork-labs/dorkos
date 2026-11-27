@@ -10,7 +10,7 @@ These rules apply to all API route handlers in the Hono server.
 
 ### Input Validation
 
-Always validate the request body with Zod before processing, reading it through `readJsonBody` (`http/request-body.ts`), never a raw body property:
+Always validate the request body with Zod before processing, reading it through `readJsonBody` (`@dorkos/http-kit`), never a raw body property. Lint refuses `c.req.json()` in `routes/` (`dorkos/restricted-syntax` in `apps/server/eslint.config.js`):
 
 ```typescript
 import { z } from 'zod';

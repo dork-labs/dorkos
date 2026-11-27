@@ -3,18 +3,9 @@ import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { Button } from '@/layers/shared/ui/button';
-import { OneBar, BarTitle, BarFixedCluster } from '../ui/OneBar';
+import { OneBar, BarTitle } from '../ui/OneBar';
 import { TitleBar } from '../ui/TitleBar';
 import { BarHarness } from './bar-harness';
-
-// The two cluster members with data needs of their own. Search is the real
-// component — its label is what the ordering assertion names.
-vi.mock('@/layers/widgets/inbox-bell', () => ({
-  InboxBell: () => <button aria-label="Inbox">Inbox</button>,
-}));
-vi.mock('@/layers/features/right-panel', () => ({
-  RightPanelToggle: () => <button aria-label="Toggle right panel">Panel</button>,
-}));
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -39,42 +30,12 @@ function buttonLabels() {
   return screen.getAllByRole('button').map((el) => el.getAttribute('aria-label') ?? el.textContent);
 }
 
-describe('BarFixedCluster — the last three controls (I1)', () => {
-  it('renders search, inbox, right-panel toggle, in that order', () => {
-    render(
-      <BarHarness>
-        <BarFixedCluster />
-      </BarHarness>
-    );
-    expect(buttonLabels()).toEqual(['Open command palette', 'Inbox', 'Toggle right panel']);
-  });
-
-  it('never shrinks, so a long room name eats the identity zone instead', () => {
-    render(
-      <BarHarness>
-        <BarFixedCluster />
-      </BarHarness>
-    );
-    expect(screen.getByLabelText('Toggle right panel').parentElement).toHaveClass('shrink-0');
-  });
-});
-
 describe('OneBar — a route bar cannot reach past the cluster (I1)', () => {
-  // The cluster is the shell's, mounted as a sibling AFTER the bar, so it stays
-  // put while the bar cross-fades. What keeps I1 true is that a route bar has no
-  // slot past `actions`: its entire output lands before the cluster, whatever it
-  // renders. These assert the half OneBar owns.
-  it('renders no cluster of its own', () => {
-    render(
-      <BarHarness>
-        <OneBar identity={<BarTitle>Workspaces</BarTitle>} />
-      </BarHarness>
-    );
-    expect(screen.queryByLabelText('Open command palette')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Inbox')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Toggle right panel')).not.toBeInTheDocument();
-  });
-
+  // The cluster is the shell's (`src/app/header/BarFixedCluster.tsx`), mounted as a
+  // sibling AFTER the bar, so it stays put while the bar cross-fades. What keeps
+  // I1 true is that a route bar has no slot past `actions`: its entire output
+  // lands before the cluster, whatever it renders. These assert the half OneBar
+  // owns; the cluster's own test asserts the composition.
   it('ends with actions — the last slot a page is given', () => {
     render(
       <BarHarness>
@@ -86,35 +47,6 @@ describe('OneBar — a route bar cannot reach past the cluster (I1)', () => {
       </BarHarness>
     );
     expect(buttonLabels()).toEqual(['3 members', 'New schedule']);
-  });
-
-  it('places the cluster after everything a bar renders', () => {
-    // The composition the shell performs, asserted end to end: bar first,
-    // cluster second, so the three fixed controls are the last three buttons on
-    // the row no matter what the page contributed.
-    render(
-      <BarHarness>
-        <OneBar
-          identity={<BarTitle>Scheduled</BarTitle>}
-          actions={<Button size="xs">New schedule</Button>}
-        />
-        <BarFixedCluster />
-      </BarHarness>
-    );
-    expect(buttonLabels()).toEqual([
-      'New schedule',
-      'Open command palette',
-      'Inbox',
-      'Toggle right panel',
-    ]);
-
-    // I1 by name: the cluster is addressable via its slot, and it is the row's
-    // LAST element — a bar that rendered anything after it would make the slot
-    // stop being :last-child. This is the assertion e2e can reuse verbatim.
-    const cluster = document.querySelector('[data-slot="bar-fixed-cluster"]');
-    expect(cluster).not.toBeNull();
-    expect(cluster?.parentElement?.lastElementChild).toBe(cluster);
-    expect(cluster?.querySelectorAll('button')).toHaveLength(3);
   });
 });
 

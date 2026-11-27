@@ -4,7 +4,7 @@
  *
  * @module services/canvas/doc-channel/route-controls/current-grants
  */
-import { CanvasAppManifestError } from '@dorkos/shared/canvas-app-manifest';
+import { CanvasAppManifestError } from '../../canvas-app-manifest.js';
 import { DocChannelNotFoundError } from '../authorization.js';
 import type { DocChannelGrants } from '../grants.js';
 import { DocRouteGrantError, type DocGrantActor } from '../grant-policy.js';

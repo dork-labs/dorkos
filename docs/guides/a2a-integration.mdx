@@ -16,7 +16,7 @@ This is developer reference: it assumes you're wiring up an external A2A client 
 <Callout type="info">
   **Protocol versions.** DorkOS speaks **A2A v1.0**, and still accepts the older **v0.3** calls, so
   a client written against either version works. Agent Cards advertise both, and each request is
-  answered in the version it was asked in. The examples below come in both dialects — pick the one
+  answered in the version it was asked in. The examples below come in both dialects. Pick the one
   matching the SDK you have installed.
 </Callout>
 
@@ -39,7 +39,7 @@ DORKOS_RELAY_ENABLED=true
 DORKOS_A2A_ENABLED=true
 ```
 
-`DORKOS_A2A_ENABLED` wins over the setting whenever it is present — including when it says `false`. The switch in Settings shows what is really happening on that machine and goes read-only, rather than offering you a choice the server will ignore.
+`DORKOS_A2A_ENABLED` wins over the setting whenever it is present, including when it says `false`. The switch in Settings shows what is really happening on that machine and goes read-only, rather than offering you a choice the server will ignore.
 
 On startup you'll see a log line confirming the mount point and auth mode:
 
@@ -65,7 +65,7 @@ A2A clients start by fetching an **Agent Card**: a JSON document describing what
 
 ### Per-agent cards
 
-`GET /a2a/agents/:id/card` returns a card for one specific agent (by its mesh ULID). Each card lists that agent's own JSON-RPC endpoint (`/a2a/agents/:id`) under `supportedInterfaces`, so a client that discovered a per-agent card never needs to specify which agent it's talking to. The endpoint is listed twice — once as protocol version `1.0` and once as `0.3` — which is how a client of either version knows it can talk to us.
+`GET /a2a/agents/:id/card` returns a card for one specific agent (by its mesh ULID). Each card lists that agent's own JSON-RPC endpoint (`/a2a/agents/:id`) under `supportedInterfaces`, so a client that discovered a per-agent card never needs to specify which agent it's talking to. The endpoint is listed twice (once as protocol version `1.0` and once as `0.3`), which is how a client of either version knows it can talk to us.
 
 </Step>
 </Steps>
@@ -89,16 +89,16 @@ Supported methods, in both dialects:
 | `SendStreamingMessage` | `message/stream` | The same, streamed over SSE |
 | `GetTask`              | `tasks/get`      | Look a task up              |
 | `CancelTask`           | `tasks/cancel`   | Stop a running task         |
-| `ListTasks`            | —                | List tasks, newest first    |
+| `ListTasks`            | Not in v0.3      | List tasks, newest first    |
 
 `ListTasks` answers for whichever endpoint you asked. On `/a2a/agents/:id` you get that
-agent's tasks and nothing else — the count and the paging follow the same scope. On the fleet
+agent's tasks and nothing else. The count and the paging follow the same scope. On the fleet
 endpoint `/a2a` you get every agent's tasks. Filter either one by `contextId`, by `status`, or
 by `statusTimestampAfter`; artifacts are left out unless you ask for them with
 `includeArtifacts`.
 
 Looking a task up follows the same boundary. On an agent's own endpoint, `GetTask` and
-`CancelTask` answer for that agent's tasks and report anything else as not found — so knowing
+`CancelTask` answer for that agent's tasks and report anything else as not found, so knowing
 another task's id gets you nothing there. Use the fleet endpoint `/a2a` to reach a task
 whichever agent ran it.
 
@@ -106,7 +106,7 @@ whichever agent ran it.
   **Waiting for the answer works differently in each version.** In v1.0, a send **waits** for the
   task to finish unless you set `configuration.returnImmediately: true`. In v0.3 it's the other way
   round: a send returns as soon as the task exists unless you set `configuration.blocking: true`. If
-  a v0.3 call that used to block now hands you a `working` task, that's this difference — set
+  a v0.3 call that used to block now hands you a `working` task, that's this difference. Set
   `blocking: true` and it waits again.
 </Callout>
 
@@ -114,8 +114,8 @@ whichever agent ran it.
 
 `tasks/cancel` asks whoever is running the turn to stop it, and answers with what really
 happened. You get the task back marked `canceled` only when a runner takes the request and
-starts interrupting the agent. If nothing takes it — the turn already finished, or DorkOS
-restarted and lost track of it — you get a `TaskNotCancelable` error instead, and the task
+starts interrupting the agent. If nothing takes it (the turn already finished, or DorkOS
+restarted and lost track of it), you get a `TaskNotCancelable` error instead, and the task
 keeps the state it had.
 
 So a `canceled` answer means the stop reached the agent that was working, not merely that
@@ -129,11 +129,11 @@ asks the agent to stop as well, so a caller walking away doesn't leave a model r
 
 A2A is for clients on this computer. Remote access and your own tunnel never serve `/a2a` or an agent card to another device, with or without a token.
 
-Every A2A JSON-RPC call runs a prompt against one of your agents, so **execution is always token-gated**. While login is off, fetching an Agent Card (the `GET` discovery paths) stays open — that's public metadata, the A2A analogue of listing tools. Turn login on and card reads need a credential too, so send your token on card fetches as well as on calls.
+Every A2A JSON-RPC call runs a prompt against one of your agents, so **execution is always token-gated**. While login is off, fetching an Agent Card (the `GET` discovery paths) stays open: that's public metadata, the A2A analogue of listing tools. Turn login on and card reads need a credential too, so send your token on card fetches as well as on calls.
 
 Which token you send depends on your setup:
 
-- **Login off (the default):** send the **local MCP token** as a Bearer header. It's the same token the [MCP endpoint](/docs/integrations/mcp-server) uses — find it in **Settings → Advanced → Tools → Connect other apps to DorkOS**, or in the `mcp-local-token` file in your DorkOS data folder (`~/.dork/` by default). Without it, a JSON-RPC `POST` comes back `401`; an Agent Card `GET` still works.
+- **Login off (the default):** send the **local MCP token** as a Bearer header. It's the same token the [MCP endpoint](/docs/integrations/mcp-server) uses. Find it in **Settings → Advanced → Tools → Connect other apps to DorkOS**, or in the `mcp-local-token` file in your DorkOS data folder (`~/.dork/` by default). Without it, a JSON-RPC `POST` comes back `401`; an Agent Card `GET` still works.
 - **Headless deployments:** set `MCP_API_KEY` and send it as the Bearer token. It overrides everything else.
 - **Login on:** a per-user [Better Auth](/docs/getting-started/configuration) API key works as the Bearer token.
 
@@ -141,7 +141,7 @@ Which token you send depends on your setup:
 Authorization: Bearer <token>
 ```
 
-Agent Cards advertise the spec-standard `http`/`bearer` security scheme, and they always say a bearer token is required — because it always is. The requirement is about **calling** an agent, not about reading the card: while login is off you can still fetch a card without a token, and the card itself tells you the call that follows needs one. Cards never say where your token lives; that stays between you and your own machine.
+Agent Cards advertise the spec-standard `http`/`bearer` security scheme, and they always say a bearer token is required, because it always is. The requirement is about **calling** an agent, not about reading the card: while login is off you can still fetch a card without a token, and the card itself tells you the call that follows needs one. Cards never say where your token lives; that stays between you and your own machine.
 
 ### `contextId`: grouping turns into one chat
 
@@ -279,7 +279,7 @@ console.log(task.status?.state === TaskState.TASK_STATE_COMPLETED ? 'done' : tas
 To use the **fleet** endpoint instead, drop the per-agent card and set `metadata: { agentId }` on the `message`. The SDK will post to `/a2a`.
 
 <Callout type="info">
-  Still on `@a2a-js/sdk@0.3`? Keep using its `A2AClient` — DorkOS answers those calls too. The v1.0
+  Still on `@a2a-js/sdk@0.3`? Keep using its `A2AClient`. DorkOS answers those calls too. The v1.0
   SDK removed that class, so the code above is the shape you'll want once you upgrade.
 </Callout>
 

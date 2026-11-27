@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { apiCall, ApiError, resolveApiKey } from '../lib/api-client.js';
+import { apiCall, ApiError, getServerBaseUrl, resolveApiKey } from '../lib/api-client.js';
 
 /**
  * An isolated DORK_HOME per test. The credential resolver reads
@@ -47,6 +47,8 @@ beforeEach(() => {
   // Run inside an agent session, the CLI inherits that agent's token; every
   // test here starts with none and sets its own.
   vi.stubEnv('DORKOS_AGENT_TOKEN', '');
+  vi.stubEnv('DORKOS_API_URL', '');
+  vi.stubEnv('DORKOS_PORT', '');
 });
 
 afterEach(() => {
@@ -104,6 +106,32 @@ describe('apiCall agent identity header', () => {
       'Content-Type': 'application/json',
       'X-DorkOS-Agent': 'minted-token',
     });
+  });
+});
+
+describe('getServerBaseUrl', () => {
+  it("dials the turn's own server when a DorkOS turn names a loopback one", () => {
+    vi.stubEnv('DORKOS_PORT', '4999');
+    for (const origin of ['http://localhost:6941', 'http://127.0.0.1:6941', 'http://[::1]:6941']) {
+      vi.stubEnv('DORKOS_API_URL', origin);
+      expect(getServerBaseUrl()).toBe(origin);
+    }
+  });
+
+  it('never dials a DORKOS_API_URL that is not a bare http loopback origin', () => {
+    vi.stubEnv('DORKOS_PORT', '4999');
+    for (const bad of [
+      'http://192.168.1.20:6941',
+      'https://localhost:6941',
+      'http://localhost',
+      'http://localhost:6941/api',
+      'http://user:pw@localhost:6941',
+      'http://localhost.evil.example:6941',
+      'not a url',
+    ]) {
+      vi.stubEnv('DORKOS_API_URL', bad);
+      expect(getServerBaseUrl(), bad).toBe('http://localhost:4999');
+    }
   });
 });
 

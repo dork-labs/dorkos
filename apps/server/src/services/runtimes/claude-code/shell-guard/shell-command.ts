@@ -405,6 +405,82 @@ export interface ReadCommand {
   resolve: (word: string, options: ResolveOptions) => string[] | null;
 }
 
+/** A word with each plain `$NAME` written as `${NAME}`, which names the same variable. */
+function bracedVariables(word: string): string {
+  // Only outside a `${…}`: inside one, a brace added would close it early (`${HOME:-$X}`).
+  let depth = 0;
+  return word.replace(/\$\{|\}|\$([A-Za-z_]\w*)/g, (whole, name: string | undefined) => {
+    if (whole === '${') depth += 1;
+    else if (whole === '}') depth = Math.max(0, depth - 1);
+    else if (depth === 0) return `\${${name}}`;
+    return whole;
+  });
+}
+
+/** One use of a `for` list's variable in a word: `${name}`, or `${name<op>default}`. */
+interface ListUse {
+  start: number;
+  end: number;
+  op: string;
+  fallback: string;
+}
+
+/** The operators whose `${name<op>…}` gives the variable's value once it is set. */
+const SET_VALUE_OPS = /^(?::?[-=?])/;
+
+/**
+ * Where a word uses a `for` list's variable, already braced by {@link bracedVariables}; `null`
+ * when it uses it in a form whose value cannot be read here (`${d#…}`, `${d/…}`, `${d:0}`).
+ */
+function listUses(word: string, name: string): ListUse[] | null {
+  const uses: ListUse[] = [];
+  const opener = `\${${name}`;
+  let start = word.indexOf(opener);
+  while (start !== -1) {
+    const at = start + opener.length;
+    const use = listUseAt(word, start, at);
+    if (use === null) return null;
+    if (use !== undefined) uses.push(use);
+    start = word.indexOf(opener, use?.end ?? at);
+  }
+  return uses;
+}
+
+/**
+ * The use of a list's variable whose `${name` runs from `start` to `at`: `undefined` when it is a
+ * longer name, `null` when its form cannot be read.
+ */
+function listUseAt(word: string, start: number, at: number): ListUse | null | undefined {
+  if (word[at] === '}') return { start, end: at + 1, op: '', fallback: '' };
+  // A longer name (`${dir}` for a list named `d`) is another variable.
+  if (/\w/.test(word[at] ?? '')) return undefined;
+  const op = SET_VALUE_OPS.exec(word.slice(at, at + 2))?.[0];
+  if (op === undefined) return null;
+  let depth = 1;
+  let end = at + op.length;
+  for (; end < word.length && depth > 0; end += 1) {
+    if (word.startsWith('${', end)) {
+      depth += 1;
+      end += 1;
+    } else if (word[end] === '}') depth -= 1;
+  }
+  if (depth > 0) return null;
+  return { start, end, op, fallback: word.slice(at + op.length, end - 1) };
+}
+
+/** A word with each use of a list's variable given one value from the list. */
+function withListValue(word: string, uses: readonly ListUse[], value: string): string {
+  let out = '';
+  let from = 0;
+  for (const use of uses) {
+    // `${d:-x}` with `d` set empty gives `x`; every other form gives the value.
+    const given = value === '' && (use.op === ':-' || use.op === ':=') ? use.fallback : value;
+    out += `${word.slice(from, use.start)}${given}`;
+    from = use.end;
+  }
+  return out + word.slice(from);
+}
+
 /**
  * Parse a command, following its `cd`s, `NAME=value`s and `for` lists.
  *
@@ -430,7 +506,7 @@ export function readCommand(
   let unreadable = false;
   for (const { words } of parsed) {
     if (words[0] === 'for' && words[2] === 'in' && /^[A-Za-z_]\w*$/.test(words[1] ?? '')) {
-      lists.set(words[1]!, words.slice(3));
+      lists.set(words[1]!, words.slice(3).map(bracedVariables));
     }
     for (const word of words) {
       const assigned = /^([A-Za-z_]\w*)=(.*)$/s.exec(word);
@@ -450,26 +526,27 @@ export function readCommand(
   // Nested `for` lists multiply, so what they would build is paid for BEFORE it is built, in bytes
   // as well as strings: 700 bytes once ran the server out of memory.
   const open = (word: string): string[] | null => {
-    let opened = [word];
+    // Every `$NAME` as `${NAME}`, so a list's variable is found by its whole name only.
+    let opened = [bracedVariables(word)];
     if (word.includes('$')) {
       if (lists.size > MAX_FOR_LISTS) return null;
       for (const [name, values] of lists) {
         if (!word.includes(name)) continue;
-        const pattern = new RegExp(`\\$\\{?${name}\\}?(?!\\w)`, 'g');
         const valueBytes = values.reduce((sum, value) => sum + value.length, 0);
+        const found = opened.map((one) => listUses(one, name));
+        if (found.includes(null)) return null;
         let built = 0;
         let cost = 0;
-        for (const one of opened) {
-          const uses = one.match(pattern)?.length ?? 0;
+        for (const [at, one] of opened.entries()) {
+          const uses = found[at]!.length;
           built += uses === 0 ? 1 : values.length;
           if (uses > 0) cost += one.length * values.length + valueBytes * uses;
         }
         if (built > MAX_PIECES || !budget.spend(cost)) return null;
-        opened = opened.flatMap((one) =>
-          one.search(pattern) === -1
-            ? [one]
-            : values.map((value) => one.replace(pattern, () => value))
-        );
+        opened = opened.flatMap((one, at) => {
+          const uses = found[at]!;
+          return uses.length === 0 ? [one] : values.map((value) => withListValue(one, uses, value));
+        });
       }
     }
     const results: string[] = [];

@@ -24,7 +24,7 @@ import { readQuery } from '../http/request-query.js';
 import { docScopeNotifications } from '../services/canvas/doc-channel/streams/registry.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { resolveSessionCwdOrDefault, resolveSettingsKey } from '../services/session/index.js';
-import { deliverSessionStream } from '../services/core/streams/session-stream-delivery.js';
+import { deliverSessionStream } from '../services/core/streams/screen/session-stream-delivery.js';
 import { SseStreamSink } from '../services/core/streams/durable-stream-sink.js';
 import { sendProblem } from '@dorkos/http-kit';
 import { boundaryRefusal, parseSessionId } from '../lib/route-utils.js';

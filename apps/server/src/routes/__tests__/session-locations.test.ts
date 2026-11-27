@@ -13,7 +13,8 @@ import { sessionLocationStore } from '../../services/core/runtime-seam/session-l
 import type { RequestFacts } from '../../http/request-facts.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
-vi.mock('../extensions-person-bar.js', () => ({
+vi.mock('../../lib/http/person-bar.js', () => ({
+  PERSON_BAR_CROSS_SITE: 'Open this from the DorkOS app.',
   assessPerson: (facts: RequestFacts) =>
     facts.headers['x-dorkos-agent']
       ? { status: 403, body: { title: 'Person required', status: 403, code: 'person_only' } }

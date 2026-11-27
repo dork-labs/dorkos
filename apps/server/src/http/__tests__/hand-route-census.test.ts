@@ -39,7 +39,7 @@ const PENDING = path.join(HERE, '..', 'hand-routes', 'pending.json');
  * change that shrinks the pending list. A route added to the pending list fails
  * here, and a PR that raises this number needs the API lead's OK first.
  */
-const PENDING_CEILING = 608;
+const PENDING_CEILING = 545;
 
 /**
  * The census's `ALL` entries that are neither allowlisted nor capabilities, each
@@ -73,7 +73,6 @@ const KNOWN_ALL: Readonly<Record<string, string>> = {
   'ALL /api/person-session/*': 'middleware (`use`) in front of the group',
   'ALL /api/runtimes/claude-code/signins/*': 'middleware (`use`) in front of the group',
   'ALL /api/session-locations/*': 'middleware (`use`) in front of the group',
-  'ALL /api/session-relay/*': 'middleware (`use`) in front of the group',
   'ALL /api/sessions/:id/*': 'middleware (`use`) in front of the group',
   'ALL /api/sign-in-landings/*': 'middleware (`use`) in front of the group',
   'ALL /api/step-up/*': 'middleware (`use`) in front of the group',

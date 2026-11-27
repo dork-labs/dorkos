@@ -22,7 +22,7 @@
  */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
+import { ExtensionSecretStore } from '../../lib/secret-store/extension-secrets.js';
 import { parseCredentialReference } from '@dorkos/shared/config-schema';
 import { mayReadOsKeychain } from '../../lib/keychain/os-keychain-policy.js';
 

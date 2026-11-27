@@ -2,6 +2,14 @@
 # Pre-push gate: refuse a push whose changed files are not Prettier-formatted
 # (DOR-1839).
 #
+# --help
+# Purpose: refuse a push whose changed files are not Prettier-formatted, before
+#          the required `lint` job says so.
+# Runs in: pre-push (`formatting`); by hand.
+# To fix:  run the `prettier --write` command it prints, commit, push again.
+# Usage:   bash scripts/pre-push-format-check.sh
+# --help end
+#
 #   bash scripts/pre-push-format-check.sh
 #
 # Silent and ~0.2s when the changed set is clean, which is every push that
@@ -193,6 +201,11 @@
 # relaying stdout; nothing about this report is worth risking on a stream whose
 # relaying was not. The `fail_text` in lefthook.yml is a one-line summary, not the
 # message — the report below is.
+
+# --help (DOR-4950). A gate checked out alone, as the PR-side gates are, runs without it.
+gate_help="$(dirname "$0")/lib/gate-help.sh"
+# shellcheck source=lib/gate-help.sh
+[ ! -r "$gate_help" ] || . "$gate_help"
 
 set -uo pipefail
 

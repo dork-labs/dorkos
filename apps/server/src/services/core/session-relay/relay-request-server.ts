@@ -50,7 +50,7 @@ import type {
 } from '../../session/launch/launch-session.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import type { DurableStreamSink } from '../streams/durable-stream-sink.js';
-import type { SessionStreamPlan } from '../streams/session-stream-delivery.js';
+import type { SessionStreamRequest } from '../streams/session-stream-plan.js';
 import type { RelayRequestServer } from './relay-dialer.js';
 import {
   relayAgentById,
@@ -116,9 +116,9 @@ export interface RelayRequestServerDeps extends RelayApprovalDeps {
   resolveStreamPlan: (
     facts: RelaySessionFacts,
     resume: string | undefined
-  ) => Promise<Omit<SessionStreamPlan, 'principal'>>;
+  ) => Promise<Omit<SessionStreamRequest, 'principal'>>;
   /** Deliver a chat's durable stream to a sink until either side ends it. */
-  deliverSessionStream: (sink: DurableStreamSink, plan: SessionStreamPlan) => Promise<void>;
+  deliverSessionStream: (sink: DurableStreamSink, plan: SessionStreamRequest) => Promise<void>;
   /** Start or feed a chat from one message. */
   dispatchSessionMessage: (
     opts: DispatchSessionMessageOpts

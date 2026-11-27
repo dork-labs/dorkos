@@ -29,6 +29,26 @@
  *   announced, so it records nothing new. The link stays even when the start
  *   is cancelled before its chat launches, so read starts through the lineage
  *   query (W3, DOR-4969), not this table alone.
+ * - **A pull request a chat opened** (DOR-5264): `scripts/open-pr.sh` calls
+ *   `work-graph.record-pr` (`work-graph-capabilities.ts`) from the chat's own
+ *   shell once the pull request exists, which records the chat `opened` it
+ *   and `works_on` each ticket the body names for sure. The chat comes from
+ *   the caller's identity token, never from the call, and the link carries
+ *   the turn's marks. Unlike the others, this one refuses: it is a capability
+ *   call, and its caller is told when nothing was recorded.
+ * - **A worktree DorkOS made for a chat** (DOR-5265): the workspace service
+ *   announces a git worktree it made for a chat (`onWorkspaceWorktreeCreated`,
+ *   wired at the composition root in `startup/steps/work-graph.ts`), and
+ *   {@link recordChatWorktree} records the chat `opened` the worktree (by its
+ *   folder name) and `opened` its branch (as given). A clone, a reused
+ *   workspace and a create with no chat (a person in the app, an agent's own
+ *   managed checkout) announce nothing, so record nothing.
+ * - **A to-do or a promise an agent made in a chat** (DOR-5266): the to-do
+ *   tools announce one an agent made from a chat's turn (`onTodoMadeInChat`,
+ *   wired at the composition root in `startup/steps/work-graph.ts`), and
+ *   {@link recordChatTodo} records the chat `produced` it (`dork:todo:<id>`;
+ *   a promise is a to-do). The chat is server-held state only, and a person's
+ *   to-do or promise names none, so records nothing.
  *
  * Two read sites:
  *
@@ -40,6 +60,10 @@
  *   ancestors and subtree from the `started` links and `session_started_by`,
  *   and is the one place that decides which started chats a reader is shown
  *   (`./chat-lineage.ts`).
+ *
+ * The read tools (W4, DOR-4970: an agent's chats, a chat's tree and the work
+ * linked to either) are in `./reads/`, and read chat bindings only through
+ * `./reads/chat-bindings.ts`.
  *
  * The store lives in this computer's SQLite store for now; its move to the
  * space store is DOR-5139 (ADR 261122-173853). The store is space data; turn
@@ -63,6 +87,7 @@ import { onDurableSessionRekey } from '../session/turn-identity/durable-rekey.js
 import { registerDurableRekeyResolver } from '../session/turn-identity/follow-chat-rekey.js';
 import { getRunRecord } from '../runs/index.js';
 import { ChatLineageReader, type ChatLineage, type ChatLineageOptions } from './chat-lineage.js';
+import { LineageReads, type LineageReadsDeps } from './lineage-reads.js';
 import { WorkLinkStore, type WorkLinkInput } from './work-link-store.js';
 
 export {
@@ -140,25 +165,69 @@ export function getWorkLinkStore(): WorkLinkStore | null {
 }
 
 /**
+ * The database the store was installed over, or `null` before startup
+ * installs it: what the read tools hand `./reads/chat-bindings.ts`.
+ */
+export function getWorkGraphDb(): Db | null {
+  return installedDb;
+}
+
+/**
+ * The chat that started each of these, when another chat did, from
+ * `session_started_by` (a carry-over names the chat it continues). For the
+ * read tools, which reach the session's records only through this barrel.
+ *
+ * @param chatIds - Current chat ids.
+ * @returns Each started chat's starter; a chat no chat started is absent.
+ */
+export function chatStartersOf(chatIds: readonly string[]): Map<string, string> {
+  const starters = new Map<string, string>();
+  for (const [id, row] of getSessionStartedByStore()?.getMany(chatIds) ?? []) {
+    if (row.kind === 'chat' && row.startedBySessionId !== null)
+      starters.set(id, row.startedBySessionId);
+  }
+  return starters;
+}
+
+/**
  * A chat's ancestors and its subtree with depth, read from this server's
  * stores: the installed edge store, `session_started_by` and the run record.
  * See {@link ChatLineageReader} for what is shown and what is left out.
  *
  * @param chatId - The chat, by any id it has had.
- * @param opts - How many levels of descendants; all by default.
+ * @param opts - How many levels of descendants (all by default), and for whom.
  * @returns The lineage; `null` before startup installs the store, or when the
  *   chat has neither a binding nor a run, and nothing it started is shown.
  */
 export function readChatLineage(chatId: string, opts?: ChatLineageOptions): ChatLineage | null {
+  const deps = lineageDeps();
+  return deps ? new ChatLineageReader(deps).read(chatId, opts) : null;
+}
+
+/**
+ * The lineage query's batched reads over the same stores
+ * {@link readChatLineage} reads, so a caller learns a chat's parent and the
+ * order it sits in among its siblings exactly as the walk does (the W4 tree's
+ * cursor).
+ *
+ * @returns The reads, or `null` before startup installs the store.
+ */
+export function readLineageReads(): LineageReads | null {
+  const deps = lineageDeps();
+  return deps ? new LineageReads(deps) : null;
+}
+
+/** What the lineage reads read on this server, or `null` before startup installs the store. */
+function lineageDeps(): LineageReadsDeps | null {
   if (store === null || installedDb === null) return null;
   const startedBy = getSessionStartedByStore();
   const runs = getRunRecord()?.store;
-  return new ChatLineageReader({
+  return {
     db: installedDb,
     links: store,
     ...(startedBy ? { startedBy } : {}),
     ...(runs ? { runs } : {}),
-  }).read(chatId, opts);
+  };
 }
 
 /**
@@ -183,7 +252,13 @@ function recordChatLink(
     });
     return;
   }
-  const input: WorkLinkInput = { from: from.value, relation, to: to.value, source: 'server' };
+  recordLink({ from: from.value, relation, to: to.value, source: 'server' }, ids);
+}
+
+/** Record one edge, never throwing: a refusal or a database failure is logged with `ids` and dropped. */
+function recordLink(input: WorkLinkInput, ids: Record<string, string>): void {
+  if (store === null) return;
+  const { relation } = input;
   try {
     const result = store.record(input);
     if (!result.ok)
@@ -227,4 +302,90 @@ export function recordChatFork(sourceId: string, forkId: string): void {
  */
 function recordChatStart(starterId: string, chatId: string): void {
   recordChatLink('started', starterId, chatId, { starterId, chatId });
+}
+
+/**
+ * Record that a chat opened the git worktree DorkOS made for it and that
+ * worktree's branch (DOR-5265), so "what did this chat make" includes where
+ * its work is. The chat is resolved through recorded re-keys; an exact repeat
+ * adds nothing. Never throws.
+ *
+ * @param made - The chat, the worktree's folder name and its branch, as given.
+ */
+export function recordChatWorktree(made: {
+  chatId: string;
+  worktree: string;
+  branch: string;
+}): void {
+  if (store === null) return;
+  let chatId = made.chatId;
+  try {
+    chatId = store.resolveRekey(made.chatId);
+  } catch {
+    // Unresolved, the chat's id as its caller gave it still names it.
+  }
+  const ids = { chatId, worktree: made.worktree };
+  const chat = entityRef('chat', chatId);
+  if (!chat.ok) {
+    logger.warn('[work-graph] a chat id has no reference form; edge not recorded', {
+      relation: 'opened',
+      ...ids,
+    });
+    return;
+  }
+  for (const [kind, id] of [
+    ['worktree', made.worktree],
+    ['branch', made.branch],
+  ] as const) {
+    const to = entityRef(kind, id);
+    if (!to.ok) {
+      logger.warn(`[work-graph] a ${kind} has no reference form; edge not recorded`, {
+        relation: 'opened',
+        ...ids,
+      });
+      continue;
+    }
+    recordLink({ from: chat.value, relation: 'opened', to: to.value, source: 'server' }, ids);
+  }
+}
+
+/**
+ * Record that a chat produced a to-do or a promise an agent made from its
+ * turn (DOR-5266), so "what did this chat make" includes it. Every id the
+ * server held for the chat is resolved through recorded re-keys; ids that
+ * resolve to two different chats record nothing, since neither can be picked.
+ * An exact repeat adds nothing. Never throws.
+ *
+ * @param made - The server-held ids of the chat, and the to-do's id.
+ */
+export function recordChatTodo(made: { chatIds: readonly string[]; todoId: string }): void {
+  const links = store;
+  if (links === null) return;
+  let chats: string[];
+  try {
+    chats = [...new Set(made.chatIds.map((id) => links.resolveRekey(id)))];
+  } catch {
+    // Unresolved, the ids as the server gave them still name the chat.
+    chats = [...new Set(made.chatIds)];
+  }
+  const [chatId] = chats;
+  if (chatId === undefined || chats.length !== 1) {
+    logger.warn('[work-graph] the call named no one chat; edge not recorded', {
+      relation: 'produced',
+      todoId: made.todoId,
+      chatIds: chats,
+    });
+    return;
+  }
+  const ids = { chatId, todoId: made.todoId };
+  const from = entityRef('chat', chatId);
+  const to = entityRef('todo', made.todoId);
+  if (!from.ok || !to.ok) {
+    logger.warn('[work-graph] a chat or to-do id has no reference form; edge not recorded', {
+      relation: 'produced',
+      ...ids,
+    });
+    return;
+  }
+  recordLink({ from: from.value, relation: 'produced', to: to.value, source: 'server' }, ids);
 }

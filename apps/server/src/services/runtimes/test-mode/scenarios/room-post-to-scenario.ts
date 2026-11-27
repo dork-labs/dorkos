@@ -19,10 +19,10 @@
  */
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { getRoomService } from '../../../rooms/index.js';
-import { homeOf, resolveAgentHome, turnAgentOf } from '../../../core/agent-identity/agent-home.js';
+import type { ScenarioContext } from '../interaction-gate.js';
 import { postAs } from '../room-reply-scenarios.js';
 import type { ScenarioFn } from '../scenario-store.js';
+import { worldOf } from '../scenario-world.js';
 
 /** What the scenario is sent: the room's id, a space, then the words. */
 const POST_TO_MESSAGE = /^\s*(\S+)\s+([\s\S]*\S)\s*$/;
@@ -51,22 +51,23 @@ export function handedOffDraft(prompt: string): string | undefined {
  * Post `<text>` into `<roomId>` from this chat, as the one line it answers with.
  *
  * @param content - The message: `<roomId> <text>`.
- * @param sessionId - The chat it runs in.
+ * @param ctx - The chat it runs in, and its world.
  * @param opts - The turn's options, for where it stands.
  */
 async function postFromThisChat(
   content: string,
-  sessionId: string,
+  ctx: ScenarioContext,
   opts: MessageOpts | undefined
 ): Promise<string> {
   const match = POST_TO_MESSAGE.exec(content);
   if (!match) return 'POST-TO-USAGE: send "<roomId> <text>"';
   const [, roomId = '', text = ''] = match;
-  const home = homeOf(resolveAgentHome(opts?.cwd, turnAgentOf(opts)));
+  const world = worldOf(ctx);
+  const home = world.agentHomeOf(opts);
   if (!home) return 'POST-TO-NO-AGENT: this chat stands in no agent’s folder';
-  const displayName = getRoomService().authorRegistry.agentNameOf(home) ?? '';
+  const displayName = world.rooms.agentNameOf(home) ?? '';
   try {
-    const result = await postAs({ agentPath: home, displayName }, sessionId, opts?.cwd, {
+    const result = await postAs(world, { agentPath: home, displayName }, ctx.sessionId, opts?.cwd, {
       roomId,
       text,
     });
@@ -84,7 +85,7 @@ export const roomPostToScenario: ScenarioFn = async function* (content, ctx, opt
     type: 'session_status',
     data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
   } as StreamEvent;
-  const said = await postFromThisChat(content, ctx.sessionId, opts);
+  const said = await postFromThisChat(content, ctx, opts);
   yield { type: 'text_delta', data: { text: said } } as StreamEvent;
   yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
 };

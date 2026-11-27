@@ -30,10 +30,12 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
 
     it('enumerates the complete current MCP declarations and every default node', () => {
       // These are measured source-census baselines, not a production allowlist.
-      // A declaration change must explain its real census drift here.
-      // +1 total/relevant/ordinary/inSession/external for
+      // An MCP declaration change must explain its real census drift here. A capability
+      // with no MCP surface is not counted: the mounted ids, conformance and the awareness
+      // lines pin those, and counting them made every parallel PR conflict on one line.
+      // +1 relevant/ordinary/inSession/external for
       // `operator.update_agent_config` (DOR-4266), which has no defaults.
-      // +1 total/relevant/ordinary/inSession/external for `link.resolve`
+      // +1 relevant/ordinary/inSession/external for `link.resolve`
       // (DOR-5046), which has no defaults.
       const topDefaults = relevant.map(
         (cap) =>
@@ -42,7 +44,6 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
           ).length
       );
       expect({
-        total: actual.capabilities.length,
         relevant: relevant.length,
         ordinary: relevant.filter((cap) => cap.surfaces.mcp?.servers.length).length,
         inSession: capabilitiesForMcpServer(actual, 'in-session').length,
@@ -52,27 +53,16 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
         topDefaultFields: topDefaults.reduce((a, b) => a + b, 0),
         topDefaultCapabilities: topDefaults.filter(Boolean).length,
       }).toEqual({
-        // +7 total for the person work-queue controls (no MCP surface, DOR-4978).
-        // +5 total for the to-do and promise doors and what cannot wake (no MCP surface, DOR-4978).
-        // +4 total for a person's to-do writes and promise changes (person-only, no MCP surface,
-        // DOR-4978).
-        // +1 total for the owner's answer to the credits offer (person-only, no MCP surface,
-        // DOR-4978).
-        // +1 total for a chat's runs list (GET /api/sessions/{id}/runs, no MCP surface, DOR-5212).
-        // +11 total for the agent registry's doors on `/api/mesh/*`: four reads and seven writes
-        // (no MCP surface, DOR-4978).
-        // +3 total for the app's task list and run reads (no MCP surface, DOR-4978).
-        // +4 total for a person's doors on the MCP servers every agent gets (person-only, no MCP
-        // surface, DOR-4978).
-        total: 180,
-        relevant: 132,
-        ordinary: 120,
-        inSession: 119,
-        external: 87,
+        // +4 relevant/ordinary/inSession/external for the work graph's reads (DOR-4970);
+        // +4 defaultNodes/topDefaultFields/topDefaultCapabilities for their page sizes.
+        relevant: 136,
+        ordinary: 124,
+        inSession: 123,
+        external: 91,
         private: 12,
-        defaultNodes: 29,
-        topDefaultFields: 15,
-        topDefaultCapabilities: 14,
+        defaultNodes: 33,
+        topDefaultFields: 19,
+        topDefaultCapabilities: 18,
       });
       expect(
         relevant
@@ -99,8 +89,8 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
       for (const id of CONNECTOR_RUNTIME_CAPABILITY_IDS) expect(actual.get(id), id).toBeDefined();
     });
 
-    it('preserves omitted and explicit values for all 29 original default nodes through SDK and registry', async () => {
-      expect(defaults).toHaveLength(29);
+    it('preserves omitted and explicit values for all 33 current default nodes through SDK and registry', async () => {
+      expect(defaults).toHaveLength(33);
       const received = new Map<string, unknown[]>();
       const probes = defaults.map((node, index) =>
         defineCapability({
@@ -125,7 +115,7 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
       });
       const { client } = await createCapabilityMcpClient(registry);
       const listed = (await client.listTools()).tools;
-      expect(listed).toHaveLength(29);
+      expect(listed).toHaveLength(33);
       for (const [index, node] of defaults.entries()) {
         const name = `default_node_${index}`;
         const value = node.schema.parse(undefined);
@@ -153,7 +143,7 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
         ).toEqual({ value: expected });
         expect(received.get(node.id + node.path)).toEqual([{ value }, { value: expected }]);
       }
-      expect(received.size).toBe(29);
+      expect(received.size).toBe(33);
     });
 
     it('preserves every current numeric coercion and rejects invalid values before the same handler', async () => {
@@ -166,7 +156,8 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
           )
           .map((node) => ({ id: cap.id, ...node }))
       );
-      expect(nodes).toHaveLength(11);
+      // +5 for the work graph reads' page sizes and tree depth (DOR-4970).
+      expect(nodes).toHaveLength(16);
       const handlers = nodes.map(() => vi.fn(async (_deps, input) => input));
       const probes = nodes.map((node, index) =>
         defineCapability({

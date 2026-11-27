@@ -9,7 +9,7 @@ import {
 } from '@dorkos/shared/connector-event-schemas';
 import type { ConnectorAgentOwnershipPort } from '../execution/authorization-service.js';
 import type { ConnectorProgramPrincipalService } from '../principal/program-principal-service.js';
-import type { ServerPrincipalProof } from '../principal/server-principal.js';
+import type { ServerPrincipalProof } from '../../core/connections-lease/index.js';
 import type { ConnectorSubscriptionStore } from './subscription-store.js';
 import type { ManagedEventConsentAuthority } from './grant-port.js';
 

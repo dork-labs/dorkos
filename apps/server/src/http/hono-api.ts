@@ -56,8 +56,10 @@ import capabilitiesRoutes from '../routes/capabilities.js';
 import cloudRoutes from '../routes/cloud.js';
 import { createCapabilitiesCatalogRoutes } from '../routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRoutes } from '../routes/capabilities-invoke.js';
+import type { CapabilityDoorPorts } from '../routes/capability-dispatch.js';
 import {
   assertNoCapabilityRouteCollisions,
+  assertCallerBarWired,
   createCapabilityHttpRoutes,
   mountedCapabilities,
 } from '../routes/capability-http.js';
@@ -87,7 +89,6 @@ import { createHarnessRoutes, type HarnessRouterDeps } from '../routes/harness.j
 import { createHealthRoutes, type HealthRouteDeps } from '../routes/health.js';
 import { createHubComputerRoutes } from '../routes/hub-computers.js';
 import { createHubLinkRoutes, hubLinkBodyRule } from '../routes/hub-link.js';
-import { createHeartbeatRoutes, type HeartbeatRouterDeps } from '../routes/heartbeats.js';
 import keepAwakeRoutes from '../routes/keep-awake.js';
 import { createMarketplaceRoutes, type MarketplaceRouteDeps } from '../routes/marketplace.js';
 import { createMcpRoutes, type McpServerFactory } from '../routes/mcp.js';
@@ -201,7 +202,7 @@ export interface ComposedGroupDeps {
    * started. The Activity feed is {@link ComposedGroupDeps.activity}.
    */
   extensions?: Omit<ExtensionsRouterDeps, 'activity'>;
-  /** What agents may do (`/api/permissions*`, `/api/agents/:id/permissions`). */
+  /** What agents may do (`/api/permissions*`, `PATCH /api/agents/:id/permissions`). */
   permissions?: PermissionsRouterDeps;
   /** What every agent is told, and what one agent will be told (spec `context-viewer`). */
   agentInstructions?: AgentInstructionsRouterDeps;
@@ -209,11 +210,6 @@ export interface ComposedGroupDeps {
   profile?: ProfileRouterDeps;
   /** The agent registry's routes (`/api/mesh`). Only handed over when the mesh started. */
   mesh?: MeshRouterDeps;
-  /**
-   * An agent's Heartbeat page (`GET /api/agents/:id/heartbeat`). Handed over
-   * when heartbeats start (`services/heartbeats`).
-   */
-  heartbeat?: HeartbeatRouterDeps;
   /** The embedded terminal's REST half (`/api/terminal`); its socket is an upgrade. */
   terminal?: TerminalManager;
   computers?: ComputerRoutesService;
@@ -237,6 +233,11 @@ export interface ComposedGroupDeps {
   /** Every `/api/connectors` group (`routes/connectors.ts`). */
   connectors?: ConnectorRoutesDeps;
   /**
+   * The bars and prechecks a capability that declares one runs on its REST
+   * path and on `/invoke` (the account-decision bar, DOR-4978).
+   */
+  capabilityPorts?: CapabilityDoorPorts;
+  /**
    * The signed webhook ingress (`POST /api/connectors/webhooks/:id`), which
    * answers to its signature before the body is parsed and before the session
    * gate.
@@ -251,7 +252,7 @@ export interface ComposedGroupDeps {
    * Document events (`/api/canvas/docs`). Always mounted; without this every
    * request answers that document events are not available yet.
    */
-  docChannel?: DocChannelHttp & { fileWrites?: Parameters<typeof createFileRoutes>[0] };
+  docChannel?: DocChannelHttp;
   /**
    * The agent registry first-run setup moves DorkBot's runtime through
    * (`/api/onboarding`, always mounted), for a boot that mounts no mesh routes
@@ -361,6 +362,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     createCapabilityHttpRoutes({
       registry: () => deps.capabilities,
       capabilities: capabilityRoutes,
+      ...(deps.capabilityPorts ? { ports: deps.capabilityPorts } : {}),
     })
   );
   app.route('/api/health', createHealthRoutes(deps));
@@ -398,7 +400,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/community-connections', createCommunityConnectionsRoutes());
   app.use('/api/communities/*', gateRemoteCommunities());
   app.route('/api/communities', createRemoteCommunitiesRoutes());
-  app.route('/api/files', createFileRoutes(deps.docChannel?.fileWrites));
+  // The media bytes; the JSON file doors are capabilities the mount serves (DOR-4978).
+  app.route('/api/files', createFileRoutes());
   app.route('/api/diff', diffRoutes);
   app.route('/api/workbench', workbenchServeRoutes);
   app.route('/api/uploads', uploadRoutes);
@@ -524,16 +527,14 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   }
   if (deps.mesh) app.route('/api/mesh', createMeshRoutes(deps.mesh));
   if (deps.discovery) app.route('/api/discovery', createDiscoveryRoutes(deps.discovery));
-  // Seven groups answer under `/api/agents`: the capability mount, agent instructions
-  // and these five. Each registers only its own concrete paths, and no two share one: the
-  // agents group's paths are all fixed words (`/current`, `/resolve`,
-  // `/create`), never an `:id`, so no order between them changes an answer.
+  // Five groups answer under `/api/agents`: the capability mount, the permissions group,
+  // agent instructions and these two. Each registers only its own concrete paths. The one
+  // path two share is `/api/agents/:id/permissions`: the mount (mounted first) serves its GET
+  // and the permissions group its PATCH, so the methods keep them apart. The agents group's
+  // paths are all fixed words (`/current`, `/resolve`, `/create`), never an `:id`.
   if (deps.mcpOAuth) app.route('/api/agents/mcp-oauth', createMcpOAuthRoutes(deps.mcpOAuth));
   // What the app's `/signed-in` page reads after any sign-in's callback.
   app.route('/api/sign-in-landings', createSignInLandingRoutes());
-  if (deps.heartbeat) {
-    app.route('/api/agents/:id/heartbeat', createHeartbeatRoutes(deps.heartbeat));
-  }
   if (deps.agents) app.route('/api/agents', createAgentsRoutes(deps.agents));
   // Three groups share this prefix. The catalog is one segment deeper than the
   // matrix's `/`, and is mounted first so nothing shorter can claim it.
@@ -542,7 +543,12 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   }
   app.route('/api/capabilities', capabilitiesRoutes);
   if (deps.capabilities) {
-    app.route('/api/capabilities', createCapabilitiesInvokeRoutes(deps.capabilities));
+    // A capability behind an owner bar never runs without its policy (DOR-4978).
+    assertCallerBarWired(deps.capabilities, deps.capabilityPorts);
+    app.route(
+      '/api/capabilities',
+      createCapabilitiesInvokeRoutes(deps.capabilities, deps.capabilityPorts)
+    );
   }
   app.route('/api', createApiDocsRoutes());
   if (deps.relay) {

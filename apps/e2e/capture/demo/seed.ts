@@ -184,11 +184,10 @@ export async function prepareFakeHome(): Promise<void> {
 /** Turn the social-queue extension on, the two answers a person gives in Settings. */
 async function turnOnSocialQueue(): Promise<void> {
   // A yes names the files the card showed (DOR-3068): its version and digest.
-  const listed =
-    await getJson<Array<{ id: string; manifest: { version: string }; digest?: string }>>(
-      '/api/extensions'
-    );
-  const shown = listed.find((ext) => ext.id === SOCIAL_QUEUE_ID);
+  const { extensions } = await getJson<{
+    extensions: Array<{ id: string; manifest: { version: string }; digest?: string }>;
+  }>('/api/extensions?limit=200');
+  const shown = extensions.find((ext) => ext.id === SOCIAL_QUEUE_ID);
   await postJson(`/api/extensions/${SOCIAL_QUEUE_ID}/approve`, {
     version: shown?.manifest.version,
     expectedDigest: shown?.digest,
@@ -320,10 +319,8 @@ async function buildMiniApp(): Promise<void> {
   await postJson('/api/extensions/reload', {});
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
-    const list = await getJson<{ id: string }[] | { extensions: { id: string }[] }>(
-      '/api/extensions'
-    );
-    const ids = (Array.isArray(list) ? list : list.extensions).map((ext) => ext.id);
+    const list = await getJson<{ extensions: { id: string }[] }>('/api/extensions?limit=200');
+    const ids = list.extensions.map((ext) => ext.id);
     if (ids.includes(MINI_APP.id)) {
       await postJson(`/api/extensions/${MINI_APP.id}/enable`, {});
       return;

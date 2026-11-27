@@ -23,9 +23,7 @@ import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import type { Context, NotFoundHandler } from 'hono';
 import type { ClientFilesHandler } from './client-files.js';
 import { problem, underMount } from '@dorkos/http-kit';
-
-/** The `/api` 404's explanation. */
-const API_NOT_FOUND_DETAIL = 'This server has no API route at that path.';
+import { API_NOT_FOUND_DETAIL } from './problems/api-not-found.js';
 
 /**
  * Characters a URL may carry as they are; everything else, and a `%` that does

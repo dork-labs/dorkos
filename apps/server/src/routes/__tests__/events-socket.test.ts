@@ -38,7 +38,10 @@ const ERRORED_ID = '88888888-8888-4888-8888-888888888888';
 const IDLE_ID = '99999999-9999-4999-8999-999999999999';
 
 /** A recording stand-in for an upgraded socket; collects every frame sent. */
-function recordingSocket(): { ws: WebSocket; frames: () => { event: string; data?: unknown }[] } {
+function recordingSocket(): {
+  ws: WebSocket;
+  frames: () => { event: string; data?: unknown; id?: string }[];
+} {
   const sent: string[] = [];
   const ws = {
     readyState: 1,
@@ -67,7 +70,12 @@ function recordingSocket(): { ws: WebSocket; frames: () => { event: string; data
  * @param attempt - Whatever this case wants to vary.
  */
 function upgradeAttempt(attempt: Partial<UpgradeAttempt> = {}): UpgradeAttempt {
-  return { headers: {}, locals: {}, ...attempt } as UpgradeAttempt;
+  return {
+    url: new URL('http://localhost/api/events'),
+    headers: {},
+    locals: {},
+    ...attempt,
+  } as UpgradeAttempt;
 }
 
 /**
@@ -166,5 +174,31 @@ describe('globalEventsRoute — the principal it registers', () => {
       locals: { user: { userId: 'user_owner', credential: 'api-key' } },
     });
     expect(principal).toEqual({ kind: 'program', userId: 'user_owner' });
+  });
+});
+
+describe('globalEventsRoute — resuming from ?resume=', () => {
+  it('replays what came after the cursor, then carries on live in order', async () => {
+    const first = recordingSocket();
+    const decision = await globalEventsRoute.authorize(upgradeAttempt());
+    if (!decision.ok) throw new Error('refused');
+    decision.open(first.ws);
+    eventFanOut.broadcast('tasks_changed', { n: 1 });
+    const cursor = first.frames().at(-1)!.id!;
+    eventFanOut.broadcast('tasks_changed', { n: 2 });
+
+    const url = new URL(`http://localhost/api/events?resume=${encodeURIComponent(cursor)}`);
+    const resumed = await globalEventsRoute.authorize(upgradeAttempt({ url }));
+    if (!resumed.ok) throw new Error('refused');
+    const second = recordingSocket();
+    resumed.open(second.ws);
+    eventFanOut.broadcast('tasks_changed', { n: 3 });
+
+    const frames = second.frames();
+    expect(frames[0]).toMatchObject({ event: 'connected', data: { resumed: true } });
+    const numbered = frames.filter((frame) => frame.id !== undefined);
+    expect(numbered.map((frame) => frame.data)).toEqual([{ n: 2 }, { n: 3 }]);
+    const seqs = numbered.map((frame) => Number(frame.id!.split('-').at(-1)));
+    expect(seqs[1]).toBe(seqs[0]! + 1);
   });
 });

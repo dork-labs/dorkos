@@ -22,7 +22,7 @@ import {
 } from '@dorkos/shared/connector-event-schemas';
 import { prepareEventReview, approvedEventSelections } from './subscription-review.js';
 import { readLastDelivery } from './subscription-delivery.js';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 
 /** Payload-free refusal at the explicit receive-consent boundary. */
 export class ConnectorSubscriptionError extends Error {

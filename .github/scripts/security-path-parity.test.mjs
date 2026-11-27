@@ -185,6 +185,15 @@ for (const [match, miss, deep] of [
   [`${S}/marketplace-mcp/tool-install.ts`, `${S}/marketplace-mcpx/tool-install.ts`, false],
   [`${S}/core-extensions/ensure-core-extensions.ts`, `${S}/core-extension/x.ts`, false],
   [`${S}/mcp-apps/mcp-app-resource-service.ts`, `${S}/mcp-app/mcp-app-resource-service.ts`, false],
+  // The capability doors on the front-door side (DOR-4978): chat from the web, runtime setup reads.
+  [
+    `${S}/core/session-relay-doors/session-relay-capabilities.ts`,
+    `${S}/core/session-relay-door/x.ts`,
+    false,
+  ],
+  [`${S}/core/runtime-doors/runtime-read-capabilities.ts`, `${S}/core/runtime-door/x.ts`, false],
+  // The chat reads on the capability mount (DOR-4978): who may read a chat.
+  [`${S}/session/reads/session-read-capabilities.ts`, `${S}/session/readers/x.ts`, false],
   // C2's new kernel homes (DOR-5303): code moved out of covered folders stays covered.
   [`${S}/core/child-bundle/child-bundle.ts`, `${S}/core/child-bundles/child-bundle.ts`, false],
   [`${S}/core/room-turn-ref/room-turn-ref.ts`, `${S}/core/room-turn-refs/room-turn-ref.ts`, false],
@@ -194,6 +203,12 @@ for (const [match, miss, deep] of [
     `${S}/core/room-worktree-name/room-worktree-name.ts`,
     `${S}/core/room-worktree-names/x.ts`,
     true,
+  ],
+  // C3's kernel home (DOR-5403): the Connections lease types left services/connectors/.
+  [
+    `${S}/core/connections-lease/runtime-principal-port.ts`,
+    `${S}/core/connections-leases/x.ts`,
+    false,
   ],
 ]) {
   test(`${match.slice(S.length + 1)} is on the main list${deep ? ' and the deep list' : ' only'}`, () => {
@@ -209,11 +224,84 @@ for (const [match, miss, deep] of [
   });
 }
 
-// C2's shared homes (DOR-5303): main list only.
+// C2's and C3's shared homes (DOR-5303, DOR-5403): main list only.
 for (const [match, miss] of [
   ['packages/shared/src/chat-client-id.ts', 'packages/shared/src/chat-client-ids.ts'],
   ['packages/shared/src/heartbeat-schemas.ts', 'packages/shared/src/heartbeat-schema.ts'],
   ['packages/shared/src/room-attachment-paths.ts', 'packages/shared/src/room-attachment-path.ts'],
+  // C3 (DOR-5403): the Connections lease's plain values left services/connectors/.
+  ['packages/shared/src/connections-lease.ts', 'packages/shared/src/connections-leases.ts'],
+  // The caller-bar labels (DOR-4978): who a person-bar caller is shown as, and the bars' declarations.
+  ['packages/shared/src/activity-schemas.ts', 'packages/shared/src/activity-schema.ts'],
+  ['packages/shared/src/capabilities.ts', 'packages/shared/src/capabilities-extra.ts'],
+  // C4 (DOR-5444): the test-mode scenario world and its stand-in cloud link left runtimes/test-mode/.
+  [
+    'apps/server/src/startup/test-composition/fake-cloud-link.ts',
+    'apps/server/src/startup/test-compositions/fake-cloud-link.ts',
+  ],
+  // DOR-4931: the secret files (host key, extension secrets) left @dorkos/shared for the server's lib/.
+  [
+    'apps/server/src/lib/secret-store/secret-file.ts',
+    'apps/server/src/lib/secret-stores/secret-file.ts',
+  ],
+  [
+    'apps/server/src/lib/secret-store/extension-secrets.ts',
+    'apps/server/src/lib/secret-store-notes/extension-secrets.ts',
+  ],
+  // C5 (DOR-5457): visibility homes. Whose browser an agent may use, and who sees which chats.
+  [
+    'apps/server/src/services/core/browser-registry/owner/owner-scope-resolver.ts',
+    'apps/server/src/services/core/browser-registry-x/owner-scope-resolver.ts',
+  ],
+  [
+    'apps/server/src/services/session/catalog/session-list-space-view.ts',
+    'apps/server/src/services/session/catalog/session-list-space-views.ts',
+  ],
+  [
+    'apps/server/src/services/session/chat-rows/chat-rows-port.ts',
+    'apps/server/src/services/session/chat-rowsx/chat-rows-port.ts',
+  ],
+  // C14 (DOR-5459): the asks port. What a consent card asks and how a yes is
+  // keyed and bound, and the slots the computer side asks through.
+  ['packages/shared/src/computer-asks.ts', 'packages/shared/src/computer-asks-old.ts'],
+  ['packages/shared/src/approval-text.ts', 'packages/shared/src/approval-texts.ts'],
+  ['packages/shared/src/consent-entries.ts', 'packages/shared/src/consent-entries-old.ts'],
+  ['packages/shared/src/folder-allows-card.ts', 'packages/shared/src/folder-allows-cards.ts'],
+  ['apps/server/src/startup/computer-asks.ts', 'apps/server/src/startup/computer-asks-old.ts'],
+  [
+    'apps/server/src/services/runtimes/computer-asks.ts',
+    'apps/server/src/services/runtimesx/computer-asks.ts',
+  ],
+  [
+    'apps/server/src/services/harness/computer-asks.ts',
+    'apps/server/src/services/harnessx/computer-asks.ts',
+  ],
+  [
+    'apps/server/src/services/core/approvals/computer-asks/consent-config.ts',
+    'apps/server/src/services/core/approvalsx/computer-asks/consent-config.ts',
+  ],
+  // C14 (DOR-5459): the CLI verbs that write or show consent, and the store they write through.
+  ['packages/cli/src/consent-config-store.ts', 'packages/cli/src/consent-config-stores.ts'],
+  ['packages/cli/src/harness-consent.ts', 'packages/cli/src/harness-consent.test.ts'],
+  ['packages/cli/src/harness-sync-command.ts', 'packages/cli/src/harnessx-sync-command.ts'],
+  ['packages/cli/src/harness-global-command.ts', 'packages/cli/src/lib/harness-global-command.ts'],
+  ['packages/cli/src/harness-adopt-command.ts', 'packages/cli/src/harness_adopt-command.ts'],
+  ['packages/cli/src/harness-hooks-command.ts', 'packages/cli/src/harness-hooks-command.tsx'],
+  // The bars in lib/ every door asks (DOR-4978, Security t1j): who the caller is, and who may
+  // make an account decision. Each file by name; a look-alike stays off.
+  ['apps/server/src/lib/caller-authority.ts', 'apps/server/src/lib/caller-authority-extra.ts'],
+  ['apps/server/src/lib/caller-principal.ts', 'apps/server/src/lib/caller-principals.ts'],
+  ['apps/server/src/lib/file-route-guards.ts', 'apps/server/src/lib/file-route-guard.ts'],
+  [
+    'apps/server/src/lib/person-without-session.ts',
+    'apps/server/src/lib/person-without-sessions.ts',
+  ],
+  [
+    'apps/server/src/lib/http/account-decision-bar.ts',
+    'apps/server/src/lib/http/account-decision-bars.ts',
+  ],
+  ['apps/server/src/lib/http/own-origin-write.ts', 'apps/server/src/lib/http/own-origin-writes.ts'],
+  ['apps/server/src/lib/http/person-bar.ts', 'apps/server/src/lib/http/person-bars.ts'],
 ]) {
   test(`${match} is on the main list only`, () => {
     assert.ok(existsSync(resolve(root, match)), `${match} no longer exists`);

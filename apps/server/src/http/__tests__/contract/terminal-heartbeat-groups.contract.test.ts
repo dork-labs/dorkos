@@ -19,13 +19,15 @@ import {
   type ComposedServer,
   type ContractCase,
 } from './harness.js';
-import { problemBody } from '@dorkos/http-kit';
+import { problemBody, validationProblemBody } from '@dorkos/http-kit';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../..');
 const UNKNOWN_ULID = '01JZZZZZZZZZZZZZZZZZZZZZZZ';
 const NO_AGENT = problemBody('not_found', { detail: 'No agent with that id.' });
-const BAD_DAYS = problemBody('invalid_request', {
-  detail: '`days` must be a whole number from 1 to 90.',
+// The capability mount's validation answer since DOR-4978: the same code, naming the field.
+const BAD_DAYS = validationProblemBody({
+  fieldErrors: { days: ['must be a whole number from 1 to 90'] },
+  formErrors: [],
 });
 const API_NOT_FOUND = problemBody('not_found', {
   detail: 'This server has no API route at that path.',

@@ -8,6 +8,7 @@ import {
   MOCK_LIMIT_HISTORY,
 } from './showcases/account-mock-data';
 import { SAMPLE_FULL_DETAIL } from './showcases/marketplace-summary-samples';
+import { PLAYGROUND_NO_WORK, playgroundChatTree } from './showcases/work-graph-mock-data';
 
 /**
  * The remote access report the playground's "server" answers with (DOR-2086).
@@ -310,6 +311,10 @@ export function createPlaygroundTransport(): Transport {
           seated: true,
         });
       }
+      // The work graph's reads are pages, which `null` is not: the chat
+      // header's pull request chip reads `items` off every page it is handed.
+      if (prop === 'getChatTree') return async (chatId: string) => playgroundChatTree(chatId);
+      if (prop === 'getChatWork' || prop === 'getAgentWork') return async () => PLAYGROUND_NO_WORK;
       if (prop === 'listNotifications') {
         return async () => ({ notifications: [], nextCursor: null, unreadCount: 0 });
       }

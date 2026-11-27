@@ -14,8 +14,8 @@
  * connection's settings, which succeeds, and undoing an agent's task mode,
  * where there is nothing to undo, and sending another chat's queued message
  * now, which joins the running turn, and `dork:` links, which open nothing.
- * Heartbeats, a hub's computers, the spend limit and a connected app's
- * writes-back switch come from their own mocks.
+ * Heartbeats, a hub's computers, the spend limit, a connected app's
+ * writes-back switch and the work graph's reads come from their own mocks.
  *
  * @module test-utils/mock-transport-slices
  */
@@ -29,6 +29,7 @@ import { createMockHeartbeatTransport } from './mock-heartbeat-transport.js';
 import { createMockHubTransport, createMockSessionRelayTransport } from './mock-hub-transport.js';
 import { createMockConnectorSpendingTransport } from './mock-connector-spending-transport.js';
 import { createMockConnectorWritesBackTransport } from './mock-connector-writes-back-transport.js';
+import { createMockWorkGraphTransport } from './mock-work-graph-transport.js';
 
 /** The methods {@link transportSliceMocks} covers. */
 type SliceMethods =
@@ -113,8 +114,10 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
   ReturnType<typeof createMockHubTransport> &
   ReturnType<typeof createMockSessionRelayTransport> &
   ReturnType<typeof createMockConnectorSpendingTransport> &
-  ReturnType<typeof createMockConnectorWritesBackTransport> {
+  ReturnType<typeof createMockConnectorWritesBackTransport> &
+  ReturnType<typeof createMockWorkGraphTransport> {
   return {
+    ...createMockWorkGraphTransport(),
     ...createMockConnectorSpendingTransport(),
     createSessionLocation: vi.fn().mockResolvedValue({ id: 'test-location' }),
     allocateSession: vi.fn(async (source: Parameters<Transport['allocateSession']>[0]) => ({

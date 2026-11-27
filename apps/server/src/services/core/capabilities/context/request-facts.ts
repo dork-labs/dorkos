@@ -53,4 +53,10 @@ export interface CapabilityRequestFacts {
    * who sent it, so the answer can say to make the change on this computer.
    */
   readonly frontDoorElsewhere: boolean;
+  /**
+   * Whether the request's signed-in account, if any, is the install's owner
+   * account: the document channel's operator rule (`isDocOperatorAccount`),
+   * login on or off. A chat canvas's file save asks it.
+   */
+  readonly ownerOrNoAccount: boolean;
 }

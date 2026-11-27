@@ -139,7 +139,7 @@ import type { McpAuthEvidencePort } from '../../mesh/mcp-revocation.js';
 export type PluginReloadActivityPort = (entry: PaidPluginReload) => void;
 import type { SessionStateProjector } from '../../session/index.js';
 import type { ConnectorRuntimeTools } from '../connector-tools.js';
-import type { RevokeConnectorTurnReason } from '../../connectors/runtime-principal-port.js';
+import type { RevokeConnectorTurnReason } from '../../core/connections-lease/index.js';
 import { claudeConnectorTurn } from './connector-turn-context.js';
 import { broadcastCommandsChanged } from './tooling/commands-changed-broadcast.js';
 import { overlayClaudeCodeHistory } from './history/claude-code-history-overlays.js';

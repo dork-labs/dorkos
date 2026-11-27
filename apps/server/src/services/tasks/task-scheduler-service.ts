@@ -13,7 +13,7 @@ import {
   type RelayDispatchVerdict,
 } from '../relay/task-dispatch/readiness.js';
 import { taskDispatchSubject } from '@dorkos/shared/relay-schemas';
-import { newDispatchId } from '@dorkos/shared/dispatch-id';
+import { newDispatchId } from '../../lib/identity/dispatch-id.js';
 import { createRunOutcomeTracker, settledRunFields } from '@dorkos/shared/run-outcome';
 import {
   createRefusedAskLog,

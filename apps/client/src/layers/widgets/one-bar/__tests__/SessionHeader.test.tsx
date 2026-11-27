@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render as baseRender, screen, cleanup } from '@testing-library/react';
+import type { ReactElement, ReactNode } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { OneBarRouteState } from '../model/one-bar-context';
 import { SessionHeader } from '../ui/SessionHeader';
 import { BarHarness } from './bar-harness';
@@ -13,13 +15,6 @@ vi.mock('@/layers/entities/room', async (importOriginal) => ({
   useDirectChat: () => ({ data: directChat.current }),
 }));
 
-vi.mock('@/layers/widgets/inbox-bell', () => ({
-  InboxBell: () => <button aria-label="Inbox">Inbox</button>,
-}));
-vi.mock('@/layers/features/right-panel', () => ({
-  RightPanelToggle: () => <button aria-label="Toggle right panel">Panel</button>,
-}));
-
 // The account badge reads the session's account through real hooks and has its
 // own suite (`features/status/__tests__/AccountBadge.test.tsx`, gate included);
 // here it is a stub that says where the bar puts it and which session it names.
@@ -29,7 +24,8 @@ vi.mock('@/layers/features/status', () => ({
   ),
 }));
 
-// Mock app store (used by CommandPaletteTrigger)
+// Mock app store (used by CommandPaletteTrigger), and the transport the chat's
+// pull requests are read through: this chat has none, so the chip stays away.
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state = {
@@ -37,6 +33,7 @@ vi.mock('@/layers/shared/model', () => ({
     };
     return selector ? selector(state) : state;
   },
+  useTransport: () => ({ getChatWork: async () => ({ items: [], nextCursor: null }) }),
 }));
 
 beforeAll(() => {
@@ -54,6 +51,19 @@ beforeAll(() => {
     })),
   });
 });
+
+/**
+ * Render with a query client of its own, kept across a `rerender`: the bar
+ * reads the chat's pull requests.
+ */
+function render(ui: ReactElement) {
+  const client = new QueryClient();
+  return baseRender(ui, {
+    wrapper: ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    ),
+  });
+}
 
 const VISUAL = { color: 'hsl(210 70% 55%)', emoji: '🤖' };
 

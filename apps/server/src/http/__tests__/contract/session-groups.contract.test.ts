@@ -146,7 +146,7 @@ contractSuite('the session routes, login off, nothing started', [
   {
     name: 'GET /api/sessions lists across runtimes, empty here',
     path: S,
-    expect: { status: 200, headers: JSON_TYPE, body: { sessions: [] } },
+    expect: { status: 200, headers: JSON_TYPE, body: { sessions: [], nextCursor: null } },
   },
   {
     name: 'GET /api/sessions with a limit that is not a number is a 400 with the details',
@@ -180,7 +180,7 @@ contractSuite('the session routes, login off, nothing started', [
     expect: {
       status: 200,
       headers: JSON_TYPE,
-      body: { sessions: [], agentActivity: {}, warnings: [] },
+      body: { sessions: [], nextCursor: null, agentActivity: {}, warnings: [] },
     },
   },
   {
@@ -975,7 +975,7 @@ contractSuite('the session routes, login off, nothing started', [
         vary: 'Origin',
         'x-content-type-options': 'nosniff',
       },
-      body: { sessions: [] },
+      body: { sessions: [], nextCursor: null },
     },
   },
 ]);
@@ -1235,7 +1235,7 @@ describe('contract: the session routes, driven by hand (login off)', { timeout: 
     const list = await call(server, 'GET', `${S}?cwd=${encodeURIComponent(WORK)}`);
     expect(list.status).toBe(200);
     const listed = z
-      .object({ sessions: z.array(SESSION) })
+      .object({ sessions: z.array(SESSION), nextCursor: z.string().nullable() })
       .strict()
       .parse(list.json);
     expect(listed.sessions.map((s) => s.id)).toContain(sessionId);

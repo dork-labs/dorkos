@@ -66,6 +66,7 @@ import { createMeshAgentRegistry } from '../services/marketplace/flows/mesh-agen
 import { UpdateFlow } from '../services/marketplace/flows/update.js';
 import { MarketplaceInstaller } from '../services/marketplace/installer/marketplace-installer.js';
 import { runAutoProjection } from '../services/harness/auto-project.js';
+import { createComputerAsks } from '../services/core/approvals/computer-asks/index.js';
 import { globalConsentRecorder } from '../services/marketplace/consent/global-plugin-consent.js';
 import { askAboutWithheldGlobalPlugins } from '../services/marketplace/consent/ask-withheld-global-plugins.js';
 import { ensurePersonalMarketplace } from '../services/marketplace-mcp/personal-marketplace.js';
@@ -353,9 +354,11 @@ export async function startMarketplace(deps: MarketplaceStartupDeps): Promise<St
         // assets to the project's other harnesses. Fire-and-forget; the
         // service is internally best-effort and never throws, but we still
         // catch here to honor the no-floating-promise convention.
-        runAutoProjection(ctx, { dorkHome, approvals: approvalService }).catch((err) => {
-          logger.warn('[Marketplace] Harness auto-projection failed', { err });
-        });
+        runAutoProjection(ctx, { dorkHome, asks: createComputerAsks(approvalService) }).catch(
+          (err) => {
+            logger.warn('[Marketplace] Harness auto-projection failed', { err });
+          }
+        );
       } catch (err) {
         logger.warn('[Marketplace] Post-change notification failed', { err });
       }
@@ -376,7 +379,7 @@ export async function startMarketplace(deps: MarketplaceStartupDeps): Promise<St
             packageName: ids.join(', '),
             action: remaining ? 'install' : 'uninstall',
           },
-          { dorkHome, approvals: approvalService }
+          { dorkHome, asks: createComputerAsks(approvalService) }
         );
         claudeRuntime?.refreshProjectCommands(root);
       },
@@ -401,7 +404,10 @@ export async function startMarketplace(deps: MarketplaceStartupDeps): Promise<St
       // project dev link's edits reach sessions through the projection alone.
       refreshPlugins: () => refreshRuntimePlugins(undefined),
       reproject: (ctx) =>
-        runAutoProjection({ ...ctx, action: 'install' }, { dorkHome, approvals: approvalService }),
+        runAutoProjection(
+          { ...ctx, action: 'install' },
+          { dorkHome, asks: createComputerAsks(approvalService) }
+        ),
       refreshProjectCommands: (projectPath) => claudeRuntime?.refreshProjectCommands(projectPath),
       // A person's surface: it names folders and build errors, so it goes
       // where `config_changed` goes and no agent reads it.
@@ -523,6 +529,7 @@ export async function startMarketplace(deps: MarketplaceStartupDeps): Promise<St
       onPluginsChanged,
       listAgentScopes,
       devLinks: devLinkService,
+      cacheRetention: marketplaceCacheRetention,
       logger,
     };
     logger.info('[Marketplace] MCP tools wired into external /mcp server');

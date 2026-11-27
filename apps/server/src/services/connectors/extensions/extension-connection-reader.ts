@@ -66,7 +66,7 @@ import type {
 import type { ConnectorRegistry } from '../registry.js';
 import type { ConnectorUsageStore } from '../execution/usage-store.js';
 import { releaseSpend, reserveExtensionSpend } from '../spending/spend-gate.js';
-import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../../core/connections-lease/index.js';
 import type { ExtensionConnectionApprovalStore } from './extension-connection-approvals.js';
 import type { LiveExtensionInstall } from './live-extension-install.js';
 

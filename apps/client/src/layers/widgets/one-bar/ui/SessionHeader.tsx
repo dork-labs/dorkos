@@ -10,6 +10,7 @@ import {
 import { AccountBadge } from '@/layers/features/status';
 import { useOneBarState } from '../model/one-bar-context';
 import { useLastKnownAgent } from '../model/use-last-known-agent';
+import { ChatWorkChip } from './ChatWorkChip';
 import { OneBar } from './OneBar';
 import { WorkLeftPill } from './WorkLeftPill';
 
@@ -22,7 +23,8 @@ import { WorkLeftPill } from './WorkLeftPill';
  * agent's face and name, then the session's own title (D1).
  *
  * **Nothing is fetched here** but whether this is an agent's Direct chat, a
- * cached read the chat panel already holds. The agent, its visual, the title and the origin
+ * cached read the chat panel already holds, and the chat's pull requests
+ * (`ChatWorkChip`). The agent, its visual, the title and the origin
  * are all resolved once by the shell and ride `useOneBarState` — the title is
  * the same runtime-owned string the sidebar rows render, out of the same cache
  * and through the same {@link sessionDisplayTitle} helper, so the bar cannot
@@ -203,6 +205,9 @@ export function SessionHeader({
               `claude-account-ui` §6.3). Draws nothing unless two or more
               accounts can be told apart. */}
           <AccountBadge sessionId={sessionId ?? null} />
+          {/* The pull requests this chat and its spin-offs opened or worked
+              on (W5). Draws nothing while there are none. */}
+          <ChatWorkChip sessionId={sessionId ?? null} />
           {/* Commands a Stop could not end, still running (DOR-3285). */}
           <WorkLeftPill sessionId={sessionId ?? null} />
         </>

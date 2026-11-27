@@ -39,6 +39,7 @@ import {
 } from './workspace-gate.js';
 import { writePortEnv } from './port-env.js';
 import { assertSafeWorkspaceSource } from './providers/git.js';
+import { announceWorktreeCreated } from './worktree-created.js';
 
 /** Resolved `workspace` config the service needs. */
 export interface WorkspaceServiceConfig {
@@ -212,6 +213,11 @@ export class WorkspaceService implements WorkspaceManager {
         removeHooks: approvedHooks.before_remove,
       };
       await this.deps.store.write(ready);
+      // A worktree made for a chat is the chat's work (DOR-5265). A clone is
+      // not a worktree, and a create with no chat names nobody. Never throws.
+      if (providerType === 'worktree' && gate.chatId) {
+        announceWorktreeCreated({ chatId: gate.chatId, worktree: nodePath.basename(path), branch });
+      }
       return ready;
     } catch (err) {
       if (staged) await fs.rm(staged, { recursive: true, force: true });

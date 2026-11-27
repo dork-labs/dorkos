@@ -192,7 +192,10 @@ import {
   hookPackagesToAskAbout,
   raisePassiveHookRows,
 } from '../services/harness/ask-withheld-hooks.js';
-import type { HookApprovalGateway } from '../services/harness/hook-approval.js';
+import {
+  createComputerAsks,
+  type HookApprovalGateway,
+} from '../services/core/approvals/computer-asks/index.js';
 import { storedHookDecisions, type HookDecisions } from '../services/harness/hook-consent.js';
 import { collectClaudeOnlyPlugins } from '../services/harness/claude-enabled-plugins.js';
 import { projectWithConsent, withProjectLock } from '../services/harness/project-with-consent.js';
@@ -515,7 +518,7 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
       if (gateway !== undefined && askedAbout.length > 0) {
         const askOpts = {
           projectPath: resolved,
-          approvals: gateway,
+          asks: createComputerAsks(gateway),
           dorkHome: deps.dorkHome,
           // Proven again: pass two can come hours after pass one. It answers
           // what it still held back, so a stale yes on a passive row leaves the

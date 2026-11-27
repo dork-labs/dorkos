@@ -8,7 +8,7 @@
  * "an agent installs a package" is exactly how stranger code would arrive.
  *
  * 1. A package's shell hooks are not projected into a project's agent tools
- *    until a person approves those exact commands (`harness/hook-approval.ts`).
+ *    until a person approves those exact commands (`core/approvals/computer-asks/hook-card-ask.ts`).
  * 2. A globally installed package that runs anything on its own loads into no
  *    session until a person approves it (`marketplace/consent/`).
  * 3. Extension code from a source the person has not trusted does not run

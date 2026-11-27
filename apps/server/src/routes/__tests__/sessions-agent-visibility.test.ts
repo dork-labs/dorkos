@@ -90,6 +90,7 @@ import { recordDispatchStart } from '../../services/observability/dispatch-buffe
 import { noopLogger } from '@dorkos/shared/logger';
 import { composeRegistry } from '../../services/core/capabilities/index.js';
 import { diffDomain } from '../../services/diff/diff-capabilities.js';
+import { sessionReadsDomain } from '../../services/core/self-description/dorkos-registry.js';
 import { registerClaudeCodeFacts } from '../../startup/register-claude-code-facts.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
@@ -97,11 +98,14 @@ import { registerClaudeCodeFacts } from '../../startup/register-claude-code-fact
 registerClaudeCodeFacts();
 
 const admission = new MainRequestAdmission();
+/** The session routes' deps; the `/recent` test lends them an agent folder. */
+const sessionDeps: { meshCore?: never } = {};
 // Routed as the running server routes: the diff routes answer from Hono, and
-// all but the raw bytes are capabilities the mount serves.
+// all but the raw bytes are capabilities the mount serves, as are the chat reads.
 const server = listeningServer(
   composedListener(admission, {
-    capabilities: composeRegistry([diffDomain], { logger: noopLogger }),
+    capabilities: composeRegistry([diffDomain, sessionReadsDomain], { logger: noopLogger }),
+    sessions: sessionDeps,
   })
 );
 
@@ -167,6 +171,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete sessionDeps.meshCore;
   resetSessionVisibility();
   resetMessageDispatcher();
   setMessageQueueStore(undefined);
@@ -210,6 +215,37 @@ describe('an agent reading sessions', () => {
     const recent = await request(server).get('/api/sessions/recent').set(AGENT);
     expect(recent.status).toBe(200);
     expect(recent.body.sessions.map((s: { id: string }) => s.id)).not.toContain(PRIVATE);
+  });
+
+  it("GET / fills an agent's page past a person's chat, and its cursor works for nobody else", async () => {
+    // Newest first, the private chat first: filtered before the cut, the page still holds one.
+    const newer = { ...sessionRow(PRIVATE), updatedAt: '2026-10-02' };
+    fakeRuntime.listSessions.mockResolvedValue([newer, sessionRow(WORK)]);
+    const page = await request(server).get('/api/sessions?limit=1').set(AGENT);
+    expect(page.body.sessions.map((s: { id: string }) => s.id)).toEqual([WORK]);
+    const owners = await request(server).get('/api/sessions?limit=1');
+    expect(owners.body.sessions.map((s: { id: string }) => s.id)).toEqual([PRIVATE]);
+    const cursor = encodeURIComponent(owners.body.nextCursor);
+    expect((await request(server).get(`/api/sessions?cursor=${cursor}`)).status).toBe(200);
+    expect((await request(server).get(`/api/sessions?cursor=${cursor}`).set(AGENT)).status).toBe(
+      400
+    );
+  });
+
+  it("GET /recent fills an agent's page past a person's chat", async () => {
+    // One agent in the project folder, so `/recent` has a folder to list.
+    sessionDeps.meshCore = {
+      listWithPaths: () => [{ projectPath: '/mock/home/project' }],
+    } as never;
+    const newer = { ...sessionRow(PRIVATE), updatedAt: '2026-10-02', cwd: '/mock/home/project' };
+    fakeRuntime.listSessions.mockResolvedValue([
+      newer,
+      { ...sessionRow(WORK), cwd: '/mock/home/project' },
+    ]);
+    const recent = (headers = {}) =>
+      request(server).get('/api/sessions/recent?limit=1').set(headers);
+    expect((await recent(AGENT)).body.sessions.map((s: { id: string }) => s.id)).toEqual([WORK]);
+    expect((await recent()).body.sessions.map((s: { id: string }) => s.id)).toEqual([PRIVATE]);
   });
 
   it('GET /api/debug/sessions/:id applies the same check', async () => {
@@ -309,6 +345,36 @@ describe('the guard in front of every session route', () => {
     expect(res.body.code).toBe('session_not_found');
   });
 
+  // The reads the mount serves fold the guard in (DOR-4978): the hand route's
+  // refusal, plus a `detail` that repeats its title, as every mount refusal has.
+  it.each([['/settings'], ['/runtime-type']])(
+    'get /:id%s refuses a private chat as a hand route does',
+    async (tail) => {
+      const hand = await request(server).get(`/api/sessions/${PRIVATE}/queue`).set(AGENT);
+      const moved = await request(server).get(`/api/sessions/${PRIVATE}${tail}`).set(AGENT);
+
+      expect(moved.status).toBe(hand.status);
+      expect(moved.body).toEqual({ ...hand.body, detail: hand.body.title });
+    }
+  );
+
+  it.each([['/settings'], ['/runtime-type']])(
+    "get /:id%s refuses an id that is not a chat in the hand route's words",
+    async (tail) => {
+      const hand = await request(server).get('/api/sessions/not-a-chat/queue');
+      const moved = await request(server).get(`/api/sessions/not-a-chat${tail}`);
+
+      expect(moved.status).toBe(400);
+      expect(moved.body).toEqual(hand.body);
+    }
+  );
+
+  it("lets the app read a person's own chat through the moved reads", async () => {
+    const res = await request(server).get(`/api/sessions/${PRIVATE}/settings`);
+
+    expect(res.status).toBe(200);
+  });
+
   // `/limit-history` answers its own 404 for a session that never hit a limit.
   const pastTheGuard = everyRoute.filter(([, tail]) => tail !== '/limit-history');
   it.each(pastTheGuard)('%s /:id%s on agent work passes the guard', async (verb, tail) => {
@@ -405,6 +471,7 @@ describe('the owner reading sessions', () => {
 
   it('lists every session', async () => {
     const list = await request(server).get('/api/sessions');
-    expect(list.body.sessions.map((s: { id: string }) => s.id)).toEqual([PRIVATE, WORK]);
+    // Same activity time: the higher id first, the tie-break a page cursor needs (DOR-4982).
+    expect(list.body.sessions.map((s: { id: string }) => s.id)).toEqual([WORK, PRIVATE]);
   });
 });

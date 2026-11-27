@@ -328,7 +328,7 @@ describe('parseRecentSessionsResponse (DOR-2233)', () => {
   it('drops a session whose id is not a UUID and keeps the rest of the list', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const stray = createMockSession({ id: 'notes' });
-    const body = { sessions: [first, stray, second], agentActivity: {} };
+    const body = { sessions: [first, stray, second], nextCursor: null, agentActivity: {} };
     expect(parseRecentSessionsResponse(body).sessions.map((s) => s.id)).toEqual([
       first.id,
       second.id,
@@ -337,19 +337,25 @@ describe('parseRecentSessionsResponse (DOR-2233)', () => {
 
   it('drops a malformed row and warns about it once, not on every poll', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const body = { sessions: [first, { id: first.id, title: 7 }], agentActivity: {} };
+    const body = {
+      sessions: [first, { id: first.id, title: 7 }],
+      nextCursor: null,
+      agentActivity: {},
+    };
     expect(parseRecentSessionsResponse(body).sessions).toEqual([first]);
     parseRecentSessionsResponse(body);
     expect(warn).toHaveBeenCalledOnce();
   });
 
   it('still rejects a broken envelope', () => {
-    expect(() => parseRecentSessionsResponse({ sessions: 'nope', agentActivity: {} })).toThrow();
+    expect(() =>
+      parseRecentSessionsResponse({ sessions: 'nope', nextCursor: null, agentActivity: {} })
+    ).toThrow();
   });
 
   it('is what the transport uses for the recent-sessions poll', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const body = { sessions: [second, { id: 42 }], agentActivity: {} };
+    const body = { sessions: [second, { id: 42 }], nextCursor: null, agentActivity: {} };
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status: 200 }))
@@ -357,5 +363,22 @@ describe('parseRecentSessionsResponse (DOR-2233)', () => {
     const methods = createSessionMethods('/api', () => 'host', new Map(), new Map());
     const result = await methods.listRecentSessions(5);
     expect(result.sessions.map((s) => s.id)).toEqual([second.id]);
+  });
+});
+
+describe('listSessions (DOR-4982)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('reads the first page of 200, once, in the order the server sent: what the rail showed', async () => {
+    const first = createMockSession({ id: '0b8e5a52-3c1d-4e6f-9a7b-2c3d4e5f6a7b' });
+    const second = createMockSession({ id: '7d1c2b3a-4e5f-4a6b-8c7d-9e0f1a2b3c4d' });
+    const body = { sessions: [second, first], nextCursor: 'more' };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(body)));
+    vi.stubGlobal('fetch', fetchMock);
+    const methods = createSessionMethods('/api', () => 'host', new Map(), new Map());
+    const result = await methods.listSessions('/p');
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('limit=200');
+    expect(result.sessions.map((s) => s.id)).toEqual([second.id, first.id]);
   });
 });

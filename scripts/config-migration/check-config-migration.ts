@@ -2,6 +2,17 @@
  * A pull request that changes the user config's shape must bring the conf
  * migration it needs, or say in writing why it needs none (DOR-5123).
  *
+ * --help
+ * Purpose: a change to the user config's shape must bring the conf migration it
+ *          needs, or say in writing why it needs none.
+ * Runs in: the required `typecheck` job; by hand.
+ * To fix:  add a new `CONFIG_MIGRATIONS` key (`adding-config-fields` skill), or an
+ *          entry with path, change and reason in
+ *          scripts/config-migration/no-migration.json. A stale shape file:
+ *          `pnpm check:config-migration -- --update`.
+ * Usage:   pnpm check:config-migration [-- --base <ref> | --update]
+ * --help end
+ *
  * WHY THIS EXISTS. The manual release had a person read the schema diff and
  * ask "does this need a migration?" (`/system:release` Check 6). The daily
  * release has no person, so the question moves to the pull request that makes
@@ -62,6 +73,7 @@ import {
   type ConfigShape,
 } from './shape.ts';
 import { MIGRATIONS_FILE, compareSemver, readMigrationTable } from '../release/migration-table.ts';
+import { exitOnHelp } from '../lib/gate-help.mjs';
 
 /** The committed shape, repo-relative. */
 export const SHAPE_PATH = 'scripts/config-migration/shape.json';
@@ -333,6 +345,7 @@ export function main(argv: readonly string[]): number {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  exitOnHelp(import.meta.url);
   try {
     process.exit(main(process.argv.slice(2)));
   } catch (error) {

@@ -33,8 +33,6 @@ import { sessionSearchSchema } from '@/layers/shared/lib';
 import { SessionRouteHeader } from '../ui/SessionRouteHeader';
 import { BarHarness } from './bar-harness';
 
-vi.mock('@/layers/widgets/inbox-bell', () => ({ InboxBell: () => null }));
-vi.mock('@/layers/features/right-panel', () => ({ RightPanelToggle: () => null }));
 vi.mock('@/layers/features/status', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/features/status')>()),
   AccountBadge: () => <span data-testid="account-badge" />,

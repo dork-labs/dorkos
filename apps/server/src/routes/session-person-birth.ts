@@ -10,12 +10,16 @@ import type { SessionLocationStore } from '../services/core/runtime-seam/session
 import { primaryOf } from '../services/session/resolution/session-key-registry.js';
 import { problemBody } from '@dorkos/http-kit';
 import type { Problem } from '@dorkos/shared/problem';
-import { assessPerson, type PersonBarCopy, type PersonRefusal } from './extensions-person-bar.js';
+import {
+  assessPerson,
+  PERSON_BAR_CROSS_SITE,
+  type PersonBarCopy,
+  type PersonRefusal,
+} from '../lib/http/person-bar.js';
 
 const PERSON_BAR: PersonBarCopy = {
   code: 'person_only',
   subject: 'chat folders',
-  crossSite: () => 'Open DorkOS to choose a chat folder.',
   agent: 'Only a person can choose a chat folder.',
 };
 
@@ -27,7 +31,7 @@ const PERSON_BAR: PersonBarCopy = {
  */
 export function assessSessionLocationPerson(facts: RequestFacts): PersonRefusal | null {
   if (facts.headers['sec-fetch-site'] === 'cross-site') {
-    const body = problemBody('person_only', { detail: PERSON_BAR.crossSite('another site') });
+    const body = problemBody('person_only', { detail: PERSON_BAR_CROSS_SITE });
     return { status: body.status, body };
   }
   return assessPerson(facts, PERSON_BAR);

@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # security-verdict-check.sh — did the cloud Security lens pass this exact head?
 #
+# --help
+# Purpose: did the cloud Security lens pass this exact head? Advisory for now.
+# Runs in: the `security-verdict` job of claude-code-review.yml.
+# To fix:  Must findings: fix them and push; the lens reviews the new head. No
+#          verdict: the cloud review has not judged this head yet.
+# Usage:   scripts/security-verdict-check.sh <pr-number> <head-sha>
+# --help end
+#
 #   scripts/security-verdict-check.sh <pr-number> <head-sha>
 #
 # The decision behind the `security-verdict` job in
@@ -26,6 +34,12 @@
 #
 # Exit codes: 0 pass; 1 fail, or no verdict for this head; 2 usage, or GitHub
 # could not be read. Fixtures: scripts/test-security-verdict-check.sh.
+
+# --help (DOR-4950). A gate checked out alone, as the PR-side gates are, runs without it.
+gate_help="$(dirname "$0")/lib/gate-help.sh"
+# shellcheck source=lib/gate-help.sh
+[ ! -r "$gate_help" ] || . "$gate_help"
+
 set -euo pipefail
 
 GH=${GH:-gh}

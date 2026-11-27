@@ -57,7 +57,7 @@ export type UpsertResult = 'registered' | 'duplicate-id';
  * costs nothing to pass. The `agents_changed` broadcast built from it does NOT
  * carry it: that frame goes to every connection on the global stream, including
  * an agent's, nothing on the client reads it, and the narrower payload is the
- * one that needs no argument (`services/core/streams/live-change-broadcasts.ts`).
+ * one that needs no argument (`services/core/streams/screen/live-change-broadcasts.ts`).
  */
 export interface AgentIdentityChange {
   /** What happened to the row. */

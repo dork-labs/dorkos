@@ -19,11 +19,13 @@ import { fetchJSON, buildQueryString } from './http-client';
 /** Create the Harness Sync methods bound to a base URL. */
 export function createHarnessMethods(baseUrl: string) {
   return {
+    // Stays hand-written: `GET /api/harness/status` has no operationId (DOR-5473).
     getHarnessStatus(projectPath: string): Promise<HarnessStatusResponse> {
       const qs = buildQueryString({ projectPath });
       return fetchJSON<HarnessStatusResponse>(baseUrl, `/harness/status${qs}`);
     },
 
+    // Stays hand-written: `POST /api/harness/sync` has no operationId (DOR-5473).
     syncHarness(projectPath: string): Promise<HarnessSyncResponse> {
       // A body rather than a query string, unlike the read beside it: this is a
       // write, and a path in a URL is a path in an access log.
@@ -33,6 +35,7 @@ export function createHarnessMethods(baseUrl: string) {
       });
     },
 
+    // Stays hand-written: `POST /api/harness/adopt` has no operationId (DOR-5473).
     adoptHarness(projectPath: string, name: string): Promise<HarnessAdoptResponse> {
       // A body for the same reason the sync uses one, plus a second: the skill's
       // name is a folder name, and a folder name in a URL is a folder name in an

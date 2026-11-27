@@ -2,6 +2,14 @@
 # Check that no source directory has too many files (cognitive load guard).
 # Thresholds:  WARN >= 15,  ERROR >= 25
 #
+# --help
+# Purpose: fail a commit that adds a source file to a directory holding 25 or
+#          more; list every directory over 25 without failing.
+# Runs in: pre-commit (`dir-size`); by hand.
+# To fix:  split the directory into subdirectories by subject.
+# Usage:   bash scripts/check-dir-size.sh   (reads the staged files)
+# --help end
+#
 # Two tiers, on purpose (DOR-930):
 #   GROWTH (blocking)  — dirs this commit is ADDING a source file to (via
 #     `git diff --cached --diff-filter=ACR`: adds, copies, renames all land a
@@ -18,6 +26,11 @@
 #     on every commit without blocking unrelated work. It never exits
 #     non-zero, and to stay quiet on unrelated commits it only speaks at/over
 #     ERROR_THRESHOLD, not the lower WARN_THRESHOLD.
+
+# --help (DOR-4950). A gate checked out alone, as the PR-side gates are, runs without it.
+gate_help="$(dirname "$0")/lib/gate-help.sh"
+# shellcheck source=lib/gate-help.sh
+[ ! -r "$gate_help" ] || . "$gate_help"
 
 set -euo pipefail
 

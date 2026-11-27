@@ -164,9 +164,15 @@ export class InstallationFileWrites {
       }
       const hash = sha256(input.content);
       if (hash === currentHash)
-        return { status: 200 as const, body: { ok: true, hash, effect: 'no_op' } };
+        return {
+          status: 200 as const,
+          body: { ok: true as const, hash, effect: 'no_op' as const },
+        };
       await this.replace(input, identity!, lease, currentHash);
-      return { status: 200 as const, body: { ok: true, hash, effect: 'changed' } };
+      return {
+        status: 200 as const,
+        body: { ok: true as const, hash, effect: 'changed' as const },
+      };
     });
   }
 

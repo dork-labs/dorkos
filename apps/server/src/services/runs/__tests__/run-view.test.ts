@@ -37,7 +37,7 @@ import {
   editQueuedMessage,
 } from '../../session/queued-message-edits.js';
 import type { DurableStreamSink } from '../../core/streams/durable-stream-sink.js';
-import { deliverSessionStream } from '../../core/streams/session-stream-delivery.js';
+import { deliverSessionStream } from '../../core/streams/screen/session-stream-delivery.js';
 import { installRunRecord, uninstallRunRecord } from '../index.js';
 import { chatRunsPage } from '../run-capabilities.js';
 import { RUN_LEASE_MS, RunStore } from '../run-store.js';

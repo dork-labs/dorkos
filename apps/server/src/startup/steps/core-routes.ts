@@ -36,6 +36,7 @@ import { roomSessionPlace } from '../../services/rooms/repo/room-turn-place.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { levelReachFor } from './level-reach.js';
 import { createAgentLevelReader } from '../../services/core/permissions/agent-level.js';
+import { setAgentPermissionViews } from '../../services/core/permissions/agent-permission-views.js';
 import { resolveAgentRuntimeType } from '../../services/runtimes/shared/resolve-agent-runtime-type.js';
 import { logger } from '../../lib/logger.js';
 import { subscribeRuntimeTurns } from '../../services/session/runtime-turns/runtime-turn.js';
@@ -77,12 +78,9 @@ import type { ClaimDataDirectoryResult } from './data-directory.js';
 import type { ServerRefs } from '../server-refs.js';
 import { appScreenRunsIn } from '../../routes/app-screen-runs.js';
 import { personSessionRequired } from '../../services/core/auth/gate-policy.js';
-import {
-  watchSessionRelaySwitch,
-  wireSessionRelay,
-} from '../../services/core/session-relay/index.js';
 import { wireConnectorSpending } from '../../services/connectors/spending/spending-port.js';
-import { remoteAccessOn } from '../../middleware/remote-access-switch.js';
+import { connectorStoreUnavailable } from '../../routes/connector-owner-boundary.js';
+import { wireSessionListSpaceView, wireSessionRelayStep } from '../space-views.js';
 
 /** What {@link mountCoreRoutes} reads from the startup steps before it. */
 export interface MountCoreRoutesInput {
@@ -96,7 +94,6 @@ export interface MountCoreRoutesInput {
   connectorRegistry: WireCoreStoresResult['connectorRegistry'];
   connectorManagementReviews: WireConnectorServicesResult['connectorManagementReviews'];
   connectorReconciliation: WireConnectorServicesResult['connectorReconciliation'];
-  connectorGrantExclusions: WireConnectorServicesResult['connectorGrantExclusions'];
   connectorOperatorQueries: WireConnectorServicesResult['connectorOperatorQueries'];
   catalogLogos: WireConnectorServicesResult['catalogLogos'];
   connectorAuthenticationFlows: WireConnectorServicesResult['connectorAuthenticationFlows'];
@@ -145,7 +142,6 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     connectorRegistry,
     connectorManagementReviews,
     connectorReconciliation,
-    connectorGrantExclusions,
     connectorOperatorQueries,
     catalogLogos,
     connectorAuthenticationFlows,
@@ -202,7 +198,6 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
       registry: connectorRegistry,
       reviews: connectorManagementReviews,
       reconciliation: connectorReconciliation,
-      exclusions: connectorGrantExclusions,
       ...connectorOwnerBoundary,
       ...(refs.connectorAgentRequests && { agentRequests: refs.connectorAgentRequests }),
       agentApprovals: (requestId: string) => approvedByField(db, requestId),
@@ -233,6 +228,12 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     },
   };
   deps.connectors = connectorRoutes;
+  // The account-decision bar and the connector store's 503 for the capabilities
+  // that declare them, on their REST paths and on `/invoke` (DOR-4978).
+  deps.capabilityPorts = {
+    accountDecision: connectorOwnerBoundary,
+    prechecks: { 'connector-store': () => connectorStoreUnavailable(connectorRegistry) },
+  };
   mountedRouters.push('connectors');
 
   // Relay routes, only when Relay is enabled and started.
@@ -272,7 +273,6 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   // Agents wake on a beat or an event (spec `heartbeats`); sets the beat-chat
   // label resolver, so it runs before the broadcaster takes its resolvers.
   heartbeats.startHeartbeats({
-    routes: deps,
     origins,
     db,
     meshCore: () => refs.meshCore,
@@ -287,6 +287,8 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   // agent sees agent work, never a person's own chat.
   const { resolveTaskOrigins, resolveStartedBy } = origins;
   wireSessionVisibility({ db, accounts: auditAccounts, resolveTaskOrigins, resolveStartedBy });
+  // And the session-list stream reads that rule from the space side (§5.12).
+  wireSessionListSpaceView();
   // Live session upserts carry the flow items a chat works on, exactly as
   // `GET /api/sessions` does, so the first upsert after a list read no longer
   // wipes them from the client's cache (spec `flow-multiproject` §6.8, D10).
@@ -323,18 +325,12 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     sessionRuntime: (sessionId) => runtimeRegistry.resolveForSession(sessionId),
   });
 
-  // The session relay answers the owner's own DorkOS on the web with the same
-  // origin lookups and room port the session routes use, so a room turn, a
-  // task run or a beat reads the same there as here (spec
-  // `everything-is-a-space` B2). Read per request, never copied.
-  wireSessionRelay({
+  // The session relay, with the session routes' origin lookups and room port (B2).
+  wireSessionRelayStep({
     meshCore: () => refs.meshCore,
     origins,
     roomSessionPlace: () => refs.roomSessionPlacePort,
-    remoteAccessOn,
   });
-  // Switching Chat from the web off closes a live relay at once.
-  watchSessionRelaySwitch();
 
   // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).
   // ALWAYS ON: fans every registered runtime's transition-only session-list
@@ -629,19 +625,19 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     arrivalRecord.clear(agentId);
     void permissionObserver.forget(agentId);
   });
-  deps.permissions = {
+  deps.permissions = { permissions: permissionService, activity: activityService };
+  mountedRouters.push('permissions');
+  // One agent's permissions and the profile's Level row (the launch rule itself), on the mount.
+  setAgentPermissionViews({
     permissions: permissionService,
-    activity: activityService,
-    // The profile's Level row: the launch rule itself, read for one agent.
-    readAgentLevel: createAgentLevelReader({
+    readLevel: createAgentLevelReader({
       agentPath: (agentId) =>
         refs.meshCore?.listWithPaths().find((agent) => agent.id === agentId)?.projectPath,
       runtimeType: resolveAgentRuntimeType,
       capabilities: (type) =>
         runtimeRegistry.has(type) ? runtimeRegistry.get(type).getCapabilities() : undefined,
     }),
-  };
-  mountedRouters.push('permissions');
+  });
 
   // What every agent is told, and what one agent will be told, for a person
   // (spec `context-viewer` phase 3). Read only.

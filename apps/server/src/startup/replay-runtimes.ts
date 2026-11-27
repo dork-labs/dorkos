@@ -1,8 +1,9 @@
 import { env } from '../env.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { composeReplayCloud } from '../services/runtimes/test-mode/compose-test-cloud.js';
+import { composeReplayCloud } from './test-composition/compose-test-cloud.js';
 import { ReplaySource } from '../services/runtimes/test-mode/replay/source.js';
 import { TestModeRuntime } from '../services/runtimes/test-mode/test-mode-runtime.js';
+import { composeScenarioWorld } from './test-composition/scenario-world.js';
 import type { RuntimeStartupDeps, RegisteredRuntimes } from './runtimes.js';
 
 /** Register only data-driven test-mode instances; no real runtime or model client is constructed. */
@@ -12,9 +13,11 @@ export function registerReplayRuntimes(deps: RuntimeStartupDeps): RegisteredRunt
   }
   const source = new ReplaySource(deps.dorkHome, env.DORKOS_REPLAY_RECORDING);
   composeReplayCloud();
+  const world = composeScenarioWorld();
   const runtimes = ['test-mode', 'claude-code', 'codex'].map((type) => {
     const runtime = new TestModeRuntime(type, source);
     runtime.setSessionSettings(runtimeRegistry);
+    runtime.useScenarioWorld(world);
     runtimeRegistry.register(runtime);
     return runtime;
   });

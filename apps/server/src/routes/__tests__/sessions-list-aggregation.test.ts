@@ -533,9 +533,8 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
     const res = await request(testServer).get('/api/sessions');
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({
-      sessions: [expect.objectContaining({ id: 'a-1', runtime: 'fake-a' })],
-    });
+    const only = [expect.objectContaining({ id: 'a-1', runtime: 'fake-a' })];
+    expect(res.body).toEqual({ sessions: only, nextCursor: null });
   });
 
   // ---------------------------------------------------------------------------

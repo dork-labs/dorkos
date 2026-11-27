@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CanonicalConnectorRuntimeAuthorityResolver } from '../runtime-authority-resolver.js';
-import { ConnectorRuntimeAuthorityError } from '../../runtime-principal-port.js';
+import { ConnectorRuntimeAuthorityError } from '@dorkos/shared/connections-lease';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 

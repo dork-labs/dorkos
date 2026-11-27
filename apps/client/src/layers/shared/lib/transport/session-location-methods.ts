@@ -14,6 +14,7 @@ export function createSessionLocationMethods(
   baseUrl: string
 ): Pick<Transport, 'allocateSession' | 'createSessionLocation' | 'getSessionLocation'> {
   return {
+    // Stays hand-written: `POST /api/session-locations` has no operationId (DOR-5473).
     createSessionLocation(cwd: string): Promise<{ id: string }> {
       return fetchJSON(baseUrl, '/session-locations', {
         method: 'POST',
@@ -21,6 +22,8 @@ export function createSessionLocationMethods(
       });
     },
 
+    // Stays hand-written: the `/api/session-locations/.../chats` paths have no
+    // operationId (DOR-5473).
     async allocateSession(source: SessionAllocationSource): Promise<SessionAllocationReceipt> {
       const savedFolder = source.kind === 'location';
       const path = savedFolder
@@ -35,6 +38,7 @@ export function createSessionLocationMethods(
       return allocationReceipt.parse(result);
     },
 
+    // Stays hand-written: `GET /api/session-locations/{id}` has no operationId (DOR-5473).
     getSessionLocation(id: string): Promise<{ cwd: string }> {
       return fetchJSON(baseUrl, `/session-locations/${encodeURIComponent(id)}`);
     },

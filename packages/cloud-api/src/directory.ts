@@ -5,12 +5,17 @@ import { HttpsUrlSchema, IdSchema, TimestampSchema, tolerantEnum } from './primi
 /**
  * The account directory: what one account has, across every DorkOS it uses.
  *
- * A person's computers, their cloud hub and their cloud agent computers do not
- * sync with each other. The directory is what joins them: which computers the
- * account has, which agents run on each and whether they are there now, the
- * account's quiet hours and time zone, and the spaces the account belongs to.
- * Every DorkOS the person signs in to reads it, so the same sidebar shows
- * everywhere.
+ * The account's own list of where it lives: the person's homes (their own
+ * computers, and their DorkOS in the cloud) and devices, whether each is
+ * reachable, whether each computer offers its own page, and the spaces the
+ * person has joined, by name and address, and how it learned of them. It holds
+ * no space data: no agents, chats, settings or inbox. A computer reports itself
+ * only while its owner has the link and the report switch on at that computer.
+ * The report names this computer, whether it is reachable, whether it offers
+ * its own page, and the spaces its owner joined from it (name and address). It
+ * holds nothing else of the computer. Each home serves its own agents to the
+ * person's other homes over the session relay, so the same list of agents
+ * shows everywhere with no copy here.
  *
  * Two rules hold for everything here:
  *
@@ -24,7 +29,8 @@ import { HttpsUrlSchema, IdSchema, TimestampSchema, tolerantEnum } from './primi
  *   | a cloud agent computer                    | no   | yes        | no       | no             |
  *
  *   An instance key acts for the person who linked the instance. An agent
- *   computer runs agent code and packages, so it only reports its own agents.
+ *   computer runs agent code and packages, so it may not read the directory.
+ *   No instance reports agents: the app sends `agents: []`.
  *   An instance linked to an organization, and any refused call, gets
  *   `not_found`.
  * - **It remembers where things are, never how to get in.** No entry carries a
@@ -77,6 +83,11 @@ export type DirectoryAvailability = z.infer<typeof DirectoryAvailabilitySchema>;
  * through the hub), `full-control` (also the terminal, files and settings,
  * by moving to the computer's own remote address). Set only at the computer,
  * by its signed-in owner; this is the computer telling the account.
+ *
+ * In the directory it says only whether the computer offers its own page. The
+ * app reports `chat` or `full-control` and nothing else
+ * ({@link DirectoryReportReachSchema}); the rest of the level stays at the
+ * computer. `off` stays here so a value that parsed before still parses.
  */
 export const DirectoryReachLevelSchema = z
   .enum(['off', 'chat', 'full-control'])
@@ -84,6 +95,23 @@ export const DirectoryReachLevelSchema = z
 
 /** How far a person let the web reach one of their computers. */
 export type DirectoryReachLevel = z.infer<typeof DirectoryReachLevelSchema>;
+
+/**
+ * The `reach` the app puts in a report: whether the computer offers its own
+ * page, and nothing more.
+ *
+ * `full-control` while the computer's owner has turned on full control at the
+ * computer, else `chat`. A computer reports at all only while its link to the
+ * web is on, so it never reports `off`.
+ */
+export const DirectoryReportReachSchema = z
+  .enum(['chat', 'full-control'])
+  .describe(
+    'The reach the app reports: full-control while full control is on at the computer, else chat.'
+  );
+
+/** The `reach` the app puts in a report. */
+export type DirectoryReportReach = z.infer<typeof DirectoryReportReachSchema>;
 
 /**
  * How the account learned of a space.
@@ -126,7 +154,14 @@ export const DIRECTORY_REPORT_MAX_SPACES = 500 as const;
 
 const name = z.string().min(1).max(DIRECTORY_NAME_MAX_LENGTH);
 
-/** One agent, as the computer that runs it reported it. */
+/**
+ * One agent, as the computer that runs it reported it.
+ *
+ * **The app sends none and reads none.** Every report it makes carries
+ * `agents: []`, and it never reads this part: agents stay on each home, and
+ * each home serves its own over the session relay. The shape stays so an
+ * answer from the service still parses.
+ */
 export const DirectoryAgentSchema = z
   .object({
     agentId: IdSchema.describe(
@@ -148,12 +183,18 @@ export const DirectoryAgentSchema = z
       'When its computer last reported it, or null if one never has. "Away since" reads from this.'
     ),
   })
-  .describe('One agent, as the computer that runs it reported it. No history, no messages.');
+  .describe(
+    'One agent, as the computer that runs it reported it. No history, no messages. The app sends none and reads none.'
+  );
 
 /** One agent, as the computer that runs it reported it. */
 export type DirectoryAgent = z.infer<typeof DirectoryAgentSchema>;
 
-/** One DorkOS the account has. */
+/**
+ * One DorkOS the account has: one of the person's homes and devices, whether
+ * it is reachable, and, for a computer of theirs, whether it offers its own
+ * page. The page's address is here only while it does.
+ */
 export const DirectoryInstanceSchema = z
   .object({
     instanceId: IdSchema,
@@ -172,7 +213,9 @@ export const DirectoryInstanceSchema = z
       'The computer`s own managed remote address, where "full control" moves the page. Filled in by the service from the address it issued, never from a report. Null unless `reach` is full-control.'
     ),
   })
-  .describe('One DorkOS the account has: a computer, its cloud hub, or an agent computer.');
+  .describe(
+    'A home or device of the person`s, whether it is reachable, and whether a computer of theirs offers its own page.'
+  );
 
 /** One DorkOS the account has. */
 export type DirectoryInstance = z.infer<typeof DirectoryInstanceSchema>;
@@ -224,10 +267,12 @@ export const ClockTimeSchema = z
   .describe('A clock time, HH:MM, in the account`s time zone.');
 
 /**
- * The account's quiet hours and time zone.
+ * The account's settings in the directory.
  *
- * They belong to the account, so every computer reads the same ones. A
- * computer that is offline keeps using the last copy it read.
+ * `learnSpacesFromSignIn` is an account setting, and the app reads and writes
+ * it. **The app does not read or write `timeZone` or `quietHours`:** a
+ * space's settings stay on its home, and working hours stay on the person's
+ * computer. They stay in the shape so an answer from the service still parses.
  */
 export const DirectorySettingsSchema = z
   .object({
@@ -236,7 +281,9 @@ export const DirectorySettingsSchema = z
       .min(1)
       .max(64)
       .nullable()
-      .describe('An IANA time zone name, or null when the account has none yet.'),
+      .describe(
+        'An IANA time zone name, or null when the account has none yet. The app does not read or write it.'
+      ),
     quietHours: z
       .object({
         start: ClockTimeSchema,
@@ -245,7 +292,9 @@ export const DirectorySettingsSchema = z
         ),
       })
       .nullable()
-      .describe('When agents should not reach the person, or null for never quiet.'),
+      .describe(
+        'When agents should not reach the person, or null for never quiet. The app does not read or write it.'
+      ),
     learnSpacesFromSignIn: z
       .boolean()
       .describe(
@@ -255,9 +304,11 @@ export const DirectorySettingsSchema = z
       'When any of these last changed, or null if never.'
     ),
   })
-  .describe('The account`s quiet hours and time zone, and how it learns of spaces.');
+  .describe(
+    'How the account learns of spaces, and a time zone and quiet hours the app does not read or write.'
+  );
 
-/** The account's quiet hours and time zone. */
+/** The account's settings in the directory. */
 export type DirectorySettings = z.infer<typeof DirectorySettingsSchema>;
 
 /**
@@ -270,7 +321,11 @@ export type DirectorySettings = z.infer<typeof DirectorySettingsSchema>;
 export const DirectorySchema = z
   .object({
     instances: z.array(DirectoryInstanceSchema),
-    agents: z.array(DirectoryAgentSchema),
+    agents: z
+      .array(DirectoryAgentSchema)
+      .describe(
+        'Agents the service holds from earlier reports. The app sends none and reads none.'
+      ),
     spaces: z.array(DirectorySpaceSchema),
     settings: DirectorySettingsSchema,
     reportEverySeconds: z
@@ -288,10 +343,19 @@ export type Directory = z.infer<typeof DirectorySchema>;
  * `PUT /v1/directory/instances/self` — this instance's report. Instance key
  * only.
  *
- * The whole picture each time: the agents it runs, the spaces it joined and
- * how far it lets the web reach it. It never carries a link to itself: the
- * service fills in `remoteAddress` from the address it issued.
+ * The report names this computer, whether it is reachable, whether it offers
+ * its own page, and the spaces its owner joined from it (name and address). It
+ * holds nothing else of the computer. It never carries a link to itself: the
+ * service fills in `remoteAddress` from the address it issued, only while
+ * `reach` is `full-control`.
  *
+ * - **No agents.** The app sends `agents: []` in every report. The part stays
+ *   required, so a report always clears any agents stored before (a present
+ *   part replaces that part) and "a part that is absent stays as it was" can
+ *   never leave old agents in place.
+ * - **`reach` is `chat` or `full-control`** ({@link DirectoryReportReachSchema}):
+ *   whether the computer offers its own page. The field still parses `off`, so
+ *   a report that parsed before still parses; the app never sends it.
  * - **A report replaces the last one, part by part.** A part that is present
  *   replaces that part: an agent or a space it stops naming leaves the
  *   directory, and `spaces: []` means none. A part that is absent stays as it
@@ -299,11 +363,13 @@ export type Directory = z.infer<typeof DirectorySchema>;
  * - **Older reports lose.** `reportedAt` is when the instance made the report.
  *   The service keeps the newest and drops one older than the last it kept, so
  *   a retried report that arrives late never brings stale entries back.
- * - Send it every `reportEverySeconds` while on. There is no "I am going off"
- *   call, because a computer that loses power cannot make one.
+ * - Send it every `reportEverySeconds` while on. A computer whose owner turns
+ *   the link off removes its report with `DELETE /v1/directory/instances/self`,
+ *   and the instance stays, listed as `unknown`; one that loses power cannot,
+ *   and reads as `offline` once its reports stop.
  *
- * The agents' part is the same as the availability report a computer sends its
- * spaces, plus each agent's name.
+ * The agents' part is always sent empty (`agents: []`): agents stay on each
+ * home, and the availability report a computer sends its spaces is unchanged.
  */
 export const DirectoryReportRequestSchema = z
   .object({
@@ -315,7 +381,10 @@ export const DirectoryReportRequestSchema = z
       .max(DIRECTORY_REPORT_MAX_AGENTS)
       .refine((agents) => new Set(agents.map((agent) => agent.agentId)).size === agents.length, {
         message: 'Name each agent once.',
-      }),
+      })
+      .describe(
+        'Always sent empty by the app (`[]`): agents stay on each home. Required, so every report clears any agents stored before.'
+      ),
     spaces: z
       .array(z.object({ address: HttpsUrlSchema, name }))
       .max(DIRECTORY_REPORT_MAX_SPACES)
@@ -327,11 +396,11 @@ export const DirectoryReportRequestSchema = z
         'The spaces this instance joined: name and address only, never its sign-in for them.'
       ),
     reach: DirectoryReachLevelSchema.optional().describe(
-      'How far its owner lets the web reach it. A hub and an agent computer leave it out. Absent keeps the last value.'
+      'Whether the computer offers its own page: the app sends full-control while full control is on at the computer, else chat, never off. A hub and an agent computer leave it out. Absent keeps the last value.'
     ),
   })
   .describe(
-    'One instance`s whole report: its agents, its spaces and its reach. It replaces the last one.'
+    'One instance`s report: this computer, whether it offers its own page, and the spaces its owner joined from it. Never agents (`[]`). It replaces the last one.'
   );
 
 /** One instance's whole report. */
@@ -349,26 +418,27 @@ export const DirectoryReportResponseSchema = z
 export type DirectoryReportResponse = z.infer<typeof DirectoryReportResponseSchema>;
 
 /**
- * `PATCH /v1/directory/settings` — change the account's quiet hours, time zone
- * or space learning.
+ * `PATCH /v1/directory/settings` — change the account's space learning (and,
+ * for a caller other than the app, its quiet hours or time zone).
  *
- * A person's session, or an instance key. `onlyIfUnset` is for a computer
- * moving the quiet hours it kept locally up to the account once: the change
- * applies only while the account has none, so two computers moving theirs at
- * once never overwrite a person's choice. The answer is the settings as they
- * now are, applied or not.
+ * A person's session, or an instance key. The answer is the settings as they
+ * now are, applied or not. **The app sends `learnSpacesFromSignIn` only;** it
+ * does not write `timeZone`, `quietHours` or `onlyIfUnset`. `onlyIfUnset`
+ * applies a change only while the account has no settings yet.
  */
 export const DirectorySettingsPatchSchema = z
   .object({
-    timeZone: DirectorySettingsSchema.shape.timeZone.optional(),
-    quietHours: DirectorySettingsSchema.shape.quietHours.optional(),
+    timeZone: DirectorySettingsSchema.shape.timeZone
+      .optional()
+      .describe('The account`s time zone. The app does not write it.'),
+    quietHours: DirectorySettingsSchema.shape.quietHours
+      .optional()
+      .describe('The account`s quiet hours. The app does not write them.'),
     learnSpacesFromSignIn: z.boolean().optional(),
     onlyIfUnset: z
       .boolean()
       .optional()
-      .describe(
-        'Apply only while the account has no settings yet. For a one-time move from a computer.'
-      ),
+      .describe('Apply only while the account has no settings yet. The app does not send it.'),
   })
   .describe('Change some of the account`s settings. Fields left out stay as they are.');
 
@@ -377,8 +447,9 @@ export type DirectorySettingsPatch = z.infer<typeof DirectorySettingsPatchSchema
 
 /**
  * The answer to `DELETE /v1/directory/instances/self` (the instance's key: its
- * owner turned sync off, so its report leaves the directory without unlinking
- * it) and `DELETE /v1/directory/spaces/{spaceId}` (a person forgets a space).
+ * owner turned the link or the report off, so its report leaves the directory
+ * without unlinking it; the instance then lists as `unknown`) and
+ * `DELETE /v1/directory/spaces/{spaceId}` (a person forgets a space).
  * Both answer even when there was nothing to remove.
  *
  * Forgetting a space sticks. The service keeps a quiet mark, so the next report

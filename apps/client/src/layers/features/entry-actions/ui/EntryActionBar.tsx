@@ -1,4 +1,4 @@
-import { Fragment, forwardRef, type KeyboardEvent } from 'react';
+import { Fragment, type KeyboardEvent, type Ref } from 'react';
 import { cn } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import { emojiLabel } from '../lib/emoji-catalog';
@@ -46,6 +46,8 @@ interface EntryActionBarProps {
   onExit: () => void;
   /** The toolbar's own look, supplied by the row so anchoring stays with layout. */
   className?: string;
+  /** The roving group's handle, so the message can hand focus up to the bar. */
+  ref?: Ref<EntryActionBarHandle>;
 }
 
 /** One button the toolbar draws, in the order it draws them. */
@@ -121,102 +123,107 @@ function barButtons(
  * and a room of fifty messages still costs a hundred and fifty presses. The tab
  * order has to be closed for the count to change, which is what `-1` is doing.
  */
-export const EntryActionBar = forwardRef<EntryActionBarHandle, EntryActionBarProps>(
-  function EntryActionBar({ actions, reactions, runWith, onExit, className }, ref) {
-    const buttons = barButtons(actions, reactions, runWith);
-    const { register, handleKeyDown } = useRovingButtons(buttons.length, onExit, ref);
+export function EntryActionBar({
+  actions,
+  reactions,
+  runWith,
+  onExit,
+  className,
+  ref,
+}: EntryActionBarProps) {
+  const buttons = barButtons(actions, reactions, runWith);
+  const { register, handleKeyDown } = useRovingButtons(buttons.length, onExit, ref);
 
-    if (buttons.length === 0) return null;
+  if (buttons.length === 0) return null;
 
-    return (
-      <div
-        role="toolbar"
-        aria-label="Message actions"
-        aria-orientation="horizontal"
-        data-testid="entry-actions"
-        className={className}
-      >
-        {buttons.map((button, index) => {
-          const onKeyDown = (event: KeyboardEvent<HTMLElement>) => handleKeyDown(event, index);
-          // The divider the design draws between the reactions and the
-          // commands, rendered with the first command rather than as a slot of
-          // its own — so a capsule with no reactions in it has no stray rule at
-          // its left edge.
-          const divider =
-            button.kind === 'command' && index > 0 && buttons[index - 1]!.kind !== 'command';
+  return (
+    <div
+      role="toolbar"
+      aria-label="Message actions"
+      aria-orientation="horizontal"
+      data-testid="entry-actions"
+      className={className}
+    >
+      {buttons.map((button, index) => {
+        const onKeyDown = (event: KeyboardEvent<HTMLElement>) => handleKeyDown(event, index);
+        // The divider the design draws between the reactions and the
+        // commands, rendered with the first command rather than as a slot of
+        // its own — so a capsule with no reactions in it has no stray rule at
+        // its left edge.
+        const divider =
+          button.kind === 'command' && index > 0 && buttons[index - 1]!.kind !== 'command';
 
-          if (button.kind === 'run-with') {
-            return (
-              <EntryRunWithMenu
-                key="run-with"
-                prompt={button.runWith.prompt}
-                sessionId={button.runWith.sessionId}
-                triggerRef={register(index)}
-                onTriggerKeyDown={onKeyDown}
-              />
-            );
-          }
-
-          if (button.kind === 'picker') {
-            return (
-              <EntryReactionPicker
-                key="react-more"
-                mine={reactions!.mine}
-                frequents={reactions!.quick}
-                disabled={reactions!.disabled}
-                onPick={reactions!.onToggle}
-                triggerRef={register(index)}
-                onTriggerKeyDown={onKeyDown}
-              />
-            );
-          }
-
+        if (button.kind === 'run-with') {
           return (
-            <Fragment key={button.kind === 'quick' ? button.emoji : button.action.id}>
-              {divider && <span aria-hidden data-slot="capsule-gap" className="mx-1" />}
-              {button.kind === 'quick' ? (
-                <Button
-                  ref={register(index)}
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  tabIndex={-1}
-                  disabled={reactions!.disabled}
-                  data-entry-action={button.slot}
-                  data-emoji={button.emoji}
-                  data-reacted={button.mine ? 'true' : undefined}
-                  aria-pressed={button.mine}
-                  aria-label={`React with ${emojiLabel(button.emoji)}`}
-                  title={`React with ${emojiLabel(button.emoji)}`}
-                  onClick={() => reactions!.onToggle(button.emoji)}
-                  onKeyDown={onKeyDown}
-                  className={cn(
-                    'text-control leading-none',
-                    button.mine && 'bg-brand/15 text-foreground'
-                  )}
-                >
-                  <span aria-hidden>{button.emoji}</span>
-                </Button>
-              ) : (
-                <Button
-                  ref={register(index)}
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  tabIndex={-1}
-                  data-entry-action={button.slot}
-                  aria-label={button.action.label}
-                  title={button.action.label}
-                  onClick={button.action.run}
-                  onKeyDown={onKeyDown}
-                >
-                  <button.action.icon aria-hidden className="size-(--size-icon-sm)" />
-                </Button>
-              )}
-            </Fragment>
+            <EntryRunWithMenu
+              key="run-with"
+              prompt={button.runWith.prompt}
+              sessionId={button.runWith.sessionId}
+              triggerRef={register(index)}
+              onTriggerKeyDown={onKeyDown}
+            />
           );
-        })}
-      </div>
-    );
-  }
-);
+        }
+
+        if (button.kind === 'picker') {
+          return (
+            <EntryReactionPicker
+              key="react-more"
+              mine={reactions!.mine}
+              frequents={reactions!.quick}
+              disabled={reactions!.disabled}
+              onPick={reactions!.onToggle}
+              triggerRef={register(index)}
+              onTriggerKeyDown={onKeyDown}
+            />
+          );
+        }
+
+        return (
+          <Fragment key={button.kind === 'quick' ? button.emoji : button.action.id}>
+            {divider && <span aria-hidden data-slot="capsule-gap" className="mx-1" />}
+            {button.kind === 'quick' ? (
+              <Button
+                ref={register(index)}
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                tabIndex={-1}
+                disabled={reactions!.disabled}
+                data-entry-action={button.slot}
+                data-emoji={button.emoji}
+                data-reacted={button.mine ? 'true' : undefined}
+                aria-pressed={button.mine}
+                aria-label={`React with ${emojiLabel(button.emoji)}`}
+                title={`React with ${emojiLabel(button.emoji)}`}
+                onClick={() => reactions!.onToggle(button.emoji)}
+                onKeyDown={onKeyDown}
+                className={cn(
+                  'text-control leading-none',
+                  button.mine && 'bg-brand/15 text-foreground'
+                )}
+              >
+                <span aria-hidden>{button.emoji}</span>
+              </Button>
+            ) : (
+              <Button
+                ref={register(index)}
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                tabIndex={-1}
+                data-entry-action={button.slot}
+                aria-label={button.action.label}
+                title={button.action.label}
+                onClick={button.action.run}
+                onKeyDown={onKeyDown}
+              >
+                <button.action.icon aria-hidden className="size-(--size-icon-sm)" />
+              </Button>
+            )}
+          </Fragment>
+        );
+      })}
+    </div>
+  );
+}

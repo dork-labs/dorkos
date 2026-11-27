@@ -16,7 +16,7 @@
  *    INSIDE the quotes. Every other value renders from a closed set (`yes`/`no`,
  *    a number, `N items`, `not set`), which carries no separators at all.
  * 2. **No single value can crowd out another.** Each is capped at
- *    {@link SUMMARY_VALUE_MAX_LENGTH} before the whole sentence is capped, so a
+ *    80 characters (`@dorkos/shared/approval-text`) before the whole sentence is capped, so a
  *    long argument cannot push a later, more consequential one past the
  *    summary's own length limit.
  *
@@ -30,89 +30,20 @@
  * @module services/core/approvals/approval-summary
  */
 
+import {
+  clampForStorage,
+  quoteSummaryValue,
+  REDACTED_SUMMARY_VALUE,
+  redactSecretsInText,
+} from '@dorkos/shared/approval-text';
 import { isSecretInputKey } from '@dorkos/shared/capabilities';
 
-/**
- * Longest a single rendered value may be.
- *
- * Small on purpose: the point of a value on the card is recognition ("yes, that
- * package"), not transcription. Capping per value rather than only per sentence
- * is what stops one padded argument from truncating away the argument that
- * decides how destructive the action is.
- */
-const SUMMARY_VALUE_MAX_LENGTH = 80;
+// The value rules a card shares with the computer side's checks (spec
+// `computer-side-starts-alone` §5.7) live in `@dorkos/shared/approval-text`.
+export { quoteSummaryValue, REDACTED_SUMMARY_VALUE, redactSecretsInText };
 
 /** Longest a requester label may be before it is shortened. */
 const SUMMARY_LABEL_MAX_LENGTH = 60;
-
-/** What replaces a value that is, or looks like, a secret. */
-export const REDACTED_SUMMARY_VALUE = '(hidden)';
-
-/**
- * A run of 32 or more hex characters: the shape of every token DorkOS mints
- * (approval tokens and agent identity tokens are both `randomBytes(16).toString('hex')`)
- * and of any SHA-256 digest.
- *
- * ULIDs (26 chars, Crockford base32) are too short to match, so an approval id
- * still reads plainly on the card.
- *
- * **Deliberately NOT `\b`-anchored.** Word boundaries look like the careful choice
- * and are the opposite: `\b` requires a non-word character before the run, so a
- * token glued to any other word character — `sentry-monitorf3a9…`, or a caller
- * simply padding with letters — never matched the pattern at all. That is a
- * one-character evasion of the whole sweep. Matching anywhere costs only that a
- * 32-character hex substring inside a longer word is also hidden, which is the
- * right trade for something broadcast to every cockpit.
- */
-const SECRET_VALUE_PATTERN = /[0-9a-f]{32,}/gi;
-
-/**
- * Replace anything token-shaped in a string.
- *
- * Runs at two points, and both are load-bearing for different reasons:
- *
- * 1. On each caller-supplied value BEFORE it is shortened ({@link quoteSummaryValue},
- *    {@link renderRequesterLabel}). This is the one that matters for a value a
- *    caller controls, because a shortened token no longer matches the pattern.
- * 2. Where a summary is STORED (`approval-service.ts`), which catches sentences a
- *    producer composed itself — the marketplace confirmation provider writes its
- *    own, so no producer can skip the sweep entirely.
- *
- * @param text - The raw value or composed summary.
- * @returns The same string with token-shaped runs replaced.
- */
-export function redactSecretsInText(text: string): string {
-  return text.replace(SECRET_VALUE_PATTERN, REDACTED_SUMMARY_VALUE);
-}
-
-/** Shorten a raw string to `max` characters, marking that it was shortened. */
-function clamp(value: string, max: number): string {
-  if (value.length <= max) return value;
-  return `${value.slice(0, max - 1).trimEnd()}…`;
-}
-
-/**
- * Render a caller-supplied string as a quoted, escaped, length-capped value.
- *
- * `JSON.stringify` does the escaping, which also flattens newlines and control
- * characters — so a multi-line value cannot fake a second line of the card.
- * The surrounding quotes are part of the result: a person reading
- * `name: "pkg, purge: no"` can see that the whole thing is one value.
- *
- * ## Redact BEFORE clamping, never after
- *
- * Review reproduced the inverted order: clamping first slices a 32-hex run below
- * 32 characters, so {@link SECRET_VALUE_PATTERN} stops matching and a padded token
- * publishes its surviving prefix. The storage sweep cannot recover it either,
- * because by then the run is already short. Redaction can only ever SHORTEN a
- * string, so running it first is free — the cap still holds.
- *
- * @param value - The raw string from the caller.
- * @returns The quoted, escaped, capped rendering.
- */
-export function quoteSummaryValue(value: string): string {
-  return JSON.stringify(clamp(redactSecretsInText(value), SUMMARY_VALUE_MAX_LENGTH));
-}
 
 /**
  * Render one input value for the card: short, plain, and structurally inert.
@@ -142,7 +73,7 @@ function renderSummaryValue(value: unknown): string {
  * @returns The redacted, capped label.
  */
 export function renderRequesterLabel(label: string): string {
-  return clamp(redactSecretsInText(label), SUMMARY_LABEL_MAX_LENGTH);
+  return clampForStorage(redactSecretsInText(label), SUMMARY_LABEL_MAX_LENGTH);
 }
 
 /** Characters a field name may contribute to the sentence. Everything else is dropped. */

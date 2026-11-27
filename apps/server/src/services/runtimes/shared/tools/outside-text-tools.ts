@@ -28,7 +28,12 @@ import {
   CODEX_DORKOS_TOOL_PREFIX,
   OPENCODE_DORKOS_TOOL_PREFIX,
 } from '../dorkos-tool-names.js';
-import { outsideFileTests, type CallPlace } from './outside-file-places.js';
+import {
+  globsKeepIgnores,
+  outsideFileTests,
+  type CallPlace,
+  type SearchWalk,
+} from './outside-file-places.js';
 import { commandReadsOutsideText, shellCommandOf } from './shell-outside-text.js';
 
 /** Claude Code's tools that bring in outside text: a page, a web search, an MCP server's resource. */
@@ -98,15 +103,34 @@ const FILE_READ_TOOLS: Readonly<Record<string, Readonly<Record<string, string>>>
 };
 
 /**
- * Each runtime's searches, and the input field naming where they start (the working folder when it
- * is left out): they mark when that folder holds outside files or has a folder of them below it.
- * Codex reads and searches through its shell.
+ * Each runtime's searches, the input field naming where they start (the working folder when it is
+ * left out), and how they walk the tree: they mark when that folder holds outside files or has a
+ * folder of them below it that the search enters. Claude Code's `Grep` and OpenCode's `grep` run
+ * `rg --hidden`, which honours ignore files; Doe's `search` leaves hidden folders out. Codex reads
+ * and searches through its shell.
  */
-const SEARCH_TOOLS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  'claude-code': { Grep: 'path' },
-  opencode: { grep: 'path' },
-  doe: { search: 'path' },
+const SEARCH_TOOLS: Readonly<
+  Record<string, Readonly<Record<string, { field: string; walk: SearchWalk; globs?: string }>>>
+> = {
+  'claude-code': {
+    Grep: { field: 'path', walk: { skipsHidden: false, ignoreFiles: true }, globs: 'glob' },
+  },
+  opencode: {
+    grep: { field: 'path', walk: { skipsHidden: false, ignoreFiles: true }, globs: 'include' },
+  },
+  doe: { search: { field: 'path', walk: { skipsHidden: true, ignoreFiles: false } } },
 };
+
+/** How a search tool walks for this input: a glob that includes paths reads past ignore files. */
+function walkOf(
+  search: { walk: SearchWalk; globs?: string },
+  fields: Record<string, unknown>
+): SearchWalk {
+  const given = search.globs === undefined ? undefined : fields[search.globs];
+  if (given === undefined || !search.walk.ignoreFiles) return search.walk;
+  const globs = typeof given === 'string' ? given.split(/\s+/).filter(Boolean) : null;
+  return { ...search.walk, ignoreFiles: globs !== null && globsKeepIgnores(globs) };
+}
 
 /** An input that cannot be judged, which counts as reading outside text. */
 const UNREADABLE = Symbol('unreadable input');
@@ -131,8 +155,8 @@ function inputReadsOutsideText(
 ): boolean {
   const isShell = SHELL_TOOLS[runtime] === toolName;
   const readField = FILE_READ_TOOLS[runtime]?.[toolName];
-  const searchField = SEARCH_TOOLS[runtime]?.[toolName];
-  if (!isShell && readField === undefined && searchField === undefined) return false;
+  const search = SEARCH_TOOLS[runtime]?.[toolName];
+  if (!isShell && readField === undefined && search === undefined) return false;
   const parsed = parsedInput(input);
   if (parsed === UNREADABLE) return true;
   const place = runtime === 'claude-code' ? { ...given, claudeCode: true } : given;
@@ -150,8 +174,9 @@ function inputReadsOutsideText(
     const target = fields[readField];
     return typeof target === 'string' && outsideFileTests(place).holds(target);
   }
-  const root = fields[searchField!];
-  return outsideFileTests(place).searchReaches(typeof root === 'string' && root ? root : '.');
+  const root = fields[search!.field];
+  const start = typeof root === 'string' && root ? root : '.';
+  return outsideFileTests(place).searchReaches(start, walkOf(search!, fields));
 }
 
 /** Whether an `mcp__server__tool` name is another server's: neither DorkOS's own nor its connected apps'. */

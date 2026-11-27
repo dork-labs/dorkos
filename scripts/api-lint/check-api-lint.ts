@@ -2,6 +2,17 @@
  * Hold the HTTP API to a ratchet: the OpenAPI document and the route census
  * may only get better, one rule and one route group at a time.
  *
+ * --help
+ * Purpose: hold the HTTP API to a ratchet: the OpenAPI document and the route
+ *          census may only get better, per rule and route group.
+ * Runs in: `pnpm ratchet` (the required `typecheck` job, `--queue` in the queue); by hand.
+ * To fix:  fix the new finding it names (rules: contributing/api-reference.md).
+ *          After a fix, run `pnpm check:api-lint -- --update` and commit the lower
+ *          baseline. A lowered count in a group you never touched is a queue
+ *          leftover: `--update` and commit it with your change.
+ * Usage:   pnpm check:api-lint [-- --base <ref> | --update | --queue | --init]
+ * --help end
+ *
  * WHY THIS EXISTS. The REST API review measured the API at `8c118b8d7f`: 0 of
  * 475 operations carried an `operationId`; 157 paths ended in a command word
  * (the `verb-path` rule here counts a command word in any static segment);
@@ -18,8 +29,10 @@
  * command-word list is exact; an error response with no body counts as a bad
  * shape), so the committed baseline, not the figures above, is the measure.
  *
- * WHAT IT READS. Two committed files, no server: `docs/api/openapi.json` (kept
- * fresh by `docs-openapi-check`) and the route census
+ * WHAT IT READS. Committed files, no server: `docs/api/openapi.json` with its
+ * internal part `docs/api/openapi-internal.json` merged in (both kept fresh by
+ * `docs-openapi-check`; internal operations are documented, only not
+ * published) and the route census
  * `apps/server/src/http/__tests__/route-census.baseline.json` (kept fresh by
  * the booted census test), plus the `registerPath(` calls in the hand-written
  * registry. The rules are in `rules.ts` and `contributing/api-reference.md`.
@@ -65,6 +78,7 @@
  *   pnpm check:api-lint -- --init             write the baseline from scratch
  *   pnpm check:api-lint -- --root <dir>       measure another tree
  *   pnpm check:api-lint -- --spec <path>      read another OpenAPI document
+ *   pnpm check:api-lint -- --internal <path>  merge another internal part into it
  *   pnpm check:api-lint -- --census <path>    read another route census
  *
  * @module scripts/api-lint/check-api-lint
@@ -101,11 +115,17 @@ import {
   type Items,
   type RuleId,
 } from './rules.ts';
+import { exitOnHelp } from '../lib/gate-help.mjs';
+import {
+  INTERNAL_PART_PATH,
+  PUBLISHED_DOCUMENT_PATH,
+  mergeInternalPart,
+} from '../../packages/api-client/scripts/api-document.ts';
 
 export { BASELINE_PATH, type Counts, type UnitCounts } from './baseline-file.ts';
 
 /** The OpenAPI document, relative to the root. */
-export const SPEC_PATH = 'docs/api/openapi.json';
+export const SPEC_PATH = PUBLISHED_DOCUMENT_PATH;
 
 /** The route census, relative to the root. */
 export const CENSUS_PATH = 'apps/server/src/http/__tests__/route-census.baseline.json';
@@ -136,6 +156,11 @@ export interface Measurement {
 export interface Inputs {
   /** The OpenAPI document. */
   spec?: string;
+  /**
+   * The document's internal part, merged into it. Read from its committed path
+   * unless `spec` names another document, when only a named one is read.
+   */
+  internal?: string;
   /** The route census. */
   census?: string;
 }
@@ -226,7 +251,14 @@ export function handRegistryItems(root: string): Items {
 export function measure(root: string, inputs: Inputs = {}): Measurement {
   const spec = readInput(root, inputs.spec ?? SPEC_PATH);
   const census = readInput(root, inputs.census ?? CENSUS_PATH);
-  const doc = parseSpec(spec.text, spec.where);
+  // Internal operations are served and documented, just not published: every
+  // rule holds them too, and they count as documented (DOR-4983).
+  const internalPath = inputs.internal ?? (inputs.spec ? undefined : INTERNAL_PART_PATH);
+  const internal = internalPath ? readInput(root, internalPath) : undefined;
+  const published = parseSpec(spec.text, spec.where);
+  const doc = internal
+    ? mergeInternalPart(published, parseSpec(internal.text, internal.where))
+    : published;
   const routes = parseCensus(census.text, census.where);
   const items: Record<RuleId, Items> = {
     'operation-id': operationIdItems(doc),
@@ -410,7 +442,9 @@ function main(argv: string[]): number {
   const root = resolve(value('--root') ?? process.cwd());
   const inputs: Inputs = {};
   const [spec, census, base] = [value('--spec'), value('--census'), value('--base')];
+  const internal = value('--internal');
   if (spec) inputs.spec = spec;
+  if (internal) inputs.internal = internal;
   if (census) inputs.census = census;
   const m = measure(root, inputs);
   const hard = duplicateFindings(m.duplicates);
@@ -443,6 +477,7 @@ function main(argv: string[]): number {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  exitOnHelp(import.meta.url);
   try {
     process.exit(main(process.argv.slice(2)));
   } catch (err: unknown) {

@@ -12,8 +12,8 @@ import {
   CanvasAppManifestError,
   canonicalCanvasAppJson,
   parseCanvasAppManifest,
-} from '@dorkos/shared/canvas-app-manifest';
-import type { ServerPrincipalProof } from '../../../connectors/principal/server-principal.js';
+} from '../../canvas-app-manifest.js';
+import type { ServerPrincipalProof } from '../../../core/connections-lease/index.js';
 import { isContained } from '../../../../lib/boundary.js';
 import type { DocSourceDescriptor } from '../http-composition.js';
 import {

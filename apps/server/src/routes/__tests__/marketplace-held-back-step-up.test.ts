@@ -8,9 +8,12 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi, beforeAll } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { createMarketplaceRoutes, type MarketplaceRouteDeps } from '../marketplace.js';
+import { marketplaceReadsDomain } from '../../services/marketplace/doors/marketplace-read-capabilities.js';
+import { capabilityGroup } from '../../http/__tests__/capability-group.js';
+import type { MarketplaceMcpDeps } from '../../services/marketplace-mcp/marketplace-mcp-tools.js';
 import { ApprovalService } from '../../services/core/approvals/index.js';
 import { packageContentHash } from '../../services/marketplace/lib/content-hash.js';
 import {
@@ -20,6 +23,10 @@ import {
 } from '../../services/marketplace/lib/records/installed-files.js';
 import { verifyInstall } from '../../services/marketplace/lib/integrity/verify-install.js';
 import { frontDoorStepUpHarness } from './front-door-step-up-harness.js';
+import { wireTestConsent } from '../../services/core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The space side's consent writes reach a config store, as at startup.
+beforeAll(() => wireTestConsent());
 
 const KEPT_SKILL = '---\nname: kept\ndescription: Kept.\n---\n\nKept.\n';
 
@@ -39,6 +46,10 @@ describe('held-back package and kept files confirmation', () => {
   const dorkHome = mkdtempSync(join(tmpdir(), 'marketplace-held-back-step-up-'));
   const heldBackCards = { approvals: new ApprovalService(createTestDb()), onGranted: vi.fn() };
   const owner = frontDoorStepUpHarness(() => [
+    // The held-back list is served by the capability mount (DOR-4978).
+    capabilityGroup(marketplaceReadsDomain, {
+      marketplaceDeps: { dorkHome } as unknown as MarketplaceMcpDeps,
+    }),
     {
       path: '/api/marketplace',
       routes: createMarketplaceRoutes({

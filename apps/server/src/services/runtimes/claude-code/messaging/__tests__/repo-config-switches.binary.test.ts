@@ -49,7 +49,6 @@ import {
   applyRepoConfigToLaunch,
   resolveRepoConfigForLaunch,
 } from '../../repo-settings/launch-repo-config.js';
-import { recordRepoConfigApproval } from '../../repo-settings/repo-config-consent.js';
 import { pinRepoBaseline, resolveRepoBaseline } from '../../repo-settings/repo-baseline.js';
 import { readRepoConfig } from '../../repo-settings/repo-config-parts.js';
 import { readLocalSettings } from '../../repo-settings/repo-local-settings.js';
@@ -62,6 +61,9 @@ import {
   writeFile,
   type RepoFixture,
 } from '../../repo-settings/__tests__/git-fixture.js';
+import { recordRepoConfigApproval } from '../../../../core/approvals/computer-asks/index.js';
+import { wireTestAsks } from '../../../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
+import { reply } from './repo-config-switches.fixtures.js';
 
 const BINARY = resolveBundledClaudeBinary();
 const CLAUDE_MD_MARK = 'folder-instructions-reached-the-model';
@@ -98,43 +100,6 @@ const SELF_GRANT = {
     ],
   },
 };
-
-/** One server-sent event. */
-function sse(event: string, data: unknown): string {
-  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-}
-
-/** A streamed reply: one `touch probe` when `toolUse`, plain text otherwise. */
-function reply(toolUse: boolean): string {
-  const message = {
-    id: `msg_${toolUse ? 1 : 2}`,
-    type: 'message',
-    role: 'assistant',
-    model: 'claude-sonnet-4-5',
-    content: [],
-    stop_reason: null,
-    stop_sequence: null,
-    usage: { input_tokens: 1, output_tokens: 1 },
-  };
-  const block = toolUse
-    ? { type: 'tool_use', id: 'toolu_probe', name: 'Bash', input: {} }
-    : { type: 'text', text: '' };
-  const delta = toolUse
-    ? { type: 'input_json_delta', partial_json: JSON.stringify({ command: 'touch probe' }) }
-    : { type: 'text_delta', text: 'done' };
-  return [
-    sse('message_start', { type: 'message_start', message }),
-    sse('content_block_start', { type: 'content_block_start', index: 0, content_block: block }),
-    sse('content_block_delta', { type: 'content_block_delta', index: 0, delta }),
-    sse('content_block_stop', { type: 'content_block_stop', index: 0 }),
-    sse('message_delta', {
-      type: 'message_delta',
-      delta: { stop_reason: toolUse ? 'tool_use' : 'end_turn', stop_sequence: null },
-      usage: { output_tokens: 1 },
-    }),
-    sse('message_stop', { type: 'message_stop' }),
-  ].join('');
-}
 
 let repo: RepoFixture;
 let worktree: string;
@@ -256,6 +221,7 @@ const claudeMdReached = () => bodies.some((body) => body.includes(CLAUDE_MD_MARK
 describe.skipIf(BINARY === null)('repo settings switches on the real CLI', () => {
   beforeEach(async () => {
     restoreEnv = isolateGitEnv();
+    wireTestAsks();
     store.harness = {};
     bodies = [];
     repo = makeRepo({

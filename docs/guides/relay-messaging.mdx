@@ -265,8 +265,8 @@ curl -X POST http://localhost:4242/api/relay/messages \
 
 Budgets bound one chain of messages. The ceiling bounds your bill.
 
-Every Relay route into an agent — an outside system speaking A2A, a webhook posting back, a
-scheduled task — ends at the same place: DorkOS hands the message to the agent and a real turn
+Every Relay route into an agent (an outside system speaking A2A, a webhook posting back, a
+scheduled task) ends at the same place: DorkOS hands the message to the agent and a real turn
 starts. That's where the turns are counted, so no Relay route can go around it and starting a fresh
 chain doesn't buy a fresh allowance.
 
@@ -277,7 +277,7 @@ Two numbers, both per hour, both editable:
 
 | Setting                              | Default | Bounds                                                          |
 | ------------------------------------ | ------- | --------------------------------------------------------------- |
-| `relay.maxAgentTurnsPerAgentPerHour` | `1000`  | What any one agent — or one scheduled task — can cost           |
+| `relay.maxAgentTurnsPerAgentPerHour` | `1000`  | What any one agent (or one scheduled task) can cost             |
 | `relay.maxAgentTurnsTotalPerHour`    | `5000`  | Everything above, altogether: Relay messages and scheduled runs |
 
 ```bash
@@ -287,14 +287,14 @@ dorkos config set relay.maxAgentTurnsTotalPerHour 2000
 Set either to `null` for no limit.
 
 <Callout type="warn">
-  `0` stops **every** turn that starts this way — including your scheduled tasks, which run through
+  `0` stops **every** turn that starts this way, including your scheduled tasks, which run through
   the same dispatch. If you want to quieten chatty agents without stopping your schedule, set a
   small number rather than zero.
 </Callout>
 
 When the ceiling stops a message, it says which of the two limits it was, and the message stays in
-the agent's inbox — it just doesn't start a turn. A turn DorkOS accepted but couldn't run — every
-agent slot busy, say — doesn't count against you: the allowance is given back.
+the agent's inbox. It just doesn't start a turn. A turn DorkOS accepted but couldn't run (every
+agent slot busy, say) doesn't count against you: the allowance is given back.
 
 ## Built-in adapters
 
@@ -323,7 +323,7 @@ The Claude Code adapter is on by default whenever Relay starts. It listens on `r
 
 You can change both in the app, under **Settings → Connections**: **Most chats at once** is `maxConcurrent`, and **Give up after** is `defaultTimeoutMs` in seconds. **Start working right away** turns it on or off.
 
-`maxConcurrent` limits how many agent chats run at once. `defaultTimeoutMs` sets the longest a message may wait for a busy agent — not how long a chat may run. What bounds a running chat is the message's own lifetime, and nothing else: a message that runs out of time is turned away rather than given a fresh clock.
+`maxConcurrent` limits how many agent chats run at once. `defaultTimeoutMs` sets the longest a message may wait for a busy agent, not how long a chat may run. What bounds a running chat is the message's own lifetime, and nothing else: a message that runs out of time is turned away rather than given a fresh clock.
 
 A message from a connected Telegram or Slack chat that arrives while every agent chat slot is busy is not turned away. It waits, and it runs as soon as one of those running chats finishes. If the wait lasts more than ten seconds, the chat gets one line saying the message is waiting.
 
@@ -359,7 +359,7 @@ Your bot never replies to another bot, whatever you pick. That is not a setting,
 
 The Slack adapter connects a Slack workspace to Relay using Socket Mode, so you don't need a public URL. It supports streaming replies, threads, a working indicator, and access control per Slack channel.
 
-When an agent starts working on your message, Slack shows it: your message gets an 👀 reaction, which comes off when the agent replies or fails. A message nobody picks up is never marked — the reaction means somebody is on it, not that the message arrived. Nothing is added when the work finishes: the reply is the answer. Set the working indicator to **None** to turn it off.
+When an agent starts working on your message, Slack shows it: your message gets an 👀 reaction, which comes off when the agent replies or fails. A message nobody picks up is never marked: the reaction means somebody is on it, not that the message arrived. Nothing is added when the work finishes: the reply is the answer. Set the working indicator to **None** to turn it off.
 
 ```json
 {
@@ -533,7 +533,6 @@ The `config.json` file controls rate limiting, circuit breakers, and backpressur
 | `GET`    | `/api/relay/dead-letters/aggregated`  | Dead letters grouped by source and reason        |
 | `GET`    | `/api/relay/metrics`                  | Relay system metrics                             |
 | `GET`    | `/api/relay/trace/metrics`            | Aggregate delivery metrics                       |
-| `GET`    | `/api/relay/stream`                   | SSE event stream (supports `?subject=` filter)   |
 | `GET`    | `/api/relay/adapters`                 | List chat apps and other bridges with status     |
 | `GET`    | `/api/relay/adapters/catalog`         | List available bridge types                      |
 | `GET`    | `/api/relay/adapters/:id`             | Get a single bridge's status                     |

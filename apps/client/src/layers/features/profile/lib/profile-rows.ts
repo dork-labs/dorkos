@@ -17,8 +17,9 @@ import { roomDisplayTitle } from '@/layers/entities/room';
 import { formatRuntimeIdentity } from '@/layers/entities/runtime';
 import type { ProfilePageId } from '../model/profile-stack';
 import type { ProfileRelationship } from './profile-relationship';
-import { nextCheckMeta, wakeRowValue } from './heartbeat-words';
 import { levelRow } from './profile-level-row';
+import { countValue, fold, summaryOf } from './profile-row-parts';
+import { otherAgentWorkFold, workFold } from './profile-work-rows';
 
 /**
  * What a row lets you do.
@@ -233,42 +234,6 @@ function managesValue(count: number): string {
   return count === 1 ? '1 agent' : `${count} agents`;
 }
 
-/** A count, or `null` when nothing has answered yet — a row says nothing rather than "0" it invented. */
-function countValue(count: number | null | undefined, one: string, many: string): string | null {
-  if (count === null || count === undefined) return null;
-  return count === 1 ? `1 ${one}` : `${count} ${many}`;
-}
-
-/** How long ago, in the two or three characters a row's trailing meta can carry. */
-function lastWords(iso: string | null): string | undefined {
-  if (!iso) return undefined;
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return undefined;
-  const elapsed = Math.max(0, Date.now() - then);
-  const minutes = Math.floor(elapsed / 60_000);
-  if (minutes < 1) return 'last just now';
-  if (minutes < 60) return `last ${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `last ${hours} h`;
-  return `last ${Math.floor(hours / 24)} d`;
-}
-
-/** When the next run fires, as a clock time — or a weekday when it is not today. */
-function nextWords(iso: string | null): string | undefined {
-  if (!iso) return undefined;
-  const when = new Date(iso);
-  if (Number.isNaN(when.getTime())) return undefined;
-  const today = new Date();
-  const sameDay =
-    when.getFullYear() === today.getFullYear() &&
-    when.getMonth() === today.getMonth() &&
-    when.getDate() === today.getDate();
-  const clock = when.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  return sameDay
-    ? `next ${clock}`
-    : `next ${when.toLocaleDateString('en-US', { weekday: 'short' })} ${clock}`;
-}
-
 /** A stored timestamp as a plain date, or `null` when it is not a date at all. */
 function formatDate(iso: string): string | null {
   const date = new Date(iso);
@@ -338,42 +303,6 @@ function roomsRow(ctx: ProfileRowsContext): ProfileRowModel {
   };
 }
 
-/**
- * The To-dos row: how many promises are open, and how many are overdue.
- * Drawn on every agent's profile, because anyone may read any agent's list.
- */
-function todosRow(ctx: ProfileRowsContext): ProfileRowModel {
-  const summary = ctx.todoPromises;
-  return {
-    id: 'todos',
-    kind: 'nav',
-    label: 'To-dos',
-    value: countValue(summary?.open, 'open', 'open'),
-    ...(summary && summary.overdue > 0 ? { meta: `${summary.overdue} overdue` } : {}),
-    page: 'todos',
-  };
-}
-
-/**
- * The Heartbeat row: how this agent wakes, and when it next checks in. Drawn
- * on every agent's profile, like To-dos.
- */
-function heartbeatRow(ctx: ProfileRowsContext): ProfileRowModel {
-  const status = ctx.heartbeat;
-  const meta =
-    status?.enabled && status.wake === 'timed'
-      ? nextCheckMeta(status.nextBeatAt, new Date(ctx.now ?? Date.now()))
-      : undefined;
-  return {
-    id: 'heartbeat',
-    kind: 'nav',
-    label: 'Heartbeat',
-    value: status ? wakeRowValue(status) : null,
-    ...(meta ? { meta } : {}),
-    page: 'heartbeat',
-  };
-}
-
 /** Another person on this install: what they do, what they own, where they are. */
 function personRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRowGroup[] {
   const rows: ProfileRowModel[] = [];
@@ -428,81 +357,6 @@ function aboutRow(kind: 'nav' | 'text' | 'locked', ctx: ProfileRowsContext): Pro
     ...(kind === 'nav' ? { page: 'about' as const } : {}),
     ...(kind === 'locked' ? { lockedReason: SYSTEM_LOCK_REASON } : {}),
   };
-}
-
-/** Summary parts that are known, joined; `null` when none is. */
-function summaryOf(parts: Array<string | null | undefined>): string | null {
-  const known = parts.filter((part): part is string => Boolean(part));
-  return known.length > 0 ? known.join(' · ') : null;
-}
-
-/** A fold, wrapped around its rows. */
-function fold(
-  id: ProfileFoldId,
-  title: string,
-  rows: ProfileRowModel[],
-  summary: string | null
-): ProfileRowGroup {
-  return { id, rows, fold: { id, title, summary } };
-}
-
-/**
- * Work: what this agent has been doing — its conversations, its schedules, its
- * promises, how it wakes, and every action on record.
- *
- * The same rows for an agent you manage and for DorkBot — what DorkBot
- * withholds is its identity, not its work.
- */
-function workFold(ctx: ProfileRowsContext): ProfileRowGroup {
-  const facts = ctx.facts;
-  const tasksAvailable = facts?.tasksAvailable !== false;
-  const rows: ProfileRowModel[] = [
-    {
-      id: 'sessions',
-      kind: 'nav',
-      label: 'Chats',
-      value: countValue(facts?.sessions?.count, 'chat', 'chats'),
-      meta: lastWords(facts?.sessions?.newestAt ?? null),
-      page: 'sessions',
-    },
-  ];
-  // Not "0 scheduled" and not a locked row: an install with the tasks tool off
-  // has no such thing as a schedule, so there is nothing here to name (§1.4).
-  if (tasksAvailable) {
-    rows.push({
-      id: 'tasks',
-      kind: 'nav',
-      label: 'Schedules',
-      value: countValue(facts?.tasks?.count, 'scheduled', 'scheduled'),
-      meta: nextWords(facts?.tasks?.nextRunAt ?? null),
-      page: 'tasks',
-    });
-  }
-  rows.push(todosRow(ctx));
-  // Yours only, so it is here and not on someone else's agent: the prompts are private.
-  rows.push({
-    id: 'work-queue',
-    kind: 'nav',
-    label: 'Work queue',
-    value: null,
-    page: 'work-queue',
-  });
-  rows.push(heartbeatRow(ctx));
-  // What it did, and what was done to it, from the audit log. No value: a count
-  // of every recorded action is a number nobody acts on.
-  rows.push({ id: 'activity', kind: 'nav', label: 'Activity', value: null, page: 'activity' });
-  return fold(
-    'work',
-    'Work',
-    rows,
-    summaryOf([
-      // Beside a DM with Show sessions off, the Chats row is left out, so its
-      // count is too.
-      ctx.quietSessionDetail ? null : countValue(facts?.sessions?.count, 'chat', 'chats'),
-      tasksAvailable ? countValue(facts?.tasks?.count, 'schedule', 'schedules') : null,
-      ctx.todoPromises ? `${ctx.todoPromises.open} open` : null,
-    ])
-  );
 }
 
 /** The Personality row: a picker on every agent whose voice is yours to set. */
@@ -681,12 +535,7 @@ function otherAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRow
         roomsRow(ctx),
       ],
     },
-    fold(
-      'work',
-      'Work',
-      [todosRow(ctx), heartbeatRow(ctx)],
-      ctx.todoPromises ? `${ctx.todoPromises.open} open` : null
-    ),
+    otherAgentWorkFold(ctx),
   ];
 }
 

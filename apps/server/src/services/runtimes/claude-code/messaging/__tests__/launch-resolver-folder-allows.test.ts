@@ -13,16 +13,9 @@ import type { MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { resolveLaunch } from '../launch-resolver.js';
 import { folderAllowsWaitingStatus } from '../../folder-settings/apply-folder-allows.js';
-import {
-  lastApprovedRules,
-  recordFolderAllowApproval,
-} from '../../folder-settings/folder-allow-consent.js';
+import { lastApprovedRules } from '../../folder-settings/folder-allow-consent.js';
 import { FOLDER_RULE_ASK_REASON } from '../../tool-gate/held-turn-hook.js';
-import {
-  _internal,
-  setFolderAllowApprovalGateway,
-  type FolderAllowApprovalGateway,
-} from '../../folder-settings/folder-allow-approval.js';
+import { _internal } from '../../folder-settings/folder-allow-approval.js';
 import { pinRepoBaseline } from '../../repo-settings/repo-baseline.js';
 import {
   isolateGitEnv,
@@ -30,6 +23,11 @@ import {
   writeFile,
   type RepoFixture,
 } from '../../repo-settings/__tests__/git-fixture.js';
+import {
+  type FolderAllowApprovalGateway,
+  recordFolderAllowApproval,
+} from '../../../../core/approvals/computer-asks/index.js';
+import { wireTestAsks } from '../../../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
 
 const requiredLaunches = isolatedRequiredLaunchOwner();
 
@@ -159,12 +157,12 @@ beforeEach(() => {
     },
     consume: () => ({ outcome: 'expired' }) as never,
   };
-  setFolderAllowApprovalGateway(gateway);
+  wireTestAsks(gateway);
   _internal.forgetOpenCards();
 });
 
 afterEach(() => {
-  setFolderAllowApprovalGateway(null);
+  wireTestAsks(null);
   setAgentHomeRegistry(undefined);
   rmSync(root, { recursive: true, force: true });
 });

@@ -1,0 +1,11 @@
+{
+  // The CHECK program: it covers src/, its tests and the generator script, so a
+  // type error in any of them fails this package's `typecheck` (DOR-518). Emit
+  // runs from tsconfig.build.json instead, which keeps only src/.
+  "extends": "@dorkos/typescript-config/node.json",
+  "compilerOptions": {
+    "outDir": "./dist"
+  },
+  "include": ["src/**/*", "scripts/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

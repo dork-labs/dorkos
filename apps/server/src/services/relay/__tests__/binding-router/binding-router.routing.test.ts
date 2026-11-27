@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readFile, writeFile } from 'node:fs/promises';
-import { isDispatchId, newDispatchId } from '@dorkos/shared/dispatch-id';
+import { isDispatchId, newDispatchId } from '../../../../lib/identity/dispatch-id.js';
 import { currentDispatchId } from '../../../../lib/dispatch-context.js';
 import { recentDispatches, resetDispatchBuffers } from '../../../observability/dispatch-buffers.js';
 import {

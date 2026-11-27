@@ -11,7 +11,7 @@ import type { HandoffTrace } from '../handoff/failure-trace.js';
 import { prepareFailedHandoffSeat, endFailedHandoffAttempt } from './failed-seat-recovery.js';
 import { randomUUID } from 'node:crypto';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
-import { newDispatchId } from '@dorkos/shared/dispatch-id';
+import { newDispatchId } from '../../../lib/identity/dispatch-id.js';
 import { logger } from '../../../lib/logger.js';
 import { marksOf } from '../../core/turn-power/turn-levels.js';
 import { marksHold } from '../../core/turn-power/turn-marks.js';

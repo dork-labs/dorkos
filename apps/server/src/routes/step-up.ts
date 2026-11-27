@@ -57,8 +57,7 @@ import {
 } from '../services/core/auth/step-up/remote-password-failures.js';
 import { requestCodeForHash } from '../services/core/auth/step-up/request-code.js';
 import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
-import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
-import { presentsProgramCredential } from '../lib/caller-authority.js';
+import { presentsProgram } from '../lib/caller-authority.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import { currentStepUpExtensionRisks } from '../services/extensions/step-up/step-up-extension-risk.js';
 import { pageStampsEnforced, staleConfirm } from '../services/extensions/step-up/page-stamp.js';
@@ -68,7 +67,6 @@ import {
 } from '../services/extensions/step-up/step-up-risk-ledger.js';
 import { remoteAnswerDevice } from '../services/core/auth/sessions/remote-answer-device.js';
 import { signInStartedAt } from '../services/core/auth/sessions/signed-in-devices.js';
-import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
 import { getAuth, readOwnerAccount } from '../services/core/auth/index.js';
 import { isAtThisComputer, isOnEncryptedConnection } from '../services/core/auth/gate-policy.js';
 import {
@@ -79,6 +77,7 @@ import {
 } from '../services/core/auth/owner-password.js';
 import {
   cancelHeldStepUp,
+  admitsConfirm,
   peekHeldStepUp,
   spendStepUpTry,
   takeHeldStepUp,
@@ -288,10 +287,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
    */
   function refuseCaller(c: Context<ApiEnv>, write: boolean): Response | undefined {
     const facts = honoRequestFacts(c);
-    const program =
-      presentsAgentIdentity(facts) ||
-      facts.headers[APPROVAL_TOKEN_HEADER] !== undefined ||
-      presentsProgramCredential(facts);
+    const program = presentsProgram(facts);
     const origin = facts.headers.origin;
     const site = facts.headers['sec-fetch-site'];
     const ownPage =
@@ -301,9 +297,16 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     return undefined;
   }
 
-  /** The live held action this caller held, or the refusal. */
-  function heldOrRefusal(c: Context<ApiEnv>): HeldStepUp | Response {
-    const entry = peekHeldStepUp(c.req.param('heldActionId') ?? '');
+  /**
+   * The live held action this caller held, or the refusal. On a confirm, the
+   * held call's own bars run first and a refusal reads as no hold, leaving it
+   * held (DOR-4978). A read of the sheet or a cancel runs nothing and grants
+   * nothing, so it skips them.
+   */
+  function heldOrRefusal(c: Context<ApiEnv>, confirming = false): HeldStepUp | Response {
+    const id = c.req.param('heldActionId') ?? '';
+    if (confirming && !admitsConfirm(id, honoRequestFacts(c))) return refuse(c, 'expired');
+    const entry = peekHeldStepUp(id);
     if (!entry) return refuse(c, 'expired');
     const sessionId = honoRequestFacts(c).user?.sessionId ?? null;
     if (entry.sessionId !== sessionId) return refuse(c, 'held_by_another_browser');
@@ -529,7 +532,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
   router.post('/:heldActionId/password', async (c) => {
     const callerRefusal = refuseCaller(c, true);
     if (callerRefusal) return callerRefusal;
-    const entry = heldOrRefusal(c);
+    const entry = heldOrRefusal(c, true);
     if (entry instanceof Response) return entry;
     const { unavailable, risks } = await passwordUnavailable(c);
     if (unavailable) return refuseUnavailable(c, unavailable, risks);
@@ -550,7 +553,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
   router.post('/:heldActionId/change-password', async (c) => {
     const callerRefusal = refuseCaller(c, true);
     if (callerRefusal) return callerRefusal;
-    const entry = heldOrRefusal(c);
+    const entry = heldOrRefusal(c, true);
     if (entry instanceof Response) return entry;
     const { unavailable, risks } = await passwordUnavailable(c);
     if (unavailable) return refuseUnavailable(c, unavailable, risks);

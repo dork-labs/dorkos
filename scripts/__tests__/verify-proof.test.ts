@@ -36,7 +36,7 @@ const git = (...args: string[]) =>
 const check = (...args: string[]) =>
   spawnSync(process.execPath, [script, 'check', sha, ...args], { cwd: repo, encoding: 'utf8' });
 const refusal = () =>
-  `no pnpm verify pass recorded for ${sha.slice(0, 12)}; run pnpm verify, or pass --no-verify-proof\n`;
+  `no pnpm check verify pass recorded for ${sha.slice(0, 12)}; run pnpm check verify, or pass --no-verify-proof\n`;
 
 /** Where turbo writes its run summaries in the fixture repository. */
 const turboRuns = () => path.join(repo, '.turbo/runs');
@@ -139,12 +139,11 @@ beforeEach(() => {
 afterEach(() => rmSync(repo, { recursive: true, force: true }));
 
 describe('verification proof', () => {
-  it('wires pnpm verify through the wrapper without changing the checks', () => {
+  it('wires pnpm check verify through the wrapper without changing the checks', () => {
     const pkg = JSON.parse(
       readFileSync(path.resolve(import.meta.dirname, '../../package.json'), 'utf8')
     );
-    expect(pkg.scripts.verify).toBe('node scripts/verify-proof/cli.ts run');
-    expect(pkg.scripts['verify:checks']).toContain('pnpm test:scripts && pnpm lint:root');
+    expect(pkg.scripts['check:verify:turbo']).toContain('pnpm test:scripts && pnpm lint:root');
   });
 
   it('runs the checks exactly once through the CLI and preserves a failed exit', () => {
@@ -152,7 +151,7 @@ describe('verification proof', () => {
     const run = (status: string) => runGate('run', { PROOF_TEST_EXIT: status });
     // The host-binary suites are left to CI: every glob in the data file rides as an exclude.
     const globs = readBinaryTestGlobs(path.resolve(import.meta.dirname, '../..'));
-    const gateRun = `run verify:checks ${globs.map((glob) => `--exclude=${glob}`).join(' ')}\n`;
+    const gateRun = `run check:verify:turbo ${globs.map((glob) => `--exclude=${glob}`).join(' ')}\n`;
     expect(run('0').status).toBe(0);
     expect(check().status).toBe(0);
     expect(readFileSync(path.join(repo, '.git/gate-runs'), 'utf8')).toBe(gateRun);
@@ -214,7 +213,7 @@ describe('verification proof', () => {
     expect(check().status).toBe(1);
     // A proof with no marker at all gets its own line; the lone-copy test pins its words.
     expect(check().stderr).toMatch(
-      field === 'finished' ? /was recorded before DOR-4616 and cannot arm/ : /^no pnpm verify pass/
+      field === 'finished' ? /before DOR-4616 and cannot arm/ : /^no pnpm check verify pass/
     );
   });
 
@@ -255,7 +254,7 @@ describe('verification proof', () => {
       encoding: 'utf8',
     });
     expect(result.status).toBe(2);
-    expect(result.stderr).toMatch(/^pnpm verify takes no arguments \(got: --force\);/);
+    expect(result.stderr).toMatch(/^pnpm check verify takes no arguments \(got: --force\);/);
     expect(existsSync(path.join(repo, '.git/dorkos-verify-proof'))).toBe(false);
   });
 
@@ -420,18 +419,16 @@ describe('verification proof', () => {
 
 const proofs = () => path.join(repo, '.git/dorkos-verify-proof');
 const preopenRefusal = () =>
-  `no pnpm verify:preopen or pnpm verify pass recorded for ${sha.slice(0, 12)}; ` +
-  'run pnpm verify:preopen, or pass --no-verify-proof\n';
+  `no pnpm check preopen or pnpm check verify pass recorded for ${sha.slice(0, 12)}; ` +
+  'run pnpm check preopen, or pass --no-verify-proof\n';
 
 describe('the preopen level (DOR-4728)', () => {
-  it('wires pnpm verify:preopen to the same wrapper, with its own command', () => {
+  it('wires pnpm check preopen to the same wrapper, with its own command', () => {
     const pkg = JSON.parse(
       readFileSync(path.resolve(import.meta.dirname, '../../package.json'), 'utf8')
     );
-    expect(pkg.scripts.verify).toBe('node scripts/verify-proof/cli.ts run');
-    expect(pkg.scripts['verify:preopen']).toBe('node scripts/verify-proof/cli.ts run-preopen');
-    expect(pkg.scripts['verify:preopen:turbo']).toContain('turbo run typecheck lint --affected');
-    expect(pkg.scripts['verify:preopen:turbo']).not.toMatch(/turbo run test\b/);
+    expect(pkg.scripts['check:preopen:turbo']).toContain('turbo run typecheck lint --affected');
+    expect(pkg.scripts['check:preopen:turbo']).not.toMatch(/turbo run test\b/);
   });
 
   it('records a preopen pass in its own file, which the default check never accepts', async () => {
@@ -552,14 +549,14 @@ describe('the preopen level (DOR-4728)', () => {
     // Only the typecheck and lint step goes through turbo, so only it writes a summary.
     installFakePnpm(
       `echo "$*" >> '${log}'\n` +
-        'case "$*" in "run verify:preopen:turbo") write_runs 1 ;; esac\nexit 0'
+        'case "$*" in "run check:preopen:turbo") write_runs 1 ;; esac\nexit 0'
     );
     const result = runGate('run-preopen');
     expect(result.status, result.stderr).toBe(0);
     // HEAD is main itself, so nothing changed: the repo-wide scripts suites (which any
     // change can break) and the typecheck and lint step run, nothing else.
     expect(readFileSync(log, 'utf8')).toBe(
-      'exec vitest run --config scripts/vitest.repo.config.ts\nrun verify:preopen:turbo\n'
+      'exec vitest run --config scripts/vitest.config.ts --project scripts-repo\nrun check:preopen:turbo\n'
     );
     expect(existsSync(path.join(proofs(), sha))).toBe(false);
     expect(check('--level', 'preopen').status).toBe(0);
@@ -567,11 +564,11 @@ describe('the preopen level (DOR-4728)', () => {
   });
 
   it.each([
-    // `pnpm verify --preopen`: only the verify:preopen script may ask for the lighter gate.
-    [['run', '--preopen'], 'pnpm verify takes no arguments (got: --preopen);'],
-    [['run', '--preopen', '--force'], 'pnpm verify takes no arguments (got: --preopen --force);'],
-    // `pnpm verify:preopen --force`: the message names only what the person typed.
-    [['run-preopen', '--force'], 'pnpm verify:preopen takes no arguments (got: --force);'],
+    // `run --preopen`: only `run-preopen` may ask for the lighter gate.
+    [['run', '--preopen'], 'pnpm check verify takes no arguments (got: --preopen);'],
+    [['run', '--preopen', '--force'], 'pnpm check verify takes no arguments (got: --preopen --'],
+    // `pnpm check preopen --force`: the message names only what the person typed.
+    [['run-preopen', '--force'], 'pnpm check preopen takes no arguments (got: --force);'],
   ])('refuses %j before any check starts', (args, message) => {
     const result = spawnSync(process.execPath, [script, ...args], {
       cwd: repo,
@@ -655,15 +652,15 @@ describe('the preopen level (DOR-4728)', () => {
       expect(refused.status).toBe(1);
       // Its own line: the file is there and matches, but cannot say its run finished.
       expect(refused.stderr).toBe(
-        `the pnpm verify proof for ${sha.slice(0, 12)} was recorded before DOR-4616 and ` +
-          'cannot arm; green CI at this head still arms, or run pnpm verify from a branch ' +
+        `the pnpm check verify proof for ${sha.slice(0, 12)} was recorded before DOR-4616 and ` +
+          'cannot arm; green CI at this head still arms, or run pnpm check verify from a branch ' +
           'that has the fix\n'
       );
       const preopen = runCli(cli, 'check', sha, '--level', 'preopen');
       expect(preopen.status).toBe(1);
       expect(preopen.stderr).toBe(
         `the proof for ${sha.slice(0, 12)} was recorded before DOR-4616 and does not count; ` +
-          'run pnpm verify:preopen from a branch that has the fix\n'
+          'run pnpm check preopen from a branch that has the fix\n'
       );
     });
   });
@@ -796,7 +793,7 @@ describe('what a preopen run checks (DOR-4728)', () => {
   it('runs the repo-wide scripts suites in place of test:scripts for an apps/client/ change', () => {
     const steps = planFor({ 'apps/client/src/view.tsx': 'export {};' });
     expect(names(steps)).toEqual(['scripts-repo', 'lint:changed', 'typecheck-lint']);
-    expect(steps.at(-1)?.args).toEqual(['run', 'verify:preopen:turbo']);
+    expect(steps.at(-1)?.args).toEqual(['run', 'check:preopen:turbo']);
   });
 
   it('still runs the repo-wide scripts suites for a change only under apps/server/src/services/', () => {
@@ -804,13 +801,9 @@ describe('what a preopen run checks (DOR-4728)', () => {
     // them), and the required typecheck workflow runs them on every PR.
     const steps = planFor({ 'apps/server/src/services/new-domain/index.md': 'words' });
     expect(names(steps)).toEqual(['scripts-repo', 'typecheck-lint']);
-    expect(steps[0]?.args).toEqual([
-      'exec',
-      'vitest',
-      'run',
-      '--config',
-      'scripts/vitest.repo.config.ts',
-    ]);
+    expect(steps[0]?.args.join(' ')).toBe(
+      'exec vitest run --config scripts/vitest.config.ts --project scripts-repo'
+    );
   });
 
   it.each([
@@ -898,7 +891,7 @@ describe('what a preopen run checks (DOR-4728)', () => {
     const steps: PreopenStep[] = [
       { name: 'test:scripts', args: ['run', 'test:scripts'] },
       { name: 'lint:changed', args: ['exec', 'eslint'] },
-      { name: 'typecheck-lint', args: ['run', 'verify:preopen:turbo'] },
+      { name: 'typecheck-lint', args: ['run', 'check:preopen:turbo'] },
     ];
     const ran: string[] = [];
     const exec = (fail?: PreopenStep['name']) => (step: PreopenStep) => {
@@ -988,7 +981,7 @@ describe('a proof only for a run that finished (DOR-4616)', () => {
     );
     const result = runGate('run', { PROOF_TEST_CUT_SHORT: cutShort });
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('pnpm verify exited 0 but did not finish');
+    expect(result.stderr).toContain('pnpm check verify exited 0 but did not finish');
     expect(result.stderr).toContain('shows 29 of 35 tasks finished, 0 failed, exit code 0');
     expect(result.stderr).toContain('no proof recorded');
     expect(existsSync(proof())).toBe(false);
@@ -1072,12 +1065,12 @@ describe('a proof only for a run that finished (DOR-4616)', () => {
 
   it('records no preopen proof for a typecheck and lint step stopped mid-run', () => {
     installFakePnpm(
-      'case "$*" in "run verify:preopen:turbo") ' +
+      'case "$*" in "run check:preopen:turbo") ' +
         'PROOF_TEST_SUMMARY="$PROOF_TEST_CUT_SHORT"; write_runs 1 ;; esac\nexit 0'
     );
     const result = runGate('run-preopen', { PROOF_TEST_CUT_SHORT: cutShort });
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('pnpm verify:preopen exited 0 but did not finish');
+    expect(result.stderr).toContain('pnpm check preopen exited 0 but did not finish');
     expect(check('--level', 'preopen').status).toBe(1);
   });
 
@@ -1089,7 +1082,7 @@ describe('a proof only for a run that finished (DOR-4616)', () => {
     const result = await run.exited;
     // A shell's code for a TERMed run, not a signal death and never 0.
     expect({ code: result.code, signal: result.signal }).toEqual({ code: 143, signal: null });
-    expect(result.stderr).toContain('pnpm verify was stopped by SIGTERM; no proof recorded');
+    expect(result.stderr).toContain('pnpm check verify was stopped by SIGTERM; no proof recorded');
     expect(readFileSync(path.join(repo, '.git/pnpm-signals'), 'utf8')).toBe('TERM\n');
     expect(existsSync(proof())).toBe(false);
     expect(check().status).toBe(1);
@@ -1098,7 +1091,7 @@ describe('a proof only for a run that finished (DOR-4616)', () => {
         sha,
         level: 'full',
         kind: 'stopped',
-        why: 'pnpm verify was stopped by SIGTERM; no proof recorded',
+        why: 'pnpm check verify was stopped by SIGTERM; no proof recorded',
         status: 143,
         when: expect.any(String),
       },
@@ -1116,7 +1109,7 @@ describe('a proof only for a run that finished (DOR-4616)', () => {
     process.kill(pnpm, 'SIGINT');
     const result = await run.exited;
     expect({ code: result.code, signal: result.signal }).toEqual({ code: 130, signal: null });
-    expect(result.stderr).toContain('pnpm verify was stopped by SIGINT; no proof recorded');
+    expect(result.stderr).toContain('pnpm check verify was stopped by SIGINT; no proof recorded');
     // Once from the "terminal", never a second time from the CLI.
     expect(readFileSync(path.join(repo, '.git/pnpm-signals'), 'utf8')).toBe('INT\n');
     expect(existsSync(proof())).toBe(false);
@@ -1140,9 +1133,10 @@ describe('a proof only for a run that finished (DOR-4616)', () => {
         .split('&&')
         .filter((part) => /\bturbo run\b/.test(part))
         .map((part) => part.split(' -- ')[0]);
-    expect(turboSteps('verify:checks')).toHaveLength(TURBO_RUNS.full);
-    expect(turboSteps('verify:preopen:turbo')).toHaveLength(TURBO_RUNS.preopen);
-    for (const step of [...turboSteps('verify:checks'), ...turboSteps('verify:preopen:turbo')]) {
+    expect(turboSteps('check:verify:turbo')).toHaveLength(TURBO_RUNS.full);
+    expect(turboSteps('check:preopen:turbo')).toHaveLength(TURBO_RUNS.preopen);
+    const steps = ['check:verify:turbo', 'check:preopen:turbo'].flatMap(turboSteps);
+    for (const step of steps) {
       expect(step).toMatch(/\bturbo run .*--summarize\b/);
     }
   });

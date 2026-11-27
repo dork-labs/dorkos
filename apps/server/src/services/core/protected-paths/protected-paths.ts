@@ -337,6 +337,11 @@ export const PERSON_ONLY_DATA_PATHS: readonly ProtectedPath[] = [
  * The person runs it as themselves, outside DorkOS, so an agent that could
  * rewrite it could run anything as the person the next time they type `dorkos`.
  * Refused at every level, Full too.
+ *
+ * `.gnupg` never changes (DOR-4388). {@link HOME_SECRET_PATHS} already refuses
+ * reading the whole folder, but a read refusal keeps only the read tools off it
+ * (Claude Code's `Read`, `Grep` and `Glob`), never a write tool. Refused at
+ * every level, Full too.
  */
 export const HOME_PERSON_ONLY_PATHS: readonly ProtectedPath[] = [
   ...belowFull(
@@ -357,6 +362,7 @@ export const HOME_PERSON_ONLY_PATHS: readonly ProtectedPath[] = [
     ['.dork/browser/agent-browser-guard.json*', 'file'],
     ['.dork/browser-profiles/.binding-key', 'file'],
     ['.local/bin/dorkos', 'file'],
+    ['.gnupg', 'folder'],
   ]),
   ...belowFull(
     group('home', 'write', [

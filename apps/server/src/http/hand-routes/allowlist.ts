@@ -79,24 +79,6 @@ export const HAND_ROUTE_ALLOWLIST: readonly HandRouteAllowlistEntry[] = [
   },
   {
     method: 'GET',
-    path: '/api/relay/stream',
-    category: 'stream',
-    reason: "Relay's live message stream (SSE).",
-  },
-  {
-    method: 'GET',
-    path: '/api/tunnel/stream',
-    category: 'stream',
-    reason: "The tunnel's status stream (SSE).",
-  },
-  {
-    method: 'GET',
-    path: '/api/extensions/events',
-    category: 'stream',
-    reason: "Apps' status stream (SSE).",
-  },
-  {
-    method: 'GET',
     path: '/api/extensions/:id/rooms/:roomId/threads/:entryId/events',
     category: 'stream',
     reason: "An app's thread event stream (SSE).",
@@ -315,6 +297,18 @@ export const HAND_ROUTE_ALLOWLIST: readonly HandRouteAllowlistEntry[] = [
   },
   {
     method: 'POST',
+    path: '/api/session-relay/passkeys/start',
+    category: 'sign-in-handshake',
+    reason: 'Starts a WebAuthn ceremony for an approvals passkey: a challenge, after the password.',
+  },
+  {
+    method: 'POST',
+    path: '/api/session-relay/passkeys/finish',
+    category: 'sign-in-handshake',
+    reason: "The ceremony's answer, from the loopback return page, with no session by design.",
+  },
+  {
+    method: 'POST',
     path: '/api/person-session',
     category: 'sign-in-handshake',
     reason: "The owner's password step-up, which sets its cookie.",
@@ -460,6 +454,31 @@ export const HAND_ROUTE_ALLOWLIST: readonly HandRouteAllowlistEntry[] = [
   {
     method: 'PATCH',
     path: '/api/agents/current',
+    category: 'network-reachable',
+    reason: 'network-reachable by design, waits for A5 (API-key audience), DOR-5267',
+  }, // A person's review of a document's routes and unfinished work (Security, t1j): a replay
+  // from a held device is refused in the route (`routes/canvas-doc-work-review.ts`).
+  {
+    method: 'POST',
+    path: '/api/canvas/docs/:id/routes/:routeId/review',
+    category: 'network-reachable',
+    reason: 'network-reachable by design, waits for A5 (API-key audience), DOR-5267',
+  },
+  {
+    method: 'POST',
+    path: '/api/canvas/docs/:id/routes/:routeId/revoke',
+    category: 'network-reachable',
+    reason: 'network-reachable by design, waits for A5 (API-key audience), DOR-5267',
+  },
+  {
+    method: 'POST',
+    path: '/api/canvas/docs/:id/work/:batchId/replay',
+    category: 'network-reachable',
+    reason: 'network-reachable by design, waits for A5 (API-key audience), DOR-5267',
+  },
+  {
+    method: 'POST',
+    path: '/api/canvas/docs/:id/work/:batchId/clear',
     category: 'network-reachable',
     reason: 'network-reachable by design, waits for A5 (API-key audience), DOR-5267',
   },

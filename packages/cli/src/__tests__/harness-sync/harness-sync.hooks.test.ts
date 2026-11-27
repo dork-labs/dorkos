@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
+// Compiles the server's consent modules now, not inside the first test (DOR-4518, DOR-5459).
+import '../preload-harness-server.js';
 import fs from 'fs';
 import path from 'path';
 import { runHarnessSync } from '../../harness-sync-command.js';

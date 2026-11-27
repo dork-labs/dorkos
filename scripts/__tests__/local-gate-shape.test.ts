@@ -43,7 +43,7 @@
  * WHY A VITEST TEST RATHER THAN A SHELL FIXTURE — the same reasoning its
  * neighbours give: `scripts/vitest.config.ts` globs every `*.test.ts` under a
  * `__tests__` directory, and that run is the last link of `test:scripts` (what
- * `pnpm verify` runs) and the final `harness` step of `scripts-test.yml`, so
+ * `pnpm check verify` runs) and the final `harness` step of `scripts-test.yml`, so
  * this file registers itself in both with no wiring. `lefthook.yml` is already
  * inside that workflow's path filters.
  */
@@ -223,14 +223,14 @@ describe('the root heavy scripts take a host-wide slot (DOR-3274)', () => {
     ).toBe(true);
   });
 
-  it('`pnpm verify` runs both of its turbo sweeps under the lock', () => {
-    expect(wraps(scripts['verify:checks'] ?? '', 'typecheck')).toBe(true);
-    expect(wraps(scripts['verify:checks'] ?? '', 'test')).toBe(true);
-    expect(scripts['verify:checks']).not.toMatch(/&& turbo run/);
+  it('`pnpm check verify` runs both of its turbo sweeps under the lock', () => {
+    expect(wraps(scripts['check:verify:turbo'] ?? '', 'typecheck')).toBe(true);
+    expect(wraps(scripts['check:verify:turbo'] ?? '', 'test')).toBe(true);
+    expect(scripts['check:verify:turbo']).not.toMatch(/&& turbo run/);
   });
 
-  it('`pnpm verify:preopen` runs its typecheck and lint sweep under the lock, and no test sweep', () => {
-    const preopen = scripts['verify:preopen:turbo'] ?? '';
+  it('`pnpm check preopen` runs its typecheck and lint sweep under the lock, and no test sweep', () => {
+    const preopen = scripts['check:preopen:turbo'] ?? '';
     expect(wraps(preopen, 'typecheck')).toBe(true);
     expect(preopen).not.toMatch(/&& turbo run/);
     // The package tests are CI's at this level (DOR-4728); a test sweep here would be

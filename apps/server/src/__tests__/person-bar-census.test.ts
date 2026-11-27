@@ -39,7 +39,7 @@ const CREDENTIAL_GATED_ALLOWED: Record<string, string> = {
   'lib/person-without-session.ts': 'tells the open gate apart, to answer with the step-up',
   'routes/debug.ts': 'a read: which owner-only flags a view shows',
   'routes/relay-delivery-receipts.ts': 'a read: whose receipts a view shows',
-  'services/core/browser-registry/owner-scope.ts':
+  'services/core/browser-registry/owner/owner-scope-resolver.ts':
     'a locality check beside refuseUnlessAccountOwner, which asks the person question',
 };
 
@@ -63,7 +63,9 @@ const ROUTE_BARS: Record<string, readonly string[]> = {
   'routes/extensions-trusted-sources.ts': ['refusedNotAPerson'],
   // The person's view of the load gate's waiting line, reads included (DOR-4209).
   'routes/system-load-gate.ts': ['refusedNotAPerson'],
-  'routes/extensions-person-bar.ts': ['requireOperatorCookieUnderLogin', 'trustedCaller'],
+  'routes/extensions-person-bar.ts': ['assessPerson'],
+  // The person bar itself, run by the hand routes and the mount (DOR-4978).
+  'lib/http/person-bar.ts': ['requireOperatorCookieUnderLogin', 'trustedCaller'],
   'services/extensions/inbox/extension-inbox-context.ts': ['assessPerson'],
   'routes/marketplace/package-actions.ts': ['trustedCaller'],
   'routes/marketplace/held-back.ts': ['trustedCaller'],
@@ -91,7 +93,11 @@ const ROUTE_BARS: Record<string, readonly string[]> = {
     "audience: 'person'",
     'frontDoorOwner',
   ],
-  'routes/capability-dispatch.ts': ['frontDoorRefusal(facts)'],
+  'routes/capability-dispatch.ts': ['frontDoorRefusal(facts)', 'assessPerson(facts'],
+  // A person's Heartbeat page and persona move are person-only capabilities (DOR-4978); the
+  // page shows held words only to the owner, a request fact the dispatcher works out.
+  'services/heartbeats/measures/page-capability.ts': ["audience: 'person'", 'accountOwner'],
+  'services/mesh/doors/agent-persona-capability.ts': ["audience: 'person'"],
   'startup/steps/core-routes.ts': ['loginEnabled: personSessionRequired'],
 };
 

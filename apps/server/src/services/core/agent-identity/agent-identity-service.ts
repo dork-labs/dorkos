@@ -55,6 +55,7 @@
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, desc, eq, isNull, agentIdentityTokens, type Db } from '@dorkos/db';
+import { TokenChats } from './token-chats.js';
 
 /** Bytes of CSPRNG randomness behind a minted token (128 bits, per spec §3.1). */
 const TOKEN_BYTES = 16;
@@ -118,6 +119,13 @@ export interface AgentIdentity {
    * anything.
    */
   inactive?: 'revoked' | 'expired';
+  /**
+   * The chat a live process holding the presented token runs (DOR-5264),
+   * from this server's memory (`token-chats.ts`). Set only by {@link AgentIdentityService.resolve},
+   * only for a live token, and only while its entry lasts. Absent means the
+   * token names no chat; it never names another one.
+   */
+  chatId?: string;
 }
 
 /** What {@link AgentIdentityService.mint} needs to describe a new identity. */
@@ -181,8 +189,13 @@ export class AgentIdentityService {
    * Build the service over a database handle.
    *
    * @param db - The DorkOS database handle.
+   * @param chats - Which chat each token was minted for, in memory only
+   *   (`token-chats.ts`); tests pass a smaller one.
    */
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    readonly chats = new TokenChats()
+  ) {}
 
   /**
    * Mint a fresh token for an agent and persist only its hash.
@@ -253,7 +266,8 @@ export class AgentIdentityService {
 
     await this.touch(row, now);
 
-    return this.identityOf(row);
+    const chatId = this.chats.chatOf(row.tokenHash);
+    return { ...this.identityOf(row), ...(chatId ? { chatId } : {}) };
   }
 
   /**
@@ -406,6 +420,29 @@ export function initAgentIdentityService(db: Db): AgentIdentityService {
  */
 export function getAgentIdentityService(): AgentIdentityService | undefined {
   return service;
+}
+
+/**
+ * A process holding `token` has started, for `chatId` (DOR-5264,
+ * `token-chats.ts`): until it ends, the token names that chat.
+ *
+ * @param token - The token the process holds.
+ * @param chatId - The chat it runs.
+ */
+export function holdTokenChat(token: string, chatId: string): void {
+  service?.chats.hold(hashToken(token), chatId);
+}
+
+/**
+ * A process holding each of these tokens has ended (DOR-5264,
+ * `token-chats.ts`). Only these tokens, never every token of their chat, and
+ * each names its chat until the last process holding it ends, so a process
+ * that replaced this one keeps its own. The tokens themselves stay valid.
+ *
+ * @param tokens - The tokens the ended process held.
+ */
+export function forgetAgentTokens(...tokens: string[]): void {
+  service?.chats.release(tokens.map(hashToken));
 }
 
 /**

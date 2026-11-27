@@ -179,7 +179,7 @@ interface DirectoryDefaultResponse {
   path?: string;
 }
 
-/** `GET /api/sessions` — the `{ sessions, warnings? }` envelope (ADR-0310). */
+/** `GET /api/sessions` — one page, the `{ sessions, nextCursor, warnings? }` envelope (ADR-0310). */
 interface SessionListResponse {
   /** Per-runtime degradation notices. Absent when every runtime answered. */
   warnings?: string[];

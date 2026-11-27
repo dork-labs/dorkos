@@ -58,6 +58,7 @@ import {
 } from '../core/capabilities/capability-definition.js';
 import { changeToTell, type TodoChangeNotice } from './notice/todo-recipient-notice.js';
 import { markTurnIfOutside } from './todo-word-marks.js';
+import { announceTodoMadeInChat } from './links/todo-made-in-chat.js';
 import {
   TodoPromiseError,
   type TodoPromiseActor,
@@ -316,6 +317,8 @@ export const todoPromisesDomain: CapabilityDomain = {
           { kind: 'agent', agentId }
         );
         markTurnIfOutside(context, [todoPromise.id], todoPromiseDeps.carriesOutsideWords);
+        // The chat this turn runs, as the server knows it, produced it (DOR-5266).
+        announceTodoMadeInChat(context, todoPromise.id);
         return { ok: true as const, todoPromise };
       },
     }),

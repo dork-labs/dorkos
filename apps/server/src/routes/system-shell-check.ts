@@ -25,12 +25,12 @@ import {
   continueWithoutCheck,
   shellCheckStatus,
 } from '../services/runtimes/claude-code/shell-guard/guard-service.js';
-import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { refusedNotAPerson } from './extensions-person-bar.js';
+import type { PersonBarCopy } from '../lib/http/person-bar.js';
 
 const COPY: PersonBarCopy = {
   code: 'person_only',
   subject: 'this check',
-  crossSite: (origin) => `A page from ${origin} tried to turn this check off. Nothing changed.`,
   agent: 'An agent can’t turn this check off. Ask a person to do it in the DorkOS app.',
 };
 

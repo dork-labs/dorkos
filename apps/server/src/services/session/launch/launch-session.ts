@@ -23,7 +23,7 @@ import path from 'node:path';
 import type { MeshCore } from '@dorkos/mesh';
 import type { MessageOpts, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { SendMessageRequest } from '@dorkos/shared/schemas';
-import { newDispatchId } from '@dorkos/shared/dispatch-id';
+import { newDispatchId } from '../../../lib/identity/dispatch-id.js';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import type { PersonChatBinding } from '../../core/runtime-seam/person-draft-settings.js';
@@ -511,6 +511,8 @@ async function launchSessionMessage(
           }),
           // A chat set to Full autonomy has no limits (DOR-3343): see `fullChatOf`.
           fullChat: fullChatOf(sessionId),
+          // Made for this chat: the work graph records it opened the worktree (DOR-5265).
+          chatId: sessionId,
         })
       );
       effectiveCwd = workspace.path;

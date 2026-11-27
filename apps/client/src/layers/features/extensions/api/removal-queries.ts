@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { extensionQueryKeys } from '@/layers/entities/extension';
 import { extensionApiUrl } from '../model/extension-api-url';
 import { readResponseError } from '@/layers/shared/lib';
+import { pageQuery, readAllPages } from '@/layers/shared/lib/read-all-pages';
 
 /** An approval left behind by an extension that is no longer installed. */
 export interface StaleApproval {
@@ -37,12 +38,18 @@ export function useStaleApprovals() {
   return useQuery({
     queryKey: staleApprovalsKey,
     queryFn: async ({ signal }) => {
-      const res = await fetch(extensionApiUrl('/extensions/stale-approvals'), { signal });
-      const body = await answer<{ approvals: StaleApproval[] }>(
-        res,
-        'Couldn’t check for approvals left behind.'
+      const { rows } = await readAllPages(
+        async (cursor) =>
+          answer<{ approvals: StaleApproval[]; nextCursor: string | null }>(
+            await fetch(extensionApiUrl(`/extensions/stale-approvals${pageQuery(cursor)}`), {
+              signal,
+            }),
+            'Couldn’t check for approvals left behind.'
+          ),
+        (page) => page.approvals,
+        '/extensions/stale-approvals'
       );
-      return body.approvals;
+      return rows.sort((a, b) => a.id.localeCompare(b.id));
     },
   });
 }

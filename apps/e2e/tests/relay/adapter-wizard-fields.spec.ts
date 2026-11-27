@@ -39,9 +39,10 @@ interface CatalogEntry {
 
 /** The catalog the server serves — the same JSON the cockpit renders from. */
 async function fetchCatalog(page: Page): Promise<CatalogEntry[]> {
-  const response = await page.request.get('/api/relay/adapters/catalog');
+  // One page holds the whole catalog (DOR-4982): there are far fewer than 200 kinds.
+  const response = await page.request.get('/api/relay/adapters/catalog?limit=200');
   expect(response.ok(), 'catalog request failed').toBe(true);
-  return (await response.json()) as CatalogEntry[];
+  return ((await response.json()) as { entries: CatalogEntry[] }).entries;
 }
 
 /**

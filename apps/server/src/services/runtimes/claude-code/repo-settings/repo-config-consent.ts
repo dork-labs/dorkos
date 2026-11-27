@@ -19,39 +19,21 @@
  * own hook, and one that could move a baseline would make its hook the
  * default branch's. The residual is the one `hook-consent.ts` states: with
  * login off, a caller that omits its agent header is treated as the operator
- * (DOR-505).
+ * (DOR-505). The space side writes them
+ * (`core/approvals/computer-asks/repo-decisions.ts`), from a card's answer or a
+ * decision this side reports through the asks port (a baseline moved forward,
+ * the upgrade pin); this module only reads.
  *
  * @module services/runtimes/claude-code/repo-settings/repo-config-consent
  */
+import type { RecordedBaseline, RepoConfigKind } from '@dorkos/shared/computer-asks';
+import { REPO_CONFIG_ENTRY_MARKER, repoConfigEntry } from '@dorkos/shared/consent-entries';
 import { configManager } from '../../../core/config-manager.js';
-import { logConfigWrite } from '../../../core/operator/config-write.js';
 
-/** What a repo or worktree setting is. */
-export type RepoConfigKind = 'local' | 'mcpJson' | 'hooks';
-
-/** What sits between the kind and the digest in a stored entry. */
-export const REPO_CONFIG_ENTRY_MARKER = '@repo-config-';
-
-/** The most repos whose baseline is remembered; the oldest go first. */
-const MAX_BASELINES = 500;
-
-/**
- * The stored form of one decision about one content.
- *
- * @param kind - Which setting.
- * @param digest - The content digest.
- */
-export function repoConfigEntry(kind: RepoConfigKind, digest: string): string {
-  return `${kind}${REPO_CONFIG_ENTRY_MARKER}${digest}`;
-}
-
-/** The commit a repo was last compared against. */
-export interface RecordedBaseline {
-  /** The ref it resolved from. */
-  branch: string;
-  /** The commit. */
-  sha: string;
-}
+// The stored form of a decision is the space side's too: it writes these lists
+// (`core/approvals/computer-asks/repo-decisions.ts`), this module reads them.
+export type { RecordedBaseline, RepoConfigKind };
+export { REPO_CONFIG_ENTRY_MARKER, repoConfigEntry };
 
 /** The three stored leaves. */
 interface Decisions {
@@ -72,19 +54,6 @@ function stored(): Decisions {
     refused: [...(harness.refusedRepoConfig ?? [])],
     baselines: { ...(harness.repoBaselines ?? {}) },
   };
-}
-
-/** Write the leaves back, and say nothing when nothing changed. */
-function write(reason: string, next: Decisions): void {
-  const harness = configManager.get('harness');
-  if (JSON.stringify(next) === JSON.stringify(stored())) return;
-  configManager.set('harness', {
-    ...harness,
-    approvedRepoConfig: next.approved,
-    refusedRepoConfig: next.refused,
-    repoBaselines: next.baselines,
-  });
-  logConfigWrite(reason, 'harness', harness, configManager.get('harness'));
 }
 
 /**
@@ -108,46 +77,6 @@ export function isRepoConfigRefused(kind: RepoConfigKind, digest: string): boole
 }
 
 /**
- * Record a yes, and clear a matching no. Earlier yeses stay: each is about its
- * own content, and another worktree may still hold it.
- *
- * @param kind - Which setting.
- * @param digest - The content digest.
- * @param trust - A repo baseline the person saw this against, to trust from now on.
- */
-export function recordRepoConfigApproval(
-  kind: RepoConfigKind,
-  digest: string,
-  trust?: { commonDir: string; baseline: RecordedBaseline }
-): void {
-  const entry = repoConfigEntry(kind, digest);
-  const current = stored();
-  const baselines = trust
-    ? withBaseline(current.baselines, trust.commonDir, trust.baseline)
-    : current.baselines;
-  write('allowing repo settings', {
-    approved: current.approved.includes(entry) ? current.approved : [...current.approved, entry],
-    refused: current.refused.filter((stored) => stored !== entry),
-    baselines,
-  });
-}
-
-/**
- * Record a no.
- *
- * @param kind - Which setting.
- * @param digest - The content digest.
- */
-export function recordRepoConfigRefusal(kind: RepoConfigKind, digest: string): void {
-  const entry = repoConfigEntry(kind, digest);
-  const current = stored();
-  write('turning down repo settings', {
-    ...current,
-    refused: current.refused.includes(entry) ? current.refused : [...current.refused, entry],
-  });
-}
-
-/**
  * The default-branch commit a repo was last compared against, if any.
  *
  * @param commonDir - The repo's shared git folder, by real path.
@@ -157,50 +86,10 @@ export function recordedBaseline(commonDir: string): RecordedBaseline | undefine
   return found ? { ...found } : undefined;
 }
 
-/**
- * Remember the commit a repo was compared against. Called only for a commit
- * that builds on the one recorded before (or the first one seen), or one a
- * person approved settings against.
- *
- * @param commonDir - The repo's shared git folder, by real path.
- * @param baseline - The branch and commit.
- */
-export function recordBaseline(commonDir: string, baseline: RecordedBaseline): void {
-  const current = stored();
-  write('comparing a repo against its default branch', {
-    ...current,
-    baselines: withBaseline(current.baselines, commonDir, baseline),
-  });
-}
-
 /** Whether DorkOS has pinned the repos it already knew (`harness.repoBaselinesPinned`). */
 export function repoBaselinesPinned(): boolean {
   return (
     (configManager.get('harness') as { repoBaselinesPinned?: boolean } | undefined)
       ?.repoBaselinesPinned === true
   );
-}
-
-/** Record that DorkOS pinned the repos it already knew, so it never does that again. */
-export function markRepoBaselinesPinned(): void {
-  const harness = configManager.get('harness');
-  if (repoBaselinesPinned()) return;
-  configManager.set('harness', { ...harness, repoBaselinesPinned: true });
-  logConfigWrite(
-    'pinning the repos DorkOS already knew',
-    'harness',
-    harness,
-    configManager.get('harness')
-  );
-}
-
-/** The baselines with one set (moved to the end), the oldest dropped past the cap. */
-function withBaseline(
-  baselines: Record<string, RecordedBaseline>,
-  commonDir: string,
-  baseline: RecordedBaseline
-): Record<string, RecordedBaseline> {
-  const entries = Object.entries(baselines).filter(([key]) => key !== commonDir);
-  entries.push([commonDir, { branch: baseline.branch, sha: baseline.sha }]);
-  return Object.fromEntries(entries.slice(-MAX_BASELINES));
 }

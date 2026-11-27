@@ -2,7 +2,7 @@ import type { CanvasChannelNotification } from '@dorkos/shared/canvas-channel-sc
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { StreamFrame } from '@dorkos/shared/stream-socket';
 import type { DurableStreamSink } from '../../../core/streams/durable-stream-sink.js';
-import { deliverSessionStream } from '../../../core/streams/session-stream-delivery.js';
+import { deliverSessionStream } from '../../../core/streams/screen/session-stream-delivery.js';
 /** Real authorized storage replays without borrowing transcript or room entry cursors. */
 import { randomUUID } from 'node:crypto';
 import { afterEach, expect, it, vi } from 'vitest';

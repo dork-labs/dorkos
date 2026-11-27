@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
+import { ExtensionSecretStore } from '../../lib/secret-store/extension-secrets.js';
 import { createExtensionsRoutes } from '../extensions.js';
 import { resetHeldStepUpsForTests } from '../../services/core/auth/step-up/step-up-holds.js';
 import { frontDoorStepUpHarness } from './front-door-step-up-harness.js';

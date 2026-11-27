@@ -31,10 +31,12 @@ function search(query: Partial<InstructionsQuery>): string {
  */
 export function createInstructionsMethods(baseUrl: string) {
   return {
+    // Stays hand-written: `GET /api/agent-instructions` has no operationId (DOR-5473).
     getAgentInstructionsTemplate(query: Partial<InstructionsQuery>): Promise<InstructionsView> {
       return fetchJSON(baseUrl, `/agent-instructions${search(query)}`);
     },
 
+    // Stays hand-written: `GET /api/agents/{id}/instructions` has no operationId (DOR-5473).
     getAgentInstructionsPreview(
       agentId: string,
       query: Partial<InstructionsQuery>

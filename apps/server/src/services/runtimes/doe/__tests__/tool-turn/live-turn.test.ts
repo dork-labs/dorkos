@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { levelOfMode } from '@dorkos/shared/permission-semantics';
 import { isFullLevel } from '../../../../core/turn-power/full-autonomy.js';
-import { RuntimeToolContextUnavailableError } from '../../../../connectors/runtime-principal-port.js';
+import { RuntimeToolContextUnavailableError } from '@dorkos/shared/connections-lease';
 import { SessionEventStore } from '../../../../session/session-event-store.js';
 import { SessionStateProjector } from '../../../../session/session-state-projector.js';
 import { feedProjector } from '../../../../session/session-event-normalizer.js';

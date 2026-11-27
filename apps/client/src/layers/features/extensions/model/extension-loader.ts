@@ -17,8 +17,15 @@ import { setExtensionNames } from '@/layers/shared/lib/extension-names';
 import { setRunningApps } from '../frame/running-apps';
 import { ExtensionLoadFailure } from '../ui/ExtensionLoadFailure';
 import { importExtensionModule } from './extension-bundle-import';
-import { AppNeedsUpdateNotice, runningCopiesOnly } from '@/layers/entities/extension';
+import { AppNeedsUpdateNotice, readRunningExtensions } from '@/layers/entities/extension';
 import { readResponseError } from '@/layers/shared/lib';
+
+/** A page of the extension list the server refused or failed. */
+class ExtensionListRefused extends Error {
+  constructor(readonly status: number) {
+    super(`Failed to fetch extension list: ${status}`);
+  }
+}
 
 /**
  * Fetch the extension list from the server.
@@ -28,12 +35,13 @@ import { readResponseError } from '@/layers/shared/lib';
  * error still rejects.
  */
 async function fetchExtensions(): Promise<ExtensionRecordPublic[] | null> {
-  const res = await fetch(extensionApiUrl('/extensions'));
-  if (!res.ok) {
-    console.error('[extensions] Failed to fetch extension list:', res.status);
+  try {
+    return await fetchExtensionsOrThrow();
+  } catch (err) {
+    if (!(err instanceof ExtensionListRefused)) throw err;
+    console.error('[extensions] Failed to fetch extension list:', err.status);
     return null;
   }
-  return runningCopiesOnly((await res.json()) as ExtensionRecordPublic[]);
 }
 
 /**
@@ -44,12 +52,8 @@ async function fetchExtensions(): Promise<ExtensionRecordPublic[] | null> {
  * set — an empty array must mean "this cwd has no extensions", never "the
  * request failed".
  */
-async function fetchExtensionsOrThrow(): Promise<ExtensionRecordPublic[]> {
-  const res = await fetch(extensionApiUrl('/extensions'));
-  if (!res.ok) {
-    throw new Error(`Failed to fetch extension list: ${res.status}`);
-  }
-  return runningCopiesOnly((await res.json()) as ExtensionRecordPublic[]);
+function fetchExtensionsOrThrow(): Promise<ExtensionRecordPublic[]> {
+  return readRunningExtensions((status) => new ExtensionListRefused(status));
 }
 
 /** Maximum wait for one local bundle, including a cold load of a large app. */

@@ -23,12 +23,6 @@ vi.mock('@/layers/entities/config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/config')>()),
   useIsHub: () => false,
 }));
-vi.mock('@/layers/widgets/inbox-bell', () => ({
-  InboxBell: () => <button aria-label="Inbox">Inbox</button>,
-}));
-vi.mock('@/layers/features/right-panel', () => ({
-  RightPanelToggle: () => <button aria-label="Toggle right panel">Panel</button>,
-}));
 
 /** How many agents the room is currently working, as the live count answers. */
 const { working, teamRoomId } = vi.hoisted(() => ({

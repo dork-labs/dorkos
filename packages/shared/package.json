@@ -73,17 +73,13 @@
       "types": "./src/transport-heartbeats.ts",
       "default": "./dist/transport-heartbeats.js"
     },
+    "./transport-work-graph": {
+      "types": "./src/transport-work-graph.ts",
+      "default": "./dist/transport-work-graph.js"
+    },
     "./sign-in-landing": {
       "types": "./src/sign-in-landing.ts",
       "default": "./dist/sign-in-landing.js"
-    },
-    "./transport-sign-in-landing": {
-      "types": "./src/transport-sign-in-landing.ts",
-      "default": "./dist/transport-sign-in-landing.js"
-    },
-    "./transport-onboarding": {
-      "types": "./src/transport-onboarding.ts",
-      "default": "./dist/transport-onboarding.js"
     },
     "./types": {
       "types": "./src/types.ts",
@@ -125,10 +121,6 @@
       "types": "./src/atomic-write.ts",
       "default": "./dist/atomic-write.js"
     },
-    "./secret-file": {
-      "types": "./src/secret-file.ts",
-      "default": "./dist/secret-file.js"
-    },
     "./node-pty-spawn-helper": {
       "types": "./src/node-pty-spawn-helper.ts",
       "default": "./dist/node-pty-spawn-helper.js"
@@ -160,6 +152,18 @@
     "./running-chats": {
       "types": "./src/running-chats.ts",
       "default": "./dist/running-chats.js"
+    },
+    "./extension-list-schemas": {
+      "types": "./src/extension-list-schemas.ts",
+      "default": "./dist/extension-list-schemas.js"
+    },
+    "./paging": {
+      "types": "./src/paging.ts",
+      "default": "./dist/paging.js"
+    },
+    "./work-graph-reads": {
+      "types": "./src/work-graph-reads.ts",
+      "default": "./dist/work-graph-reads.js"
     },
     "./telemetry-consent": {
       "types": "./src/telemetry-consent.ts",
@@ -377,10 +381,6 @@
       "types": "./src/workspace.ts",
       "default": "./dist/workspace.js"
     },
-    "./harness-ids": {
-      "types": "./src/harness-ids.ts",
-      "default": "./dist/harness-ids.js"
-    },
     "./additional-context": {
       "types": "./src/additional-context.ts",
       "default": "./dist/additional-context.js"
@@ -413,14 +413,6 @@
       "types": "./src/dorkbot-templates.ts",
       "default": "./dist/dorkbot-templates.js"
     },
-    "./extension-secrets": {
-      "types": "./src/extension-secrets.ts",
-      "default": "./dist/extension-secrets.js"
-    },
-    "./extension-settings": {
-      "types": "./src/extension-settings.ts",
-      "default": "./dist/extension-settings.js"
-    },
     "./activity-schemas": {
       "types": "./src/activity-schemas.ts",
       "default": "./dist/activity-schemas.js"
@@ -449,6 +441,10 @@
       "types": "./src/session-stream.ts",
       "default": "./dist/session-stream.js"
     },
+    "./dorkos-events": {
+      "types": "./src/dorkos-events.ts",
+      "default": "./dist/dorkos-events.js"
+    },
     "./interaction-events": {
       "types": "./src/interaction-events.ts",
       "default": "./dist/interaction-events.js"
@@ -465,10 +461,6 @@
       "types": "./src/doc-links.ts",
       "default": "./dist/doc-links.js"
     },
-    "./transport-doc-links": {
-      "types": "./src/transport-doc-links.ts",
-      "default": "./dist/transport-doc-links.js"
-    },
     "./person-session": {
       "types": "./src/person-session.ts",
       "default": "./dist/person-session.js"
@@ -480,10 +472,6 @@
     "./session-relay-link": {
       "types": "./src/session-relay-link.ts",
       "default": "./dist/session-relay-link.js"
-    },
-    "./session-relay-agent-computer": {
-      "types": "./src/session-relay-agent-computer.ts",
-      "default": "./dist/session-relay-agent-computer.js"
     },
     "./run-schemas": {
       "types": "./src/run-schemas.ts",
@@ -509,6 +497,10 @@
       "types": "./src/runtime-connect.ts",
       "default": "./dist/runtime-connect.js"
     },
+    "./runtime-connect-schemas": {
+      "types": "./src/runtime-connect-schemas.ts",
+      "default": "./dist/runtime-connect-schemas.js"
+    },
     "./ui-widget": {
       "types": "./src/ui-widget.ts",
       "default": "./dist/ui-widget.js"
@@ -525,17 +517,9 @@
       "types": "./src/diff-tools.ts",
       "default": "./dist/diff-tools.js"
     },
-    "./dispatch-id": {
-      "types": "./src/dispatch-id.ts",
-      "default": "./dist/dispatch-id.js"
-    },
     "./dork-ref": {
       "types": "./src/dork-ref.ts",
       "default": "./dist/dork-ref.js"
-    },
-    "./dork-address": {
-      "types": "./src/dork-address.ts",
-      "default": "./dist/dork-address.js"
     },
     "./entity-ref": {
       "types": "./src/entity-ref.ts",
@@ -621,10 +605,6 @@
       "types": "./src/mention-addressing.ts",
       "default": "./dist/mention-addressing.js"
     },
-    "./canonical-directory": {
-      "types": "./src/canonical-directory.ts",
-      "default": "./dist/canonical-directory.js"
-    },
     "./paths": {
       "types": "./src/paths.ts",
       "default": "./dist/paths.js"
@@ -681,10 +661,6 @@
       "types": "./src/canvas-doc-frame-wire.ts",
       "default": "./dist/canvas-doc-frame-wire.js"
     },
-    "./canvas-app-manifest": {
-      "types": "./src/canvas-app-manifest.ts",
-      "default": "./dist/canvas-app-manifest.js"
-    },
     "./browser-frame-wire": {
       "types": "./src/browser-frame-wire.ts",
       "default": "./dist/browser-frame-wire.js"
@@ -696,6 +672,26 @@
     "./chat-client-id": {
       "types": "./src/chat-client-id.ts",
       "default": "./dist/chat-client-id.js"
+    },
+    "./connections-lease": {
+      "types": "./src/connections-lease.ts",
+      "default": "./dist/connections-lease.js"
+    },
+    "./approval-text": {
+      "types": "./src/approval-text.ts",
+      "default": "./dist/approval-text.js"
+    },
+    "./computer-asks": {
+      "types": "./src/computer-asks.ts",
+      "default": "./dist/computer-asks.js"
+    },
+    "./consent-entries": {
+      "types": "./src/consent-entries.ts",
+      "default": "./dist/consent-entries.js"
+    },
+    "./folder-allows-card": {
+      "types": "./src/folder-allows-card.ts",
+      "default": "./dist/folder-allows-card.js"
     },
     "./room-attachment-paths": {
       "types": "./src/room-attachment-paths.ts",
@@ -761,10 +757,6 @@
       "types": "./src/file-save/recovery.ts",
       "default": "./dist/file-save/recovery.js"
     },
-    "./prompts/prompt-kinds": {
-      "types": "./src/prompts/prompt-kinds.ts",
-      "default": "./dist/prompts/prompt-kinds.js"
-    },
     "./space-page": {
       "types": "./src/space-page/index.ts",
       "default": "./dist/space-page/index.js"
@@ -791,7 +783,6 @@
     "@dork-labs/connector-providers": "workspace:*",
     "ajv": "^8.20.0",
     "tldts": "7.0.28",
-    "ulidx": "^2.4.1",
     "zod": "^4.6.6"
   },
   "devDependencies": {

@@ -18,8 +18,8 @@
  * written to close for `onUnregister`. The payload decisions that wiring makes
  * are probed next door in `services/core/streams/__tests__/live-change-broadcasts.test.ts`;
  * this file is about which WRITES reach it. That `index.ts` really calls it is
- * held by `services/core/__tests__/sse-event-allowlist.test.ts`, which scans the
- * server tree for the literal names and fails if `GENERIC_EVENTS` lists one
+ * held by `services/core/__tests__/event-union-census.test.ts`, which scans the
+ * server tree for the literal names and fails if the event union lists one
  * nothing broadcasts.
  *
  * **Run it with a fresh `@dorkos/mesh` build.** `pnpm test` gets one from
@@ -93,7 +93,7 @@ vi.mock('../../services/core/config-manager.js', async (importOriginal) => ({
 }));
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
-import { wireLiveChangeBroadcasts } from '../../services/core/streams/live-change-broadcasts.js';
+import { wireLiveChangeBroadcasts } from '../../services/core/streams/screen/live-change-broadcasts.js';
 import { createMeshRegisterHandler } from '../../services/runtimes/claude-code/mcp-tools/mesh-tools.js';
 import { createMeshAgentRegistry } from '../../services/marketplace/flows/mesh-agent-registry.js';
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';

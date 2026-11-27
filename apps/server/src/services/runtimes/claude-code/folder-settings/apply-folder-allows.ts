@@ -24,15 +24,15 @@ import {
   protectedPathGlob,
 } from '../../../core/protected-paths/protected-paths.js';
 import { isExactlyAgentHome, readFolderAllowList } from './agent-folder-allows.js';
+import { cardShowsWholeList } from '@dorkos/shared/folder-allows-card';
+import { runtimeAsks } from '../../computer-asks.js';
 import {
   folderAllowEntry,
   isFolderAllowListApproved,
   isFolderAllowListRefused,
   lastApprovedRules,
-  recordFolderAllowApproval,
   type FolderAllowRequest,
 } from './folder-allow-consent.js';
-import { cardShowsWholeList } from './folder-allow-approval.js';
 
 /** What a launch does with an agent's folder allow list. */
 export type FolderAllowsDecision =
@@ -84,9 +84,16 @@ export async function resolveFolderAllows(turn: FolderAllowsTurn): Promise<Folde
   if (isFolderAllowListRefused(request)) return { kind: 'refused', hash: list.hash };
   const previous = lastApprovedRules(turn.agent.id, turn.home);
   // A list that only lost rules since the person's yes can only narrow what
-  // runs, so it applies without a card, and becomes the yes on record.
+  // runs, so it applies without a card, and the space side makes it the yes on
+  // record.
   if (previous && list.rules.every((rule) => previous.includes(rule))) {
-    recordFolderAllowApproval(request, 'narrowing an approved agent folder allow list');
+    runtimeAsks().record({
+      kind: 'folder_allows_approved',
+      agentId: request.agentId,
+      home: request.home,
+      rules: request.rules,
+      reason: 'narrowing an approved agent folder allow list',
+    });
     return applied;
   }
   const asking = previous ? { ...request, previousRules: previous } : request;

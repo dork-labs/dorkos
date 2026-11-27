@@ -20,22 +20,13 @@ import { mountSessionSendMessage } from './session-send-message.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { SessionLocationStore } from '../services/core/runtime-seam/session-location-store.js';
 import { openedChatToolWarnings } from '../services/session/launch/session-tool-warnings.js';
-import {
-  ForkSessionRequestSchema,
-  ListSessionsQuerySchema,
-  RecentSessionsQuerySchema,
-  SessionDailyCountsQuerySchema,
-} from '@dorkos/shared/schemas';
-import type {
-  InterruptReceipt,
-  SessionListResponse,
-  StoredSessionSettingsResponse,
-} from '@dorkos/shared/types';
+import { ForkSessionRequestSchema, SessionDailyCountsQuerySchema } from '@dorkos/shared/schemas';
+import type { InterruptReceipt } from '@dorkos/shared/types';
 import type { MeshCore } from '@dorkos/mesh';
 import { getChatMessageService } from '../services/session/chat-messages/chat-message-current.js';
 import type { ChatActivityResponse } from '@dorkos/shared/chat-messages';
 import { stampHistory } from '../services/session/chat-messages/chat-message-stamps.js';
-import * as historyWindow from '../services/session/history/history-window.js';
+import * as historyWindow from '../services/session/chat-messages/screen/history-window.js';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import type { ApiEnv } from '../http/api-chain.js';
 import { problem, readJsonBody, sendProblem, validationProblem } from '@dorkos/http-kit';
@@ -46,15 +37,12 @@ import { recordChatFork } from '../services/work-graph/index.js';
 import { recordStopReceipt, recordStopRequest } from '../services/runs/index.js';
 import { readQuery } from '../http/request-query.js';
 import { boundaryRefusal, parseSessionId } from '../lib/route-utils.js';
-import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logError, logger } from '../lib/logger.js';
 import { askForPersonBeforeChat } from '../http/person-session-refusal.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { askEntitlement, type AskSubject } from '../services/session/asks/ask-entitlement.js';
 import type { RoomBindingsPort, SessionOriginResolvers } from '../services/session/index.js';
 import {
-  aggregateSessionList,
-  listRecentSessions,
   listPendingInteractionsAcrossSessions,
   countSessionsPerDay,
   clearQueuedMessages,
@@ -74,8 +62,9 @@ import { createSessionAnswerRoutes } from './session-answers.js';
 import { sessionUiActionHandler } from './session-ui-action-handler.js';
 import { registerSessionQueueRoutes } from './session-queue-handler.js';
 import { sessionEventsHandler } from './session-events-handler.js';
-import { guardSessionParam, readableSessions } from './session-read-guard.js';
-import { mountWindowSignalRoutes, touchedSinceKeeper } from './session-touch-handler.js';
+import { guardSessionParam } from './session-read-guard.js';
+import { mountWindowSignalRoutes } from './session-touch-handler.js';
+import { mountSessionListRoutes } from './session-lists.js';
 import { sessionCommandIntentHandler } from './session-command-intent-handler.js';
 import { sessionDevtoolsActionHandler, sessionDevtoolsIngestHandler } from './session-devtools.js';
 import { createSessionCanvasRoutes, type SessionCanvasDeps } from './session-canvas.js';
@@ -125,8 +114,6 @@ export interface SessionRouteDeps extends SessionOriginResolvers, SessionCanvasD
   roomSessionPlace?: RoomSessionPlacePort;
 }
 
-const vaultRoot = DEFAULT_CWD;
-
 /** What Switch now says to a caller that is not the owner. */
 const SWITCH_NOW = {
   personOnly: 'Only you can switch now, from the DorkOS app.',
@@ -154,95 +141,9 @@ export function createSessionRoutes(
   // such as `/recent` reaches it as an id that does not parse, which it passes.
   router.use('/:id/*', guardSessionParam);
 
-  // GET /api/sessions - List sessions aggregated across all registered runtimes
-  // (ADR-0310). Responds with the { sessions, warnings?, accountUsage? } envelope rather than a
-  // bare array: aggregation degrades gracefully per runtime, and the in-band
-  // warnings[] must survive both transports (an HTTP header would be invisible
-  // to the Direct in-process transport). See SessionListResponseSchema.
-  router.get('/', async (c) => {
-    const parsed = ListSessionsQuerySchema.safeParse(readQuery(c));
-    if (!parsed.success) {
-      return validationProblem(c, parsed.error);
-    }
-    const { limit, cwd, runtime: runtimeFilter } = parsed.data;
-    const outside = await boundaryRefusal(cwd, { allowDorkHome: true });
-    if (outside) return sendProblem(c, outside);
-    if (runtimeFilter !== undefined && !runtimeRegistry.has(runtimeFilter)) {
-      return problem(c, 'invalid_request', { detail: `Unknown runtime: ${runtimeFilter}` });
-    }
-
-    const projectDir = cwd || vaultRoot;
-    const runtimes = runtimeFilter
-      ? [runtimeRegistry.get(runtimeFilter)]
-      : runtimeRegistry.listRuntimes();
-    const { sessions, warnings } = await aggregateSessionList({ runtimes, projectDir });
-
-    // An agent lists agent work only, never a person's own chat (spec
-    // `audit-trail` §3.4). Filtered before the page is cut, so the page is full.
-    const page = readableSessions(honoRequestFacts(c), sessions).slice(0, limit);
-    // Overlay persisted settings (ADR-0260) through the ONE shared resolver that
-    // `GET /:id` also uses, so the two endpoints cannot report different modes
-    // for one session (DOR-463).
-    overlayStoredSettings(page, runtimeRegistry);
-    // Overlay the origins no transcript can carry — the room binding and the Pulse
-    // run (session-origin-legibility, team-room-home §D2.3). The ordering rule
-    // lives in `applySessionOriginOverlays`, which the global session-list stream
-    // applies too, so a room turn reads the same way whichever one a client heard
-    // it from (DOR-1141).
-    applySessionOriginOverlays(page, sessionOriginResolvers(deps));
-    // The fleet fields (spec claude-account-fleet D7): each session's account,
-    // live status and work item, and the usage of the accounts on the page. One
-    // pass over the page, from memory plus one limit query.
-    const accountUsage = await applySessionFleetOverlay(page, sessionFleetOverlayDeps());
-    return c.json({
-      sessions: page,
-      ...(warnings.length > 0 && { warnings }),
-      ...(accountUsage && { accountUsage }),
-    } satisfies SessionListResponse);
-  });
-
-  // GET /api/sessions/recent - Most-recent sessions across ALL agents (DOR-329).
-  // MUST be registered before the `/:id` routes below: `/:id` matches `recent` too,
-  // and Hono answers from the first route registered. Resolves agent project paths server-side via the
-  // mesh registry, then fans out via listRecentSessions (bounded concurrency,
-  // subtree cwd membership per DOR-203 + DOR-674, ADR-0310 per-runtime
-  // degradation).
-  router.get('/recent', async (c) => {
-    const parsed = RecentSessionsQuerySchema.safeParse(readQuery(c));
-    if (!parsed.success) {
-      return validationProblem(c, parsed.error);
-    }
-    const { limit, touchedSince } = parsed.data;
-
-    const meshCore = deps.meshCore;
-    const agentPaths = meshCore ? meshCore.listWithPaths().map((a) => a.projectPath) : [];
-    const runtimes = runtimeRegistry.listRuntimes();
-
-    const { sessions, agentActivity, warnings } = await listRecentSessions({
-      runtimes,
-      agentPaths,
-      limit,
-      // Every chat you touched since the caller's day began stays, however many
-      // agent-busy chats outrank it by `updatedAt` (spec `your-activity-first` D6).
-      ...(touchedSince && {
-        keepBeyondLimit: touchedSinceKeeper(
-          touchedSince,
-          sessionOriginResolvers(deps).resolveTouches
-        ),
-      }),
-    });
-    // An agent sees agent work only, never a person's own chat (spec
-    // `audit-trail` §3.4).
-    const readable = readableSessions(honoRequestFacts(c), sessions);
-    // Same persisted-settings overlay as the other two session reads — a recent
-    // session is the same session, so it must not report a different mode.
-    overlayStoredSettings(readable, runtimeRegistry);
-    // The same origin overlays the list endpoint applies, in the same order — a
-    // room turn is an engine run under a thread the reader can already see, and
-    // the binding table is the only place that knows.
-    applySessionOriginOverlays(readable, sessionOriginResolvers(deps));
-    return c.json({ sessions: readable, agentActivity, warnings });
-  });
+  // GET /api/sessions and GET /api/sessions/recent, a page at a time
+  // (`session-lists.ts`). Before the `/:id` routes, which would answer `recent`.
+  mountSessionListRoutes(router, deps);
 
   // GET /api/sessions/daily-counts - Sessions started per day across ALL agents
   // (DOR-1039). Same registration rule as `/recent` above: it MUST precede the
@@ -324,52 +225,9 @@ export function createSessionRoutes(
     return c.json({ interactions });
   });
 
-  // GET /api/sessions/:id/runtime-type — Lightweight endpoint for clients that
-  // need only the runtime owner. Uses getSessionRuntimeType, which infers on a
-  // miss ('claude-code' for legacy sessions predating the table) and NEVER
-  // writes: a read path that back-filled would mint a ghost row for any id it
-  // was handed, and first-write-wins would make that guess the binding (DOR-812).
-  router.get('/:id/runtime-type', async (c) => {
-    const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return invalidSessionId(c);
-    const runtime = await runtimeRegistry.getSessionRuntimeType(sessionId);
-    return c.json({ runtime });
-  });
-
-  // GET /api/sessions/:id/settings — the settings STORED for a session id, or
-  // `null`. The one read on this server that can see a row belonging to a session
-  // that has not started (DOR-2103).
-  //
-  // ## Why `GET /:id` could not answer this
-  //
-  // Every other session read resolves a session out of its RUNTIME's store
-  // (ADR-0310), so a session with a `session_metadata` row and no transcript is a
-  // 404 below and absent from the list. That row is the normal product of a
-  // settings change made before the first message (DOR-812's pre-launch picker),
-  // which means a person's own explicit choice — including one that LOWERS their
-  // power for this conversation — was invisible to the screen after a reload, and
-  // the trust dial fell back to showing the operator's configured default over
-  // it. Answering that with a synthesized `Session` would mean inventing a title
-  // and a `createdAt`, and reporting the registry's runtime INFERENCE in a field
-  // the client caches as a fact — the costume DOR-1693 took off PATCH's answer.
-  // So this answers the row, and the shape says so.
-  //
-  // Same posture as `/runtime-type` directly above, for the same reasons: no
-  // `?cwd=` and no boundary check, because nothing here touches the filesystem —
-  // it is one indexed read of a row keyed by session id. And it NEVER writes: a
-  // read that back-filled would mint a row for any id it was handed, and
-  // `persistSessionRuntime` is first-write-wins, so the guess would become the
-  // binding (DOR-812).
-  router.get('/:id/settings', async (c) => {
-    const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) return invalidSessionId(c);
-    // Under the id as asked, deliberately: a session that has not started has no
-    // runtime to hold an alias, and `getInternalSessionId` needs a resolved
-    // runtime, which for an unbound id would be the inference. A started session
-    // is answered by the overlay on the session reads, not by this one.
-    const settings = await runtimeRegistry.getSessionSettings(sessionId);
-    return c.json({ settings } satisfies StoredSessionSettingsResponse);
-  });
+  // GET /api/sessions/:id/runtime-type and GET /api/sessions/:id/settings are
+  // capabilities the mount serves (`services/session/reads/session-read-capabilities.ts`,
+  // DOR-4978), each with the read guard folded in.
 
   // GET /api/sessions/:id - Get session details
   // Like `/:id/messages`, no `?cwd=` is required for a session the server can
@@ -812,7 +670,7 @@ export function createSessionRoutes(
   // through the upgrade router, and that is what the cockpit connects to (ADR
   // 260805-041016). This SSE route stays because it is the public integration
   // contract (`docs/integrations/sse-protocol.mdx`). Both share their sequencing
-  // — see `services/session/session-stream-delivery.ts`.
+  // — see `services/core/streams/screen/session-stream-delivery.ts`.
   router.get('/:id/events', sessionEventsHandler);
 
   return router;

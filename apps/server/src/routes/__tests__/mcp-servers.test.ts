@@ -149,8 +149,9 @@ describe('/api/mcp-servers', () => {
       .post('/api/mcp-servers')
       .set('x-dorkos-agent', 'agent-token')
       .send({ ...SERVER, name: 'other' });
+    // A person-only capability now (DOR-4978): an agent is refused as one.
     expect(write.status).toBe(403);
-    expect(write.body.code).toBe('operator_only');
+    expect(write.body.code).toBe('person_only');
 
     const remove = await request(app())
       .delete('/api/mcp-servers/github')

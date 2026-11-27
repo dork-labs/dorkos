@@ -29,6 +29,19 @@ Moving a hand route onto the capability mount also makes it something every agen
 5. **The allowlist.** `apps/server/src/http/hand-routes/allowlist.ts` holds the routes that stay by hand, each with a category and a one-line reason: streams, byte uploads and downloads, OAuth and webhook callbacks, sign-in handshakes that set cookies, HTML pages, health and docs, and the invoke route. A census test keeps every `/api` route classified as a capability, allowlisted or pending; the pending list may only shrink, and the API lint's `hand-registered-path` rule turns blocking when it is empty.
 6. **Every move is checked for what agents gain.** Each route that moves gets a deliberate tier and permission area, an audience, a per-reader filter on private data, and a read class for its output (`outside` for text from outside sources), plus a line in the agents' awareness block. A fresh review checks agent exposure before the pull request opens.
 
+## Amendments (2026-11-26, as A1 built them)
+
+Each was decided with Security (t1j) on DOR-4978 and is enforced by code and a pinned test.
+
+1. **Network modes, built.** The capability field is `wifi?: 'lowers-power' | 'person-held'` (it replaced `allowFromWifi`). A narrow list names each id with its one mode, and a census pins the set. A held, unproven Wi-Fi device may not give an agent work: it can't make or hand over an agent's to-do, change or answer an agent's promise, or replay queued canvas work.
+2. **Writes that are network-reachable by design** stay hand routes until A5 decides whether a person-held audience may accept an API key. They sit on the allowlist in the category `network-reachable`, each linked to DOR-5267, and a census pins all of them. When `PATCH /api/agents/:id/permissions` moves, it maps to `lowers-power` for the lowering half only.
+3. **Confirm-first has a declared bar:** `confirmFirst: { bar: 'account-owner' | 'front-door' }`. The bar is static and listed per id. For `front-door`, the asking and the confirming request each pass the front-door bar, and the confirm must come in the same way (ingress kind) as the hold. The sheet and the 428 carry names and constants only. Hold and confirm are audited with the id and bar, never the input. State read for the sheet reaches the handler only as an HMAC under a per-process key, and a change answers 412. A hold raised mid-write stays a hand route.
+4. **A person's reads pass an area Blocked for agents.** This applies on a capability's own REST path only (never `/invoke`), to `observe` calls only, and skips the area permission only. These reads are audited as the person, grouped per person, device and capability every 10 minutes. The grouping key never reaches a handler.
+5. **Request facts stay yes/no answers.** A handler sees only the pinned list of answers (owner, person, at this computer, held Wi-Fi owner, agent bar, front-door owner and elsewhere, and so on). An id, address, token or key never reaches it.
+6. **One import port.** A capability imports `defineCapability`, its types and `CapabilityToolError` from `services/core/capabilities/capability-definition.ts` only. The composition root `core/self-description/dorkos-registry.ts` is exempt from the services import ratchet.
+7. **Capability inputs are describable as JSON Schema**, with no transforms. The catalog and the API document render them, so a value is converted inside the handler.
+8. **A new folder of capability definitions** (`services/core/*-doors/`) joins Security's path pattern in the same pull request that creates it. The release lead confirms its side of the computer wall.
+
 ## Consequences
 
 ### Positive

@@ -30,10 +30,9 @@
  */
 import type { EndBeatInput } from '@dorkos/shared/heartbeat-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { composeRegistry } from '../../core/capabilities/registry.js';
-import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
 import { DEMO_MODEL, DEMO_SESSION_ID, delay, streamText } from './demo-scenario-shared.js';
 import type { ScenarioFn } from './scenario-store.js';
+import { worldOf } from './scenario-world.js';
 
 /** The mini app's id. `apps/e2e/capture/demo/config.ts` pins the same one. */
 export const DEMO_MINI_APP_ID = 'launch-checklist';
@@ -196,10 +195,7 @@ const demoHeartbeat: ScenarioFn = async function* (content, ctx, opts) {
   yield* streamText(`${ending.summary}\n`);
   // The real capability, under the agent's own identity, the way
   // `sayInRoom` posts: it ends the beat this chat belongs to, or refuses.
-  const registry = composeRegistry([heartbeatDomain], {
-    logger: { debug() {}, info() {}, warn() {}, error() {} },
-  });
-  const ended = (await registry.invoke('heartbeat.end_beat', ending, {
+  const ended = (await worldOf(ctx).heartbeat.invoke('heartbeat.end_beat', ending, {
     identity: { agentPath: opts?.cwd ?? '', displayName: '', createdAt: new Date().toISOString() },
     sessionId: ctx.sessionId,
   })) as { ok: boolean; error?: string };

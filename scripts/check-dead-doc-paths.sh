@@ -2,6 +2,15 @@
 # Fail when a ground-truth doc teaches an import path or file path that no
 # longer exists in the codebase.
 #
+# --help
+# Purpose: fail when a ground-truth doc teaches an import or file path that no
+#          longer exists (the dead client `@/components/ui` paths).
+# Runs in: the required `typecheck` job; by hand.
+# To fix:  point the doc line at the real path. A line that shows the dead path on
+#          purpose carries `doc-allow-dead-path`. New dead paths go in SCAN_TARGETS.
+# Usage:   pnpm check:dead-doc-paths      (ROOT=<dir> to scan another checkout)
+# --help end
+#
 # WHY THIS EXISTS (DOR-1762). contributing/styling-theming.md once taught
 # `import { Button as BaseButton } from '@/components/ui/button'` as the
 # canonical way to extend a shadcn primitive — but `apps/client/src/components/`
@@ -40,6 +49,11 @@
 #
 # Pinned by scripts/test-check-dead-doc-paths.sh, which proves it goes red on a
 # seeded violation and stays green on the exemption above.
+
+# --help (DOR-4950). A gate checked out alone, as the PR-side gates are, runs without it.
+gate_help="$(dirname "$0")/lib/gate-help.sh"
+# shellcheck source=lib/gate-help.sh
+[ ! -r "$gate_help" ] || . "$gate_help"
 
 set -uo pipefail
 

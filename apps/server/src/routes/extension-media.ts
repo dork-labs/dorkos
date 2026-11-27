@@ -29,7 +29,7 @@ import { honoRequestFacts } from '../http/request-facts.js';
 import { corsAllowsOrigin } from '../http/cors-policy.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import { isNotAWindow } from './extension-caller-token.js';
-import { SAFE_EXT_ID } from './extensions.js';
+import { SAFE_EXT_ID } from '../services/extensions/http-capabilities/extension-door-words.js';
 import { EXTENSION_ID_HEADER } from './extension-write-binding.js';
 import type { ExtensionMediaFetch } from '../services/extensions/http/media-fetch.js';
 import {

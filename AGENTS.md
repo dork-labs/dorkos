@@ -50,8 +50,9 @@ DorkOS Cloud is the hosted, paid layer. Its control plane is closed-source and l
 ```bash
 pnpm dev               # API server + Vite dev server (loads .env)
 pnpm dev:dogfood       # Dev preview (:6241) + the built CLI app (:4242), the default workflow
-pnpm verify            # Affected-only typecheck + lint + test, the full local check (optional; CI is the gate)
-pnpm verify:preopen    # Optional lighter check, for debugging (no package tests)
+pnpm check             # The gate ladder, from an edit to the merge queue, and what each rung runs
+pnpm check verify      # Affected-only typecheck + lint + test, the full local check (optional; CI is the gate)
+pnpm check preopen     # Optional lighter check, for debugging (no package tests)
 pnpm vitest run <path> # One test file (~1-2s); works for every package
 pnpm test -- --run     # Full suite via turbo
 pnpm --filter @dorkos/server typecheck   # One package (~4s vs ~28s full)
@@ -59,7 +60,7 @@ pnpm --filter @dorkos/server typecheck   # One package (~4s vs ~28s full)
 
 Use `pnpm test -- --run` for full runs, not bare `pnpm vitest run`: bare vitest skips the per-package env turbo sets up and has falsely failed tests. A project filter is the directory name (`--project client`, not `--project @dorkos/client`). "No test files found" means your path is wrong.
 
-**Some paths spend real money.** Each needs its own opt-in flag beside its own key; a key alone arms nothing. None of those names may reach a task that `pnpm test`, `pnpm verify`, pre-push or CI runs (`packages/evals/src/runner/__tests__/paid-provider.test.ts` guards it). A fake key is not safe either: the test server falls back to your `claude` sign-in and bills that. The list, and how evals pick a credential: [contributing/paid-paths.md](contributing/paid-paths.md).
+**Some paths spend real money.** Each needs its own opt-in flag beside its own key; a key alone arms nothing. None of those names may reach a task that `pnpm test`, `pnpm check verify`, pre-push or CI runs (`packages/evals/src/runner/__tests__/paid-provider.test.ts` guards it). A fake key is not safe either: the test server falls back to your `claude` sign-in and bills that. The list, and how evals pick a credential: [contributing/paid-paths.md](contributing/paid-paths.md).
 
 **Gotchas:**
 
@@ -128,7 +129,7 @@ All enforced, so a break fails a check. Rules 1-5 ride `lint`, 6-7 are hooks, 9 
 
 1. **FSD layer violations are errors** (`no-restricted-imports`).
 2. **Each runtime SDK stays in its adapter dir** under `services/runtimes/`.
-3. **`os.homedir()` is banned in `apps/server/src`**; use `lib/dork-home.ts`. The few carve-outs mirror another program's own directory and are listed in `.claude/rules/dork-home.md`.
+3. **`os.homedir()` is banned in `apps/server/src`**; use `lib/dork-home.ts`. The carve-outs, with reasons, are in `.claude/rules/dork-home.md`.
 4. **Exports carry TSDoc** with a real description (`eslint-plugin-jsdoc`, all `error`).
 5. **Prettier and Tailwind class sorting run at turn end and pre-commit**, not after each edit, so your in-context copy stays valid. Don't hand-format. Pre-push checks formatting and names the files to fix.
 6. **`git stash` and `git checkout -- <path>` are refused.** The stash is shared by every worktree, and the pathspec checkout silently drops uncommitted work. Park files in your scratchpad and restore with `cp`.
@@ -147,7 +148,7 @@ The full guide is [contributing/ci.md](contributing/ci.md). What you must know:
 - **Change the pipeline as an experiment.** Every pipeline change carries a ledger entry in `ci/ledger/` with a hypothesis (`stewarding-ci-pipeline` skill).
 - **`main` merges through a merge queue, with no human approval.** Don't update a branch to satisfy a gate; being behind blocks nothing.
 - **Required checks** come from `ci/required-checks.json`. Each must report on both `pull_request` and `merge_group`, with no path filter that can skip it.
-- **Done means open the PR; CI judges.** Locally only the git hooks run; `pnpm verify:preopen`/`pnpm verify` are optional, for debugging.
+- **Done means open the PR; CI judges.** Locally only the git hooks run; `pnpm check preopen`/`pnpm check verify` are optional, for debugging.
 - **Open PRs only with `scripts/open-pr.sh`.** It turns on auto-merge, so a PR merges once every required check is green, including `pr-gates` (Security's sign-off: the cloud review's Security lens or Security's label). Never merge directly or with admin rights (`.claude/hooks/merge-guard.mjs` refuses that). Use the `hold` label, with a `hold:` comment, to keep a green PR from merging.
 - **Only Security's `label-pr.sh` adds or removes `security-*` labels.** Ask Security if you think a PR needs one.
 - **A red is not a reason to add load.** After a first queue ejection, read the failing job; once it's plainly not yours, re-queue it once with `gh pr merge --auto <n>`. The same check failing again at the same head is real: read the log and push a fix. Don't push empty commits.

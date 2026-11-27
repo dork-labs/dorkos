@@ -61,6 +61,7 @@ function trackedLicenses(): string[] {
   return execFileSync('git', ['ls-files', '--', ':(glob)**/LICENSE', ':(glob)**/LICENSE.*'], {
     cwd: ROOT,
     encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
   })
     .split('\n')
     .filter(Boolean);
@@ -163,6 +164,8 @@ const LITERAL_URL_ALLOWED: Record<string, string> = {
   'packages/shared/src/links.ts': 'the module itself',
   'packages/shared/src/community-release-manifest.ts':
     'the one definition of the Community image repository, which the CLI imports',
+  'apps/client/eslint-rules/barrel.js':
+    'an ESLint rule loaded as plain JS before any workspace package is built',
   'apps/client/eslint-rules/fsd.js':
     'an ESLint rule loaded as plain JS before any workspace package is built',
   'apps/space/acceptance/run.mjs':
@@ -266,7 +269,7 @@ describe('company facts', { timeout: 30_000 }, () => {
     const registries = execFileSync(
       'git',
       ['ls-files', '--', ':(glob)**/.claude-plugin/marketplace.json'],
-      { cwd: ROOT, encoding: 'utf8' }
+      { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
     )
       .split('\n')
       .filter(Boolean);

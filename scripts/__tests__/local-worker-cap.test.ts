@@ -18,7 +18,7 @@
  *
  * TWO MECHANISMS, because there are two entry points and they do not share a
  * config. `pnpm vitest run <path>` from the repo root loads the root
- * `vitest.config.ts`; the turbo path (`pnpm test`, `pnpm verify`) runs each
+ * `vitest.config.ts`; the turbo path (`pnpm test`, `pnpm check verify`) runs each
  * package's OWN config in its own process, so the root scripts export
  * `VITEST_MAX_WORKERS`, which vitest reads at config-resolve time whatever
  * config it loads. Both are pinned below, including that they agree on the
@@ -71,7 +71,7 @@ describe('the root config caps local runs', () => {
 describe('the turbo entry points carry the same cap', () => {
   // Run each entry point's actual shell assignment in a clean environment.
   // Checking just that the caller exported a value misses a later overwrite.
-  describe.each(['test', 'verify:checks', 'verify:preopen:turbo'])('%s', (name) => {
+  describe.each(['test', 'check:verify:turbo', 'check:preopen:turbo'])('%s', (name) => {
     const resolveCap = (env: Record<string, string>) => {
       const assignment = /VITEST_MAX_WORKERS=\$\([^)]*\)/.exec(pkg.scripts[name]!);
       expect(assignment, `${name} must select a worker cap for Turbo`).not.toBeNull();

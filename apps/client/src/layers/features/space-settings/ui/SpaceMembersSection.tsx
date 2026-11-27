@@ -72,7 +72,7 @@ export function SpaceMembersSection({
               <div className="flex items-center gap-3 px-4 py-2.5">
                 <span
                   aria-hidden
-                  className="bg-background text-muted-foreground inline-flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold"
+                  className="bg-background text-muted-foreground text-3xs inline-flex size-7 shrink-0 items-center justify-center rounded-full font-semibold"
                 >
                   {initialsOf(person.displayName)}
                 </span>
@@ -106,7 +106,7 @@ export function SpaceMembersSection({
                             <span className="truncate" dir="auto">
                               {agent.displayName}
                             </span>
-                            <span className="bg-background text-muted-foreground shrink-0 rounded px-1.5 text-[11px] font-normal">
+                            <span className="bg-background text-muted-foreground text-2xs shrink-0 rounded px-1.5 font-normal">
                               Agent
                             </span>
                           </span>

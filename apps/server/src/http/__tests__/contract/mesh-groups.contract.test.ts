@@ -47,8 +47,24 @@ import {
   type ComposedServer,
   type ContractCase,
 } from './harness.js';
+import {
+  JSON_TYPE,
+  NOT_FOUND,
+  PROBLEM_TYPE,
+  AGENT_NOT_FOUND,
+  OUTSIDE,
+  NO_PATH,
+  NO_PATH_FIELD,
+  NO_AGENT_HERE,
+  AGENT,
+  UNKNOWN_ULID,
+  VALIDATION_FAILED,
+  NEEDS_APPROVAL,
+  MALFORMED_JSON,
+  AGENT_LIST,
+  EVENT_STREAM,
+} from './mesh-groups.fixtures.js';
 import { problemBody } from '@dorkos/http-kit';
-import { EXECUTION_NEEDS_APPROVAL_DETAIL } from '../../../services/core/operator/agent-execution.js';
 
 /** The repository root: the composed server's directory boundary. */
 const REPO_ROOT = realpathSync(
@@ -58,35 +74,6 @@ const REPO_ROOT = realpathSync(
 const WORK = path.join(REPO_ROOT, '.temp', `contract-mesh-${randomUUID().slice(0, 8)}`);
 mkdirSync(WORK, { recursive: true });
 afterAll(() => rmSync(WORK, { recursive: true, force: true }));
-
-const JSON_TYPE = { 'content-type': /^application\/json\b/ };
-const NOT_FOUND = problemBody('not_found', {
-  detail: 'This server has no API route at that path.',
-});
-const PROBLEM_TYPE = { 'content-type': /^application\/problem\+json\b/ };
-const AGENT_NOT_FOUND = problemBody('not_found', { detail: 'No agent with that id.' });
-const OUTSIDE = problemBody('outside_boundary', {
-  detail: 'Pick a folder inside the ones DorkOS may use.',
-});
-const NO_PATH = problemBody('invalid_request', { detail: 'Send the agent’s folder as `path`.' });
-const NO_AGENT_HERE = problemBody('not_found', {
-  detail: 'No agent is registered in that folder.',
-});
-/** An agent header this machine never minted: the caller is a machine, unverified. */
-const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
-/** A ULID nothing in a fresh install has. */
-const UNKNOWN_ULID = '01JZZZZZZZZZZZZZZZZZZZZZZZ';
-const VALIDATION_FAILED = z
-  .object({ code: z.literal('invalid_request'), issues: z.unknown() })
-  .loose();
-const NEEDS_APPROVAL = problemBody('needs_approval', { detail: EXECUTION_NEEDS_APPROVAL_DETAIL });
-const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') }).loose();
-const AGENT_LIST = z.object({ agents: z.array(z.object({ id: z.string() }).loose()) }).strict();
-const EVENT_STREAM = {
-  'content-type': 'text/event-stream',
-  'cache-control': 'no-cache',
-  'x-accel-buffering': 'no',
-};
 
 contractSuite('mesh, agent and discovery groups', [
   // mesh: reads
@@ -360,7 +347,7 @@ contractSuite('mesh, agent and discovery groups', [
   {
     name: 'GET /api/agents/current refuses a request with no path',
     path: '/api/agents/current',
-    expect: { status: 400, headers: PROBLEM_TYPE, body: NO_PATH },
+    expect: { status: 400, headers: PROBLEM_TYPE, body: NO_PATH_FIELD },
   },
   {
     name: 'HEAD /api/agents/current answers the GET’s status with no body',
@@ -466,7 +453,7 @@ contractSuite('mesh, agent and discovery groups', [
     name: 'POST /api/agents/current/migrate-persona refuses a request with no path',
     method: 'POST',
     path: '/api/agents/current/migrate-persona',
-    expect: { status: 400, body: NO_PATH },
+    expect: { status: 400, body: NO_PATH_FIELD },
   },
   {
     name: 'POST /api/agents/current/migrate-persona answers 404 for a folder with no agent',

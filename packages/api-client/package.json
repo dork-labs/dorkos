@@ -1,0 +1,31 @@
+{
+  "name": "@dorkos/api-client",
+  "version": "0.0.0",
+  "description": "A typed client for the DorkOS HTTP API, generated from docs/api/openapi.json and called by operationId.",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@dorkos/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@dorkos/eslint-config": "workspace:*",
+    "@dorkos/typescript-config": "workspace:*",
+    "@types/node": "^24",
+    "openapi-typescript": "7.13.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}

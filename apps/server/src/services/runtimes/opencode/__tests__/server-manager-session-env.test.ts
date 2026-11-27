@@ -63,14 +63,17 @@ it('binds the agent id it is given and the space id boot loaded', async () => {
     DORKOS_SESSION_ID: 'chat-alpha',
     DORKOS_AGENT_ID: '01JAGENT0000000000000000',
     DORKOS_SPACE_ID: spaceId,
+    // The server that started the turn, loopback only (DOR-5264).
+    DORKOS_API_URL: expect.stringMatching(/^http:\/\/localhost:\d+$/),
   });
 });
 
-it('binds only the chat id when there is no agent and the server never booted', async () => {
+it('binds only the chat id and the server when there is no agent and the space never loaded', async () => {
   await manager.bindSessionEnvironment('chat-beta', 'ses_beta');
 
   expect(await shellEnvFor('ses_beta')).toEqual({
     EXISTING: 'kept',
     DORKOS_SESSION_ID: 'chat-beta',
+    DORKOS_API_URL: expect.stringMatching(/^http:\/\/localhost:\d+$/),
   });
 });

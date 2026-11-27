@@ -3,7 +3,8 @@
  *
  * The app's side of the permission routes: read the default layer, one agent,
  * and the history, and write the preset, the defaults and one agent. Every write
- * is refused by the server for anything that is not a person.
+ * is refused by the server for anything that is not a person. The calls with a
+ * documented operation go through the generated API client (DOR-5473).
  *
  * @module shared/lib/transport/permission-methods
  */
@@ -19,6 +20,7 @@ import type {
   UndoPermissionChangeResponse,
 } from '@dorkos/shared/permissions';
 import type { PermissionWriteResult } from '@dorkos/shared/transport';
+import { createTransportApiClient } from './api-client';
 import { fetchJSON } from './http-client';
 
 /**
@@ -27,19 +29,28 @@ import { fetchJSON } from './http-client';
  * @param baseUrl - Server base URL (already includes `/api`).
  */
 export function createPermissionMethods(baseUrl: string) {
+  const api = createTransportApiClient(baseUrl);
   return {
+    // Stays hand-written: `GET /api/permissions` has no operationId (DOR-5473).
     getPermissions(): Promise<PermissionsResponse> {
       return fetchJSON(baseUrl, '/permissions');
     },
 
-    getAgentPermissions(agentId: string): Promise<AgentPermissionsResponse> {
-      return fetchJSON(baseUrl, `/agents/${encodeURIComponent(agentId)}/permissions`);
+    // The document also lists each read capability's 202 approval answer, which
+    // a person's own read never gets; the casts keep today's types.
+    async getAgentPermissions(agentId: string): Promise<AgentPermissionsResponse> {
+      return (await api.call('permissions.view_agent', {
+        path: { id: agentId },
+      })) as AgentPermissionsResponse;
     },
 
-    getAgentLevel(agentId: string): Promise<AgentLevelResponse> {
-      return fetchJSON(baseUrl, `/agents/${encodeURIComponent(agentId)}/level`);
+    async getAgentLevel(agentId: string): Promise<AgentLevelResponse> {
+      return (await api.call('permissions.view_agent_level', {
+        path: { id: agentId },
+      })) as AgentLevelResponse;
     },
 
+    // Stays hand-written: `PUT /api/permissions/preset` has no operationId (DOR-5473).
     setPermissionPreset(
       body: SetPermissionPresetBody
     ): Promise<PermissionWriteResult<PermissionsResponse>> {
@@ -49,6 +60,7 @@ export function createPermissionMethods(baseUrl: string) {
       });
     },
 
+    // Stays hand-written: `PATCH /api/permissions/defaults` has no operationId (DOR-5473).
     patchPermissionDefaults(
       body: PatchPermissionDefaultsBody
     ): Promise<PermissionWriteResult<PermissionsResponse>> {
@@ -58,6 +70,8 @@ export function createPermissionMethods(baseUrl: string) {
       });
     },
 
+    // Stays hand-written: the generated body for `agents.updatePermissions` drops the
+    // `null` that puts an area back to its default (DOR-5473).
     patchAgentPermissions(
       agentId: string,
       body: PatchAgentPermissionsBody
@@ -68,6 +82,7 @@ export function createPermissionMethods(baseUrl: string) {
       });
     },
 
+    // Stays hand-written: `GET /api/permissions/history` has no operationId (DOR-5473).
     getPermissionHistory(
       query: { agentId?: string; before?: string; limit?: number } = {}
     ): Promise<PermissionHistoryResponse> {
@@ -79,6 +94,8 @@ export function createPermissionMethods(baseUrl: string) {
       return fetchJSON(baseUrl, `/permissions/history${search ? `?${search}` : ''}`);
     },
 
+    // Stays hand-written: `POST /api/permissions/history/{eventId}/undo` has no
+    // operationId (DOR-5473).
     undoPermissionChange(
       eventId: string,
       body: UndoPermissionChangeBody = {}

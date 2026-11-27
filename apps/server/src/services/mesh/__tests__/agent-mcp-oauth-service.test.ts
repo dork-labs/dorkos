@@ -18,7 +18,10 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { ExtensionSecretStore, resetKeyCache } from '@dorkos/shared/extension-secrets';
+import {
+  ExtensionSecretStore,
+  resetKeyCache,
+} from '../../../lib/secret-store/extension-secrets.js';
 import { writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 

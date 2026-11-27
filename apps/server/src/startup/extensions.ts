@@ -8,7 +8,7 @@
  */
 import { logger } from '../lib/logger.js';
 import { broadcastExtensionReloaded } from '../routes/extensions.js';
-import { assessPerson } from '../routes/extensions-person-bar.js';
+import { assessPerson } from '../lib/http/person-bar.js';
 import { setExtensionPersonBar } from '../services/extensions/inbox/extension-inbox-context.js';
 import { startExtensionApprovalQueue } from '../services/extensions/extension-approval-queue.js';
 import { ExtensionManager } from '../services/extensions/extension-manager.js';

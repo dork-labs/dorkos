@@ -145,8 +145,9 @@ The full interface also covers Tasks (`listTasks`, `createTask`, `triggerTask`, 
 Use the REST API directly for any language or platform:
 
 ```bash
-# List sessions
-GET /api/sessions
+# List sessions, a page at a time, latest activity first
+# (pass the answer's nextCursor as ?cursor= for the next page; null on the last)
+GET /api/sessions?limit=50
 
 # Subscribe to a session's durable event stream (SSE: snapshot → replay → live)
 GET /api/sessions/:id/events
@@ -189,6 +190,7 @@ class MyCustomTransport implements Transport {
   async listSessions(cwd?: string) {
     const url = new URL(`${this.baseUrl}/api/sessions`);
     if (cwd) url.searchParams.set('cwd', cwd);
+    url.searchParams.set('limit', '200'); // the first page; follow nextCursor for more
     const res = await fetch(url);
     return res.json();
   }

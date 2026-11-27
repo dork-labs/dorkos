@@ -47,7 +47,7 @@ export const RECENT_SESSIONS_WINDOW = 24;
  * entry, and the persisted boot cache keeps recognising it. The next refetch
  * after 04:00 asks with the new boundary.
  *
- * @param limit - Maximum sessions to return (1-50). Defaults to
+ * @param limit - The first page's size (1-200); the rest is not read. Defaults to
  *   {@link RECENT_SESSIONS_WINDOW} — leave it alone unless you truly need a
  *   different window, because a different number is a different request.
  * @param options.enabled - Ask the server at all. `false` holds the query idle

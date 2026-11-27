@@ -199,16 +199,14 @@ vi.mock('@/layers/features/composer', async (importActual) => {
       // is a single positioned div with nothing to stub.
       Root: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
       OverlayLane: actual.Composer.OverlayLane,
-      Input: React.forwardRef<unknown, Record<string, unknown>>(
-        function MockComposerInput(_p, ref) {
-          React.useImperativeHandle(ref, () => ({
-            focus: chatInputFocus,
-            focusUnlessTouch: chatInputFocusIfDesktop,
-            focusAt: vi.fn(),
-          }));
-          return <div data-testid="chat-input">Composer.Input</div>;
-        }
-      ),
+      Input: function MockComposerInput({ ref }: { ref?: React.Ref<unknown> }) {
+        React.useImperativeHandle(ref, () => ({
+          focus: chatInputFocus,
+          focusUnlessTouch: chatInputFocusIfDesktop,
+          focusAt: vi.fn(),
+        }));
+        return <div data-testid="chat-input">Composer.Input</div>;
+      },
       Attachments: actual.Composer.Attachments,
       ClearArmedHint: actual.Composer.ClearArmedHint,
     },

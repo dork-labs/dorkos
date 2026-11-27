@@ -21,7 +21,7 @@ export const st = {
 
 export const mockSecretGet = vi.fn<(key: string) => Promise<string | null>>();
 
-vi.mock('@dorkos/shared/extension-secrets', () => ({
+vi.mock('../../../../lib/secret-store/extension-secrets.js', () => ({
   ExtensionSecretStore: vi.fn().mockImplementation(function () {
     return {
       get: mockSecretGet,

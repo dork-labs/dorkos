@@ -34,7 +34,8 @@
  *   is unchanged (`project-with-consent.ts`, DOR-3433).
  * - **An entry from before pins** (`<name>@<commands>` alone, for hooks that do
  *   name a file): it applies, and the running server pins today's files onto it
- *   the first time it sees it ({@link pinLegacyHookApproval}), the same
+ *   the first time it sees it (a `hook_files_pinned` decision the space side
+ *   writes, `core/approvals/computer-asks/hook-decisions.ts`), the same
  *   one-time pin the agent folder settings took on upgrade. After that it is
  *   strict like any other.
  * - **A no** is about the commands, so it holds whatever the files hold: a
@@ -71,6 +72,14 @@
  * with login off, a caller that simply omits its agent header is treated as the
  * operator (DOR-505). Turning on Require login closes it.
  *
+ * ## Who writes it
+ *
+ * The space side, never this module (spec `computer-side-starts-alone` §5.7):
+ * a card's answer, a person's CLI verb and a global package's consent are
+ * written by `core/approvals/computer-asks/hook-decisions.ts`, and a decision
+ * the computer makes with no card reaches it through the asks port
+ * (`harness/computer-asks.ts`). This module reads.
+ *
  * ## Why there are two ways to READ the same file
  *
  * {@link storedHookDecisions} reads the running server's live store.
@@ -85,34 +94,22 @@
  *
  * @module services/harness/hook-consent
  */
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import type { ProjectedHook } from '@dorkos/harness';
+import { join } from 'node:path';
 import { UserConfigSchema } from '@dorkos/shared/config-schema';
+import type { HookProjectionRequest } from '@dorkos/shared/computer-asks';
+import {
+  hookApprovalEntry,
+  hookCommandsKey,
+  hookEntryPackageName,
+  sameHookCommands,
+} from '@dorkos/shared/consent-entries';
 import { configManager } from '../core/config-manager.js';
-import { logConfigWrite } from '../core/operator/config-write.js';
-import type { HookScriptPin } from './hook-script-pins.js';
 
-/** One package's request to install shell commands into a project's harnesses. */
-export interface HookProjectionRequest {
-  /** The project whose harness files would be written. */
-  projectPath: string;
-  /** The installed package that declared the hooks. */
-  packageName: string;
-  /**
-   * Exactly what would land: each command, the event that fires it, and the
-   * matcher that narrows it. Sorted by `projectedHooks`, so a package that only
-   * reorders its `hooks.json` is not asked about again.
-   */
-  hooks: ProjectedHook[];
-  /**
-   * The files the commands run, each with the sha256 of its bytes, sorted by
-   * path (`hook-script-pins.ts`). Absent or empty when the commands name no
-   * file, or the package is a dev link.
-   */
-  scripts?: readonly HookScriptPin[];
-}
+// The stored form of a decision is the space side's too: it writes these lists
+// (`core/approvals/computer-asks/hook-decisions.ts`), this module reads them.
+export type { HookProjectionRequest };
+export { hookApprovalEntry, hookCommandsKey, hookEntryPackageName, sameHookCommands };
 
 /** The two stored lists, read together so a caller cannot consult one and forget the other. */
 export interface HookDecisions {
@@ -147,7 +144,7 @@ export interface HookDecisions {
   /**
    * Set only on the running server's own lists ({@link storedHookDecisions}),
    * so a caller that passes them in still gets a yes from before pins pinned
-   * once ({@link pinLegacyHookApproval}). Never set on the read-only disk copy
+   * once (`hook_files_pinned`). Never set on the read-only disk copy
    * or a list built by hand, which must write nothing.
    */
   live?: true;
@@ -155,70 +152,6 @@ export interface HookDecisions {
 
 /** Nothing decided — the shape a fresh install resolves to. */
 const NO_DECISIONS: HookDecisions = { approved: [], refused: [] };
-
-/**
- * The canonical form of a request, so two ways of naming the same thing hash the
- * same.
- *
- * `path.resolve` is the whole of it, and it is not cosmetic: `/x/proj` and
- * `/x/proj/` are one directory, and the app is not the only caller — the CLI and
- * the API pass whatever a person or a script typed. Without this, one project
- * could hold two decisions and a person would be asked twice for the same thing.
- */
-function canonicalProjectPath(request: HookProjectionRequest): string {
-  return resolve(request.projectPath);
-}
-
-/**
- * The stored form of one hook decision: `<packageName>@<digest>`.
- *
- * The same function writes an approval and a refusal, which is what makes the
- * two lists comparable and makes "an entry is never in both" checkable.
- *
- * @param request - The package, project, and hooks to identify.
- * @returns The entry as it is stored in `harness.approvedHooks` or
- *   `harness.refusedHooks`.
- */
-export function hookApprovalEntry(request: HookProjectionRequest): string {
-  const commands = hookCommandsKey(request);
-  const scripts = request.scripts ?? [];
-  if (scripts.length === 0) return commands;
-  const pinned = createHash('sha256').update(JSON.stringify(scripts), 'utf8').digest('hex');
-  return `${commands}.${pinned}`;
-}
-
-/**
- * The commands half of an entry, `<packageName>@<digest>`: the project, and
- * every hook's event, matcher and command. Every entry for the same commands
- * starts with it, whatever files they ran when it was recorded.
- *
- * @param request - The package, project, and hooks to identify.
- * @returns The entry with no files pinned; compare with {@link sameHookCommands}.
- */
-export function hookCommandsKey(request: HookProjectionRequest): string {
-  const digest = createHash('sha256')
-    .update(
-      JSON.stringify([
-        canonicalProjectPath(request),
-        request.hooks.map((hook) => [hook.event, hook.matcher ?? null, hook.command]),
-      ]),
-      'utf8'
-    )
-    .digest('hex');
-  return `${request.packageName}@${digest}`;
-}
-
-/**
- * Whether a stored entry is about the same commands as `key`, whatever files it
- * pinned.
- *
- * @param stored - A stored entry.
- * @param key - An entry with no files pinned (`<packageName>@<digest>`).
- * @returns True when both name the same package, project and commands.
- */
-export function sameHookCommands(stored: string, key: string): boolean {
-  return stored === key || stored.startsWith(`${key}.`);
-}
 
 /** Local shorthand for {@link sameHookCommands}. */
 const sameCommands = sameHookCommands;
@@ -292,20 +225,6 @@ export const WORKSPACE_HOOKS_ENTRY_MARKER = '@workspace-';
  */
 export function isWorkspaceHooksEntry(entry: string): boolean {
   return entry.lastIndexOf(WORKSPACE_HOOKS_ENTRY_MARKER) > 0;
-}
-
-/**
- * The package name half of a stored entry.
- *
- * Split on the LAST `@`, because a scoped package name carries one of its own
- * (`@acme/tools@<digest>`) and the digest never does.
- *
- * @param entry - A stored `<packageName>@<digest>` entry.
- * @returns The package name, or the whole entry when it carries no `@`.
- */
-export function hookEntryPackageName(entry: string): string {
-  const at = entry.lastIndexOf('@');
-  return at <= 0 ? entry : entry.slice(0, at);
 }
 
 /**
@@ -435,180 +354,4 @@ export function isHookProjectionRefused(
 ): boolean {
   const key = hookCommandsKey(request);
   return decisions.refused.some((stored) => sameCommands(stored, key));
-}
-
-/**
- * Pin today's files onto a yes recorded before files were pinned, so the next
- * edit to them needs a new yes. The running server's store only; the read-only
- * `--check` path never calls this.
- *
- * @param request - A projection {@link hookApprovalMatch} answered `unpinned` for.
- */
-export function pinLegacyHookApproval(request: HookProjectionRequest): void {
-  if ((request.scripts ?? []).length === 0) return;
-  recordHookDecision(request, 'approved', 'pinning the files a package hook runs');
-}
-
-/**
- * Write both lists back, log what moved, and say nothing when nothing changed.
- *
- * One writer for both sides so the "never in both" invariant lives in a single
- * place rather than in each caller.
- */
-function writeDecisions(reason: string, approved: string[], refused: string[]): void {
-  const harness = configManager.get('harness');
-  const sameApproved =
-    approved.length === harness.approvedHooks.length &&
-    approved.every((entry, i) => entry === harness.approvedHooks[i]);
-  const sameRefused =
-    refused.length === harness.refusedHooks.length &&
-    refused.every((entry, i) => entry === harness.refusedHooks[i]);
-  if (sameApproved && sameRefused) return;
-  configManager.set('harness', { ...harness, approvedHooks: approved, refusedHooks: refused });
-  logConfigWrite(reason, 'harness', harness, configManager.get('harness'));
-}
-
-/**
- * Record a person's yes, so the same package projecting the same hooks into the
- * same project is never asked about again.
- *
- * Idempotent, and it clears any matching refusal: a package cannot be approved
- * and refused at once.
- *
- * @param request - The projection that was allowed.
- */
-export function recordHookApproval(request: HookProjectionRequest): void {
-  recordHookDecision(request, 'approved', 'approving a package hook');
-}
-
-/**
- * Record one decision about a package's hooks, replacing every earlier entry
- * for the same commands on either list: one decision per set of commands, and
- * the newest one names the files it covers.
- */
-function recordHookDecision(
-  request: HookProjectionRequest,
-  decision: 'approved' | 'refused',
-  reason: string
-): void {
-  const entry = hookApprovalEntry(request);
-  const key = hookCommandsKey(request);
-  const { approved, refused } = storedHookDecisions();
-  const others = (list: readonly string[]): string[] =>
-    list.filter((stored) => !sameCommands(stored, key));
-  writeDecisions(
-    reason,
-    decision === 'approved' ? [...others(approved), entry] : others(approved),
-    decision === 'refused' ? [...others(refused), entry] : others(refused)
-  );
-}
-
-/**
- * Record a yes for one stored entry, whatever decision it identifies: a hook
- * projection ({@link hookApprovalEntry}) or a global plugin's programs
- * (`globalActivationEntry` in `marketplace/global-plugin-consent.ts`). One
- * writer, so "never on both lists" holds for every kind of entry.
- *
- * @param entry - The `<packageName>@<digest>` entry to allow.
- * @param reason - What the audit log says was happening.
- * @param replacing - Earlier yeses this one supersedes, removed in the same
- *   write (a global package keeps one approval: the one for what is installed).
- */
-export function recordApprovedEntry(
-  entry: string,
-  reason: string,
-  replacing: (stored: string) => boolean = () => false
-): void {
-  const { approved, refused } = storedHookDecisions();
-  const kept = approved.filter((stored) => stored === entry || !replacing(stored));
-  writeDecisions(
-    reason,
-    kept.includes(entry) ? kept : [...kept, entry],
-    refused.filter((stored) => stored !== entry)
-  );
-}
-
-/**
- * Forget every stored yes a predicate matches, leaving every no in place.
- * Used when a global package is replaced or removed, so an old approval can
- * never cover the same bytes coming back later (a downgrade).
- *
- * @param matches - Which approved entries to forget.
- * @param reason - What the audit log says was happening.
- */
-export function forgetApprovedEntries(matches: (stored: string) => boolean, reason: string): void {
-  const { approved, refused } = storedHookDecisions();
-  writeDecisions(
-    reason,
-    approved.filter((stored) => !matches(stored)),
-    [...refused]
-  );
-}
-
-/**
- * Record a no for one stored entry; the counterpart of {@link recordApprovedEntry}.
- *
- * @param entry - The `<packageName>@<digest>` entry to turn down.
- * @param reason - What the audit log says was happening.
- */
-export function recordRefusedEntry(entry: string, reason: string): void {
-  const { approved, refused } = storedHookDecisions();
-  writeDecisions(
-    reason,
-    approved.filter((stored) => stored !== entry),
-    refused.includes(entry) ? [...refused] : [...refused, entry]
-  );
-}
-
-/**
- * Record a person's no, so every later trigger obeys it instead of asking again.
- *
- * Idempotent, and it clears any matching approval — the same package cannot be
- * on both lists. The refusal ends on its own when the package changes what it
- * wants to run (a different digest matches neither list), and a person can end
- * it early with `dorkos harness hooks --revoke <package>`.
- *
- * @param request - The projection that was turned down.
- */
-export function recordHookRefusal(request: HookProjectionRequest): void {
-  recordHookDecision(request, 'refused', 'turning down a package hook');
-}
-
-/** One stored decision, removed by {@link revokeHookDecisions}. */
-export interface RevokedHookDecision {
-  /** The entry as it was stored. */
-  entry: string;
-  /** Which list it came off. */
-  decision: 'approved' | 'refused';
-}
-
-/**
- * Forget every stored decision recorded for one package.
- *
- * Scoped by package NAME rather than by project, and that is the honest scope
- * rather than a shortcut: the digest is one-way, so a stored entry cannot say
- * which project it was recorded in. Only the entry matching what the package
- * declares in the project you are standing in can be identified, and every other
- * entry for that name is already inert — its digest matches nothing, so the
- * package is treated as undecided wherever it now differs. Removing a decision
- * only ever means "ask me again", so the wider scope cannot arm anything; the
- * caller prints each entry it removed and says which one matched here.
- *
- * @param packageName - The package whose decisions to forget.
- * @returns What was removed, in the order the lists held it.
- */
-export function revokeHookDecisions(packageName: string): RevokedHookDecision[] {
-  const { approved, refused } = storedHookDecisions();
-  const mine = (entry: string): boolean => hookEntryPackageName(entry) === packageName;
-  const removed: RevokedHookDecision[] = [
-    ...approved.filter(mine).map((entry) => ({ entry, decision: 'approved' as const })),
-    ...refused.filter(mine).map((entry) => ({ entry, decision: 'refused' as const })),
-  ];
-  if (removed.length === 0) return [];
-  writeDecisions(
-    'revoking a package hook decision',
-    approved.filter((entry) => !mine(entry)),
-    refused.filter((entry) => !mine(entry))
-  );
-  return removed;
 }

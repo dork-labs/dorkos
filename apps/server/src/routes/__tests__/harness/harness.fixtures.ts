@@ -30,11 +30,11 @@ import type {
   ApprovalRequestInput,
   ApprovalTicket,
 } from '../../../services/core/approvals/approval-service.js';
-import { _internal as approvalInternal } from '../../../services/harness/hook-approval.js';
 import { hookApprovalEntry, type HookDecisions } from '../../../services/harness/hook-consent.js';
 import { scanHookRequests } from '../../../services/harness/project-with-consent.js';
 import { createHarnessRoutes } from '../../harness.js';
 import { honoGroupListener } from '../../../http/__tests__/hono-group-listener.js';
+import { _internal as askInternal } from '../../../services/harness/ask-withheld-hooks.js';
 
 /** Nobody has decided anything: the shape every case runs under unless it says. */
 export const NO_DECISIONS: HookDecisions = { approved: [], refused: [] };
@@ -203,7 +203,7 @@ export function useHarnessRoutes(options: { realConfig?: boolean } = {}): Harnes
     harnessState.storedPreset = 'trusted';
     harnessState.signedInUser = undefined;
     gateway.requested = [];
-    approvalInternal.forgetDecisions();
+    askInternal.forgetDecisions();
   });
 
   return servers;

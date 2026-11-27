@@ -219,6 +219,7 @@ function render() {
 /** Seed the recent-session window the palette asks the server for. */
 function seedSessions(sessions: Session[], agentActivity: Record<string, string> = {}) {
   vi.mocked(mockTransport.listRecentSessions).mockResolvedValue({
+    nextCursor: null,
     sessions,
     agentActivity,
     warnings: [],

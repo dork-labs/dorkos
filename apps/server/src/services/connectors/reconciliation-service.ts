@@ -74,7 +74,7 @@ import {
   type EveryAgentChange,
   type EveryAgentChangeWriter,
 } from './every-agent-activity.js';
-import type { ConnectorOwnerAuthority } from './principal/server-principal.js';
+import type { ConnectorOwnerAuthority } from '../core/connections-lease/index.js';
 import type { ConnectorRegistry } from './registry.js';
 import type { ManagedAuthoritySyncService } from './resources/managed-authority-sync-service.js';
 

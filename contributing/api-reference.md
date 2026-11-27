@@ -40,6 +40,7 @@ surfaces: {
     // query: ['dryRun'],                // a write's fields that come from the query string
     // success: 201,                     // 200 unless declared; 204 sends no body
     // audience: 'person',               // only a person may call it; an agent gets 403 person_only
+    // stability: 'stable',              // promise it to outside callers; preview unless declared (see Stability)
   },
 },
 ```
@@ -98,7 +99,44 @@ The document declares two schemes, `sessionCookie` and `apiKey`, and a default o
 
 A `registerPath` call that sets `security` keeps it. A local install with "Ask for a password on this computer too" off takes calls from this computer with no credential; the `info.description` and both scheme descriptions say so. `X-DorkOS-Agent` is an identity header, not a credential, so it is not a scheme; `docs/api/index.mdx` describes it. `services/core/openapi/__tests__/security-schemes.test.ts` asks the real session gate about every documented operation and fails when the document calls a path open that the gate guards, or the reverse.
 
+## Stability
+
+Every operation carries `x-stability`: `stable`, `preview` or `internal` (ADR `261123-170832`, DOR-4983).
+
+| Value      | Means                                                                                                                                                               | Published                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `stable`   | Meant for outside callers: scripts, other programs, agents.                                                                                                         | Yes                                                             |
+| `preview`  | New or still being reshaped: an area the roadmap is rebuilding, a list that just started paging, any capability route not yet promised.                             | Yes, its description opens with "**Preview.**"                  |
+| `internal` | Only DorkOS's own app, command line or desktop app calls it: sign-in steps, settings pages, the app's plumbing, debug and test hooks. It can change without notice. | No: served, but left out of the published document and the site |
+
+**The rule for a group:** one that public docs tell outside callers to use is never `internal`.
+
+**No deprecation period.** Until the API is a stable v1.0, a breaking change lands at once with every caller in the repo fixed in the same change, and a changelog fragment that names what broke and what replaces it. There are no `deprecated` flags on operations, no `Deprecation` or `Sunset` headers and no aliases. `stable` means an operation changes only that way, never quietly.
+
+**Where the value comes from**, first match wins (`services/core/openapi/stability.ts`):
+
+1. The operation's own declaration: `stability` on a capability's `http` surface, or `'x-stability'` on a hand `registerPath` call. For hand routes the place is `OPERATION_STABILITY`, one table beside the groups: the session list's paging, the session routes only the app calls, the two old streams kept until `/api/events` replaces them, and the operations public docs send people to in otherwise internal groups (a project's Claude accounts, an extension's secrets and the extension list). A key the document lacks fails the export.
+2. A capability with none is `internal` in a group marked internal, and `preview` everywhere else. A capability route is promised `stable` only by its own `stability: 'stable'`.
+3. A hand route with none takes its route group's value in `GROUP_STABILITY`. A group missing from that table fails `pnpm docs:export-api`, so a new group is classified the day it is documented.
+
+**The groups**, from `GROUP_STABILITY`:
+
+| Value      | Route groups                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stable`   | `activity`, `agents`, `audit`, `capabilities`, `connectors`, `files`, `health`, `heartbeats`, `marketplace`, `mcp-servers`, `mesh`, `models`, `openapi.json`, `search`, `sessions`, `tasks`, `templates`, `todo-promises`, `todos`, `work-queues`, `workspaces`                                                                                                                                                                                                                                                                                                                                                               |
+| `preview`  | `canvas`, `cloud`, `commands`, `community-connections`, `computers`, `config`, `diff`, `direct-chats`, `documents`, `events`, `hub`, `links`, `notifications`, `read-cursors`, `relay`, `rooms`, `shapes`, `tunnel` (being rebuilt, or app settings that public guides point people to)                                                                                                                                                                                                                                                                                                                                       |
+| `internal` | `admin`, `agent-instructions`, `approvals`, `auth`, `browser-viewers`, `communities`, `debug`, `desktop`, `devices`, `directory`, `discovery`, `errors`, `extension-decisions`, `extension-frame`, `extensions`, `feedback`, `git`, `harness`, `keep-awake`, `lan-access`, `local-browser`, `mcp-config`, `onboarding`, `owner-factors`, `owner-sign-in`, `permissions`, `person-session`, `profile`, `projects`, `push`, `remote-access`, `runtimes`, `session-locations`, `session-relay`, `sign-in-landings`, `step-up`, `subagents`, `system`, `team`, `terminal`, `uploads`, `wifi-sign-in`, `workbench`, `your-browser` |
+
+`openapi.json` and most `internal` groups above are served but not documented yet (the lint gate's `undocumented-route`); they are classified already, so each takes its value the day its routes are documented.
+
+**Two files.** `pnpm docs:export-api` splits the document (`services/core/openapi/published-document.ts`):
+
+- `docs/api/openapi.json` is the published document: every operation that is not `internal`, and every component except those only `internal` operations use. The site's API pages, `/api/openapi.json` and `/api/docs` all show it.
+- `docs/api/openapi-internal.json` holds the `internal` operations and the components only they use. It has no `info`, so a release never touches it. The generated client (`packages/api-client`) and the API lint gate read it merged into the published one (`packages/api-client/scripts/api-document.ts`): the app calls internal operations, and every operation is held to the same lint rules. `openapi-fresh` compares both.
+
 The document's `info.version` is the product version: the running server's version at `/api/openapi.json`, and the repo `VERSION` in the committed `docs/api/openapi.json`. A release bumps `VERSION`, so the release PR regenerates the docs too (`.claude/commands/system/release.md`, Phase 6).
+
+**The census.** `services/core/openapi/__tests__/stability-census.test.ts` fails when an operation has no `x-stability` or an unknown one, when the committed published document holds an `internal` operation or the internal part a published one, and when the published document's `info.version` differs from `VERSION`.
 
 ## Errors
 
@@ -246,7 +284,7 @@ The last answers built by hand moved to problem documents, and every reader drop
 Anything that changes `openapi-registry.ts`, including a description or a response code, has to be regenerated and committed:
 
 ```bash
-pnpm docs:export-api                          # 1. registry  -> docs/api/openapi.json
+pnpm docs:export-api                          # 1. registry  -> docs/api/openapi.json (+ openapi-internal.json)
 pnpm --filter=@dorkos/site generate:api-docs  # 2. that JSON -> docs/api/api/**/*.mdx
 ```
 
@@ -256,22 +294,22 @@ The `docs-openapi-check` workflow runs both and fails on any difference, so CI c
 
 ## The API lint gate
 
-The API lint gate (DOR-4996) stops the HTTP API from getting worse while old routes are migrated area by area (DOR-4977). It reads two committed files, `docs/api/openapi.json` and the route census `apps/server/src/http/__tests__/route-census.baseline.json`, and holds what it finds to a baseline that may only go down. It runs as the `API lint gate (DOR-4996)` step of the required `typecheck` job.
+The API lint gate (DOR-4996) stops the HTTP API from getting worse while old routes are migrated area by area (DOR-4977). It reads committed files: `docs/api/openapi.json` with its internal part `docs/api/openapi-internal.json` merged in (internal operations are documented, only not published, so they count as documented and every rule holds them), and the route census `apps/server/src/http/__tests__/route-census.baseline.json`, and holds what it finds to a baseline that may only go down. It is one of the ratchets `pnpm ratchet` runs (`scripts/ratchets/registry.ts`), in the `Ratchets (DOR-4948)` step of the required `typecheck` job.
 
-| Concept                  | Location                                                           |
-| ------------------------ | ------------------------------------------------------------------ |
-| The check (CLI, ratchet) | `scripts/api-lint/check-api-lint.ts`                               |
-| The rules and word lists | `scripts/api-lint/rules.ts`                                        |
-| The baseline             | `scripts/api-lint/baseline.json`                                   |
-| Tests                    | `scripts/__tests__/check-api-lint.test.ts`                         |
-| The CI step              | `.github/workflows/typecheck.yml`, step `API lint gate (DOR-4996)` |
+| Concept                  | Location                                                      |
+| ------------------------ | ------------------------------------------------------------- |
+| The check (CLI, ratchet) | `scripts/api-lint/check-api-lint.ts`                          |
+| The rules and word lists | `scripts/api-lint/rules.ts`                                   |
+| The baseline             | `scripts/api-lint/baseline.json`                              |
+| Tests                    | `scripts/__tests__/check-api-lint.test.ts`                    |
+| The CI step              | `.github/workflows/typecheck.yml`, step `Ratchets (DOR-4948)` |
 
 ```bash
 pnpm check:api-lint                    # check against the baseline
 pnpm check:api-lint -- --update        # after fixing findings: lower the baseline
 ```
 
-`--update` lowers a blocking rule's entries and never raises them. It sets an advisory rule's entries (`hand-registered-path`) to whatever it measured, up or down, so that count stays true and the rule does not go red the day it starts blocking; `--base` never judges an advisory entry. In the merge queue the step adds `--queue`, which turns a stale entry into a note ([contributing/ci.md](ci.md#api-lint-gate-dor-4996-is-red-in-typecheck) says why).
+`--update` lowers a blocking rule's entries and never raises them. It sets an advisory rule's entries (`hand-registered-path`) to whatever it measured, up or down, so that count stays true and the rule does not go red the day it starts blocking; `--base` never judges an advisory entry. In the merge queue the step adds `--queue`, which turns a stale entry into a note ([contributing/ci.md](ci.md#ratchets-dor-4948-is-red-in-typecheck) says why).
 
 The counts are per rule and group, not per finding: a PR that fixes one finding and adds another of the same rule in the same group leaves the count where it was and passes. The ratchet stops the API getting worse in total, not every new finding.
 
@@ -288,10 +326,12 @@ Every rule blocks except `hand-registered-path`, which is **advisory** (`blockin
 | `param-name`           | A resource whose `{param}` goes by more than one name in its group (`/rooms/{id}` beside `/rooms/{roomId}`): distinct names minus one.                                                                                                                                                                                                                                            | Use the name the group already uses.                                                                             |
 | `error-missing`        | An operation with no 4xx or 5xx response.                                                                                                                                                                                                                                                                                                                                         | Declare the error responses the handler can send.                                                                |
 | `error-shape`          | A 4xx or 5xx response with no body, or whose body is not a shared error schema (`SHARED_ERROR_SCHEMAS`: `Problem`, `AuthRequired`, `StepUpRequired`, `PasskeyCheckRequired`), an extension of one, or a choice between them.                                                                                                                                                      | Declare it with `problemResponse()`.                                                                             |
-| `list-paging`          | A GET whose last segment is static and whose 200 body is an array or holds one, but which lacks a `cursor` and `limit` query parameter or a `nextCursor` in its body.                                                                                                                                                                                                             | Page the list: accept `cursor` and `limit`, return `nextCursor`.                                                 |
+| `list-paging`          | A GET whose last segment is static and whose 200 body is a list, but which lacks a `cursor` and `limit` query parameter or a `nextCursor` in its body.                                                                                                                                                                                                                            | Page the list: accept `cursor` and `limit`, return `nextCursor`.                                                 |
 | `undocumented-route`   | A served route (from the census) with no documented operation. `ALL` middleware, wildcards, `/api/test` and `/api/ext/{id}` are left out; parameter names are ignored when matching. Known gap: an `ALL` or `/*` route answers requests but is never counted here, so a route served only that way can stay undocumented without a finding.                                       | Document the route, then regenerate the docs (above).                                                            |
 | `unserved-operation`   | A documented operation no served route answers.                                                                                                                                                                                                                                                                                                                                   | Serve it, or remove it from the document.                                                                        |
 | `hand-registered-path` | Advisory. A `registerPath(` call site in the hand registry: `openapi-registry.ts`, `services/core/openapi/*.ts`, and any `*-openapi.ts` or `openapi.ts` under `apps/server/src`, less calls whose literal method and path are on the hand-route allowlist. It counts call sites, not paths, so a loop that registers several paths counts once (`computer-openapi.ts` does this). | Move the route onto a capability `http` surface ([Moving a hand route](#moving-a-hand-route-onto-a-capability)). |
+
+**What `list-paging` counts as a list.** The 200 body, or any one member of its `oneOf`, `anyOf` or `allOf` judged on its own (so an `allOf` errs toward counting), is a top-level array, or an object that wraps a collection. An object wraps one when at least one property is an array whose items are not plain values, or when every property is an array (`{ files: string[] }`: paths, ids and tags grow without bound). Items are plain when they are an `enum`, directly or through a `$ref`, or every listed type is `string`, `number`, `integer`, `boolean` or `null`; an array with no item schema is not plain. An `id` property makes the object one resource that holds arrays (an agent manifest), except when the segment before the last is a parameter (`/rooms/{id}/members`), where the `id` names the parent and the body is judged as a list. The object's other properties are not judged, because real lists carry `warnings` or counts beside their rows (`GET /api/sessions`).
 
 ### When it goes red
 
@@ -354,6 +394,8 @@ The marketplace routes are mounted at `/api/marketplace` and backed by injected 
 
 A source name rides in the path or, from the app, in `?name=`: a name saved by an older DorkOS may hold a `/`, and Remote Access refuses an encoded `/` in a URL path (DOR-4212). Both forms run the same handler.
 
+**Who may call them** (DOR-4978): the capability mount serves the reads (`GET /sources`, `/cache`, `/packages`, `/installed`, `/installed/:name`, `/updates`, `/held-back`, `/dev-links`; `services/marketplace/doors/marketplace-read-capabilities.ts`). They are open to agents, as the `marketplace_*` tools are; an agent reads `/installed`, `/installed/:name` and `/held-back` without the working folder a dev-linked package runs from (`linkedPath`, `devLink.path`, the folder in `note` and a `bindsTo` that spells it). The exception is `GET /dev-links`: it names a person's working folders, so an agent, an approval token, an API key or any `Authorization` header gets `403 person_only`. `GET /packages/:name` and every write stay by hand.
+
 **Error responses** are problem documents from a centralised `mapErrorToProblem` helper — `400 invalid_request` for invalid manifests, `409 conflict` for file conflicts, `404 not_found` for missing packages/sources, `500 internal_error` for unexpected failures.
 
 See `contributing/marketplace-installs.md` for the full install pipeline, transaction semantics, and per-kind flow details.
@@ -409,23 +451,33 @@ Schemas live in `packages/shared/src/session-stream.ts`; the handler in `apps/se
 
 ### GET /api/events
 
-Unified SSE stream for all real-time system events, on one connection. Clients filter by the SSE `event:` field. Three older streams that overlap it are still served today: `GET /api/tunnel/stream`, `GET /api/extensions/events` and `GET /api/relay/stream`. The plan (ADR `261123-170833`) is to remove each one, not deprecate it, in the change that moves every caller onto `/api/events`. New code reads `/api/events` only.
+Unified SSE stream for all real-time system events, on one connection. Clients filter by the SSE `event:` field.
+
+**The contract** (ADR `261123-170833`). Every event is a `DorkOsEvent`, `{ seq, at, type, payload }`, and every type is a member of one union in `packages/shared/src/dorkos-events.ts`, which also names each type's area (a permission area, or `null` with a note). The fan-out's `broadcast` only takes members, `event-union-census.test.ts` checks every call site, and the client's `GENERIC_EVENTS` derives from the union. On this stream `type` is the `event:` name, `payload` the `data:` (unchanged), and `seq` the last part of the frame id. `seq` only grows within one stream, may skip numbers, and is never compared across streams. A new domain adds its own table to the union.
+
+**Replay.** Every broadcast frame carries `id: events-<epoch>-<generation>-<seq>`, written by `streamFrameId` and read by `parseResumeCursor` like the chat and room streams. `Last-Event-ID` (or `?resume=` on the socket) inside the window replays the gap, filtered per reader by the same audience and redaction rules, asked with the rights the reader has when it resumes (a room's membership now, not when the event was sent), and the `connected` frame says `resumed: true`. The window is `EVENT_REPLAY_LIMITS` in `lib/event-stream/event-replay-buffer.ts` (500 events, 512 KiB counted as the bytes of both wire renderings; an event over the whole budget is sent live, not kept, and empties the window).
+
+The API document describes what is sent today: `event:` is the type, `data:` the bare payload, `id:` the opaque cursor; the envelope on the wire is DOR-5474. A cursor older than the window, ahead of the counter, from another generation or process, or for another stream is a cold connect: `connected` and the snapshot, the same answer the chat stream gives when its replay floor has moved past a cursor.
+
+**The snapshot** is the current `tunnel_status` (to a reader `frontDoorReadAudience` admits: the person or their key, never an agent) and the `session_status` frames. The opening frames (`connected`, the snapshot) carry no id.
+
+**Retired streams.** `GET /api/tunnel/stream`, `GET /api/extensions/events` and `GET /api/relay/stream` are gone (ADR `261123-170833`, A7, DOR-4986): their events ride `/api/events`, except the relay stream's `relay.system.*` and `relay.signal.*` subjects, which no screen read. `/api/events` takes no subject filter. New code reads `/api/events` only.
 
 **Events:**
 
-| Event                | Description                                                                                                           | Payload                                          |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| `connected`          | Sent on initial connection                                                                                            | `{ connectedAt: string }` (ISO timestamp)        |
-| `heartbeat`          | Keepalive (every 15 s)                                                                                                | _(empty)_                                        |
-| `session_upserted`   | Session created or metadata changed                                                                                   | `{ session: Session }`                           |
-| `session_removed`    | Session deleted                                                                                                       | `{ sessionId: string }`                          |
-| `session_status`     | Session status projection changed; `retiredSessionId` announces a first-turn rekey (drop state held under the old id) | `{ sessionId, cwd?, retiredSessionId?, status }` |
-| `tunnel_status`      | Tunnel state changed                                                                                                  | Tunnel status object                             |
-| `extension_reloaded` | Extension(s) recompiled                                                                                               | `{ type, extensionIds: string[], timestamp }`    |
-| `relay_connected`    | Relay SSE connection established                                                                                      | Connection metadata                              |
-| `relay_message`      | New relay message published                                                                                           | Relay envelope                                   |
-| `relay_backpressure` | Relay back-pressure signal                                                                                            | Back-pressure details                            |
-| `relay_signal`       | Relay control signal                                                                                                  | Signal payload                                   |
+| Event                | Description                                                                                                           | Payload                                           |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `connected`          | Sent on every connect; `resumed: true` when it picked up from the cursor                                              | `{ connectedAt, sessionListsResetAt?, resumed? }` |
+| `heartbeat`          | Keepalive (every 15 s)                                                                                                | _(empty)_                                         |
+| `session_upserted`   | Session created or metadata changed                                                                                   | `{ session: Session }`                            |
+| `session_removed`    | Session deleted                                                                                                       | `{ sessionId: string }`                           |
+| `session_status`     | Session status projection changed; `retiredSessionId` announces a first-turn rekey (drop state held under the old id) | `{ sessionId, cwd?, retiredSessionId?, status }`  |
+| `tunnel_status`      | Tunnel state changed; also in every connect's opening frames. Never sent to an agent                                  | Tunnel status object                              |
+| `extension_reloaded` | Extension(s) recompiled                                                                                               | `{ type, extensionIds: string[], timestamp }`     |
+| `relay_connected`    | Relay SSE connection established                                                                                      | Connection metadata                               |
+| `relay_message`      | New relay message published                                                                                           | Relay envelope                                    |
+| `relay_backpressure` | Relay back-pressure signal                                                                                            | Back-pressure details                             |
+| `relay_signal`       | Relay control signal                                                                                                  | Signal payload                                    |
 
 The session-list events (`session_upserted`/`session_removed`/`session_status`) feed the sidebar and fleet status views — there is no session-list polling. Schemas: `SessionListEventSchema` in `packages/shared/src/session-stream.ts`.
 
@@ -760,7 +812,7 @@ Agent identity endpoints are always mounted at `/api/agents/` — no feature fla
 
 ### GET /api/agents/current
 
-Get the agent manifest for a working directory.
+Get the agent a folder belongs to: its home, through any checkout of its repo, with its SOUL.md, NOPE.md, MEMORY.md and HEARTBEAT.md. Served by the capability mount as `agent.current` (`services/mesh/doors/agent-current-capability.ts`). An agent reading another agent's folder gets no `persona`, `conventions`, `permissions`, `mcpServers`, `workspace`, `projectPath` or files, as the `/api/mesh` reads leave out.
 
 **Query params:**
 
@@ -768,10 +820,9 @@ Get the agent manifest for a working directory.
 
 **Responses:**
 
-- `200` - `AgentManifest` object
+- `200` - The agent, or `null` when no agent lives there
 - `400` - Missing `path` query parameter
 - `403` - Path outside configured boundary
-- `404` - No agent registered at this path
 
 ### POST /api/agents
 
@@ -927,6 +978,8 @@ Change one or more areas or single actions for everyone. `null` removes a change
 
 One agent's resolved permissions, with where each area's state and its Files & commands stop came from.
 
+Served by the capability mount as `permissions.view_agent`, beside `GET /api/agents/:id/level` (`permissions.view_agent_level`). Whoever could read it before still can, an agent included (DOR-4978).
+
 - `200` - `AgentPermissionsResponse`: `{ agentId, agentName, overrides, areas: [{ ...area, inherited, changedOutsideAt, lastChange? }], filesAndCommands: { stop, source, lastChange?, inherited: { stop, source, lastChange? } } }`. `source` is one of `agent | runtime | default | runtime-own`; `changedOutsideAt` is set when the area's most recent change was an edit to the agent's settings file DorkOS noticed rather than made.
 
 ### PATCH /api/agents/:id/permissions
@@ -1072,28 +1125,6 @@ Relay system metrics.
 
 - `200` - `{ totalMessages: number, totalEndpoints: number, totalDeadLetters: number }`
 
-### GET /api/relay/stream
-
-> **Still served; to be removed.** New code uses `GET /api/events` (event names: `relay_connected`, `relay_message`, `relay_backpressure`, `relay_signal`). This stream is not a strict duplicate yet: it accepts `relay.system.*` and `relay.signal.*` subjects, which `/api/events` does not carry. Under ADR `261123-170833` it is removed once `/api/events` carries those subjects and every caller has moved.
-
-SSE event stream for real-time relay activity. Supports server-side subject filtering.
-
-**Query params:**
-
-- `subject` (optional) - Subject pattern filter (e.g., `relay.agent.*`)
-
-**Events:**
-
-- `relay_connected` - Connection established
-- `relay_message` - New message published
-- `relay_delivery` - Message delivered to endpoint
-- `relay_dead_letter` - Message became dead letter
-- `relay_metrics` - Periodic metrics update
-
-**Keepalive:** `: keepalive\n\n` comment every 15 seconds.
-
-**Usage:** Clients should close the EventSource when the relay panel is not visible.
-
 ### GET /api/relay/messages/:id/trace
 
 Get delivery trace for a specific message. Available only when Relay is on.
@@ -1145,14 +1176,15 @@ All adapter catalog endpoints are under `/api/relay/adapters/` and are available
 
 ### GET /api/relay/adapters/catalog
 
-Returns the full adapter catalog with manifests and running instances for each adapter type.
+Returns the adapter catalog with manifests and running instances for each adapter type, in the order the setup list shows them. Pages with `cursor` and `limit` (1 to 200, default 50): pass `nextCursor` back as `cursor` for the next page; it is `null` on the last. A cursor this list did not give is a `400 invalid_request`.
 
 **Responses:**
 
-- `200` - Array of `CatalogEntry` objects:
+- `200` - One page of `CatalogEntry` objects, `{ entries: CatalogEntry[], nextCursor }`:
 
 ```json
-[
+{
+  "entries": [
   {
     "manifest": {
       "type": "telegram",
@@ -1172,9 +1204,12 @@ Returns the full adapter catalog with manifests and running instances for each a
       }
     ]
   }
-]
+  ],
+  "nextCursor": null
+}
 ```
 
+- `400` - `invalid_request`: a bad `limit`, another query field, or a cursor this list did not give
 - `500` - Internal error
 
 ### POST /api/relay/adapters/reload
@@ -1285,11 +1320,12 @@ All binding endpoints are under `/api/relay/bindings/` and are available only wh
 
 ### GET /api/relay/bindings
 
-List all adapter-agent bindings.
+List the adapter-agent bindings, newest first. Pages with `cursor` and `limit` (1 to 200, default 50): pass `nextCursor` back as `cursor` for the next page; it is `null` on the last. A cursor this list did not give is a `400 invalid_request`.
 
 **Responses:**
 
-- `200` - `{ bindings: AdapterBinding[] }`
+- `200` - `{ bindings: AdapterBinding[], nextCursor: string | null }`
+- `400` - `invalid_request`: a bad `limit`, another query field, or a cursor this list did not give
 - `503` - Binding subsystem not available
 
 ### GET /api/relay/bindings/:id
@@ -1883,13 +1919,11 @@ Always available even when the extension system is not initialized.
 
 Compiles the extension and activates it against a server-side mock API. Reports per-slot contribution counts on success, or structured errors with file/line/column on failure.
 
-### SSE Extension Events
+### Extension reload events
 
-**Endpoint**: `GET /api/extensions/events`
+**Endpoint**: `GET /api/events` (the old `GET /api/extensions/events` is gone, ADR `261123-170833`)
 
-> **Still served; to be removed.** New code uses `GET /api/events` (event name: `extension_reloaded`). Under ADR `261123-170833` this stream is removed in the change that moves its callers onto `/api/events`.
-
-**Event**: `extension_reloaded`
+**Event**: `extension_reloaded` (area `extensions`)
 
 ```json
 { "type": "extension_reloaded", "extensionIds": ["ext-id"], "timestamp": 1711461000000 }
@@ -1898,7 +1932,7 @@ Compiles the extension and activates it against a server-side mock API. Reports 
 - `extensionIds` — array of extension IDs that were reloaded
 - `timestamp` — numeric epoch milliseconds (`Date.now()`)
 
-Sent when extensions are recompiled via `reload_extensions` or `create_extension`. The client uses this to trigger a live reload of the extension bundle.
+Sent when extensions are recompiled via `reload_extensions` or `create_extension`, or turned on, approved or reloaded by hand. The app's extension host uses this to reload the bundle; a mini app's frame never opens `/api/events`, and the host's reload is what it sees.
 
 ### Client Configuration
 

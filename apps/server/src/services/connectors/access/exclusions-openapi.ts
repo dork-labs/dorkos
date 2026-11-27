@@ -12,9 +12,6 @@ import {
   ConnectorAccessChangeListSchema,
   ConnectorAccessChangeSchema,
   ConnectorAccessChangeUndoSchema,
-  ConnectorGrantExclusionChangeSchema,
-  ConnectorGrantExclusionListSchema,
-  ConnectorGrantExclusionParamsSchema,
   ConnectorWritesBackChangeRequestSchema,
   ConnectorWritesBackChangeSchema,
   ConnectorWritesBackSchema,
@@ -31,38 +28,6 @@ const notFound = problemResponse(
  * @param registry - The server's OpenAPI registry.
  */
 export function registerConnectorExclusionsOpenApi(registry: OpenAPIRegistry): void {
-  registry.registerPath({
-    method: 'get',
-    path: '/api/connectors/connections/{connectionId}/exclusions',
-    tags: ['Connectors'],
-    summary: "Agents left out of a connection's every-agent share",
-    description: 'Owner only. Lists the agents the every-agent share does not reach.',
-    request: { params: z.object({ connectionId: z.string().min(1) }) },
-    responses: {
-      200: {
-        description: 'The agents left out, oldest first',
-        content: { 'application/json': { schema: ConnectorGrantExclusionListSchema } },
-      },
-      404: notFound,
-    },
-  });
-  registry.registerPath({
-    method: 'put',
-    path: '/api/connectors/connections/{connectionId}/exclusions/{agentId}',
-    tags: ['Connectors'],
-    summary: "Leave one agent out of a connection's every-agent share",
-    description:
-      'Owner only. The agent keeps only the access given to it by name. The share, now and ' +
-      'as it changes later, no longer reaches it. Takes effect on its next call.',
-    request: { params: ConnectorGrantExclusionParamsSchema },
-    responses: {
-      200: {
-        description: 'The agent is left out',
-        content: { 'application/json': { schema: ConnectorGrantExclusionChangeSchema } },
-      },
-      404: notFound,
-    },
-  });
   registry.registerPath({
     method: 'get',
     path: '/api/connectors/access-changes',
@@ -112,22 +77,6 @@ export function registerConnectorExclusionsOpenApi(registry: OpenAPIRegistry): v
       },
       404: problemResponse('`not_found`: nothing to undo under that id'),
       412: problemResponse('`precondition_failed`: access changed since'),
-    },
-  });
-  registry.registerPath({
-    method: 'delete',
-    path: '/api/connectors/connections/{connectionId}/exclusions/{agentId}',
-    tags: ['Connectors'],
-    summary: "Let one agent back into a connection's every-agent share",
-    description:
-      'Owner only. The agent gets whatever the share gives every agent now. Only a person can do this.',
-    request: { params: ConnectorGrantExclusionParamsSchema },
-    responses: {
-      200: {
-        description: 'The agent is no longer left out',
-        content: { 'application/json': { schema: ConnectorGrantExclusionChangeSchema } },
-      },
-      404: notFound,
     },
   });
   registry.registerPath({

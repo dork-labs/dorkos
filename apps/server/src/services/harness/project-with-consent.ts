@@ -109,13 +109,13 @@ import {
   hookApprovalEntry,
   hookApprovalMatch,
   isHookProjectionRefused,
-  pinLegacyHookApproval,
   storedHookDecisions,
   storedPresetIsFull,
   type HookDecisions,
   type HookProjectionRequest,
 } from './hook-consent.js';
 import { recordFullAction } from '../core/turn-power/full-autonomy.js';
+import { pinLegacyHookFiles } from './computer-asks.js';
 import {
   isProvenDorkosInstall,
   provenDorkosInstallsIfFull,
@@ -126,7 +126,7 @@ import { projectUserSkills, readGlobalSharingFromDisk } from './global-scope.js'
 import { withPersonRepinAtHome } from '../runtimes/claude-code/folder-settings/folder-config-consent.js';
 
 /**
- * The hook card's id (`HOOK_PROJECTION_CAPABILITY_ID` in `hook-approval.ts`),
+ * The hook card's id (`HOOK_PROJECTION_CAPABILITY_ID` in `core/approvals/computer-asks/hook-card-ask.ts`),
  * for the Activity line Full writes instead. Restated rather than imported so the
  * read-only `--check` path does not load the approvals module; a test pins them equal.
  */
@@ -593,7 +593,7 @@ export function consentedHookPackages(
         // A yes from before files were pinned takes today's files once, on the
         // running server's own lists only (DOR-3403); after that an edit is
         // `changed`. `--check` passes a copy that is not live, and writes nothing.
-        if (match === 'unpinned' && decisions.live === true) pinLegacyHookApproval(request);
+        if (match === 'unpinned' && decisions.live === true) pinLegacyHookFiles(request);
       } else if (full) {
         // A folder somebody committed under `.dork/plugins/`, an edited install,
         // or a yes for files that have changed since: withheld, and asked about

@@ -105,7 +105,7 @@ describe('the /v1 fetch seam', () => {
       .sort();
     expect(naming).toEqual([
       'services/core/cloud/v1-client.ts',
-      'services/runtimes/test-mode/compose-test-cloud.ts',
+      'startup/test-composition/compose-test-cloud.ts',
     ]);
   });
 });

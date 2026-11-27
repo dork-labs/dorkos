@@ -2,6 +2,15 @@
  * Hold each package's tests to a ratchet on mocking our own code: the number of
  * `vi.mock(...)` calls that name one of our own modules may only fall.
  *
+ * --help
+ * Purpose: hold each package to a ratchet on `vi.mock` of our own modules: the
+ *          count may only fall. Mock at the edges, use the real module elsewhere.
+ * Runs in: `pnpm ratchet` (pre-push; the required `typecheck` job).
+ * To fix:  replace the new own-module mock with the real module. After removing
+ *          some, run `pnpm check:own-mocks -- --update`. Never raise an entry.
+ * Usage:   pnpm check:own-mocks [-- --base <ref> | --update | --init | --root <dir>]
+ * --help end
+ *
  * WHY THIS EXISTS. A test that replaces a module we own with a fake checks the
  * fake, not the code. It passes when the real module breaks and breaks when the
  * real module is refactored, so it costs time and catches little. On 2026-11-11
@@ -50,6 +59,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { exitOnHelp } from './lib/gate-help.mjs';
 
 /** Where the baseline lives, relative to the root. */
 export const BASELINE_PATH = 'scripts/own-mocks/baseline.json';
@@ -336,6 +346,7 @@ function main(argv: string[]): number {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  exitOnHelp(import.meta.url);
   try {
     process.exit(main(process.argv.slice(2)));
   } catch (err: unknown) {

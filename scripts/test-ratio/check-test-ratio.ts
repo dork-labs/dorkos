@@ -2,6 +2,16 @@
  * Hold each package's test code to a budget: it may not add lines of test
  * faster than it adds lines of source, and the budget only tightens.
  *
+ * --help
+ * Purpose: hold each package's tests to a budget: no more lines of test than its
+ *          ceiling, and the ceiling only tightens.
+ * Runs in: `pnpm ratchet` (pre-push; the required `typecheck` job).
+ * To fix:  delete weaker tests in that package (.claude/rules/testing.md, "Is
+ *          this test worth keeping?"), then
+ *          `pnpm check:test-ratio -- --update --package <pkg>`. Never raise a budget.
+ * Usage:   pnpm check:test-ratio [-- --base <ref> | --update [--package <pkg>] | --report]
+ * --help end
+ *
  * WHY THIS EXISTS. Agents write tests faster than anyone reads them. On
  * 2026-11-23 the repo held more lines of test than of source, and every one of
  * those lines is read, run, edited and waited on. Nothing pushed the other way:
@@ -67,6 +77,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { exitOnHelp } from '../lib/gate-help.mjs';
 
 /** Where the baseline lives, relative to the root. */
 export const BASELINE_PATH = 'scripts/test-ratio/baseline.json';
@@ -508,6 +519,7 @@ function main(argv: string[]): number {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  exitOnHelp(import.meta.url);
   try {
     process.exit(main(process.argv.slice(2)));
   } catch (err: unknown) {

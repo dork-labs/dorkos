@@ -14,7 +14,8 @@
  * @module features/dashboard-sidebar/ui/SessionSwitcher
  */
 import { useCallback, useState } from 'react';
-import { useIsMobile } from '@/layers/shared/model';
+import { toSession } from '@/layers/shared/lib';
+import { useIsMobile, useSafeNavigate } from '@/layers/shared/model';
 import {
   Kbd,
   ResponsiveDialog,
@@ -85,6 +86,18 @@ export function SessionSwitcher({
     [onOpenChange, onSelectSession]
   );
 
+  // A chat another agent holds, found in a spin-off tree: opened by its id
+  // alone, so the chat page finds its own folder.
+  const navigate = useSafeNavigate();
+  const handleOpenOther = useCallback(
+    (sessionId: string) => {
+      if (!navigate) return;
+      void navigate(toSession({ session: sessionId }));
+      onOpenChange(false);
+    },
+    [navigate, onOpenChange]
+  );
+
   const handleNew = useCallback(() => {
     onNewSession();
     onOpenChange(false);
@@ -121,6 +134,7 @@ export function SessionSwitcher({
               agentPath={agentPath}
               agentName={agentName}
               onOpenChat={handleOpen}
+              onOpenOtherChat={handleOpenOther}
               onNewChat={handleNew}
               autoFocusRow={!isMobile}
               className="max-h-[min(60vh,520px)]"

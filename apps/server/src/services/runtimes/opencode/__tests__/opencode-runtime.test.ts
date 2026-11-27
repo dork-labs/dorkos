@@ -28,10 +28,8 @@ import {
 import { detectOllama } from '../providers/ollama.js';
 import { TurnEventQueue } from '../events/global-event-hub.js';
 import { OPENCODE_STREAM_LOST_MESSAGE } from '../events/event-mapper.js';
-import {
-  ConnectorRuntimeAuthorityError,
-  type ConnectorRuntimePrincipalPort,
-} from '../../../connectors/runtime-principal-port.js';
+import type { ConnectorRuntimePrincipalPort } from '../../../core/connections-lease/index.js';
+import { ConnectorRuntimeAuthorityError } from '@dorkos/shared/connections-lease';
 import { createRuntimeTurnRenewalConformanceFixture } from '../../connectors/__tests__/turn-renewal-conformance-fixture.js';
 import {
   DIRECTORY,

@@ -59,6 +59,7 @@ import type { WireConnectorEventsAndApprovalsResult } from './connector-events-a
 import type { WireConnectorServicesResult } from './connector-services.js';
 import type { ServerRefs } from '../server-refs.js';
 import { currentServerRole } from '../../lib/server-role.js';
+import { frontDoorReadAudience } from '../../lib/caller-principal.js';
 import { isAgentComputer } from '../../services/core/server-role/role-checks.js';
 import { runsSchedules } from '../../services/core/agent-computer/sealed.js';
 import { getLatestVersion } from '../../services/core/update-checker.js';
@@ -314,9 +315,10 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
     tunnel: tunnelManager,
   });
 
-  // Wire tunnel status changes to unified SSE stream
+  // Tunnel status changes go out on GET /api/events, refused to agents as
+  // GET /api/tunnel/status refuses them (DOR-3650).
   tunnelManager.on('status_change', (status) => {
-    eventFanOut.broadcast('tunnel_status', status);
+    eventFanOut.broadcast('tunnel_status', status, frontDoorReadAudience);
   });
 
   // Dispatch retained document work only after every runtime and capability is ready.
