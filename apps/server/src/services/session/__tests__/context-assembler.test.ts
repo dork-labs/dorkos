@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../core/git-status.js', () => ({
+vi.mock('../../core/git-status.js', async (importOriginal) => ({
+  // The real module keeps the agent facts slot it holds; only the read is faked.
+  ...(await importOriginal<typeof import('../../core/git-status.js')>()),
   getGitStatus: vi.fn(),
 }));
 

@@ -24,7 +24,7 @@ import {
   setRoomService,
   type RoomSubsystem,
 } from '../../services/rooms/index.js';
-import { SearchIndexer } from '../../services/search/index.js';
+import { SearchIndexer, searchAnswerer } from '../../services/search/index.js';
 import { roomsSource } from '../../services/search/registry.js';
 import { createSearchRoutes } from '../search.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
@@ -59,7 +59,7 @@ let agentId: string;
  */
 function buildApp(identity?: AgentIdentity, presentsHeader = identity !== undefined) {
   return honoGroupListener(
-    { path: '/api/search', routes: createSearchRoutes({ db }) },
+    { path: '/api/search', routes: createSearchRoutes({ answer: searchAnswerer(db) }) },
     {
       before: async (c, next) => {
         if (identity) c.set('agentIdentity', identity);

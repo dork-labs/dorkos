@@ -598,7 +598,7 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     },
   },
   {
-    name: 'GET /api/agents/:id/permissions answers the service’s refusal for an unknown agent',
+    name: 'GET /api/agents/:agentId/permissions answers the service’s refusal for an unknown agent',
     path: '/api/agents/no-such-agent/permissions',
     expect: {
       status: 404,
@@ -607,7 +607,7 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     },
   },
   {
-    name: 'PATCH /api/agents/:id/permissions refuses an agent',
+    name: 'PATCH /api/agents/:agentId/permissions refuses an agent',
     method: 'PATCH',
     path: '/api/agents/no-such-agent/permissions',
     headers: AGENT,
@@ -615,13 +615,13 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     expect: { status: 403, body: PERMISSIONS_PERSON_ONLY },
   },
   {
-    name: 'PATCH /api/agents/:id/permissions refuses an empty body',
+    name: 'PATCH /api/agents/:agentId/permissions refuses an empty body',
     method: 'PATCH',
     path: '/api/agents/no-such-agent/permissions',
     expect: { status: 400, schema: VALIDATION_FAILED },
   },
   {
-    name: 'PATCH /api/agents/:id/permissions answers the service’s refusal for an unknown agent',
+    name: 'PATCH /api/agents/:agentId/permissions answers the service’s refusal for an unknown agent',
     method: 'PATCH',
     path: '/api/agents/no-such-agent/permissions',
     body: { surface: 'agent-page' },

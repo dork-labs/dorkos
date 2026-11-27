@@ -94,6 +94,30 @@ export function findAccessChangeForOwner(
   return listAccessChangesForOwner(db, owner, { changeId, limit: 1 })[0];
 }
 
+/** The owner's reads of the ledger, bound to one database: what the access-change routes call. */
+export interface AccessChangeReads {
+  /** {@link listAccessChangesForOwner}. */
+  list(
+    owner: ConnectorOwnerAuthority,
+    filters?: Parameters<typeof listAccessChangesForOwner>[2]
+  ): ConnectorAccessChange[];
+  /** {@link findAccessChangeForOwner}. */
+  find(owner: ConnectorOwnerAuthority, changeId: string): ConnectorAccessChange | undefined;
+}
+
+/**
+ * Bind the owner's ledger reads to the connector database, so the routes never hold it.
+ *
+ * @param db - Canonical connector database.
+ * @returns The reads the access-change routes call.
+ */
+export function accessChangeReads(db: Db): AccessChangeReads {
+  return {
+    list: (owner, filters) => listAccessChangesForOwner(db, owner, filters),
+    find: (owner, changeId) => findAccessChangeForOwner(db, owner, changeId),
+  };
+}
+
 /**
  * Another agent's approval of one request for Read, as the request's owner sees it on the card:
  * the approver as it looked then, when, and when the person undid it. Read by the request's own

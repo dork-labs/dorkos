@@ -393,7 +393,7 @@ Key methods:
 
 ### How Routes Use the Registry
 
-Routes never reference a specific runtime class. Session-scoped routes resolve the session's own runtime; the session list aggregates across all of them:
+Routes never reference a specific runtime class, and lint refuses a route that imports a concrete adapter (`apps/server/eslint-rules/routes-imports.js`, DOR-4923). The route files that still do are listed there until DOR-5152 changes how routes reach a runtime; the list only shrinks. Session-scoped routes resolve the session's own runtime; the session list aggregates across all of them:
 
 ```typescript
 import { runtimeRegistry } from '../services/core/runtime-registry.js';

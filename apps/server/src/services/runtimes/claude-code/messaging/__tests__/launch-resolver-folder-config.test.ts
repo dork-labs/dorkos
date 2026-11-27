@@ -5,6 +5,8 @@ import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
  * MCP servers file or agent file runs without the change (DOR-3068).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+// Computer-side code reads agent facts through the port, wired as boot does.
+import '../../../../core/agent-identity/__tests__/wire-test-facts.js';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -58,10 +60,6 @@ vi.mock('../../../../core/config-manager.js', () => ({
 vi.mock('../../../../core/operator/config-write.js', () => ({ logConfigWrite: vi.fn() }));
 vi.mock('../../../../core/credential-env.js', () => ({
   resolveClaudeCredentialEnv: vi.fn().mockResolvedValue({}),
-}));
-vi.mock('../../../../core/agent-identity/index.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../../core/agent-identity/index.js')>()),
-  resolveAgentTokenEnv: vi.fn().mockResolvedValue({}),
 }));
 const accountRoot = vi.hoisted(() => `/tmp/folder-config-account-${process.pid}`);
 vi.mock('../../claude-config-dir.js', async (importOriginal) => ({

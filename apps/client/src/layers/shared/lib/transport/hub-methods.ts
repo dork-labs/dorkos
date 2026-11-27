@@ -18,7 +18,8 @@ import type {
   SessionRelayPresence,
   SessionRelayStatus,
 } from '@dorkos/shared/session-relay-link';
-import { fetchJSON, fetchNoContent } from './http-client';
+import { createTransportApiClient } from './api-client';
+import { fetchJSON } from './http-client';
 
 /**
  * Create the hub methods bound to a base URL.
@@ -26,80 +27,76 @@ import { fetchJSON, fetchNoContent } from './http-client';
  * @param baseUrl - Server base URL (already includes `/api`).
  */
 export function createHubMethods(baseUrl: string) {
+  const api = createTransportApiClient(baseUrl);
+  // The document also lists the capability mount's 202 approval answer for the
+  // relay reads, which a person's own call never gets; the casts keep today's types.
   return {
-    listHubComputers(): Promise<HubComputerList> {
-      return fetchJSON(baseUrl, '/hub/computers');
+    async listHubComputers(): Promise<HubComputerList> {
+      return (await api.call('hub.listComputers', {})) as HubComputerList;
     },
+    // Stays hand-written: waits for batch 3's no-body client (DOR-5473).
     createHubLinkCode(): Promise<HubLinkCode> {
       return fetchJSON(baseUrl, '/hub/computers/link-code', { method: 'POST' });
     },
-    removeHubComputer(computerId: string): Promise<void> {
-      return fetchNoContent(baseUrl, `/hub/computers/${encodeURIComponent(computerId)}`, {
-        method: 'DELETE',
-      });
+    async removeHubComputer(computerId: string): Promise<void> {
+      await api.call('hub.deleteComputers', { path: { computerId } });
     },
-    getSessionRelayStatus(): Promise<SessionRelayStatus> {
-      return fetchJSON(baseUrl, '/session-relay/status');
+    async getSessionRelayStatus(): Promise<SessionRelayStatus> {
+      return (await api.call('session-relay.status', {})) as SessionRelayStatus;
     },
-    linkSessionRelay(body: SessionRelayLinkBody): Promise<SessionRelayStatus> {
-      // The computer waits up to 15 s for its hub; leave room past that.
-      return fetchJSON(baseUrl, '/session-relay/link', {
-        method: 'POST',
-        body: JSON.stringify(body),
-        timeout: 30_000,
-      });
+    // The computer waits up to 15 s for its hub; the usual 30 s leaves room past that.
+    async linkSessionRelay(body: SessionRelayLinkBody): Promise<SessionRelayStatus> {
+      return (await api.call('sessionRelay.link', { body })) as SessionRelayStatus;
     },
-    setSessionRelayLevel(level: SessionRelayLevel): Promise<SessionRelayStatus> {
-      return fetchJSON(baseUrl, '/session-relay/level', {
-        method: 'PATCH',
-        body: JSON.stringify({ level }),
-      });
+    async setSessionRelayLevel(level: SessionRelayLevel): Promise<SessionRelayStatus> {
+      return (await api.call('sessionRelay.updateLevel', {
+        body: { level },
+      })) as SessionRelayStatus;
     },
+    // Stays hand-written: waits for batch 3's no-body client (DOR-5473).
     pauseSessionRelay(): Promise<SessionRelayStatus> {
       return fetchJSON(baseUrl, '/session-relay/pause', { method: 'POST' });
     },
+    // Stays hand-written: waits for batch 3's no-body client (DOR-5473).
     resumeSessionRelay(): Promise<SessionRelayStatus> {
       return fetchJSON(baseUrl, '/session-relay/resume', {
         method: 'POST',
       });
     },
-    unlinkSessionRelay(): Promise<SessionRelayStatus> {
-      return fetchJSON(baseUrl, '/session-relay/link', { method: 'DELETE' });
+    async unlinkSessionRelay(): Promise<SessionRelayStatus> {
+      return (await api.call('session-relay.unlink', {})) as SessionRelayStatus;
     },
-    getSessionRelayPresence(): Promise<SessionRelayPresence> {
-      return fetchJSON(baseUrl, '/session-relay/presence');
+    async getSessionRelayPresence(): Promise<SessionRelayPresence> {
+      return (await api.call('session-relay.presence', {})) as SessionRelayPresence;
     },
+    // Stays hand-written: waits for batch 3's no-body client (DOR-5473).
     endSessionRelayPresence(): Promise<SessionRelayPresence> {
       return fetchJSON(baseUrl, '/session-relay/presence/end', { method: 'POST' });
     },
-    listSessionRelayDevices(): Promise<SessionRelayDeviceList> {
-      return fetchJSON(baseUrl, '/session-relay/devices');
+    async listSessionRelayDevices(): Promise<SessionRelayDeviceList> {
+      return (await api.call('session-relay.devices', {})) as SessionRelayDeviceList;
     },
-    listSessionRelayPasskeys(): Promise<SessionRelayPasskeyList> {
-      return fetchJSON(baseUrl, '/session-relay/passkeys');
+    async listSessionRelayPasskeys(): Promise<SessionRelayPasskeyList> {
+      return (await api.call('session-relay.passkeys', {})) as SessionRelayPasskeyList;
     },
-    startSessionRelayPasskey(
+    async startSessionRelayPasskey(
       body: SessionRelayPasskeyStartBody
     ): Promise<SessionRelayPasskeyStart> {
-      return fetchJSON(baseUrl, '/session-relay/passkeys/start', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
+      return (await api.call('sessionRelay.startPasskeys', { body })) as SessionRelayPasskeyStart;
     },
-    removeSessionRelayPasskey(
+    async removeSessionRelayPasskey(
       credentialId: string,
       password: string
     ): Promise<SessionRelayPasskeyList> {
-      return fetchJSON(baseUrl, `/session-relay/passkeys/${encodeURIComponent(credentialId)}`, {
-        method: 'DELETE',
-        body: JSON.stringify({ password }),
-      });
+      return (await api.call('sessionRelay.deletePasskey', {
+        path: { credentialId },
+        body: { password },
+      })) as SessionRelayPasskeyList;
     },
-    removeDamagedSessionRelayPasskeys(password: string): Promise<SessionRelayPasskeyList> {
-      return fetchJSON(baseUrl, '/session-relay/passkeys', {
-        method: 'DELETE',
-        body: JSON.stringify({ password }),
-      });
+    async removeDamagedSessionRelayPasskeys(password: string): Promise<SessionRelayPasskeyList> {
+      return (await api.call('sessionRelay.deletePasskeys', {
+        body: { password },
+      })) as SessionRelayPasskeyList;
     },
   };
 }

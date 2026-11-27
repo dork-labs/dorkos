@@ -67,6 +67,7 @@ import {
   resolveMcpLocalToken,
   readOwnerAccount,
 } from '../../services/core/auth/index.js';
+import { getMcpLocalToken } from '../../services/core/auth/mcp-local-token.js';
 import { setRemoteCommunityDb } from '../../services/communities/remote/state.js';
 import { exposeDesktopSignInMint } from '../../services/core/auth/desktop-sign-in.js';
 import { readGatePosture } from '../../services/core/auth/gate-policy.js';
@@ -202,7 +203,11 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   // to the person (spec "Agent context viewer", phase 1). Before any runtime
   // registers, so the first turn is recorded; text past 30 days is swept here
   // and on the hourly tick.
-  installTurnContextStore(db);
+  // The local `/mcp` token is the space side's; the record is handed it to sweep.
+  installTurnContextStore(db, () => {
+    const token = getMcpLocalToken();
+    return token !== null ? [token] : [];
+  });
 
   // The work graph's edges (DOR-4968), on the same beat: a first turn's re-key
   // is recorded as it happens, so the first turn must find the store in place.

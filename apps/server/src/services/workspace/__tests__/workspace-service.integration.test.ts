@@ -7,6 +7,8 @@
  *   VC#3 — cleanup refuses to remove a dirty workspace.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+// Computer-side code reads agent facts through the port, wired as boot does.
+import '../../core/agent-identity/__tests__/wire-test-facts.js';
 import { mkdtemp, rm, writeFile, mkdir, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';

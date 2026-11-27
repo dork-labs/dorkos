@@ -185,6 +185,33 @@ export function setWritesBack(
   });
 }
 
+/** The person's writes-back switch, bound to one database: what the writes-back routes call. */
+export interface WritesBackStore {
+  /** {@link readWritesBack}. */
+  readWritesBack(owner: ConnectorOwnerAuthority, connectionId: string): ConnectorWritesBack;
+  /** {@link setWritesBack}: the switch's one writer, which only the operator-only route calls. */
+  setWritesBack(
+    owner: ConnectorOwnerAuthority,
+    connectionId: string,
+    on: boolean,
+    now: Date
+  ): ReturnType<typeof setWritesBack>;
+}
+
+/**
+ * Bind the writes-back switch to the connector database, so the routes never hold it.
+ *
+ * @param db - The connector database.
+ * @returns The store the writes-back routes call.
+ */
+export function writesBackStore(db: Db): WritesBackStore {
+  return {
+    readWritesBack: (owner, connectionId) => readWritesBack(db, owner, connectionId),
+    setWritesBack: (owner, connectionId, on, now) =>
+      setWritesBack(db, owner, connectionId, on, now),
+  };
+}
+
 /**
  * Whether writes back are on for a connection, as the connector preflight reads it for a call it
  * has already authorized. Fails closed: an app not on the list in

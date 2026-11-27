@@ -28,8 +28,8 @@ const agent = vi.hoisted(() => ({
     unknown
   > | null,
 }));
-vi.mock('../../../core/agent-identity/index.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../core/agent-identity/index.js')>()),
+vi.mock('@dorkos/shared/agent-facts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/shared/agent-facts')>()),
   homeOf: () => '/agents/one',
   readHomeManifest: async () => agent.manifest,
 }));

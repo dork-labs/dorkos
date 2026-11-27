@@ -7,8 +7,8 @@ import {
   autoAdoptIsInertHere,
   formatWithheldBlock,
   readDorkosHarness,
+  harnessDorkHome,
   readStoredDecisions,
-  resolveDorkHome,
   withheldSummaryLine,
 } from './harness-consent.js';
 import { resolveAllowHooks } from './harness-sync-allow-hooks.js';
@@ -16,7 +16,6 @@ import { runGlobalSync } from './harness-sync-global.js';
 import { formatClaudeOnly } from './harness-sync-claude-only.js';
 import type { WithheldHooks } from '../server/services/harness/project-with-consent.js';
 import type { HarnessClaudeOnly } from '@dorkos/shared/harness-schemas';
-
 import {
   ADOPT_SENTENCES,
   ADOPTABLE_BLOCK_HEADING,
@@ -861,7 +860,7 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
       return { exitCode: 1 };
     }
     try {
-      return { exitCode: await runGlobalSync(args, resolveDorkHome()) };
+      return { exitCode: await runGlobalSync(args, await harnessDorkHome()) };
     } catch (err) {
       console.error(`Harness sync failed: ${err instanceof Error ? err.message : String(err)}`);
       if (err instanceof Error && err.stack && wantsDebugDetail()) console.error(err.stack);
@@ -942,7 +941,7 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
   // the config store creates it, and `--check` is documented as never writing
   // anything (DOR-678). It decides one entry in a scaffolded manifest and one
   // notice line; it changes nothing a sync writes on its own.
-  const ourHarness = await readDorkosHarness(resolveDorkHome());
+  const ourHarness = await readDorkosHarness(await harnessDorkHome());
   if (!existsSync(join(repoRoot, HARNESS_MANIFEST_PATH))) {
     // No manifest here. `--fix` is the write mode, so it bootstraps a default,
     // visible, editable one (detecting the harnesses already in use) and carries
@@ -1019,7 +1018,7 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     // nothing targets `<dorkHome>/skills` or the user tier yet (DOR-174) — it
     // makes them visible, so the report can say what each holds, who can see it,
     // and when one of them is also installed in this project (DOR-1922).
-    const dorkHome = resolveDorkHome();
+    const dorkHome = await harnessDorkHome();
     const { planWithConsent, projectWithConsent, scanHookRequests, withProvenInstalls } =
       await import('../server/services/harness/project-with-consent.js');
 

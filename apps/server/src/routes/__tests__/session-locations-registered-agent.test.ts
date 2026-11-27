@@ -4,6 +4,8 @@ import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
+// A launch reads the rooms folder through the agent facts port, wired as boot does.
+import '../../services/core/agent-identity/__tests__/wire-test-facts.js';
 import {
   agents,
   eq,
@@ -41,6 +43,7 @@ import {
   type WorkspaceSubsystem,
 } from '../../services/workspace/index.js';
 import { createSessionLocationsRoutes } from '../session-locations.js';
+import { sessionLocationStore } from '../../services/core/runtime-seam/session-location-store.js';
 import { createSessionRoutes } from '../sessions.js';
 import { frontDoorStepUpHarness } from './front-door-step-up-harness.js';
 
@@ -114,9 +117,15 @@ const harness = frontDoorStepUpHarness(() => {
   return [
     {
       path: '/api/session-locations',
-      routes: createSessionLocationsRoutes(db, { meshCore: mesh, mintChatId }),
+      routes: createSessionLocationsRoutes(sessionLocationStore(db), {
+        meshCore: mesh,
+        mintChatId,
+      }),
     },
-    { path: '/api/sessions', routes: createSessionRoutes({ personBirthDb: db, meshCore: mesh }) },
+    {
+      path: '/api/sessions',
+      routes: createSessionRoutes({ personBirth: sessionLocationStore(db), meshCore: mesh }),
+    },
   ];
 });
 

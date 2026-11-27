@@ -26,7 +26,7 @@ import { mountWifiSignIn } from './sign-in/wifi-sign-in.js';
 import { mountOwnerPasskeySignIn } from './sign-in/owner-passkey-sign-in.js';
 import { createClientFiles } from './client-files.js';
 import { serveRouteCensus } from './route-census/census.js';
-import type { Db } from '@dorkos/db';
+import type { SessionLocationStore } from '../services/core/runtime-seam/session-location-store.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import type { CapabilityRegistry } from '../services/core/capabilities/index.js';
 import type { NotificationService } from '../services/notifications/notification-service.js';
@@ -171,8 +171,8 @@ export interface ComposedGroupDeps {
    * (`GET /api/capabilities`) needs none and is always mounted.
    */
   capabilities?: CapabilityRegistry;
-  /** The install's database, behind the saved chat folders (`/api/session-locations`). */
-  sessionLocations?: Db;
+  /** The saved chat folders and person allocations (`/api/session-locations`). */
+  sessionLocations?: SessionLocationStore;
   /** The data directory the user's own templates live in (`/api/templates`). */
   templates?: { dorkHome: string };
   /** The agent-file status and Sync now (`/api/harness`). */
@@ -202,7 +202,7 @@ export interface ComposedGroupDeps {
    * started. The Activity feed is {@link ComposedGroupDeps.activity}.
    */
   extensions?: Omit<ExtensionsRouterDeps, 'activity'>;
-  /** What agents may do (`/api/permissions*`, `PATCH /api/agents/:id/permissions`). */
+  /** What agents may do (`/api/permissions*`, `PATCH /api/agents/:agentId/permissions`). */
   permissions?: PermissionsRouterDeps;
   /** What every agent is told, and what one agent will be told (spec `context-viewer`). */
   agentInstructions?: AgentInstructionsRouterDeps;
@@ -529,7 +529,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.discovery) app.route('/api/discovery', createDiscoveryRoutes(deps.discovery));
   // Five groups answer under `/api/agents`: the capability mount, the permissions group,
   // agent instructions and these two. Each registers only its own concrete paths. The one
-  // path two share is `/api/agents/:id/permissions`: the mount (mounted first) serves its GET
+  // path two share is `/api/agents/:agentId/permissions`: the mount (mounted first) serves its GET
   // and the permissions group its PATCH, so the methods keep them apart. The agents group's
   // paths are all fixed words (`/current`, `/resolve`, `/create`), never an `:id`.
   if (deps.mcpOAuth) app.route('/api/agents/mcp-oauth', createMcpOAuthRoutes(deps.mcpOAuth));

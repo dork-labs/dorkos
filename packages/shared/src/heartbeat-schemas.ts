@@ -256,7 +256,7 @@ export const EndBeatInputSchema = z.object({
 export type EndBeatInput = z.infer<typeof EndBeatInputSchema>;
 
 // ---------------------------------------------------------------------------
-// Status, for the Heartbeat page (GET /api/agents/:id/heartbeat)
+// Status, for the Heartbeat page (GET /api/agents/:agentId/heartbeat)
 // ---------------------------------------------------------------------------
 
 /** How a beat ended (spec §11). */
@@ -457,7 +457,7 @@ export const TriageCreditsChoiceSchema = z
 /** A person's answer to the offer. */
 export type TriageCreditsChoice = z.infer<typeof TriageCreditsChoiceSchema>;
 
-/** The answer to GET /api/agents/:id/heartbeat. */
+/** The answer to GET /api/agents/:agentId/heartbeat. */
 export const HeartbeatStatusSchema = z
   .object({
     /** Whether heartbeats run on this server at all (`heartbeats.enabled`). */
@@ -487,5 +487,5 @@ export const HeartbeatStatusSchema = z
   })
   .openapi('HeartbeatStatus');
 
-/** The answer to GET /api/agents/:id/heartbeat. */
+/** The answer to GET /api/agents/:agentId/heartbeat. */
 export type HeartbeatStatus = z.infer<typeof HeartbeatStatusSchema>;

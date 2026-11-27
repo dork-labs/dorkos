@@ -1,6 +1,5 @@
 /** Mount the ordinary session message entry at its existing route position. */
 import type { Hono } from 'hono';
-import type { Db } from '@dorkos/db';
 import { SendMessageRequestSchema } from '@dorkos/shared/schemas';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -12,6 +11,7 @@ import {
   dispatchSessionMessage,
   isSessionLaunchRefusal,
 } from '../services/session/launch/launch-session.js';
+import type { SessionLocationStore } from '../services/core/runtime-seam/session-location-store.js';
 import { sessionExists } from '../services/session/launch/session-exists.js';
 import { registeredSpellingOf } from '../services/session/launch/verify-chat-agent.js';
 import { httpTurnOrigin } from '../services/session/origin/turn-origin.js';
@@ -45,12 +45,12 @@ const RUN_ON_CREDITS = {
  *
  * @param router - The session router after its per-session guard.
  * @param deps - The session's live placement and registration lookups.
- * @param personBirthDb - The mounted database that owns person allocations.
+ * @param personBirth - The saved folders and person allocations, when mounted.
  */
 export function mountSessionSendMessage(
   router: Hono<ApiEnv>,
-  deps: Pick<SessionRouteDeps, 'personBirthDb' | 'meshCore' | 'roomSessionPlace'>,
-  personBirthDb?: Db
+  deps: Pick<SessionRouteDeps, 'personBirth' | 'meshCore' | 'roomSessionPlace'>,
+  personBirth?: SessionLocationStore
 ): void {
   // POST /api/sessions/:id/messages — Accept a message (trigger-only, ADR-0264;
   // accept-only, spec `persistent-session-runtime` §3.3).
@@ -89,8 +89,8 @@ export function mountSessionSendMessage(
       if (refusal) return ownerRefusalReply(c, refusal);
     }
 
-    const db = personBirthDb ?? deps.personBirthDb;
-    const source = db && observePersonChat(db, sessionId);
+    const store = personBirth ?? deps.personBirth;
+    const source = store && observePersonChat(store, sessionId);
     // An id nobody started is a 404, never a new session (DOR-2712): a stale id
     // used to start a stranger session on the default runtime in the default
     // folder. Starting a chat is said out loud with `create: true`.
@@ -118,8 +118,8 @@ export function mountSessionSendMessage(
     const launch = httpLaunchOf(facts, sessionId);
     if (source && launch.launcher.kind !== 'person') return sendProblem(c, personChatMissing.body);
     const prepared =
-      db && source
-        ? await preparePersonChat(db, sessionId, facts, source, deps.meshCore, parsed.data.cwd)
+      store && source
+        ? await preparePersonChat(store, sessionId, facts, source, deps.meshCore, parsed.data.cwd)
         : undefined;
     if (prepared && 'refusal' in prepared) return sendProblem(c, prepared.refusal.body);
     // The acknowledged agent, named in any spelling of its folder (DOR-5117).

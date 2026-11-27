@@ -1,12 +1,12 @@
 /**
  * One agent's permissions and the level it runs at, as the capabilities the
- * mount serves on `GET /api/agents/{id}/permissions` and
- * `GET /api/agents/{id}/level` (DOR-4978, ADR 261125-114705).
+ * mount serves on `GET /api/agents/{agentId}/permissions` and
+ * `GET /api/agents/{agentId}/level` (DOR-4978, ADR 261125-114705).
  *
  * Both are reads, `observe` with no permission area, like `list_my_permissions`:
  * a switch that blocked them would hide an agent's own settings from it and
  * stop nothing. Neither changes anything, so neither can raise any agent's
- * power; the change stays `PATCH /api/agents/:id/permissions`, a person's.
+ * power; the change stays `PATCH /api/agents/:agentId/permissions`, a person's.
  *
  * **Every reader, as before.** Whoever could read the hand routes still can: a
  * person, a program with the API key, and an agent, its own or another's.
@@ -85,7 +85,9 @@ export const viewAgentPermissionsCapability = defineCapability({
   areaNote: READ_NOTE,
   input: AgentIdInput,
   output: AgentPermissionsResponseSchema,
-  surfaces: { http: { method: 'get', path: '/api/agents/{id}/permissions' } },
+  surfaces: {
+    http: { method: 'get', path: '/api/agents/{agentId}/permissions', params: { agentId: 'id' } },
+  },
   invoke: async (_deps, { id }) => {
     const wired = wiredViews();
     try {
@@ -110,7 +112,9 @@ export const viewAgentLevelCapability = defineCapability({
   areaNote: READ_NOTE,
   input: AgentIdInput,
   output: AgentLevelResponseSchema,
-  surfaces: { http: { method: 'get', path: '/api/agents/{id}/level' } },
+  surfaces: {
+    http: { method: 'get', path: '/api/agents/{agentId}/level', params: { agentId: 'id' } },
+  },
   invoke: async (_deps, { id }) => {
     const wired = wiredViews();
     const level = await wired.readLevel(id);

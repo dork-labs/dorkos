@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+// Computer-side code reads agent facts through the port, wired as boot does.
+import '../../../core/agent-identity/__tests__/wire-test-facts.js';
 
 vi.mock('../../../core/runtime-registry.js', () => ({
   runtimeRegistry: {

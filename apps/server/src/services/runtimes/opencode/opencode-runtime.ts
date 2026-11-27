@@ -79,7 +79,7 @@ import { SessionDiscoveryUnavailableError } from '../../session/resolution/sessi
 import { overlayRecordedHistory } from '../../session/overlays/recorded-history.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
-import { homeOf, resolveAgentHome, turnAgentOf } from '../../core/agent-identity/index.js';
+import { homeOf, runtimeFacts, turnAgentOf } from '../agent-facts.js';
 import { logger, logError } from '../../../lib/logger.js';
 import {
   checkOpenCodeDependencies,
@@ -619,7 +619,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     // looked up exactly hosts nobody, which is how opencode agents in a room
     // with files used to get no `dorkos` server at all. Looked up when asked,
     // so the connector check below reads the registry as it is by then.
-    const agentPath = homeOf(resolveAgentHome(cwd, opts?.forAgent));
+    const agentPath = homeOf(runtimeFacts().home(cwd, opts?.forAgent));
     const registeredAgent = () => (agentPath ? this.meshCore?.getByPath(agentPath) : undefined);
     let ocSessionId: string, client: OpencodeClient, directory: string;
     try {

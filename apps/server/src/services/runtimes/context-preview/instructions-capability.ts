@@ -30,7 +30,8 @@ import {
   defineCapability,
   type CapabilityDomain,
 } from '../../core/capabilities/capability-definition.js';
-import { homeOf, resolveAgentHome } from '../../core/agent-identity/index.js';
+import { homeOf } from '@dorkos/shared/agent-facts';
+import { runtimeFacts } from '../agent-facts.js';
 
 /** The MCP tool name. */
 export const AGENT_INSTRUCTIONS_TOOL = 'agent_instructions';
@@ -111,7 +112,7 @@ export const agentInstructionsCapability = defineCapability({
     const identity = context.identity && !context.identity.inactive ? context.identity : null;
     const meshCore = reader.meshCore();
     const agent = identity ? meshCore?.getByPath(identity.agentPath) : undefined;
-    const home = identity ? homeOf(resolveAgentHome(identity.agentPath)) : undefined;
+    const home = identity ? homeOf(runtimeFacts().home(identity.agentPath)) : undefined;
     if (!identity || !agent || !home) {
       return {
         ok: false as const,

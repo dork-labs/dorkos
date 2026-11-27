@@ -15,6 +15,8 @@ import {
 } from '../../services/session/message-queue-store.js';
 import { disposeProjector } from '../../services/session/session-state-projector.js';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
+// A launch reads the rooms folder through the agent facts port, wired as boot does.
+import '../../services/core/agent-identity/__tests__/wire-test-facts.js';
 import {
   eq,
   sessionBirthAllocations,
@@ -36,6 +38,7 @@ import { ClaudeCodeRuntime } from '../../services/runtimes/claude-code/claude-co
 import { OpenCodeRuntime } from '../../services/runtimes/opencode/opencode-runtime.js';
 import { OpenCodeSessionMap } from '../../services/runtimes/opencode/sessions/session-map.js';
 import { createSessionLocationsRoutes } from '../session-locations.js';
+import { sessionLocationStore } from '../../services/core/runtime-seam/session-location-store.js';
 import { createSessionRoutes } from '../sessions.js';
 import { frontDoorStepUpHarness } from './front-door-step-up-harness.js';
 
@@ -81,8 +84,14 @@ const harness = frontDoorStepUpHarness(() => {
   setChatRiseFacts(createChatRiseFacts(db));
   setMessageQueueStore(new MessageQueueStore(db));
   return [
-    { path: '/api/session-locations', routes: createSessionLocationsRoutes(db) },
-    { path: '/api/sessions', routes: createSessionRoutes({ personBirthDb: db }) },
+    {
+      path: '/api/session-locations',
+      routes: createSessionLocationsRoutes(sessionLocationStore(db)),
+    },
+    {
+      path: '/api/sessions',
+      routes: createSessionRoutes({ personBirth: sessionLocationStore(db) }),
+    },
   ];
 });
 

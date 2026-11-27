@@ -833,7 +833,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'setAgent(',
     allowed: {
       'routes/permissions.ts':
-        "`PATCH /api/agents/:id/permissions`: a raise waits for the owner to confirm it's them (DOR-4355); Wi-Fi refuses a raise",
+        "`PATCH /api/agents/:agentId/permissions`: a raise waits for the owner to confirm it's them (DOR-4355); Wi-Fi refuses a raise",
       'routes/approvals.ts':
         'Always allow on a card writes the standing rule; that answer is held in DOR-3648 (remote approval step-up), which merges first or in the same release',
       'services/core/permissions/permission-capabilities.ts':

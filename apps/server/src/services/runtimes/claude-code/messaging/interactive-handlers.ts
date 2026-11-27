@@ -5,13 +5,9 @@ import type {
   ElicitationResult,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { QuestionItem } from '@dorkos/shared/types';
-import { canvasDocumentFilePath } from '../../../canvas/canvas-document-subject.js';
 import { QuestionItemSchema } from '@dorkos/shared/schemas';
 import type { PermissionModeId } from '@dorkos/shared/schemas';
-import {
-  createInSessionContextResolver,
-  resolveAgentHome,
-} from '../../../core/agent-identity/index.js';
+import { inSessionIdentity, runtimeFacts } from '../../agent-facts.js';
 import { PENDING_APPROVAL_TIMING } from '../../shared/timing/pending-approval-timing.js';
 import { logger } from '../../../../lib/logger.js';
 import { logRefusal } from '../../../observability/refusals.js';
@@ -492,9 +488,7 @@ export function createCanUseTool(
   session: InteractiveSession & CeilingedMode<PermissionModeId>,
   log: ToolGateLogger,
   onToolPreflight?: (toolName: string, input: Record<string, unknown>) => Promise<void>,
-  resolveIdentity: () => Promise<unknown> = createInSessionContextResolver(
-    resolveAgentHome(session.cwd)
-  ),
+  resolveIdentity: () => Promise<unknown> = inSessionIdentity(runtimeFacts().home(session.cwd)),
   readFolders: ReadFolders | undefined = session.cwd
     ? { cwd: session.cwd, roots: [session.cwd] }
     : undefined,
@@ -655,7 +649,7 @@ function canvasReadTarget(
   if (toolName !== `${IN_SESSION_TOOL_PREFIX}read_canvas_document` || sessionId === undefined)
     return undefined;
   return typeof input.documentId === 'string'
-    ? canvasDocumentFilePath(sessionId, input.documentId)
+    ? runtimeFacts().documentFilePath(sessionId, input.documentId)
     : undefined;
 }
 

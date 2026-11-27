@@ -2,7 +2,7 @@
  * Heartbeats at server startup and shutdown (spec `heartbeats` §3, §9, §11):
  * one call from the composition root builds the store, the outbox, the runner
  * and the event-wake hub, wires them to the services they read, hands over
- * what `GET /api/agents/:id/heartbeat` reads, and follows `heartbeats.enabled`.
+ * what `GET /api/agents/:agentId/heartbeat` reads, and follows `heartbeats.enabled`.
  *
  * - **Off is really off** (§3.6). With `heartbeats.enabled` false nothing is
  *   armed and nothing is answered: no beat timer, no outbox tick, no event-wake

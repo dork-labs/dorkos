@@ -152,7 +152,12 @@ export const accountUsageCapability = defineCapability({
   input: z.object({ runtime: z.enum(LEDGER_RUNTIMES).describe('The runtime slug.') }),
   output: z.object({ accounts: z.array(AccountUsageSchema) }),
   surfaces: {
-    http: { method: 'get', path: '/api/runtimes/{runtime}/accounts/usage', audience: 'person' },
+    http: {
+      method: 'get',
+      path: '/api/runtimes/{type}/accounts/usage',
+      params: { type: 'runtime' },
+      audience: 'person',
+    },
   },
   invoke: async (_deps, { runtime }) => {
     const accounts = readerOf().accountUsage(runtime);

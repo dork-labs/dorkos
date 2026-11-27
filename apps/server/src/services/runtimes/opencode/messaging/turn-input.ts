@@ -1,4 +1,4 @@
-import { renderDocEvents } from '../../../canvas/doc-channel/prompt.js';
+import { runtimeFacts } from '../../agent-facts.js';
 import { formatAccountsAccess } from '../../shared/accounts-access-context.js';
 import { formatContextWarning } from '../../shared/prose/context-warning-block.js';
 /**
@@ -82,7 +82,7 @@ export function parseModelSelection(
 function renderContextEntry(entry: AdditionalContextEntry): string {
   switch (entry.kind) {
     case 'doc_events':
-      return renderDocEvents(entry.data);
+      return runtimeFacts().renderDocEvents(entry.data);
     case 'git_status':
     case 'env':
     case 'relay_context':

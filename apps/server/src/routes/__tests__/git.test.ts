@@ -16,7 +16,9 @@ vi.mock('../../lib/boundary.js', () => ({
   },
 }));
 
-vi.mock('../../services/core/git-status.js', () => ({
+vi.mock('../../services/core/git-status.js', async (importOriginal) => ({
+  // The real module keeps the agent facts slot it holds; only the read is faked.
+  ...(await importOriginal<typeof import('../../services/core/git-status.js')>()),
   getGitStatus: vi.fn().mockResolvedValue({ branch: 'main', files: [] }),
 }));
 

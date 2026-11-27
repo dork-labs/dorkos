@@ -12,6 +12,8 @@ import {
 } from '../chat-messages/startup/spin-off-startup.js';
 import { wireSpinOffStartup } from '../chat-messages/startup/wire-spin-off-startup.js';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+// A launch reads the rooms folder through the agent facts port, wired as boot does.
+import '../../core/agent-identity/__tests__/wire-test-facts.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

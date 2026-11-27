@@ -10,7 +10,6 @@
  * @module routes/connector-access-changes
  */
 import { Hono } from 'hono';
-import type { Db } from '@dorkos/db';
 import {
   ConnectorAccessChangeListQuerySchema,
   ConnectorAccessChangeListSchema,
@@ -19,10 +18,7 @@ import {
 } from '@dorkos/shared/connector-exclusion-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readQuery } from '../http/request-query.js';
-import {
-  findAccessChangeForOwner,
-  listAccessChangesForOwner,
-} from '../services/connectors/access/access-change-ledger.js';
+import type { AccessChangeReads } from '../services/connectors/access/access-change-ledger.js';
 import {
   AccessNarrowingError,
   type AccessNarrowingService,
@@ -40,14 +36,14 @@ import { NARROWING_PROBLEM, sendConnectorProblem } from './connector-problems.js
 export interface ConnectorAccessChangeRouterDeps extends ConnectorOwnerBoundaryDeps {
   /** The narrowing service, for Undo. */
   readonly narrowing: Pick<AccessNarrowingService, 'undo'>;
-  /** The connector database, for the list. */
-  readonly db: Db;
+  /** The owner's reads of the access-change ledger. */
+  readonly ledger: AccessChangeReads;
 }
 
 /**
  * Build the access-change routes, for mounting under `/api/connectors`.
  *
- * @param deps - The owner boundary, the narrowing service and the database.
+ * @param deps - The owner boundary, the narrowing service and the ledger.
  * @returns The routes.
  */
 export function createConnectorAccessChangeRoutes(
@@ -62,7 +58,7 @@ export function createConnectorAccessChangeRoutes(
     if (!query.success) return validationProblem(c, query.error);
     return c.json(
       ConnectorAccessChangeListSchema.parse({
-        changes: listAccessChangesForOwner(deps.db, owner, query.data),
+        changes: deps.ledger.list(owner, query.data),
       })
     );
   });
@@ -72,7 +68,7 @@ export function createConnectorAccessChangeRoutes(
   router.get('/access-changes/:changeId', (c) => {
     const owner = resolveConnectorOperator(c, deps);
     if (owner instanceof Response) return owner;
-    const change = findAccessChangeForOwner(deps.db, owner, c.req.param('changeId'));
+    const change = deps.ledger.find(owner, c.req.param('changeId'));
     if (!change) {
       return problem(c, 'not_found', { detail: 'Nothing to show there.' });
     }

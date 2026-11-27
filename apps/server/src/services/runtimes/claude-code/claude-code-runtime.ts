@@ -115,12 +115,9 @@ import type { McpServerFactory, MessageSenderOpts } from './messaging/message-se
 import { PersistentDispatch } from './sessions/persistent-dispatch.js';
 import { BackgroundWorkLedger } from './messaging/background-work-ledger.js';
 import { watchSessionList } from './sessions/session-list-watcher.js';
-import {
-  homeOf,
-  readHomeManifest,
-  resolveAgentHome,
-  turnAgentOf,
-} from '../../core/agent-identity/index.js';
+import { homeOf, readHomeManifest, turnAgentOf } from '@dorkos/shared/agent-facts';
+import type { RelayConnectionsSource as RelayFacts } from '@dorkos/shared/agent-facts';
+import { runtimeFacts } from '../agent-facts.js';
 import { projectOfFolder } from '../../core/usage/account-eligibility.js';
 import type { LaunchAccountResolution } from '../../core/usage/account-eligibility.js';
 import { accountUnlessHeld, checkClaudeLaunchAccount } from './launch-account-check.js';
@@ -243,9 +240,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private readonly accountsAccess = new AccountsAccessContext();
   private mcpAuthEvidence: McpAuthEvidencePort | undefined;
   private pluginReloadActivity: PluginReloadActivityPort | undefined;
-  private bindingRouter: import('../../relay/binding-router.js').BindingRouter | undefined;
-  private bindingStore: import('../../relay/binding-store.js').BindingStore | undefined;
-  private adapterManager: import('../../relay/adapter-manager.js').AdapterManager | undefined;
+  private bindingRouter: RelayFacts['sessions'] | undefined;
+  private bindingStore: RelayFacts['bindings'] | undefined;
+  private adapterManager: RelayFacts['adapters'] | undefined;
 
   /**
    * Cached Claude Agent SDK `options.plugins` array for the current set of
@@ -467,9 +464,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   /** Inject relay binding context for outbound awareness. */
   setRelayBindingContext(
-    bindingRouter: import('../../relay/binding-router.js').BindingRouter,
-    bindingStore: import('../../relay/binding-store.js').BindingStore,
-    adapterManager: import('../../relay/adapter-manager.js').AdapterManager
+    bindingRouter: RelayFacts['sessions'],
+    bindingStore: RelayFacts['bindings'],
+    adapterManager: RelayFacts['adapters']
   ): void {
     this.bindingRouter = bindingRouter;
     this.bindingStore = bindingStore;
@@ -564,7 +561,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     | { agentPath: string; meshAgent: NonNullable<ReturnType<AgentRegistryPort['getByPath']>> }
     | undefined {
     if (!this.connectorRuntimeTools) return undefined;
-    const agentPath = homeOf(resolveAgentHome(cwdKey, turnAgent));
+    const agentPath = homeOf(runtimeFacts().home(cwdKey, turnAgent));
     const meshAgent = agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
     return agentPath && meshAgent ? { agentPath, meshAgent } : undefined;
   }
@@ -834,14 +831,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     let packages: Array<{ type: 'local'; path: string }>;
     try {
       const { resolveDorkHome } = await import('../../../lib/dork-home.js');
-      const { listConsentedPluginNames } =
-        await import('../../marketplace/consent/global-plugin-consent.js');
       const { buildClaudeAgentSdkPluginsArray } = await import('./messaging/plugin-activation.js');
       const { logger } = await import('../../../lib/logger.js');
       const dorkHome = resolveDorkHome();
       // Only packages a person approved (or that run nothing on their own):
       // a global package's hooks and servers start in every session (DOR-2306).
-      const enabledNames = await listConsentedPluginNames(dorkHome);
+      const enabledNames = await runtimeFacts().consentedGlobalPackages(dorkHome);
       packages =
         enabledNames.length === 0
           ? []
@@ -1122,7 +1117,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       projectDir
     );
     if (settled) return settled;
-    const home = homeOf(resolveAgentHome(projectDir));
+    const home = homeOf(runtimeFacts().home(projectDir));
     const manifest = home ? await readHomeManifest(home).catch(() => null) : null;
     // Keeps to the accounts that may work in this folder's project; a launch
     // that would be refused predicts no account at all (spec

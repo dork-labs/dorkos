@@ -4487,14 +4487,14 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'patch',
-  path: '/api/agents/{id}/permissions',
+  path: '/api/agents/{agentId}/permissions',
   tags: ['Permissions'],
   summary: "Change one agent's permissions",
   description:
     "Sets this agent's own areas and actions; `null` puts one back to the default. Records one " +
     '`permission.changed` Activity event.',
   request: {
-    params: z.object({ id: z.string() }),
+    params: z.object({ agentId: z.string() }),
     body: { content: { 'application/json': { schema: PatchAgentPermissionsBodySchema } } },
   },
   responses: {

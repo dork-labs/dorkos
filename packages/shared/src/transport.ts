@@ -3487,7 +3487,7 @@ export interface Transport extends TransportSlices {
 
   /**
    * Read how much of each of a runtime's accounts is used
-   * (`GET /api/runtimes/:runtime/accounts/usage`). Claude Code answers one row
+   * (`GET /api/runtimes/:type/accounts/usage`). Claude Code answers one row
    * per account; Codex and OpenCode answer their implicit `default` row. Each
    * row carries its `runtime`.
    *

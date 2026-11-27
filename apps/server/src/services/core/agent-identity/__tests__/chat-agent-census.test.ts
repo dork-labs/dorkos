@@ -199,8 +199,10 @@ describe('the chat agent census', () => {
     ).toHaveLength(6);
   });
 
-  // DOR-5038: these read a chat's agent only through session-agent. Most of this wiring has no
-  // test of its own, so the recorded-only read coming back here fails this instead.
+  // DOR-5038: these read a chat's agent only through session-agent, directly or, on the computer
+  // side, through the agent facts port's `ofChat` (spec `computer-side-starts-alone` §5.3), which
+  // is `sessionAgentById`. Most of this wiring has no test of its own, so the recorded-only read
+  // coming back here fails this instead.
   it.each([
     'services/heartbeats/gatherers/open-work-reader.ts',
     'services/relay/adapter-factory.ts',
@@ -211,7 +213,7 @@ describe('the chat agent census', () => {
   ])('%s reads the chat’s agent through session-agent', (file) => {
     const code = codeOnly(fs.readFileSync(path.join(SRC, file), 'utf8'));
     expect(code).not.toContain('getSessionAgentPath(');
-    expect(code).toMatch(/\b(?:sessionAgentById|sessionAgentOf|chatFactsOf)\(?/);
+    expect(code).toMatch(/\b(?:sessionAgentById|sessionAgentOf|chatFactsOf)\(?|\.ofChat\(/);
   });
 
   // chat_read's description names the chat's agent (DOR-5038, slice C). The rest of the file

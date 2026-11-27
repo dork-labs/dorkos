@@ -5,7 +5,7 @@
  * - `todos.view_list` — `GET /api/todos`: a view's to-dos, the hidden done count and the badge.
  * - `todos.view_card` — `GET /api/todos/{id}`: one to-do for its card, and its latest turn's chat.
  * - `todos.view_promises` — `GET /api/todo-promises`: every agent's promises.
- * - `todos.add_promise_for_agent` — `POST /api/agents/{id}/todo-promises`: the owner records a
+ * - `todos.add_promise_for_agent` — `POST /api/agents/{agentId}/todo-promises`: the owner records a
  *   promise for an agent.
  *
  * The reads are open to anyone in the space, agents included, in the To-dos area like the agents'
@@ -296,8 +296,7 @@ export const todoPromiseHttpDomain: CapabilityDomain = {
       surfaces: {
         http: {
           method: 'post',
-          path: '/api/agents/{id}/todo-promises',
-          params: { id: 'agentId' },
+          path: '/api/agents/{agentId}/todo-promises',
           success: 201,
           audience: 'person',
         },

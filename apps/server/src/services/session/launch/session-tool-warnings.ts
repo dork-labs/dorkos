@@ -10,7 +10,7 @@
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { SessionLaunchWarning } from '@dorkos/shared/schemas';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
-import { sessionAgentById } from '../../core/agent-identity/session-agent.js';
+import { sessionAgentFacts } from '../turn-port/agent-facts.js';
 import { logger } from '../../../lib/logger.js';
 
 /** The chat a turn would run in: where, which chat, and for which agent. */
@@ -70,13 +70,15 @@ export async function openedChatToolWarnings(
   sessionId: string
 ): Promise<{ warnings?: SessionLaunchWarning[] }> {
   if (runtime.type !== 'codex') return {};
-  const agentPath = await sessionAgentById(sessionId).catch((err: unknown) => {
-    logger.debug('[launch] could not read the chat’s agent', {
-      sessionId,
-      error: err instanceof Error ? err.message : String(err),
+  const agentPath = await sessionAgentFacts()
+    .ofChat(sessionId)
+    .catch((err: unknown) => {
+      logger.debug('[launch] could not read the chat’s agent', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return undefined;
     });
-    return undefined;
-  });
   return sessionToolWarnings(runtime.type, runtime, { cwd, sessionId, agentPath });
 }
 

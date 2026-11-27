@@ -26,10 +26,7 @@ import { editToolFilePath, isEditFamilyTool } from '@dorkos/shared/diff-tools';
 import path from 'node:path';
 import { logger } from '../../../../lib/logger.js';
 import { editBaselineStore } from '../../../diff/index.js';
-import type { HomeResolution } from '../../../core/agent-identity/index.js';
-import type { AdapterManager } from '../../../relay/adapter-manager.js';
-import type { BindingRouter } from '../../../relay/binding-router.js';
-import type { BindingStore } from '../../../relay/binding-store.js';
+import type { HomeResolution, RelayConnectionsSource } from '@dorkos/shared/agent-facts';
 import type { SessionAttachmentStore } from '../../../session/attachments/index.js';
 import type { ClaudeToolLaunchSettings } from '../tool-turn/live-tool-turn.js';
 import type { AgentSession } from '../agent-types.js';
@@ -145,9 +142,9 @@ export interface MessageSenderOpts {
    */
   attachments?: SessionAttachmentStore;
   meshCore?: AgentRegistryPort | null;
-  bindingRouter?: BindingRouter;
-  bindingStore?: BindingStore;
-  adapterManager?: AdapterManager;
+  bindingRouter?: RelayConnectionsSource['sessions'];
+  bindingStore?: RelayConnectionsSource['bindings'];
+  adapterManager?: RelayConnectionsSource['adapters'];
   mcpServerFactory?: McpServerFactory | null;
   /** Handed to the tool server factory as {@link McpServerLaunch.connectorTools}. */
   connectorTools?: boolean;

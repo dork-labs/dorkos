@@ -11,12 +11,15 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
+// A launch reads the rooms folder through the agent facts port, wired as boot does.
+import '../../services/core/agent-identity/__tests__/wire-test-facts.js';
 import { workLinks } from '@dorkos/db';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { initBoundary } from '../../lib/boundary.js';
 import { configManager } from '../../services/core/config-manager.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
+import { sessionLocationStore } from '../../services/core/runtime-seam/session-location-store.js';
 import {
   createChatRiseFacts,
   setChatRiseFacts,
@@ -91,7 +94,12 @@ const harness = frontDoorStepUpHarness(() => {
   runtimeRegistry.setDefault('test-mode');
   setChatRiseFacts(createChatRiseFacts(db));
   setMessageQueueStore(new MessageQueueStore(db));
-  return [{ path: '/api/sessions', routes: createSessionRoutes({ personBirthDb: db }) }];
+  return [
+    {
+      path: '/api/sessions',
+      routes: createSessionRoutes({ personBirth: sessionLocationStore(db) }),
+    },
+  ];
 });
 
 afterAll(async () => {

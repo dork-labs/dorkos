@@ -51,7 +51,6 @@
  */
 import { Hono } from 'hono';
 import { problem } from '@dorkos/http-kit';
-import type { Db } from '@dorkos/db';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
@@ -59,7 +58,7 @@ import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import { isOwnerRecord } from '../services/rooms/author-registry.js';
 import { getRoomService, type AuthorRecord } from '../services/rooms/index.js';
-import { answerSearch, type SearchScope } from '../services/search/index.js';
+import type { SearchAnswerer, SearchScope } from '../services/search/index.js';
 import { readableSessionIds } from '../services/audit/session-visibility.js';
 import { readerOfRequest } from './audit-reader.js';
 import { resolveCaller } from './room-caller.js';
@@ -67,8 +66,8 @@ import { isOwnerCaller, sendRoomError } from './room-error-response.js';
 
 /** What the search router reads. It writes nothing and holds no state. */
 export interface SearchRouterDeps {
-  /** The database holding the message index. */
-  db: Db;
+  /** Answers one search over the message index for an already-resolved caller. */
+  answer: SearchAnswerer;
 }
 
 /**
@@ -109,11 +108,7 @@ export function createSearchRoutes(deps: SearchRouterDeps): Hono<ApiEnv> {
           }
         : isOwnerRecord(caller, readOwnerAccount()?.id ?? null);
 
-      const answer = answerSearch(
-        deps.db,
-        { rooms: rooms.searchScope(caller.id), sessions },
-        readQuery(c)
-      );
+      const answer = deps.answer({ rooms: rooms.searchScope(caller.id), sessions }, readQuery(c));
       if (!answer.ok) return problem(c, 'invalid_request', { detail: answer.detail });
       return c.json(answer.response);
     } catch (err) {

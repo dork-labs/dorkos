@@ -21,12 +21,8 @@ import { DoeInferenceConfigSchema, type DoeInferenceConfig } from '@dorkos/share
 import { clampModeToCeiling } from '@dorkos/shared/permission-semantics';
 import type { AuditActor } from '@dorkos/shared/audit-schemas';
 import { recordRuntimeToolCall, toolActorOf } from '../../audit/record-tool-use.js';
-import {
-  homeOf,
-  resolveAgentHome,
-  turnAgentOf,
-  readHomeManifest,
-} from '../../core/agent-identity/index.js';
+import { homeOf, readHomeManifest, turnAgentOf } from '@dorkos/shared/agent-facts';
+import { runtimeFacts } from '../agent-facts.js';
 import { agentRunsOnCredits } from '../../core/cloud/credits-model-gate.js';
 import { chosenModeWithinOwnBounds } from '../../core/turn-power/full-autonomy.js';
 import { creditsRefusalEvent } from '../../core/cloud/credits-protocols.js';
@@ -164,7 +160,7 @@ export async function executeDoeTurn(
         : clampModeToCeiling(DOE_CAPABILITIES.permissionModes, modeChoice, opts.permissionCeiling);
     turn.mode = mode;
     const record = hostState.sessions.get(id)!;
-    const agentPath = homeOf(resolveAgentHome(cwd, turnAgentOf(opts)));
+    const agentPath = homeOf(runtimeFacts().home(cwd, turnAgentOf(opts)));
     // The catalog id DorkOS froze, when it differs from what the chat named.
     let substituted: string | undefined;
     if (!record.inference) {

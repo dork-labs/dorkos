@@ -23,7 +23,7 @@ import type {
 } from '@dorkos/shared/agent-instructions-schemas';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import type { Task, TaskRun } from '@dorkos/shared/types';
-import type { AgentHome } from '../../core/agent-identity/index.js';
+import type { AgentHome } from '@dorkos/shared/agent-facts';
 import type { AgentContextSource } from '../shared/source/agent-context-source.js';
 import { buildAgentContextAppend } from '../shared/agent-context.js';
 import {
@@ -39,7 +39,7 @@ import { buildCodexPrompt } from '../codex/turn-input.js';
 import { buildOpenCodeTurnParts } from '../opencode/messaging/turn-context.js';
 import { buildOpenCodeSystem } from '../opencode/messaging/turn-input.js';
 import { buildDoeContextParts } from '../doe/context.js';
-import { buildTaskAppend } from '../../tasks/task-append.js';
+import { runtimeFacts } from '../agent-facts.js';
 import { renderRoomConventions } from '../../core/room-conventions/room-conventions-block.js';
 import {
   SESSION_BLOCKS,
@@ -125,7 +125,7 @@ const TEMPLATE_RUN = { id: token('task.run_id'), trigger: 'scheduled' } as TaskR
  */
 function callerAppendFor(place: InstructionsPlace, agentId?: string): string {
   if (place === 'task') {
-    return buildTaskAppend(templateTask(agentId ?? token('agent.id')), TEMPLATE_RUN);
+    return runtimeFacts().taskAppend(templateTask(agentId ?? token('agent.id')), TEMPLATE_RUN);
   }
   if (place === 'room') {
     return renderRoomConventions(

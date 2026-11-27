@@ -7,6 +7,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+// Computer-side code reads agent facts through the port, wired as boot does.
+import '../../../core/agent-identity/__tests__/wire-test-facts.js';
 import type { CommandEntry } from '@dorkos/shared/types';
 import { setAgentHomeRegistry } from '../../../core/agent-identity/index.js';
 import { homeOutside } from '../home-skills-block.js';

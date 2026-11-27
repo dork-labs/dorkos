@@ -16,7 +16,7 @@ const refresh = (queryClient: QueryClient, agentId: string) =>
  * One agent's work queue.
  *
  * @param agentId - The agent's Mesh id.
- * @returns The TanStack Query result for `GET /api/agents/:id/work-queue`.
+ * @returns The TanStack Query result for `GET /api/agents/:agentId/work-queue`.
  */
 export function useWorkQueue(agentId: string) {
   const transport = useTransport();

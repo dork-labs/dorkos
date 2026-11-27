@@ -14,6 +14,8 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { runtimeRegistry } from '../../../../core/runtime-registry.js';
 import { eq, roomSeatLaunchRequirements, sessionMetadata } from '@dorkos/db';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+// Computer-side code reads agent facts through the port, wired as boot does.
+import '../../../../core/agent-identity/__tests__/wire-test-facts.js';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -106,11 +108,6 @@ vi.mock('../../../../core/turn-power/turn-levels.js', async (importOriginal) => 
         : real.marksOf(sessionId, agentPath),
   };
 });
-
-vi.mock('../../../../core/agent-identity/index.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../../core/agent-identity/index.js')>()),
-  resolveAgentTokenEnv: vi.fn().mockResolvedValue({}),
-}));
 
 /** A minimal cold session — enough for one launch to be planned. */
 function makeSession(): AgentSession {

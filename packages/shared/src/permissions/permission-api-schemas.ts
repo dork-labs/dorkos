@@ -187,7 +187,7 @@ export const PermissionsResponseSchema = z
 /** `GET /api/permissions` response. */
 export type PermissionsResponse = z.infer<typeof PermissionsResponseSchema>;
 
-/** `GET /api/agents/:id/permissions`: one agent's resolved state, with its source. */
+/** `GET /api/agents/:agentId/permissions`: one agent's resolved state, with its source. */
 export const AgentPermissionsResponseSchema = z
   .object({
     agentId: z.string(),
@@ -212,11 +212,11 @@ export const AgentPermissionsResponseSchema = z
   })
   .openapi('AgentPermissionsResponse');
 
-/** `GET /api/agents/:id/permissions` response. */
+/** `GET /api/agents/:agentId/permissions` response. */
 export type AgentPermissionsResponse = z.infer<typeof AgentPermissionsResponseSchema>;
 
 /**
- * `GET /api/agents/:id/level`: the level a new chat of this agent actually
+ * `GET /api/agents/:agentId/level`: the level a new chat of this agent actually
  * starts at, before any per-chat limit. Read-only; there is no write path.
  */
 export const AgentLevelResponseSchema = z
@@ -232,7 +232,7 @@ export const AgentLevelResponseSchema = z
   })
   .openapi('AgentLevelResponse');
 
-/** `GET /api/agents/:id/level` response. */
+/** `GET /api/agents/:agentId/level` response. */
 export type AgentLevelResponse = z.infer<typeof AgentLevelResponseSchema>;
 
 /** `PUT /api/permissions/preset` body. */
@@ -260,7 +260,7 @@ export const PatchPermissionDefaultsBodySchema = z
 /** `PATCH /api/permissions/defaults` body. */
 export type PatchPermissionDefaultsBody = z.infer<typeof PatchPermissionDefaultsBodySchema>;
 
-/** `PATCH /api/agents/:id/permissions` body. `null` = back to the default. */
+/** `PATCH /api/agents/:agentId/permissions` body. `null` = back to the default. */
 export const PatchAgentPermissionsBodySchema = z
   .object({
     areas: z.record(z.string(), NullableStateSchema).optional(),
@@ -271,7 +271,7 @@ export const PatchAgentPermissionsBodySchema = z
   })
   .openapi('PatchAgentPermissionsBody');
 
-/** `PATCH /api/agents/:id/permissions` body. */
+/** `PATCH /api/agents/:agentId/permissions` body. */
 export type PatchAgentPermissionsBody = z.infer<typeof PatchAgentPermissionsBodySchema>;
 
 /** `GET /api/permissions/history` query. */

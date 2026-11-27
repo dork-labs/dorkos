@@ -16,7 +16,8 @@
  * @module services/session/agent-compaction/compaction-permission
  */
 import { resolvePermission, type AgentPermissions } from '@dorkos/shared/permissions';
-import { homeOf, resolveAgentHome } from '../../core/agent-identity/index.js';
+import { homeOf } from '@dorkos/shared/agent-facts';
+import { sessionAgentFacts } from '../turn-port/agent-facts.js';
 import { permissionGateSources } from '../../core/capabilities/permission-enforcement.js';
 import { SESSION_COMPACT_CAPABILITY_ID } from './compaction-capabilities.js';
 
@@ -58,5 +59,5 @@ export function agentPathOfTurn(
   cwd: string | undefined,
   forAgent: string | undefined
 ): string | undefined {
-  return homeOf(resolveAgentHome(cwd, forAgent));
+  return homeOf(sessionAgentFacts().home(cwd, forAgent));
 }

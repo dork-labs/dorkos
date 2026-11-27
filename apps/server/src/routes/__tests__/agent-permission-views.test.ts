@@ -1,6 +1,6 @@
 /**
- * One agent's permissions and its level (`GET /api/agents/:id/permissions`,
- * `GET /api/agents/:id/level`), served by the capability mount (DOR-4978):
+ * One agent's permissions and its level (`GET /api/agents/:agentId/permissions`,
+ * `GET /api/agents/:agentId/level`), served by the capability mount (DOR-4978):
  * read-only, answered from the readers boot hands over, `agent_not_found` for
  * no such agent, no write path for a level, and readable by whoever could read
  * them before, an agent included.
@@ -64,7 +64,7 @@ beforeEach(() => {
 
 afterEach(() => setAgentPermissionViews(undefined));
 
-describe('GET /api/agents/:id/level', () => {
+describe('GET /api/agents/:agentId/level', () => {
   it('answers what the reader resolves for the agent', async () => {
     const res = await request(build()).get('/api/agents/agent-test/level');
     expect(res.status).toBe(200);
@@ -92,7 +92,7 @@ describe('GET /api/agents/:id/level', () => {
   });
 });
 
-describe('GET /api/agents/:id/permissions', () => {
+describe('GET /api/agents/:agentId/permissions', () => {
   it('answers one agent’s resolved permissions', async () => {
     const res = await request(build()).get('/api/agents/agent-auditor/permissions');
     expect(res.status).toBe(200);
