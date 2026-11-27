@@ -12,7 +12,8 @@
  */
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { homeOf, resolveAgentHome, turnAgentOf } from '../../../core/agent-identity/agent-home.js';
+import { homeOf, turnAgentOf } from '@dorkos/shared/agent-facts';
+import { runtimeFacts } from '../../agent-facts.js';
 import { markRunningTurnOutsider } from '../../../core/turn-power/turn-levels.js';
 import { markChatTurnOutsideText } from '../../../audit/outside-text-stream.js';
 import { scriptTextFetches } from '../../shared/tools/shell-network-commands.js';
@@ -34,7 +35,7 @@ function placeOf(context: unknown): { place: CallPlace; agentHome?: string } {
   const opts = (context as { opts?: MessageOpts } | undefined)?.opts;
   let agentHome: string | undefined;
   try {
-    agentHome = homeOf(resolveAgentHome(opts?.cwd, turnAgentOf(opts)));
+    agentHome = homeOf(runtimeFacts().home(opts?.cwd, turnAgentOf(opts)));
   } catch {
     // No agent to name: the chat's own turn is marked all the same.
   }

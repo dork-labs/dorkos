@@ -14,6 +14,7 @@ import type {
   ApprovalFullDetailResponse,
   PendingApprovalsResponse,
 } from '@dorkos/shared/approval-schemas';
+import { createTransportApiClient } from './api-client';
 import { fetchJSON } from './http-client';
 
 /**
@@ -22,23 +23,27 @@ import { fetchJSON } from './http-client';
  * @param baseUrl - Server base URL (already includes `/api`).
  */
 export function createApprovalMethods(baseUrl: string) {
+  const api = createTransportApiClient(baseUrl);
   return {
-    listDeclinedHookApprovals(): Promise<DeclinedHookApprovalsResponse> {
-      return fetchJSON(baseUrl, '/approvals/declined-hooks');
+    async listDeclinedHookApprovals(): Promise<DeclinedHookApprovalsResponse> {
+      return api.call('approvals.getDeclinedHooks', {});
     },
+    // Stays hand-written: waits for batch 3's no-body client (DOR-5473).
     askAgainHookApproval(approvalId: string): Promise<{ ok: true; approvalId: string }> {
       return fetchJSON(baseUrl, `/approvals/${encodeURIComponent(approvalId)}/ask-again`, {
         method: 'POST',
       });
     },
-    listPendingApprovals(): Promise<PendingApprovalsResponse> {
-      return fetchJSON(baseUrl, '/approvals/pending');
+    async listPendingApprovals(): Promise<PendingApprovalsResponse> {
+      return api.call('approvals.getPending', {});
     },
 
-    getApprovalFullDetail(approvalId: string): Promise<ApprovalFullDetailResponse> {
-      return fetchJSON(baseUrl, `/approvals/${encodeURIComponent(approvalId)}/full-detail`);
+    async getApprovalFullDetail(approvalId: string): Promise<ApprovalFullDetailResponse> {
+      return api.call('approvals.getFullDetail', { path: { id: approvalId } });
     },
 
+    // Stays hand-written: the one-time yes sends no body; waits for batch 3's
+    // no-body client (DOR-5473).
     grantApproval(
       approvalId: string,
       options?: { answer?: ApprovalAnswer }
@@ -51,13 +56,14 @@ export function createApprovalMethods(baseUrl: string) {
       });
     },
 
-    denyApproval(approvalId: string, reason?: string): Promise<ApprovalDecisionResponse> {
-      return fetchJSON(baseUrl, `/approvals/${encodeURIComponent(approvalId)}/deny`, {
-        method: 'POST',
-        body: JSON.stringify(reason ? { reason } : {}),
+    async denyApproval(approvalId: string, reason?: string): Promise<ApprovalDecisionResponse> {
+      return api.call('approvals.deny', {
+        path: { id: approvalId },
+        body: reason ? { reason } : {},
       });
     },
 
+    // Stays hand-written: waits for batch 3's no-body client (DOR-5473).
     dismissAlwaysSuggestion(approvalId: string): Promise<{ ok: true; approvalId: string }> {
       return fetchJSON(baseUrl, `/approvals/${encodeURIComponent(approvalId)}/dismiss-suggestion`, {
         method: 'POST',

@@ -20,7 +20,8 @@ import path from 'node:path';
 import { scanSkillDirs, AGENTS_SKILLS_DIR } from '@dorkos/harness/scan';
 import { SkillFrontmatterSchema, SKILL_FILENAME } from '@dorkos/skills';
 import { parseSkillFile } from '@dorkos/skills/parser';
-import { homeOf, resolveAgentHome, type AgentHome } from '../../core/agent-identity/index.js';
+import { homeOf, type AgentHome } from '@dorkos/shared/agent-facts';
+import { runtimeFacts } from '../agent-facts.js';
 
 /** At most this many skills are listed, so a large home can't crowd the context. */
 export const HOME_SKILLS_LIMIT = 40;
@@ -60,7 +61,7 @@ export function isInsideHome(home: string, cwd: string): boolean {
  */
 export function homeOutside(cwd: string | undefined, agentPath?: string): string | undefined {
   if (!cwd) return undefined;
-  const home = homeOf(resolveAgentHome(cwd, agentPath));
+  const home = homeOf(runtimeFacts().home(cwd, agentPath));
   return home && !isInsideHome(home, cwd) ? realFolder(home) : undefined;
 }
 

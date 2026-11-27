@@ -46,14 +46,8 @@ import { resolveDorkHome } from '../../../../lib/dork-home.js';
 import { logger } from '../../../../lib/logger.js';
 import { parseSessionId } from '../../../../lib/route-utils.js';
 import { resolveClaudeCredentialEnv } from '../../../core/credential-env.js';
-import {
-  homeOf,
-  createInSessionContextResolver,
-  readHomeManifest,
-  resolveAgentTokenEnv,
-  resolveAgentHome,
-  turnAgentOf,
-} from '../../../core/agent-identity/index.js';
+import { homeOf, readHomeManifest, turnAgentOf } from '@dorkos/shared/agent-facts';
+import { inSessionIdentity, runtimeFacts } from '../../agent-facts.js';
 import { resolveCreditsLaunchEnv } from '../../../core/cloud/credits-inference.js';
 import { decideCreditsLaunchModel } from '../../../core/cloud/credits-models.js';
 // The error event a refused credits launch ends its turn with, or `null` when
@@ -177,7 +171,7 @@ export async function resolveLaunch(args: {
   // names the turn's agent it must be that agent or nobody. See
   // `core/agent-identity/agent-home.ts` for the whole rule.
   const forAgent = turnAgentOf(messageOpts);
-  const turnAgentPath = homeOf(resolveAgentHome(effectiveCwd, forAgent));
+  const turnAgentPath = homeOf(runtimeFacts().home(effectiveCwd, forAgent));
   // Stamp agent last_seen_at when a message is dispatched
   const meshAgent = turnAgentPath ? opts.meshCore?.getByPath(turnAgentPath) : undefined;
   const meshAgentId = meshAgent?.id;
@@ -249,7 +243,7 @@ export async function resolveLaunch(args: {
   // the token above is minted for the agent: login on refuses every room verb
   // again, and login off hands them to the operator with the cross-check never
   // run. The directory the turn actually launches in is the honest fallback.
-  const toolIdentity = resolveAgentHome(session.cwd ?? effectiveCwd, forAgent);
+  const toolIdentity = runtimeFacts().home(session.cwd ?? effectiveCwd, forAgent);
   const toolAgentPath = homeOf(toolIdentity);
   // What a Blocked permission hides from this agent (spec `agent-permissions`
   // D15), resolved against the SAME cwd the tool server keys the session's
@@ -302,7 +296,7 @@ export async function resolveLaunch(args: {
   // Minting under the slug therefore renamed a live agent to `docs-writer`
   // mid-conversation, in every message and in the member list (DOR-1264).
   const agentDisplayName = meshAgent?.displayName ?? meshAgent?.name;
-  const agentTokenEnv = await resolveAgentTokenEnv(
+  const agentTokenEnv = await runtimeFacts().launchTokenEnv(
     meshAgent ? turnAgentPath : undefined,
     agentDisplayName
   );
@@ -747,7 +741,7 @@ export async function resolveLaunch(args: {
   // The gate answers "does this session have an agent identity?" off the SAME
   // anchor the tool server acts as, so a call it waves through is never one the
   // tool then runs as somebody else (DOR-2091).
-  const resolveIdentity = createInSessionContextResolver(toolIdentity);
+  const resolveIdentity = inSessionIdentity(toolIdentity);
   const turnGrantPaths = (turnGrants ?? []).map((grant) => grant.path);
   const heldReadFolders = { cwd: effectiveCwd, roots: [effectiveCwd, ...turnGrantPaths] };
   // The status reads' outsider bound (DOR-3971, DOR-4601), shared by canUseTool and the hook.

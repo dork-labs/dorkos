@@ -14,7 +14,8 @@ import type {
   ManagedMcpServerResolver,
   AgentRegistryPort,
 } from '@dorkos/shared/agent-runtime';
-import { homeOf, resolveAgentHome, type AgentHome } from '../../core/agent-identity/index.js';
+import { homeOf, type AgentHome } from '@dorkos/shared/agent-facts';
+import { runtimeFacts } from '../agent-facts.js';
 import type { ConnectorRuntimeMcpInjection } from '../connector-tools.js';
 import { managedConfigHeld } from '../shared/policy/managed-config.js';
 import { turnProtectedRoots } from '../shared/policy/turn-protected-roots.js';
@@ -55,7 +56,7 @@ export interface DoeHostOptions extends DoeBuilderLifecycle {
 /** Assemble a new turn with no retained routing or directory grants. Caller owns token revocation. */
 export async function assembleDoeHost(options: DoeHostOptions) {
   options.signal.throwIfAborted();
-  const resolution = resolveAgentHome(options.cwd, options.opts?.forAgent);
+  const resolution = runtimeFacts().home(options.cwd, options.opts?.forAgent);
   if (resolution.kind === 'refused') throw new Error('This turn cannot act as that agent.');
   const agentPath = options.agentPath ?? homeOf(resolution);
   const agentToAgent = loadsAgentToAgentTools(!!(agentPath && options.mesh?.getByPath(agentPath)));

@@ -19,7 +19,7 @@ import { dorkosToolNameFor } from '../dorkos-tool-names.js';
 // Both names come from where each tool is registered, never spelled here: this
 // module is read by three runtimes, and a bare name in it would be one none of
 // them can call (DOR-1292).
-import { MEMORY_WRITE_TOOL_NAME } from '../../../memory/memory-capabilities.js';
+import { MEMORY_WRITE_TOOL_NAME } from '@dorkos/shared/memory-provider';
 import { COMPACT_MY_SESSION_TOOL_NAME } from '../../../session/agent-compaction/compaction-capabilities.js';
 
 /**

@@ -34,7 +34,7 @@
  * `locate-install.ts` because the marketplace domain owns what a source is, and
  * the harness domain should not learn to parse one.
  *
- * @module services/marketplace/lib/marketplace-repo-key
+ * @module services/harness/marketplace-repo-key
  */
 
 /** Either spelling of where a marketplace came from. */

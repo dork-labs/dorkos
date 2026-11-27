@@ -12,6 +12,7 @@ import {
   type Db,
 } from '@dorkos/db';
 import { AuthorRegistry } from '../../../rooms/author-registry.js';
+import { createBrowserOwnerPeople } from '../owner/owner-people.js';
 import { createBrowserOwnerScopeResolver } from '../owner/owner-scope-resolver.js';
 import { BrowserRegistryConflict, createBrowserRegistryStore } from '../registry-store.js';
 
@@ -50,7 +51,7 @@ beforeEach(() => {
   runMigrations(db);
   state.registry = new AuthorRegistry(db);
   resolver = createBrowserOwnerScopeResolver();
-  store = createBrowserRegistryStore(db, resolver);
+  store = createBrowserRegistryStore(db, resolver, createBrowserOwnerPeople(db));
 });
 afterEach(() => {
   if (db?.$client.open) db.$client.close();
@@ -96,7 +97,11 @@ describe('owner-qualified browser metadata on real SQLite', () => {
     expect(() =>
       store.listProfiles({ ...scope() } as NonNullable<ReturnType<typeof scope>>)
     ).toThrow(BrowserRegistryConflict);
-    const foreign = createBrowserRegistryStore(db, createBrowserOwnerScopeResolver());
+    const foreign = createBrowserRegistryStore(
+      db,
+      createBrowserOwnerScopeResolver(),
+      createBrowserOwnerPeople(db)
+    );
     expect(() => foreign.listProfiles(scope())).toThrow(BrowserRegistryConflict);
     expect(store.listProfiles(scope())).toHaveLength(1);
   });

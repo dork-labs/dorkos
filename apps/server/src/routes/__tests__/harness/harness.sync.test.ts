@@ -7,6 +7,8 @@
  * @module routes/__tests__/harness/harness.sync
  */
 import { describe, expect, it, vi } from 'vitest';
+// Computer-side code reads agent facts through the port, wired as boot does.
+import '../../../services/core/agent-identity/__tests__/wire-test-facts.js';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import request from '@dorkos/test-utils/supertest';

@@ -11,6 +11,8 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
+// A launch reads the rooms folder through the agent facts port, wired as boot does.
+import '../../services/core/agent-identity/__tests__/wire-test-facts.js';
 import { workLinks } from '@dorkos/db';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { FakeAgentRuntime } from '@dorkos/test-utils';

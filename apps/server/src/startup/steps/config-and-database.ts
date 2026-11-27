@@ -25,6 +25,7 @@ import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { setAccountUsageStore } from '../../services/core/usage/current-usage-store.js';
 import { keepAwakeService } from '../../services/core/keep-awake/index.js';
 import { wireComputerAsks } from '../computer-asks.js';
+import { wireAgentFacts } from '../agent-facts.js';
 import path from 'path';
 import { initObservability, isOtlpExporting } from '../../services/observability/index.js';
 import { env } from '../../env.js';
@@ -66,8 +67,10 @@ export async function openConfigAndDatabase(
   }
   // With the config open, the computer side's consent cards and standing
   // decisions go through the space side, before any turn launches or any folder
-  // is pinned (spec `computer-side-starts-alone` §5.7).
+  // is pinned (spec `computer-side-starts-alone` §5.7); so do the agent facts
+  // it reads (§5.3).
   wireComputerAsks();
+  wireAgentFacts();
   // The Claude sign-ins this computer already uses are kept, once, before any
   // turn can launch, so an upgrade pauses nothing (DOR-3245).
   seedAccountSigninPolicy();

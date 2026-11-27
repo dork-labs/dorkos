@@ -9,7 +9,7 @@
 import { UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
 import type { PermissionModeId } from '@dorkos/shared/schemas';
 import { CHAT_SEND_TOOL, CHAT_STOP_TOOL } from '@dorkos/shared/chat-messages';
-import { MEMORY_TOOL_NAMES } from '../../../memory/tool-names.js';
+import { MEMORY_TOOL_NAMES } from '@dorkos/shared/memory-provider';
 import { inSessionToolName, isHostServedOrUnattributed } from '../mcp-tools/tool-exposure.js';
 import { carriesOutsiderMark, ceilingOn, type CeilingedMode } from '../turn-permission.js';
 import { ALWAYS_ON_READS, ALWAYS_ON_READS_QUALIFIED } from './always-on-reads.js';

@@ -32,6 +32,7 @@ import { initBoundary } from './lib/boundary.js';
 import { logger } from './lib/logger.js';
 import { registerClaudeCodeFacts } from './startup/register-claude-code-facts.js';
 import { wireComputerAsks } from './startup/computer-asks.js';
+import { wireAgentFacts } from './startup/agent-facts.js';
 import { initConfigManager } from './services/core/config-manager.js';
 import { initAgentIdentityService } from './services/core/agent-identity/index.js';
 import { wireProcessTokenPort } from './startup/steps/work-graph.js';
@@ -92,8 +93,10 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   // First, as in `start()` (DOR-4928): until Claude Code's folder facts are registered the
   // protected-path policy refuses every path and turn code honours no agent file's runtime.
   registerClaudeCodeFacts();
-  // The computer side asks and records consent through the space side, as in `start()`.
+  // The computer side asks and records consent, and reads agent facts, through
+  // the space side, as in `start()`.
   wireComputerAsks();
+  wireAgentFacts();
 
   // Config store first — the session gate reads it on every request; without
   // it every request 500s (spec eval-harness Errata, in-process boot recipe).

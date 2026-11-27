@@ -66,9 +66,7 @@ import {
 import { readOwnerAccount } from '../../services/core/auth/index.js';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import path from 'path';
-import { setAgentHomeRegistry, canonicalDir } from '../../services/core/agent-identity/index.js';
-import { setSessionAgentSources } from '../../services/core/agent-identity/session-agent.js';
-import { liveRuntimeCwd } from '../../services/core/runtime-seam/live-runtime-cwd.js';
+import { wireAgentHomes } from '../agent-facts.js';
 import { setAgentSessionSources, continueActivity } from '../../services/session/index.js';
 import { runBootSessionReconcile } from '../../services/session/catalog/boot-session-reconcile.js';
 import { roomWorktreesOfAgent } from '../../services/runtimes/claude-code/migrate-room-transcripts.js';
@@ -423,35 +421,10 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
   // this manager before its context is built (`room-turn-place.ts`, spec
   // `agent-home-desk` §5.1).
   setRoomWorktreeManager(roomWorktrees);
-  // Which folders are agent homes, for every identity read (spec
-  // `agent-home-desk` §3.1). Each lookup is read per call off the live
-  // registry (assigned later in boot), so an agent unregistered a moment ago is
-  // nobody's home at once and nothing is cached across a registration.
-  setAgentHomeRegistry({
-    isRegisteredHome: (dir) => refs.meshCore?.getByPath(dir) !== undefined,
-    listRegisteredHomes: () =>
-      refs.meshCore?.listWithPaths().map((agent) => agent.projectPath) ?? [],
-    // Canonically: a checkout path may be stored realpath'd while the turn
-    // names it through a symlink, or the other way round.
-    managedWorkspaceOwner: (dir) => {
-      const target = canonicalDir(dir);
-      const owned = refs.managedWorkspaces
-        ?.list()
-        .find(
-          (ws) =>
-            ws.owner?.kind === 'agent' &&
-            (path.resolve(ws.path) === dir || canonicalDir(ws.path) === target)
-        );
-      return owned?.owner?.ref ?? null;
-    },
-    roomsDir: path.join(dorkHome, 'rooms'),
-    // Until the mesh registry is up, nobody can say which folders are homes,
-    // so the git kill switch refuses every folder (DOR-3343).
-    homesKnown: () => refs.meshCore !== undefined,
-  });
-  // A chat bound without an agent is its folder's agent's; the folder its own
-  // runtime runs it in now is one place that folder is known (DOR-5035).
-  setSessionAgentSources({ db, liveCwd: (sessionId) => liveRuntimeCwd(db, sessionId) });
+  // Which folders are agent homes, which agent a chat is, and every agent's
+  // facts, off the live registry (spec `agent-home-desk` §3.1,
+  // `computer-side-starts-alone` §5.3).
+  wireAgentHomes(refs, db, dorkHome);
   // Where else an agent's conversations are: session storage is derived per
   // working directory (ADR-0310), and room turns stood in their agent's copy of
   // the room's files until spec `agent-home-desk` moved them home. Claude Code's

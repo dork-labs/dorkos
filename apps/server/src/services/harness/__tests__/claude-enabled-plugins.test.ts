@@ -13,6 +13,8 @@
  * marketplace names of which two are declared.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+// Computer-side code reads agent facts through the port, wired as boot does.
+import '../../core/agent-identity/__tests__/wire-test-facts.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

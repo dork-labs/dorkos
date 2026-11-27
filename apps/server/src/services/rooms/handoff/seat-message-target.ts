@@ -86,7 +86,7 @@ function seatTargetKey(target: SeatMessageTarget): string {
  * unsolicited item's room has become bridged. One stale target refuses the whole batch.
  *
  * Each distinct target and room is read once per call, not once per item: a busy seat rechecks
- * its full batch every 30 seconds for up to an hour (DOR-4722).
+ * its full batch every 30 seconds for as long as its notes wait (DOR-4722, `seat-message-settlements.ts`).
  *
  * @param core - The room core the seat lives in.
  * @param batch - The pending items about to share one private turn.

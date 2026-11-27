@@ -1,5 +1,7 @@
 /** Hermetic document input assertions at the actual runtime request boundary. */
 import { expect } from 'vitest';
+// Runtimes render document events through the agent facts port, wired as boot does.
+import '../../core/agent-identity/__tests__/wire-test-facts.js';
 import { types } from 'node:util';
 import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 

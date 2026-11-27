@@ -31,7 +31,7 @@ import type {
 } from '@dorkos/shared/workspace';
 import { readProjectRootUncached } from '../core/project-root/resolve-project-root.js';
 import { runSafeGit } from '@dorkos/shared/safe-git';
-import { mayRunGitHere } from '../core/agent-identity/index.js';
+import { workspaceFacts } from './agent-facts.js';
 
 /**
  * Per-git-command ceiling. Short on purpose: the scan answers an HTTP request,
@@ -131,7 +131,7 @@ async function inspectCheckout(checkoutPath: string, project: string): Promise<W
     lastCommitAt: null,
     readable: false,
   };
-  if (!mayRunGitHere(checkoutPath)) return stub;
+  if (!workspaceFacts().mayRunGit(checkoutPath)) return stub;
 
   try {
     // `--no-optional-locks` is the whole reason this is safe to run against

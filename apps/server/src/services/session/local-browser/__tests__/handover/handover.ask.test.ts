@@ -1,6 +1,8 @@
 /** Asking a person to take the browser, their answers and controls, and what the app hears. */
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+// A launch reads the rooms folder through the agent facts port, wired as boot does.
+import '../../../../core/agent-identity/__tests__/wire-test-facts.js';
 import { BrowserHandover, assertSignInUrl } from '../../handover.js';
 import { HANDED_BACK_MESSAGE, handBackWake } from '../../hand-back-wake/index.js';
 import { handBackWakeHarness } from '../hand-back-wake-harness.js';

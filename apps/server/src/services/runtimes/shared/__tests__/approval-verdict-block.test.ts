@@ -23,7 +23,11 @@
 import { describe, it, expect, vi } from 'vitest';
 
 // The Claude context-builder pulls app-wide collaborators at module load.
-vi.mock('../../../core/git-status.js', () => ({ getGitStatus: vi.fn() }));
+vi.mock('../../../core/git-status.js', async (importOriginal) => ({
+  // The real module keeps the agent facts slot it holds; only the read is faked.
+  ...(await importOriginal<typeof import('../../../core/git-status.js')>()),
+  getGitStatus: vi.fn(),
+}));
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn() }));
 vi.mock('../../../../lib/logger.js', () => ({
   logger: {

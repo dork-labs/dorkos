@@ -97,7 +97,7 @@ import type {
   SdkPluginConfig,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { EffortLevel } from '@dorkos/shared/types';
-import { AGENT_TOKEN_ENV_VAR } from '../../../core/agent-identity/index.js';
+import { AGENT_TOKEN_ENV_VAR } from '@dorkos/shared/agent-facts';
 import { TURN_REFERENCE_ENV_NAMES } from '../../shared/references/turn-reference-env.js';
 import { directoryGrantsFingerprint } from '@dorkos/shared/directory-grants';
 import { grantsFromSettings } from '../messaging/directory-grants.js';

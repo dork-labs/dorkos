@@ -8,6 +8,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+// Computer-side code reads agent facts through the port, wired as boot does.
+import '../../../../core/agent-identity/__tests__/wire-test-facts.js';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { setAgentHomeRegistry } from '../../../../core/agent-identity/index.js';
 import { CommandRegistryService } from '../command-registry.js';

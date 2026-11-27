@@ -26,10 +26,13 @@ import {
   type AgentIdentity,
 } from './agent-identity-service.js';
 import type { CapabilityInvocationContext } from '../capabilities/index.js';
-import { homeOf, type HomeResolution } from './agent-home.js';
+import {
+  AGENT_TOKEN_ENV_VAR,
+  createInSessionContextResolver as resolveInSessionContext,
+  type HomeResolution,
+} from '@dorkos/shared/agent-facts';
 
-/** The env var a spawned agent reads its identity token from. */
-export const AGENT_TOKEN_ENV_VAR = 'DORKOS_AGENT_TOKEN';
+export { AGENT_TOKEN_ENV_VAR };
 
 /**
  * Mint a fresh identity token for the agent rooted at `agentPath` and return it
@@ -195,29 +198,28 @@ export async function ensureInSessionAgentIdentity(
 export function createInSessionContextResolver(
   anchor: HomeResolution | undefined
 ): () => Promise<CapabilityInvocationContext | undefined> {
-  let pending: Promise<CapabilityInvocationContext | undefined> | undefined;
+  return resolveInSessionContext(anchor, describeInSessionAgent);
+}
 
-  return () => {
-    pending ??= (async () => {
-      if (anchor?.kind === 'refused') return { agentIdentityPresented: true };
-      const agentPath = anchor ? homeOf(anchor) : undefined;
-      if (!agentPath) return undefined;
-
-      const service = getAgentIdentityService();
-      if (!service) return undefined;
-
-      try {
-        const identity = await service.describeAgent(agentPath);
-        return identity ? { identity } : undefined;
-      } catch (err) {
-        // Attribution is a side channel: never fail the agent's tool call.
-        logger.debug('[agent-identity] In-session identity lookup failed', {
-          agentPath,
-          err: String(err),
-        });
-        return undefined;
-      }
-    })();
-    return pending;
-  };
+/**
+ * Who an agent is, from the identity service, or `undefined` when there is no
+ * service or the lookup failed. Attribution is a side channel: it never fails
+ * the agent's tool call.
+ *
+ * @param agentPath - The agent's home.
+ */
+export async function describeInSessionAgent(
+  agentPath: string
+): Promise<AgentIdentity | undefined> {
+  const service = getAgentIdentityService();
+  if (!service) return undefined;
+  try {
+    return await service.describeAgent(agentPath);
+  } catch (err) {
+    logger.debug('[agent-identity] In-session identity lookup failed', {
+      agentPath,
+      err: String(err),
+    });
+    return undefined;
+  }
 }

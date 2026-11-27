@@ -2,7 +2,7 @@
 import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
-import type { AgentHome } from '../../core/agent-identity/index.js';
+import type { AgentHome } from '@dorkos/shared/agent-facts';
 import { buildAgentContextAppend } from '../shared/agent-context.js';
 import type { AgentContextSource } from '../shared/source/agent-context-source.js';
 import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
@@ -10,7 +10,7 @@ import { formatAccountsAccess } from '../shared/accounts-access-context.js';
 import { formatContextWarning } from '../shared/prose/context-warning-block.js';
 import { formatRoomContext } from '../shared/room-context-block.js';
 import { renderProseContextBlock, type ProseContextEntry } from '../shared/prose/prose-context.js';
-import { renderDocEvents } from '../../canvas/doc-channel/prompt.js';
+import { runtimeFacts } from '../agent-facts.js';
 import { GEN_UI_CONTEXT } from '../shared/gen-ui-context.js';
 import { dorkosToolNameFor } from '../shared/dorkos-tool-names.js';
 import {
@@ -23,7 +23,7 @@ import { joinFitted, type ContextPart } from '../../session/context-window/conte
 export function renderDoeContextEntry(entry: AdditionalContextEntry): string {
   switch (entry.kind) {
     case 'doc_events':
-      return renderDocEvents(entry.data);
+      return runtimeFacts().renderDocEvents(entry.data);
     case 'git_status':
     case 'env':
     case 'relay_context':

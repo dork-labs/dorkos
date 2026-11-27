@@ -11,8 +11,7 @@
 import type { AgentContextSource } from '../../shared/source/agent-context-source.js';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 
-import { isRelayEnabled } from '../../../relay/relay-state.js';
-import { isTasksEnabled } from '../../../tasks/task-state.js';
+import { runtimeFacts } from '../../agent-facts.js';
 
 /**
  * Which of the switchable tool-doc blocks this agent is given.
@@ -47,12 +46,13 @@ export interface ToolDocGates {
  */
 export function toolDocGates(blockedAreas: readonly PermissionAreaId[]): ToolDocGates {
   const blocked = new Set(blockedAreas);
+  const { tasksEnabled, relayEnabled } = runtimeFacts().promptFacts();
   return {
-    tasks: isTasksEnabled() && !blocked.has('tasks'),
+    tasks: tasksEnabled && !blocked.has('tasks'),
     messages: !blocked.has('messages'),
-    relay: isRelayEnabled() && !blocked.has('messages'),
+    relay: relayEnabled && !blocked.has('messages'),
     mesh: !blocked.has('agents'),
-    adapter: isRelayEnabled() && !blocked.has('connections'),
+    adapter: relayEnabled && !blocked.has('connections'),
     packages: !blocked.has('packages'),
   };
 }

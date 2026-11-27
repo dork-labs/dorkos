@@ -5,6 +5,8 @@
  * generic fetch layer would swallow into a opaque error.
  */
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
+// Computer-side code reads agent facts through the port, wired as boot does.
+import '../../services/core/agent-identity/__tests__/wire-test-facts.js';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { mkdtemp, rm, mkdir, realpath, writeFile } from 'node:fs/promises';

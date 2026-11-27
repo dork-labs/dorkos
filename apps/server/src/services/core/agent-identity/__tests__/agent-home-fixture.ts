@@ -7,6 +7,9 @@
  */
 import path from 'node:path';
 import { setAgentHomeRegistry, type AgentHome, type AgentHomeRegistry } from '../agent-home.js';
+// Computer-side code reads homes through the agent facts port, so a suite that
+// registers homes here sees them there too.
+import './wire-test-facts.js';
 
 /**
  * Register `homes` as the only agent homes, and return a mutable handle.

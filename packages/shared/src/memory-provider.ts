@@ -905,3 +905,20 @@ export interface MemoryProvider {
    */
   readNote(ref: AgentMemoryRef, name: MemoryNoteName): Promise<MemorySnapshot>;
 }
+
+// ---------------------------------------------------------------------------
+// The memory tools' names
+// ---------------------------------------------------------------------------
+
+/** The tool name `memory.write` is registered under. */
+export const MEMORY_WRITE_TOOL_NAME = 'memory_write';
+
+/** The tool name `memory.read` is registered under. */
+export const MEMORY_READ_TOOL_NAME = 'memory_read';
+
+/**
+ * Both memory tools. One spread keeps a list from naming one and forgetting the
+ * other: they share the same jail (the caller's own memory, by identity) and
+ * the same reason to need no card.
+ */
+export const MEMORY_TOOL_NAMES = [MEMORY_WRITE_TOOL_NAME, MEMORY_READ_TOOL_NAME] as const;

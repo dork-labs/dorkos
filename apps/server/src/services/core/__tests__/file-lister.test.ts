@@ -35,6 +35,9 @@ describe('FileListService', () => {
 
     fs = await import('fs/promises');
 
+    // The lister reads git's kill switch through the agent facts port, wired as
+    // boot does, into the modules this reset loads fresh.
+    await import('../agent-identity/__tests__/wire-test-facts.js');
     const mod = await import('../file-lister.js');
     fileLister = mod.fileLister;
   });

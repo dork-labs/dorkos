@@ -7,6 +7,8 @@ import type { RequestListener } from 'node:http';
 import type { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { frontDoorListener } from '../front-door.js';
 import { composeFrontDoor, type HonoApiDeps } from '../hono-api.js';
+// The composed app launches turns, which read agent facts through the port; wired as boot does.
+import '../../services/core/agent-identity/__tests__/wire-test-facts.js';
 
 /**
  * A Node request listener routing as the running server does

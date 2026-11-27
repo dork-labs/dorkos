@@ -151,13 +151,14 @@ describe('bounded seat queues', () => {
       expect(turns.filter((turn) => turn.prompt.includes(`${n}:`))).toHaveLength(1);
   });
 
-  it('M9: an hour waiting settles failed and shutdown clears release waits', async () => {
+  it('M9: two minutes waiting settles failed and shutdown clears release waits', async () => {
     vi.useFakeTimers();
     hold();
     const receipt = await chats.send(caller, { to: 'seat-chat', message: 'expires' });
-    await vi.advanceTimersByTimeAsync(60 * 60_000 + 1);
-    await seatInbox?.idle();
+    await vi.advanceTimersByTimeAsync(2 * 60_000 + 1);
+    // Checked before idle(), so a note still waiting fails here, not on a timeout.
     expect(receipts.get(receipt.messageId)?.status).toBe('failed');
+    await seatInbox?.idle();
     expect(turns).toHaveLength(0);
     expect(vi.getTimerCount()).toBe(0);
   });

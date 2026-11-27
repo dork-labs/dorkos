@@ -12,7 +12,8 @@
  * @module services/runtimes/claude-code/launch-account-check
  */
 import type { ProjectRef } from '@dorkos/shared/project-schemas';
-import { homeOf, readHomeManifest, resolveAgentHome } from '../../core/agent-identity/index.js';
+import { homeOf, readHomeManifest } from '@dorkos/shared/agent-facts';
+import { runtimeFacts } from '../agent-facts.js';
 import {
   projectOfFolder,
   type LaunchAccountResolution,
@@ -37,7 +38,7 @@ export async function checkClaudeLaunchAccount(opts: {
   hintId?: string | undefined;
   project?: ProjectRef | null;
 }): Promise<LaunchAccountResolution> {
-  const home = homeOf(resolveAgentHome(opts.cwd));
+  const home = homeOf(runtimeFacts().home(opts.cwd));
   const manifest = home ? await readHomeManifest(home).catch(() => null) : null;
   return resolveLaunchAccountRoot({
     hintId: opts.hintId,

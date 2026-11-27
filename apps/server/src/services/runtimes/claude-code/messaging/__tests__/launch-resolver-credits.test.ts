@@ -57,10 +57,6 @@ vi.mock('../../../../core/config-manager.js', () => ({
 vi.mock('../../../../core/credential-env.js', () => ({
   resolveClaudeCredentialEnv: vi.fn().mockResolvedValue({}),
 }));
-vi.mock('../../../../core/agent-identity/index.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../../core/agent-identity/index.js')>()),
-  resolveAgentTokenEnv: vi.fn().mockResolvedValue({}),
-}));
 vi.mock('../../../../core/cloud/v1-client.js', () => ({
   isCloudLinked: () => link.linked,
   readCloudInstanceToken: () => (link.linked ? 'ik' : null),

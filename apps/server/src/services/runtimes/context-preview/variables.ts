@@ -16,7 +16,7 @@
  */
 import type { InstructionsVariable } from '@dorkos/shared/agent-instructions-schemas';
 import type { MemorySnapshot } from '@dorkos/shared/memory-provider';
-import type { AgentHome } from '../../core/agent-identity/index.js';
+import type { AgentHome } from '@dorkos/shared/agent-facts';
 import {
   diskContextSource,
   type AgentContextSource,

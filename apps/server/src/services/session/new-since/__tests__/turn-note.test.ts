@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+// Computer-side code reads agent facts through the port, wired as boot does.
+import '../../../core/agent-identity/__tests__/wire-test-facts.js';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -9,6 +11,7 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { triggerTurn, type TriggerTurnOpts } from '../../trigger-turn.js';
 import { disposeProjector, getOrCreateProjector } from '../../session-state-projector.js';
 import * as identity from '../../../core/agent-identity/index.js';
+import * as agentFacts from '@dorkos/shared/agent-facts';
 import * as seen from '../seen-versions.js';
 
 vi.mock('../../context-assembler.js', () => ({ assembleAdditionalContext: async () => [] }));
@@ -41,7 +44,7 @@ beforeEach(async () => {
     managedWorkspaceOwner: () => null,
     roomsDir: null,
   });
-  vi.spyOn(identity, 'readHomeManifest').mockResolvedValue({ id: 'ana' } as never);
+  vi.spyOn(agentFacts, 'readHomeManifest').mockResolvedValue({ id: 'ana' } as never);
 });
 afterEach(async () => {
   for (const id of sessions.splice(0)) disposeProjector(id);
