@@ -35,6 +35,7 @@ import type { Task } from '@dorkos/shared/schemas';
 import type { DeliveryMetrics } from '@dorkos/shared/relay-schemas';
 import { createExternalMcpServer } from '../mcp-server.js';
 import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
+import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import {
   clearTestHomes,
   registerEveryFolderAsHome,
@@ -292,5 +293,60 @@ describe('external MCP structured-output tools (real tools/call pipeline)', () =
     } finally {
       await badClient.close();
     }
+  });
+});
+
+describe('mesh_list on /mcp seals its cursor to the request’s caller (DOR-5480)', () => {
+  // Purpose: the /mcp door must hand each request's caller to mesh_list, or a
+  // cursor an agent was given would go on for the person (and the reverse).
+  const OLDER = {
+    ...MANIFEST,
+    id: '01JX4MP1E0000000000000OLDR',
+    registeredAt: '2026-11-01T00:00:00.000Z',
+  };
+  const deps = {
+    transcriptReader: {} as McpToolDeps['transcriptReader'],
+    defaultCwd: tmpdir(),
+    dorkHome: '/tmp/dorkos-test-home',
+    meshCore: {
+      list: () => [MANIFEST, OLDER],
+      getSubject: () => null,
+      getProjectPath: () => undefined,
+    } as unknown as McpToolDeps['meshCore'],
+  } satisfies McpToolDeps;
+
+  async function callAs(identity: AgentIdentity | undefined, args: Record<string, unknown>) {
+    const server = createExternalMcpServer(deps, undefined, undefined, identity);
+    const client = new Client({ name: 'mesh-list-cursor-test', version: '1.0.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    try {
+      return (await client.callTool({ name: 'mesh_list', arguments: args })) as CallToolResult;
+    } finally {
+      await client.close();
+    }
+  }
+
+  it('refuses an agent’s cursor to the person', async () => {
+    const agent = {
+      agentPath: tmpdir(),
+      displayName: 'Scout',
+      createdAt: NOW,
+    } as AgentIdentity;
+    const first = await callAs(agent, { limit: 1 });
+    expect(first.isError).toBeFalsy();
+    const cursor = (first.structuredContent as { nextCursor: string }).nextCursor;
+    expect(cursor).toEqual(expect.any(String));
+
+    const asAgent = await callAs(agent, { limit: 1, cursor });
+    expect(asAgent.isError).toBeFalsy();
+    expect((asAgent.structuredContent as { agents: { id: string }[] }).agents[0]?.id).toBe(
+      OLDER.id
+    );
+
+    const asPerson = await callAs(undefined, { limit: 1, cursor });
+    expect(asPerson.isError).toBe(true);
+    const [block] = asPerson.content as { type: 'text'; text: string }[];
+    expect(JSON.parse(block!.text)).toMatchObject({ code: 'INVALID_CURSOR' });
   });
 });

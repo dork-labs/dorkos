@@ -400,7 +400,8 @@ export function createMeshQueryTopologyHandler(deps: AgentToolDeps) {
  * every tool regardless of feature flags.
  *
  * @param deps - Shared MCP tool dependencies.
- * @param reader - Who is asking, read per call, for `mesh_list`'s cursor seal.
+ * @param reader - Who is asking, for `mesh_list`'s cursor seal: fixed when this tool set is
+ *   built (once per session in session, once per request on `/mcp`); the person when absent.
  */
 export function meshToolDefinitions(deps: AgentToolDeps, reader?: () => PageCaller) {
   return [
@@ -532,7 +533,8 @@ export function meshToolDefinitions(deps: AgentToolDeps, reader?: () => PageCall
  * The mesh tools for the in-session server — only when meshCore is provided.
  *
  * @param deps - Shared MCP tool dependencies.
- * @param reader - Who is asking, read per call, for `mesh_list`'s cursor seal.
+ * @param reader - Who is asking, for `mesh_list`'s cursor seal: fixed when this tool set is
+ *   built (once per session in session, once per request on `/mcp`); the person when absent.
  */
 export function getMeshTools(deps: AgentToolDeps, reader?: () => PageCaller) {
   if (!deps.meshCore) return [];

@@ -1463,11 +1463,11 @@ Lightweight agent list returning only IDs and project paths. Used by onboarding 
 
 ### GET /api/mesh/agents
 
-List all registered agents in the mesh.
+List all registered agents in the mesh, newest registered first, a page at a time (`cursor`, `limit` up to 200, default 50). The `mesh_list` agent tool pages the same way.
 
 **Responses:**
 
-- `200` - `{ agents: AgentManifest[] }`
+- `200` - `{ agents: AgentManifest[], nextCursor: string | null }`
 
 ### PATCH /api/mesh/agents/:id
 
