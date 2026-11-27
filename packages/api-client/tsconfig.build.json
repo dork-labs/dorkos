@@ -1,0 +1,10 @@
+{
+  // The EMIT program: src/ without its tests. The reasoning for the split is in
+  // apps/server/tsconfig.build.json (DOR-508).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./src"
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "src/**/__tests__/**"]
+}

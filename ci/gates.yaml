@@ -207,7 +207,7 @@ gates:
     purpose: In a merge group only, checks whether openapi-fresh already succeeded on the entry PR's current head, so the queue can skip re-running it (DOR-5130); any doubt runs the real check.
   - id: wf.docs-openapi-check.openapi-fresh
     source: .github/workflows/docs-openapi-check.yml
-    purpose: Fails when the committed OpenAPI spec or generated API reference has drifted from the Zod schemas.
+    purpose: Fails when the committed OpenAPI spec, the generated API reference or the generated API client has drifted from the Zod schemas.
 
   # --- evals.yml ---
   - id: wf.evals.structural
