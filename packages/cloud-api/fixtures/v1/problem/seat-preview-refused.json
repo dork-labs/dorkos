@@ -1,0 +1,9 @@
+{
+  "code": "person_seat_required",
+  "status": 403,
+  "title": "This space has no room for another person.",
+  "detail": "The text the service chose to explain why one more person cannot join.",
+  "actionUrl": "https://account.example.invalid/seats",
+  "actionLabel": "Open your account",
+  "instance": "req_5e6f7a81"
+}

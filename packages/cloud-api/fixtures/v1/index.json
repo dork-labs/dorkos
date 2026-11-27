@@ -4,6 +4,7 @@
   "fixtures": {
     "problem/unauthenticated.json": "ProblemSchema",
     "problem/person-seat-required.json": "ProblemSchema",
+    "problem/seat-preview-refused.json": "ProblemSchema",
     "problem/handle-tombstoned.json": "ProblemSchema",
     "problem/malformed-identifier.json": "ProblemSchema",
     "problem/malformed-request.json": "ProblemSchema",
@@ -101,6 +102,10 @@
     "communities/name-check-free.json": "CommunityNameCheckResponseSchema",
     "communities/name-check-taken.json": "CommunityNameCheckResponseSchema",
     "communities/claim-link.json": "CommunityClaimLinkSchema",
+    "communities/seat-preview.json": "CommunitySeatPreviewSchema",
+    "communities/seat-preview-adds-seat.json": "CommunitySeatPreviewSchema",
+    "communities/seat-preview-uncounted.json": "CommunitySeatPreviewSchema",
+    "communities/seat-preview-each-counted.json": "CommunitySeatPreviewSchema",
     "communities/keep.json": "CommunityKeepResponseSchema",
     "communities/move-start-request.json": "CommunityMoveStartRequestSchema",
     "communities/move-start.json": "CommunityMoveStartResponseSchema",
