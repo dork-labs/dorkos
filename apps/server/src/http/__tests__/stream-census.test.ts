@@ -17,6 +17,9 @@
  *   stream public docs point at is at least `preview` (the rule for a group in
  *   `contributing/api-reference.md`).
  *
+ * A stream that cannot be described yet waits on {@link NOT_DOCUMENTED_YET},
+ * with the reason and what ends the wait.
+ *
  * Streams outside `/api` speak another protocol with its own specification
  * ({@link OTHER_PROTOCOL_STREAMS}); they are checked only to be served.
  *
@@ -105,6 +108,15 @@ const SOURCES: Readonly<Record<string, Source>> = {
   },
 };
 
+/**
+ * `/api` streams kept out of the API document for now, each with why and what
+ * ends the wait. Documenting one before its path is fixed would raise the API
+ * lint's `verb-path` count.
+ */
+const NOT_DOCUMENTED_YET: Readonly<Record<string, string>> = {
+  'POST /api/discovery/scan': 'verb path; renamed in A5 (DOR-4982), then documented',
+};
+
 /** Streams outside `/api`, each with the specification that describes it. */
 const OTHER_PROTOCOL_STREAMS: Readonly<Record<string, string>> = {
   'GET /mcp': 'MCP Streamable HTTP (the MCP specification)',
@@ -166,6 +178,8 @@ function pathPattern(route: string): RegExp {
 const API_STREAMS = HAND_ROUTE_ALLOWLIST.filter((entry) => entry.category === 'stream').map(
   (entry) => `${entry.method} ${entry.path}`
 );
+/** The `/api` streams the document describes: all but those waiting. */
+const DOCUMENTED_STREAMS = API_STREAMS.filter((route) => !(route in NOT_DOCUMENTED_YET));
 
 describe('stream census', () => {
   const doc = generateOpenAPISpec();
@@ -191,7 +205,7 @@ describe('stream census', () => {
 
   it('describes every /api stream in the API document, with typed frames', () => {
     const undescribed: string[] = [];
-    for (const route of API_STREAMS) {
+    for (const route of DOCUMENTED_STREAMS) {
       const [method = '', routePath = ''] = documentKey(route).split(' ');
       const operation = doc.paths?.[routePath]?.[method.toLowerCase() as 'get'] as
         | { responses?: Record<string, { content?: Record<string, { schema?: object }> }> }
@@ -212,7 +226,7 @@ describe('stream census', () => {
           : []
       )
     );
-    expect(documented.sort()).toEqual(API_STREAMS.map(documentKey).sort());
+    expect(documented.sort()).toEqual(DOCUMENTED_STREAMS.map(documentKey).sort());
   });
 
   it('keeps internal only the streams no public docs page sends readers to', () => {
@@ -221,7 +235,7 @@ describe('stream census', () => {
       text: readFileSync(page, 'utf8'),
     }));
     const misfiled: string[] = [];
-    for (const route of API_STREAMS) {
+    for (const route of DOCUMENTED_STREAMS) {
       const [method = '', routePath = ''] = documentKey(route).split(' ');
       const operation = doc.paths?.[routePath]?.[method.toLowerCase() as 'get'] as
         { 'x-stability'?: string } | undefined;
@@ -232,6 +246,10 @@ describe('stream census', () => {
       }
     }
     expect(misfiled).toEqual([]);
+  });
+
+  it('keeps waiting only served /api streams', () => {
+    for (const route of Object.keys(NOT_DOCUMENTED_YET)) expect(API_STREAMS).toContain(route);
   });
 
   it('serves every stream outside /api that it names', () => {

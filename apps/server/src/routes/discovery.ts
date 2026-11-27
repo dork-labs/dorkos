@@ -9,7 +9,7 @@
  */
 import type { ServerResponse } from 'node:http';
 import { Hono } from 'hono';
-import type { z } from 'zod';
+import { z } from 'zod';
 import type { MeshCore } from '@dorkos/mesh';
 import type { ExistingAgent } from '@dorkos/shared/mesh-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -18,7 +18,14 @@ import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { isWithinBoundary, getBoundary } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { createScanBrowserWarner } from '../services/browser/agent-browser-lint.js';
-import { DiscoveryScanRequestSchema } from '../services/core/openapi/served-streams-openapi.js';
+
+/** Zod schema for the POST /scan request body. */
+const ScanRequestSchema = z.object({
+  root: z.string().optional(),
+  roots: z.array(z.string()).optional(),
+  maxDepth: z.number().int().min(1).max(10).optional(),
+  timeout: z.number().int().min(1000).max(120000).optional(),
+});
 
 /**
  * Create the Discovery routes with the SSE scan endpoint.
@@ -30,7 +37,7 @@ export function createDiscoveryRoutes(meshCore: MeshCore): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
 
   router.post('/scan', async (c) => {
-    const parsed = DiscoveryScanRequestSchema.safeParse(readJsonBody(c));
+    const parsed = ScanRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) return validationProblem(c, parsed.error);
     const data = parsed.data;
 
@@ -69,7 +76,7 @@ async function streamScan(
   res: ServerResponse,
   signal: AbortSignal,
   roots: string[],
-  data: z.infer<typeof DiscoveryScanRequestSchema>
+  data: z.infer<typeof ScanRequestSchema>
 ): Promise<void> {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',

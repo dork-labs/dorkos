@@ -333,7 +333,6 @@
   "POST /api/diff/baseline/advance": "diff.advance_baseline",
   "POST /api/diff/revert": "diff.revert",
   "POST /api/direct-chats": "directChats.create",
-  "POST /api/discovery/scan": "discovery.scan",
   "POST /api/extension-decisions/{id}/action": "extensionDecisions.createAction",
   "POST /api/extension-decisions/{id}/offer": "extensionDecisions.createOffer",
   "POST /api/extensions/approve-set": "extensions.approveSet",

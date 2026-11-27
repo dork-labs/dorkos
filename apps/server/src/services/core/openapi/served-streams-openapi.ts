@@ -1,10 +1,10 @@
 /**
  * The event streams the API document did not describe yet (DOR-4986): a
- * remote space room, a mini app's room thread, a folder scan, and the runtime
- * installs that stream their progress. Every one of them is in an `internal`
+ * remote space room, a mini app's room thread, and the runtime installs that
+ * stream their progress. Every one of them is in an `internal`
  * route group, so each lands in the internal part of the document; the census
  * (`http/__tests__/stream-census.test.ts`) holds that every served stream is
- * described somewhere.
+ * described somewhere, or on its short list of streams waiting to be.
  *
  * The chat, room, global and hub streams are described beside their other
  * routes (`openapi-registry.ts`, `events-openapi.ts`, `hub-computers-openapi.ts`).
@@ -21,12 +21,6 @@ import { z } from 'zod';
 import type { RoomThreadEntry } from '@dorkos/extension-api';
 import { RemoteCommunityEventSchema } from '@dorkos/shared/community-views';
 import {
-  AgentRuntimeSchema,
-  DiscoveryCandidateSchema,
-  ScanProgressSchema,
-  type ExistingAgent,
-} from '@dorkos/shared/mesh-schemas';
-import {
   OLLAMA_TAG_PATTERN,
   type OllamaProvisionResult,
   type OllamaPullProgress,
@@ -34,14 +28,6 @@ import {
 } from '@dorkos/shared/runtime-connect';
 import type { RuntimeProvisionProgress, RuntimeProvisionResult } from '@dorkos/shared/transport';
 import { problemResponse } from './problem-openapi.js';
-
-/** The body of `POST /api/discovery/scan`, which the route parses with it. */
-export const DiscoveryScanRequestSchema = z.object({
-  root: z.string().optional(),
-  roots: z.array(z.string()).optional(),
-  maxDepth: z.number().int().min(1).max(10).optional(),
-  timeout: z.number().int().min(1000).max(120000).optional(),
-});
 
 /** The body of `POST /api/runtimes/opencode/ollama/pull`, which the route parses with it. */
 export const OllamaPullRequestSchema = z.object({
@@ -61,13 +47,6 @@ const RoomThreadEntrySchema = z.object({
   }),
   createdAt: z.string(),
   text: z.string(),
-});
-
-const ExistingAgentSchema = z.object({
-  path: z.string(),
-  name: z.string(),
-  runtime: AgentRuntimeSchema,
-  description: z.string(),
 });
 
 const RuntimeProvisionProgressSchema = z.object({
@@ -195,36 +174,6 @@ export function registerServedStreamsOpenApi(registry: OpenAPIRegistry): void {
 
   registry.registerPath({
     method: 'post',
-    path: '/api/discovery/scan',
-    tags: ['Discovery'],
-    summary: 'Scan folders for agents and projects (SSE)',
-    description:
-      'Walks the folders named (the boundary when none) and streams what it finds: `candidate` frames for projects that could become agents, `existing-agent` frames for agents it registered from their own `.dork/agent.json`, `progress` frames, then `complete`. An `error` frame says the scan stopped early.',
-    request: {
-      body: { content: { 'application/json': { schema: DiscoveryScanRequestSchema } } },
-    },
-    responses: {
-      200: eventStream(
-        "An SSE stream. Each frame's `data:` is, by its `event:`: a `DiscoveryCandidate` (`candidate`), an existing agent (`existing-agent`), a `ScanProgress` (`progress`), the same with `timedOut` (`complete`), or `{ error }` (`error`).",
-        z.union([
-          DiscoveryCandidateSchema,
-          ExistingAgentSchema.describe('An `existing-agent` frame.'),
-          ScanProgressSchema,
-          z
-            .object({ ...ScanProgressSchema.shape, timedOut: z.boolean() })
-            .describe('The `complete` frame.'),
-          z.object({ error: z.string() }).describe('An `error` frame.'),
-        ])
-      ),
-      400: problemResponse('The body did not pass its checks.'),
-      403: problemResponse('`outside_boundary`: a folder is outside the ones DorkOS may use.'),
-    },
-  });
-
-  // One call per path, each spelled out: the API lint matches a registration to
-  // the hand-route allowlist by its literal path.
-  registry.registerPath({
-    method: 'post',
     path: '/api/runtimes/claude-code/provision',
     tags: ['Runtimes'],
     summary: 'Install Claude Code on this computer (SSE)',
@@ -283,7 +232,6 @@ type SameKeys<A, B> = [keyof A] extends [keyof B]
  */
 const mirrors = {
   entry: true satisfies SameKeys<z.infer<typeof RoomThreadEntrySchema>, RoomThreadEntry>,
-  existingAgent: true satisfies SameKeys<z.infer<typeof ExistingAgentSchema>, ExistingAgent>,
   provisionProgress: true satisfies SameKeys<
     z.infer<typeof RuntimeProvisionProgressSchema>,
     RuntimeProvisionProgress
@@ -307,7 +255,6 @@ const mirrors = {
 type Fits<T, S extends z.ZodType> = T extends z.infer<S> ? true : false;
 const fits = {
   entry: true satisfies Fits<RoomThreadEntry, typeof RoomThreadEntrySchema>,
-  existingAgent: true satisfies Fits<ExistingAgent, typeof ExistingAgentSchema>,
   provisionProgress: true satisfies Fits<
     RuntimeProvisionProgress,
     typeof RuntimeProvisionProgressSchema

@@ -9534,26 +9534,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/discovery/scan": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Scan folders for agents and projects (SSE)
-         * @description Walks the folders named (the boundary when none) and streams what it finds: `candidate` frames for projects that could become agents, `existing-agent` frames for agents it registered from their own `.dork/agent.json`, `progress` frames, then `complete`. An `error` frame says the scan stopped early.
-         */
-        post: operations["discovery.scan"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/runtimes/claude-code/provision": {
         parameters: {
             query?: never;
@@ -16472,10 +16452,6 @@ export interface components {
         ExtensionMediaTicketRequest: {
             /** @description The path below the app, e.g. `/videos/intro.mp4`. No query, no empty, `.` or `..` part, and no `%`, `\`, `#` or control character. */
             path: string;
-        };
-        ScanProgress: {
-            scannedDirs: number;
-            foundAgents: number;
         };
     };
     responses: {
@@ -65057,64 +65033,6 @@ export interface operations {
             };
             /** @description No such mini app, room or thread, or the person cannot read it. */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    "discovery.scan": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": {
-                    root?: string;
-                    roots?: string[];
-                    maxDepth?: number;
-                    timeout?: number;
-                };
-            };
-        };
-        responses: {
-            /** @description An SSE stream. Each frame's `data:` is, by its `event:`: a `DiscoveryCandidate` (`candidate`), an existing agent (`existing-agent`), a `ScanProgress` (`progress`), the same with `timedOut` (`complete`), or `{ error }` (`error`). */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": components["schemas"]["DiscoveryCandidate"] | {
-                        path: string;
-                        name: string;
-                        runtime: components["schemas"]["AgentRuntime"];
-                        description: string;
-                    } | components["schemas"]["ScanProgress"] | {
-                        scannedDirs: number;
-                        foundAgents: number;
-                        timedOut: boolean;
-                    } | {
-                        error: string;
-                    };
-                };
-            };
-            /** @description The body did not pass its checks. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description `outside_boundary`: a folder is outside the ones DorkOS may use. */
-            403: {
                 headers: {
                     [name: string]: unknown;
                 };
