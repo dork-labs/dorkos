@@ -5,7 +5,7 @@
  * one sign-in. The owner's management doors (`owner-management-capabilities.ts`)
  * share these deps, this bar and these refusals.
  *
- * **Behind the account-decision bar, every door** (`http.ownerBar:
+ * **Behind the account-decision bar, every door** (`http.callerBar:
  * 'account-decision'`, `lib/http/account-decision-bar.ts`): the mount runs it before
  * the handler on the REST path and on `/invoke`, and hands the handler the
  * server-owned owner as `context.ownerAuthority`. Person-only, with no MCP
@@ -14,8 +14,9 @@
  * the hand group did.
  *
  * The rest of the groups stay hand routes for now (`routes/connector-resources.ts`,
- * `routes/connector-management.ts`): the lists until they page, the reads that
- * set their own caching or follow the client going away, the writes a Wi-Fi
+ * `routes/connector-management.ts`): the lists that page but follow the client
+ * going away or need agent identity (the paged lists the mount serves are in
+ * `owner-lists/`), the reads that set their own caching or follow the client going away, the writes a Wi-Fi
  * sign-in may make, and every write that waits on "Confirm it's you".
  *
  * @module services/connectors/resources/owner-capabilities
@@ -63,7 +64,14 @@ import type { ConnectionManagementDeps } from './owner-door-types.js';
 /** What the owner's connection doors read: the services the hand routes hold. */
 export interface ConnectionOwnerDeps extends ConnectionManagementDeps {
   /** The owner's reads of accounts. */
-  readonly query: Pick<ConnectorOperatorQueryService, 'disconnectImpact'>;
+  readonly query: Pick<
+    ConnectorOperatorQueryService,
+    | 'disconnectImpact'
+    | 'everyAgentGrants'
+    | 'agentConnections'
+    | 'sessionConnections'
+    | 'createdAtOf'
+  >;
   /** Local lifecycle changes. */
   readonly lifecycle: Pick<ConnectorLifecycleService, 'rename' | 'remove'>;
   /** The owner's sign-ins to an app. */
@@ -177,8 +185,11 @@ export function knownConnectionRefusal(
  * Only the code is logged; anything unknown is logged and answered as a
  * generic failure, as the hand routes did. A schema error is thrown on, so
  * the mount answers it as the hand routes did (`invalid_request`).
+ *
+ * @param deps - The registry's deps, for the managed-cloud reader.
+ * @param error - What the service threw.
  */
-function connectionRefusal(deps: CapabilityDeps, error: unknown): never {
+export function connectionRefusal(deps: CapabilityDeps, error: unknown): never {
   if (error instanceof z.ZodError) throw error;
   if (error instanceof ConnectorLifecycleError) {
     logger.info('[connectors] a request was refused', { code: error.code });
@@ -199,7 +210,7 @@ function connectionRefusal(deps: CapabilityDeps, error: unknown): never {
 /** The bar every door declares, with the connections' own `owner_only` sentence. */
 export const OWNER_BAR = {
   audience: 'person',
-  ownerBar: 'account-decision',
+  callerBar: 'account-decision',
   ownerOnly: ACCOUNT_DECISION_OWNER_ONLY[0],
   precheck: 'connector-store',
 } as const satisfies Partial<HttpSurface>;

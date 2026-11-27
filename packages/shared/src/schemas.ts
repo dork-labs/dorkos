@@ -63,6 +63,7 @@ export {
  */
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
+import { nextCursorOutput, PageQuerySchema } from './paging.js';
 // `ClientContextSchema` lives in additional-context.ts (which imports UiStateSchema
 // from here). The reference below is wrapped in `z.lazy`, so this cyclic import is
 // resolved at validation time, not module-load time — no initialization hazard.
@@ -1734,18 +1735,15 @@ export const SubmitElicitationRequestSchema = z
 
 export type SubmitElicitationRequest = z.infer<typeof SubmitElicitationRequestSchema>;
 
-export const ListSessionsQuerySchema = z
-  .object({
-    limit: z.coerce.number().int().min(1).max(500).optional().default(200),
-    cwd: z.string().optional(),
-    /**
-     * Filter the list to sessions owned by a single runtime type (e.g.
-     * `'claude-code'`). Must name a runtime registered on the server —
-     * unknown types are rejected with a 400 `UNKNOWN_RUNTIME`.
-     */
-    runtime: z.string().optional(),
-  })
-  .openapi('ListSessionsQuery');
+export const ListSessionsQuerySchema = PageQuerySchema.extend({
+  cwd: z.string().optional(),
+  /**
+   * Filter the list to sessions owned by a single runtime type (e.g.
+   * `'claude-code'`). Must name a runtime registered on the server —
+   * unknown types are rejected with a 400 `UNKNOWN_RUNTIME`.
+   */
+  runtime: z.string().optional(),
+}).openapi('ListSessionsQuery');
 
 export type ListSessionsQuery = z.infer<typeof ListSessionsQuerySchema>;
 
@@ -1787,8 +1785,9 @@ export type SessionListWarning = z.infer<typeof SessionListWarningSchema>;
  */
 export const SessionListResponseSchema = z
   .object({
-    /** Merged across runtimes, sorted by `updatedAt` descending. */
+    /** One page, merged across runtimes, latest activity first (`updatedAt`, then id). */
     sessions: z.array(SessionSchema),
+    nextCursor: nextCursorOutput,
     /** Present only when at least one runtime failed or timed out. */
     warnings: z.array(SessionListWarningSchema).optional(),
     /**
@@ -1803,30 +1802,26 @@ export const SessionListResponseSchema = z
 export type SessionListResponse = z.infer<typeof SessionListResponseSchema>;
 
 /**
- * Query for `GET /api/sessions/recent` (DOR-329): how many most-recent sessions
- * to return across all agents. `limit` is coerced from the query string and
- * validated to 1-50 (default 10); out-of-range values are rejected (400).
+ * Query for `GET /api/sessions/recent` (DOR-329): one page of the most-recent
+ * sessions across all agents, in the one paging shape (`cursor`, `limit`).
  */
-export const RecentSessionsQuerySchema = z
-  .object({
-    limit: z.coerce.number().int().min(1).max(50).default(10),
-    /**
-     * Also return every chat you touched at or after this ISO-8601 time
-     * ({@link SessionSchema}'s `lastTouchedByYouAt`), beyond `limit` (spec
-     * `your-activity-first` D6). The sidebar passes the start of its day, so
-     * no window can drop a chat you used today however busy the agents are.
-     */
-    touchedSince: z.string().datetime({ offset: true }).optional(),
-  })
-  .openapi('RecentSessionsQuery');
+export const RecentSessionsQuerySchema = PageQuerySchema.extend({
+  /**
+   * The first page also returns every chat you touched at or after this
+   * ISO-8601 time ({@link SessionSchema}'s `lastTouchedByYouAt`), beyond
+   * `limit`, and later pages leave them out (spec `your-activity-first` D6).
+   * The sidebar passes the start of its day, so no window drops today's chats.
+   */
+  touchedSince: z.string().datetime({ offset: true }).optional(),
+}).openapi('RecentSessionsQuery');
 
 export type RecentSessionsQuery = z.infer<typeof RecentSessionsQuerySchema>;
 
 /**
  * Response envelope for `GET /api/sessions/recent` (DOR-329, ADR-0310).
  *
- * `sessions` are the most-recent sessions merged across every registered agent,
- * sorted `updatedAt` descending and trimmed to the requested limit.
+ * `sessions` are one page of the sessions merged across every registered agent,
+ * latest `updatedAt` first (then id); `nextCursor` goes on to the next page.
  * `agentActivity` maps each agent's `projectPath` to its latest session
  * `updatedAt` (ISO string), computed before the trim so it is complete even for
  * agents with no session in the top `limit` — it powers the client's per-group
@@ -1836,6 +1831,7 @@ export type RecentSessionsQuery = z.infer<typeof RecentSessionsQuerySchema>;
 export const RecentSessionsResponseSchema = z
   .object({
     sessions: z.array(SessionSchema),
+    nextCursor: nextCursorOutput,
     agentActivity: z.record(z.string(), z.string()),
     warnings: z.array(SessionListWarningSchema).optional(),
   })

@@ -1,12 +1,12 @@
 /**
  * What the work graph's read tools share (W4, DOR-4970; DOR-4972): the ports
  * the composition root hands them, the audit deps they read their reader
- * from, the MCP surface they all take, the page fields, and the store they
- * fail on until startup installs it.
+ * from, the MCP surface they all take, and the store they fail on until
+ * startup installs it. Their page fields are the API's own
+ * (`@dorkos/shared/paging`).
  *
  * @module services/work-graph/reads/read-tool-parts
  */
-import { z } from 'zod';
 import {
   CapabilityToolError,
   type CapabilityDeps,
@@ -64,29 +64,6 @@ export const READ_TOOL = {
   servers: ['in-session', 'external'] as ('in-session' | 'external')[],
   annotations: { idempotentHint: true },
 };
-
-/** The page cursor field. */
-export const cursorInput = z
-  .string()
-  .min(1)
-  .max(4096)
-  .optional()
-  .describe('The `nextCursor` of the page before; leave it out for the first page.');
-
-/**
- * A page size field, 1 to `max`, 50 when left out.
- *
- * @param max - The most one page holds.
- */
-export function limitInput(max: number) {
-  return z.coerce
-    .number()
-    .int()
-    .min(1)
-    .max(max)
-    .default(50)
-    .describe(`How many this page holds, 1 to ${max}.`);
-}
 
 /** The installed database and edge store, or "still starting" until startup installs them. */
 export function workGraphDb(): { db: Db; links: WorkLinkStore } {

@@ -21,7 +21,7 @@
  *   3. **A freshly generated secret** — 32 random bytes, hex-encoded, written to
  *      the persisted file with `0600` permissions and returned. This is the
  *      zero-config path a fresh install lands on. The file is created
- *      exclusively (`@dorkos/shared/secret-file`), so two first boots at once
+ *      exclusively (`lib/secret-store/secret-file`), so two first boots at once
  *      settle on one secret instead of overwriting each other's.
  *
  * The secret value is never logged; only its file path is.
@@ -31,7 +31,7 @@
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { claimSecretText } from '@dorkos/shared/secret-file';
+import { claimSecretText } from '../../../lib/secret-store/secret-file.js';
 import { logger } from '../../../lib/logger.js';
 
 /**

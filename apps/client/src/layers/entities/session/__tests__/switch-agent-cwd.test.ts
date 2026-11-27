@@ -91,11 +91,11 @@ describe('switchAgentCwd', () => {
     const store = makeStore();
     const order: string[] = [];
     store.setSelectedCwd = vi.fn(() => order.push('store'));
-    let answer!: (value: { sessions: Session[] }) => void;
+    let answer!: (value: { sessions: Session[]; nextCursor: null }) => void;
     const transport = createMockTransport({
       listSessions: vi.fn(
         () =>
-          new Promise<{ sessions: Session[] }>((resolve) => {
+          new Promise<{ sessions: Session[]; nextCursor: null }>((resolve) => {
             answer = resolve;
           })
       ),
@@ -110,7 +110,7 @@ describe('switchAgentCwd', () => {
     });
 
     expect(order).toEqual([]); // nothing committed while the lookup is out
-    answer({ sessions: [{ id: 'sess-1' } as Session] });
+    answer({ sessions: [{ id: 'sess-1' } as Session], nextCursor: null });
     await pending;
     expect(order).toEqual(['store', 'navigate']);
   });
@@ -139,7 +139,7 @@ describe('switchAgentCwd', () => {
     // so ANY navigation — a channel, a thread, a Recent row — cancels it.
     const store = makeStore();
     const navigate = vi.fn();
-    let answer!: (value: { sessions: Session[] }) => void;
+    let answer!: (value: { sessions: Session[]; nextCursor: null }) => void;
     let location: AppLocation = {
       pathname: '/session',
       search: { dir: '/home/user/old' },
@@ -147,7 +147,7 @@ describe('switchAgentCwd', () => {
     const transport = createMockTransport({
       listSessions: vi.fn(
         () =>
-          new Promise<{ sessions: Session[] }>((resolve) => {
+          new Promise<{ sessions: Session[]; nextCursor: null }>((resolve) => {
             answer = resolve;
           })
       ),
@@ -161,7 +161,7 @@ describe('switchAgentCwd', () => {
       navigate,
     });
     location = { pathname: '/channels', search: { id: 'c1' } }; // somebody opened a channel
-    answer({ sessions: [{ id: 'sess-1' } as Session] });
+    answer({ sessions: [{ id: 'sess-1' } as Session], nextCursor: null });
     await pending;
 
     expect(navigate).not.toHaveBeenCalled();
@@ -174,7 +174,7 @@ describe('switchAgentCwd', () => {
     // destination it hangs off into history state, so the switch is NOT cancelled.
     const store = makeStore();
     const navigate = vi.fn();
-    let answer!: (value: { sessions: Session[] }) => void;
+    let answer!: (value: { sessions: Session[]; nextCursor: null }) => void;
     let location: AppLocation = {
       pathname: '/session',
       search: { dir: '/home/user/old' },
@@ -182,7 +182,7 @@ describe('switchAgentCwd', () => {
     const transport = createMockTransport({
       listSessions: vi.fn(
         () =>
-          new Promise<{ sessions: Session[] }>((resolve) => {
+          new Promise<{ sessions: Session[]; nextCursor: null }>((resolve) => {
             answer = resolve;
           })
       ),
@@ -203,7 +203,7 @@ describe('switchAgentCwd', () => {
       search: { dir: '/home/user/old', settings: 'open' },
       state: { inPlaceBase: { pathname: '/session', search: { dir: '/home/user/old' } } },
     };
-    answer({ sessions: [{ id: 'sess-1' } as Session] });
+    answer({ sessions: [{ id: 'sess-1' } as Session], nextCursor: null });
 
     return pending.then(() => {
       expect(store.setSelectedCwd).toHaveBeenCalledWith('/home/user/project');

@@ -39,6 +39,7 @@ import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { setStepUpExtensionRiskInputs } from '../../services/extensions/step-up/step-up-extension-risk.js';
 import { useStepUpRiskLedgerFile } from '../../services/extensions/step-up/step-up-risk-ledger.js';
 import { createExtensionsRoutes } from '../extensions.js';
+import { extensionDoorRoutes } from '../../services/extensions/http-capabilities/__tests__/extension-doors-fixture.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -126,14 +127,18 @@ function createApp(
   getCwd: () => string | null = () => TEST_CWD
 ): RequestListener {
   // Cast to satisfy the type -- our mock fulfills the interface structurally
-  return honoGroupListener({
-    path: '/api/extensions',
-    routes: createExtensionsRoutes({
-      manager: manager as unknown as Parameters<typeof createExtensionsRoutes>[0]['manager'],
-      dorkHome: DORK_HOME,
-      getCwd,
-    }),
-  });
+  return honoGroupListener([
+    {
+      path: '/api/extensions',
+      routes: createExtensionsRoutes({
+        manager: manager as unknown as Parameters<typeof createExtensionsRoutes>[0]['manager'],
+        dorkHome: DORK_HOME,
+        getCwd,
+      }),
+    },
+    // Turning one off is on the capability mount (DOR-4978).
+    { path: '/', routes: extensionDoorRoutes(manager as never) },
+  ]);
 }
 
 describe('Extension Routes', () => {
@@ -161,23 +166,27 @@ describe('Extension Routes', () => {
   }
 
   describe('GET /api/extensions', () => {
-    it('returns array of extension records', async () => {
-      const records = [stubPublicRecord(), stubPublicRecord({ id: 'ext-2' })];
-      manager.listPublic.mockReturnValue(records);
-
-      const res = await request(fixtureServer).get('/api/extensions');
-
-      expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(2);
-      expect(res.body[0].id).toBe('test-ext');
-      expect(res.body[1].id).toBe('ext-2');
+    it('reads, page by page, exactly the array it answered before it paged', async () => {
+      const running = ['zed', 'alpha', 'mid'].map((id) => stubPublicRecord({ id }));
+      const shadowed = ['/p1', '/p2'].map((at) =>
+        stubPublicRecord({ id: 'alpha', shadowedBy: at })
+      );
+      manager.listPublic.mockReturnValue(running);
+      manager.listShadowedPublic.mockReturnValue(shadowed);
+      const read: unknown[] = [];
+      for (let cursor = ''; ;) {
+        const page = await request(fixtureServer).get(`/api/extensions?limit=2${cursor}`);
+        read.push(...page.body.extensions);
+        if (!page.body.nextCursor) break;
+        cursor = `&cursor=${page.body.nextCursor}`;
+      }
+      expect(read).toEqual([...running, ...shadowed]);
     });
 
-    it('returns empty array when no extensions discovered', async () => {
-      const res = await request(fixtureServer).get('/api/extensions');
-
-      expect(res.status).toBe(200);
-      expect(res.body).toEqual([]);
+    it('refuses a cursor it did not give, rather than starting over', async () => {
+      const res = await request(fixtureServer).get('/api/extensions?cursor=not-a-cursor');
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ code: 'invalid_request' });
     });
   });
 

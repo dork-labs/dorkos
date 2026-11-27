@@ -3,7 +3,8 @@
  * notice does exactly what reloading that one extension does, and tells open
  * windows it changed. It never turns on an extension a person turned off.
  *
- * The manager is a narrow fake; the route runs the real shared person bar
+ * The manager is a narrow fake; the door is the capability mount's
+ * (`extensions.restart`, DOR-4978), which runs the real shared person bar
  * before calling the reload for the id it was given and answering for it.
  */
 import fs from 'node:fs';
@@ -15,13 +16,13 @@ import type { ApiEnv } from '../../http/api-chain.js';
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
 import type { ReloadExtensionResult } from '../../services/extensions/extension-manager-types.js';
 import type { ExtensionRecord } from '@dorkos/extension-api';
-import {
-  registerExtensionRestartRoute,
-  type ExtensionRestartManager,
-} from '../extensions-restart.js';
+import type { ExtensionManager } from '../../services/extensions/extension-manager.js';
+import { extensionDoorRoutes } from '../../services/extensions/http-capabilities/__tests__/extension-doors-fixture.js';
 
-/** The id pattern the extensions router passes in (`SAFE_EXT_ID`). */
-const SAFE_EXT_ID = /^[a-z0-9][a-z0-9-]*$/;
+type ExtensionRestartManager = Pick<
+  ExtensionManager,
+  'get' | 'reloadExtension' | 'listPublic' | 'getServerHandler'
+>;
 
 let reloaded: string[];
 let broadcast: string[][];
@@ -29,6 +30,8 @@ let answer: (id: string) => Promise<ReloadExtensionResult>;
 /** Whether the copy on disk is one a person approved to run, before and after the reload. */
 let approved: { before: boolean; after: boolean };
 let serverError: { code: string; message: string } | undefined;
+/** Whether reading the cards throws, as a manager mid-change might. */
+let listPublicThrows: boolean;
 let router: Hono<ApiEnv>;
 let user: ApiEnv['Variables']['user'];
 
@@ -47,6 +50,7 @@ beforeEach(() => {
   broadcast = [];
   approved = { before: true, after: true };
   serverError = undefined;
+  listPublicThrows = false;
   answer = async (id) => ({ id, status: 'compiled', bundleReady: true, sourceHash: 'h' });
   const manager: ExtensionRestartManager = {
     get: (id) => (id === 'people' ? ({ id, hasServerEntry: true } as ExtensionRecord) : undefined),
@@ -55,27 +59,32 @@ beforeEach(() => {
       reloaded.push(id);
       return answer(id);
     },
-    listPublic: () =>
-      [
+    listPublic: () => {
+      if (listPublicThrows) throw new Error('cards unreadable');
+      return [
         {
           id: 'people',
           approvedToRun: reloaded.length > 0 ? approved.after : approved.before,
           serverError: reloaded.length > 0 ? serverError : undefined,
         },
-      ] as ReturnType<ExtensionRestartManager['listPublic']>,
+      ] as ReturnType<ExtensionRestartManager['listPublic']>;
+    },
   };
   router = new Hono<ApiEnv>();
   router.use(async (c, next) => {
     c.set('user', user);
     await next();
   });
-  registerExtensionRestartRoute(router, manager, SAFE_EXT_ID, (ids) => broadcast.push(ids));
+  router.route(
+    '/',
+    extensionDoorRoutes(manager, { broadcastReloaded: (ids) => broadcast.push(ids) })
+  );
 });
 
 function restart(id: string, headers: Record<string, string> = {}): Promise<Response> {
   return Promise.resolve(
     router.request(
-      `/${id}/restart`,
+      `/api/extensions/${id}/restart`,
       { method: 'POST', headers },
       {
         incoming: { headers, socket: { remoteAddress: '127.0.0.1' }, method: 'POST' },
@@ -186,5 +195,21 @@ describe('POST /api/extensions/:id/restart', () => {
       code: 'upstream_unavailable',
     });
     expect(broadcast).toEqual([['people']]);
+  });
+
+  it('answers the hand route’s 409 when a check after the reload throws', async () => {
+    serverError = undefined;
+    const original = answer;
+    answer = async (id) => {
+      const result = await original(id);
+      listPublicThrows = true;
+      return result;
+    };
+    const res = await restart('people');
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      code: 'conflict',
+      detail: 'Couldn’t restart it. Check it’s turned on in Settings.',
+    });
   });
 });

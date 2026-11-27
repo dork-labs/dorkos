@@ -65,8 +65,8 @@ describe('GET /api/sessions', () => {
 
     const res = await request(server).get('/api/sessions');
     expect(res.status).toBe(200);
-    // Envelope (ADR-0310): { sessions, warnings? }.
-    expect(res.body).toEqual({ sessions });
+    // Envelope (ADR-0310), one page (DOR-4982): { sessions, nextCursor, warnings? }.
+    expect(res.body).toEqual({ sessions, nextCursor: null });
   });
 });
 

@@ -63,8 +63,12 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
     writes.push({ method: init.method, body: JSON.parse(String(init.body)) });
     return new Response(JSON.stringify({ sources: [{ source: SOURCE, trustedAt: 'now' }] }));
   }
-  if (url.endsWith('/extensions')) return new Response('[]');
-  if (url.endsWith('/extensions/pending-approvals')) return new Response('{"approvals":[]}');
+  if (url.endsWith('/extensions?limit=200')) {
+    return new Response('{"extensions":[],"nextCursor":null}');
+  }
+  if (url.endsWith('/extensions/pending-approvals?limit=200')) {
+    return new Response('{"approvals":[],"nextCursor":null}');
+  }
   return new Response('{}', { status: 404 });
 }
 

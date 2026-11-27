@@ -141,7 +141,9 @@ function projectSuccess(
  * (`routes/capability-http.ts`): query parameters for read methods
  * (`get`/`delete`), a JSON body for writes, and the surface's `query` list when
  * it names one. The success status is the surface's `success` (`200` unless
- * declared). Last, it documents the generic invoke endpoint, the second door
+ * declared), and `x-stability` its `stability` when it declares one (the
+ * document's last pass gives the others a capability's default, from the keys
+ * this returns). Last, it documents the generic invoke endpoint, the second door
  * onto every one of these capabilities. A capability with
  * no path parameters and an empty input object projects no request. The response schema is the
  * capability's Zod `output`; capabilities that still model `output` as
@@ -150,14 +152,16 @@ function projectSuccess(
  *
  * @param registry - The composed capability registry to project from.
  * @param registryDoc - The zod-to-openapi document to register paths onto.
+ * @returns The `METHOD /path` keys it projected, as `GET /api/x/{id}`.
  * @throws If a capability's `method + path` collides with a route already
  *   registered on the document (a legacy hand-registered path).
  */
 export function registerCapabilitiesInOpenApi(
   registry: CapabilityRegistry,
   registryDoc: OpenAPIRegistry
-): void {
+): ReadonlySet<string> {
   const taken = registeredRouteKeys(registryDoc);
+  const projected = new Set<string>();
 
   for (const capability of registry.capabilities) {
     const http = capability.surfaces.http;
@@ -172,6 +176,7 @@ export function registerCapabilitiesInOpenApi(
       );
     }
     taken.add(key);
+    projected.add(key);
 
     const domain = capability.id.slice(0, capability.id.indexOf('.'));
     const { params, rest } = splitPathParams(
@@ -185,6 +190,7 @@ export function registerCapabilitiesInOpenApi(
       method: http.method,
       path: http.path,
       operationId: capability.id,
+      ...(http.stability ? { 'x-stability': http.stability } : {}),
       tags: [domainTag(domain)],
       summary: capability.title,
       description: capability.description,
@@ -193,4 +199,5 @@ export function registerCapabilitiesInOpenApi(
     });
   }
   registerInvokeOperation(registryDoc);
+  return projected;
 }

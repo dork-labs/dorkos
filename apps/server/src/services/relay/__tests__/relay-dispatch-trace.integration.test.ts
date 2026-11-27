@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { RelayCore } from '@dorkos/relay';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { newDispatchId } from '@dorkos/shared/dispatch-id';
+import { newDispatchId } from '../../../lib/identity/dispatch-id.js';
 import { loadCeilingMs } from '@dorkos/shared/test-budget';
 import { TraceStore } from '../trace-store.js';
 

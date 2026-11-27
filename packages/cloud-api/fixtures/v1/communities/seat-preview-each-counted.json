@@ -1,0 +1,7 @@
+{
+  "seatsUsed": 4,
+  "seatsIncluded": null,
+  "addsSeat": true,
+  "summary": "Every person here takes a seat. The next person to join takes one more.",
+  "payer": "The space's owner pays for each seat."
+}

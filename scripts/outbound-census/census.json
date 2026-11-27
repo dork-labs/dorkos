@@ -719,6 +719,13 @@
     "offSwitch": "Never leaves the computer"
   },
   {
+    "file": "packages/api-client/src/client.ts",
+    "destination": "The DorkOS server the caller names (its base URL)",
+    "class": "feature",
+    "reason": "Calls the DorkOS API by operation for the app, scripts and tests.",
+    "offSwitch": "Not outbound: the caller's own DorkOS server"
+  },
+  {
     "file": "packages/browser/src/network/fixture-proxy.ts",
     "destination": "A local test page server",
     "class": "feature",

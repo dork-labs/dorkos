@@ -11,8 +11,9 @@
  */
 import type { RequestHandler } from 'express';
 import { problemBody } from '@dorkos/http-kit';
-import { PROBLEM_CONTENT_TYPE, type Problem, type ProblemCode } from '@dorkos/shared/problem';
+import { PROBLEM_CONTENT_TYPE, type Problem } from '@dorkos/shared/problem';
 import type { InboxApi, PersonCheck, ProjectSettingsReader } from '@dorkos/extension-api/server';
+import type { PersonBarCopy } from '@dorkos/shared/capabilities';
 import type { RequestFacts } from '../../../http/request-facts.js';
 import { expressRequestFacts } from '../http/express-bridge.js';
 import { PERSON_APP_HEADER, PERSON_SESSION_REQUIRED_CODE } from '@dorkos/shared/person-session';
@@ -27,19 +28,10 @@ import { projectSettingsStore } from './extension-project-settings.js';
 import { runInPersonRequest } from '../person-record/person-record.js';
 
 /**
- * What one surface says when the person bar refuses, so the reader is told
- * what DorkOS did not do and what to do instead.
+ * What one surface says when the person bar refuses (`lib/http/person-bar.ts`):
+ * the same fixed copy every DorkOS surface declares.
  */
-export interface ExtensionPersonCopy {
-  /** Machine-readable code for the origin and agent bars. */
-  code: ProblemCode;
-  /** What the cookie bar names as the thing being changed, as a noun phrase. */
-  subject: string;
-  /** The `detail` for a request that arrived from another site, given its origin. */
-  crossSite: (origin: string) => string;
-  /** The `detail` for a caller that named itself an agent. */
-  agent: string;
-}
+export type ExtensionPersonCopy = PersonBarCopy;
 
 /**
  * The person bar's verdict on one request: the refusal to answer with, or
@@ -137,8 +129,6 @@ export function requirePersonCopy(extensionName: string): ExtensionPersonCopy {
   return {
     code: 'person_only',
     subject: `${extensionName}'s settings`,
-    crossSite: (origin) =>
-      `DorkOS changed nothing. ${origin} isn’t DorkOS. Change ${extensionName}'s settings in DorkOS.`,
     agent: `DorkOS changed nothing. Only a person can change ${extensionName}'s settings.`,
   };
 }

@@ -43,7 +43,7 @@ export const ATTR = {
    *
    * Admissible on the same grounds as {@link ATTR.SESSION_ID} and no others: it
    * is random, opaque, and derives from nothing — not a path, not a name, not a
-   * session id. `isDispatchId` from `@dorkos/shared/dispatch-id` makes that
+   * session id. `isDispatchId` from `lib/identity/dispatch-id` makes that
    * checkable rather than asserted.
    *
    * This is the bridge that closes the gap ADR 260711-154514 recorded as an

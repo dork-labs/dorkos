@@ -58,7 +58,7 @@ import {
 } from '../../core/cloud/credits-defaults.js';
 import { ambientClaudeConfigDir } from './claude-config-env-lock.js';
 import type { ProjectRef } from '@dorkos/shared/project-schemas';
-import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
+import { canonicalDirectory } from '../../../lib/fs/canonical-directory.js';
 import {
   AccountNotAllowedError,
   accountEligibility,

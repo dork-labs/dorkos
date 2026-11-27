@@ -433,7 +433,7 @@ export class TeamRoomApi {
       'pending prompts'
     );
     const { approvals: extensions } = await read<{ approvals: unknown[] }>(
-      '/api/extensions/pending-approvals',
+      '/api/extensions/pending-approvals?limit=200',
       'extensions waiting to be turned on'
     );
     const { decisions } = await read<{ decisions: unknown[] }>(

@@ -15,7 +15,7 @@ import { registerComputerOpenApi } from '../../computers/computer-openapi.js';
 import { registerBrowserScanOpenApi } from '../../browser/profile-scan-openapi.js';
 import { registerLocalBrowserOpenApi } from '../../session/local-browser/openapi.js';
 import { registerConnectorHoldsOpenApi } from '../../connectors/execution/holds-openapi.js';
-import { registerRelayAdapterOpenApi } from './relay-adapters.js';
+import { registerRelayAdapterListOpenApi, registerRelayAdapterOpenApi } from './relay-adapters.js';
 import { registerConnectorExclusionsOpenApi } from '../../connectors/access/exclusions-openapi.js';
 import { registerMiniAppAccessOpenApi } from '../../connectors/extensions/mini-app-access-openapi.js';
 import { registerHubComputersOpenApi } from '../hub-relay/hub-computers-openapi.js';
@@ -26,6 +26,7 @@ import { registerDocLinksOpenApi } from '../../docs/links/doc-links-openapi.js';
 import { registerDevicesOpenApi } from '../auth/sessions/devices-openapi.js';
 import { registerOwnerFactorsOpenApi } from '../auth/factors/owner-factors-openapi.js';
 import { registerProblemOpenApi } from './problem-openapi.js';
+import { registerEventsOpenApi } from './events-openapi.js';
 
 /** Register independent domain paths in their existing order. */
 export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
@@ -44,6 +45,7 @@ export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
   registerDocRouteControlsOpenApi(registry);
   registerConnectorHoldsOpenApi(registry);
   registerRelayAdapterOpenApi(registry);
+  registerRelayAdapterListOpenApi(registry);
   registerConnectorExclusionsOpenApi(registry);
   registerMiniAppAccessOpenApi(registry);
   registerLocalBrowserOpenApi(registry);
@@ -56,4 +58,5 @@ export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
   registerDevicesOpenApi(registry);
   registerOwnerFactorsOpenApi(registry);
   registerAccountSigninOpenApi(registry);
+  registerEventsOpenApi(registry);
 }

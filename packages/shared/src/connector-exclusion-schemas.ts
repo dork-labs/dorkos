@@ -13,6 +13,7 @@
  */
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
+import { nextCursorOutput } from './paging.js';
 
 extendZodWithOpenApiOnce();
 
@@ -51,6 +52,13 @@ export const ConnectorGrantExclusionListSchema = z
   .openapi('ConnectorGrantExclusionList');
 /** The agents left out of one connection's every-agent share. */
 export type ConnectorGrantExclusionList = z.infer<typeof ConnectorGrantExclusionListSchema>;
+
+/** One page of the agents left out of one connection's every-agent share, newest first. */
+export const ConnectorGrantExclusionPageSchema = ConnectorGrantExclusionListSchema.extend({
+  nextCursor: nextCursorOutput,
+}).openapi('ConnectorGrantExclusionPage');
+/** One page of the agents left out of one connection's every-agent share. */
+export type ConnectorGrantExclusionPage = z.infer<typeof ConnectorGrantExclusionPageSchema>;
 
 /** What leaving an agent out, or letting it back in, did. */
 export const ConnectorGrantExclusionChangeSchema = z

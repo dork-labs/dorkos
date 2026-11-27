@@ -1,5 +1,6 @@
 /** Every room event and read cursor is addressed; a new producer must not silently broadcast. */
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import type { DorkOsEventType } from '@dorkos/shared/dorkos-events';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -118,7 +119,13 @@ describe('every room_* event and read_cursor', () => {
         expect(outsider).not.toHaveBeenCalled();
         // The same audience restriction also applies to the full rendering.
         if (method === 'broadcastRedacted') {
-          eventFanOut.broadcastRedacted(name, {}, {}, () => true, roomAudience('room', rooms));
+          eventFanOut.broadcastRedacted(
+            name as DorkOsEventType,
+            {},
+            {},
+            () => true,
+            roomAudience('room', rooms)
+          );
           expect(member).toHaveBeenCalledOnce();
           expect(outsider).not.toHaveBeenCalled();
         }
@@ -185,7 +192,7 @@ it('every in-process listener is a reviewed one, and none picks out a read curso
   // It reads every server source file, which took about 6 s on a loaded CI shard.
 }, 30_000);
 
-it('requires room and dynamic audiences at compile time in both APIs', () => {
+it('requires room audiences and union names at compile time in both APIs', () => {
   const path = join(sourceRoot, 'services/core/event-fan-out.ts');
   const source = ts.createSourceFile(
     path,
@@ -238,23 +245,17 @@ it('requires room and dynamic audiences at compile time in both APIs', () => {
           `fan.${method}('room_created', ${payload}, () => true);`,
           `fan.${method}('read_cursor', ${payload}, () => true);`,
           `fan.${method}(cursorMixed, ${payload}, () => true);`,
-          `fan.${method}(room, ${payload}, () => true);`,
-          `fan.${method}(dynamic, ${payload}, () => true);`,
           `fan.${method}(mixed, ${payload}, () => true);`,
-          `fan.${method}(openPrefix, ${payload}, () => true);`,
-          `fan.${method}(openSuffix, ${payload}, () => true);`,
-          `fan.${method}(mixedOpenPrefix, ${payload}, () => true);`,
-          `fan.${method}(mixedOpenSuffix, ${payload}, () => true);`,
+          `fan.${method}(extension, ${payload}, () => true);`,
           `// @ts-expect-error A room audience is mandatory.\nfan.${method}('room_created', ${payload});`,
           `// @ts-expect-error A read cursor audience is mandatory.\nfan.${method}('read_cursor', ${payload});`,
           `// @ts-expect-error A union with read_cursor needs an audience.\nfan.${method}(cursorMixed, ${payload});`,
-          `// @ts-expect-error Undefined is not a room audience.\nfan.${method}(room, ${payload}, undefined);`,
-          `// @ts-expect-error A dynamic string could name a room event.\nfan.${method}(dynamic, ${payload});`,
-          `// @ts-expect-error An open prefix can name a room event.\nfan.${method}(openPrefix, ${payload});`,
-          `// @ts-expect-error An open suffix can name a room event.\nfan.${method}(openSuffix, ${payload});`,
-          `// @ts-expect-error An open member makes the whole union unsafe.\nfan.${method}(mixedOpenPrefix, ${payload});`,
-          `// @ts-expect-error A suffix member makes the whole union unsafe.\nfan.${method}(mixedOpenSuffix, ${payload});`,
+          `// @ts-expect-error Undefined is not a room audience.\nfan.${method}('room_created', ${payload}, undefined);`,
+          `// @ts-expect-error An open family needs an audience.\nfan.${method}(extension, ${payload});`,
           `// @ts-expect-error A mixed union can name a room event.\nfan.${method}(mixed, ${payload});`,
+          `// @ts-expect-error A name outside the event union.\nfan.${method}(dynamic, ${payload}, () => true);`,
+          `// @ts-expect-error An open prefix is outside the event union.\nfan.${method}(openPrefix, ${payload}, () => true);`,
+          `// @ts-expect-error An open member is outside the event union.\nfan.${method}(mixedOpenSuffix, ${payload}, () => true);`,
         ];
       })
       .join('\n');
@@ -263,14 +264,13 @@ it('requires room and dynamic audiences at compile time in both APIs', () => {
       `type Record<K extends string, V> = { [P in K]: V };
       type Extract<T, U> = T extends U ? T : never;
       type BroadcastAudience = () => boolean;
+      type DorkOsEventType = 'session_status' | 'relay_signal' | 'room_created' | 'read_cursor' | \`ext:\${string}:\${string}\`;
       ${constants}
       ${aliases}
       declare class Fan { ${signatures} }
       declare const fan: Fan;
-      declare const room: \`room_\${string}\`;
+      declare const extension: \`ext:\${string}:\${string}\`;
       declare const openPrefix: \`room\${string}\`;
-      declare const openSuffix: \`\${string}_created\`;
-      declare const mixedOpenPrefix: 'session_status' | \`room\${string}\`;
       declare const mixedOpenSuffix: 'relay_signal' | \`\${string}_created\`;
       declare const dynamic: string;
       declare const mixed: 'room_created' | 'session_status';

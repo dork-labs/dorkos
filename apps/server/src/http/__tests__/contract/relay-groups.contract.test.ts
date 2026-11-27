@@ -63,9 +63,10 @@ const HOST_REFUSED = z.object({ code: z.literal('host_not_allowed') }).loose();
 const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 const MESSAGE_PAGE = z.object({ messages: z.array(z.unknown()) }).loose();
 const ENDPOINTS = z.array(z.object({ subject: z.string() }).loose());
-const ADAPTERS = z.array(z.object({ config: z.object({ id: z.string() }).loose() }).loose());
-const CATALOG = z.array(z.object({ manifest: z.object({ type: z.string() }).loose() }).loose());
-const BINDINGS = z.object({ bindings: z.array(z.unknown()) }).strict();
+const page = (noun: string, row: z.ZodType) => z.object({ [noun]: z.array(row) }).loose();
+const ADAPTERS = page('adapters', z.object({ config: z.object({ id: z.string() }).loose() }));
+const CATALOG = page('entries', z.object({ manifest: z.object({ type: z.string() }).loose() }));
+const BINDINGS = page('bindings', z.unknown());
 const BINDING_NOT_FOUND = problemBody('not_found', { detail: 'That chat route doesn’t exist.' });
 const CONNECTION_NOT_FOUND = problemBody('not_found', { detail: 'That connection doesn’t exist.' });
 const ENDPOINT_NOT_FOUND = problemBody('not_found', { detail: 'That address has no mailbox.' });
@@ -346,22 +347,6 @@ contractSuite('the Relay groups, login off, nothing set up', [
     name: 'GET /trace/metrics reports delivery',
     path: '/api/relay/trace/metrics',
     expect: { status: 200, headers: JSON_TYPE, schema: z.object({}).loose() },
-  },
-  {
-    name: 'GET /stream with an unscoped pattern is refused',
-    path: '/api/relay/stream?subject=%3E',
-    expect: {
-      status: 400,
-      body: problemBody('invalid_request', {
-        detail: 'That subject pattern isn’t one this stream allows.',
-        extensions: { allowedPrefixes: ['relay.human.console.', 'relay.system.', 'relay.signal.'] },
-      }),
-    },
-  },
-  {
-    name: 'GET /stream with a pattern outside the allowed prefixes is refused',
-    path: '/api/relay/stream?subject=relay.agent.%3E',
-    expect: { status: 400, schema: problemWith('invalid_request') },
   },
   // --- adapters ---
   {
@@ -713,21 +698,34 @@ async function check(
   await checkContractCase(server!.baseUrl, { name: ask.path, ...ask });
 }
 
-/** The first event-stream frame a server sends, its status and headers, then the stream closed. */
-function firstFrame(
+/**
+ * Open `GET /api/events`, run `act` once it has connected, and read on until a
+ * frame named `event` whose data contains `needle`; then close the stream.
+ * Returns that frame's data.
+ */
+function frameOn(
   server: ComposedServer | undefined,
-  url: string
-): Promise<{ status: number; headers: http.IncomingHttpHeaders; frame: string }> {
+  event: string,
+  needle: string,
+  act: () => Promise<void>
+): Promise<string> {
   return new Promise((resolve, reject) => {
-    const req = http.get(new URL(url, server!.baseUrl), (res) => {
+    const req = http.get(new URL('/api/events', server!.baseUrl), (res) => {
       let text = '';
+      let acted = false;
       res.setEncoding('utf8');
       res.on('data', (chunk: string) => {
         text += chunk;
-        const end = text.indexOf('\n\n');
-        if (end === -1) return;
-        resolve({ status: res.statusCode ?? 0, headers: res.headers, frame: text.slice(0, end) });
-        req.destroy();
+        if (!acted && text.includes('event: connected')) {
+          acted = true;
+          act().catch(reject);
+        }
+        for (const [, data] of text.matchAll(new RegExp(`event: ${event}\\ndata: (.*)\\n`, 'g'))) {
+          if (!data!.includes(needle)) continue;
+          resolve(data!);
+          req.destroy();
+          return;
+        }
       });
       res.on('error', () => undefined);
     });
@@ -843,30 +841,19 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
     if (agent) rmSync(agent.agentDir, { recursive: true, force: true });
   }, 30_000);
 
-  it('streams relay events, opening with relay_connected', async () => {
-    const { status, headers, frame } = await firstFrame(
-      server,
-      '/api/relay/stream?subject=relay.human.console.contract'
-    );
-    expect(status).toBe(200);
-    expect(headers['content-type']).toBe('text/event-stream');
-    expect(headers['cache-control']).toBe('no-cache');
-    expect(headers['x-accel-buffering']).toBe('no');
-    expect(headers['x-content-type-options']).toBe('nosniff');
-    const [event, data] = frame.split('\n');
-    expect(event).toBe('event: relay_connected');
-    expect(JSON.parse(data!.replace(/^data: /, ''))).toEqual({
-      pattern: 'relay.human.console.contract',
-      connectedAt: expect.any(String),
+  it('sends console traffic to readers of /api/events, as relay_message', async () => {
+    // `GET /api/relay/stream` is gone. The console messages it streamed by
+    // default ride the global stream, where the Connections page reads them.
+    const subject = `relay.human.console.contract-${randomUUID().slice(0, 8)}`;
+    const data = await frameOn(server, 'relay_message', subject, async () => {
+      const sent = await call(server, 'POST', '/api/relay/messages', {
+        subject,
+        payload: 'hello',
+        from: 'relay.human.console',
+      });
+      expect(sent.status).toBe(200);
     });
-    // The server is still answering after the client left.
-    await check(server, { path: '/api/relay/metrics', expect: { status: 200 } });
-  });
-
-  it('streams the console pattern when no subject is named', async () => {
-    const { status, frame } = await firstFrame(server, '/api/relay/stream');
-    expect(status).toBe(200);
-    expect(frame).toContain('"pattern":"relay.human.console.>"');
+    expect(JSON.parse(data)).toMatchObject({ subject, payload: 'hello' });
   });
 
   it('registers an endpoint, reads its inbox, and removes it', async () => {
@@ -1046,9 +1033,8 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
 
   it('answers a webhook for a connection that is not a webhook with the flat 401', async () => {
     const adapters = await setup(server, 'GET', '/api/relay/adapters');
-    const other = (adapters.json as unknown as { config: { id: string; type: string } }[]).find(
-      (adapter) => adapter.config.type !== 'webhook'
-    );
+    const listed = adapters.json.adapters as { config: { id: string; type: string } }[];
+    const other = listed.find((adapter) => adapter.config.type !== 'webhook');
     if (!other) return;
     await check(server, {
       method: 'POST',
@@ -1233,7 +1219,6 @@ describe('contract: the Relay groups with login on', () => {
       ['POST', '/api/relay/messages'],
       ['GET', `/api/relay/messages/${UNKNOWN_MESSAGE_ID}/status`],
       ['GET', '/api/relay/endpoints'],
-      ['GET', '/api/relay/stream'],
       ['GET', '/api/relay/adapters'],
       ['GET', '/api/relay/bindings'],
       ['POST', '/api/relay/bindings/x/test'],
@@ -1308,11 +1293,6 @@ contractSuite(
     {
       name: 'GET /unclaimed-chats does not exist',
       path: '/api/relay/unclaimed-chats',
-      expect: { status: 404, body: NOT_FOUND },
-    },
-    {
-      name: 'GET /stream does not exist',
-      path: '/api/relay/stream',
       expect: { status: 404, body: NOT_FOUND },
     },
     {

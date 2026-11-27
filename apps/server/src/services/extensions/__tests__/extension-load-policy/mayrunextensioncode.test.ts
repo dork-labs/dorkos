@@ -15,7 +15,7 @@ import {
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { ApiEnv } from '../../../../http/api-chain.js';
-import { registerExtensionRestartRoute } from '../../../../routes/extensions-restart.js';
+import { extensionDoorRoutes } from '../../http-capabilities/__tests__/extension-doors-fixture.js';
 import {
   approvedSourceOf,
   mayRunExtensionCode,
@@ -407,10 +407,10 @@ describe('the dev loop stays free after one approval, for the approved files', (
       c.set('user', { userId: 'owner', credential: 'cookie' });
       await next();
     });
-    registerExtensionRestartRoute(router, manager, /^[a-z0-9][a-z0-9-]*$/, () => {});
+    router.route('/', extensionDoorRoutes(manager));
     mockCompileServer.mockClear();
     const res = await router.request(
-      '/my-ext/restart',
+      '/api/extensions/my-ext/restart',
       { method: 'POST' },
       {
         incoming: { headers: {}, socket: { remoteAddress: '127.0.0.1' }, method: 'POST' },

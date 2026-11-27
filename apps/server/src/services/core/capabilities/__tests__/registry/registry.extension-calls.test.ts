@@ -289,6 +289,9 @@ describe('a confirm-first hold is a reviewed list’s alone (ADR 261125-114705, 
       .map((capability) => [capability.id, capability.confirmFirst?.bar])
       .sort(([a], [b]) => String(a).localeCompare(String(b)));
     expect(declaring).toEqual([
+      ['connectors.answer_agent_request', 'front-door'],
+      ['connectors.let_agent_back_in', 'front-door'],
+      ['connectors.start_agent_request_sign_in', 'front-door'],
       ['heartbeat.choose_triage_credits', 'account-owner'],
       ['mcp.add_global_server', 'front-door'],
       ['mcp.replace_global_server', 'front-door'],

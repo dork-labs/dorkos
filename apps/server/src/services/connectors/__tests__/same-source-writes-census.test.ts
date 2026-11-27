@@ -26,7 +26,7 @@ import {
   PROMPT_KINDS,
   PROMPT_KIND_KEYS,
   type PromptKind,
-} from '@dorkos/shared/prompts/prompt-kinds';
+} from '../../core/prompts/prompt-kinds.js';
 import { composeCapabilityRegistryForDocs } from '../../core/self-description/dorkos-registry.js';
 import { MCP_TOOL_TIERS } from '../../core/mcp-tool-tiers.js';
 import { serializeCapability } from '../../core/capabilities/registry.js';
@@ -49,6 +49,8 @@ const NAMING_FILES: Record<string, string> = {
   'services/core/prompts/connector-gate-facts.ts':
     'carries what the preflight read to the permission gate; it writes nothing',
   'services/core/prompts/should-ask.ts': 'decides on what the preflight read; it writes nothing',
+  'services/core/prompts/prompt-kinds.ts':
+    'the prompt-kind registry names the switch each kind reads; it writes nothing',
 };
 
 /**

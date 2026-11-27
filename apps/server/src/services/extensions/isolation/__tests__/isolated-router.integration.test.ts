@@ -41,7 +41,7 @@ vi.mock('../../../core/auth/session-gate.js', async (importOriginal) => ({
 }));
 
 import { createRequirePerson, setExtensionPersonBar } from '../../inbox/extension-inbox-context.js';
-import { assessPerson } from '../../../../routes/extensions-person-bar.js';
+import { assessPerson } from '../../../../lib/http/person-bar.js';
 import { createIsolatedHandler } from '../isolated-router.js';
 import { bridgeExpressRouter } from '../../http/express-bridge.js';
 import type { ExtensionHttpHandler } from '../../http/extension-http.js';

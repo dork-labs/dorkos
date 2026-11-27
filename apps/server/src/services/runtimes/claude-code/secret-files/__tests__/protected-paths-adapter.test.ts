@@ -9,9 +9,11 @@ import {
   ANYWHERE_SECRETS,
   DATA_FOLDER_SECRETS,
   HOME_SECRETS,
+  secretReadDenyRules,
 } from '../secret-read-deny.js';
 import {
   agentHomesSelfGrantRules,
+  HOME_PERSON_ONLY_FULL_RULES,
   PERSON_ONLY_DATA_FILES,
   PERSON_ONLY_DATA_FOLDERS,
   PROJECT_PLUGIN_DENY_RULES,
@@ -205,6 +207,20 @@ describe('Claude Code protected-path adapter', () => {
       'marketplaces.json',
     ]) {
       expect(rules).toContain(`Edit(//x/missing-dork-home/${name})`);
+    }
+  });
+
+  // DOR-4388: the read refusal on ~/.gnupg names only the read tools, so only
+  // the person-only write entry keeps a write tool out of it at Full.
+  it('refuses writes to ~/.gnupg at Full, which the read refusal alone never does', () => {
+    const readRules = secretReadDenyRules({
+      dorkHome: '/x/dork-home',
+      accountRoot: '/x/account',
+      otherAccountRoots: [],
+    }).filter((rule) => rule.includes('~/.gnupg'));
+    expect(readRules).toEqual(['Read(~/.gnupg/**)', 'Grep(~/.gnupg/**)', 'Glob(~/.gnupg/**)']);
+    for (const tool of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
+      expect(HOME_PERSON_ONLY_FULL_RULES).toContain(`${tool}(~/.gnupg/**)`);
     }
   });
 });

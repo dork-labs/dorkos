@@ -112,11 +112,11 @@ function serve(
       calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
       const json = (value: unknown) =>
         Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(value) });
-      if (url.includes('/extensions/approval-sets')) return json({ sets });
+      if (url.includes('/extensions/approval-sets')) return json({ sets, nextCursor: null });
       if (url.includes('/extensions/approve-set')) return json(approveSet);
-      if (url.endsWith('/extensions')) return json(extensions);
+      if (url.endsWith('/extensions?limit=200')) return json({ extensions, nextCursor: null });
       if (/\/extensions\/[^/]+\/(enable|disable)$/.test(url)) return json({});
-      return json({ approvals: [], risks: [], sources: [] });
+      return json({ approvals: [], nextCursor: null, risks: [], sources: [] });
     })
   );
 }
@@ -339,7 +339,9 @@ describe('the Allow all card', () => {
     expect(screen.queryByTestId('extension-group-member-writer')).not.toBeInTheDocument();
     const approvedAt = calls.findIndex((c) => c.url.includes('/approve-set'));
     await waitFor(() =>
-      expect(calls.slice(approvedAt + 1).some((c) => c.url.endsWith('/extensions'))).toBe(true)
+      expect(calls.slice(approvedAt + 1).some((c) => c.url.endsWith('/extensions?limit=200'))).toBe(
+        true
+      )
     );
   });
 });

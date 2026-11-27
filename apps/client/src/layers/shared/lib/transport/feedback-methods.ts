@@ -29,6 +29,7 @@ import { fetchJSON } from './http-client';
  */
 export function createFeedbackMethods(baseUrl: string) {
   return {
+    // Stays hand-written: `POST /api/feedback` has no operationId (DOR-5473).
     async sendFeedback(submission: FeedbackSubmission): Promise<{ ok: boolean }> {
       try {
         return await fetchJSON<{ ok: boolean }>(baseUrl, '/feedback', {
@@ -42,6 +43,7 @@ export function createFeedbackMethods(baseUrl: string) {
       }
     },
 
+    // Stays hand-written: `GET /api/feedback/mine` has no operationId (DOR-5473).
     /**
      * List this install's own feedback submissions from the local server's
      * `GET /api/feedback/mine` proxy. Rejects on failure — unlike
@@ -52,6 +54,7 @@ export function createFeedbackMethods(baseUrl: string) {
       return fetchJSON<FeedbackListItem[]>(baseUrl, '/feedback/mine');
     },
 
+    // Stays hand-written: `GET /api/feedback/room-transcript` has no operationId (DOR-5473).
     /**
      * The room excerpt a report written in `roomId` would attach, and its
      * newest message's `seq`, from the server's

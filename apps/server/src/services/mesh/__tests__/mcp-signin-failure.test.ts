@@ -17,7 +17,7 @@ import path from 'node:path';
 import { noopLogger } from '@dorkos/shared/logger';
 import { AgentRegistry } from '@dorkos/mesh';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { resetKeyCache } from '@dorkos/shared/extension-secrets';
+import { resetKeyCache } from '../../../lib/secret-store/extension-secrets.js';
 import { writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 

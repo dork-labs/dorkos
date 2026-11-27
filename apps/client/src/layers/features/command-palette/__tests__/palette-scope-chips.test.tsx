@@ -162,6 +162,7 @@ beforeEach(() => {
   });
   vi.mocked(mockTransport.listRooms).mockResolvedValue(ALL_ROOMS);
   vi.mocked(mockTransport.listRecentSessions).mockResolvedValue({
+    nextCursor: null,
     sessions: ALL_SESSIONS,
     agentActivity: {},
     warnings: [],

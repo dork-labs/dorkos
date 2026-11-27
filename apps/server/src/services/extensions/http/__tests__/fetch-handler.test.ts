@@ -27,7 +27,7 @@ import { createExtensionApiRoutes } from '../../../../routes/extension-api.js';
 import { bridgeExpressRouter } from '../express-bridge.js';
 import { firstAnswer, type ExtensionHttpHandler } from '../extension-http.js';
 import { createFetchHandler } from '../fetch-handler.js';
-import { assessPerson } from '../../../../routes/extensions-person-bar.js';
+import { assessPerson } from '../../../../lib/http/person-bar.js';
 import { setExtensionPersonBar } from '../../inbox/extension-inbox-context.js';
 
 // The person bar every extension route runs, wired as boot wires it.

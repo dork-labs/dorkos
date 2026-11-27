@@ -169,6 +169,26 @@ export function conformanceSampleInputs(
     'connectors.stop_every_agent_share': { connectionId: 'conformance-connection' },
     'connectors.leave_agent_out': { connectionId: 'conformance-connection', agentId: 'agent-a' },
     'connectors.list_usage': {},
+    'connectors.let_agent_back_in': { connectionId: 'conformance-connection', agentId: 'agent-a' },
+    'connectors.answer_agent_request': { requestId: 'conformance-request', decision: 'denied' },
+    'connectors.start_agent_request_sign_in': {
+      requestId: 'conformance-request',
+      providerInstanceId: 'conformance-provider',
+    },
+    'connectors.list_every_agent_grants': {},
+    'connectors.list_agent_connections': { agentId: 'agent-a' },
+    'connectors.list_session_connections': { sessionId: 'conformance-session' },
+    'connectors.list_reviews': {},
+    'connectors.list_exclusions': { connectionId: 'conformance-connection' },
+    // Behind the person bar: refused before the handler without the mount's pass.
+    'extensions.dismiss_approval': {
+      id: 'conformance-ext',
+      path: '/x/conformance-ext',
+      version: '1.0.0',
+    },
+    'extensions.remove': { id: 'conformance-ext' },
+    'extensions.forget_approval': { id: 'conformance-ext' },
+    'extensions.restart': { id: 'conformance-ext' },
     'mcp.check_global_tools': { name: 'conformance-srv' },
     'mcp.undo_global_allow': {
       name: 'conformance-srv',

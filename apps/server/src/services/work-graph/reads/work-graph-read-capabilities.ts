@@ -37,6 +37,7 @@
  * @module services/work-graph/reads/work-graph-read-capabilities
  */
 import { z } from 'zod';
+import { pageCursorInput, pageLimitInput } from '@dorkos/shared/paging';
 import {
   AGENT_CHATS_PAGE_LIMIT,
   AgentChatsPageSchema,
@@ -61,8 +62,6 @@ import { chatIdsOf, filterChatTree } from './chat-tree.js';
 import { idInput, idOf } from './id-input.js';
 import { readWork } from './work-for.js';
 import {
-  cursorInput,
-  limitInput,
   READ_TOOL,
   requireAuditDeps,
   workGraphDb,
@@ -157,8 +156,8 @@ export function createWorkGraphReadDomain(ports: WorkGraphReadPorts): Capability
         areaNote: 'reading',
         input: z.object({
           agentId: idInput('agent'),
-          cursor: cursorInput,
-          limit: limitInput(AGENT_CHATS_PAGE_LIMIT),
+          cursor: pageCursorInput,
+          limit: pageLimitInput(AGENT_CHATS_PAGE_LIMIT),
         }),
         output: AgentChatsPageSchema,
         surfaces: {
@@ -215,7 +214,7 @@ export function createWorkGraphReadDomain(ports: WorkGraphReadPorts): Capability
             .describe(
               `How many levels below the chat, 1 to ${LINEAGE_MAX_DEPTH}; all when left out.`
             ),
-          cursor: cursorInput,
+          cursor: pageCursorInput,
           limit: z.coerce
             .number()
             .int()
@@ -259,8 +258,8 @@ export function createWorkGraphReadDomain(ports: WorkGraphReadPorts): Capability
         input: z.object({
           agentId: idInput('agent'),
           kind: kindInput,
-          cursor: cursorInput,
-          limit: limitInput(WORK_PAGE_LIMIT),
+          cursor: pageCursorInput,
+          limit: pageLimitInput(WORK_PAGE_LIMIT),
         }),
         output: WorkPageSchema,
         surfaces: {
@@ -301,8 +300,8 @@ export function createWorkGraphReadDomain(ports: WorkGraphReadPorts): Capability
             .optional()
             .describe('Include the chats below it (`true`, the default) or not (`false`).'),
           kind: kindInput,
-          cursor: cursorInput,
-          limit: limitInput(WORK_PAGE_LIMIT),
+          cursor: pageCursorInput,
+          limit: pageLimitInput(WORK_PAGE_LIMIT),
         }),
         output: WorkPageSchema,
         surfaces: {

@@ -104,7 +104,8 @@ inactivity as a backstop.
 ### Who can read a chat over the API
 
 A request that carries an agent token (`X-DorkOS-Agent`) reads agent work only. `GET /api/sessions`
-and `/api/sessions/recent` leave a person's own chats out, and every `/api/sessions/:id` route,
+and `/api/sessions/recent` leave a person's own chats out (both come a page at a time, and a
+page cursor works only for the caller it was given to), and every `/api/sessions/:id` route,
 reading or writing, answers `404 session_not_found` for one, the same answer as a chat that does
 not exist. Starting a new chat with `create: true` is the one thing an agent may do under an id
 nobody has used yet. The live list on `/api/events` leaves a person's own chats out of an agent's

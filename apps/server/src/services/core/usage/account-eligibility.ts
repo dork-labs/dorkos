@@ -30,7 +30,7 @@
  * @module services/core/usage/account-eligibility
  */
 import path from 'node:path';
-import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
+import { canonicalDirectory } from '../../../lib/fs/canonical-directory.js';
 import { IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { readProjectRootList } from '@dorkos/shared/config-schema';
 import { ACCOUNT_NOT_ALLOWED_CODE, type ProjectRef } from '@dorkos/shared/project-schemas';

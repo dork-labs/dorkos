@@ -10,7 +10,11 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
 import { ApprovalDriver } from '../approval-driver.js';
-import { PENDING_CONNECTION_REQUESTS_PATH, questionCards } from '../interaction-answers.js';
+import {
+  PENDING_CONNECTION_REQUESTS_PATH,
+  denyPendingConnectionRequests,
+  questionCards,
+} from '../interaction-answers.js';
 import type { ApprovalPolicy } from '../../types.js';
 
 interface SeenRequest {
@@ -35,8 +39,11 @@ describe('ApprovalDriver: connection requests and question cards', () => {
       req.on('end', () => {
         seen.push({ method: req.method ?? '', url: req.url ?? '', headers: req.headers, body });
         res.setHeader('content-type', 'application/json');
-        if (req.url === PENDING_CONNECTION_REQUESTS_PATH) {
-          res.end(JSON.stringify({ requests: pending }));
+        if (req.url?.startsWith(PENDING_CONNECTION_REQUESTS_PATH)) {
+          // One request a page, so a sweep must follow `nextCursor` to see them all.
+          const from = Number(new URL(req.url, 'http://x').searchParams.get('cursor') ?? 0);
+          const next = from + 1 < pending.length ? String(from + 1) : null;
+          res.end(JSON.stringify({ requests: pending.slice(from, from + 1), nextCursor: next }));
           return;
         }
         const decided = /^\/api\/connectors\/agent-requests\/([^/]+)\/decision$/.exec(
@@ -93,6 +100,16 @@ describe('ApprovalDriver: connection requests and question cards', () => {
     expect(decisions[0]!.headers.origin).toBeUndefined();
     expect(d.log.connectionRequests[0]).toMatchObject({ requestId: 'req-1', decision: 'denied' });
     expect(d.log.errors).toEqual([]);
+  });
+
+  it('denies the requests on every page, not just the first', async () => {
+    pending = [
+      { requestId: 'req-1', status: 'awaiting_owner' },
+      { requestId: 'req-2', status: 'awaiting_owner' },
+    ];
+    const { records, errors } = await denyPendingConnectionRequests(baseUrl, new Set());
+    expect(records.map((record) => record.requestId)).toEqual(['req-1', 'req-2']);
+    expect(errors).toEqual([]);
   });
 
   it('leaves connection requests alone when the policy does not ask', async () => {

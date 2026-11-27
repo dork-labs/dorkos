@@ -10,7 +10,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { ShapePackageManifest } from '@dorkos/marketplace';
 import { MarketplacePackageManifestSchema } from '@dorkos/marketplace';
-import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
+import { ExtensionSecretStore } from '../../lib/secret-store/extension-secrets.js';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { configManager } from '../core/config-manager.js';
 import { logConfigWrite } from '../core/operator/config-write.js';

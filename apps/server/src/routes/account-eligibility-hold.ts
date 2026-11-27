@@ -15,17 +15,13 @@ import { problem } from '@dorkos/http-kit';
 import type { ApiEnv } from '../http/api-chain.js';
 import type { RequestFacts } from '../http/request-facts.js';
 import { logger } from '../lib/logger.js';
-import type { PersonBarCopy } from './extensions-person-bar.js';
+import type { PersonBarCopy } from '../lib/http/person-bar.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 
 /** What the person bar says when anything but a person tries to change a rule. */
 export const ACCOUNT_RULES_BAR: PersonBarCopy = {
   code: 'person_only',
   subject: 'where each Claude account may be used',
-  crossSite: (origin) =>
-    `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
-    `Which projects an account may work in is something a person sets in their own copy ` +
-    `of the app, not something another site can change for them.`,
   agent:
     'DorkOS changed nothing. Which projects a Claude account may work in is a decision ' +
     'only a person makes. Ask them to change it in Settings → Runtimes.',
@@ -35,10 +31,6 @@ export const ACCOUNT_RULES_BAR: PersonBarCopy = {
 export const NO_AUTO_MOVE_BAR: PersonBarCopy = {
   code: 'person_only',
   subject: 'whether agents move to each Claude account automatically',
-  crossSite: (origin) =>
-    `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
-    `Whether agents move to an account automatically is something a person sets in their ` +
-    `own copy of the app, not something another site can change for them.`,
   agent:
     'DorkOS changed nothing. Whether agents move to a Claude account automatically is a ' +
     'decision only a person makes. Ask them to change it in Settings → Runtimes.',
@@ -48,10 +40,6 @@ export const NO_AUTO_MOVE_BAR: PersonBarCopy = {
 export const AGENTS_MAY_PICK_BAR: PersonBarCopy = {
   code: 'person_only',
   subject: 'which Claude accounts agents may pick',
-  crossSite: (origin) =>
-    `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
-    `Which accounts agents may pick is something a person sets in their own copy of the ` +
-    `app, not something another site can change for them.`,
   agent:
     'DorkOS changed nothing. Which Claude accounts agents may pick is a decision only a ' +
     'person makes. Ask them to change it in Settings → Runtimes.',

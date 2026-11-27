@@ -1,10 +1,9 @@
 /**
- * Relay message bus routes — send messages, manage endpoints, query inbox, SSE stream,
+ * Relay message bus routes — send messages, manage endpoints, query inbox,
  * and external adapter management.
  *
  * @module routes/relay
  */
-import type { ServerResponse } from 'node:http';
 import { Hono } from 'hono';
 import type { AgentSessionStoreLike, RelayCore, DeadLetterEntry } from '@dorkos/relay';
 import {
@@ -21,11 +20,9 @@ import {
   EndpointRegistrationSchema,
   reachesServerDestination,
 } from '@dorkos/shared/relay-schemas';
-import { initSSEStream } from '../services/core/streams/stream-adapter.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
-import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import type { TraceStore } from '../services/relay/trace-store.js';
 import { resolveSubjectLabels, type SubjectLabel } from '../services/relay/subject-resolver.js';
@@ -56,9 +53,6 @@ import {
 } from './relay-chat-place.js';
 import { launchRefusalReply } from './session-route-replies.js';
 
-/** Allowed subject prefixes for SSE subscription patterns. */
-const ALLOWED_PREFIXES = ['relay.human.console.', 'relay.system.', 'relay.signal.'];
-
 /** Maximum characters for conversation preview text. */
 const PREVIEW_MAX_CHARS = 120;
 
@@ -87,12 +81,6 @@ interface Conversation {
   sessionId: string | undefined;
   traceId: string;
   failureReason: string | undefined;
-}
-
-/** Validate that a subscription pattern starts with an allowed prefix. */
-function validateSubscriptionPattern(pattern: string): boolean {
-  if (pattern === '>') return false;
-  return ALLOWED_PREFIXES.some((prefix) => pattern.startsWith(prefix));
 }
 
 /**
@@ -224,7 +212,7 @@ const RESERVED_SUBJECT_REFUSAL = 'DorkOS keeps that address for itself. Send som
 
 /**
  * The Relay routes, mounted at `/api/relay`: messages, endpoints, dead letters,
- * metrics, traces and the event stream, plus the connection routes when an
+ * metrics and traces, plus the connection routes when an
  * adapter manager is handed over.
  *
  * @param deps - The bus, and the optional adapter manager, traces and activity feed.
@@ -497,21 +485,6 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
     return c.json(traceStore.getMetrics());
   });
 
-  // GET /stream — SSE event stream with server-side subject filtering
-  router.get('/stream', (c) => {
-    logger.warn('[DEPRECATED] GET /api/relay/stream — use GET /api/events instead');
-    const pattern = (readQuery(c).subject as string) || 'relay.human.console.>';
-    if (!validateSubscriptionPattern(pattern)) {
-      return problem(c, 'invalid_request', {
-        detail: 'That subject pattern isn’t one this stream allows.',
-        extensions: { allowedPrefixes: ALLOWED_PREFIXES },
-      });
-    }
-    return streamToNodeResponse(c, (res, { signal }) =>
-      streamRelayEvents(relayCore, pattern, res, signal)
-    );
-  });
-
   // --- Adapter Management Routes ---
   if (adapterManager) {
     router.route('/', createAdapterRoutes({ adapterManager, traceStore, activity: deps.activity }));
@@ -519,79 +492,4 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
   }
 
   return router;
-}
-
-/**
- * Write relay messages and signals matching `pattern` as an event stream until
- * the client leaves.
- */
-function streamRelayEvents(
-  relayCore: RelayCore,
-  pattern: string,
-  res: ServerResponse,
-  signal: AbortSignal
-): Promise<void> {
-  initSSEStream(res);
-  res.write(`event: relay_connected\n`);
-  res.write(`data: ${JSON.stringify({ pattern, connectedAt: new Date().toISOString() })}\n\n`);
-
-  // Backpressure: skip events until the client drains its buffer
-  let paused = false;
-
-  const unsubMessages = relayCore.subscribe(pattern, (envelope) => {
-    if (res.writableEnded || paused) return;
-    try {
-      res.write(`id: ${envelope.id}\n`);
-      res.write(`event: relay_message\n`);
-      const canContinue = res.write(`data: ${JSON.stringify(envelope)}\n\n`);
-      if (!canContinue) {
-        paused = true;
-        res.once('drain', () => {
-          paused = false;
-        });
-      }
-    } catch {
-      // Write failure — cleaned up on close
-    }
-  });
-
-  const unsubSignals = relayCore.onSignal(pattern, (_subject, relaySignal) => {
-    if (res.writableEnded || paused) return;
-    try {
-      const eventType = relaySignal.type === 'backpressure' ? 'relay_backpressure' : 'relay_signal';
-      res.write(`event: ${eventType}\n`);
-      const canContinue = res.write(`data: ${JSON.stringify(relaySignal)}\n\n`);
-      if (!canContinue) {
-        paused = true;
-        res.once('drain', () => {
-          paused = false;
-        });
-      }
-    } catch {
-      // Write failure — cleaned up on close
-    }
-  });
-
-  const keepalive = setInterval(() => {
-    if (res.writableEnded) {
-      clearInterval(keepalive);
-      return;
-    }
-    try {
-      res.write(`: keepalive\n\n`);
-    } catch {
-      clearInterval(keepalive);
-    }
-  }, 15_000);
-
-  return new Promise((resolve) => {
-    const stop = (): void => {
-      clearInterval(keepalive);
-      unsubMessages();
-      unsubSignals();
-      resolve();
-    };
-    if (signal.aborted) stop();
-    else signal.addEventListener('abort', stop, { once: true });
-  });
 }

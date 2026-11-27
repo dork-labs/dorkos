@@ -31,6 +31,8 @@ import {
 import { FILE_TOOL_REFUSALS } from '../services/core/directory/file-refusals.js';
 import { SESSION_READ_TOOL_REFUSALS } from '../services/session/reads/session-read-refusals.js';
 import { CONNECTION_OWNER_TOOL_REFUSALS } from '../services/connectors/resources/owner-refusals.js';
+import { EXTENSION_DOOR_TOOL_REFUSALS } from '../services/extensions/http-capabilities/extension-door-words.js';
+import { INVALID_CURSOR_DETAIL } from '@dorkos/shared/paging';
 
 import type {
   TierDeniedPayload,
@@ -262,10 +264,7 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
     code: 'invalid_request',
     detail: 'Send an id or a dork: reference of the right kind.',
   },
-  INVALID_CURSOR: {
-    code: 'invalid_request',
-    detail: 'That cursor wasn’t given by this list. Leave it out to start again.',
-  },
+  INVALID_CURSOR: { code: 'invalid_request', detail: INVALID_CURSOR_DETAIL },
   WORK_ITEM_NOT_FOUND: { code: 'not_found', detail: 'No item in a work queue has that id.' },
   WORK_ITEM_STARTED: { code: 'conflict', detail: 'That item has already started.' },
   WORK_ITEM_NOT_ENDED: { code: 'conflict', detail: 'That item has not ended.' },
@@ -309,8 +308,7 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
     detail: 'Heartbeats are not running on this server yet.',
   },
   AGENT_FOLDER_NOT_FOUND: { code: 'not_found', detail: 'No agent is registered in that folder.' },
-  // The marketplace's reads kept the hand routes' codes and sentences
-  // (`services/marketplace/doors/marketplace-refusals.ts`).
+  // The marketplace reads kept the hand routes' codes and sentences (`marketplace-refusals.ts`).
   ...MARKETPLACE_TOOL_REFUSALS,
   // The runtime setup reads kept the hand routes' codes and sentences
   // (`services/core/runtime-doors/runtime-read-refusals.ts`).
@@ -320,9 +318,9 @@ const TOOL_REFUSALS: Readonly<Record<string, Refusal>> = {
   ...FILE_TOOL_REFUSALS,
   // The chat reads kept the hand routes' codes and sentences (`session/reads/session-read-refusals.ts`).
   ...SESSION_READ_TOOL_REFUSALS,
-  // The connection doors kept the hand routes' codes and sentences
-  // (`services/connectors/resources/owner-refusals.ts`, DOR-4978).
+  // The connection and extension doors kept the hand routes' codes and sentences (DOR-4978).
   ...CONNECTION_OWNER_TOOL_REFUSALS,
+  ...EXTENSION_DOOR_TOOL_REFUSALS,
 };
 
 /** How a tool code ends or starts, and the family that spelling means. */

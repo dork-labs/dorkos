@@ -99,8 +99,15 @@ export const V1_ROUTES = {
    */
   hubNextWake: '/v1/hubs/self/next-wake',
   /**
+   * `POST` a report the hub received for one of its published pages
+   * (`PageReportRequestSchema`). Hub instance key only; answered 202 with
+   * `PageReportResponseSchema`.
+   */
+  hubPageReports: '/v1/hubs/self/page-reports',
+  /**
    * `POST` from a person's own computer, with its instance key and no body, to
-   * wake its own account's hub so it can deliver a notice. Answered 202 with
+   * wake its own account's hub so it can deliver a notice, or send or call
+   * for a published page. Answered 202 with
    * `HubWakeResponseSchema`; capped for each computer (`hub-wake.ts`).
    */
   instancesHubWake: '/v1/instances/hub-wake',
@@ -414,6 +421,18 @@ export const v1Path = {
    * @param communityId - The community's permanent identifier.
    */
   communityRestore: (communityId: string) => `/v1/communities/${communityEnc(communityId)}/restore`,
+  /**
+   * The route that previews what one more invite does to the seats a hosted
+   * space counts, answered with `CommunitySeatPreviewSchema`. A `GET` that
+   * makes no invite, holds no seat and promises nothing. Only an owner or an
+   * admin of the space may ask, and another member is `forbidden`; a space the
+   * caller cannot see is `not_found`, the same as one that does not exist. When one more person would be refused, the answer is
+   * `person_seat_required` with the service's words and an `actionUrl`.
+   *
+   * @param communityId - The community's permanent identifier.
+   */
+  communitySeatPreview: (communityId: string) =>
+    `/v1/communities/${communityEnc(communityId)}/seat-preview`,
   /**
    * The route for one move, answered with `CommunityMoveSchema`.
    *

@@ -8,7 +8,7 @@
 import { isExtensionClientId } from '@dorkos/shared/extension-id';
 import crypto from 'node:crypto';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
-import { newDispatchId } from '@dorkos/shared/dispatch-id';
+import { newDispatchId } from '../../../lib/identity/dispatch-id.js';
 import { getMessageQueueStore } from '../message-queue-store.js';
 import type { SessionStateProjector } from '../session-state-projector.js';
 import { primaryOf, queueKeyOf } from '../resolution/session-key-registry.js';

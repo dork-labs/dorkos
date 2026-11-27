@@ -29,9 +29,9 @@ export type EventHandler = (data: unknown) => void;
 export type SubscribeFn = (eventName: KnownEvent, handler: EventHandler) => () => void;
 
 /**
- * Known event names published by the `/api/events` unified stream. The
- * canonical list lives with the connection owner ({@link streamManager}'s
- * `GENERIC_EVENTS`) — add new events there as the server emits them.
+ * Known event names published by the `/api/events` unified stream, derived
+ * from the shared event union (`@dorkos/shared/dorkos-events`): a new event is
+ * added there, in its domain's table.
  */
 export type KnownEvent = GenericEventName;
 

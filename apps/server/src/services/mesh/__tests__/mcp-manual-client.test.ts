@@ -13,7 +13,10 @@ import { describe, it, expect, afterEach } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { ExtensionSecretStore, resetKeyCache } from '@dorkos/shared/extension-secrets';
+import {
+  ExtensionSecretStore,
+  resetKeyCache,
+} from '../../../lib/secret-store/extension-secrets.js';
 
 import { AgentMcpOAuthService } from '../agent-mcp-oauth-service.js';
 

@@ -49,7 +49,8 @@ import type {
 } from '@dorkos/shared/work-graph-reads';
 import type { AuditReader } from '../../audit/visibility.js';
 import type { WorkLink, WorkLinkStore } from '../work-link-store.js';
-import { decodePageCursor, encodePageCursor, invalidCursor } from './page-cursor.js';
+import { invalidCursor } from '../../core/capabilities/capability-definition.js';
+import { decodePageCursor, encodePageCursor } from './page-cursor.js';
 
 /** What {@link readWorkItemChats} reads. */
 export type WorkItemChatsSources = Pick<WorkLinkStore, 'to' | 'resolveRekeys'>;

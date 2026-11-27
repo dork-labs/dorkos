@@ -113,7 +113,7 @@ describe('apps built for the old extension API', () => {
     const old = oldApp('meadow');
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({ ok: true, json: async () => [old] }))
+      vi.fn(async () => ({ ok: true, json: async () => ({ extensions: [old], nextCursor: null }) }))
     );
     await loader.initialize();
     expect(importExtensionModule).not.toHaveBeenCalled();
@@ -131,7 +131,7 @@ describe('apps built for the old extension API', () => {
     const old = oldApp('meadow', true);
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({ ok: true, json: async () => [old] }))
+      vi.fn(async () => ({ ok: true, json: async () => ({ extensions: [old], nextCursor: null }) }))
     );
     await loader.initialize();
     const tab = useExtensionRegistry
@@ -150,7 +150,7 @@ describe('apps built for the old extension API', () => {
     const old = { ...oldApp('reed', true), allowedSlots: [] };
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({ ok: true, json: async () => [old] }))
+      vi.fn(async () => ({ ok: true, json: async () => ({ extensions: [old], nextCursor: null }) }))
     );
     await loader.initialize();
     const ids = useExtensionRegistry.getState().slots['right-panel'].map((entry) => entry.id);
@@ -165,7 +165,10 @@ describe('independent app loads', () => {
     const approvals = JSON.stringify(records);
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({ ok: true, json: async () => records }))
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ extensions: records, nextCursor: null }),
+      }))
     );
     vi.mocked(importExtensionModule).mockImplementation(async (url) => {
       if (url.includes('/pond/')) return new Promise<ExtensionModule>(() => {});
@@ -205,7 +208,10 @@ describe('independent app loads', () => {
     const records = [record('pond')];
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({ ok: true, json: async () => records }))
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ extensions: records, nextCursor: null }),
+      }))
     );
     let finish!: (module: ExtensionModule) => void;
     vi.mocked(importExtensionModule).mockImplementationOnce(
@@ -250,7 +256,10 @@ describe('independent app loads', () => {
     const records = [record('pond'), record('garden', 'local')];
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({ ok: true, json: async () => records }))
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ extensions: records, nextCursor: null }),
+      }))
     );
     let finishGarden!: (module: ExtensionModule) => void;
     let pondAttempts = 0;
@@ -279,7 +288,10 @@ describe('independent app loads', () => {
       let records = [record('pond')];
       vi.stubGlobal(
         'fetch',
-        vi.fn(async () => ({ ok: true, json: async () => records }))
+        vi.fn(async () => ({
+          ok: true,
+          json: async () => ({ extensions: records, nextCursor: null }),
+        }))
       );
       vi.mocked(importExtensionModule).mockRejectedValueOnce(new Error('unavailable'));
       await loader.initialize();
@@ -300,7 +312,10 @@ describe('independent app loads', () => {
     const records = [record('pond'), record('garden')];
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({ ok: true, json: async () => records }))
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ extensions: records, nextCursor: null }),
+      }))
     );
     vi.mocked(importExtensionModule).mockResolvedValueOnce({
       activate(api) {
@@ -338,7 +353,10 @@ describe('the listing other surfaces read', () => {
     const off = { ...record('desk'), approvedToRun: false };
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({ ok: true, json: async () => [ledger, off] }))
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ extensions: [ledger, off], nextCursor: null }),
+      }))
     );
     await loader.initialize();
     expect(getExtensionNames()).toEqual({ ledger: 'Ledger', desk: 'desk' });

@@ -74,7 +74,7 @@ export {
   extensionQueryKeys,
   type PendingExtensionApprovalsState,
 } from './model/use-pending-extension-approvals';
-export { useExtensionList } from './model/use-extension-list';
+export { readRunningExtensions, useExtensionList } from './model/use-extension-list';
 export { approvalSetsKey, pluginDisplayName, useApprovalSets } from './model/use-approval-sets';
 export {
   REVIEW_EXTENSION_SET_ACTION,

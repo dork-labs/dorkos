@@ -181,6 +181,7 @@ beforeEach(() => {
   });
   vi.mocked(mockTransport.listRooms).mockResolvedValue(ALL_ROOMS);
   vi.mocked(mockTransport.listRecentSessions).mockResolvedValue({
+    nextCursor: null,
     sessions: [
       {
         id: '00000000-0000-4000-8000-00000000cafe',

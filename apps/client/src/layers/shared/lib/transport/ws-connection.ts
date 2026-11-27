@@ -406,10 +406,10 @@ export class WSConnection {
    * A WebSocket does not compete for the HTTP socket pool, so this is no longer
    * a scarcity measure — it is kept because it still stops a backgrounded window
    * holding a server-side subscription (and the projector waiter behind it) open
-   * for hours. A session stream resumes from the retained cursor. The global
-   * `/api/events` stream has no replay, so what it said while parked is gone:
-   * the park reports `reconnecting`, and the reopen is a recovery that callers
-   * re-sync from (DOR-2896).
+   * for hours. Both streams resume from the retained cursor, but the global
+   * `/api/events` stream replays only a short window, so a long park can still
+   * lose what it said: the park reports `reconnecting`, and the reopen is a
+   * recovery that callers re-sync from (DOR-2896).
    *
    * @param graceMs - Grace period before closing when hidden. Default: 30000.
    */

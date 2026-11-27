@@ -15,10 +15,10 @@
  */
 import type { WebSocket } from 'ws';
 import { upgradeCaller } from '../services/core/streams/stream-upgrade-auth.js';
-import { eventFanOut, encodeBroadcast, type FanOutClient } from '../services/core/event-fan-out.js';
+import { STREAM_RESUME_PARAM } from '@dorkos/shared/stream-socket';
+import { eventFanOut, type FanOutClient } from '../services/core/event-fan-out.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
-import { sendSessionStatusSnapshot } from '../services/session/catalog/session-list-broadcaster.js';
-import { connectedFramePayload } from '../services/session/catalog/session-list-reset.js';
+import { openGlobalStream } from './global-events-connect.js';
 import { DurableStreamSocket } from '../services/core/streams/stream-socket.js';
 import type {
   UpgradeAttempt,
@@ -59,7 +59,7 @@ export const globalEventsRoute: UpgradeRoute = {
   // The router runs the credential gate before this is called.
   credential: 'required',
 
-  authorize({ headers, locals }: UpgradeAttempt): UpgradeDecision {
+  authorize({ url, headers, locals }: UpgradeAttempt): UpgradeDecision {
     // Refusals go out as a close frame rather than a failed handshake: a
     // browser cannot read the status of a failed one, and "you are signed out"
     // has to be distinguishable from "the server is briefly down".
@@ -83,15 +83,15 @@ export const globalEventsRoute: UpgradeRoute = {
         // this reads the same principal an HTTP request would, with no second
         // notion of who a caller is (`stream-upgrade-auth.ts`).
         const principal = readCallerPrincipal(upgradeCaller(headers, locals));
-        const unsubscribe = eventFanOut.addClient(client, principal);
+        // Registration, the preamble, any replay from `?resume=` and the
+        // fleet's current lifecycles (DOR-1136), in one tick, so a live
+        // transition cannot land ahead of the snapshot it supersedes.
+        const unsubscribe = openGlobalStream(
+          client,
+          principal,
+          url.searchParams.get(STREAM_RESUME_PARAM) ?? undefined
+        );
         socket.signal.addEventListener('abort', unsubscribe, { once: true });
-        // The connect preamble: `connected`, then the fleet's current
-        // lifecycles, so a window that opened after a session errored or
-        // blocked still learns about it (DOR-1136). Registration first and no
-        // await in between, so a live transition cannot land ahead of the
-        // snapshot it supersedes.
-        client.send(encodeBroadcast('connected', connectedFramePayload()));
-        sendSessionStatusSnapshot(client, principal);
       },
     };
   },

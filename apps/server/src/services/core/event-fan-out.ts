@@ -12,29 +12,29 @@
  * this through the narrow {@link FanOutClient} port, so a broadcast is written
  * once and lands on every reader whatever it speaks.
  *
+ * Every broadcast a client could receive is numbered and kept in a bounded
+ * window (`lib/event-stream/event-replay-buffer.ts`), so a reader that
+ * reconnects with its last frame id is sent what it missed, filtered with the
+ * rights it has when it resumes (ADR 261123-170833).
+ *
  * @module services/event-fan-out
  */
-import { encodeStreamFrame } from '@dorkos/shared/stream-socket';
+import type { DorkOsEventType } from '@dorkos/shared/dorkos-events';
 import { SSE } from '../../config/constants.js';
 import { logger } from '../../lib/logger.js';
 import type { CallerPrincipal } from '../../lib/caller-principal.js';
+import type { ResumeCursor } from '../../lib/stream-cursor.js';
+import { EventReplayBuffer, type ReplayEntry } from '../../lib/event-stream/event-replay-buffer.js';
+import {
+  deliveryBytes,
+  encodeBroadcast,
+  frameFor,
+  type BroadcastAudience,
+  type Delivery,
+  type EncodedBroadcast,
+} from '../../lib/event-stream/global-event-frames.js';
 
-/**
- * One broadcast, pre-rendered for both wire formats.
- *
- * Both encodings are computed ONCE per broadcast and handed to every client,
- * however many are connected on either protocol. That is the property this
- * whole port exists to protect: a client that serialized for itself would be
- * invisible until it was expensive.
- */
-export interface EncodedBroadcast {
-  /** The event name, e.g. `room_created`. */
-  readonly event: string;
-  /** The JSON stream frame — the WebSocket wire format. */
-  readonly json: string;
-  /** The `event:`/`data:` lines — the SSE wire format. */
-  readonly sse: string;
-}
+export { encodeBroadcast, type BroadcastAudience, type EncodedBroadcast };
 
 /**
  * One connected reader of the global stream.
@@ -54,43 +54,6 @@ export interface FanOutClient {
   /** Drop a client that cannot keep up; it reconnects and re-baselines. */
   drop(): void;
 }
-
-/**
- * Render one event into both wire formats.
- *
- * Exported because a frame does not always go to everyone: a client that has
- * just connected is sent its own connect preamble — the `connected` frame and
- * the fleet's current lifecycles — which nobody else needs and which would be
- * duplicate noise on every other open connection. Those writes go through the
- * same {@link FanOutClient.send} port as a broadcast, so they need the same
- * encoding, and there must be exactly one encoder or the two paths drift.
- *
- * @param eventName - The event name, e.g. `session_status`.
- * @param data - The payload; serialized once per format.
- */
-export function encodeBroadcast(eventName: string, data: unknown): EncodedBroadcast {
-  return {
-    event: eventName,
-    json: encodeStreamFrame({ event: eventName, data }),
-    sse: `event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`,
-  };
-}
-
-/**
- * Decide, per connected client, whether one broadcast is that client's to
- * receive.
- *
- * Omitted at the call site means everyone, which is what most events on this
- * bus mean. Room events and `read_cursor` must name one: both say what a person
- * did in a place only some readers may see, so omitting it sends nothing. An
- * event carrying detail, like `interaction_pending` (the tool, the command and
- * the working directory), goes only to a connection entitled to it
- * (ADR 260819-022912).
- *
- * @param principal - What the connection registered itself as.
- * @returns Whether to write the frame to that connection.
- */
-export type BroadcastAudience = (principal: CallerPrincipal) => boolean;
 
 /**
  * A listener on the in-process half of the global event stream.
@@ -113,12 +76,16 @@ export const ROOM_EVENT_PREFIX = 'room_';
  * halves read: {@link ScopedEventLiteral} for typed calls, and
  * {@link requiresAudience} for calls the types cannot see. An in-process
  * listener hears these whatever their audience, so it must never forward one
- * ({@link EventFanOut.subscribe}, contract 3).
+ * ({@link EventFanOut.subscribe}, contract 3). `tunnel_status` is here because
+ * it carries this computer's public address, which an agent must never read
+ * (DOR-3650): an unaddressed one fails the typecheck and is dropped.
  */
-export const SCOPED_EXACT_EVENTS = { read_cursor: true } as const;
+export const SCOPED_EXACT_EVENTS = { read_cursor: true, tunnel_status: true } as const;
 
-/** The event names that must name an audience: room events and read cursors. */
-type ScopedEventLiteral = `${typeof ROOM_EVENT_PREFIX}${string}` | keyof typeof SCOPED_EXACT_EVENTS;
+/** The event names that must name an audience: room events, read cursors, the tunnel. */
+type ScopedEventLiteral =
+  | Extract<DorkOsEventType, `${typeof ROOM_EVENT_PREFIX}${string}`>
+  | keyof typeof SCOPED_EXACT_EVENTS;
 
 /**
  * Whether a broadcast of this name must name an audience.
@@ -158,6 +125,8 @@ type UnscopedEventName<Name extends string> = [ScopedEventName<Name>] extends [n
 class EventFanOut {
   private clients = new Set<{ client: FanOutClient; principal: CallerPrincipal }>();
   private listeners = new Set<EventFanOutListener>();
+  /** The stream's numbering and replay window; frame ids read `events-…`. */
+  private readonly replay = new EventReplayBuffer<Delivery>('events');
 
   /**
    * Whether another client may connect.
@@ -289,16 +258,19 @@ class EventFanOut {
    *   {@link BroadcastAudience}.
    */
   broadcast(eventName: ScopedEventLiteral, data: unknown, audience: BroadcastAudience): void;
-  broadcast<Name extends string>(
+  broadcast<Name extends DorkOsEventType>(
     eventName: Name & UnscopedEventName<Name>,
     data: unknown,
     audience?: BroadcastAudience
   ): void;
-  broadcast(eventName: string, data: unknown, audience: BroadcastAudience): void;
-  broadcast(eventName: string, data: unknown, audience?: BroadcastAudience): void {
+  broadcast(eventName: DorkOsEventType, data: unknown, audience: BroadcastAudience): void;
+  broadcast(eventName: DorkOsEventType, data: unknown, audience?: BroadcastAudience): void {
     this.notifyListeners(eventName, data);
     if (requiresAudience(eventName) && !audience) return;
-    this.writeToClients(() => encodeBroadcast(eventName, data), audience);
+    this.publish(eventName, (id) => ({
+      full: encodeBroadcast(eventName, data, id),
+      ...(audience && { audience }),
+    }));
   }
 
   /**
@@ -320,8 +292,8 @@ class EventFanOut {
    * - **In-process listeners are notified ONCE**, with the FULL payload. They
    *   are the server itself, not callers; a listener that received the same
    *   event twice — or received a redacted one — would be a new bug.
-   * - **Each rendering is encoded once**, whatever the split, and the redacted
-   *   one is not encoded at all when every connection is entitled.
+   * - **Each rendering is encoded once**, whatever the split, and kept with
+   *   the event so a replay filters the same way.
    * - **Backpressure is unchanged**: each client is measured on the one frame
    *   it actually received.
    *
@@ -339,7 +311,7 @@ class EventFanOut {
     entitled: BroadcastAudience,
     audience: BroadcastAudience
   ): void;
-  broadcastRedacted<Name extends string>(
+  broadcastRedacted<Name extends DorkOsEventType>(
     eventName: Name & UnscopedEventName<Name>,
     full: unknown,
     redacted: unknown,
@@ -347,14 +319,14 @@ class EventFanOut {
     audience?: BroadcastAudience
   ): void;
   broadcastRedacted(
-    eventName: string,
+    eventName: DorkOsEventType,
     full: unknown,
     redacted: unknown,
     entitled: BroadcastAudience,
     audience: BroadcastAudience
   ): void;
   broadcastRedacted(
-    eventName: string,
+    eventName: DorkOsEventType,
     full: unknown,
     redacted: unknown,
     entitled: BroadcastAudience,
@@ -362,15 +334,56 @@ class EventFanOut {
   ): void {
     this.notifyListeners(eventName, full);
     if (requiresAudience(eventName) && !audience) return;
-    const receives = audience ?? (() => true);
-    this.writeToClients(
-      () => encodeBroadcast(eventName, full),
-      (principal) => receives(principal) && entitled(principal)
-    );
-    this.writeToClients(
-      () => encodeBroadcast(eventName, redacted),
-      (principal) => receives(principal) && !entitled(principal)
-    );
+    // Both renderings share one seq and one frame id: they are one event.
+    this.publish(eventName, (id) => ({
+      full: encodeBroadcast(eventName, full, id),
+      redacted: encodeBroadcast(eventName, redacted, id),
+      entitled,
+      ...(audience && { audience }),
+    }));
+  }
+
+  /**
+   * What a connecting reader is owed: the events after its cursor, or a
+   * snapshot when the cursor names nothing this window can serve.
+   *
+   * @param cursor - What `parseResumeCursor` read off the request.
+   */
+  resumeFor(cursor: ResumeCursor | undefined): ReturnType<EventReplayBuffer<Delivery>['resume']> {
+    return this.replay.resume(cursor);
+  }
+
+  /**
+   * Send a reconnecting reader the events it missed, each filtered with the
+   * rights the reader has now, when it resumes (an audience such as a room's
+   * membership is asked again). Call in the same tick as {@link addClient}, so
+   * no live broadcast lands between the two.
+   *
+   * @param client - The reader.
+   * @param principal - Who the reader is.
+   * @param entries - From {@link resumeFor}.
+   */
+  replayTo(
+    client: FanOutClient,
+    principal: CallerPrincipal,
+    entries: readonly ReplayEntry<Delivery>[]
+  ): void {
+    for (const entry of entries) {
+      const frame = frameFor(entry.delivery, principal);
+      if (frame) client.send(frame);
+    }
+  }
+
+  /**
+   * Number one broadcast, keep it for replay, and write it to every reader it is
+   * for. Encoded once per rendering, whatever the number of readers.
+   *
+   * @param eventName - The event type.
+   * @param deliver - The delivery record, from the event's frame id.
+   */
+  private publish(eventName: DorkOsEventType, deliver: (frameId: string) => Delivery): void {
+    const entry = this.replay.append(eventName, deliver, deliveryBytes);
+    this.writeToClients(entry.delivery);
   }
 
   /**
@@ -394,28 +407,22 @@ class EventFanOut {
   }
 
   /**
-   * Write one frame to the connected clients an audience admits, dropping the
-   * gone and the hopelessly backed-up.
+   * Write one broadcast to the connected clients it is for, dropping the gone
+   * and the hopelessly backed-up.
    *
-   * `render` is a thunk, called AT MOST ONCE and only if some client is going
-   * to receive it. That is what keeps "encoded once per broadcast" true when a
-   * rendering has no readers at all — the redacted variant on an install where
-   * only the cockpit is connected, which is the common case.
-   *
-   * @param render - Produces the frame, once.
-   * @param audience - Which connections it is for; omitted means all.
+   * @param delivery - The broadcast; {@link frameFor} picks each reader's frame.
    */
-  private writeToClients(render: () => EncodedBroadcast, audience?: BroadcastAudience): void {
-    let broadcast: EncodedBroadcast | undefined;
+  private writeToClients(delivery: Delivery): void {
     for (const entry of this.clients) {
       const { client } = entry;
       if (client.gone) {
         this.clients.delete(entry);
         continue;
       }
-      if (audience && !audience(entry.principal)) continue;
+      const frame = frameFor(delivery, entry.principal);
+      if (!frame) continue;
       try {
-        client.send((broadcast ??= render()));
+        client.send(frame);
         if (client.bufferedBytes > SSE.MAX_BUFFERED_BYTES) {
           logger.warn('[EventFanOut] dropping slow client (buffer over limit)', {
             bufferedBytes: client.bufferedBytes,

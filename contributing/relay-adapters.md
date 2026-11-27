@@ -961,7 +961,7 @@ Manifests are static constants beside each adapter and are registered automatica
 
 ### CatalogEntry
 
-`GET /api/relay/adapters/catalog` returns `CatalogEntry[]`, one per known adapter type, pairing the manifest with its configured instances so the UI can show "available types" and "running instances" in one view:
+`GET /api/relay/adapters/catalog` returns `{ entries: CatalogEntry[], nextCursor }` a page at a time (`cursor`, `limit`), one entry per known adapter type, pairing the manifest with its configured instances so the UI can show "available types" and "running instances" in one view:
 
 ```typescript
 interface CatalogEntry {

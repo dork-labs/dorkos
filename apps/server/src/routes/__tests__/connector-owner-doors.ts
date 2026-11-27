@@ -17,6 +17,7 @@ import {
   type ConnectionOwnerDeps,
 } from '../../services/connectors/resources/owner-capabilities.js';
 import { connectionManagementDomain } from '../../services/connectors/resources/owner-management-capabilities.js';
+import { connectionListDomain } from '../../services/connectors/owner-lists/owner-list-capabilities.js';
 import { connectorStoreUnavailable } from '../connector-owner-boundary.js';
 import { managedCloudRefusalCode } from '../managed-cloud-error.js';
 
@@ -48,6 +49,7 @@ export function withOwnerDoors<D extends DoorDeps>(
   return [
     capabilityGroup(connectionOwnerDomain, doors, ports),
     capabilityGroup(connectionManagementDomain, doors, ports),
+    capabilityGroup(connectionListDomain, doors, ports),
     { path: '/api/connectors', routes: build(deps) },
   ];
 }

@@ -84,7 +84,7 @@ export interface CommandStreamDeps {
    */
   open: (signal: AbortSignal) => Promise<Response>;
   /** Called for each leased command, in order. Keepalives never reach it. */
-  onCommand: (command: Exclude<RemoteCommand, { kind: 'keepalive' }>) => void;
+  onCommand: (command: Exclude<RemoteCommand, { kind: 'keepalive' | 'page_take_down' }>) => void;
   /** Asked before every connection; `false` stops the stream for good. */
   shouldRun: () => boolean;
   /** Called once when Cloud answers `404`: the route is not here. */
@@ -290,6 +290,16 @@ export class CommandStream {
       return;
     }
     const command = parsed.data;
+    // A take-down of a published page is for a hub whose build carries out
+    // take-downs, which this one does not yet. The service sends it only to a
+    // build that knows it, so this one treats it as a kind it cannot read:
+    // never acknowledged, never journaled.
+    if (command.kind === 'page_take_down') {
+      logger.warn('[RemoteAccess] Ignored a command this build cannot read', {
+        kind: command.kind,
+      });
+      return;
+    }
     if (command.kind === 'keepalive') {
       if (command.reconnectAfterMs !== undefined) {
         this.retryMs = clampRetry(command.reconnectAfterMs);

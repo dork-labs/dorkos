@@ -202,8 +202,8 @@ beforeEach(() => {
       const url = String(input);
       const body = url.endsWith('/extension-decisions')
         ? { decisions: [], offers: [] }
-        : url.endsWith('/extensions/pending-approvals')
-          ? { approvals: [] }
+        : url.endsWith('/extensions/pending-approvals?limit=200')
+          ? { approvals: [], nextCursor: null }
           : {};
       return Promise.resolve(new Response(JSON.stringify(body)));
     })

@@ -382,13 +382,16 @@ describe('useTabIdentity', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
-        Response.json([
-          {
-            id: 'field-notes',
-            manifest: { id: 'field-notes', name: 'Field notes', version: '1.0.0' },
-            status: 'active',
-          },
-        ])
+        Response.json({
+          extensions: [
+            {
+              id: 'field-notes',
+              manifest: { id: 'field-notes', name: 'Field notes', version: '1.0.0' },
+              status: 'active',
+            },
+          ],
+          nextCursor: null,
+        })
       )
     );
     try {

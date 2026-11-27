@@ -235,7 +235,7 @@ describe('Host guard on /api (DNS rebinding)', () => {
 });
 
 /**
- * One request to the listener, answered as soon as its head arrives: the tunnel
+ * One request to the listener, answered as soon as its head arrives: the event
  * stream never ends, so its headers are all a test can wait for. A body is read
  * only when the answer is not a stream.
  */
@@ -267,9 +267,10 @@ function answer(
 
 // DOR-3650 (Security, Nov 12). Remote Access's own state is read by the app from
 // this computer or the person's own tunnel. A page on any other site must get no
-// CORS grant to read it, and a rebound Host must not reach it at all.
+// CORS grant to read it, and a rebound Host must not reach it at all. Its live
+// changes ride `/api/events` (`tunnel_status`), so that stream is held to the same.
 describe('Remote Access reads refuse a foreign page and a foreign Host (DOR-3650)', () => {
-  const READS = ['/api/tunnel/status', '/api/tunnel/stream'];
+  const READS = ['/api/tunnel/status', '/api/events'];
 
   beforeEach(() => {
     vi.clearAllMocks();

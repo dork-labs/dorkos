@@ -80,7 +80,10 @@ const record: ExtensionRecordPublic = {
 };
 
 beforeEach(() => {
-  global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([record]) });
+  global.fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    json: () => Promise.resolve({ extensions: [record], nextCursor: null }),
+  });
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 

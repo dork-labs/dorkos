@@ -688,24 +688,24 @@ export interface Transport extends TransportSlices {
   readonly supportsWorkbenchServe: boolean;
   /**
    * List sessions across all registered runtimes, optionally scoped to a
-   * working directory. Returns the aggregation envelope (ADR-0310): `sessions`
-   * merged and sorted by `updatedAt` descending, plus optional per-runtime
-   * `warnings` when a backend failed or timed out (partial results, never a
-   * failed request).
+   * working directory: the first page of 200 (DOR-4982), in the aggregation
+   * envelope (ADR-0310), `sessions` latest `updatedAt` first, plus optional
+   * per-runtime `warnings` when a backend failed or timed out (partial results,
+   * never a failed request).
    */
   listSessions(cwd?: string): Promise<SessionListResponse>;
   /**
    * List the most-recent sessions across ALL registered agents (DOR-329),
-   * backing the sidebar's cross-agent "Recent" section. Returns the merged,
-   * `updatedAt`-descending sessions trimmed to `limit`, plus `agentActivity` (a
+   * backing the sidebar's cross-agent "Recent" section. Returns the first page
+   * of merged sessions, latest `updatedAt` first, plus `agentActivity` (a
    * per-agent `projectPath` → latest-session-`updatedAt` map that drives the
    * per-group "Recent activity" sort) and optional per-runtime `warnings`
    * (ADR-0310 degradation). Embedded mode has no multi-agent roster and returns
    * an empty envelope.
    *
-   * @param limit - Maximum sessions to return (1-50, default 10).
+   * @param limit - The page size (1-200, default 50).
    * @param touchedSince - ISO-8601 time; every chat you touched at or after it
-   *   is returned too, beyond `limit` (spec `your-activity-first` D6).
+   *   is on the first page too, beyond `limit` (spec `your-activity-first` D6).
    */
   listRecentSessions(limit?: number, touchedSince?: string): Promise<RecentSessionsResponse>;
   /**
@@ -3208,8 +3208,8 @@ export interface Transport extends TransportSlices {
     limit?: number;
   }): Promise<ConnectorCatalogResourcePage>;
 
-  /** Read every stable connection owned by the current operator. */
-  getConnectorConnections(): Promise<ConnectorConnectionListResource>;
+  /** Read every stable connection owned by the current operator, every page, in name order. */
+  getConnectorConnections(): Promise<Pick<ConnectorConnectionListResource, 'connections'>>;
 
   /** Read owner-visible detail for one stable connection. */
   getConnectorConnection(connectionId: string): Promise<ConnectorConnectionDetail>;

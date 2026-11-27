@@ -225,7 +225,8 @@ export {
   setAgentSessionSources,
   type AgentSessionSources,
 } from './agent-session-fanout.js';
-export { listRecentSessions } from './catalog/recent-sessions.js';
+export { listRecentSessions, mergeRecentSessions } from './catalog/recent-sessions.js';
+export { recentSessionsPage, sessionListPage } from './catalog/session-list-page.js';
 export { countSessionsPerDay } from './catalog/session-daily-counts.js';
 
 // --- Global session-list discovery → unified SSE fan-out (Task #7, ADR-0265) ---

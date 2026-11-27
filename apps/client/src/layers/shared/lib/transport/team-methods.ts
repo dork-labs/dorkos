@@ -13,6 +13,7 @@ import { fetchJSON } from './http-client';
 /** Create the team-roster methods bound to a base URL. */
 export function createTeamMethods(baseUrl: string) {
   return {
+    // Stays hand-written: `GET /api/team` has no operationId (DOR-5473).
     getTeamRoster(): Promise<TeamRosterResponse> {
       // The envelope goes back untouched, `warnings` included: a degraded read
       // is a 200 the page renders a banner for, not an error the caller has to
@@ -20,6 +21,7 @@ export function createTeamMethods(baseUrl: string) {
       return fetchJSON<TeamRosterResponse>(baseUrl, '/team');
     },
 
+    // Stays hand-written: `GET /api/team/{memberId}/rooms` has no operationId (DOR-5473).
     listMemberRooms(memberId: string): Promise<MemberRoomsResponse> {
       // Encoded because a roster id is opaque: today they are ULIDs, and
       // "today's ids happen to be URL-safe" is not a thing a client gets to

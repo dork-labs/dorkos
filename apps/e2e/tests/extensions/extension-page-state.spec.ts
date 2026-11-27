@@ -171,12 +171,19 @@ test.describe('An app’s page while the app is still starting', () => {
     await page.route(LIST, async (route) => {
       if (!changed) return route.continue();
       const response = await route.fetch();
-      const list = (await response.json()) as Array<{ id: string; approvedToRun: boolean }>;
+      // One page of the list (DOR-4982): rewrite its rows, keep its cursor.
+      const body = (await response.json()) as {
+        extensions: Array<{ id: string; approvedToRun: boolean }>;
+        nextCursor: string | null;
+      };
       await route.fulfill({
         response,
-        json: list.map((record) =>
-          record.id === HELLO ? { ...record, approvedToRun: false } : record
-        ),
+        json: {
+          ...body,
+          extensions: body.extensions.map((record) =>
+            record.id === HELLO ? { ...record, approvedToRun: false } : record
+          ),
+        },
       });
     });
     await watchPage(page);

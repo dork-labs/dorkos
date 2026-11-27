@@ -216,6 +216,21 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'connectors.stop_every_agent_share': 'local',
   'connectors.leave_agent_out': 'local',
   'connectors.list_usage': 'local',
+  'connectors.let_agent_back_in': 'local',
+  // An agent's request carries its own words and the app's own action text.
+  'connectors.answer_agent_request': 'outside',
+  'connectors.start_agent_request_sign_in': 'local',
+  'connectors.list_every_agent_grants': 'local',
+  'connectors.list_agent_connections': 'local',
+  'connectors.list_session_connections': 'local',
+  // A program's requested changes carry the program's words and the app's own action text.
+  'connectors.list_reviews': 'outside',
+  'connectors.list_exclusions': 'local',
+  // The person's extension doors (DOR-4978): agents are refused; extension records only.
+  'extensions.dismiss_approval': 'local',
+  'extensions.remove': 'local',
+  'extensions.forget_approval': 'local',
+  'extensions.restart': 'local',
   'mcp.list': 'local',
   'mcp.add': 'local',
   'mcp.import': 'local',

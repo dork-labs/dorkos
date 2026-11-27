@@ -26,9 +26,8 @@ import {
 } from '@dorkos/shared/work-graph-reads';
 import { defineCapability } from '../../core/capabilities/capability-definition.js';
 import type { AuditReader } from '../../audit/visibility.js';
+import { pageCursorInput, pageLimitInput } from '@dorkos/shared/paging';
 import {
-  cursorInput,
-  limitInput,
   READ_TOOL,
   requireAuditDeps,
   workGraphDb,
@@ -88,8 +87,8 @@ export function workItemChatsCapability(ports: WorkGraphReadPorts) {
           message: 'Name a ticket (DOR-1234) or a pull request (owner/repo#42 or PR #42).',
         })
         .describe('The ticket (DOR-1234) or pull request (owner/repo#42 or PR #42).'),
-      cursor: cursorInput,
-      limit: limitInput(WORK_ITEM_CHATS_PAGE_LIMIT),
+      cursor: pageCursorInput,
+      limit: pageLimitInput(WORK_ITEM_CHATS_PAGE_LIMIT),
     }),
     output: WorkItemChatsPageSchema,
     surfaces: {

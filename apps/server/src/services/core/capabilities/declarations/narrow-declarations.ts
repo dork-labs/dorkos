@@ -47,11 +47,18 @@ export const WIFI_MODE_CAPABILITY_IDS: ReadonlyMap<string, CapabilityWifiMode> =
  *   for heartbeat checks.
  * - `mcp.add_global_server`, `mcp.replace_global_server` (`front-door`): what
  *   an MCP server every agent gets runs (DOR-4978).
+ * - `connectors.let_agent_back_in`, `connectors.answer_agent_request` (a yes
+ *   only), `connectors.start_agent_request_sign_in` (`front-door`, behind the
+ *   account-decision caller bar): giving an agent access to a connected app
+ *   (DOR-4355, DOR-4978).
  */
 export const CONFIRM_FIRST_CAPABILITY_IDS: ReadonlyMap<string, ConfirmFirstBar> = new Map([
   ['heartbeat.choose_triage_credits', 'account-owner'],
   ['mcp.add_global_server', 'front-door'],
   ['mcp.replace_global_server', 'front-door'],
+  ['connectors.let_agent_back_in', 'front-door'],
+  ['connectors.answer_agent_request', 'front-door'],
+  ['connectors.start_agent_request_sign_in', 'front-door'],
 ]);
 
 /**
@@ -59,7 +66,7 @@ export const CONFIRM_FIRST_CAPABILITY_IDS: ReadonlyMap<string, ConfirmFirstBar> 
  *
  * @param capability - The capability being composed.
  * @throws When it declares `cancelWindow`, a `wifi` mode or `confirmFirst`
- *   without being listed for it, an owner bar it may not ({@link assertOwnerBar}), a confirm-first bar other than its listed one, or `person-held` or `confirmFirst` on a
+ *   without being listed for it, a caller bar it may not ({@link assertCallerBar}), a confirm-first bar other than its listed one, or `person-held` or `confirmFirst` on a
  *   capability any agent may call.
  */
 export function assertNarrowDeclarations(
@@ -69,7 +76,7 @@ export function assertNarrowDeclarations(
   >
 ): void {
   const { id } = capability;
-  assertOwnerBar(capability);
+  assertCallerBar(capability);
   if (capability.cancelWindow && !CANCEL_WINDOW_CAPABILITY_IDS.has(id)) {
     throw new Error(`Capability registry: "${id}" may not declare a cancel window.`);
   }
@@ -97,38 +104,46 @@ export function assertNarrowDeclarations(
 }
 
 /**
- * Refuse an owner bar (`http.ownerBar`, DOR-4978) anywhere an agent could reach
- * it or the bar would mean less: it needs `audience: 'person'` and its own
- * `owner_only` sentence, and takes no MCP surface, no network mode and no
- * confirm-first hold (a held call's confirmation does not re-run this bar yet).
+ * Refuse a caller bar (`http.callerBar`, DOR-4978) anywhere an agent could
+ * reach it or the bar would mean less: it needs `audience: 'person'` (so every
+ * list an agent reads shows it closed to agents), and takes no MCP surface and
+ * no network mode. It takes a confirm-first hold only behind the `front-door`
+ * bar (Security t1j, 2026-11-27): the mount runs the caller bar afresh on the
+ * confirming request, refuses a confirm from another kind of caller, and keeps
+ * no pass with the hold (`routes/capability-confirm-first.ts`). Never with the
+ * `account-owner` hold, which runs its own owner bar in its own words. Each
+ * bar names its own fixed words: `account-decision` its `owner_only`
+ * sentence, `person` its copy; neither takes the other's.
  *
  * @param capability - The capability being composed.
  * @throws Naming what the declaration may not have.
  */
-function assertOwnerBar(
+function assertCallerBar(
   capability: Pick<CapabilityDefinition, 'id' | 'wifi' | 'confirmFirst' | 'surfaces'>
 ): void {
   const { id, surfaces } = capability;
   const http = surfaces.http;
-  if (http?.ownerBar === undefined) {
-    if (http?.ownerOnly !== undefined) {
-      throw new Error(`Capability registry: "${id}" names an owner sentence but no owner bar.`);
-    }
-    return;
+  const bar = http?.callerBar;
+  const fail = (why: string): never => {
+    throw new Error(`Capability registry: "${id}" ${why}.`);
+  };
+  if (http?.ownerOnly !== undefined && bar !== 'account-decision') {
+    fail('names an owner sentence but not the account-decision bar');
   }
-  if (http.audience !== 'person') {
-    throw new Error(`Capability registry: "${id}" has an owner bar, so only a person may call it.`);
+  if (http?.personCopy !== undefined && bar !== 'person') {
+    fail('names person bar copy but not the person bar');
   }
-  if (http.ownerOnly === undefined) {
-    throw new Error(`Capability registry: "${id}" has an owner bar, so it names its own sentence.`);
+  if (bar === undefined) return;
+  if (http!.audience !== 'person') fail('has a caller bar, so only a person may call it');
+  if (bar === 'account-decision' && http!.ownerOnly === undefined) {
+    fail('has the account-decision bar, so it names its own sentence');
   }
-  if (surfaces.mcp !== undefined) {
-    throw new Error(`Capability registry: "${id}" has an owner bar, so it has no MCP surface.`);
+  if (bar === 'person' && http!.personCopy === undefined) {
+    fail('has the person bar, so it names its own copy');
   }
-  if (capability.wifi !== undefined) {
-    throw new Error(`Capability registry: "${id}" has an owner bar, so it has no network mode.`);
-  }
-  if (capability.confirmFirst !== undefined) {
-    throw new Error(`Capability registry: "${id}" has an owner bar, so it can't be confirm-first.`);
+  if (surfaces.mcp !== undefined) fail('has a caller bar, so it has no MCP surface');
+  if (capability.wifi !== undefined) fail('has a caller bar, so it has no network mode');
+  if (capability.confirmFirst !== undefined && capability.confirmFirst.bar !== 'front-door') {
+    fail('has a caller bar, so its confirm-first hold takes the front-door bar');
   }
 }
