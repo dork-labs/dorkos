@@ -23,7 +23,7 @@ export default function Layout(props) {
   return (
     <>
       {props.children}
-      <Comp document="../../docs/api/openapi.json" operations={[{"path":"/api/agents/{id}/permissions","method":"patch"}]} showDescription />
+      <Comp document="../../docs/api/openapi.json" operations={[{"path":"/api/agents/{agentId}/permissions","method":"patch"}]} showDescription />
     </>
   );
 }

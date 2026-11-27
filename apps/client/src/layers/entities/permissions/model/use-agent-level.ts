@@ -7,7 +7,7 @@ import { permissionKeys } from './permission-keys';
  * any per-chat limit, and whether a person's setting holds it there.
  *
  * @param agentId - The agent's id; the query waits until one is known.
- * @returns The TanStack Query result for `GET /api/agents/:id/level`.
+ * @returns The TanStack Query result for `GET /api/agents/:agentId/level`.
  */
 export function useAgentLevel(agentId: string | undefined) {
   const transport = useTransport();

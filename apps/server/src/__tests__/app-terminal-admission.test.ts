@@ -257,7 +257,7 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/relay');
     expect(mounts).toContain('/api/canvas/docs');
     expect(mounts).toContain('/api/session-locations');
-    // 70 -> 72: `/api/todo-promises` and `/api/agents/:id/todo-promises` (spec
+    // 70 -> 72: `/api/todo-promises` and `/api/agents/:agentId/todo-promises` (spec
     // `heartbeats` §12); both are capabilities the mount serves now (DOR-4978).
     // 72 -> 71: the `/assets` trap is no longer an Express mount; it lives in
     // `http/client-files.ts`, and is asked for by hand below.

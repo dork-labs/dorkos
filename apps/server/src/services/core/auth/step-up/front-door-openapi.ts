@@ -64,7 +64,7 @@ export const HELD_WRITES = new Set([
   // A raise, or an Undo, of what agents may do; lowering answers at once.
   'put /api/permissions/preset',
   'patch /api/permissions/defaults',
-  'patch /api/agents/{id}/permissions',
+  'patch /api/agents/{agentId}/permissions',
   'post /api/permissions/history/{eventId}/undo',
   'post /api/extensions/{id}/enable',
   // Raising or removing the limit; lowering it answers at once.

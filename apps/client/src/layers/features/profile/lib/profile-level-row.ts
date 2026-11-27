@@ -1,6 +1,6 @@
 /**
  * The Level row: what an agent actually runs at, resolved by the server from
- * the rule a launch uses (`GET /api/agents/:id/level`).
+ * the rule a launch uses (`GET /api/agents/:agentId/level`).
  *
  * @module features/profile/lib/profile-level-row
  */

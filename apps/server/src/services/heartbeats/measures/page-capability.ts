@@ -1,6 +1,6 @@
 /**
  * `heartbeat.view_page` (spec `heartbeats` §7.6, §13; DOR-4978): what an
- * agent's Heartbeat page shows, served on `GET /api/agents/{id}/heartbeat`.
+ * agent's Heartbeat page shows, served on `GET /api/agents/{agentId}/heartbeat`.
  * How it wakes, its next beat, its last 50 beats from the record, the raises
  * held for people's hours, its checks, and its measures over `days` (default 7,
  * at most 90).
@@ -53,7 +53,7 @@ export function setHeartbeatPageReader(next: HeartbeatPageReader | undefined): v
 /** What a `days` outside the window reads. */
 const DAYS_RULE = 'must be a whole number from 1 to 90';
 
-/** The person-only read behind an agent's Heartbeat page, on `GET /api/agents/{id}/heartbeat`. */
+/** The person-only read behind an agent's Heartbeat page, on `GET /api/agents/{agentId}/heartbeat`. */
 export const heartbeatPageCapability = defineCapability({
   id: 'heartbeat.view_page',
   title: 'Read an agent’s Heartbeat page',
@@ -79,7 +79,8 @@ export const heartbeatPageCapability = defineCapability({
   surfaces: {
     http: {
       method: 'get',
-      path: '/api/agents/{id}/heartbeat',
+      path: '/api/agents/{agentId}/heartbeat',
+      params: { agentId: 'id' },
       audience: 'person',
       agentsUse: 'Agents read a heartbeat with heartbeat_status.',
     },

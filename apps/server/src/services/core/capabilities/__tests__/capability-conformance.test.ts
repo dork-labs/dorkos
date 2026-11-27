@@ -428,7 +428,7 @@ const registry = composeDorkOsCapabilityRegistry({
       list: () => [],
     },
   },
-  // The person's work queue domain serves its doors (`/api/agents/{id}/work-queue/*`,
+  // The person's work queue domain serves its doors (`/api/agents/{agentId}/work-queue/*`,
   // `/api/work-queues/stop`, DOR-4978); no agent is on this team.
   // The agents' own work queue tools (`work-queue.*`, DOR-3462), checked
   // beside the person's doors. The prober is the one agent on this team, with

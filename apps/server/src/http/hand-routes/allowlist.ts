@@ -435,7 +435,7 @@ export const HAND_ROUTE_ALLOWLIST: readonly HandRouteAllowlistEntry[] = [
   // stay by hand until the API-key audience (A5) lands (DOR-5267).
   {
     method: 'PATCH',
-    path: '/api/agents/:id/permissions',
+    path: '/api/agents/:agentId/permissions',
     category: 'network-reachable',
     reason: 'network-reachable to lower only, wifi-raise-guard; waits for A5, DOR-5267',
   },

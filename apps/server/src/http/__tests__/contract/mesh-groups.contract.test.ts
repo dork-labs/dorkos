@@ -4,7 +4,7 @@
  * discovery scan stream (`/api/discovery`), and the two groups that share the
  * `/api/agents` prefix, the managed-MCP sign-in landing
  * (`/api/agents/mcp-oauth`) and an agent's promises
- * (`/api/agents/:id/todo-promises`, with their list at `/api/todo-promises`).
+ * (`/api/agents/:agentId/todo-promises`, with their list at `/api/todo-promises`).
  * That PR must pass this file unchanged.
  *
  * Two servers, both with login off:
@@ -532,7 +532,7 @@ contractSuite('mesh, agent and discovery groups', [
     expect: { status: 404, body: NOT_FOUND },
   },
   {
-    name: 'POST /api/agents/:id/todo-promises refuses an agent',
+    name: 'POST /api/agents/:agentId/todo-promises refuses an agent',
     method: 'POST',
     path: `/api/agents/${UNKNOWN_ULID}/todo-promises`,
     headers: AGENT,
@@ -545,13 +545,13 @@ contractSuite('mesh, agent and discovery groups', [
     },
   },
   {
-    name: 'POST /api/agents/:id/todo-promises refuses an empty body',
+    name: 'POST /api/agents/:agentId/todo-promises refuses an empty body',
     method: 'POST',
     path: `/api/agents/${UNKNOWN_ULID}/todo-promises`,
     expect: { status: 400, schema: VALIDATION_FAILED },
   },
   {
-    name: 'GET /api/agents/:id/work-queue refuses an agent',
+    name: 'GET /api/agents/:agentId/work-queue refuses an agent',
     path: `/api/agents/${UNKNOWN_ULID}/work-queue`,
     headers: AGENT,
     expect: {
@@ -560,7 +560,7 @@ contractSuite('mesh, agent and discovery groups', [
     },
   },
   {
-    name: 'PATCH /api/agents/:id/work-queue refuses an agent turning a queue on',
+    name: 'PATCH /api/agents/:agentId/work-queue refuses an agent turning a queue on',
     method: 'PATCH',
     path: `/api/agents/${UNKNOWN_ULID}/work-queue`,
     headers: AGENT,
@@ -571,7 +571,7 @@ contractSuite('mesh, agent and discovery groups', [
     },
   },
   {
-    name: 'GET /api/agents/:id/work-queue answers 404 for an unknown agent',
+    name: 'GET /api/agents/:agentId/work-queue answers 404 for an unknown agent',
     path: `/api/agents/${UNKNOWN_ULID}/work-queue`,
     expect: {
       status: 404,
@@ -590,7 +590,7 @@ contractSuite('mesh, agent and discovery groups', [
     },
   },
   {
-    name: 'GET /api/agents/:id/todo-promises is the /api 404',
+    name: 'GET /api/agents/:agentId/todo-promises is the /api 404',
     path: `/api/agents/${UNKNOWN_ULID}/todo-promises`,
     expect: { status: 404, body: NOT_FOUND },
   },

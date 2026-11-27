@@ -7,7 +7,7 @@ import { permissionKeys } from './permission-keys';
  * came from, and what it would inherit.
  *
  * @param agentId - The agent's id; the query waits until one is known.
- * @returns The TanStack Query result for `GET /api/agents/:id/permissions`.
+ * @returns The TanStack Query result for `GET /api/agents/:agentId/permissions`.
  */
 export function useAgentPermissions(agentId: string | undefined) {
   const transport = useTransport();

@@ -1,6 +1,6 @@
 /**
  * A person's work queue doors, served by the capability mount on
- * `/api/agents/{id}/work-queue/*` and `/api/work-queues/stop` (DOR-3462,
+ * `/api/agents/{agentId}/work-queue/*` and `/api/work-queues/stop` (DOR-3462,
  * ADR 261123-170830): the same paths, bodies and statuses the hand routes had,
  * and every one refuses an agent.
  */

@@ -238,7 +238,7 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/tasks/:id/approve-file',
     'PATCH /api/permissions/defaults',
     'PUT /api/permissions/preset',
-    'PATCH /api/agents/:id/permissions',
+    'PATCH /api/agents/:agentId/permissions',
     'POST /api/permissions/history/:eventId/undo',
   ],
   'Settings: front-door settings refused by the route; a looser Files & commands stop too (DOR-3037)':

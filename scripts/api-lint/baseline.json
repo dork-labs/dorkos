@@ -83,10 +83,7 @@
     },
     "operation-id": {},
     "param-name": {
-      "agents": 1,
-      "relay": 1,
-      "rooms": 2,
-      "runtimes": 1
+      "relay": 1
     },
     "undocumented-route": {
       "admin": 3,
