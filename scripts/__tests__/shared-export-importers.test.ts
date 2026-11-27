@@ -41,8 +41,8 @@ const TYPE_ONLY_KEYS: Record<string, string> = {
 
 /** Server-only keys that stay in `@dorkos/shared`, each with the reason. */
 const SERVER_ONLY_KEYS: Record<string, string> = {
-  'work-graph-reads':
-    "A wire contract: one shape for the work graph's REST reads and its agent tools (DOR-4970), which the client and the CLI read once their callers land.",
+  paging:
+    'A wire contract: the one paging shape every API list uses, for the REST paths and the agent tools alike (DOR-4982), which the client reads once its callers land.',
   'community-administer':
     'Community wire, frozen until the Community Space opens (AGENTS.md, "Where the system is going", rule 4).',
   'community-private-wire':
@@ -68,6 +68,14 @@ const SERVER_ONLY_KEYS: Record<string, string> = {
     'A shared home between the space side and the computer side of the computer wall (step 6, DOR-5303/DOR-5403); both sides live in the server today.',
   'connections-lease':
     'A shared home between the space side and the computer side of the computer wall (step 6, DOR-5303/DOR-5403); both sides live in the server today.',
+  'computer-asks':
+    'The asks port between the space side and the computer side (C14, DOR-5459); both sides live in the server today.',
+  'approval-text':
+    'The asks port between the space side and the computer side (C14, DOR-5459); both sides live in the server today.',
+  'consent-entries':
+    'The asks port between the space side and the computer side (C14, DOR-5459); both sides live in the server today.',
+  'folder-allows-card':
+    'The asks port between the space side and the computer side (C14, DOR-5459); both sides live in the server today.',
 };
 
 /**
