@@ -18388,6 +18388,1773 @@
         "x-stability": "internal"
       }
     },
+    "/api/communities/{ref}/rooms/{roomId}/events": {
+      "get": {
+        "tags": [
+          "Communities"
+        ],
+        "summary": "Stream a room in a remote space (SSE)",
+        "description": "The owner's own view of one remote room: a `snapshot` frame, then each new entry, each message changed in place, and the state of the owner's own deliveries, until the room closes or the reader leaves. Each frame's `event:` is its `type`; a `: keepalive` comment keeps a quiet stream open.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "ref",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "roomId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The last `redactionCursor` you were given, so changes made while you were away still reach you."
+            },
+            "required": false,
+            "description": "The last `redactionCursor` you were given, so changes made while you were away still reach you.",
+            "name": "redactions",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An SSE stream; each frame's `data:` is one event.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "snapshot"
+                          ]
+                        },
+                        "room": {
+                          "type": "object",
+                          "properties": {
+                            "community": {
+                              "type": "string",
+                              "pattern": "^[0-9A-Za-z][0-9A-Za-z_-]*$"
+                            },
+                            "roomId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "kind": {
+                              "$ref": "#/components/schemas/RoomKind"
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "slug": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "topic": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "archived": {
+                              "type": "boolean"
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "lastActivityAt": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "unreadCount": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "remoteCommunityId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "visibility": {
+                              "type": "string",
+                              "enum": [
+                                "public",
+                                "private"
+                              ]
+                            },
+                            "readable": {
+                              "type": "boolean"
+                            },
+                            "writable": {
+                              "type": "boolean"
+                            },
+                            "joined": {
+                              "type": "boolean"
+                            },
+                            "stale": {
+                              "type": "boolean"
+                            },
+                            "cacheCursor": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "minLength": 1
+                            },
+                            "lastRemoteSeq": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "access": {
+                              "type": "object",
+                              "properties": {
+                                "state": {
+                                  "type": "string",
+                                  "enum": [
+                                    "verified",
+                                    "unverified",
+                                    "reconnect-required"
+                                  ]
+                                },
+                                "effective": {
+                                  "type": "object",
+                                  "properties": {
+                                    "read": {
+                                      "type": "boolean"
+                                    },
+                                    "post": {
+                                      "type": "boolean"
+                                    },
+                                    "enrollAgent": {
+                                      "type": "boolean"
+                                    },
+                                    "stream": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "read",
+                                    "post",
+                                    "enrollAgent",
+                                    "stream"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "lastKnown": {
+                                  "type": [
+                                    "object",
+                                    "null"
+                                  ],
+                                  "properties": {
+                                    "lifecycle": {
+                                      "type": "string",
+                                      "enum": [
+                                        "active",
+                                        "archived",
+                                        "suspended",
+                                        "deletion_pending",
+                                        "deleted",
+                                        "taken_down"
+                                      ]
+                                    },
+                                    "capabilities": {
+                                      "type": "object",
+                                      "properties": {
+                                        "read": {
+                                          "type": "boolean"
+                                        },
+                                        "post": {
+                                          "type": "boolean"
+                                        },
+                                        "enrollAgent": {
+                                          "type": "boolean"
+                                        },
+                                        "stream": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "read",
+                                        "post",
+                                        "enrollAgent",
+                                        "stream"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "verifiedAt": {
+                                      "type": "string",
+                                      "format": "date-time"
+                                    }
+                                  },
+                                  "required": [
+                                    "lifecycle",
+                                    "capabilities",
+                                    "verifiedAt"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "required": [
+                                "state",
+                                "effective",
+                                "lastKnown"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "community",
+                            "roomId",
+                            "kind",
+                            "title",
+                            "slug",
+                            "topic",
+                            "archived",
+                            "createdAt",
+                            "lastActivityAt",
+                            "unreadCount",
+                            "remoteCommunityId",
+                            "visibility",
+                            "readable",
+                            "writable",
+                            "joined",
+                            "stale",
+                            "cacheCursor",
+                            "lastRemoteSeq",
+                            "access"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "entries": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "community": {
+                                "type": "string",
+                                "pattern": "^[0-9A-Za-z][0-9A-Za-z_-]*$"
+                              },
+                              "roomId": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "authorId": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "text": {
+                                "type": "string"
+                              },
+                              "mentions": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "parentEntryId": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "threadRootEntryId": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "depth": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "thread": {
+                                "type": "object",
+                                "properties": {
+                                  "replyCount": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "lastReplyAt": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "replyCount",
+                                  "lastReplyAt"
+                                ]
+                              },
+                              "cursor": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "createdAt": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "attachments": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "name": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "contentType": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "byteSize": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    },
+                                    "checksum": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "name",
+                                    "contentType",
+                                    "byteSize",
+                                    "checksum"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "maxItems": 8
+                              },
+                              "remoteSeq": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 9007199254740991
+                              },
+                              "authorDisplayName": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "authorKind": {
+                                "type": "string",
+                                "enum": [
+                                  "human",
+                                  "agent"
+                                ]
+                              },
+                              "originIdempotencyKey": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              },
+                              "threadLastReplySeq": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "community",
+                              "roomId",
+                              "id",
+                              "authorId",
+                              "text",
+                              "mentions",
+                              "parentEntryId",
+                              "threadRootEntryId",
+                              "depth",
+                              "cursor",
+                              "createdAt",
+                              "attachments",
+                              "remoteSeq",
+                              "authorDisplayName",
+                              "authorKind"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 100
+                        },
+                        "cursor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1
+                        },
+                        "lastRemoteSeq": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "stale": {
+                          "type": "boolean"
+                        },
+                        "redactionCursor": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1024
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "room",
+                        "entries",
+                        "cursor",
+                        "lastRemoteSeq",
+                        "stale"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "entry"
+                          ]
+                        },
+                        "entry": {
+                          "type": "object",
+                          "properties": {
+                            "community": {
+                              "type": "string",
+                              "pattern": "^[0-9A-Za-z][0-9A-Za-z_-]*$"
+                            },
+                            "roomId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "authorId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "text": {
+                              "type": "string"
+                            },
+                            "mentions": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "parentEntryId": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "threadRootEntryId": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "depth": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "thread": {
+                              "type": "object",
+                              "properties": {
+                                "replyCount": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "lastReplyAt": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "replyCount",
+                                "lastReplyAt"
+                              ]
+                            },
+                            "cursor": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "attachments": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "name": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "contentType": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "byteSize": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "checksum": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name",
+                                  "contentType",
+                                  "byteSize",
+                                  "checksum"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "maxItems": 8
+                            },
+                            "remoteSeq": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            },
+                            "authorDisplayName": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "authorKind": {
+                              "type": "string",
+                              "enum": [
+                                "human",
+                                "agent"
+                              ]
+                            },
+                            "originIdempotencyKey": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128
+                            },
+                            "threadLastReplySeq": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "community",
+                            "roomId",
+                            "id",
+                            "authorId",
+                            "text",
+                            "mentions",
+                            "parentEntryId",
+                            "threadRootEntryId",
+                            "depth",
+                            "cursor",
+                            "createdAt",
+                            "attachments",
+                            "remoteSeq",
+                            "authorDisplayName",
+                            "authorKind"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "entry"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "revision"
+                          ]
+                        },
+                        "entry": {
+                          "type": "object",
+                          "properties": {
+                            "community": {
+                              "type": "string",
+                              "pattern": "^[0-9A-Za-z][0-9A-Za-z_-]*$"
+                            },
+                            "roomId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "authorId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "text": {
+                              "type": "string"
+                            },
+                            "mentions": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "parentEntryId": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "threadRootEntryId": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "depth": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "thread": {
+                              "type": "object",
+                              "properties": {
+                                "replyCount": {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                "lastReplyAt": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "replyCount",
+                                "lastReplyAt"
+                              ]
+                            },
+                            "cursor": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "attachments": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "name": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "contentType": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "byteSize": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "checksum": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name",
+                                  "contentType",
+                                  "byteSize",
+                                  "checksum"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "maxItems": 8
+                            },
+                            "remoteSeq": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            },
+                            "authorDisplayName": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "authorKind": {
+                              "type": "string",
+                              "enum": [
+                                "human",
+                                "agent"
+                              ]
+                            },
+                            "originIdempotencyKey": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128
+                            },
+                            "threadLastReplySeq": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "community",
+                            "roomId",
+                            "id",
+                            "authorId",
+                            "text",
+                            "mentions",
+                            "parentEntryId",
+                            "threadRootEntryId",
+                            "depth",
+                            "cursor",
+                            "createdAt",
+                            "attachments",
+                            "remoteSeq",
+                            "authorDisplayName",
+                            "authorKind"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "redactionCursor": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1024
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "entry"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "community": {
+                          "type": "string",
+                          "pattern": "^[0-9A-Za-z][0-9A-Za-z_-]*$"
+                        },
+                        "roomId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "deliveries": {
+                          "type": "array",
+                          "items": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "idempotencyKey": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                  },
+                                  "author": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "agent"
+                                        ]
+                                      },
+                                      "displayName": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 120
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "displayName"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "text": {
+                                    "type": "string",
+                                    "maxLength": 100000
+                                  },
+                                  "parentEntryId": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                  },
+                                  "attachments": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 255
+                                        },
+                                        "contentType": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 255
+                                        },
+                                        "byteSize": {
+                                          "type": "integer",
+                                          "minimum": 0
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "contentType",
+                                        "byteSize"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "maxItems": 8
+                                  },
+                                  "state": {
+                                    "type": "string",
+                                    "enum": [
+                                      "pending"
+                                    ]
+                                  },
+                                  "failure": {
+                                    "type": "null"
+                                  },
+                                  "retryable": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "idempotencyKey",
+                                  "author",
+                                  "text",
+                                  "parentEntryId",
+                                  "attachments",
+                                  "state",
+                                  "failure",
+                                  "retryable"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "idempotencyKey": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                  },
+                                  "author": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "agent"
+                                        ]
+                                      },
+                                      "displayName": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 120
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "displayName"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "text": {
+                                    "type": "string",
+                                    "maxLength": 100000
+                                  },
+                                  "parentEntryId": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                  },
+                                  "attachments": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 255
+                                        },
+                                        "contentType": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 255
+                                        },
+                                        "byteSize": {
+                                          "type": "integer",
+                                          "minimum": 0
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "contentType",
+                                        "byteSize"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "maxItems": 8
+                                  },
+                                  "state": {
+                                    "type": "string",
+                                    "enum": [
+                                      "failed"
+                                    ]
+                                  },
+                                  "failure": {
+                                    "type": "string",
+                                    "enum": [
+                                      "expired",
+                                      "not-confirmed"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "idempotencyKey",
+                                  "author",
+                                  "text",
+                                  "parentEntryId",
+                                  "attachments",
+                                  "state",
+                                  "failure"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          "maxItems": 100
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "deliveries"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "community",
+                        "roomId",
+                        "deliveries",
+                        "type"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "community": {
+                          "type": "string",
+                          "pattern": "^[0-9A-Za-z][0-9A-Za-z_-]*$"
+                        },
+                        "roomId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "closed"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "removed",
+                            "revoked",
+                            "unavailable"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "community",
+                        "roomId",
+                        "type",
+                        "reason"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`forbidden`: your access to this space does not allow reading it.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No space connection by that reference.; or `spaces_disabled`: the spaces experiment is off on this computer (Settings → Advanced → Experiments).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`reconnect_required`: reconnect this space to continue.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`upstream_unavailable`: the space cannot be reached right now.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "communities.getRoomsEvents",
+        "x-stability": "internal"
+      }
+    },
+    "/api/extensions/{id}/rooms/{roomId}/threads/{entryId}/events": {
+      "get": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Stream new replies in a room thread, for a mini app's page (SSE)",
+        "description": "Each new reply in the thread, as a `reply` frame whose `id:` is the reply's `seq`. Send the last one back as `Last-Event-ID` (or `?after=`) to resume after it. The stream ends when the person takes the room away from the mini app or turns the mini app off.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "roomId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "entryId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Resume after this `seq`."
+            },
+            "required": false,
+            "description": "Resume after this `seq`.",
+            "name": "after",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An SSE stream; each `reply` frame's `data:` is one reply.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "seq": {
+                      "type": "integer"
+                    },
+                    "author": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "person",
+                            "agent",
+                            "system"
+                          ]
+                        },
+                        "isYou": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "kind",
+                        "isYou"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "seq",
+                    "author",
+                    "createdAt",
+                    "text"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a valid mini app id.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The mini app may not use that room, or the caller is not the person signed in.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such mini app, room or thread, or the person cannot read it.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "extensions.getRoomsThreadsEvents",
+        "x-stability": "internal"
+      }
+    },
+    "/api/discovery/scan": {
+      "post": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "Scan folders for agents and projects (SSE)",
+        "description": "Walks the folders named (the boundary when none) and streams what it finds: `candidate` frames for projects that could become agents, `existing-agent` frames for agents it registered from their own `.dork/agent.json`, `progress` frames, then `complete`. An `error` frame says the scan stopped early.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "root": {
+                    "type": "string"
+                  },
+                  "roots": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "maxDepth": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10
+                  },
+                  "timeout": {
+                    "type": "integer",
+                    "minimum": 1000,
+                    "maximum": 120000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "An SSE stream. Each frame's `data:` is, by its `event:`: a `DiscoveryCandidate` (`candidate`), an existing agent (`existing-agent`), a `ScanProgress` (`progress`), the same with `timedOut` (`complete`), or `{ error }` (`error`).",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/DiscoveryCandidate"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "runtime": {
+                          "$ref": "#/components/schemas/AgentRuntime"
+                        },
+                        "description": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "name",
+                        "runtime",
+                        "description"
+                      ],
+                      "description": "An `existing-agent` frame."
+                    },
+                    {
+                      "$ref": "#/components/schemas/ScanProgress"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "scannedDirs": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "foundAgents": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "timedOut": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "scannedDirs",
+                        "foundAgents",
+                        "timedOut"
+                      ],
+                      "description": "The `complete` frame."
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ],
+                      "description": "An `error` frame."
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body did not pass its checks.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`outside_boundary`: a folder is outside the ones DorkOS may use.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "discovery.scan",
+        "x-stability": "internal"
+      }
+    },
+    "/api/runtimes/claude-code/provision": {
+      "post": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Install Claude Code on this computer (SSE)",
+        "responses": {
+          "200": {
+            "description": "An SSE stream: `progress` frames while it runs, then one `result` frame with the outcome.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "stage": {
+                          "type": "string",
+                          "enum": [
+                            "starting",
+                            "installing",
+                            "done",
+                            "error"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "stage",
+                        "message"
+                      ],
+                      "description": "A `progress` frame."
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean"
+                        },
+                        "binaryPath": {
+                          "type": "string"
+                        },
+                        "error": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ok"
+                      ],
+                      "description": "The `result` frame, sent once, last."
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`operator_only`: only the person at this computer can install or download here.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "runtimes.createClaudeCodeProvision",
+        "x-stability": "internal"
+      }
+    },
+    "/api/runtimes/codex/provision": {
+      "post": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Install Codex on this computer (SSE)",
+        "responses": {
+          "200": {
+            "description": "An SSE stream: `progress` frames while it runs, then one `result` frame with the outcome.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "stage": {
+                          "type": "string",
+                          "enum": [
+                            "starting",
+                            "installing",
+                            "done",
+                            "error"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "stage",
+                        "message"
+                      ],
+                      "description": "A `progress` frame."
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean"
+                        },
+                        "binaryPath": {
+                          "type": "string"
+                        },
+                        "error": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ok"
+                      ],
+                      "description": "The `result` frame, sent once, last."
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`operator_only`: only the person at this computer can install or download here.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "runtimes.createCodexProvision",
+        "x-stability": "internal"
+      }
+    },
+    "/api/runtimes/opencode/provision": {
+      "post": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Install OpenCode on this computer (SSE)",
+        "responses": {
+          "200": {
+            "description": "An SSE stream: `progress` frames while it runs, then one `result` frame with the outcome.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "stage": {
+                          "type": "string",
+                          "enum": [
+                            "starting",
+                            "installing",
+                            "done",
+                            "error"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "stage",
+                        "message"
+                      ],
+                      "description": "A `progress` frame."
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean"
+                        },
+                        "binaryPath": {
+                          "type": "string"
+                        },
+                        "error": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ok"
+                      ],
+                      "description": "The `result` frame, sent once, last."
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`operator_only`: only the person at this computer can install or download here.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "runtimes.createOpencodeProvision",
+        "x-stability": "internal"
+      }
+    },
+    "/api/runtimes/opencode/ollama/provision": {
+      "post": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Install Ollama on this computer (SSE)",
+        "responses": {
+          "200": {
+            "description": "An SSE stream: `progress` frames while it runs, then one `result` frame with the outcome.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "stage": {
+                          "type": "string",
+                          "enum": [
+                            "starting",
+                            "installing",
+                            "done",
+                            "error"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "stage",
+                        "message"
+                      ],
+                      "description": "A `progress` frame."
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean"
+                        },
+                        "installMethod": {
+                          "type": "string",
+                          "enum": [
+                            "brew",
+                            "winget",
+                            "manual"
+                          ]
+                        },
+                        "error": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "description": "A fresh check of Ollama after the install, as `GET /api/runtimes/opencode/ollama` answers."
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "installMethod"
+                      ],
+                      "description": "The `result` frame, sent once, last."
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`operator_only`: only the person at this computer can install or download here.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "runtimes.createOpencodeOllamaProvision",
+        "x-stability": "internal"
+      }
+    },
+    "/api/runtimes/opencode/ollama/pull": {
+      "post": {
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Download an Ollama model (SSE)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[a-z0-9][a-z0-9._\\-/]*(:[a-z0-9._-]+)?$/i"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "An SSE stream: `progress` frames while it runs, then one `result` frame with the outcome.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string"
+                        },
+                        "completed": {
+                          "type": "number"
+                        },
+                        "total": {
+                          "type": "number"
+                        },
+                        "percent": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "status"
+                      ],
+                      "description": "A `progress` frame."
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean"
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "error": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "model"
+                      ],
+                      "description": "The `result` frame, sent once, last."
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "That is not a valid Ollama model name.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`operator_only`: only the person at this computer can install or download here.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "runtimes.createOpencodeOllamaPull",
+        "x-stability": "internal"
+      }
+    },
     "/api/step-up/{heldActionId}": {
       "get": {
         "tags": [
@@ -24061,6 +25828,23 @@
         },
         "required": [
           "path"
+        ]
+      },
+      "ScanProgress": {
+        "type": "object",
+        "properties": {
+          "scannedDirs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "foundAgents": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "scannedDirs",
+          "foundAgents"
         ]
       }
     }

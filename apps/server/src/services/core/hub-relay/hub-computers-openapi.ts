@@ -88,30 +88,6 @@ export function registerHubComputersOpenApi(registry: OpenAPIRegistry): void {
   });
 
   registry.registerPath({
-    method: 'get',
-    path: '/api/hub/computers/{computerId}/sessions/{sessionId}/stream',
-    tags: TAGS,
-    summary: 'Stream a chat on a linked computer',
-    description:
-      "Server-Sent Events relayed from the computer's own chat stream: each event keeps " +
-      'its name, JSON data and resume id. Send the last id back as `Last-Event-ID` (or ' +
-      '`?resume=`) to continue after it. An `error` event carries the reason when the computer ' +
-      'ends the stream with one.',
-    request: {
-      params: SessionParams,
-      query: z.object({ resume: z.string().optional() }),
-    },
-    responses: {
-      200: {
-        description: 'The event stream',
-        content: { 'text/event-stream': { schema: z.string() } },
-      },
-      ...REFUSALS,
-      406: problemResponse('The request does not accept `text/event-stream` (`not_acceptable`)'),
-    },
-  });
-
-  registry.registerPath({
     method: 'post',
     path: '/api/hub/computers/{computerId}/sessions/{sessionId}/messages',
     tags: TAGS,
@@ -166,6 +142,42 @@ export function registerHubComputersOpenApi(registry: OpenAPIRegistry): void {
     responses: {
       200: json(RelayResultBodySchemas['interaction.respond'], 'Answered'),
       ...REFUSALS,
+    },
+  });
+}
+
+/**
+ * Register the relayed chat stream. Called after the chat's own stream is
+ * registered, so the frames' shared components keep the form that route gives them.
+ *
+ * @param registry - The server's OpenAPI registry.
+ * @param frames - One frame's `data:`: the chat stream's frames, or the `error` event.
+ */
+export function registerHubComputerStreamOpenApi(
+  registry: OpenAPIRegistry,
+  frames: z.ZodType
+): void {
+  registry.registerPath({
+    method: 'get',
+    path: '/api/hub/computers/{computerId}/sessions/{sessionId}/stream',
+    tags: TAGS,
+    summary: 'Stream a chat on a linked computer',
+    description:
+      "Server-Sent Events relayed from the computer's own chat stream: each event keeps " +
+      'its name, JSON data and resume id. Send the last id back as `Last-Event-ID` (or ' +
+      '`?resume=`) to continue after it. An `error` event carries the reason when the computer ' +
+      'ends the stream with one.',
+    request: {
+      params: SessionParams,
+      query: z.object({ resume: z.string().optional() }),
+    },
+    responses: {
+      200: {
+        description: "The event stream: each frame's `data:` as the chat's own stream sends it",
+        content: { 'text/event-stream': { schema: frames } },
+      },
+      ...REFUSALS,
+      406: problemResponse('The request does not accept `text/event-stream` (`not_acceptable`)'),
     },
   });
 }

@@ -132,9 +132,15 @@ export const ALLOWED_VERBS: readonly string[] = [
 /**
  * Whole paths that end in a command word on purpose. `POST /api/capabilities/{id}/invoke`
  * is the documented RPC projection of every capability (ADR 261123-170830), not a
- * resource that lost its noun, so `verb-path` never counts it. Keep this list short.
+ * resource that lost its noun, so `verb-path` never counts it. `POST /api/discovery/scan`
+ * is an internal stream that was served long before the document described it
+ * (DOR-4986); describing it must not wait on renaming it, which would change the
+ * wire for the app. Keep this list short.
  */
-export const ALLOWED_VERB_PATHS: readonly string[] = ['/api/capabilities/{id}/invoke'];
+export const ALLOWED_VERB_PATHS: readonly string[] = [
+  '/api/capabilities/{id}/invoke',
+  '/api/discovery/scan',
+];
 
 /**
  * Schemas a 4xx or 5xx body may reference: the RFC 9457 `Problem` every route

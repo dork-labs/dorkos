@@ -18,7 +18,10 @@ import { registerConnectorHoldsOpenApi } from '../../connectors/execution/holds-
 import { registerRelayAdapterListOpenApi, registerRelayAdapterOpenApi } from './relay-adapters.js';
 import { registerConnectorExclusionsOpenApi } from '../../connectors/access/exclusions-openapi.js';
 import { registerMiniAppAccessOpenApi } from '../../connectors/extensions/mini-app-access-openapi.js';
-import { registerHubComputersOpenApi } from '../hub-relay/hub-computers-openapi.js';
+import {
+  registerHubComputerStreamOpenApi,
+  registerHubComputersOpenApi,
+} from '../hub-relay/hub-computers-openapi.js';
 import { registerHubLinkOpenApi } from '../hub-relay/hub-link-openapi.js';
 import { registerSessionRelayOpenApi } from '../session-relay/session-relay-openapi.js';
 import { registerDirectChatOpenApi } from '../../rooms/direct-chat/direct-chat-openapi.js';
@@ -28,6 +31,11 @@ import { registerOwnerFactorsOpenApi } from '../auth/factors/owner-factors-opena
 import { registerProblemOpenApi } from './problem-openapi.js';
 import { registerEventsOpenApi } from './events-openapi.js';
 import { registerPushOpenApi } from './push-openapi.js';
+import { registerServedStreamsOpenApi } from './served-streams-openapi.js';
+import { RelayedSessionStreamFrameSchema } from './stream-frames-openapi.js';
+
+// The chat and room stream frames, for the hand registry's two stream routes.
+export { RoomStreamFrameSchema, SessionStreamFrameSchema } from './stream-frames-openapi.js';
 
 /** Register independent domain paths in their existing order. */
 export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
@@ -61,4 +69,16 @@ export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
   registerAccountSigninOpenApi(registry);
   registerEventsOpenApi(registry);
   registerPushOpenApi(registry);
+}
+
+/**
+ * Register the event streams whose frames reuse the chat stream's components.
+ * Call it after the chat's own stream is registered: a component takes the form
+ * of the first operation that uses it, so the chat stream's form stands.
+ *
+ * @param registry - The server's OpenAPI registry.
+ */
+export function registerStreamOpenApi(registry: OpenAPIRegistry): void {
+  registerHubComputerStreamOpenApi(registry, RelayedSessionStreamFrameSchema);
+  registerServedStreamsOpenApi(registry);
 }

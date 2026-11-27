@@ -138,6 +138,8 @@ The document's `info.version` is the product version: the running server's versi
 
 **The census.** `services/core/openapi/__tests__/stability-census.test.ts` fails when an operation has no `x-stability` or an unknown one, when the committed published document holds an `internal` operation or the internal part a published one, and when the published document's `info.version` differs from `VERSION`.
 
+**Streams.** `http/__tests__/stream-census.test.ts` finds every event stream the server serves by reading the source, and fails when one is not a `stream` entry on the hand-route allowlist, when the document lacks it or gives its frames no schema, or when it is `internal` while a public docs page names it. A new stream is described in `services/core/openapi/served-streams-openapi.ts` or beside its group's other routes. The global stream's event list in `docs/integrations/sse-protocol.mdx` is written from the union's table (`packages/shared/src/dorkos-event-types.ts`) by `pnpm docs:sse-events`, which `pnpm docs:export-api` also runs; `scripts/__tests__/sse-event-table.test.ts` fails while it is stale.
+
 ## Errors
 
 Every failed request on the API is answered with one shape: an [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem document, served as `application/problem+json` (ADR `261123-170831`, DOR-4979).

@@ -112,6 +112,8 @@ export const REPO_WIDE_SUITES = [
   '__tests__/shared-export-importers.test.ts',
   '__tests__/space-page-versions.test.ts',
   '__tests__/space-server.test.ts',
+  // Reads docs/integrations/sse-protocol.mdx and packages/shared's event table (DOR-4986).
+  '__tests__/sse-event-table.test.ts',
   // Reads .github/workflows/security-gate.yml through the classifier (DOR-4834).
   '__tests__/text-only-scope.test.ts',
   '__tests__/tsconfig-extends-resolve.test.ts',
