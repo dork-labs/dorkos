@@ -29,14 +29,13 @@ export function createTodoPromiseMethods(baseUrl: string) {
   return {
     async listTodoPromises(query: ListTodoPromisesQuery = {}): Promise<ListTodoPromisesResponse> {
       // An empty string is no filter, as it always was here.
-      const answer = await api.call('todos.view_promises', {
+      return (await api.call('todos.view_promises', {
         query: {
           agentId: query.agentId || undefined,
           state: query.state || undefined,
           to: query.to || undefined,
         },
-      });
-      return answer as ListTodoPromisesResponse;
+      })) as ListTodoPromisesResponse;
     },
 
     async createTodoPromise(agentId: string, body: CreateTodoPromiseRequest): Promise<TodoPromise> {

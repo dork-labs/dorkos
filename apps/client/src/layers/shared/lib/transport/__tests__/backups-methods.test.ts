@@ -45,6 +45,21 @@ describe('createBackupsMethods', () => {
     expect(fetchMock.mock.calls[0]![1]).toMatchObject({ credentials: 'include' });
   });
 
+  it('gives a move ten minutes and every other call the usual 30 seconds', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    try {
+      answer({ ok: true });
+      await methods.moveBackup('a.db', '/Volumes/x');
+      expect(timeout).toHaveBeenLastCalledWith(10 * 60_000);
+
+      answer({ copies: [] });
+      await methods.listBackups();
+      expect(timeout).toHaveBeenLastCalledWith(30_000);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
   it('throws a refusal as the app error, with its code and status', async () => {
     vi.stubGlobal(
       'fetch',

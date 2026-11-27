@@ -15,9 +15,9 @@ import { createTransportApiClient } from './api-client';
  */
 export function createHeartbeatMethods(baseUrl: string) {
   const api = createTransportApiClient(baseUrl);
-  // The document also lists each capability's 202 approval answer, which a
-  // person's own call never gets; the casts keep today's types.
   return {
+    // The document also lists each capability's 202 approval answer, which a
+    // person's own call never gets; the casts keep today's types.
     async getAgentHeartbeat(agentId: string): Promise<HeartbeatStatus> {
       return (await api.call('heartbeat.view_page', { path: { id: agentId } })) as HeartbeatStatus;
     },
