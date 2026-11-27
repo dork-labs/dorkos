@@ -54,8 +54,9 @@
  *   transaction (the recorder is set at the composition root in
  *   `startup/steps/work-graph.ts`), which records the chat `claims` the ticket
  *   or pull request at the claim's time, or `released` it when the claim
- *   ended. A key that is neither (`CHECKOUT-FF`, a free-text name) records
- *   nothing: an edge holds no free text. `work_claims` stays the lock.
+ *   ended. A key that is neither `DOR-1234` nor `PR #42` (`CHECKOUT-FF`,
+ *   `FIX/BUG#12`, a free-text name) records nothing: an edge holds no free
+ *   text (`parseClaimKey`). `work_claims` stays the lock.
  *
  * Two read sites:
  *
@@ -84,7 +85,7 @@
  * @module services/work-graph
  */
 import type { Db, DbTransaction } from '@dorkos/db';
-import { entityRef, parseEntityRef } from '@dorkos/shared/entity-ref';
+import { entityRef, parseClaimKey } from '@dorkos/shared/entity-ref';
 import { logger } from '../../lib/logger.js';
 import {
   getSessionStartedByStore,
@@ -429,8 +430,9 @@ export interface ClaimLinkChange {
  */
 export function recordChatClaim(tx: DbTransaction, change: ClaimLinkChange): void {
   if (store === null) return;
-  const parsed = parseEntityRef(change.key);
-  if (!parsed.ok || (parsed.value.kind !== 'ticket' && parsed.value.kind !== 'pr')) return;
+  // A claim key names a ticket or PR only as `DOR-1234` or `PR #42`: `FIX/BUG#12` is a free key.
+  const parsed = parseClaimKey(change.key);
+  if (!parsed.ok) return;
   const relation = change.transition === 'claimed' ? 'claims' : 'released';
   let chatId = change.sessionId;
   try {

@@ -321,7 +321,8 @@ export class WorkClaimService {
         )
         .run();
       if (changed.changes > 0) {
-        // The taking chat's own span starts here; the chat that handed it on is the one acting.
+        // The giver's span ends and the taker's starts at one time. Both rows name the taking
+        // chat as the recording chat (the architect's rule, DOR-4972), on the giver's release too.
         const change = { agentId, key, at, writer: 'hand-over', recordingChatId: to } as const;
         this.note(tx, { ...change, transition: 'released', sessionId: from });
         this.note(tx, { ...change, transition: 'claimed', sessionId: to });

@@ -13,6 +13,8 @@ import { AuditLog } from '../../audit/audit-log.js';
 import { AccountIds } from '../../audit/account-ids.js';
 import { CLAIM_IDLE_LIMIT_MS, WorkClaimService } from '../../session/claims/work-claim-service.js';
 import { wireClaimLinks } from '../../../startup/steps/work-graph.js';
+import { setWorkClaims } from '../../session/claims/work-claim-current.js';
+import { claimForStart } from '../../session/claims/work-claim-start.js';
 import { OWNER_READER } from '../../audit/visibility.js';
 import {
   getWorkLinkStore,
@@ -73,6 +75,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setWorkClaims(undefined);
   unwire();
   uninstallWorkLinkStore();
   resetAuditTrail();
@@ -126,6 +129,40 @@ describe('a claim and its release', () => {
     claims.claim(AGENT, 'chat-a', 'CHECKOUT-FF CLEANUP');
     claims.release(AGENT, 'chat-a', 'CHECKOUT-FF CLEANUP');
     expect(db.select().from(workLinks).all()).toEqual([]);
+  });
+
+  it('records nothing for a free key shaped like owner/repo#12', () => {
+    expect(claims.claim(AGENT, 'chat-a', 'FIX/BUG#12').ok).toBe(true);
+    claims.release(AGENT, 'chat-a', 'FIX/BUG#12');
+    expect(db.select().from(workLinks).all()).toEqual([]);
+  });
+
+  it('records the same free key from session_start, named or read off the brief, as nothing', async () => {
+    setWorkClaims(claims);
+    const start = (sessionId: string, args: { claim?: string; title?: string }) =>
+      claimForStart({
+        args,
+        agentId: AGENT,
+        agentPath: '/agents/a',
+        callerSessionId: 'caller',
+        sessionId,
+      });
+    expect(await start('lane-1', { claim: 'fix/bug#12' })).toBeNull();
+    claims.release(AGENT, 'lane-1', 'FIX/BUG#12');
+    expect(await start('lane-2', { title: 'Look at fix/bug#12 again' })).toBeNull();
+    expect(
+      db
+        .select()
+        .from(workClaims)
+        .all()
+        .map((row) => row.claimKey)
+    ).toEqual(['FIX/BUG#12']);
+    expect(db.select().from(workLinks).all()).toEqual([]);
+    // A ticket the brief names is recorded, as the new chat's claim, by the chat that called.
+    expect(await start('lane-3', { title: 'Build DOR-77' })).toBeNull();
+    expect(edges('DOR-77')).toEqual([
+      expect.objectContaining({ from: 'dork:chat:lane-3', source: 'session-start', by: 'caller' }),
+    ]);
   });
 
   it('records a pull request key as the pull request', () => {
@@ -197,6 +234,26 @@ describe('a claim that ends without a release', () => {
       ['released', 'session-end', null],
     ]);
     expect(spans()).toEqual([]);
+  });
+});
+
+describe('three transitions in one millisecond', () => {
+  // Accepted: a claim's rows are unique by time, to the millisecond, so a repeat of one
+  // transition lands nothing. A claim, its release and a second claim by one chat inside one
+  // millisecond therefore keep the first claim and the release only. The lock still holds the
+  // second claim; the history just shows the first span, ended. No tool does all three that fast.
+  it('keeps the first claim and its release, and drops the second claim', () => {
+    claims.claim(AGENT, 'chat-a', 'DOR-1234');
+    claims.release(AGENT, 'chat-a', 'DOR-1234');
+    expect(claims.claim(AGENT, 'chat-a', 'DOR-1234').ok).toBe(true);
+    expect(edges().map((e) => [e.relation, e.at])).toEqual([
+      ['claims', iso(now)],
+      ['released', iso(now)],
+    ]);
+    expect(db.select().from(workClaims).all()).toHaveLength(1);
+    expect(spans()).toEqual([
+      expect.objectContaining({ chatId: 'chat-a', endedBy: 'released', endedAt: iso(now) }),
+    ]);
   });
 });
 

@@ -2,17 +2,20 @@
  * `work-graph.work_item_chats` (DOR-4972): who worked on a ticket, and when,
  * through the real mount and both MCP servers, with the claims written by the
  * real claim service through the real recorder. One row for each of
- * Security's three rules: a private span keeps only its relation and days; a
- * caller nobody named never reads as the owner; two private spans on the same
- * days read as one, with no count.
+ * Security's rules: a private span keeps only its relation and days; a caller
+ * nobody named never reads as the owner, whatever user id it carries; two
+ * private spans on the same days read as one, with no count; and a span handed
+ * over to a chat the reader may not read ends on the day, naming no one.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { WorkClaimService } from '../../../session/claims/work-claim-service.js';
 import { recordChatClaim } from '../../index.js';
 import {
   bind,
+  agentIdentityOf,
   callInSession,
   get,
+  getWith,
   invoke,
   RANGER,
   SCOUT,
@@ -146,12 +149,97 @@ describe('a caller nobody named', () => {
     expect(body.spans).toEqual([SPACE_SPAN, PRIVATE_SPAN]);
   });
 
-  it('reads as the owner when a signed-in person’s key names them', async () => {
+  it('reads as the space for a program key with login on, though the key names a user', async () => {
     plant();
     const res = await get('/api/work-items/chats?ref=DOR-1', 'api-key');
-    expect(res.body.spans.map((span: { chatId?: string }) => span.chatId)).toEqual([
-      'c-space',
-      'c-private',
+    expect(res.status).toBe(200);
+    expect(res.body.spans).toEqual([SPACE_SPAN, PRIVATE_SPAN]);
+  });
+
+  it('reads as the space for a REST read with login off that presents an x-api-key', async () => {
+    plant();
+    const res = await getWith('/api/work-items/chats?ref=DOR-1', { 'x-api-key': 'a-program-key' });
+    expect(res.status).toBe(200);
+    expect(res.body.spans).toEqual([SPACE_SPAN, PRIVATE_SPAN]);
+  });
+
+  it('reads as the space for a /mcp call carrying a user id', async () => {
+    plant();
+    const { body } = await callInSession('work_item_chats', { ref: 'DOR-1' }, 'external', {
+      userId: 'owner-user',
+      mcpServer: 'external',
+    });
+    expect(body.spans).toEqual([SPACE_SPAN, PRIVATE_SPAN]);
+  });
+
+  it('reads as the space for an agent’s tool call in a chat carrying a user id', async () => {
+    plant();
+    const { body } = await callInSession('work_item_chats', { ref: 'DOR-1' }, 'in-session', {
+      identity: agentIdentityOf('scout'),
+      userId: 'owner-user',
+      mcpServer: 'in-session',
+    });
+    expect(body.spans).toEqual([SPACE_SPAN, PRIVATE_SPAN]);
+  });
+});
+
+describe('a hand-over', () => {
+  it('ends a readable span on the day only, naming no one, when the taker is private', async () => {
+    bind('c-space', 'space');
+    bind('c-private', 'private');
+    claims.claim(SCOUT.id, 'c-space', 'DOR-1');
+    later(7);
+    claims.handOver(SCOUT.id, 'DOR-1', 'c-space', 'c-private');
+    const res = await get('/api/work-items/chats?ref=DOR-1', 'ranger');
+    expect(res.body.spans).toEqual([
+      {
+        relation: 'claims',
+        chatId: 'c-space',
+        claimedAt: '2026-11-26T09:00:00.000Z',
+        endedAt: '2026-11-26',
+        endedBy: 'handed-over',
+      },
+      PRIVATE_SPAN,
+    ]);
+    // The owner reads the same span exactly.
+    const owner = await get('/api/work-items/chats?ref=DOR-1');
+    expect(owner.body.spans[0].endedAt).toBe('2026-11-26T09:07:00.000Z');
+  });
+
+  it('stays exact between two chats the reader may read', async () => {
+    bind('c-space', 'space');
+    bind('c-space-2', 'space');
+    claims.claim(SCOUT.id, 'c-space', 'DOR-1');
+    later(7);
+    claims.handOver(SCOUT.id, 'DOR-1', 'c-space', 'c-space-2');
+    const res = await get('/api/work-items/chats?ref=DOR-1', 'ranger');
+    expect(res.body.spans).toEqual([
+      {
+        relation: 'claims',
+        chatId: 'c-space',
+        claimedAt: '2026-11-26T09:00:00.000Z',
+        endedAt: '2026-11-26T09:07:00.000Z',
+        endedBy: 'handed-over',
+      },
+      {
+        relation: 'claims',
+        chatId: 'c-space-2',
+        claimedAt: '2026-11-26T09:07:00.000Z',
+        endedAt: null,
+        endedBy: null,
+      },
+    ]);
+  });
+});
+
+describe('the work reads', () => {
+  it('list a claim once, as `claims`, and never its end', async () => {
+    plant();
+    const res = await get(`/api/agents/${SCOUT.id}/work`);
+    const item = res.body.items.find((entry: { text: string }) => entry.text === 'DOR-1');
+    expect(item.links.map((link: { relation: string }) => link.relation)).toEqual([
+      'claims',
+      'claims',
     ]);
   });
 });

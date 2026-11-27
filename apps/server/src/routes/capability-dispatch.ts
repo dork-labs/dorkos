@@ -295,7 +295,10 @@ async function invokeAs(
       ...(approvalToken ? { approvalToken } : {}),
       ...(person ? { person } : {}),
       ...(call.accountDecision ? { accountDecision: call.accountDecision } : {}),
-      request: capabilityRequestFacts(facts, restRead && person !== undefined),
+      request: capabilityRequestFacts(
+        facts,
+        restRead && person !== undefined && !presentsProgramCredential(facts)
+      ),
       retryChannel: 'http-header',
       ...(confirmed !== undefined ? { confirmed } : {}),
     });
@@ -339,7 +342,8 @@ async function invokeAs(
  * so it must run only for a handler that actually asks, as the hand routes did.
  *
  * @param facts - The request's facts.
- * @param personOnRestPath - Whether the capability's own REST path minted a person proof for this read.
+ * @param personOnRestPath - Whether the capability's own REST path minted a person proof for
+ *   this read, with no program credential (no API key or bearer).
  * @returns The derived answers; no header value is in them.
  */
 export function capabilityRequestFacts(

@@ -4,8 +4,10 @@
  * names it. The set is an agent's chats, or one chat and the chats below it
  * (the lineage query's subtree, W3).
  *
- * Every relation in the store's own set is read (`WORK_LINK_RELATIONS`), and
- * each link comes back with its relation as stored, so a new relation is
+ * Every relation in the store's own set is read (`WORK_LINK_RELATIONS`) but
+ * `released`: a claim's end is history with a read of its own
+ * (`work-item-chats.ts`), and a claim lists here once, as `claims`. Each
+ * link comes back with its relation as stored, so a new relation is
  * listed on purpose, in the store, and never by a string here. Only links to a
  * pull request or a ticket are kept.
  *
@@ -31,6 +33,9 @@ import type { LineageReads } from '../lineage-reads.js';
 import { decodePageCursor, encodePageCursor, pairOf } from './page-cursor.js';
 import type { AuditReader } from '../../audit/visibility.js';
 import { WORK_LINK_RELATIONS, type WorkLink, type WorkLinkStore } from '../work-link-store.js';
+
+/** The relations an item's links list: every one but a claim's end (see the module header). */
+const LISTED_RELATIONS = WORK_LINK_RELATIONS.filter((relation) => relation !== 'released');
 
 /** The kinds of work listed when none is asked for. */
 const ALL_WORK_KINDS: readonly WorkKind[] = ['pr', 'ticket'];
@@ -85,7 +90,7 @@ export function readWork(
   const kinds = new Set<string>(query.kind ? [query.kind] : ALL_WORK_KINDS);
   const { of, owner } = sources.aliases.aliases(query.chatIds);
   const refs = [...of.values()].flat().map((id) => ({ kind: 'chat' as const, id }));
-  const found: WorkLink[] = WORK_LINK_RELATIONS.flatMap((relation) =>
+  const found: WorkLink[] = LISTED_RELATIONS.flatMap((relation) =>
     sources.links.fromMany(refs, relation)
   ).filter((link) => kinds.has(link.to.kind));
   found.sort((a, b) => compare(a.recordedAt, b.recordedAt) || compare(a.id, b.id));

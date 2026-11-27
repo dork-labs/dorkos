@@ -8,7 +8,9 @@
  * under an older id count as its own, through `rekeyed_from`) and in the
  * order the transitions happened:
  *
- * 1. A `claims` opens a span.
+ * 1. A `claims` opens a span, when the claim tool, `session_start` (the new
+ *    chat's own claim; its recording chat is the caller) or a hand-over (the
+ *    taker's) wrote it.
  * 2. The next `released` closes it; what wrote that row says how it ended
  *    (the release tool: released; the lapse sweep: lapsed; a hand-over:
  *    handed over).
@@ -17,6 +19,8 @@
  * 4. A `released` with no open span is ignored.
  * 5. A `claims` with no later `released` is a span still open.
  *
+ * One chat's rows are taken in order of `recorded_at`, then of their id.
+ *
  * A span the session-end cleanup closed is left out: its chat never started
  * (`releaseSession` is called for a start that was cancelled before launch),
  * as the lineage query leaves out a chat that never started.
@@ -24,7 +28,10 @@
  * **What a reader may not read (Security, DOR-4972; W4's rule).** A span of a
  * chat the reader may not read keeps only its relation and the day it began
  * and ended: no chat, no time finer than the day, no end reason. Two such
- * spans on the same days read as one, with no count.
+ * spans on the same days read as one, with no count. A span the reader may
+ * read that was handed over to a chat it may not read ends on the day only,
+ * as handed over and to no one named, so nothing on it times or names the
+ * other chat. A hand-over between two chats it may read stays exact.
  *
  * @module services/work-graph/reads/work-item-chats
  */
@@ -64,7 +71,16 @@ export interface ChatSpan {
   endedAt: string | null;
   /** How it ended, or null while open. */
   endedBy: ClaimSpanEnd | null;
+  /** For a hand-over, the chat that took it, by its current id; otherwise null. Never shown. */
+  handedTo: string | null;
 }
+
+/** The writers whose `claims` row opens a span. */
+const STARTED_BY_WRITER: ReadonlySet<string> = new Set([
+  'claim-tool',
+  'session-start',
+  'hand-over',
+]);
 
 /** How each writer of a `released` row reads as a span's end; absent ones are left out. */
 const END_BY_WRITER: Readonly<Record<string, ClaimSpanEnd>> = {
@@ -81,7 +97,8 @@ const NEVER_STARTED = 'session-end';
  * this module's header.
  *
  * @param links - The item's `claims` and `released` edges, any order.
- * @param currentOf - Each chat id an edge names, mapped to the id it has now.
+ * @param currentOf - Each chat id an edge names (its subject, and a hand-over's
+ *   recording chat), mapped to the id it has now.
  * @returns The spans, the left-out ones already dropped.
  */
 export function pairClaimSpans(
@@ -101,8 +118,15 @@ export function pairClaimSpans(
     let open: string | null = null;
     for (const link of ordered) {
       if (link.relation === 'claims') {
+        if (!STARTED_BY_WRITER.has(link.source)) continue;
         if (open !== null)
-          spans.push({ chatId, claimedAt: open, endedAt: link.recordedAt, endedBy: 'unknown' });
+          spans.push({
+            chatId,
+            claimedAt: open,
+            endedAt: link.recordedAt,
+            endedBy: 'unknown',
+            handedTo: null,
+          });
         open = link.recordedAt;
         continue;
       }
@@ -113,11 +137,16 @@ export function pairClaimSpans(
           claimedAt: open,
           endedAt: link.recordedAt,
           endedBy: END_BY_WRITER[link.source] ?? 'unknown',
+          handedTo:
+            link.source === 'hand-over' && link.recordingChatId !== null
+              ? (currentOf.get(link.recordingChatId) ?? link.recordingChatId)
+              : null,
         });
       }
       open = null;
     }
-    if (open !== null) spans.push({ chatId, claimedAt: open, endedAt: null, endedBy: null });
+    if (open !== null)
+      spans.push({ chatId, claimedAt: open, endedAt: null, endedBy: null, handedTo: null });
   }
   return spans;
 }
@@ -144,17 +173,31 @@ export function readWorkItemChats(
   sources: WorkItemChatsSources
 ): WorkItemChatsPage {
   const links = [...sources.to(query.ref, 'claims'), ...sources.to(query.ref, 'released')];
-  const currentOf = sources.resolveRekeys([...new Set(links.map((link) => link.from.id))]);
+  const named = links.flatMap((link) =>
+    link.recordingChatId === null ? [link.from.id] : [link.from.id, link.recordingChatId]
+  );
+  const currentOf = sources.resolveRekeys([...new Set(named)]);
   const spans = pairClaimSpans(links, currentOf);
-  const mayRead = readable([...new Set(spans.map((span) => span.chatId))]);
+  const mayRead = readable([
+    ...new Set(
+      spans.flatMap((span) => (span.handedTo ? [span.chatId, span.handedTo] : [span.chatId]))
+    ),
+  ]);
 
   const shown: Shown[] = [];
   const privateSeen = new Set<string>();
   for (const span of spans) {
     const day = span.claimedAt.slice(0, 10);
     if (mayRead.has(span.chatId)) {
+      const { handedTo, ...exact } = span;
+      // Handed to a chat this reader may not read: the day only, and no one named.
+      const hidden = handedTo !== null && !mayRead.has(handedTo);
       shown.push({
-        span: { relation: 'claims', ...span },
+        span: {
+          relation: 'claims',
+          ...exact,
+          endedAt: hidden ? exact.endedAt!.slice(0, 10) : exact.endedAt,
+        },
         key: [day, '0', span.claimedAt, span.chatId],
       });
       continue;

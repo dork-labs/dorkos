@@ -97,10 +97,10 @@ export const workGraphReadDomain = createWorkGraphReadDomain({
   titleOf: (chatId) => chatTitleOf(chatId),
   holdsOutsideText: (chatId) => chatHoldsOutsideText(chatId),
   markOutside: (context) => markCallerTurnOutsider(context, { kind: 'chat' }),
+  // A userId is not proof of the person: a program key resolves to one, and so do `/mcp`
+  // calls and an agent's tool call in a chat (Security, DOR-4972).
   namesPerson: (context) =>
-    context?.request?.personOnRestPath === true ||
-    isTrustedCaller(context?.trusted) ||
-    context?.userId !== undefined,
+    context?.request?.personOnRestPath === true || isTrustedCaller(context?.trusted),
 });
 
 /**

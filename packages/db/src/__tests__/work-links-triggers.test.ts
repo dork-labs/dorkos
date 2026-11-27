@@ -93,14 +93,95 @@ describe('work_links stays append-only through every migration', () => {
   it('keeps every row through the rebuild', () => {
     const db = createDb(':memory:');
     migrateThrough(db, REBUILD_IDX - 1);
-    db.$client
-      .prepare(
-        `INSERT INTO work_links (id, from_ref, to_ref, relation, recorded_at, recording_chat_id, source, turn_marks)
-         VALUES ('01J0000000000000000000000B', 'dork:chat:a', 'DOR-1', 'works_on', '2026-11-25T10:00:00.000Z', 'a', 'open-pr', '{}')`
-      )
-      .run();
+    const insert = db.$client.prepare(
+      `INSERT INTO work_links (id, from_ref, to_ref, relation, recorded_at, recording_chat_id, source, turn_marks)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    // One row of each kind of edge the table held before: their ends, sources and marks differ.
+    const at = '2026-11-25T10:00:00.000Z';
+    insert.run(
+      '01J0000000000000000000000B',
+      'dork:chat:a',
+      'DOR-1',
+      'works_on',
+      at,
+      'a',
+      'open-pr',
+      '{}'
+    );
+    insert.run(
+      '01J0000000000000000000000C',
+      'dork:chat:a',
+      'owner/repo#4',
+      'opened',
+      at,
+      'a',
+      'open-pr',
+      '{"outsider":true}'
+    );
+    insert.run(
+      '01J0000000000000000000000D',
+      'dork:chat:b',
+      'dork:chat:a',
+      'started',
+      at,
+      null,
+      'server',
+      null
+    );
+    insert.run(
+      '01J0000000000000000000000E',
+      'dork:chat:a',
+      'dork:todo:T1',
+      'produced',
+      at,
+      null,
+      'server',
+      null
+    );
+    insert.run(
+      '01J0000000000000000000000F',
+      'dork:chat:c',
+      'dork:chat:a',
+      'forked_from',
+      at,
+      null,
+      'server',
+      null
+    );
+    insert.run(
+      '01J0000000000000000000000G',
+      'dork:chat:d',
+      'dork:chat:c',
+      'rekeyed_from',
+      at,
+      null,
+      'server',
+      null
+    );
+    insert.run(
+      '01J0000000000000000000000H',
+      'dork:chat:a',
+      'worktree:wt-a',
+      'opened',
+      at,
+      null,
+      'server',
+      null
+    );
+    insert.run(
+      '01J0000000000000000000000J',
+      'dork:chat:a',
+      'DOR-1',
+      'claims',
+      at,
+      null,
+      'server',
+      null
+    );
     const before = db.$client.prepare('SELECT * FROM work_links').all();
     migrateThrough(db, REBUILD_IDX);
+    expect(before).toHaveLength(8);
     expect(db.$client.prepare('SELECT * FROM work_links').all()).toEqual(before);
   });
 });

@@ -8,7 +8,10 @@
  * recorder is set at the composition root (`startup/steps/work-graph.ts`), so
  * this domain imports nothing from the work graph (the `work-graph/stay-out`
  * rule). Recording never decides the claim: the service catches and logs
- * anything the recorder throws.
+ * anything the recorder throws, and SQLite undoes only the failed statement.
+ * An error that makes SQLite undo the whole transaction (SQLITE_FULL,
+ * SQLITE_IOERR, SQLITE_NOMEM) does fail the claim: its COMMIT fails with it,
+ * as it would with no edge at all.
  *
  * @module services/session/claims/work-claim-links
  */

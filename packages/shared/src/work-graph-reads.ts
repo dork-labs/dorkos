@@ -229,7 +229,11 @@ export const WorkItemSpanSchema = z.union([
     chatId: z.string(),
     /** When the chat claimed it (ISO 8601). */
     claimedAt: z.string(),
-    /** When the claim ended (ISO 8601), or null while the chat holds it. */
+    /**
+     * When the claim ended (ISO 8601), or null while the chat holds it. The day
+     * only (`YYYY-MM-DD`) when it was handed over to a chat the reader may not
+     * read, so nothing here times that chat.
+     */
     endedAt: z.string().nullable(),
     /** How it ended, or null while the chat holds it. */
     endedBy: ClaimSpanEndSchema.nullable(),

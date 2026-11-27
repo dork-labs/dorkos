@@ -27,7 +27,11 @@ import type { WorkLinkInput } from '../../work-link-store.js';
 import { configManager, initConfigManager } from '../../../core/config-manager.js';
 import { initAuth } from '../../../core/auth/index.js';
 import type { AgentIdentity } from '../../../core/agent-identity/index.js';
-import { composeRegistry, type CapabilityDeps } from '../../../core/capabilities/index.js';
+import {
+  composeRegistry,
+  type CapabilityDeps,
+  type CapabilityInvocationContext,
+} from '../../../core/capabilities/index.js';
 import { createCapabilityMcpClient } from '../../../runtimes/claude-code/mcp-tools/__tests__/capability-mcp-client.js';
 import { AccountIds } from '../../../audit/account-ids.js';
 import { resetSessionVisibility } from '../../../audit/session-visibility.js';
@@ -136,6 +140,11 @@ export function useWorkGraphReads(): void {
   afterEach(() => resetSessionVisibility());
 }
 
+/** The identity an agent reader's turn binds, for a call made from its chat. */
+export function agentIdentityOf(reader: 'scout' | 'ranger'): AgentIdentity {
+  return identityOf(reader)!;
+}
+
 /**
  * GET a path as `reader`. An agent presents its header (and the chain resolved
  * its identity); `unidentified` presents a header nobody could resolve. A key
@@ -158,6 +167,11 @@ export async function get(url: string, reader: Reader = 'owner'): Promise<Respon
   }
 }
 
+/** GET a path with login off and these headers only, as a program at this computer might. */
+export async function getWith(url: string, headers: Record<string, string>): Promise<Response> {
+  return request(target.server).get(url).set(headers);
+}
+
 /**
  * Call a capability through `POST /api/capabilities/:id/invoke`, as
  * `dorkos call` does, with no key and no agent token.
@@ -170,16 +184,23 @@ export async function invoke(id: string, input: Record<string, unknown>): Promis
  * Call a read's tool over the in-session MCP server, with no turn bound to the
  * call: the caller `readerFor` reads as an agent nobody could name. Over the
  * `external` server, the caller is one no agent token or person names.
+ * `context` is what the surface bound to the call, such as the user a key
+ * resolved to.
  *
  * @returns Whether the tool answered an error, and the JSON it carried.
  */
 export async function callInSession(
   name: string,
   args: Record<string, unknown>,
-  server: 'in-session' | 'external' = 'in-session'
+  server: 'in-session' | 'external' = 'in-session',
+  context?: CapabilityInvocationContext
 ): Promise<{ isError: boolean; body: Record<string, unknown> }> {
   const registry = composeRegistry([workGraphReadDomain], { logger: noopLogger, auditDeps });
-  const { client } = await createCapabilityMcpClient(registry, server);
+  const { client } = await createCapabilityMcpClient(
+    registry,
+    server,
+    context ? async () => context : undefined
+  );
   const result = (await client.callTool({ name, arguments: args })) as {
     isError?: boolean;
     structuredContent?: Record<string, unknown>;
