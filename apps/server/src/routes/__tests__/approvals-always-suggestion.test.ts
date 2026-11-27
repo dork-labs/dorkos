@@ -131,7 +131,7 @@ describe('the Always allow suggestion', () => {
     for (let i = 0; i < 3; i++) await answer('once');
     const fourth = ask();
     await request(app).post(`/api/approvals/${fourth}/dismiss-suggestion`).expect(200);
-    const [dismissal] = (await listPermissionHistory(activity, { limit: 10 })).items;
+    const [dismissal] = (await listPermissionHistory(activity, { limit: 10 })).entries;
     expect(dismissal).toMatchObject({ undoable: true, undone: false });
     expect(dismissal!.summary).toMatch(/^Stopped suggesting Always allow/);
 
@@ -164,7 +164,7 @@ describe('the Always allow suggestion', () => {
     });
     expect(approvals.getPending(fourth)?.suggestAlways).toBe(true);
     const history = await listPermissionHistory(activity, { limit: 10 });
-    expect(history.items.find((i) => i.id === dismissal!.id)).toMatchObject({ undone: true });
+    expect(history.entries.find((i) => i.id === dismissal!.id)).toMatchObject({ undone: true });
     // Undoing it again finds nothing to do.
     await expect(service.undo(dismissal!.id, {}, writer)).resolves.toEqual({
       changes: [],

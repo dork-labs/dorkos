@@ -94,7 +94,7 @@ export function useNotifications(lens?: NotificationLens): NotificationsState {
     queryFn: ({ pageParam }) =>
       transport.listNotifications({
         limit: PAGE_SIZE,
-        ...(pageParam === undefined ? {} : { before: pageParam }),
+        ...(pageParam === undefined ? {} : { cursor: pageParam }),
         ...(agentId === undefined ? {} : { agentId }),
         ...(sessionId === undefined ? {} : { sessionId }),
         ...(kinds === undefined || kinds === ''

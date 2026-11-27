@@ -44,7 +44,7 @@ import { readStoredPayload, storedNotificationDto } from './stored-dto-parts.js'
  *
  * A plain `ulid()` randomises its entropy, so two notifications minted in the
  * same millisecond sort in an arbitrary order relative to each other. Everything
- * here reads ids as time — the paging cursor is `id < before`, and prune keeps
+ * here reads ids as time — the paging key is `id < beforeId`, and prune keeps
  * "the newest 1000 ids" — so an arbitrary order there would let prune drop a row
  * newer than one it kept. The monotonic factory increments instead, which is why
  * `dispatch-id.ts` and `relay-publish.ts` already use it.
@@ -378,19 +378,20 @@ export class NotificationStore {
   }
 
   /**
-   * One page of history, newest first.
+   * One page of history, newest first. The route turns `nextBeforeId` into
+   * the opaque cursor the API hands out, and a cursor back into `beforeId`.
    *
-   * @param query - Cursor, page size, and the lens filters.
+   * @param query - The id the page starts below, page size, and the lens filters.
    */
-  list(query: ListNotificationsQuery): {
+  list(query: Omit<ListNotificationsQuery, 'cursor'> & { beforeId?: string }): {
     notifications: NotificationDTO[];
-    nextCursor: string | null;
+    nextBeforeId: string | null;
   } {
     const conditions: SQL[] = [];
-    // The cursor is the ULID id, which sorts by creation time — so paging and
+    // The key is the ULID id, which sorts by creation time — so paging and
     // ordering use one column and two rows raised in the same millisecond can
     // neither be skipped nor repeated.
-    if (query.before) conditions.push(lt(notifications.id, query.before));
+    if (query.beforeId) conditions.push(lt(notifications.id, query.beforeId));
     if (query.agentId) conditions.push(eq(notifications.agentId, query.agentId));
     if (query.sessionId) conditions.push(eq(notifications.sessionId, query.sessionId));
     // `inArray` even for one kind: the filter is a list now (see
@@ -414,7 +415,7 @@ export class NotificationStore {
     const page = readableRows.slice(0, query.limit);
     return {
       notifications: page.map((row) => storedNotificationDto(row)),
-      nextCursor: hasMore && page.length > 0 ? page[page.length - 1].id : null,
+      nextBeforeId: hasMore && page.length > 0 ? page[page.length - 1].id : null,
     };
   }
 

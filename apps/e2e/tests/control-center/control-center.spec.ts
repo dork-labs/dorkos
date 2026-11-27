@@ -243,8 +243,8 @@ test.describe('Control Center @smoke', () => {
         .toBeNull();
       const history = (await (
         await request.get(`/api/permissions/history?agentId=${agentId}&limit=1`)
-      ).json()) as { items: { metadata: { surface: string } }[] };
-      expect(history.items[0]?.metadata.surface).toBe('control-center');
+      ).json()) as { entries: { metadata: { surface: string } }[] };
+      expect(history.entries[0]?.metadata.surface).toBe('control-center');
     } finally {
       await request.patch(url, { data: { areas: { rooms: null }, surface: 'api' } });
     }

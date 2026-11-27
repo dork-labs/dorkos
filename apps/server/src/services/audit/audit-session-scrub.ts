@@ -25,6 +25,7 @@ import type {
 } from '@dorkos/shared/audit-schemas';
 import type { AuditLog } from './audit-log.js';
 import type { AuditReader } from './visibility.js';
+import { auditCursorSeq, auditPageResult } from './audit-page.js';
 
 /** The subset of these sessions the reader may read. */
 export type ReadableSessions = (sessionIds: readonly string[]) => ReadonlySet<string>;
@@ -79,7 +80,7 @@ function scrubPage(
     .map((event) => scrubEvent(event, open));
   // A page that filter emptied is the last one: a cursor beside no rows would
   // say rows matched, which is the one thing a private chat must not confirm.
-  if (events.length === 0 && result.events.length > 0) return { events };
+  if (events.length === 0 && result.events.length > 0) return { events, nextCursor: null };
   return { ...result, events };
 }
 
@@ -92,6 +93,9 @@ function filtersUnreadableSession(
   if (reader.kind === 'owner' || !sessionId) return false;
   return !readable([sessionId]).has(sessionId);
 }
+
+/** The answer for a filter that matches nothing the reader may see. */
+const EMPTY_PAGE: AuditQueryResult = { events: [], nextCursor: null };
 
 /** What the reads below need of the log. */
 type AuditReads = Pick<AuditLog, 'query' | 'timeline' | 'getWithLinks'>;
@@ -110,8 +114,11 @@ export function readAuditQuery(
   reader: AuditReader,
   readable: ReadableSessions
 ): AuditQueryResult {
-  if (filtersUnreadableSession(reader, query.sessionId, readable)) return { events: [] };
-  return scrubPage(reader, log.query(query, reader), readable, query.targetId);
+  const { cursor, ...filters } = query;
+  const beforeSeq = auditCursorSeq('audit', cursor, reader);
+  if (filtersUnreadableSession(reader, query.sessionId, readable)) return EMPTY_PAGE;
+  const page = log.query({ ...filters, ...(beforeSeq ? { beforeSeq } : {}) }, reader);
+  return scrubPage(reader, auditPageResult('audit', page, reader), readable, query.targetId);
 }
 
 /**
@@ -128,8 +135,11 @@ export function readAuditTimeline(
   reader: AuditReader,
   readable: ReadableSessions
 ): AuditQueryResult {
-  if (filtersUnreadableSession(reader, query.sessionId, readable)) return { events: [] };
-  return scrubPage(reader, log.timeline(query, reader), readable);
+  const { cursor, ...filters } = query;
+  const beforeSeq = auditCursorSeq('audit-timeline', cursor, reader);
+  if (filtersUnreadableSession(reader, query.sessionId, readable)) return EMPTY_PAGE;
+  const page = log.timeline({ ...filters, ...(beforeSeq ? { beforeSeq } : {}) }, reader);
+  return scrubPage(reader, auditPageResult('audit-timeline', page, reader), readable);
 }
 
 /**

@@ -54,9 +54,6 @@ import {
 import { AUDIT_VERIFY_MAX_ROWS } from '@dorkos/shared/audit-schemas';
 import type {
   AuditGetResult,
-  AuditQuery,
-  AuditQueryResult,
-  AuditTimelineQuery,
   AuditActor,
   AuditChange,
   AuditEvent,
@@ -73,6 +70,7 @@ import { canonicalJson } from './canonical-json.js';
 import { redactAuditText, redactChange } from './audit-redaction.js';
 import { markAuditScopeRecorded } from './audit-context.js';
 import { escapeLike, OWNER_READER, readableBy, type AuditReader } from './visibility.js';
+import type { AuditLogPage, AuditLogQuery, AuditLogTimelineQuery } from './audit-page.js';
 
 /** What the first row links to: 64 zeros. */
 export const GENESIS_HASH = '0'.repeat(64);
@@ -330,9 +328,9 @@ export class AuditLog {
    *
    * @param query - Filters and the page.
    * @param reader - Who is reading.
-   * @returns One page, and where the next one starts.
+   * @returns One page, and whether more follow it.
    */
-  query(query: AuditQuery, reader: AuditReader): AuditQueryResult {
+  query(query: AuditLogQuery, reader: AuditReader): AuditLogPage {
     const conditions: (SQL | undefined)[] = [readableBy(reader)];
     if (query.actorId) conditions.push(eq(auditEvents.actorId, query.actorId));
     if (query.targetId) conditions.push(eq(auditEvents.targetId, query.targetId));
@@ -426,7 +424,7 @@ export class AuditLog {
    * @param query - The account, filters and the page.
    * @param reader - Who is reading.
    */
-  timeline(query: AuditTimelineQuery, reader: AuditReader): AuditQueryResult {
+  timeline(query: AuditLogTimelineQuery, reader: AuditReader): AuditLogPage {
     const ids = this.aliasesOf(query.accountId, reader);
     const onBehalf = ids.map(
       (id) =>
@@ -467,7 +465,10 @@ export class AuditLog {
 
   /** The filters a query and a timeline share. */
   private commonFilters(
-    query: Pick<AuditQuery, 'action' | 'operation' | 'sessionId' | 'since' | 'until' | 'beforeSeq'>
+    query: Pick<
+      AuditLogQuery,
+      'action' | 'operation' | 'sessionId' | 'since' | 'until' | 'beforeSeq'
+    >
   ): SQL[] {
     const conditions: SQL[] = [];
     if (query.action) {
@@ -483,8 +484,8 @@ export class AuditLog {
     return conditions;
   }
 
-  /** One page newest first, and the cursor to the next. */
-  private page(conditions: (SQL | undefined)[], limit: number): AuditQueryResult {
+  /** One page newest first by `seq`, which never changes, and whether more follow. */
+  private page(conditions: (SQL | undefined)[], limit: number): AuditLogPage {
     const rows = this.db
       .select()
       .from(auditEvents)
@@ -492,9 +493,7 @@ export class AuditLog {
       .orderBy(desc(auditEvents.seq))
       .limit(limit + 1)
       .all();
-    const events = rows.slice(0, limit).map(toAuditEvent);
-    const last = events.at(-1);
-    return { events, ...(rows.length > limit && last ? { nextBeforeSeq: last.seq } : {}) };
+    return { events: rows.slice(0, limit).map(toAuditEvent), more: rows.length > limit };
   }
 
   /**

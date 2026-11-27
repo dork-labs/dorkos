@@ -107,12 +107,15 @@ export function createPermissionWorld(
       });
     },
     get: async (id: string) => events.find((e) => e.id === id),
-    list: async (query: ListActivityQuery) => {
+    list: async (query: ListActivityQuery, after?: { at: string; id: string }) => {
       const cats = query.categories?.split(',');
       const rows = [...events]
         .reverse()
         .filter((e) => !cats || cats.includes(e.category))
-        .filter((e) => !query.before || e.occurredAt < query.before);
+        .filter((e) => !query.before || e.occurredAt < query.before)
+        .filter(
+          (e) => !after || e.occurredAt < after.at || (e.occurredAt === after.at && e.id < after.id)
+        );
       const page = rows.slice(0, query.limit);
       return {
         items: page,

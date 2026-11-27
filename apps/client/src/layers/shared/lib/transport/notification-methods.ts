@@ -27,7 +27,7 @@ export function createNotificationMethods(baseUrl: string) {
     listNotifications(query?: Partial<ListNotificationsQuery>): Promise<ListNotificationsResponse> {
       const values = {
         limit: query?.limit,
-        before: query?.before,
+        cursor: query?.cursor,
         agentId: query?.agentId,
         sessionId: query?.sessionId,
         // Comma-joined, the flat spelling the route parses and the same one

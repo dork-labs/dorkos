@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { RequestListener } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
+import { INVALID_CURSOR_DETAIL } from '@dorkos/shared/paging';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, eq, sql, notifications, type Db } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
@@ -121,14 +122,24 @@ describe('GET /api/notifications', () => {
     const first = await request(app).get('/api/notifications').query({ limit: 1 });
     expect(first.status).toBe(200);
     expect(first.body.notifications.map((n: { id: string }) => n.id)).toEqual([ids[1]]);
-    expect(first.body.nextCursor).toBe(ids[1]);
+    expect(first.body.nextCursor).toEqual(expect.any(String));
 
     const second = await request(app)
       .get('/api/notifications')
-      .query({ limit: 1, before: first.body.nextCursor });
+      .query({ limit: 1, cursor: first.body.nextCursor });
     expect(second.status).toBe(200);
     expect(second.body.notifications.map((n: { id: string }) => n.id)).toEqual([ids[0]]);
     expect(second.body.nextCursor).toBeNull();
+  });
+
+  it('refuses a cursor it did not give, and the old before parameter, rather than page one', async () => {
+    const ids = await seed(2);
+    const app = fixtureTarget.mount(buildApp());
+    const forged = await request(app).get('/api/notifications').query({ cursor: ids[1] });
+    expect(forged.status).toBe(400);
+    expect(forged.body).toMatchObject({ code: 'invalid_request', detail: INVALID_CURSOR_DETAIL });
+    const old = await request(app).get('/api/notifications').query({ before: ids[1] });
+    expect(old.status).toBe(400);
   });
 
   it('keeps a known notice with malformed payload JSON, without its action buttons', async () => {
@@ -168,14 +179,13 @@ describe('GET /api/notifications', () => {
       .get('/api/notifications')
       .query({ limit: 2 });
     expect(first.body.notifications).toHaveLength(2);
-    expect(first.body.nextCursor).toBe(first.body.notifications[1].id);
 
     const second = await request(fixtureServer)
       .get('/api/notifications')
-      .query({ limit: 2, before: first.body.nextCursor });
+      .query({ limit: 2, cursor: first.body.nextCursor });
     const third = await request(fixtureServer)
       .get('/api/notifications')
-      .query({ limit: 2, before: second.body.nextCursor });
+      .query({ limit: 2, cursor: second.body.nextCursor });
 
     const seen = [
       ...first.body.notifications,

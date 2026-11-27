@@ -19,24 +19,25 @@ export const AUDIT_QUERY_KEY = ['audit'] as const;
 const PAGE_SIZE = 50;
 
 /** Every loaded page, flattened into rows, newest first. */
-function selectRows(data: InfiniteData<AuditQueryResult, number | undefined>): ActivityRowItem[] {
+function selectRows(data: InfiniteData<AuditQueryResult, string | undefined>): ActivityRowItem[] {
   return data.pages.flatMap((page) => page.events.map(auditEventToRow));
 }
 
 /**
- * Every action the caller may see, newest first, 50 at a time.
+ * Every action the caller may see, newest first, 50 at a time: "Load more"
+ * passes the last page's `nextCursor` back.
  *
  * @param filters - Optional filters forwarded to `GET /api/audit`.
  */
-export function useAuditFeed(filters: Partial<Omit<AuditQuery, 'beforeSeq' | 'limit'>> = {}) {
+export function useAuditFeed(filters: Partial<Omit<AuditQuery, 'cursor' | 'limit'>> = {}) {
   const transport = useTransport();
 
   return useInfiniteQuery({
     queryKey: [...AUDIT_QUERY_KEY, 'list', filters],
     queryFn: ({ pageParam }) =>
-      transport.listAuditEvents({ ...filters, limit: PAGE_SIZE, beforeSeq: pageParam }),
-    initialPageParam: undefined as number | undefined,
-    getNextPageParam: (lastPage) => lastPage.nextBeforeSeq,
+      transport.listAuditEvents({ ...filters, limit: PAGE_SIZE, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     select: selectRows,
     staleTime: 30_000,
     refetchOnWindowFocus: true,
@@ -57,9 +58,9 @@ export function useAccountTimeline(accountId: string | null) {
       accountId === null
         ? skipToken
         : ({ pageParam }) =>
-            transport.getAccountTimeline(accountId, { limit: PAGE_SIZE, beforeSeq: pageParam }),
-    initialPageParam: undefined as number | undefined,
-    getNextPageParam: (lastPage) => lastPage.nextBeforeSeq,
+            transport.getAccountTimeline(accountId, { limit: PAGE_SIZE, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     select: selectRows,
     staleTime: 30_000,
     refetchOnWindowFocus: true,

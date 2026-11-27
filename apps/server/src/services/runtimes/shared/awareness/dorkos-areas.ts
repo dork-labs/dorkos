@@ -265,7 +265,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       'approvals.withdraw',
       'operator.config_',
       'operator.check_update',
-      // One agent's permissions and level (`permissions.view_agent*`, DOR-4978), any agent's.
+      // One agent's permissions and level (`permissions.view_agent*`, DOR-4978), any agent's,
+      // and the permission history, a page at a time (`permissions.view_history`, DOR-4982).
       'permissions.',
       'instructions.',
       'capabilities.list',

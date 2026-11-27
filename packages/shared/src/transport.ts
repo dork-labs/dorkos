@@ -2664,14 +2664,14 @@ export interface Transport extends TransportSlices {
   ): Promise<PermissionWriteResult<AgentPermissionsResponse>>;
 
   /**
-   * The permission history, newest first; with `agentId`, the changes that
-   * touched that agent.
+   * The permission history, newest first, a page at a time; with `agentId`,
+   * the changes that touched that agent.
    *
-   * @param query - Optional agent, cursor and page size.
+   * @param query - Optional agent, the last page's `nextCursor`, and page size.
    */
   getPermissionHistory(query?: {
     agentId?: string;
-    before?: string;
+    cursor?: string;
     limit?: number;
   }): Promise<PermissionHistoryResponse>;
 

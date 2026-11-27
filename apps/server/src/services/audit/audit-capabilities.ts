@@ -191,7 +191,8 @@ export const auditDomain: CapabilityDomain = {
         'Read the DorkOS audit log: every action anyone took, person or agent, newest first. ' +
         'Filter by actorId (who did it), targetId (what it was done to), action (a prefix such as ' +
         '"config." or "runtime.tool_used"), operation, sessionId, and a since/until time window. ' +
-        'Page backwards by passing nextBeforeSeq as beforeSeq. You see every action and every ' +
+        'It comes a page at a time (limit, at most 200): pass nextCursor back as cursor for ' +
+        'the next page; nextCursor is null on the last one. You see every action and every ' +
         "agent's work; a person's private chat and sign-in details are not shown to agents.",
       tier: 'observe',
       area: null,
@@ -243,7 +244,8 @@ export const auditDomain: CapabilityDomain = {
         'Everything one account did, had done to it, or had done on its behalf, newest first: ' +
         'the per-account timeline of the audit log. accountId is an agent id, a person’s ' +
         'account id, or the install id the owner had before making an account (the two are ' +
-        'read as one). The same filters and paging as reading the whole log.',
+        'read as one). The same filters as reading the whole log, and it comes a page at a ' +
+        'time the same way: pass nextCursor back as cursor; null on the last page.',
       tier: 'observe',
       area: null,
       areaNote: 'reading',

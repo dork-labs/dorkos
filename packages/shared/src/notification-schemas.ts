@@ -22,7 +22,7 @@
  */
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
-import { nextCursorOutput } from './paging.js';
+import { nextCursorOutput, pageCursorInput, pageLimitInput } from './paging.js';
 
 extendZodWithOpenApiOnce();
 
@@ -490,15 +490,15 @@ export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number];
  */
 export const ListNotificationsQuerySchema = z
   .object({
-    limit: z.coerce.number().int().min(1).max(100).optional().default(25),
+    limit: pageLimitInput(),
     /**
-     * ULID cursor — return notifications older than this one.
+     * The `nextCursor` of the page before; leave it out for the first page.
      *
-     * The id rather than a timestamp: ULIDs already sort by creation time, and
-     * two notifications raised in the same millisecond would make a timestamp
-     * cursor either skip one or repeat it forever.
+     * Opaque. The list is newest first by id (a ULID, which sorts by creation
+     * time and never changes), so two notifications raised in the same
+     * millisecond are neither skipped nor repeated.
      */
-    before: z.string().min(1).optional(),
+    cursor: pageCursorInput,
     agentId: z.string().optional(),
     sessionId: z.string().optional(),
     /**
@@ -561,8 +561,8 @@ export type ListNotificationsQuery = z.infer<typeof ListNotificationsQuerySchema
 export const ListNotificationsResponseSchema = z
   .object({
     notifications: z.array(NotificationDTOSchema),
-    /** Pass as `before` for the next page. `null` when this was the last one. */
-    nextCursor: z.string().nullable(),
+    /** Pass as `cursor` for the next page. `null` when this was the last one. */
+    nextCursor: nextCursorOutput,
     /**
      * How many stored notifications are unread, ignoring the filters above.
      *

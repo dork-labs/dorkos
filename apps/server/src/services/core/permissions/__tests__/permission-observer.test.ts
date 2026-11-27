@@ -38,7 +38,8 @@ describe('PermissionObserver', () => {
 
   /** The permission events about the agent, newest first. */
   async function history() {
-    return (await listPermissionHistory(world.activity, { agentId: 'agent-ana', limit: 50 })).items;
+    return (await listPermissionHistory(world.activity, { agentId: 'agent-ana', limit: 50 }))
+      .entries;
   }
 
   /** The id registered at `agentPath`; a test re-registers by changing it. */
@@ -266,7 +267,7 @@ describe('PermissionObserver', () => {
     await read(agentPath);
 
     const all = await listPermissionHistory(world.activity, { limit: 50 });
-    expect(all.items).toEqual([]);
+    expect(all.entries).toEqual([]);
   });
 
   it("does not hold one agent's reads behind another's", async () => {

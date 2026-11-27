@@ -157,7 +157,7 @@ describe('useNotifications', () => {
       .fn()
       .mockResolvedValueOnce({
         notifications: [build({ id: 'a' })],
-        nextCursor: 'a',
+        nextCursor: 'page-2',
         unreadCount: 2,
       })
       .mockResolvedValueOnce({
@@ -171,7 +171,7 @@ describe('useNotifications', () => {
     act(() => result.current.loadMore());
 
     await waitFor(() => expect(result.current.notifications).toHaveLength(2));
-    expect(listNotifications).toHaveBeenLastCalledWith({ limit: 25, before: 'a' });
+    expect(listNotifications).toHaveBeenLastCalledWith({ limit: 25, cursor: 'page-2' });
     expect(result.current.hasMore).toBe(false);
   });
 

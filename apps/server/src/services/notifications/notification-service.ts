@@ -36,8 +36,6 @@
  * @module services/notifications/notification-service
  */
 import type {
-  ListNotificationsQuery,
-  ListNotificationsResponse,
   MarkNotificationsReadResponse,
   NotificationChannel,
   NotificationDTO,
@@ -274,9 +272,9 @@ export class NotificationService {
   /**
    * One page of history, plus the unread count the bell draws.
    *
-   * @param query - Cursor, page size, and the lens filters.
+   * @param query - The id the page starts below, page size, and the lens filters.
    */
-  list(query: ListNotificationsQuery): ListNotificationsResponse {
+  list(query: Parameters<NotificationStore['list']>[0]) {
     const page = this.store.list(query);
     return { ...page, unreadCount: this.store.unreadCount() };
   }

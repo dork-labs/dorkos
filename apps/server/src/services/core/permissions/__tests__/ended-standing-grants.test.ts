@@ -232,7 +232,7 @@ describe('ended standing permissions', () => {
       agentId: 'agent-dorkbot',
       limit: 10,
     });
-    expect(history.items.map((i) => i.summary)).toEqual([lines[0]!.summary]);
+    expect(history.entries.map((i) => i.summary)).toEqual([lines[0]!.summary]);
   });
 
   it('keeps an unconsumed capture when a second boot captures again', () => {

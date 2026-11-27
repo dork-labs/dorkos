@@ -8,7 +8,7 @@
  * @module services/activity/activity-service
  */
 import { ulid } from 'ulidx';
-import { lt, gt, inArray, ne } from 'drizzle-orm';
+import { lt, gt, inArray, ne, or } from 'drizzle-orm';
 import { desc, and, eq, activityEvents, type Db } from '@dorkos/db';
 import type {
   ActivityItem,
@@ -175,16 +175,29 @@ export class ActivityService {
   }
 
   /**
-   * Query activity events with cursor-based pagination and filtering.
+   * Query activity events with cursor-based pagination and filtering, newest
+   * first, the higher id first on a tie.
    *
    * @param query - Pagination and filter parameters
+   * @param after - For a reader paging on the whole key (the permission
+   *   history): only rows after this one in that order, ties on the time included.
    */
-  async list(query: ListActivityQuery): Promise<ListActivityResponse> {
+  async list(
+    query: ListActivityQuery,
+    after?: { at: string; id: string }
+  ): Promise<ListActivityResponse> {
     const { limit, before, categories, actorType, actorId, resourceId, since } = query;
     const conditions: SQL[] = [];
 
     if (before) {
       conditions.push(lt(activityEvents.occurredAt, before));
+    }
+    if (after) {
+      const sameTime = and(
+        eq(activityEvents.occurredAt, after.at),
+        lt(activityEvents.id, after.id)
+      );
+      conditions.push(or(lt(activityEvents.occurredAt, after.at), sameTime)!);
     }
     if (categories) {
       const cats = categories.split(',').map((c) => c.trim()) as ActivityCategory[];
@@ -208,7 +221,7 @@ export class ActivityService {
       .select()
       .from(activityEvents)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(activityEvents.occurredAt))
+      .orderBy(desc(activityEvents.occurredAt), desc(activityEvents.id))
       .limit(limit + 1);
 
     const hasMore = rows.length > limit;

@@ -290,7 +290,7 @@ describe('Undo in the history', () => {
     const { wrapper } = wrap(
       createMockTransport({
         getPermissionHistory: vi.fn().mockResolvedValue({
-          items: [answered, undo, entry(), undone],
+          entries: [answered, undo, entry(), undone],
           nextCursor: null,
         }),
         undoPermissionChange,
@@ -334,7 +334,7 @@ describe('Undo in the history', () => {
       .mockResolvedValueOnce({ changes: [], skipped: [] });
     const { wrapper } = wrap(
       createMockTransport({
-        getPermissionHistory: vi.fn().mockResolvedValue({ items: [entry()], nextCursor: null }),
+        getPermissionHistory: vi.fn().mockResolvedValue({ entries: [entry()], nextCursor: null }),
         undoPermissionChange,
       })
     );
@@ -362,7 +362,7 @@ describe('Undo in the history', () => {
     });
     const { wrapper } = wrap(
       createMockTransport({
-        getPermissionHistory: vi.fn().mockResolvedValue({ items: [entry()], nextCursor: null }),
+        getPermissionHistory: vi.fn().mockResolvedValue({ entries: [entry()], nextCursor: null }),
         undoPermissionChange,
       })
     );

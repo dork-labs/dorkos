@@ -182,10 +182,11 @@ describe('the audit read capabilities', () => {
     for (const sessionId of ['chat-1', 'nobody']) {
       await expect(registry.invoke('audit.query', { sessionId }, ofAgent)).resolves.toEqual({
         events: [],
+        nextCursor: null,
       });
       await expect(
         registry.invoke('audit.account_timeline', { accountId: 'agent-1', sessionId }, ofAgent)
-      ).resolves.toEqual({ events: [] });
+      ).resolves.toEqual({ events: [], nextCursor: null });
     }
 
     // The owner sees all of it.
@@ -222,6 +223,7 @@ describe('the audit read capabilities', () => {
     // Filtering on the private chat as a target matches nothing.
     await expect(registry.invoke('audit.query', { targetId: 'chat-1' }, ofAgent)).resolves.toEqual({
       events: [],
+      nextCursor: null,
     });
     // Not even by a cursor that says more rows matched further back.
     log.record({
@@ -235,7 +237,7 @@ describe('the audit read capabilities', () => {
     });
     await expect(
       registry.invoke('audit.query', { targetId: 'chat-1', limit: 1 }, ofAgent)
-    ).resolves.toEqual({ events: [] });
+    ).resolves.toEqual({ events: [], nextCursor: null });
 
     // The owner sees it whole.
     const forOwner = (await registry.invoke(

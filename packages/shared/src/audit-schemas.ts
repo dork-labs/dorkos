@@ -9,6 +9,7 @@
  */
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
+import { nextCursorOutput, pageCursorInput, pageLimitInput } from './paging.js';
 
 extendZodWithOpenApiOnce();
 
@@ -208,8 +209,9 @@ export type AuditVerifyResult = z.infer<typeof AuditVerifyResultSchema>;
 export const AUDIT_QUERY_MAX_LIMIT = 200;
 
 /**
- * Filters for reading the audit log, newest first. Page backwards with
- * `beforeSeq` (the lowest `seq` of the previous page).
+ * Filters for reading the audit log, newest first (by `seq`, which never
+ * changes), a page at a time: pass the last page's `nextCursor` as `cursor`.
+ * The cursor is sealed to the reader who got it.
  */
 export const AuditQuerySchema = z
   .object({
@@ -227,10 +229,10 @@ export const AuditQuerySchema = z
     since: z.string().datetime({ offset: true }).optional(),
     /** Only events before this time (ISO 8601). */
     until: z.string().datetime({ offset: true }).optional(),
-    /** Only events with a lower `seq` than this: the next page. */
-    beforeSeq: z.coerce.number().int().positive().optional(),
+    /** The `nextCursor` of the page before; leave it out for the first page. */
+    cursor: pageCursorInput,
     /** How many, newest first. */
-    limit: z.coerce.number().int().positive().max(AUDIT_QUERY_MAX_LIMIT).default(50),
+    limit: pageLimitInput(AUDIT_QUERY_MAX_LIMIT),
   })
   .openapi('AuditQuery');
 
@@ -241,8 +243,8 @@ export type AuditQuery = z.infer<typeof AuditQuerySchema>;
 export const AuditQueryResultSchema = z
   .object({
     events: z.array(AuditEventSchema),
-    /** Pass as `beforeSeq` for the next page; absent on the last one. */
-    nextBeforeSeq: z.number().int().positive().optional(),
+    /** Pass as `cursor` for the next page; null on the last one. */
+    nextCursor: nextCursorOutput,
   })
   .openapi('AuditQueryResult');
 

@@ -6,7 +6,7 @@
  */
 import type { ReactNode } from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { AuditEvent } from '@dorkos/shared/audit-schemas';
@@ -77,6 +77,7 @@ describe('the profile Activity page', () => {
           }),
           auditEvent(),
         ],
+        nextCursor: null,
       }),
     });
 
@@ -94,7 +95,7 @@ describe('the profile Activity page', () => {
 
   it('says so when nothing is on record', async () => {
     const transport = createMockTransport({
-      getAccountTimeline: vi.fn().mockResolvedValue({ events: [] }),
+      getAccountTimeline: vi.fn().mockResolvedValue({ events: [], nextCursor: null }),
     });
 
     await renderPage(transport);
@@ -102,13 +103,27 @@ describe('the profile Activity page', () => {
     expect(await screen.findByText('Nothing on record yet')).toBeInTheDocument();
   });
 
-  it('offers more when the server says there is an older page', async () => {
+  it('loads the older page from the cursor the server gave, below the newer one', async () => {
+    const newer = auditEvent({ seq: 2, id: 'aud-2', summary: 'Warden edited README.md' });
     const transport = createMockTransport({
-      getAccountTimeline: vi.fn().mockResolvedValue({ events: [auditEvent()], nextBeforeSeq: 1 }),
+      getAccountTimeline: vi
+        .fn()
+        .mockResolvedValueOnce({ events: [newer], nextCursor: 'page-2' })
+        .mockResolvedValueOnce({ events: [auditEvent()], nextCursor: null }),
     });
 
     await renderPage(transport);
 
-    expect(await screen.findByRole('button', { name: 'Load 50 more' })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Load 50 more' }));
+    await waitFor(() =>
+      expect(transport.getAccountTimeline).toHaveBeenLastCalledWith(
+        WARDEN.agent!.manifestId,
+        expect.objectContaining({ cursor: 'page-2' })
+      )
+    );
+    const older = await screen.findByText('Warden ran a shell command');
+    const first = screen.getByText('Warden edited README.md');
+    expect(first.compareDocumentPosition(older) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Load 50 more' })).not.toBeInTheDocument();
   });
 });

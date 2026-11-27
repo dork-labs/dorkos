@@ -149,7 +149,7 @@
   "GET /api/notifications": "notifications.list",
   "GET /api/owner-factors": "ownerFactors.list",
   "GET /api/permissions": "permissions.get",
-  "GET /api/permissions/history": "permissions.listHistory",
+  "GET /api/permissions/history": "permissions.view_history",
   "GET /api/profile/avatar/{id}": "profile.getAvatar",
   "GET /api/projects": "projects.get",
   "GET /api/projects/resolve": "projects.resolve",

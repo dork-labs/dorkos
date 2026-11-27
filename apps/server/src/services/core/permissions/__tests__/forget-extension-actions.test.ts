@@ -72,7 +72,7 @@ describe('PermissionService.forgetExtensionActions', () => {
     await expect(
       w.service.undo(w.events[0]!.id, {}, personWriter('local-trust'))
     ).rejects.toMatchObject({ code: 'NOT_UNDOABLE' });
-    const [line] = (await listPermissionHistory(w.activity, { limit: 10 })).items;
+    const [line] = (await listPermissionHistory(w.activity, { limit: 10 })).entries;
     expect(line).toMatchObject({ undoable: false });
   });
 

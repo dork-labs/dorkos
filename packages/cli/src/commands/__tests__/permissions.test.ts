@@ -172,7 +172,7 @@ describe('dorkos permissions', () => {
 
   it('reads the history for one agent, found by name', async () => {
     apiCallMock.mockResolvedValueOnce(ROSTER).mockResolvedValueOnce({
-      items: [
+      entries: [
         {
           id: 'e1',
           occurredAt: '2026-09-24T10:00:00.000Z',
@@ -182,18 +182,28 @@ describe('dorkos permissions', () => {
           metadata: {},
         },
       ],
-      nextCursor: null,
+      nextCursor: 'page-2',
     });
-    expect(await runPermissionsDispatcher(['history', '--agent', 'dorkbot', '--limit', '5'])).toBe(
-      0
-    );
+    expect(
+      await runPermissionsDispatcher([
+        'history',
+        '--agent',
+        'dorkbot',
+        '--limit',
+        '5',
+        '--cursor',
+        'p1',
+      ])
+    ).toBe(0);
     expect(apiCallMock).toHaveBeenLastCalledWith(
       'GET',
-      '/api/permissions/history?limit=5&agentId=a2'
+      '/api/permissions/history?limit=5&cursor=p1&agentId=a2'
     );
     expect(out()).toContain('Rooms: Ask');
     // The id is what `undo` takes.
     expect(out()).toMatch(/^e1\s/m);
+    // The next page is the cursor it prints.
+    expect(out()).toContain('--cursor page-2');
   });
 
   it('undoes one change, and says what it left alone', async () => {

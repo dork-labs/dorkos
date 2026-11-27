@@ -1026,7 +1026,7 @@ export class PermissionService {
       agentId,
       limit: OUTSIDE_HISTORY_DEPTH,
     });
-    for (const entry of history.items) {
+    for (const entry of history.entries) {
       for (const change of entry.metadata.changes) {
         if (change.target.kind !== 'agent' || change.target.agentId !== agentId) continue;
         const area =

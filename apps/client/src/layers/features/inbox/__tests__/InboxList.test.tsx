@@ -253,7 +253,7 @@ describe('InboxList', () => {
       .fn()
       .mockResolvedValueOnce({
         notifications: [build({ id: 'a' })],
-        nextCursor: 'a',
+        nextCursor: 'page-2',
         unreadCount: 1,
       })
       .mockResolvedValueOnce({
@@ -266,7 +266,7 @@ describe('InboxList', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Load more' }));
 
     expect(await screen.findByText('older one')).toBeInTheDocument();
-    expect(listNotifications).toHaveBeenLastCalledWith({ limit: 25, before: 'a' });
+    expect(listNotifications).toHaveBeenLastCalledWith({ limit: 25, cursor: 'page-2' });
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument()
     );

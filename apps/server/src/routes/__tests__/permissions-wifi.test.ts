@@ -38,7 +38,6 @@ function build(options: Parameters<typeof createPermissionWorld>[0] = { preset: 
       path: '/api',
       routes: createPermissionsRoutes({
         permissions: world.service,
-        activity: world.activity,
         isLoginEnabled: () => false,
       }),
     },

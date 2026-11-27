@@ -48,7 +48,6 @@ describe('permission routes', () => {
         path: '/api',
         routes: createPermissionsRoutes({
           permissions: world.service,
-          activity: world.activity,
           isLoginEnabled: () => options.loginEnabled === true,
         }),
       },
@@ -294,17 +293,6 @@ describe('permission routes', () => {
           state: 'blocked',
         },
       ]);
-    });
-
-    it('reads the history, per agent', async () => {
-      const { app } = build();
-      await request(app)
-        .patch('/api/agents/agent-test/permissions')
-        .send({ areas: { rooms: 'ask' }, surface: 'agent-page' });
-      const res = await request(app).get('/api/permissions/history?agentId=agent-test');
-      expect(res.status).toBe(200);
-      expect(res.body.items).toHaveLength(1);
-      expect(res.body.items[0].summary).toBe('Test Bot: Rooms Ask');
     });
   });
 });

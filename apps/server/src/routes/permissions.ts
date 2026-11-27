@@ -1,8 +1,8 @@
 /**
  * The permission routes (spec `agent-permissions` D10): read the default layer,
- * change the preset, the defaults and one agent, read the history, and undo one
- * change from it (D14). One agent's settings and level are read on the
- * capability mount (`services/core/permissions/agent-permission-views.ts`).
+ * change the preset, the defaults and one agent, and undo one change from the
+ * history (D14). One agent's settings and level, and the history itself, are
+ * read on the capability mount (`services/core/permissions/agent-permission-views.ts`).
  *
  * ## Every mutating route proves a person
  *
@@ -32,7 +32,6 @@ import { Hono, type Context } from 'hono';
 import {
   PatchAgentPermissionsBodySchema,
   PatchPermissionDefaultsBodySchema,
-  PermissionHistoryQuerySchema,
   SetPermissionPresetBodySchema,
   UndoPermissionChangeBodySchema,
 } from '@dorkos/shared/permissions';
@@ -47,7 +46,6 @@ import {
 } from '@dorkos/http-kit';
 import type { Problem, ProblemCode } from '@dorkos/shared/problem';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { readQuery } from '../http/request-query.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 import {
   resolveDecisionAuthority,
@@ -65,11 +63,9 @@ import {
 } from '../services/core/auth/sessions/wifi-raise-guard.js';
 import { resolveAnswererName } from '../services/identity/operator-profile.js';
 import type { RequestUser } from '../services/core/auth/session-gate.js';
-import type { ActivityService } from '../services/activity/activity-service.js';
 import {
   PermissionError,
   type PermissionErrorCode,
-  listPermissionHistory,
   personWriter,
   type PermissionService,
   type PermissionWriter,
@@ -211,8 +207,6 @@ function sendPermissionError(c: Context<ApiEnv>, err: unknown): Response {
 export interface PermissionsRouterDeps {
   /** The one owner of every permission write. */
   permissions: PermissionService;
-  /** The Activity reader the history comes from. */
-  activity: Pick<ActivityService, 'list'>;
   /** In tests, a login-state lookup; the live config otherwise. */
   isLoginEnabled?: LoginEnabledLookup;
 }
@@ -223,11 +217,11 @@ export interface PermissionsRouterDeps {
  *
  * @param deps - See {@link PermissionsRouterDeps}.
  * @returns The routes serving `/permissions*` and `PATCH /agents/:agentId/permissions`; one agent's
- *   reads are capabilities (`services/core/permissions/agent-permission-views.ts`).
+ *   reads and the history are capabilities (`services/core/permissions/agent-permission-views.ts`).
  */
 export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
-  const { permissions, activity, isLoginEnabled } = deps;
+  const { permissions, isLoginEnabled } = deps;
   const person = (c: Context<ApiEnv>) => requirePerson(c, isLoginEnabled);
   /** A raise waits for the owner to confirm; anything else runs now. */
   const raiseOrRun = (
@@ -247,18 +241,6 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
 
   router.get('/permissions', async (c) => {
     return c.json(await permissions.getOverview());
-  });
-
-  router.get('/permissions/history', async (c) => {
-    const query = PermissionHistoryQuerySchema.safeParse(readQuery(c));
-    if (!query.success) return validationProblem(c, query.error);
-    return c.json(
-      await listPermissionHistory(activity, {
-        limit: query.data.limit,
-        ...(query.data.agentId ? { agentId: query.data.agentId } : {}),
-        ...(query.data.before ? { before: query.data.before } : {}),
-      })
-    );
   });
 
   router.put('/permissions/preset', async (c) => {

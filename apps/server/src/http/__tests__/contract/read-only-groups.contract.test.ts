@@ -318,7 +318,7 @@ contractSuite('read-only and system groups', [
   {
     name: 'GET /api/audit/accounts/:accountId/timeline answers an empty timeline',
     path: '/api/audit/accounts/x/timeline',
-    expect: { status: 200, headers: JSON_TYPE, body: { events: [] } },
+    expect: { status: 200, headers: JSON_TYPE, body: { events: [], nextCursor: null } },
   },
 
   // search

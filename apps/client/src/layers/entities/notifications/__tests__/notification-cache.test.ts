@@ -462,20 +462,19 @@ describe('the live-page cap', () => {
     expect(read(client)).toHaveLength(MAX_LIVE_PAGE_ROWS);
   });
 
-  it('moves the cursor back to the last row it kept, so nothing is skipped', () => {
-    // `before: <cursor>` is exclusive. Leaving the cursor on a row the trim
-    // dropped would ask for everything OLDER than a row that is nowhere, and
-    // that row would never be seen again. Seeded defect: keep the original
-    // cursor and this reads the id of a row no longer in the page.
-    seed(client, undefined, infinite(page([build({ id: 'a000' })])));
+  it('reads a trimmed lens again, and offers no Load more that would skip the trim meanwhile', () => {
+    // The cursor is the server's and points past the rows the trim dropped, so
+    // "Load more" from it would skip them; only the server can give a cursor
+    // for the last row kept. Seeded defect: keep the cursor and skip the refetch.
+    seed(client, undefined, infinite({ ...page([build({ id: 'a000' })]), nextCursor: 'server-1' }));
 
     for (let i = 0; i < MAX_LIVE_PAGE_ROWS + 5; i += 1) {
       upsertNotification(client, build({ id: `n${String(i).padStart(3, '0')}` }));
     }
 
     const data = client.getQueryData<NotificationPages>(notificationsQueryKey());
-    const rows = data?.pages[0]?.notifications ?? [];
-    expect(data?.pages[0]?.nextCursor).toBe(rows[rows.length - 1]?.id);
+    expect(data?.pages[0]?.nextCursor).toBeNull();
+    expect(client.getQueryState(notificationsQueryKey())?.isInvalidated).toBe(true);
   });
 
   it('leaves a page that never reached the cap alone, cursor included', () => {

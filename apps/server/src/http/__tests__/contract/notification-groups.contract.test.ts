@@ -522,9 +522,9 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     expect: { status: 200, schema: PermissionHistoryResponseSchema },
   },
   {
-    name: 'GET /api/permissions/history refuses a cursor that is not a time',
-    path: '/api/permissions/history?before=yesterday',
-    expect: { status: 400, schema: VALIDATION_FAILED },
+    name: 'GET /api/permissions/history refuses a cursor it did not give',
+    path: '/api/permissions/history?cursor=yesterday',
+    expect: { status: 400 },
   },
   {
     name: 'PUT /api/permissions/preset refuses a preset it does not know',

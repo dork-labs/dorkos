@@ -58,7 +58,6 @@ describe('permission raise confirmation', () => {
                 : Reflect.get(target, key),
           });
         }),
-        activity: live(() => world.activity),
         isLoginEnabled: () => true,
       }),
     },

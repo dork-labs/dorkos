@@ -12,7 +12,7 @@
  *
  * @module entities/notifications/model/notification-cache
  */
-import type { InfiniteData, QueryClient } from '@tanstack/react-query';
+import type { InfiniteData, QueryClient, QueryKey } from '@tanstack/react-query';
 import type {
   ListNotificationsResponse,
   NotificationDTO,
@@ -52,9 +52,10 @@ export const NOTIFICATIONS_QUERY_KEY = ['notifications'] as const;
  * than anybody scrolls without paging, so the tail past it is dropped.
  *
  * **Dropping is safe because the server still has it.** The rows fall off the
- * BOTTOM of the newest page, which is exactly where "Load more" fetches from —
- * so a person who scrolls that far gets them back off `GET /api/notifications`,
- * cursored, rather than out of a cache that grew all night.
+ * BOTTOM of the newest page, and the lens is then read again from the server
+ * ({@link capNewestPage}), so a person who scrolls that far gets them back off
+ * `GET /api/notifications`, a page at a time, rather than out of a cache that
+ * grew all night.
  */
 export const MAX_LIVE_PAGE_ROWS = 50;
 
@@ -159,29 +160,27 @@ export function matchesLens(notification: NotificationDTO, lens: NotificationLen
 }
 
 /**
- * Trim the newest page back under {@link MAX_LIVE_PAGE_ROWS}, moving the cursor
- * with it.
+ * Trim the newest page back under {@link MAX_LIVE_PAGE_ROWS}.
  *
- * **The cursor has to move, or the cap eats a row.** `nextCursor` is the id of
- * the last row ON the page, and `before: <cursor>` is exclusive — so if the trim
- * drops the row the cursor names, "Load more" asks for everything older than a
- * row that is no longer anywhere, and that row is silently skipped. Pointing the
- * cursor at the last row we KEEP makes the dropped tail exactly what the next
- * page fetches.
- *
- * A page that was the last one (`nextCursor: null`) and then got trimmed grows a
- * cursor for the same reason: there is now something older to go and get.
+ * **A trimmed lens is read again, or the cap eats rows.** The page's cursor is
+ * the server's, opaque, and points past the last row the server sent, so the
+ * dropped tail sits before it: "Load more" would skip it. Only the server can
+ * give a cursor for the last row kept, so a trimmed lens is refetched
+ * ({@link upsertNotification}), which pages it afresh and holds no more than it
+ * did. Until then a trimmed page that was the only one offers no "Load more"
+ * (`nextCursor: null`), so nothing is skipped meanwhile.
  *
  * @param rows - The page's rows after the prepend, newest first.
  * @param cursor - The page's current cursor.
+ * @param only - Whether this is the lens's only page, whose cursor "Load more" reads.
  */
 function capNewestPage(
   rows: NotificationDTO[],
-  cursor: string | null
-): { notifications: NotificationDTO[]; nextCursor: string | null } {
-  if (rows.length <= MAX_LIVE_PAGE_ROWS) return { notifications: rows, nextCursor: cursor };
-  const kept = rows.slice(0, MAX_LIVE_PAGE_ROWS);
-  return { notifications: kept, nextCursor: kept[kept.length - 1]?.id ?? cursor };
+  cursor: string | null,
+  only: boolean
+): { notifications: NotificationDTO[]; nextCursor: string | null } | null {
+  if (rows.length <= MAX_LIVE_PAGE_ROWS) return null;
+  return { notifications: rows.slice(0, MAX_LIVE_PAGE_ROWS), nextCursor: only ? null : cursor };
 }
 
 /**
@@ -211,13 +210,14 @@ function lensOfKey(key: readonly unknown[]): NotificationLens {
  */
 function updateEveryLens(
   queryClient: QueryClient,
-  apply: (pages: NotificationPages, lens: NotificationLens) => NotificationPages
+  apply: (pages: NotificationPages, lens: NotificationLens, key: QueryKey) => NotificationPages
 ): void {
   const queries = queryClient.getQueryCache().findAll({ queryKey: NOTIFICATIONS_QUERY_KEY });
   for (const query of queries) {
     const pages = query.state.data as NotificationPages | undefined;
     if (pages === undefined) continue;
-    queryClient.setQueryData(query.queryKey, apply(pages, lensOfKey(query.queryKey)));
+    const next = apply(pages, lensOfKey(query.queryKey), query.queryKey);
+    queryClient.setQueryData(query.queryKey, next);
   }
 }
 
@@ -262,7 +262,8 @@ export function upsertNotification(queryClient: QueryClient, notification: Notif
   const bump =
     !knownAlready && notification.readAt === undefined && claimBump(notification.id) ? 1 : 0;
 
-  updateEveryLens(queryClient, (pages, lens) => {
+  const trimmed: QueryKey[] = [];
+  updateEveryLens(queryClient, (pages, lens, key) => {
     const held = pages.pages.some((page) =>
       page.notifications.some((entry) => entry.id === notification.id)
     );
@@ -291,14 +292,17 @@ export function upsertNotification(queryClient: QueryClient, notification: Notif
     // whole Inbox's number, not this lens's.
     if (!belongs) return { ...pages, pages: pages.pages.map(withCount) };
     const grown = [notification, ...first.notifications];
+    const capped = capNewestPage(grown, first.nextCursor, rest.length === 0);
+    if (capped) trimmed.push(key);
     return {
       ...pages,
       pages: [
-        { ...withCount(first), ...capNewestPage(grown, first.nextCursor) },
+        { ...withCount(first), ...(capped ?? { notifications: grown }) },
         ...rest.map(withCount),
       ],
     };
   });
+  for (const key of trimmed) void queryClient.invalidateQueries({ queryKey: key, exact: true });
 }
 
 /**

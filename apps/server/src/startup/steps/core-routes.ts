@@ -625,11 +625,13 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     arrivalRecord.clear(agentId);
     void permissionObserver.forget(agentId);
   });
-  deps.permissions = { permissions: permissionService, activity: activityService };
+  deps.permissions = { permissions: permissionService };
   mountedRouters.push('permissions');
-  // One agent's permissions and the profile's Level row (the launch rule itself), on the mount.
+  // One agent's permissions, the profile's Level row (the launch rule itself) and the
+  // permission history, on the mount.
   setAgentPermissionViews({
     permissions: permissionService,
+    activity: activityService,
     readLevel: createAgentLevelReader({
       agentPath: (agentId) =>
         refs.meshCore?.listWithPaths().find((agent) => agent.id === agentId)?.projectPath,
