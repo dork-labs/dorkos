@@ -5,7 +5,7 @@
  * three presentations a conversation is. That is easy to state and easy to
  * erode: the first `if (surface` comparison looks harmless, and by the fifth the
  * compound is two components sharing a file. So the rule is scanned rather than
- * asked for, in the manner of `sse-event-allowlist.test.ts` — a textual
+ * asked for, in the manner of `event-union-census.test.ts` — a textual
  * cross-check over source, which is the only kind of check that can catch a
  * decision being unpicked one line at a time.
  *

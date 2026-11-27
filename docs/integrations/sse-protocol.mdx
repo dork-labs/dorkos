@@ -451,6 +451,20 @@ forgotten after about half an hour of quiet. Nothing else expires on a timer tod
 left waiting on a person (or one whose turn never finished) keeps being announced on every
 connect until it moves again. Reconnecting is not what clears it.
 
+### Picking up where you left off
+
+Every event after the opening frames has an `id:` line. Treat it as opaque. If
+the connection drops, reconnect with the last one as `Last-Event-ID` (browsers' `EventSource`
+does this for you). The server sends the events you missed, then live ones, and the `connected`
+frame says `resumed: true`. You get the missed events you may read now, when you reconnect.
+
+The server keeps the last 500 events (up to 512 KiB) for this. If you were gone longer, or the
+server restarted, you get an ordinary fresh connect instead: `connected` without `resumed`, then
+the current chat statuses. Read back anything else you show, the same as on a first connect.
+
+Ids can skip, because you are not sent events that are not yours. Never compare an id from this
+stream with one from another stream.
+
 <Callout type="info">
   The DorkOS client uses a single `GET /api/events` connection for all background state. The older
   per-resource streams (`/api/relay/stream`, `/api/tunnel/stream`) are internal: they stay only

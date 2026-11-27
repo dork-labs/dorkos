@@ -9,9 +9,8 @@
  * parser's reading of them: the exact headers, the `connected` frame first, a
  * live broadcast, the heartbeat, which caller a frame addressed to a person
  * reaches (a read cursor reaches only its own person, never an agent), and
- * that a client leaving frees its place. The global stream has no
- * `Last-Event-ID` replay (only the per-session and per-room streams do) and
- * reads no query, so a query string is checked to change nothing.
+ * that a client leaving frees its place. Replay from `Last-Event-ID` is
+ * `routes/__tests__/events-replay.test.ts`; here an id it never wrote is cold.
  *
  * The WebSocket the cockpit opens on the same path is an upgrade, not a
  * route, and is not in this file.
@@ -300,6 +299,13 @@ contractSuite('the global event stream, login off, the refusals', [
     headers: { origin: 'https://evil.example' },
     expect: { status: 403, schema: CORS_REFUSED },
   },
+  // A mini app's frame is sandboxed to an opaque origin; it never opens this stream.
+  {
+    name: 'GET /api/events from a mini app frame (`Origin: null`) is refused',
+    path: '/api/events',
+    headers: { origin: 'null' },
+    expect: { status: 403, schema: CORS_REFUSED },
+  },
 ]);
 
 describe('contract: the global event stream, driven by hand (login off)', () => {
@@ -354,7 +360,7 @@ describe('contract: the global event stream, driven by hand (login off)', () => 
     }
   });
 
-  it('ignores Last-Event-ID: a reconnect is a cold connect, opening with connected', async () => {
+  it('treats a Last-Event-ID it never wrote as a cold connect, opening with connected', async () => {
     const stream = await held('/api/events', { 'last-event-id': '42' });
     expect(stream.text()).toMatch(CONNECTED_FRAME);
     stream.close();

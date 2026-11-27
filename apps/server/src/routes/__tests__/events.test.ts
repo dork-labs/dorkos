@@ -18,6 +18,8 @@ vi.mock('../../services/core/event-fan-out.js', async (importOriginal) => ({
   eventFanOut: {
     hasCapacity: vi.fn(() => true),
     addClient: vi.fn(() => mockUnsubscribe),
+    resumeFor: vi.fn(() => ({ kind: 'snapshot' })),
+    replayTo: vi.fn(),
   },
 }));
 

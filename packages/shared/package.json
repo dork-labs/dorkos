@@ -441,6 +441,10 @@
       "types": "./src/session-stream.ts",
       "default": "./dist/session-stream.js"
     },
+    "./dorkos-events": {
+      "types": "./src/dorkos-events.ts",
+      "default": "./dist/dorkos-events.js"
+    },
     "./interaction-events": {
       "types": "./src/interaction-events.ts",
       "default": "./dist/interaction-events.js"

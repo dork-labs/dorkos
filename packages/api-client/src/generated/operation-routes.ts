@@ -157,6 +157,7 @@ export const OPERATION_ROUTES = {
   "directory.default": { method: "GET", path: "/directory/default" },
   "documents.getIndex": { method: "GET", path: "/documents/index" },
   "documents.resolve": { method: "GET", path: "/documents/resolve" },
+  "events.get": { method: "GET", path: "/events" },
   "extensionDecisions.createAction": { method: "POST", path: "/extension-decisions/{id}/action" },
   "extensionDecisions.createOffer": { method: "POST", path: "/extension-decisions/{id}/offer" },
   "extensionDecisions.get": { method: "GET", path: "/extension-decisions" },

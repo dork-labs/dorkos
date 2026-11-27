@@ -20,6 +20,7 @@
  * @module services/core/streams/screen/live-change-broadcasts
  */
 import type { AgentIdentityChange } from '@dorkos/mesh';
+import type { DorkOsEventType } from '@dorkos/shared/dorkos-events';
 import { operatorAudience } from '../../../notifications/notification-entitlement.js';
 import type { BroadcastAudience } from '../../event-fan-out.js';
 
@@ -91,7 +92,7 @@ export interface CommunityConnectionChangeView {
 /** The narrow slice of the global fan-out this wiring needs. */
 export interface BroadcastSink {
   /** Write one event to every connection the audience admits. */
-  broadcast(eventName: string, data: unknown, audience?: BroadcastAudience): void;
+  broadcast(eventName: DorkOsEventType, data: unknown, audience?: BroadcastAudience): void;
 }
 
 /** Collaborators for {@link wireLiveChangeBroadcasts}. */

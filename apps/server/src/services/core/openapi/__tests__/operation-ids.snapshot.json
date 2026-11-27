@@ -107,6 +107,7 @@
   "GET /api/directory/default": "directory.default",
   "GET /api/documents/index": "documents.getIndex",
   "GET /api/documents/resolve": "documents.resolve",
+  "GET /api/events": "events.get",
   "GET /api/extension-decisions": "extensionDecisions.get",
   "GET /api/extensions": "extensions.list",
   "GET /api/extensions/approval-sets": "extensions.listApprovalSets",

@@ -2601,7 +2601,7 @@
     "apps/server/src/services/core/__tests__/room-event-audiences.test.ts": 172,
     "apps/server/src/services/core/__tests__/runtime-environment-config.test.ts": 1158,
     "apps/server/src/services/core/__tests__/runtime-registry.test.ts": 47616,
-    "apps/server/src/services/core/__tests__/sse-event-allowlist.test.ts": 4,
+    "apps/server/src/services/core/__tests__/event-union-census.test.ts": 4,
     "apps/server/src/services/core/__tests__/stream-adapter.test.ts": 7,
     "apps/server/src/services/core/__tests__/telemetry-first-run.test.ts": 6,
     "apps/server/src/services/core/__tests__/tier1-consent-reads.census.test.ts": 175,
