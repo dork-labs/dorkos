@@ -1925,7 +1925,7 @@ export interface paths {
          * List package sources
          * @description **Preview.** This operation may change in any release.
          *
-         *     Every configured marketplace source with `lastFetch`: how the latest fetch of its listing went (never, fetched, failed or stale, with the reason).
+         *     Every configured marketplace source with `lastFetch`: how the latest fetch of its listing went (never, fetched, failed or stale, with the reason). A page at a time, in the list’s own order: pass `nextCursor` back as `cursor` for the next page. One added or removed while paging can repeat or be missed.
          */
         get: operations["marketplace.list_sources"];
         put?: never;
@@ -2269,7 +2269,7 @@ export interface paths {
          * List dev links
          * @description **Preview.** This operation may change in any release.
          *
-         *     Every package running from a folder on this computer, and whether its link is in force. `registryUnreadable` is set when the record of links can’t be read.
+         *     Every package running from a folder on this computer, and whether its link is in force. `registryUnreadable` is set when the record of links can’t be read. A page at a time, in the list’s own order: pass `nextCursor` back as `cursor` for the next page. One added or removed while paging can repeat or be missed.
          */
         get: operations["marketplace.list_dev_links"];
         put?: never;
@@ -2529,9 +2529,9 @@ export interface paths {
          * List installed Shapes
          * @description **Preview.** This operation may change in any release.
          *
-         *     Returns every installed Shape with its display name, active flag (`ui.shapes.active`), and fork lineage.
+         *     Every installed Shape with its display name, active flag (`ui.shapes.active`), and fork lineage, A to Z by name, a page at a time: pass `nextCursor` back as `cursor` for the next page. A Shape installed or removed while paging can repeat or be missed.
          */
-        get: operations["shapes.get"];
+        get: operations["shapes.list"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4226,7 +4226,7 @@ export interface paths {
          * Browse packages
          * @description **Preview.** This operation may change in any release.
          *
-         *     Every package listed by every enabled marketplace, each tagged with its marketplace, with install counts and update dates when known. One source that fails is skipped.
+         *     Every package listed by every enabled marketplace, each tagged with its marketplace, with install counts and update dates when known. One source that fails is skipped. Source by source, in the order each listing names its packages. A page at a time, in the list’s own order: pass `nextCursor` back as `cursor` for the next page. One added or removed while paging can repeat or be missed.
          */
         get: operations["marketplace.browse"];
         put?: never;
@@ -4248,7 +4248,7 @@ export interface paths {
          * List installations
          * @description **Preview.** This operation may change in any release.
          *
-         *     Without projectPath, one entry per installation across all scopes, each with its scope and agent. With projectPath, that project’s merged view, scanned at the canonical path so its install paths match the update check’s. A global package held back from chats says so in `heldBack`.
+         *     Without projectPath, one entry per installation across all scopes, each with its scope and agent. With projectPath, that project’s merged view, scanned at the canonical path so its install paths match the update check’s. A global package held back from chats says so in `heldBack`. In scan order. A page at a time, in the list’s own order: pass `nextCursor` back as `cursor` for the next page. One added or removed while paging can repeat or be missed.
          */
         get: operations["marketplace.list_installations"];
         put?: never;
@@ -4292,7 +4292,7 @@ export interface paths {
          * List held-back packages
          * @description **Preview.** This operation may change in any release.
          *
-         *     Every global package held back from chats until a person approves it: why, what it runs, and `bindsTo`, what a decision is bound to. Only a person decides.
+         *     Every global package held back from chats until a person approves it: why, what it runs, and `bindsTo`, what a decision is bound to. Only a person decides. A page at a time, in the list’s own order: pass `nextCursor` back as `cursor` for the next page. One added or removed while paging can repeat or be missed.
          */
         get: operations["marketplace.list_held_back"];
         put?: never;
@@ -4314,7 +4314,7 @@ export interface paths {
          * List an agent’s managed MCP servers
          * @description **Preview.** This operation may change in any release.
          *
-         *     List the MCP servers DorkOS manages for an agent, each with its transport, enabled state, audit record, and — for a remote server — whether DorkOS holds a live sign-in for it (authStatus). A free read — use it before add/update/remove to see what is already configured. It lists only the agent’s own servers: servers a person added for every agent on the Connections page also reach the agent, but are not listed here and only a person can change them.
+         *     List the MCP servers DorkOS manages for an agent, each with its transport, enabled state, audit record, and — for a remote server — whether DorkOS holds a live sign-in for it (authStatus). A free read — use it before add/update/remove to see what is already configured. It lists only the agent’s own servers: servers a person added for every agent on the Connections page also reach the agent, but are not listed here and only a person can change them. A page at a time, in the agent’s own order: pass nextCursor back as cursor until it is null. One added or removed while paging can repeat or be missed.
          */
         get: operations["mcp.list"];
         put?: never;
@@ -5236,7 +5236,7 @@ export interface paths {
          * List the agents
          * @description **Preview.** This operation may change in any release.
          *
-         *     Every registered agent with its health (`healthStatus`, `lastSeenAt`), filtered by runtime or capability. `callerNamespace` narrows it to the namespaces that one can reach.
+         *     Every registered agent with its health (`healthStatus`, `lastSeenAt`), filtered by runtime or capability. `callerNamespace` narrows it to the namespaces that one can reach. Newest registered first, a page at a time: pass `nextCursor` back as `cursor` until it is null, or you see only the first page.
          */
         get: operations["mesh.list_agents"];
         put?: never;
@@ -23669,7 +23669,12 @@ export interface operations {
     };
     "marketplace.list_sources": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -23711,6 +23716,8 @@ export interface operations {
                                 packageCount: number;
                             };
                         }[];
+                        /** @description Pass as `cursor` for the next page; null on the last one. */
+                        nextCursor: string | null;
                     };
                 };
             };
@@ -26143,7 +26150,12 @@ export interface operations {
     };
     "marketplace.list_dev_links": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -26176,6 +26188,8 @@ export interface operations {
                             lastReloadAt?: string;
                         }[];
                         registryUnreadable?: string;
+                        /** @description Pass as `cursor` for the next page; null on the last one. */
+                        nextCursor: string | null;
                     };
                 };
             };
@@ -26895,16 +26909,21 @@ export interface operations {
             };
         };
     };
-    "shapes.get": {
+    "shapes.list": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Installed Shapes */
+            /** @description One page of installed Shapes */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -26921,7 +26940,18 @@ export interface operations {
                                 forkedAt: string;
                             };
                         }[];
+                        /** @description Pass as `cursor` for the next page; null on the last one. */
+                        nextCursor: string | null;
                     };
+                };
+            };
+            /** @description `invalid_request`: `limit` is out of range, the query has another field, or the cursor was not given by this list */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             500: components["responses"]["InternalErrorProblem"];
@@ -37636,7 +37666,12 @@ export interface operations {
     };
     "marketplace.browse": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -37673,6 +37708,8 @@ export interface operations {
                             updatedAt?: string;
                             marketplace: string;
                         }[];
+                        /** @description Pass as `cursor` for the next page; null on the last one. */
+                        nextCursor: string | null;
                     };
                 };
             };
@@ -37771,6 +37808,10 @@ export interface operations {
     "marketplace.list_installations": {
         parameters: {
             query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
                 /** @description The project whose merged view to read: global installs plus its own. Send it once; a repeated key is refused. */
                 projectPath?: string | string[];
                 /** @description `true` adds each installation's `integrity`. Reads every shipped file. */
@@ -37846,6 +37887,8 @@ export interface operations {
                                 reason: "no-record" | "unreadable-record" | "linked";
                             };
                         }[];
+                        /** @description Pass as `cursor` for the next page; null on the last one. */
+                        nextCursor: string | null;
                     };
                 };
             };
@@ -38122,7 +38165,12 @@ export interface operations {
     };
     "marketplace.list_held_back": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -38197,6 +38245,8 @@ export interface operations {
                             };
                             bindsTo?: string;
                         }[];
+                        /** @description Pass as `cursor` for the next page; null on the last one. */
+                        nextCursor: string | null;
                     };
                 };
             };
@@ -38294,7 +38344,12 @@ export interface operations {
     };
     "mcp.list": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
             header?: never;
             path: {
                 /** @description The id of the agent whose managed MCP servers this acts on. */
@@ -38310,7 +38365,11 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ManagedMcpServerView"][];
+                    "application/json": {
+                        servers: components["schemas"]["ManagedMcpServerView"][];
+                        /** @description Pass as `cursor` for the next page; null on the last one. */
+                        nextCursor: string | null;
+                    };
                 };
             };
             /** @description A person must allow the call first; nothing ran */
@@ -45823,6 +45882,10 @@ export interface operations {
                 runtime?: components["schemas"]["AgentRuntime"];
                 capability?: string;
                 callerNamespace?: string;
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
             };
             header?: never;
             path?: never;
@@ -45932,6 +45995,8 @@ export interface operations {
                              */
                             createdBy?: string;
                         }[];
+                        /** @description Pass as `cursor` for the next page; null on the last one. */
+                        nextCursor: string | null;
                     };
                 };
             };

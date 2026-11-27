@@ -174,3 +174,33 @@ export function keysetPage<T>(
     nextCursor: keyed.length > query.limit && last ? encode(list, last.key, sealedFor) : null,
   };
 }
+
+/**
+ * One page of `rows` kept in their own order (a file's, a scan's, a sort the
+ * list already made), keyed by {@link listPosition}: every page read in turn
+ * gives the array the list answered whole. A row added or removed between
+ * pages can repeat or be missed; say so where the list is described.
+ *
+ * @param list - The list's name, bound into its cursors.
+ * @param rows - Every row the reader may see, filtered, in the list's order.
+ * @param idOf - A row's id.
+ * @param query - The cursor, if any, and the page size.
+ * @param refuse - The error for a cursor this list did not give.
+ * @param sealedFor - The reader's key, when rows read differently by reader.
+ */
+export function pageInOwnOrder<T>(
+  list: string,
+  rows: readonly T[],
+  idOf: (row: T) => string,
+  query: PageQuery,
+  refuse: () => Error,
+  sealedFor?: string
+): KeysetPage<T> {
+  const placed = rows.map((row, index) => ({ row, index }));
+  const keyOf = ({ row, index }: (typeof placed)[number]): PageKey => [
+    listPosition(index),
+    idOf(row),
+  ];
+  const page = keysetPage(list, placed, keyOf, query, refuse, sealedFor);
+  return { items: page.items.map(({ row }) => row), nextCursor: page.nextCursor };
+}

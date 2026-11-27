@@ -3453,14 +3453,24 @@ registry.registerPath({
   tags: ['Shapes'],
   summary: 'List installed Shapes',
   description:
-    'Returns every installed Shape with its display name, active flag (`ui.shapes.active`), and fork lineage.',
+    'Every installed Shape with its display name, active flag (`ui.shapes.active`), and fork ' +
+    'lineage, A to Z by name, a page at a time: pass `nextCursor` back as `cursor` for the ' +
+    'next page. A Shape installed or removed while paging can repeat or be missed.',
+  request: { query: PageQuerySchema },
   responses: {
+    400: problemResponse(
+      '`invalid_request`: `limit` is out of range, the query has another field, or the cursor ' +
+        'was not given by this list'
+    ),
     500: INTERNAL_ERROR_RESPONSE,
     200: {
-      description: 'Installed Shapes',
+      description: 'One page of installed Shapes',
       content: {
         'application/json': {
-          schema: z.object({ shapes: z.array(LocalInstalledShapeSummarySchema) }),
+          schema: z.object({
+            shapes: z.array(LocalInstalledShapeSummarySchema),
+            nextCursor: nextCursorOutput,
+          }),
         },
       },
     },

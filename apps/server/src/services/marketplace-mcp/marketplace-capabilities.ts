@@ -30,6 +30,7 @@
 import { z } from 'zod';
 
 import { trustPosture } from '@dorkos/shared/permissions';
+import { PageQuerySchema } from '@dorkos/shared/paging';
 
 import { permissionGateSources } from '../core/capabilities/index.js';
 import {
@@ -43,6 +44,7 @@ import { quoteSummaryValue } from '../core/approvals/index.js';
 import type { MarketplaceConfirmationContext } from './confirmation-provider.js';
 
 import type { MarketplaceMcpDeps } from './marketplace-mcp-tools.js';
+import { callerReaderKey } from '../../lib/paging/caller-reader-key.js';
 import { createSearchHandler, SearchInputSchema } from './tool-search.js';
 import { createGetHandler, GetInputSchema } from './tool-get.js';
 import { createListMarketplacesHandler } from './tool-list-marketplaces.js';
@@ -224,11 +226,12 @@ export const marketplaceDomain: CapabilityDomain = {
         'List configured marketplace sources. Each source includes name, source URL/path, enabled flag, ' +
         'total package count, and lastFetch: how the latest fetch of its listing went (never | fetched | ' +
         'failed | stale, with the reason). A packageCount of 0 with lastFetch failed means the listing ' +
-        "didn't load, not that the marketplace is empty.",
+        "didn't load, not that the marketplace is empty. A page at a time, in the order the sources " +
+        'are kept: pass nextCursor back as cursor for the next page; nextCursor null means the last.',
       tier: 'observe',
       area: null,
       areaNote: 'reading',
-      input: z.object({}),
+      input: PageQuerySchema,
       output: z.unknown(),
       surfaces: {
         mcp: {
@@ -238,8 +241,8 @@ export const marketplaceDomain: CapabilityDomain = {
           annotations: { idempotentHint: true },
         },
       },
-      invoke: async (deps) =>
-        unwrapMcpEnvelope(await createListMarketplacesHandler(requireMarketplaceDeps(deps))()),
+      invoke: async (deps, query) =>
+        unwrapMcpEnvelope(await createListMarketplacesHandler(requireMarketplaceDeps(deps))(query)),
     }),
     defineCapability({
       id: 'marketplace.list_installed',
@@ -252,7 +255,9 @@ export const marketplaceDomain: CapabilityDomain = {
         'Pass checkUpdates:true to also get, per entry, update.status (update-available | current | unknown), ' +
         "update.latestVersion and a note. That checks each package's marketplace, so it is slower; " +
         'without it nothing is fetched. Pass verify:true to also get, per entry, integrity.status ' +
-        '(clean | modified | unknown) with the files that changed since install; that reads every shipped file.',
+        '(clean | modified | unknown) with the files that changed since install; that reads every shipped file. ' +
+        'A page at a time: pass nextCursor back as cursor for the next page; nextCursor null means the last. ' +
+        'One installed or removed while paging can repeat or be missed.',
       tier: 'observe',
       area: null,
       areaNote: 'reading',
@@ -275,6 +280,7 @@ export const marketplaceDomain: CapabilityDomain = {
             {
               agentAsking:
                 context.identity !== undefined || context.agentIdentityPresented === true,
+              key: callerReaderKey(context),
             }
           )
         ),

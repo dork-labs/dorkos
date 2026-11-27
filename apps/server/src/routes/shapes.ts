@@ -1,7 +1,8 @@
 /**
  * Shape routes (DOR-355, spec §9) — list, apply, and fork installed Shapes.
  *
- * - `GET  /api/shapes` — installed Shapes (name, displayName, active flag, lineage).
+ * - `GET  /api/shapes` — installed Shapes (name, displayName, active flag, lineage),
+ *   a page at a time, A to Z by name as the list always came (DOR-4982).
  * - `POST /api/shapes/:name/apply` — apply a Shape; returns the exact §5 value
  *   `{ ok, applied, warnings[], offeredAgents[] }` so the client restores the
  *   chrome (`applied.layout`) without a second fetch.
@@ -47,6 +48,8 @@ import {
 import { forkShape, ShapeForkConflictError, type ForkShapeDeps } from '../services/shapes/fork.js';
 import { listInstalledShapes } from '../services/shapes/shape-services.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
+import { answerPage } from '../lib/paging/hand-route-page.js';
+import { listPosition } from '../lib/paging/keyset-page.js';
 
 /** Constructor dependencies for {@link createShapesRoutes}. */
 export interface ShapesRouterDeps {
@@ -202,11 +205,21 @@ export function createShapesRoutes(deps: ShapesRouterDeps): Hono<ApiEnv> {
   };
 
   // GET /api/shapes — installed Shapes, active flag resolved from config.
-  router.get('/', async (c) => {
-    const active = deps.applyDeps.configStore.getShapePrefs().active;
-    const shapes = await listInstalledShapes(deps.dorkHome, active);
-    return c.json({ shapes });
-  });
+  // Every reader sees the same Shapes, so the cursor is plain. The key is each
+  // Shape's place in the A-to-Z list, so every page read in turn keeps that order.
+  router.get('/', (c) =>
+    answerPage(c, {
+      list: 'shapes',
+      noun: 'shapes',
+      read: async () => {
+        const active = deps.applyDeps.configStore.getShapePrefs().active;
+        const shapes = await listInstalledShapes(deps.dorkHome, active);
+        return shapes.map((shape, index) => ({ shape, index }));
+      },
+      keyOf: ({ shape, index }) => [listPosition(index), shape.name],
+      show: ({ shape }) => shape,
+    })
+  );
 
   // POST /api/shapes/:name/apply — apply a Shape. Only "not installed" is fatal.
   router.post('/:name/apply', async (c) => {

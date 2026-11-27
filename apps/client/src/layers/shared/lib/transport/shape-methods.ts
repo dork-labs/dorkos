@@ -13,13 +13,17 @@ import type {
 } from '@dorkos/shared/marketplace-schemas';
 import type { ForkShapeRequest } from '@dorkos/shared/schemas';
 import { createTransportApiClient } from './api-client';
+import { LIST_PAGE_LIMIT, readAllPages } from '../read-all-pages';
 
 /** Create all Shape methods bound to a base URL. */
 export function createShapeMethods(baseUrl: string) {
   const api = createTransportApiClient(baseUrl);
   return {
+    // The list comes in pages, A to Z (DOR-4982); the switcher shows it whole.
     async listShapes(): Promise<InstalledShapeSummary[]> {
-      return (await api.call('shapes.get', {})).shapes;
+      const read = (cursor?: string) =>
+        api.call('shapes.list', { query: { limit: LIST_PAGE_LIMIT, ...(cursor && { cursor }) } });
+      return (await readAllPages(read, (page) => page.shapes, '/shapes')).rows;
     },
 
     applyShape(name: string): Promise<ApplyShapeResult> {

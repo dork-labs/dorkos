@@ -15,6 +15,7 @@
  * @module services/marketplace/doors/marketplace-read-capabilities
  */
 import { z } from 'zod';
+import { PageQuerySchema, nextCursorOutput } from '@dorkos/shared/paging';
 
 import {
   CapabilityToolError,
@@ -49,6 +50,8 @@ import {
   heldBackWithoutFolder,
   installationForReader,
 } from './marketplace-reader.js';
+import { PAGES, assertMarketplaceCursor, pageInListOrder } from './marketplace-list-page.js';
+import { callerReaderKey } from '../../../lib/paging/caller-reader-key.js';
 import {
   marketplaceFailure,
   marketplaceRefusal,
@@ -124,28 +127,31 @@ export const marketplaceListSourcesCapability = defineCapability({
   title: 'List package sources',
   description:
     'Every configured marketplace source with `lastFetch`: how the latest fetch of its ' +
-    'listing went (never, fetched, failed or stale, with the reason).',
+    `listing went (never, fetched, failed or stale, with the reason).${PAGES}`,
   tier: 'observe',
   area: null,
   areaNote: READ_NOTE,
-  input: z.object({}),
+  input: PageQuerySchema,
   output: z.object({
     sources: z.array(MarketplaceSourceSchema.extend({ lastFetch: SourceLastFetchSchema })),
+    nextCursor: nextCursorOutput,
   }),
   surfaces: { http: { method: 'get', path: '/api/marketplace/sources' } },
-  invoke: async (deps) => {
+  invoke: async (deps, query) => {
     const { sourceManager, cache } = marketplaceOf(deps);
+    const options = { list: 'sources', query };
+    assertMarketplaceCursor(options);
     return orRefuse('MARKETPLACE_SOURCES_UNLISTED', 'list sources', async () => {
-      const sources = await sourceManager.list();
+      const page = pageInListOrder(await sourceManager.list(), (source) => source.name, options);
       // From the record the fetcher keeps (DOR-2324), so a failed listing is
       // still shown after a reload.
       const listed = await Promise.all(
-        sources.map(async (source) => ({
+        page.items.map(async (source) => ({
           ...source,
           lastFetch: await describeLastFetch(cache, source.name),
         }))
       );
-      return { sources: listed };
+      return { sources: listed, nextCursor: page.nextCursor };
     });
   },
 });
@@ -179,21 +185,26 @@ export const marketplaceBrowseCapability = defineCapability({
   title: 'Browse packages',
   description:
     'Every package listed by every enabled marketplace, each tagged with its marketplace, ' +
-    'with install counts and update dates when known. One source that fails is skipped.',
+    'with install counts and update dates when known. One source that fails is skipped. ' +
+    `Source by source, in the order each listing names its packages.${PAGES}`,
   tier: 'observe',
   area: null,
   areaNote: READ_NOTE,
-  input: z.object({}),
-  output: z.object({ packages: z.array(AggregatedPackageSchema) }),
+  input: PageQuerySchema,
+  output: z.object({ packages: z.array(AggregatedPackageSchema), nextCursor: nextCursorOutput }),
   surfaces: { http: { method: 'get', path: '/api/marketplace/packages' } },
-  invoke: async (deps) => {
+  invoke: async (deps, query) => {
     const { sourceManager, fetcher } = marketplaceOf(deps);
+    const options = { list: 'packages', query };
+    assertMarketplaceCursor(options);
     try {
       const sources = await sourceManager.list();
-      const packages = await aggregatePackages(
+      const all = await aggregatePackages(
         sources.filter((source) => source.enabled),
         fetcher
       );
+      const page = pageInListOrder(all, (row) => `${row.marketplace}/${row.name}`, options);
+      const packages = page.items;
       // Cached maps, refreshed in the background: never blocks on the network.
       // Loaded on first browse: each module builds its provider from the
       // server's settings when it loads.
@@ -201,8 +212,12 @@ export const marketplaceBrowseCapability = defineCapability({
         await import('../telemetry/install-counts.js');
       const { enrichWithUpdatedAt, updatedAtProvider } = await import('../telemetry/updated-at.js');
       const withCounts = enrichWithInstallCounts(packages, installCountsProvider.getCounts());
-      return { packages: enrichWithUpdatedAt(withCounts, updatedAtProvider.getUpdatedAt()) };
+      return {
+        packages: enrichWithUpdatedAt(withCounts, updatedAtProvider.getUpdatedAt()),
+        nextCursor: page.nextCursor,
+      };
     } catch (err) {
+      if (err instanceof CapabilityToolError) throw err;
       logger.error('[Marketplace] Failed to aggregate packages', err);
       throw marketplaceFailure(err);
     }
@@ -217,18 +232,23 @@ export const marketplaceListInstallationsCapability = defineCapability({
     'Without projectPath, one entry per installation across all scopes, each with its ' +
     'scope and agent. With projectPath, that project’s merged view, scanned at the ' +
     'canonical path so its install paths match the update check’s. A global package held ' +
-    'back from chats says so in `heldBack`.',
+    `back from chats says so in \`heldBack\`. In scan order.${PAGES}`,
   tier: 'observe',
   area: null,
   areaNote: READ_NOTE,
-  input: z.object({ projectPath: ProjectPathQuery, verify: VerifyQuery }),
-  output: z.object({ packages: z.array(InstalledPackageSchema) }),
+  input: PageQuerySchema.extend({ projectPath: ProjectPathQuery, verify: VerifyQuery }),
+  output: z.object({ packages: z.array(InstalledPackageSchema), nextCursor: nextCursorOutput }),
   surfaces: { http: { method: 'get', path: '/api/marketplace/installed' } },
-  invoke: async (deps, input, context) => {
+  invoke: async (deps, { projectPath: rawProject, verify, ...query }, context) => {
     const market = marketplaceOf(deps);
     const readable = installationForReader(context);
     return orRefuse('MARKETPLACE_INSTALLED_UNLISTED', 'list installed packages', async () => {
-      const projectPath = await projectInView(input.projectPath);
+      const projectPath = await projectInView(rawProject);
+      // The view is bound into the cursor: a cursor for one project's view
+      // does not go on in another's.
+      const list = `installed:${projectPath ?? ''}`;
+      const options = { list, query, sealedFor: callerReaderKey(context) };
+      assertMarketplaceCursor(options);
       const records = await scanUpdateView(market, projectPath);
       // A held-back global package says so on its row (DOR-2306).
       const heldBack = new Map(
@@ -246,9 +266,11 @@ export const marketplaceListInstallationsCapability = defineCapability({
         const held = r.package.scope === 'global' ? heldBack.get(r.package.installPath) : undefined;
         return held ? { ...r.package, heldBack: held } : r.package;
       });
-      // Verification hashes every shipped file, so it is asked for (DOR-2197).
-      const listed = input.verify === 'true' ? await withIntegrity(packages) : packages;
-      return { packages: listed.map(readable) };
+      const page = pageInListOrder(packages, (row) => row.installPath, options);
+      // Verification hashes every shipped file, so it is asked for (DOR-2197),
+      // and only for the page.
+      const listed = verify === 'true' ? await withIntegrity(page.items) : page.items;
+      return { packages: listed.map(readable), nextCursor: page.nextCursor };
     });
   },
 });
@@ -318,18 +340,21 @@ export const marketplaceListHeldBackCapability = defineCapability({
   title: 'List held-back packages',
   description:
     'Every global package held back from chats until a person approves it: why, what ' +
-    'it runs, and `bindsTo`, what a decision is bound to. Only a person decides.',
+    `it runs, and \`bindsTo\`, what a decision is bound to. Only a person decides.${PAGES}`,
   tier: 'observe',
   area: null,
   areaNote: READ_NOTE,
-  input: z.object({}),
-  output: z.object({ packages: z.array(HeldBackPackageSchema) }),
+  input: PageQuerySchema,
+  output: z.object({ packages: z.array(HeldBackPackageSchema), nextCursor: nextCursorOutput }),
   surfaces: { http: { method: 'get', path: '/api/marketplace/held-back' } },
-  invoke: async (deps, _input, context) => {
+  invoke: async (deps, query, context) => {
     const { dorkHome } = marketplaceOf(deps);
+    const options = { list: 'held-back', query, sealedFor: callerReaderKey(context) };
+    assertMarketplaceCursor(options);
     return orRefuse('MARKETPLACE_HELD_BACK_UNLISTED', 'list held-back packages', async () => {
-      const packages = await listHeldBackPackages(dorkHome);
-      return { packages: agentIsAsking(context) ? packages.map(heldBackWithoutFolder) : packages };
+      const page = pageInListOrder(await listHeldBackPackages(dorkHome), (p) => p.name, options);
+      const packages = agentIsAsking(context) ? page.items.map(heldBackWithoutFolder) : page.items;
+      return { packages, nextCursor: page.nextCursor };
     });
   },
 });
@@ -340,20 +365,27 @@ export const marketplaceListDevLinksCapability = defineCapability({
   title: 'List dev links',
   description:
     'Every package running from a folder on this computer, and whether its link is in ' +
-    'force. `registryUnreadable` is set when the record of links can’t be read.',
+    `force. \`registryUnreadable\` is set when the record of links can’t be read.${PAGES}`,
   tier: 'observe',
   area: null,
   areaNote: 'folders on this computer; only a person reads them',
-  input: z.object({}),
+  input: PageQuerySchema,
   output: z.object({
     links: z.array(DevLinkStatusSchema),
     registryUnreadable: z.string().optional(),
+    nextCursor: nextCursorOutput,
   }),
   surfaces: { http: { method: 'get', path: '/api/marketplace/dev-links', audience: 'person' } },
-  invoke: async (deps) => {
+  invoke: async (deps, query) => {
     const { devLinks } = marketplaceOf(deps);
     if (!devLinks) throw marketplaceRefusal('MARKETPLACE_DEV_LINKS_UNAVAILABLE');
-    return orRefuse('MARKETPLACE_DEV_LINKS_UNLISTED', 'list dev links', () => devLinks.list());
+    const options = { list: 'dev-links', query };
+    assertMarketplaceCursor(options);
+    return orRefuse('MARKETPLACE_DEV_LINKS_UNLISTED', 'list dev links', async () => {
+      const { links, ...listing } = await devLinks.list();
+      const page = pageInListOrder(links, (link) => `${link.scope}/${link.name}`, options);
+      return { ...listing, links: page.items, nextCursor: page.nextCursor };
+    });
   },
 });
 

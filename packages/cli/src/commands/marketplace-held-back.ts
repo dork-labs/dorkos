@@ -22,6 +22,7 @@
 import { parseArgs } from 'node:util';
 import type { HeldBackPackage } from '@dorkos/shared/marketplace-schemas';
 import { ApiError, apiCall } from '../lib/api-client.js';
+import { readAllPages } from '../lib/read-all-pages.js';
 import { confirm } from '../lib/confirm-prompt.js';
 import { renderDisclosureLines } from '../lib/disclosure-render.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
@@ -75,10 +76,10 @@ export function parseMarketplaceHeldBackArgs(rawArgs: string[]): MarketplaceHeld
   };
 }
 
-/** Every held-back package the running DorkOS reports. */
+/** Every held-back package the running DorkOS reports, every page of it. */
 async function fetchHeldBack(): Promise<HeldBackPackage[]> {
-  return (await apiCall<{ packages: HeldBackPackage[] }>('GET', '/api/marketplace/held-back'))
-    .packages;
+  type Page = { packages: HeldBackPackage[]; nextCursor: string | null };
+  return (await readAllPages('/api/marketplace/held-back', {}, (p: Page) => p.packages)).rows;
 }
 
 /**

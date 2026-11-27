@@ -27,6 +27,7 @@
  */
 import { parseArgs } from 'node:util';
 import { ApiError, apiCall } from '../lib/api-client.js';
+import { readAllRows } from '../lib/read-all-pages.js';
 import { confirm } from '../lib/confirm-prompt.js';
 import { renderDisclosureLines } from '../lib/disclosure-render.js';
 import type { DisclosedEffects } from '@dorkos/shared/marketplace-schemas';
@@ -276,7 +277,7 @@ export function parseAgentUpdateArgs(rawArgs: string[]): AgentUpdateArgs {
  */
 export async function runAgentList(json: boolean): Promise<number> {
   try {
-    const { agents } = await apiCall<{ agents: MeshAgent[] }>('GET', '/api/mesh/agents');
+    const agents = await readAllRows<MeshAgent>('/api/mesh/agents', 'agents');
     if (json) {
       printJson(agents);
       return 0;

@@ -252,3 +252,34 @@ describe('the registry reads an agent may make', () => {
     for (const field of PRIVATE) expect(scout).not.toHaveProperty(field);
   });
 });
+
+describe('the roster, a page at a time (DOR-4982)', () => {
+  // Purpose: the registry lists newest registered first; every page read in
+  // turn keeps that order, and the cursor is sealed to its reader, since an
+  // agent reads other agents without their private fields.
+  it('keeps the newest-registered order across pages, and refuses another reader’s cursor', async () => {
+    const at = (day: number) => `2026-11-0${day}T00:00:00.000Z`;
+    const agents = [
+      { ...RANGER, id: 'agent-b', registeredAt: at(3) },
+      { ...SCOUT, id: 'agent-c', registeredAt: at(2) },
+      { ...RANGER, id: 'agent-a', registeredAt: at(1) },
+    ];
+    meshCore.listWithHealth.mockReturnValue(agents);
+    serve();
+    const ids: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const after: string = cursor ? `&cursor=${encodeURIComponent(cursor)}` : '';
+      const page = await request(fixtureServer).get(`/api/mesh/agents?limit=1${after}`);
+      ids.push(...page.body.agents.map((agent: { id: string }) => agent.id));
+      cursor = page.body.nextCursor;
+    } while (cursor);
+    expect(ids).toEqual(['agent-b', 'agent-c', 'agent-a']);
+
+    const first = await request(fixtureServer).get('/api/mesh/agents?limit=1');
+    const asAgent = await request(fixtureServer)
+      .get(`/api/mesh/agents?limit=1&cursor=${encodeURIComponent(first.body.nextCursor)}`)
+      .set('X-DorkOS-Agent', 'not-a-real-token');
+    expect(asAgent.status).toBe(400);
+  });
+});

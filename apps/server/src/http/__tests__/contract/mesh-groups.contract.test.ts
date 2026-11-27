@@ -62,6 +62,7 @@ import {
   NEEDS_APPROVAL,
   MALFORMED_JSON,
   AGENT_LIST,
+  AGENT_PAGE,
   EVENT_STREAM,
 } from './mesh-groups.fixtures.js';
 import { problemBody } from '@dorkos/http-kit';
@@ -94,17 +95,13 @@ contractSuite('mesh, agent and discovery groups', [
     expect: {
       status: 200,
       headers: JSON_TYPE,
-      schema: z.object({
-        agents: z
-          .array(z.object({ isSystem: z.boolean().optional() }).loose())
-          .refine((agents) => agents.some((agent) => agent.isSystem === true)),
-      }),
+      schema: AGENT_PAGE.refine((page) => page.agents.some((agent) => agent.isSystem === true)),
     },
   },
   {
     name: 'GET /api/mesh/agents/ answers with a trailing slash',
     path: '/api/mesh/agents/?runtime=claude-code',
-    expect: { status: 200, schema: AGENT_LIST },
+    expect: { status: 200, schema: AGENT_PAGE },
   },
   {
     name: 'GET /api/mesh/agents refuses a runtime it does not know',
@@ -828,7 +825,7 @@ describe('contract: mesh, agents and discovery, driven by hand (login off)', () 
       path: '/api/mesh/agents',
       expect: {
         status: 200,
-        schema: AGENT_LIST.refine((list) => list.agents.some((agent) => agent.id === id)),
+        schema: AGENT_PAGE.refine((list) => list.agents.some((agent) => agent.id === id)),
       },
     });
     await check(server, {

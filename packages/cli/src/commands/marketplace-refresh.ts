@@ -11,6 +11,7 @@
  */
 import { parseArgs } from 'node:util';
 import { ApiError, apiCall } from '../lib/api-client.js';
+import { readAllPages } from '../lib/read-all-pages.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** Parsed CLI arguments accepted by {@link runMarketplaceRefresh}. */
@@ -70,6 +71,7 @@ interface MarketplaceSource {
 /** Response shape for `GET /api/marketplace/sources`. */
 interface ListSourcesResponseBody {
   sources: MarketplaceSource[];
+  nextCursor: string | null;
 }
 
 /** One-line usage string surfaced in error messages. */
@@ -189,8 +191,12 @@ export async function runMarketplaceRefresh(args: MarketplaceRefreshArgs): Promi
   // one source failed.
   let sources: MarketplaceSource[];
   try {
-    const list = await apiCall<ListSourcesResponseBody>('GET', '/api/marketplace/sources');
-    sources = list.sources;
+    const list = await readAllPages(
+      '/api/marketplace/sources',
+      {},
+      (p: ListSourcesResponseBody) => p.sources
+    );
+    sources = list.rows;
   } catch (err) {
     console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
     return 1;

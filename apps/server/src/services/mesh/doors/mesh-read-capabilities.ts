@@ -15,6 +15,7 @@
  * @module services/mesh/doors/mesh-read-capabilities
  */
 import { z } from 'zod';
+import { PageQuerySchema, nextCursorOutput } from '@dorkos/shared/paging';
 import {
   AgentListQuerySchema,
   AgentManifestSchema,
@@ -23,11 +24,11 @@ import {
   TopologyViewSchema,
   type TopologyView,
 } from '@dorkos/shared/mesh-schemas';
-import { PageQuerySchema, nextCursorOutput } from '@dorkos/shared/paging';
 
 import { type CapabilityHandlerContext } from '../../core/capabilities/index.js';
 import { defineCapability, invalidCursor } from '../../core/capabilities/capability-definition.js';
-import { keysetPage } from '../../../lib/paging/keyset-page.js';
+import { assertPageCursor, keysetPage } from '../../../lib/paging/keyset-page.js';
+import { callerReaderKey } from '../../../lib/paging/caller-reader-key.js';
 import { agentIsAsking, meshOf, type MeshCapabilityDeps } from './mesh-capability-deps.js';
 
 /**
@@ -91,21 +92,38 @@ export const meshListAgentsCapability = defineCapability({
   title: 'List the agents',
   description:
     'Every registered agent with its health (`healthStatus`, `lastSeenAt`), filtered by ' +
-    'runtime or capability. `callerNamespace` narrows it to the namespaces that one can reach.',
+    'runtime or capability. `callerNamespace` narrows it to the namespaces that one can reach. ' +
+    'Newest registered first, a page at a time: pass `nextCursor` back as `cursor` until it ' +
+    'is null, or you see only the first page.',
   tier: 'observe',
   area: null,
   areaNote: READ_NOTE,
-  input: AgentListQuerySchema,
-  output: z.object({ agents: z.array(AgentAsReadSchema) }),
+  input: AgentListQuerySchema.extend(PageQuerySchema.shape),
+  output: z.object({ agents: z.array(AgentAsReadSchema), nextCursor: nextCursorOutput }),
   surfaces: { http: { method: 'get', path: '/api/mesh/agents' } },
-  invoke: async (deps, input, context) => {
+  invoke: async (deps, { cursor, limit, ...filters }, context) => {
     const mesh = meshOf(deps);
+    // The filters are bound into the cursor, and the cursor to its reader: what
+    // an agent reads of another agent differs from what the person reads.
+    const list = `agents:${JSON.stringify(filters)}`;
+    const sealedFor = callerReaderKey(context);
+    assertPageCursor(list, cursor, invalidCursor, sealedFor);
+    // Newest registered first, as the registry lists them: a key that never
+    // moves, so an agent registered while paging is never repeated.
+    const page = keysetPage(
+      list,
+      mesh.meshCore.listWithHealth(filters),
+      (agent) => [agent.registeredAt, agent.id],
+      { cursor, limit },
+      invalidCursor,
+      sealedFor
+    );
     const paths = mesh.meshCore.listWithPaths();
     const readable = forReader(mesh, context);
-    const agents = mesh.meshCore
-      .listWithHealth(input)
-      .map((agent) => readable(mesh.views.projectPlacementById(agent, paths)));
-    return { agents };
+    const agents = page.items.map((agent) =>
+      readable(mesh.views.projectPlacementById(agent, paths))
+    );
+    return { agents, nextCursor: page.nextCursor };
   },
 });
 

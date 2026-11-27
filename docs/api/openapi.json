@@ -36894,7 +36894,34 @@
           "Marketplace"
         ],
         "summary": "List package sources",
-        "description": "**Preview.** This operation may change in any release.\n\nEvery configured marketplace source with `lastFetch`: how the latest fetch of its listing went (never, fetched, failed or stale, with the reason).",
+        "description": "**Preview.** This operation may change in any release.\n\nEvery configured marketplace source with `lastFetch`: how the latest fetch of its listing went (never, fetched, failed or stale, with the reason). A page at a time, in the list’s own order: pass `nextCursor` back as `cursor` for the next page. One added or removed while paging can repeat or be missed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "List package sources result",
@@ -37024,10 +37051,18 @@
                           "lastFetch"
                         ]
                       }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass as `cursor` for the next page; null on the last one."
                     }
                   },
                   "required": [
-                    "sources"
+                    "sources",
+                    "nextCursor"
                   ]
                 }
               }
@@ -44319,7 +44354,34 @@
           "Marketplace"
         ],
         "summary": "List dev links",
-        "description": "**Preview.** This operation may change in any release.\n\nEvery package running from a folder on this computer, and whether its link is in force. `registryUnreadable` is set when the record of links can’t be read.",
+        "description": "**Preview.** This operation may change in any release.\n\nEvery package running from a folder on this computer, and whether its link is in force. `registryUnreadable` is set when the record of links can’t be read. A page at a time, in the list’s own order: pass `nextCursor` back as `cursor` for the next page. One added or removed while paging can repeat or be missed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "List dev links result",
@@ -44398,10 +44460,18 @@
                     },
                     "registryUnreadable": {
                       "type": "string"
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass as `cursor` for the next page; null on the last one."
                     }
                   },
                   "required": [
-                    "links"
+                    "links",
+                    "nextCursor"
                   ]
                 }
               }
@@ -45318,10 +45388,37 @@
           "Shapes"
         ],
         "summary": "List installed Shapes",
-        "description": "**Preview.** This operation may change in any release.\n\nReturns every installed Shape with its display name, active flag (`ui.shapes.active`), and fork lineage.",
+        "description": "**Preview.** This operation may change in any release.\n\nEvery installed Shape with its display name, active flag (`ui.shapes.active`), and fork lineage, A to Z by name, a page at a time: pass `nextCursor` back as `cursor` for the next page. A Shape installed or removed while paging can repeat or be missed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Installed Shapes",
+            "description": "One page of installed Shapes",
             "content": {
               "application/json": {
                 "schema": {
@@ -45365,11 +45462,29 @@
                           "active"
                         ]
                       }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass as `cursor` for the next page; null on the last one."
                     }
                   },
                   "required": [
-                    "shapes"
+                    "shapes",
+                    "nextCursor"
                   ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: `limit` is out of range, the query has another field, or the cursor was not given by this list",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -45378,7 +45493,7 @@
             "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
-        "operationId": "shapes.get",
+        "operationId": "shapes.list",
         "x-stability": "preview"
       }
     },
@@ -78036,7 +78151,34 @@
           "Marketplace"
         ],
         "summary": "Browse packages",
-        "description": "**Preview.** This operation may change in any release.\n\nEvery package listed by every enabled marketplace, each tagged with its marketplace, with install counts and update dates when known. One source that fails is skipped.",
+        "description": "**Preview.** This operation may change in any release.\n\nEvery package listed by every enabled marketplace, each tagged with its marketplace, with install counts and update dates when known. One source that fails is skipped. Source by source, in the order each listing names its packages. A page at a time, in the list’s own order: pass `nextCursor` back as `cursor` for the next page. One added or removed while paging can repeat or be missed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Browse packages result",
@@ -78133,10 +78275,18 @@
                           "marketplace"
                         ]
                       }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass as `cursor` for the next page; null on the last one."
                     }
                   },
                   "required": [
-                    "packages"
+                    "packages",
+                    "nextCursor"
                   ]
                 }
               }
@@ -78253,8 +78403,33 @@
           "Marketplace"
         ],
         "summary": "List installations",
-        "description": "**Preview.** This operation may change in any release.\n\nWithout projectPath, one entry per installation across all scopes, each with its scope and agent. With projectPath, that project’s merged view, scanned at the canonical path so its install paths match the update check’s. A global package held back from chats says so in `heldBack`.",
+        "description": "**Preview.** This operation may change in any release.\n\nWithout projectPath, one entry per installation across all scopes, each with its scope and agent. With projectPath, that project’s merged view, scanned at the canonical path so its install paths match the update check’s. A global package held back from chats says so in `heldBack`. In scan order. A page at a time, in the list’s own order: pass `nextCursor` back as `cursor` for the next page. One added or removed while paging can repeat or be missed.",
         "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          },
           {
             "schema": {
               "anyOf": [
@@ -78525,10 +78700,18 @@
                           "installPath"
                         ]
                       }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass as `cursor` for the next page; null on the last one."
                     }
                   },
                   "required": [
-                    "packages"
+                    "packages",
+                    "nextCursor"
                   ]
                 }
               }
@@ -79052,7 +79235,34 @@
           "Marketplace"
         ],
         "summary": "List held-back packages",
-        "description": "**Preview.** This operation may change in any release.\n\nEvery global package held back from chats until a person approves it: why, what it runs, and `bindsTo`, what a decision is bound to. Only a person decides.",
+        "description": "**Preview.** This operation may change in any release.\n\nEvery global package held back from chats until a person approves it: why, what it runs, and `bindsTo`, what a decision is bound to. Only a person decides. A page at a time, in the list’s own order: pass `nextCursor` back as `cursor` for the next page. One added or removed while paging can repeat or be missed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "List held-back packages result",
@@ -79354,10 +79564,18 @@
                           "changedSinceApproval"
                         ]
                       }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass as `cursor` for the next page; null on the last one."
                     }
                   },
                   "required": [
-                    "packages"
+                    "packages",
+                    "nextCursor"
                   ]
                 }
               }
@@ -79474,7 +79692,7 @@
           "Mcp"
         ],
         "summary": "List an agent’s managed MCP servers",
-        "description": "**Preview.** This operation may change in any release.\n\nList the MCP servers DorkOS manages for an agent, each with its transport, enabled state, audit record, and — for a remote server — whether DorkOS holds a live sign-in for it (authStatus). A free read — use it before add/update/remove to see what is already configured. It lists only the agent’s own servers: servers a person added for every agent on the Connections page also reach the agent, but are not listed here and only a person can change them.",
+        "description": "**Preview.** This operation may change in any release.\n\nList the MCP servers DorkOS manages for an agent, each with its transport, enabled state, audit record, and — for a remote server — whether DorkOS holds a live sign-in for it (authStatus). A free read — use it before add/update/remove to see what is already configured. It lists only the agent’s own servers: servers a person added for every agent on the Connections page also reach the agent, but are not listed here and only a person can change them. A page at a time, in the agent’s own order: pass nextCursor back as cursor until it is null. One added or removed while paging can repeat or be missed.",
         "parameters": [
           {
             "schema": {
@@ -79486,6 +79704,31 @@
             "description": "The id of the agent whose managed MCP servers this acts on.",
             "name": "agentId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
           }
         ],
         "responses": {
@@ -79494,10 +79737,26 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ManagedMcpServerView"
-                  }
+                  "type": "object",
+                  "properties": {
+                    "servers": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ManagedMcpServerView"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass as `cursor` for the next page; null on the last one."
+                    }
+                  },
+                  "required": [
+                    "servers",
+                    "nextCursor"
+                  ]
                 }
               }
             }
@@ -95580,7 +95839,7 @@
           "Mesh"
         ],
         "summary": "List the agents",
-        "description": "**Preview.** This operation may change in any release.\n\nEvery registered agent with its health (`healthStatus`, `lastSeenAt`), filtered by runtime or capability. `callerNamespace` narrows it to the namespaces that one can reach.",
+        "description": "**Preview.** This operation may change in any release.\n\nEvery registered agent with its health (`healthStatus`, `lastSeenAt`), filtered by runtime or capability. `callerNamespace` narrows it to the namespaces that one can reach. Newest registered first, a page at a time: pass `nextCursor` back as `cursor` until it is null, or you see only the first page.",
         "parameters": [
           {
             "schema": {
@@ -95604,6 +95863,31 @@
             },
             "required": false,
             "name": "callerNamespace",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
             "in": "query"
           }
         ],
@@ -95786,10 +96070,18 @@
                         ],
                         "description": "An agent. Read by another agent, it leaves out persona, conventions, permissions, mcpServers, workspace and projectPath."
                       }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass as `cursor` for the next page; null on the last one."
                     }
                   },
                   "required": [
-                    "agents"
+                    "agents",
+                    "nextCursor"
                   ]
                 }
               }

@@ -37,22 +37,22 @@ import type {
   RefreshedMarketplaceSource,
 } from '@dorkos/shared/marketplace-schemas';
 import type { CapabilityApprovalRequired, DevLinkCreateResult } from '@dorkos/shared/transport';
-import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
+import { fetchAllPages, fetchJSON, fetchNoContent, buildQueryString } from './http-client';
+
+// The five marketplace lists come in pages (DOR-4982); the app shows each
+// whole, so these read every page, in the list's own order.
 
 /** Create all Marketplace methods bound to a base URL. */
 export function createMarketplaceMethods(baseUrl: string) {
   return {
     // --- Browse / discovery ---
 
-    listMarketplacePackages(filter?: PackageFilter): Promise<AggregatedPackage[]> {
-      const qs = buildQueryString({
-        marketplace: filter?.marketplace,
-        q: filter?.q,
-      });
-      return fetchJSON<{ packages: AggregatedPackage[] }>(
-        baseUrl,
-        `/marketplace/packages${qs}`
-      ).then((r) => r.packages);
+    async listMarketplacePackages(filter?: PackageFilter): Promise<AggregatedPackage[]> {
+      type Page = { packages: AggregatedPackage[]; nextCursor: string | null };
+      const params = { marketplace: filter?.marketplace, q: filter?.q };
+      const path = '/marketplace/packages';
+      const { rows } = await fetchAllPages(baseUrl, path, params, (p: Page) => p.packages);
+      return rows;
     },
 
     getMarketplacePackage(name: string, marketplace?: string): Promise<MarketplacePackageDetail> {
@@ -150,8 +150,12 @@ export function createMarketplaceMethods(baseUrl: string) {
 
     // --- Dev links (DOR-2696) ---
 
-    listDevLinks(): Promise<DevLinkListing> {
-      return fetchJSON<DevLinkListing>(baseUrl, '/marketplace/dev-links');
+    async listDevLinks(): Promise<DevLinkListing> {
+      type Page = DevLinkListing & { nextCursor: string | null };
+      const path = '/marketplace/dev-links';
+      const { first, rows } = await fetchAllPages(baseUrl, path, {}, (p: Page) => p.links);
+      const { nextCursor: _next, ...listing } = first;
+      return { ...listing, links: rows };
     },
 
     previewDevLink(input: DevLinkPreviewInput): Promise<DevLinkPreviewResponse> {
@@ -185,15 +189,15 @@ export function createMarketplaceMethods(baseUrl: string) {
 
     // --- Installed packages ---
 
-    listInstalledPackages(
+    async listInstalledPackages(
       projectPath?: string,
       opts?: ListInstalledOptions
     ): Promise<InstalledPackage[]> {
-      const qs = buildQueryString({ projectPath, verify: opts?.verify ? 'true' : undefined });
-      return fetchJSON<{ packages: InstalledPackage[] }>(
-        baseUrl,
-        `/marketplace/installed${qs}`
-      ).then((r) => r.packages);
+      type Page = { packages: InstalledPackage[]; nextCursor: string | null };
+      const params = { projectPath, verify: opts?.verify ? 'true' : undefined };
+      const path = '/marketplace/installed';
+      const { rows } = await fetchAllPages(baseUrl, path, params, (p: Page) => p.packages);
+      return rows;
     },
 
     checkPackageFiles(name: string, opts?: CheckFilesOptions): Promise<CheckFilesResult> {
@@ -212,10 +216,11 @@ export function createMarketplaceMethods(baseUrl: string) {
       );
     },
 
-    listHeldBackPackages(): Promise<HeldBackPackage[]> {
-      return fetchJSON<{ packages: HeldBackPackage[] }>(baseUrl, '/marketplace/held-back').then(
-        (r) => r.packages
-      );
+    async listHeldBackPackages(): Promise<HeldBackPackage[]> {
+      type Page = { packages: HeldBackPackage[]; nextCursor: string | null };
+      const path = '/marketplace/held-back';
+      const { rows } = await fetchAllPages(baseUrl, path, {}, (p: Page) => p.packages);
+      return rows;
     },
 
     listPackageInstallations(name: string): Promise<InstalledPackage[]> {
@@ -227,11 +232,11 @@ export function createMarketplaceMethods(baseUrl: string) {
 
     // --- Sources ---
 
-    listMarketplaceSources(): Promise<ListedMarketplaceSource[]> {
-      return fetchJSON<{ sources: ListedMarketplaceSource[] }>(
-        baseUrl,
-        '/marketplace/sources'
-      ).then((r) => r.sources);
+    async listMarketplaceSources(): Promise<ListedMarketplaceSource[]> {
+      type Page = { sources: ListedMarketplaceSource[]; nextCursor: string | null };
+      const path = '/marketplace/sources';
+      const { rows } = await fetchAllPages(baseUrl, path, {}, (p: Page) => p.sources);
+      return rows;
     },
 
     addMarketplaceSource(input: AddSourceInput): Promise<AddedMarketplaceSource> {

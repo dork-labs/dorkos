@@ -58,8 +58,8 @@ The `Auth` column describes authentication, not permission. “Local read carve-
 | ------------------------------- | ------------------------------------------------------------ | -------------------- |
 | `marketplace_search`            | Search for packages by query, type, category, tags           | Local read carve-out |
 | `marketplace_get`               | Get full package details + README                            | Local read carve-out |
-| `marketplace_list_marketplaces` | List configured marketplace sources                          | Local read carve-out |
-| `marketplace_list_installed`    | List installed packages                                      | Local read carve-out |
+| `marketplace_list_marketplaces` | List configured marketplace sources, a page at a time        | Local read carve-out |
+| `marketplace_list_installed`    | List installed packages, a page at a time                    | Local read carve-out |
 | `marketplace_recommend`         | Recommend packages from a context description                | Local read carve-out |
 | `marketplace_install`           | Install a package; confirmation depends on caller permission | Always required      |
 | `marketplace_update`            | Check for newer versions (confirmation only with `apply`)    | Always required      |

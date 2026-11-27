@@ -12,6 +12,7 @@ import {
 } from '../../../runtimes/claude-code/messaging/context-builder.js';
 import type { RelayContextDeps } from '../../../runtimes/claude-code/messaging/context-builder.js';
 import type { GitStatusData } from '@dorkos/shared/additional-context';
+import { PageQuerySchema } from '@dorkos/shared/paging';
 import { setRelayEnabled } from '../../../relay/relay-state.js';
 // The real Zod input shapes the marketplace tools are registered with — imported
 // (not re-typed) so the signature-pin test below diffs against the schema itself,
@@ -131,10 +132,10 @@ describe('buildMarketplaceToolsBlock', () => {
       ).toEqual(real);
     }
 
-    // marketplace_list_marketplaces has no InputSchema constant to import — its
-    // capability is registered with a literal `z.object({})` inline in
-    // marketplace-capabilities.ts — so it is asserted directly instead.
-    expect(documentedParams(result, 'marketplace_list_marketplaces')).toEqual([]);
+    // marketplace_list_marketplaces takes the shared page query (DOR-4982).
+    expect(documentedParams(result, 'marketplace_list_marketplaces').sort()).toEqual(
+      Object.keys(PageQuerySchema.shape).sort()
+    );
   });
 });
 

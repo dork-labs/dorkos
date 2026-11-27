@@ -27,6 +27,7 @@ import type {
   KeepFilesResult,
 } from '@dorkos/shared/marketplace-schemas';
 import { ApiError, apiCall } from '../lib/api-client.js';
+import { readAllPages } from '../lib/read-all-pages.js';
 import { confirm } from '../lib/confirm-prompt.js';
 import { renderDisclosureLines } from '../lib/disclosure-render.js';
 import { printError, printJson } from '../lib/operator-output.js';
@@ -88,13 +89,12 @@ export function parseMarketplaceKeepFilesArgs(rawArgs: string[]): MarketplaceKee
 
 /** The installation of `name` this command acts on: the project's, or the global one. */
 async function findInstallation(args: MarketplaceKeepFilesArgs): Promise<InstalledPackage | null> {
-  const query = [
-    ...(args.projectPath ? [`projectPath=${encodeURIComponent(args.projectPath)}`] : []),
-    'verify=true',
-  ].join('&');
-  const { packages } = await apiCall<{ packages: InstalledPackage[] }>(
-    'GET',
-    `/api/marketplace/installed?${query}`
+  type Page = { packages: InstalledPackage[]; nextCursor: string | null };
+  const params = { projectPath: args.projectPath || undefined, verify: 'true' };
+  const { rows: packages } = await readAllPages(
+    '/api/marketplace/installed',
+    params,
+    (p: Page) => p.packages
   );
   const named = packages.filter((p) => p.name === args.name);
   if (args.projectPath) return named[0] ?? null;
@@ -153,10 +153,9 @@ export async function runMarketplaceKeepFiles(args: MarketplaceKeepFilesArgs): P
   // person sees everything it runs first.
   let review: KeepFilesOptions['review'];
   if (installation.heldBack && !args.projectPath) {
-    const { packages } = await apiCall<{ packages: HeldBackPackage[] }>(
-      'GET',
-      '/api/marketplace/held-back'
-    );
+    type Page = { packages: HeldBackPackage[]; nextCursor: string | null };
+    const path = '/api/marketplace/held-back';
+    const { rows: packages } = await readAllPages(path, {}, (p: Page) => p.packages);
     const held = packages.find((p) => p.name === args.name);
     if (held?.effects && held.bindsTo) {
       review = { effects: held.effects, bindsTo: held.bindsTo };

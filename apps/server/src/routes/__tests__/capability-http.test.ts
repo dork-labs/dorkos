@@ -762,7 +762,7 @@ describe('an agent’s MCP servers, served by the mount', () => {
       `/api/agents/${AGENT_ID}/mcp-servers`
     );
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([expect.objectContaining({ name: 'fs', enabled: true })]);
+    expect(res.body).toMatchObject({ servers: [{ name: 'fs', enabled: true }], nextCursor: null });
   });
 
   it('answers 404 for an agent nobody registered', async () => {

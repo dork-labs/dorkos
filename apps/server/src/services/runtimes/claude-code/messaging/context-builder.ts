@@ -299,8 +299,9 @@ skill packs, adapters), and scaffold new ones into the user's personal marketpla
 Read-only lookups:
   ${T}marketplace_search(query?, type?, category?, tags?, marketplace?, limit?) -- search every enabled source (limit defaults to 20)
   ${T}marketplace_get(name, marketplace?) -- full manifest + README for one package
-  ${T}marketplace_list_marketplaces() -- configured sources (name, source, enabled, package count)
-  ${T}marketplace_list_installed(type?, checkUpdates?, verify?) -- what is installed, one entry per scope (global | agent-local | override); checkUpdates adds update.status/latestVersion (slower: fetches each marketplace); verify adds integrity (clean | modified | unknown) with the changed files (slower: reads every shipped file)
+  ${T}marketplace_list_marketplaces(cursor?, limit?) -- configured sources (name, source, enabled, package count); pages
+  ${T}marketplace_list_installed(type?, checkUpdates?, verify?, cursor?, limit?) -- what is installed, one entry per scope (global | agent-local | override); checkUpdates adds update.status/latestVersion (slower: fetches each marketplace); verify adds integrity (clean | modified | unknown) with the changed files (slower: reads every shipped file)
+  Both list tools page: pass nextCursor back as cursor until it is null, or you see only the first page.
   ${T}marketplace_recommend(context, type?, limit?) -- keyword/tag-matched suggestions for a free-text need (limit defaults to 5)
 
 Mutations -- ${T}marketplace_install, ${T}marketplace_update (with apply), ${T}marketplace_uninstall,

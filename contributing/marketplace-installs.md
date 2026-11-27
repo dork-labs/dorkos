@@ -932,7 +932,7 @@ Ordering is deterministic: global entries first (scan order), then agent entries
 
 ### The API
 
-- `GET /api/marketplace/installed` with **no** `projectPath` returns the cross-scope list (`scanInstallationsAcrossScopes`). With `?projectPath=<path>` it returns the merged single-project view (`scanInstalledPackages`, boundary-validated) — the shape the install dialog needs for reinstall detection.
+- `GET /api/marketplace/installed` with **no** `projectPath` returns the cross-scope list (`scanInstallationsAcrossScopes`), a page at a time in that order (`cursor`, `limit`, `nextCursor`; `?verify=true` hashes only the page's installs). With `?projectPath=<path>` it returns the merged single-project view (`scanInstalledPackages`, boundary-validated) — the shape the install dialog needs for reinstall detection.
 - `GET /api/marketplace/installed/:name` returns `{ installations: InstalledPackage[] }` — every installation of that one package across scopes, each enriched with a `provides` capability count (`commands`/`skills`/`hooks`) via `computeProvides`. Enrichment lives here, not on the list endpoint, so the marketplace grid never pays N filesystem walks per render; here N is the handful of scopes one package occupies. `404` when the package is installed nowhere.
 
 `GET /installed/:name` returning a **list** (not a single `package`) is a deliberate clean break — every consumer is in-repo. The transport method is `listPackageInstallations(name): Promise<InstalledPackage[]>` (`layers/shared/lib/transport/marketplace-methods.ts`), consumed by the `usePackageInstallations(name)` entity hook.

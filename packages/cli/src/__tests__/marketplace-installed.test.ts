@@ -140,16 +140,26 @@ describe('runMarketplaceInstalled', () => {
     vi.unstubAllGlobals();
   });
 
-  it('lists every scope from GET /installed and exits 0', async () => {
-    fetchMock.mockResolvedValueOnce(mockResponse(200, { packages: [GLOBAL_FLOW, ALPHA_FLOW] }));
+  // Purpose (DOR-4982): the list comes in pages; the command reads every page
+  // and keeps the server's order.
+  it('lists every scope from every page of GET /installed and exits 0', async () => {
+    fetchMock
+      .mockResolvedValueOnce(mockResponse(200, { packages: [ALPHA_FLOW], nextCursor: 'c1' }))
+      .mockResolvedValueOnce(mockResponse(200, { packages: [GLOBAL_FLOW], nextCursor: null }));
 
     const code = await runMarketplaceInstalled({ json: false, verify: false });
 
     expect(code).toBe(0);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toMatch(/\/api\/marketplace\/installed$/);
+    expect(url).toMatch(/\/api\/marketplace\/installed\?limit=200$/);
     expect(init.method).toBe('GET');
-    expect(printed(logSpy)).toMatch(/flow\s+0\.7\.2\s+plugin\s+Alpha/);
+    expect(fetchMock.mock.calls[1]?.[0]).toMatch(/\?cursor=c1&limit=200$/);
+    const rows = printed(logSpy)
+      .split('\n')
+      .filter((line) => line.startsWith('flow'));
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatch(/Alpha$/);
+    expect(rows[1]).toMatch(/global$/);
   });
 
   // Purpose (DOR-2696): the footer's unlink line must work when pasted. A
@@ -196,7 +206,7 @@ describe('runMarketplaceInstalled', () => {
     await runMarketplaceInstalled({ projectPath: '/work/my app', json: false, verify: false });
 
     const [url] = fetchMock.mock.calls[0] as [string];
-    expect(url).toMatch(/\/api\/marketplace\/installed\?projectPath=%2Fwork%2Fmy%20app$/);
+    expect(url).toMatch(/\/api\/marketplace\/installed\?projectPath=%2Fwork%2Fmy\+app&limit=200$/);
   });
 
   // Purpose (DOR-2197): --verify asks the server to verify, shows a FILES
@@ -233,7 +243,7 @@ describe('runMarketplaceInstalled', () => {
     await runMarketplaceInstalled({ json: false, verify: true });
 
     const [url] = fetchMock.mock.calls[0] as [string];
-    expect(url).toMatch(/\/api\/marketplace\/installed\?verify=true$/);
+    expect(url).toMatch(/\/api\/marketplace\/installed\?verify=true&limit=200$/);
     const out = printed(logSpy);
     expect(out.split('\n')[0]).toMatch(/WHERE\s+FILES$/);
     expect(out).toMatch(/flow\s+0\.7\.3\s+plugin\s+global\s+as installed/);

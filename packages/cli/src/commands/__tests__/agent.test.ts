@@ -95,7 +95,7 @@ describe('runAgentList', () => {
     });
     const code = await runAgentList(false);
     expect(code).toBe(0);
-    expect(apiCallMock).toHaveBeenCalledWith('GET', '/api/mesh/agents');
+    expect(apiCallMock).toHaveBeenCalledWith('GET', '/api/mesh/agents?limit=200');
   });
 
   it('prints raw JSON with --json', async () => {
@@ -277,7 +277,7 @@ describe('runAgentDispatcher', () => {
   it('dispatches list', async () => {
     apiCallMock.mockResolvedValue({ agents: [] });
     expect(await runAgentDispatcher(['list'])).toBe(0);
-    expect(apiCallMock).toHaveBeenCalledWith('GET', '/api/mesh/agents');
+    expect(apiCallMock).toHaveBeenCalledWith('GET', '/api/mesh/agents?limit=200');
   });
 });
 

@@ -33,14 +33,21 @@ beforeEach(() => {
 });
 
 describe('listAgentMcpServers', () => {
-  it('reads the agent’s list from its REST path', async () => {
-    stubFetch([{ name: 'fs', enabled: true }]);
+  it('reads every page of the agent’s list from its REST path, in order (DOR-4982)', async () => {
+    const pages = [
+      { servers: [{ name: 'zz', enabled: true }], nextCursor: 'c1' },
+      { servers: [{ name: 'fs', enabled: true }], nextCursor: null },
+    ];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, status: 200, json: () => Promise.resolve(pages.shift()) }))
+    );
     const result = await setup().listAgentMcpServers('agent 1');
     const [url, init] = lastCall();
-    expect(url).toBe('http://localhost:4242/api/agents/agent%201/mcp-servers');
+    expect(url).toBe('http://localhost:4242/api/agents/agent%201/mcp-servers?cursor=c1&limit=200');
     expect(init.method ?? 'GET').toBe('GET');
     expect(init.body).toBeUndefined();
-    expect(result).toEqual([{ name: 'fs', enabled: true }]);
+    expect(result.map((server) => server.name)).toEqual(['zz', 'fs']);
   });
 });
 

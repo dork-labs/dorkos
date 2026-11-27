@@ -17,7 +17,10 @@
  * @module services/marketplace-mcp/tool-list-marketplaces
  */
 import type { SourceLastFetch } from '@dorkos/shared/marketplace-schemas';
+import type { PageQuery } from '@dorkos/shared/paging';
 import { describeLastFetch } from '../marketplace/sources/source-listing.js';
+import { invalidCursor } from '../core/capabilities/capability-definition.js';
+import { assertPageCursor, pageInOwnOrder } from '../../lib/paging/keyset-page.js';
 import type { MarketplaceMcpDeps } from './marketplace-mcp-tools.js';
 
 /**
@@ -44,23 +47,26 @@ interface ListedMarketplace {
 
 /**
  * Build the `marketplace_list_marketplaces` tool handler bound to the
- * given dependency bundle. The returned async function takes no input,
- * lists every configured source, fetches each source's `marketplace.json`
- * to count plugins, and returns the result as a JSON-encoded MCP text
- * block.
+ * given dependency bundle. The returned async function takes a page
+ * query, lists one page of configured sources in the sources file's order
+ * (the cursor is the same as `GET /api/marketplace/sources` gives, DOR-4982),
+ * fetches each listed source's `marketplace.json` to count plugins, and
+ * returns the page and its `nextCursor` as a JSON-encoded MCP text block.
  *
  * The return type is intentionally inferred so the MCP SDK's loose
  * `CallToolResult` shape (with its index signature) accepts it without an
  * explicit cast at the registration site in `marketplace-mcp-tools.ts`.
  *
  * @param deps - Marketplace MCP dependency bundle.
- * @returns An MCP tool handler with empty input schema.
+ * @returns An MCP tool handler taking `cursor` and `limit`.
  */
 export function createListMarketplacesHandler(deps: MarketplaceMcpDeps) {
-  return async () => {
+  return async (query: PageQuery) => {
+    assertPageCursor('sources', query.cursor, invalidCursor);
     const sources = await deps.sourceManager.list();
+    const page = pageInOwnOrder('sources', sources, (src) => src.name, query, invalidCursor);
     const enriched: ListedMarketplace[] = await Promise.all(
-      sources.map(async (src) => {
+      page.items.map(async (src) => {
         let packageCount = 0;
         try {
           const json = await deps.fetcher.fetchMarketplaceJson(src);
@@ -84,7 +90,7 @@ export function createListMarketplacesHandler(deps: MarketplaceMcpDeps) {
       content: [
         {
           type: 'text' as const,
-          text: JSON.stringify({ sources: enriched }, null, 2),
+          text: JSON.stringify({ sources: enriched, nextCursor: page.nextCursor }, null, 2),
         },
       ],
     };

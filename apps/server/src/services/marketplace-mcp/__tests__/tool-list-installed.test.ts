@@ -164,6 +164,30 @@ describe('createListInstalledHandler', () => {
     expect(names).toEqual(['researcher', 'sentry-monitor']);
   });
 
+  // Purpose (DOR-4982): the tool pages in scan order, and its cursor is sealed
+  // to the reader, so one agent's cursor does not go on for another.
+  it('lists a page at a time, in scan order, with a cursor only its reader can use', async () => {
+    for (const name of ['p-one', 'p-two', 'p-three']) {
+      await writeManifest(join(dorkHome, 'plugins', name), { type: 'plugin', name, version: '1' });
+    }
+    const handler = createListInstalledHandler(buildDeps(dorkHome));
+    const whole = parseToolResult(await handler({}, { key: 'agent:a' })).installed;
+    const reader = { agentAsking: true, key: 'agent:a' };
+
+    const first = JSON.parse((await handler({ limit: 2 }, reader)).content[0].text);
+    const rest = JSON.parse(
+      (await handler({ limit: 2, cursor: first.nextCursor }, reader)).content[0].text
+    );
+
+    expect([...first.installed, ...rest.installed].map((p) => p.name)).toEqual(
+      whole.map((p) => p.name)
+    );
+    expect(rest.nextCursor).toBeNull();
+    await expect(
+      handler({ limit: 2, cursor: first.nextCursor }, { agentAsking: true, key: 'agent:b' })
+    ).rejects.toMatchObject({ payload: { code: 'INVALID_CURSOR' } });
+  });
+
   // Purpose (DOR-4978): an agent reads a dev link's row without the working
   // folder it runs from, as on `GET /api/marketplace/installed`.
   it("leaves a dev link's folder out for an agent, and in for a person", async () => {

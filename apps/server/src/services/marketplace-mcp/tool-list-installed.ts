@@ -22,11 +22,14 @@
  * @module services/marketplace-mcp/tool-list-installed
  */
 import { z } from 'zod';
+import { PAGE_LIMIT_DEFAULT, PageQuerySchema } from '@dorkos/shared/paging';
 import type { MarketplaceMcpDeps } from './marketplace-mcp-tools.js';
 import type { InstalledPackage } from '../marketplace/installed-scanner.js';
 import { scanUpdateView } from '../marketplace/flows/update-installed.js';
 import type { InstallationUpdateCheck } from '../marketplace/flows/update-types.js';
 import { withIntegrity } from '../marketplace/lib/integrity/verify-install.js';
+import { invalidCursor } from '../core/capabilities/capability-definition.js';
+import { assertPageCursor, pageInOwnOrder } from '../../lib/paging/keyset-page.js';
 
 /**
  * Zod input schema for `marketplace_list_installed`. The schema is exported
@@ -63,6 +66,10 @@ export const ListInstalledInputSchema = {
         "'modified' (with the changed, missing or added files) or 'unknown' (installed by an " +
         'older DorkOS, or a linked working copy). Slower: reads every shipped file.'
     ),
+  /** The `nextCursor` of the page before (DOR-4982). */
+  cursor: PageQuerySchema.shape.cursor,
+  /** How many one page holds. */
+  limit: PageQuerySchema.shape.limit,
 };
 
 /** Inferred TypeScript type for the tool's input arguments. */
@@ -70,6 +77,8 @@ export type ListInstalledInput = {
   type?: 'agent' | 'plugin' | 'skill-pack' | 'adapter';
   checkUpdates?: boolean;
   verify?: boolean;
+  cursor?: string;
+  limit?: number;
 };
 
 /** What `checkUpdates` adds to one listed installation. */
@@ -119,8 +128,9 @@ function withoutDevLinkFolder<T extends InstalledPackage>(installation: T): T {
  * entry per installation, each tagged with scope and agent identity, and with
  * `checkUpdates` an `update` summary ({@link InstalledUpdateSummary}).
  *
- * Filtering happens in memory after the scan, and before any update check,
- * because the scan is cheap and the checks are not. The return type is intentionally inferred so
+ * Filtering happens in memory after the scan, and so does the cut to one page
+ * (scan order, `cursor` and `limit` in, `nextCursor` back, DOR-4982), both
+ * before any update check, because the scan is cheap and the checks are not. The return type is intentionally inferred so
  * the MCP SDK's `CallToolResult` shape (which has an index signature) accepts
  * the handler directly at the registration site.
  *
@@ -135,11 +145,18 @@ function withoutDevLinkFolder<T extends InstalledPackage>(installation: T): T {
  * @returns An async handler accepting {@link ListInstalledInput}
  */
 export function createListInstalledHandler(deps: MarketplaceMcpDeps) {
-  return async (args: ListInstalledInput, reader: { agentAsking?: boolean } = {}) => {
-    // Filter before any check: a check nobody will see is a fetch for nothing.
-    const records = (await scanUpdateView(deps, undefined)).filter(
+  return async (args: ListInstalledInput, reader: { agentAsking?: boolean; key?: string } = {}) => {
+    // The type filter is bound into the cursor, and the cursor to the reader.
+    const list = `mcp-installed:${args.type ?? ''}`;
+    const query = { cursor: args.cursor, limit: args.limit ?? PAGE_LIMIT_DEFAULT };
+    assertPageCursor(list, query.cursor, invalidCursor, reader.key);
+    // Filter and cut before any check: a check nobody will see is a fetch for nothing.
+    const scanned = (await scanUpdateView(deps, undefined)).filter(
       (r) => !args.type || r.package.type === args.type
     );
+    const idOf = (r: (typeof scanned)[number]) => r.package.installPath;
+    const page = pageInOwnOrder(list, scanned, idOf, query, invalidCursor, reader.key);
+    const records = page.items;
     let installed: Array<InstalledPackage & { update?: InstalledUpdateSummary }> = records.map(
       (r) => r.package
     );
@@ -159,7 +176,10 @@ export function createListInstalledHandler(deps: MarketplaceMcpDeps) {
         {
           type: 'text' as const,
           text: JSON.stringify(
-            { installed: reader.agentAsking ? installed.map(withoutDevLinkFolder) : installed },
+            {
+              installed: reader.agentAsking ? installed.map(withoutDevLinkFolder) : installed,
+              nextCursor: page.nextCursor,
+            },
             null,
             2
           ),
