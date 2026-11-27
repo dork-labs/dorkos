@@ -28,6 +28,24 @@ describe('Adapter routes', () => {
     target.mount(relayApp(relayCore, adapterManager));
   });
 
+  it('pages the connections by id, Z to A, and the catalog in its own order, each its own cursor', async () => {
+    const first = await request(server).get('/api/relay/adapters?limit=1');
+    expect(first.body.adapters.map((a: { config: { id: string } }) => a.config.id)).toEqual([
+      'wh-github',
+    ]);
+    const rest = await request(server).get(`/api/relay/adapters?cursor=${first.body.nextCursor}`);
+    expect(rest.body.adapters.map((a: { config: { id: string } }) => a.config.id)).toEqual([
+      'tg-main',
+    ]);
+    expect(rest.body.nextCursor).toBeNull();
+    const catalog = await request(server).get('/api/relay/adapters/catalog?limit=200');
+    expect(catalog.body.entries).toEqual(adapterManager.getCatalog());
+    const refused = await request(server).get(
+      `/api/relay/adapters/catalog?cursor=${first.body.nextCursor}`
+    );
+    expect(refused.status).toBe(400);
+  });
+
   it('returns a single adapter status', async () => {
     const res = await request(server).get('/api/relay/adapters/tg-main');
 

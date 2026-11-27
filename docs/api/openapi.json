@@ -2217,6 +2217,808 @@
           "config"
         ]
       },
+      "AdapterConfig": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[a-z0-9-]+$"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AdapterType"
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "label": {
+            "type": "string"
+          },
+          "builtin": {
+            "type": "boolean"
+          },
+          "plugin": {
+            "$ref": "#/components/schemas/PluginSource"
+          },
+          "config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TelegramAdapterConfig"
+              },
+              {
+                "$ref": "#/components/schemas/WebhookAdapterConfig"
+              },
+              {
+                "$ref": "#/components/schemas/SlackAdapterConfig"
+              },
+              {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "config"
+        ]
+      },
+      "AdapterType": {
+        "type": "string",
+        "enum": [
+          "telegram",
+          "webhook",
+          "claude-code",
+          "slack",
+          "plugin"
+        ]
+      },
+      "PluginSource": {
+        "type": "object",
+        "properties": {
+          "package": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "TelegramAdapterConfig": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "polling",
+              "webhook"
+            ],
+            "default": "polling"
+          },
+          "webhookUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "webhookPort": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "webhookSecret": {
+            "type": "string",
+            "minLength": 1
+          },
+          "streaming": {
+            "type": "boolean",
+            "default": true
+          },
+          "respondMode": {
+            "type": "string",
+            "enum": [
+              "always",
+              "mention-only",
+              "thread-aware"
+            ],
+            "default": "thread-aware"
+          },
+          "dmPolicy": {
+            "type": "string",
+            "enum": [
+              "open",
+              "allowlist"
+            ],
+            "default": "allowlist"
+          },
+          "dmAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "approverAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
+      "WebhookAdapterConfig": {
+        "type": "object",
+        "properties": {
+          "inbound": {
+            "$ref": "#/components/schemas/WebhookInboundConfig"
+          },
+          "outbound": {
+            "$ref": "#/components/schemas/WebhookOutboundConfig"
+          }
+        },
+        "required": [
+          "inbound",
+          "outbound"
+        ]
+      },
+      "WebhookInboundConfig": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "minLength": 1
+          },
+          "secret": {
+            "type": "string",
+            "minLength": 16
+          },
+          "previousSecret": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "subject",
+          "secret"
+        ]
+      },
+      "WebhookOutboundConfig": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "secret": {
+            "type": "string",
+            "minLength": 16
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "url",
+          "secret"
+        ]
+      },
+      "SlackAdapterConfig": {
+        "type": "object",
+        "properties": {
+          "botToken": {
+            "type": "string",
+            "minLength": 1
+          },
+          "appToken": {
+            "type": "string",
+            "minLength": 1
+          },
+          "signingSecret": {
+            "type": "string",
+            "minLength": 1
+          },
+          "streaming": {
+            "type": "boolean",
+            "default": true
+          },
+          "nativeStreaming": {
+            "type": "boolean",
+            "default": true
+          },
+          "typingIndicator": {
+            "type": "string",
+            "enum": [
+              "none",
+              "reaction"
+            ],
+            "default": "reaction"
+          },
+          "respondMode": {
+            "type": "string",
+            "enum": [
+              "always",
+              "mention-only",
+              "thread-aware"
+            ],
+            "default": "thread-aware"
+          },
+          "dmPolicy": {
+            "type": "string",
+            "enum": [
+              "open",
+              "allowlist"
+            ],
+            "default": "allowlist"
+          },
+          "dmAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "approverAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "channelOverrides": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "respondMode": {
+                  "type": "string",
+                  "enum": [
+                    "always",
+                    "mention-only",
+                    "thread-aware"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            },
+            "default": {}
+          }
+        },
+        "required": [
+          "botToken",
+          "appToken",
+          "signingSecret"
+        ]
+      },
+      "AdapterStatus": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AdapterType"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "disconnected",
+              "error",
+              "starting",
+              "stopping",
+              "reconnecting"
+            ]
+          },
+          "messageCount": {
+            "type": "object",
+            "properties": {
+              "inbound": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "outbound": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "inbound",
+              "outbound"
+            ]
+          },
+          "errorCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastError": {
+            "type": "string"
+          },
+          "lastErrorAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "displayName",
+          "state",
+          "messageCount",
+          "errorCount"
+        ]
+      },
+      "CatalogEntry": {
+        "type": "object",
+        "properties": {
+          "manifest": {
+            "$ref": "#/components/schemas/AdapterManifest"
+          },
+          "instances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogInstance"
+            }
+          }
+        },
+        "required": [
+          "manifest",
+          "instances"
+        ]
+      },
+      "AdapterManifest": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "iconId": {
+            "type": "string"
+          },
+          "category": {
+            "$ref": "#/components/schemas/AdapterCategory"
+          },
+          "docsUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "builtin": {
+            "type": "boolean"
+          },
+          "configFields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfigField"
+            }
+          },
+          "setupSteps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdapterSetupStep"
+            }
+          },
+          "setupInstructions": {
+            "type": "string"
+          },
+          "multiInstance": {
+            "type": "boolean",
+            "default": false
+          },
+          "deprecated": {
+            "type": "boolean"
+          },
+          "apiVersion": {
+            "type": "string"
+          },
+          "actionButton": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "label",
+              "url"
+            ]
+          },
+          "setupGuide": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "displayName",
+          "description",
+          "category",
+          "builtin",
+          "configFields"
+        ]
+      },
+      "AdapterCategory": {
+        "type": "string",
+        "enum": [
+          "messaging",
+          "automation",
+          "internal",
+          "custom"
+        ]
+      },
+      "ConfigField": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ConfigFieldType"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "default": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "placeholder": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfigFieldOption"
+            }
+          },
+          "section": {
+            "type": "string"
+          },
+          "showWhen": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "equals": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "field",
+              "equals"
+            ]
+          },
+          "pattern": {
+            "type": "string"
+          },
+          "patternMessage": {
+            "type": "string"
+          },
+          "visibleByDefault": {
+            "type": "boolean"
+          },
+          "displayAs": {
+            "type": "string",
+            "enum": [
+              "radio-cards"
+            ]
+          },
+          "helpMarkdown": {
+            "type": "string"
+          },
+          "valueShape": {
+            "type": "string",
+            "enum": [
+              "id-list",
+              "json-object"
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "type",
+          "required"
+        ]
+      },
+      "ConfigFieldType": {
+        "type": "string",
+        "enum": [
+          "text",
+          "password",
+          "number",
+          "boolean",
+          "select",
+          "textarea",
+          "url"
+        ]
+      },
+      "ConfigFieldOption": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ]
+      },
+      "AdapterSetupStep": {
+        "type": "object",
+        "properties": {
+          "stepId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "stepId",
+          "title",
+          "fields"
+        ]
+      },
+      "CatalogInstance": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "confirmation": {
+            "$ref": "#/components/schemas/AdapterConfirmation"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AdapterStatus"
+          },
+          "config": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "id",
+          "enabled",
+          "status"
+        ]
+      },
+      "AdapterConfirmation": {
+        "type": "object",
+        "properties": {
+          "references": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "ref": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "field",
+                "ref"
+              ]
+            }
+          },
+          "host": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "notSent": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "references",
+          "fingerprint",
+          "notSent"
+        ]
+      },
+      "AdapterBinding": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "adapterId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "agentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "chatId": {
+            "type": "string"
+          },
+          "channelType": {
+            "$ref": "#/components/schemas/ChannelType"
+          },
+          "platformChatType": {
+            "$ref": "#/components/schemas/PlatformChatType"
+          },
+          "sessionStrategy": {
+            "$ref": "#/components/schemas/SessionStrategy"
+          },
+          "label": {
+            "type": "string",
+            "default": ""
+          },
+          "permissionMode": {
+            "$ref": "#/components/schemas/PermissionMode"
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "canInitiate": {
+            "type": "boolean",
+            "default": false
+          },
+          "canReply": {
+            "type": "boolean",
+            "default": true
+          },
+          "canReceive": {
+            "type": "boolean",
+            "default": true
+          },
+          "notifyOnTaskComplete": {
+            "type": "boolean",
+            "default": true
+          },
+          "bridge": {
+            "type": "string",
+            "enum": [
+              "off",
+              "room"
+            ],
+            "default": "off"
+          },
+          "roomId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "adapterId",
+          "agentId",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "ChannelType": {
+        "type": "string",
+        "enum": [
+          "dm",
+          "group",
+          "channel",
+          "thread"
+        ]
+      },
+      "PlatformChatType": {
+        "type": "string",
+        "enum": [
+          "private",
+          "group",
+          "supergroup",
+          "channel"
+        ]
+      },
+      "SessionStrategy": {
+        "type": "string",
+        "enum": [
+          "per-chat",
+          "per-user",
+          "stateless"
+        ],
+        "default": "per-chat"
+      },
+      "PermissionMode": {
+        "type": "string",
+        "enum": [
+          "default",
+          "plan",
+          "acceptEdits",
+          "dontAsk",
+          "bypassPermissions",
+          "auto"
+        ],
+        "default": "default"
+      },
       "ConnectorAccessChangeList": {
         "type": "object",
         "properties": {
@@ -11037,17 +11839,6 @@
           "updatedAt"
         ]
       },
-      "PermissionMode": {
-        "type": "string",
-        "enum": [
-          "default",
-          "plan",
-          "acceptEdits",
-          "dontAsk",
-          "bypassPermissions",
-          "auto"
-        ]
-      },
       "TaskRunPlace": {
         "oneOf": [
           {
@@ -13211,119 +14002,6 @@
         "required": [
           "binding"
         ]
-      },
-      "AdapterBinding": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "adapterId": {
-            "type": "string",
-            "minLength": 1
-          },
-          "agentId": {
-            "type": "string",
-            "minLength": 1
-          },
-          "chatId": {
-            "type": "string"
-          },
-          "channelType": {
-            "$ref": "#/components/schemas/ChannelType"
-          },
-          "platformChatType": {
-            "$ref": "#/components/schemas/PlatformChatType"
-          },
-          "sessionStrategy": {
-            "$ref": "#/components/schemas/SessionStrategy"
-          },
-          "label": {
-            "type": "string",
-            "default": ""
-          },
-          "permissionMode": {
-            "$ref": "#/components/schemas/PermissionMode"
-          },
-          "enabled": {
-            "type": "boolean",
-            "default": true
-          },
-          "canInitiate": {
-            "type": "boolean",
-            "default": false
-          },
-          "canReply": {
-            "type": "boolean",
-            "default": true
-          },
-          "canReceive": {
-            "type": "boolean",
-            "default": true
-          },
-          "notifyOnTaskComplete": {
-            "type": "boolean",
-            "default": true
-          },
-          "bridge": {
-            "type": "string",
-            "enum": [
-              "off",
-              "room"
-            ],
-            "default": "off"
-          },
-          "roomId": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "default": null
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "id",
-          "adapterId",
-          "agentId",
-          "createdAt",
-          "updatedAt"
-        ]
-      },
-      "ChannelType": {
-        "type": "string",
-        "enum": [
-          "dm",
-          "group",
-          "channel",
-          "thread"
-        ]
-      },
-      "PlatformChatType": {
-        "type": "string",
-        "enum": [
-          "private",
-          "group",
-          "supergroup",
-          "channel"
-        ]
-      },
-      "SessionStrategy": {
-        "type": "string",
-        "enum": [
-          "per-chat",
-          "per-user",
-          "stateless"
-        ],
-        "default": "per-chat"
       },
       "MoveBindingRequest": {
         "type": "object",
@@ -31623,6 +32301,94 @@
           }
         },
         "operationId": "relay.createAdapters"
+      },
+      "get": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "List the chat connections",
+        "description": "Each chat app set up on this computer, with its settings (secrets hidden) and how it is doing, by id Z to A. One added or removed while paging can repeat or be missed. A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did not give is refused with `400 invalid_request`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the chat connections",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "adapters": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "config": {
+                            "$ref": "#/components/schemas/AdapterConfig"
+                          },
+                          "status": {
+                            "$ref": "#/components/schemas/AdapterStatus"
+                          }
+                        },
+                        "required": [
+                          "config",
+                          "status"
+                        ]
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass as `cursor` for the next page; null on the last one."
+                    }
+                  },
+                  "required": [
+                    "adapters",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: `limit` is out of range, the query has another field, or the cursor was not given by this list",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "relay.listAdapters"
       }
     },
     "/api/relay/adapters/{id}/config": {
@@ -31752,6 +32518,231 @@
           }
         },
         "operationId": "relay.updateAdaptersConfig"
+      }
+    },
+    "/api/relay/adapters/catalog": {
+      "get": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "List the kinds of chat connection",
+        "description": "Each kind that can be connected, with its setup fields and the connections of that kind, in the order the setup list shows them. A kind a plugin adds while paging can repeat or be missed. A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did not give is refused with `400 invalid_request`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the kinds of chat connection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CatalogEntry"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass as `cursor` for the next page; null on the last one."
+                    }
+                  },
+                  "required": [
+                    "entries",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: `limit` is out of range, the query has another field, or the cursor was not given by this list",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "relay.listAdaptersCatalog"
+      }
+    },
+    "/api/relay/bindings": {
+      "get": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "List the chat routes",
+        "description": "Each route from a chat to an agent, newest first, the id breaking a tie. One made or removed while paging can repeat or be missed. `503` while chat routes start. A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did not give is refused with `400 invalid_request`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the chat routes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "bindings": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdapterBinding"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass as `cursor` for the next page; null on the last one."
+                    }
+                  },
+                  "required": [
+                    "bindings",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: `limit` is out of range, the query has another field, or the cursor was not given by this list",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: chat routes are still starting",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "relay.listBindings"
+      },
+      "post": {
+        "tags": [
+          "Access"
+        ],
+        "summary": "Confirm a lasting access or account change",
+        "description": "The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The action completed",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "403": {
+            "description": "This caller cannot change access here",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Always `no-store`: the held action is for this request only.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpRequired"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "relay.createBindings"
       }
     },
     "/api/connectors/access-changes": {
@@ -127213,67 +128204,6 @@
           }
         },
         "operationId": "extensions.updateSecrets"
-      }
-    },
-    "/api/relay/bindings": {
-      "post": {
-        "tags": [
-          "Access"
-        ],
-        "summary": "Confirm a lasting access or account change",
-        "description": "The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {}
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The action completed",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "403": {
-            "description": "This caller cannot change access here",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
-            "headers": {
-              "Cache-Control": {
-                "description": "Always `no-store`: the held action is for this request only.",
-                "schema": {
-                  "type": "string",
-                  "enum": [
-                    "no-store"
-                  ]
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StepUpRequired"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "relay.createBindings"
       }
     },
     "/api/relay/bindings/{id}": {

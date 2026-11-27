@@ -26,29 +26,24 @@ describe('HttpTransport — Relay Bindings', () => {
   });
 
   describe('getBindings()', () => {
-    it('calls GET /relay/bindings and returns the bindings array', async () => {
-      vi.mocked(fetch).mockResolvedValue(
-        new Response(JSON.stringify({ bindings: [mockBinding] }), { status: 200 })
-      );
+    it('reads every page of GET /relay/bindings and returns the bindings', async () => {
+      const second = { ...mockBinding, id: 'second' };
+      vi.mocked(fetch)
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ bindings: [mockBinding], nextCursor: 'c1' }))
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ bindings: [second], nextCursor: null }))
+        );
 
-      const transport = new HttpTransport(BASE_URL);
-      const result = await transport.getBindings();
+      const result = await new HttpTransport(BASE_URL).getBindings();
 
-      const [url, init] = vi.mocked(fetch).mock.calls[0]!;
-      expect(url).toBe(`${BASE_URL}/relay/bindings`);
-      expect(new Headers(init?.headers).get('Content-Type')).toBe('application/json');
-      expect(result).toEqual([mockBinding]);
-    });
-
-    it('returns an empty array when server returns empty bindings', async () => {
-      vi.mocked(fetch).mockResolvedValue(
-        new Response(JSON.stringify({ bindings: [] }), { status: 200 })
-      );
-
-      const transport = new HttpTransport(BASE_URL);
-      const result = await transport.getBindings();
-
-      expect(result).toEqual([]);
+      const urls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+      expect(urls).toEqual([
+        `${BASE_URL}/relay/bindings?limit=200`,
+        `${BASE_URL}/relay/bindings?cursor=c1&limit=200`,
+      ]);
+      expect(result).toEqual([mockBinding, second]);
     });
 
     it('throws when the server responds with an error', async () => {

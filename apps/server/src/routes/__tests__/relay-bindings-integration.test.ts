@@ -528,15 +528,15 @@ describe('Multi-instance adapter flow', () => {
     const app = createTestApp(adapterManager);
 
     // Verify catalog returns both instances under the Telegram entry
-    const catalogRes = await request(app).get('/api/relay/adapters/catalog').expect(200);
+    const { entries: catalog } = (await request(app).get('/api/relay/adapters/catalog')).body;
 
-    expect(catalogRes.body).toHaveLength(1);
-    expect(catalogRes.body[0].manifest.type).toBe('telegram');
-    expect(catalogRes.body[0].instances).toHaveLength(2);
-    expect(catalogRes.body[0].instances[0].id).toBe('telegram-1');
-    expect(catalogRes.body[0].instances[0].label).toBe('@bot_one');
-    expect(catalogRes.body[0].instances[1].id).toBe('telegram-2');
-    expect(catalogRes.body[0].instances[1].label).toBe('@bot_two');
+    expect(catalog).toHaveLength(1);
+    expect(catalog[0].manifest.type).toBe('telegram');
+    expect(catalog[0].instances).toHaveLength(2);
+    expect(catalog[0].instances[0].id).toBe('telegram-1');
+    expect(catalog[0].instances[0].label).toBe('@bot_one');
+    expect(catalog[0].instances[1].id).toBe('telegram-2');
+    expect(catalog[0].instances[1].label).toBe('@bot_two');
   });
 
   it('adds a second Telegram adapter when multiInstance is true', async () => {

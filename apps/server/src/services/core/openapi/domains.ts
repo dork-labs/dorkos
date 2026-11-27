@@ -15,7 +15,7 @@ import { registerComputerOpenApi } from '../../computers/computer-openapi.js';
 import { registerBrowserScanOpenApi } from '../../browser/profile-scan-openapi.js';
 import { registerLocalBrowserOpenApi } from '../../session/local-browser/openapi.js';
 import { registerConnectorHoldsOpenApi } from '../../connectors/execution/holds-openapi.js';
-import { registerRelayAdapterOpenApi } from './relay-adapters.js';
+import { registerRelayAdapterListOpenApi, registerRelayAdapterOpenApi } from './relay-adapters.js';
 import { registerConnectorExclusionsOpenApi } from '../../connectors/access/exclusions-openapi.js';
 import { registerMiniAppAccessOpenApi } from '../../connectors/extensions/mini-app-access-openapi.js';
 import { registerHubComputersOpenApi } from '../hub-relay/hub-computers-openapi.js';
@@ -44,6 +44,7 @@ export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
   registerDocRouteControlsOpenApi(registry);
   registerConnectorHoldsOpenApi(registry);
   registerRelayAdapterOpenApi(registry);
+  registerRelayAdapterListOpenApi(registry);
   registerConnectorExclusionsOpenApi(registry);
   registerMiniAppAccessOpenApi(registry);
   registerLocalBrowserOpenApi(registry);
