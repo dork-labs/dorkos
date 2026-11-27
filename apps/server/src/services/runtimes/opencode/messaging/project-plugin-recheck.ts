@@ -1,13 +1,15 @@
 /**
- * Look again for a project's own plugins after every OpenCode turn, and restart
- * the shared sidecar when one has appeared (DOR-4412).
+ * Look again for a project's own plugins during and after every OpenCode turn,
+ * and restart the shared sidecar when one has appeared (DOR-4412, DOR-5258).
  *
  * The guard in `project-plugin-guard.ts` asks before a turn is sent, but a
  * turn can change its folder (a `git clone` or `git pull`), and OpenCode reads a
- * folder's plugins on its own schedule. So once a turn ends, DorkOS asks again
- * about the folders the turn used: its `cwd` and the session's stored folder.
- * When either has plugins now, the one sidecar every OpenCode chat shares is
- * restarted before any further turn in any chat, and the Activity feed says so.
+ * folder's plugins on its own schedule. So DorkOS asks again about the folders
+ * the turn used (its `cwd` and the session's stored folder) twice more: when
+ * the turn's first event arrives, by which time OpenCode has opened the folder,
+ * and once the turn ends. When either has plugins, the one sidecar every
+ * OpenCode chat shares is restarted before any further turn in any chat, and
+ * the Activity feed says so. A restart at the first event also ends that turn.
  *
  * **Restart, not dispose.** Disposing a folder's instance cannot undo a plugin
  * that already loaded: what its code set up belongs to the process, not the
@@ -15,7 +17,7 @@
  *
  * **No turn starts on the old process.** A turn waits here while a restart
  * runs, and one that was already setting up when it began is stopped before it
- * sends ({@link PluginTurnPass.assertCurrent}). Turns still running on the old
+ * sends ({@link PluginTurnPass.beforeSend}). Turns still running on the old
  * process end with it. A restart that fails holds every turn: the next one
  * tries it again and is refused if it fails again.
  *
@@ -94,13 +96,32 @@ export interface PluginTurnPass {
    */
   assertNoPlugins(directory: string): void;
   /**
-   * Throw when the sidecar was restarted after this turn started, so a turn
-   * holding the old process's client never sends on it.
+   * Call right before the prompt is sent. Throws when the sidecar was restarted
+   * after this turn started, so a turn holding the old process's client never
+   * sends on it. From here on, the turn's first event is checked
+   * ({@link PluginTurnPass.atEvent}).
    */
-  assertCurrent(): void;
+  beforeSend(): void;
+  /**
+   * Call on each of the turn's events. The first one after
+   * {@link PluginTurnPass.beforeSend} checks the turn's folders again; when one
+   * has plugins, the restart begins and `stop` ends the turn with
+   * {@link PLUGIN_RESTART_MESSAGE}. Every later event is passed through.
+   *
+   * @param directory - The session's folder as OpenCode stored it.
+   * @param stop - Ends the turn with the given error.
+   * @returns Whether the turn was stopped, so the event should be dropped.
+   */
+  atEvent(directory: string, stop: (err: Error) => void): boolean;
+  /**
+   * Call once the turn ends: check its folders again, unless its first event
+   * already restarted the sidecar for them.
+   *
+   * @param directory - The session's folder as OpenCode stored it.
+   */
+  afterTurn(directory: string): void;
 }
 
-/** Said when a turn was setting up as OpenCode restarted. */
 /**
  * Restart the sidecar for a folder that gained plugins: its whole process
  * group, SIGKILL at once, with no grace window a loaded plugin could use.
@@ -111,13 +132,15 @@ export function killNow(provider: OpenCodeClientProvider): Promise<void> | undef
   return provider.recycle?.({ immediate: true });
 }
 
+/** Said when a turn was setting up, or running, as OpenCode restarted. */
 export const PLUGIN_RESTART_MESSAGE = 'OpenCode restarted. Send your message again.';
 
 /** Said when OpenCode needed a restart and it did not finish. */
 export const PLUGIN_RESTART_FAILED_MESSAGE = 'OpenCode couldn’t restart. Try again in a moment.';
 
 /**
- * The post-turn plugin check and the restart it can start, one per runtime.
+ * The in-turn and post-turn plugin checks and the restart they can start,
+ * one per runtime.
  */
 export class ProjectPluginRecheck {
   private restarting: Promise<void> | undefined;
@@ -144,38 +167,53 @@ export class ProjectPluginRecheck {
     while (this.restarting) await this.restarting;
     if (this.failed) throw new Error(PLUGIN_RESTART_FAILED_MESSAGE);
     const generation = this.generation;
+    let armed = false;
+    let checked = false;
+    let restartedEarly = false;
     return {
       refusal: projectPluginRefusal(cwd),
       assertNoPlugins: (directory) => assertNoProjectPlugins(cwd, directory),
-      assertCurrent: () => {
+      beforeSend: () => {
         if (this.generation !== generation) throw new Error(PLUGIN_RESTART_MESSAGE);
+        armed = true;
+      },
+      atEvent: (directory, stop) => {
+        if (!armed || checked) return false;
+        checked = true;
+        restartedEarly = this.restartFor([cwd, directory]);
+        if (restartedEarly) stop(new Error(PLUGIN_RESTART_MESSAGE));
+        return restartedEarly;
+      },
+      afterTurn: (directory) => {
+        if (!restartedEarly) this.restartFor([cwd, directory]);
       },
     };
   }
 
   /**
-   * After a turn, check the folders it used. When one has plugins now, start
-   * the restart at once (synchronously, so no other turn can slip in first)
-   * and record it. A restart already running covers this turn too: the turn
-   * ran on the process it is stopping.
+   * Check `dirs`. When one has plugins now, start the restart at once
+   * (synchronously, so no other turn can slip in first) and record it. A
+   * restart already running covers this turn too: the turn ran on the process
+   * it is stopping.
    *
-   * @param dirs - The turn's `cwd` and the session's stored folder, when known.
+   * @param dirs - The turn's `cwd` and the session's stored folder.
+   * @returns Whether any of them has plugins.
    */
-  afterTurn(...dirs: (string | undefined)[]): void {
-    const unique = [...new Set(dirs.filter((dir): dir is string => dir !== undefined))];
-    const folders = unique.filter((dir) => projectHasPlugins(dir));
-    if (folders.length === 0) return;
+  private restartFor(dirs: string[]): boolean {
+    const folders = [...new Set(dirs)].filter((dir) => projectHasPlugins(dir));
+    if (folders.length === 0) return false;
     const folder = folders[0]!;
     logger.warn('[OpenCode] a folder gained its own plugins during a turn; restarting', {
       folders,
     });
-    if (this.restarting) return;
+    if (this.restarting) return true;
     this.begin();
     activityPort?.({
       folder,
       summary: `OpenCode restarted because ${path.basename(folder)} gained its own plugins.`,
       folders,
     });
+    return true;
   }
 
   /**

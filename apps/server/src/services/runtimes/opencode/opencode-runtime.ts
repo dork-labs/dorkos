@@ -746,14 +746,13 @@ export class OpenCodeRuntime implements AgentRuntime {
           const admit =
             matchesOpenCodeSession(event, directory, ocSessionId) ||
             matchesOpenCodeSubagentSession(event, directory, ctx);
-          if (admit) {
-            queue.push(event.payload as OpenCodeWireEvent);
-            if (
-              event.payload.type === 'session.idle' &&
-              matchesOpenCodeSession(event, directory, ocSessionId)
-            )
-              queue.end();
-          }
+          if (!admit || pluginTurn.atEvent(directory, (err) => queue.fail(err))) return;
+          queue.push(event.payload as OpenCodeWireEvent);
+          if (
+            event.payload.type === 'session.idle' &&
+            matchesOpenCodeSession(event, directory, ocSessionId)
+          )
+            queue.end();
         },
         onStreamDrop: (error) => queue.fail(error),
       });
@@ -764,8 +763,8 @@ export class OpenCodeRuntime implements AgentRuntime {
       // Trigger only once the stream is observably live (or the bounded wait
       // elapses) — a fast turn must not complete before we can see its idle.
       await Promise.race([subscription.live, delay(STREAM_LIVE_TIMEOUT_MS)]);
-      // Nothing is sent on a sidecar a plugin restart has begun to stop.
-      pluginTurn.assertCurrent();
+      // Never sent on a sidecar a restart is stopping; arms the first-event check.
+      pluginTurn.beforeSend();
       await trigger(client, ocSessionId, mcpResult, plan, () => {
         if (mcpResult.connectorApplied && turn.connectorBinding)
           toolTurn.attach((event) => queue.push(event));
@@ -806,10 +805,9 @@ export class OpenCodeRuntime implements AgentRuntime {
       }
       connectorRevokeReason = sawRuntimeError ? 'runtime_failed' : 'turn_terminal';
     } finally {
-      // First, before anything here waits: a folder this turn used may have
-      // gained plugins while it ran, and the restart must begin before any
-      // other turn can be sent (DOR-4412).
-      this.pluginRecheck.afterTurn(cwd, directory);
+      // First, before anything waits: a folder may have gained plugins as the
+      // turn ran; restart before any other turn is sent (DOR-4412).
+      pluginTurn.afterTurn(directory);
       toolTurn.close();
       if (controller.signal.aborted) connectorRevokeReason = 'turn_cancelled';
       turn.connectorSupervisor?.stop();
