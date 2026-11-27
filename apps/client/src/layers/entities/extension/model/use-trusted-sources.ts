@@ -45,8 +45,9 @@ export function useTrustedSources() {
     queryFn: async () => {
       const { rows } = await readAllPages(
         async (cursor) => {
-          const url = `${resolveApiBaseUrl()}/extensions/trusted-sources${pageQuery(cursor)}`;
-          const res = await fetch(url);
+          const res = await fetch(
+            `${resolveApiBaseUrl()}/extensions/trusted-sources${pageQuery(cursor)}`
+          );
           if (!res.ok) throw await failureOf(res);
           return (await res.json()) as TrustedSourcesResponse & { nextCursor: string | null };
         },
