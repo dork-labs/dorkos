@@ -16,11 +16,14 @@ import { TurnEventQueue } from '../events/global-event-hub.js';
 import type { OpenCodeWireEvent } from '../events/event-mapper.js';
 import type { OpenCodeClientProvider } from '../sessions/session-mapper.js';
 import {
+  ARMED_CHECK_MS,
   PLUGIN_RESTART_FAILED_MESSAGE,
   PLUGIN_RESTART_MESSAGE,
+  ProjectPluginRecheck,
   setPluginRestartActivity,
   type PluginRestartActivityEntry,
 } from '../messaging/project-plugin-recheck.js';
+import { summarizeOpenCodeSession } from '../messaging/compaction-model.js';
 import { makeConformanceClient } from './conformance-client.js';
 import {
   OC_SESSION_A,
@@ -436,5 +439,56 @@ describe("when an OpenCode turn's first event arrives", () => {
     expect(seen(events)).toEqual({ text: 'pong', errors: [], done: true });
     expect(recycle).toHaveBeenCalledTimes(1);
     expect(lines.map((line) => line.folder)).toEqual([dir]);
+  });
+});
+
+describe('once a turn is armed, its folders are checked without waiting on an event', () => {
+  /** One turn's pass, armed as its request goes out, with what its checks did. */
+  async function armedTurn(dir: string) {
+    const restart = vi.fn(async () => {});
+    const pass = await new ProjectPluginRecheck(restart).admit(dir);
+    const stop = vi.fn();
+    pass.assertNoPlugins(dir);
+    pass.beforeSend(stop, () => {})();
+    return { pass, stop, restart };
+  }
+
+  it('checks again when the request resolves, after an earlier event found none', async () => {
+    const dir = repo('northwind-widgets');
+    const { pass, stop, restart } = await armedTurn(dir);
+    expect(pass.atEvent(dir)).toBe(false);
+    dropPlugin(dir);
+    await pass.sent(Promise.resolve());
+    expect(stop).toHaveBeenCalledWith(new Error(PLUGIN_RESTART_MESSAGE));
+    expect(restart).toHaveBeenCalledTimes(1);
+    pass.afterTurn(dir);
+    expect(restart).toHaveBeenCalledTimes(1);
+  });
+
+  it('checks about a second in when no event comes', async () => {
+    vi.useFakeTimers();
+    try {
+      const dir = repo('northwind-widgets');
+      const { pass, stop, restart } = await armedTurn(dir);
+      dropPlugin(dir);
+      vi.advanceTimersByTime(ARMED_CHECK_MS - 1);
+      expect(stop).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(stop).toHaveBeenCalledWith(new Error(PLUGIN_RESTART_MESSAGE));
+      expect(restart).toHaveBeenCalledTimes(1);
+      pass.afterTurn(dir);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('compaction arms the checks right before it asks for the summary', async () => {
+    const order: string[] = [];
+    const client = {
+      session: { summarize: vi.fn(async () => (order.push('summarize'), { data: true })) },
+    } as unknown as OpencodeClient;
+    const model = { providerID: 'anthropic', modelID: 'claude-sonnet-4-5' };
+    await summarizeOpenCodeSession(client, 'ses_1', model, () => order.push('arm'));
+    expect(order).toEqual(['arm', 'summarize']);
   });
 });

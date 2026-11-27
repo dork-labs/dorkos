@@ -114,7 +114,7 @@ import {
 import { OPENCODE_CAPABILITIES, STREAM_LIVE_TIMEOUT_MS } from './runtime-constants.js';
 import { awaitAbortAck, delay } from './messaging/bounded-abort.js';
 import { sessionDirectoryOf } from './sessions/session-directory.js';
-import { resolveCompactionModel } from './messaging/compaction-model.js';
+import { resolveCompactionModel, summarizeOpenCodeSession } from './messaging/compaction-model.js';
 import { readOpenCodeTurnMode, type OpenCodeTurnOptions } from './messaging/turn-options.js';
 import { validatedGrants } from './messaging/directory-grants.js';
 import { ProjectPluginsRefusedError } from './messaging/project-plugin-guard.js';
@@ -508,7 +508,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       sessionId,
       cwd,
       undefined,
-      async (client, ocSessionId, _mcp, plan) => {
+      async (client, ocSessionId, _mcp, plan, arm) => {
         const model =
           plan.mode === 'credits'
             ? creditsPromptModel(settings.model, plan)
@@ -517,13 +517,7 @@ export class OpenCodeRuntime implements AgentRuntime {
                 cwd,
                 trackedModel: settings.model,
               });
-        const summarized = await client.session.summarize({
-          path: { id: ocSessionId },
-          body: model,
-        });
-        if (summarized.error !== undefined) {
-          throw new Error(`OpenCode session.summarize failed: ${JSON.stringify(summarized.error)}`);
-        }
+        await summarizeOpenCodeSession(client, ocSessionId, model, arm);
       }
     );
   }
@@ -746,7 +740,7 @@ export class OpenCodeRuntime implements AgentRuntime {
           const admit =
             matchesOpenCodeSession(event, directory, ocSessionId) ||
             matchesOpenCodeSubagentSession(event, directory, ctx);
-          if (!admit || pluginTurn.atEvent(directory, (err) => queue.fail(err))) return;
+          if (!admit || pluginTurn.atEvent(directory)) return;
           queue.push(event.payload as OpenCodeWireEvent);
           if (
             event.payload.type === 'session.idle' &&
@@ -764,11 +758,14 @@ export class OpenCodeRuntime implements AgentRuntime {
       // elapses) — a fast turn must not complete before we can see its idle.
       await Promise.race([subscription.live, delay(STREAM_LIVE_TIMEOUT_MS)]);
       // Never sent on a sidecar a restart is stopping; the send arms the first-event check.
-      const onSend = pluginTurn.beforeSend(() => {
-        if (mcpResult.connectorApplied && turn.connectorBinding)
-          toolTurn.attach((event) => queue.push(event));
-      });
-      await trigger(client, ocSessionId, mcpResult, plan, onSend);
+      const onSend = pluginTurn.beforeSend(
+        (err) => queue.fail(err),
+        () => {
+          if (mcpResult.connectorApplied && turn.connectorBinding)
+            toolTurn.attach((event) => queue.push(event));
+        }
+      );
+      await pluginTurn.sent(trigger(client, ocSessionId, mcpResult, plan, onSend));
 
       const routing: ApprovalRouting = {
         ...opts,

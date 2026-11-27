@@ -98,28 +98,38 @@ export interface PluginTurnPass {
   /**
    * Call right before the turn is triggered. Throws when the sidecar was
    * restarted after this turn started, so a turn holding the old process's
-   * client never sends on it. The callback it returns arms the first-event
-   * check ({@link PluginTurnPass.atEvent}) as the prompt's request goes out:
-   * arming at the send, not before it, keeps an event from the turn's own
-   * setup calls from using up the one check before the folder is opened.
+   * client never sends on it. The callback it returns arms the in-turn checks
+   * as the request goes out (a prompt's, or compaction's right before
+   * `summarize`): arming at the send, not before it, keeps an event from the
+   * turn's own setup calls from using up the first-event check before the
+   * folder is opened. Once armed, the folders are checked at the first event
+   * ({@link PluginTurnPass.atEvent}), when the request resolves
+   * ({@link PluginTurnPass.sent}), and after {@link ARMED_CHECK_MS} whether or
+   * not any event came. The first check that finds plugins restarts the
+   * sidecar and ends the turn through `stop`; the rest do nothing.
    *
-   * @param onSend - What the prompt already does as its request goes out.
-   * @returns `onSend`, preceded by arming the first-event check.
+   * @param stop - Ends the turn with the given error.
+   * @param onSend - What the trigger already does as its request goes out.
+   * @returns `onSend`, preceded by arming the in-turn checks.
    */
-  beforeSend(onSend: () => void): () => void;
+  beforeSend(stop: (err: Error) => void, onSend: () => void): () => void;
   /**
-   * Call on each of the turn's events. The first one after
-   * {@link PluginTurnPass.beforeSend}'s callback checks the turn's folders again; when one
-   * has plugins, the restart begins and `stop` ends the turn with
-   * {@link PLUGIN_RESTART_MESSAGE}. Every later event is passed through.
+   * Wait for the turn's request, then check its folders once more: an event
+   * can arrive after arming but before OpenCode has loaded the folder.
+   *
+   * @param request - The trigger's promise.
+   */
+  sent(request: Promise<void>): Promise<void>;
+  /**
+   * Call on each of the turn's events. The first one after arming checks the
+   * turn's folders.
    *
    * @param directory - The session's folder as OpenCode stored it.
-   * @param stop - Ends the turn with the given error.
    * @returns Whether the turn was stopped, so the event should be dropped.
    */
-  atEvent(directory: string, stop: (err: Error) => void): boolean;
+  atEvent(directory: string): boolean;
   /**
-   * Call once the turn ends: check its folders again, unless its first event
+   * Call once the turn ends: check its folders again, unless an in-turn check
    * already restarted the sidecar for them.
    *
    * @param directory - The session's folder as OpenCode stored it.
@@ -136,6 +146,9 @@ export interface PluginTurnPass {
 export function killNow(provider: OpenCodeClientProvider): Promise<void> | undefined {
   return provider.recycle?.({ immediate: true });
 }
+
+/** How long after a turn's request goes out its folders are checked even if no event came. */
+export const ARMED_CHECK_MS = 1_500;
 
 /** Said when a turn was setting up, or running, as OpenCode restarted. */
 export const PLUGIN_RESTART_MESSAGE = 'OpenCode restarted. Send your message again.';
@@ -175,24 +188,45 @@ export class ProjectPluginRecheck {
     let armed = false;
     let checked = false;
     let restartedEarly = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stop: (err: Error) => void = () => {};
+    // The session's stored folder, once the turn has read it.
+    let turnDir: string | undefined;
+    const check = (): boolean => {
+      if (restartedEarly) return true;
+      restartedEarly = this.restartFor(turnDir === undefined ? [cwd] : [cwd, turnDir]);
+      if (restartedEarly) stop(new Error(PLUGIN_RESTART_MESSAGE));
+      return restartedEarly;
+    };
     return {
       refusal: projectPluginRefusal(cwd),
-      assertNoPlugins: (directory) => assertNoProjectPlugins(cwd, directory),
-      beforeSend: (onSend) => {
+      assertNoPlugins: (directory) => {
+        turnDir = directory;
+        assertNoProjectPlugins(cwd, directory);
+      },
+      beforeSend: (onStop, onSend) => {
         if (this.generation !== generation) throw new Error(PLUGIN_RESTART_MESSAGE);
+        stop = onStop;
         return () => {
           armed = true;
+          // A turn with no event yet is still checked, about a second in.
+          timer = setTimeout(check, ARMED_CHECK_MS);
+          timer.unref?.();
           onSend();
         };
       },
-      atEvent: (directory, stop) => {
+      sent: async (request) => {
+        await request;
+        if (armed) check();
+      },
+      atEvent: (directory) => {
         if (!armed || checked) return false;
         checked = true;
-        restartedEarly = this.restartFor([cwd, directory]);
-        if (restartedEarly) stop(new Error(PLUGIN_RESTART_MESSAGE));
-        return restartedEarly;
+        turnDir = directory;
+        return check();
       },
       afterTurn: (directory) => {
+        clearTimeout(timer);
         if (!restartedEarly) this.restartFor([cwd, directory]);
       },
     };
