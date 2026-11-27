@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(api): GET /api/relay/stream is gone; console traffic comes on /api/events (DOR-4986)'
+  - 'feat(api): tunnel_status must name its audience, or it is dropped (DOR-4986)'
 ---
 
 ### Removed

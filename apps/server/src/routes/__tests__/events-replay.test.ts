@@ -227,10 +227,14 @@ describe('tunnel status on GET /api/events (it replaced GET /api/tunnel/stream)'
     expect(agentText).not.toContain('tunnel_status');
   });
 
-  it('asks the rule GET /api/tunnel/status asks: a person or their key, never an agent', () => {
-    expect(frontDoorReadAudience({ kind: 'operator' })).toBe(true);
-    expect(frontDoorReadAudience({ kind: 'program', userId: 'u1' })).toBe(true);
-    expect(frontDoorReadAudience({ kind: 'agent' })).toBe(false);
-    expect(frontDoorReadAudience({ kind: 'relayed' })).toBe(false);
+  it('drops a tunnel_status that names no audience, so an unwired sender leaks nothing', async () => {
+    const person = stream({});
+    await person((t) => t.includes('event: connected'));
+    // @ts-expect-error The tunnel's status must name who may read it.
+    eventFanOut.broadcast('tunnel_status', { unaddressed: true });
+    eventFanOut.broadcast('tasks_changed', { after: 'unaddressed' });
+    expect(await person((t) => t.includes('"after":"unaddressed"'))).not.toContain(
+      '"unaddressed":true'
+    );
   });
 });

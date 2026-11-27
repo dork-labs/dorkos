@@ -76,11 +76,13 @@ export const ROOM_EVENT_PREFIX = 'room_';
  * halves read: {@link ScopedEventLiteral} for typed calls, and
  * {@link requiresAudience} for calls the types cannot see. An in-process
  * listener hears these whatever their audience, so it must never forward one
- * ({@link EventFanOut.subscribe}, contract 3).
+ * ({@link EventFanOut.subscribe}, contract 3). `tunnel_status` is here because
+ * it carries this computer's public address, which an agent must never read
+ * (DOR-3650): an unaddressed one fails the typecheck and is dropped.
  */
-export const SCOPED_EXACT_EVENTS = { read_cursor: true } as const;
+export const SCOPED_EXACT_EVENTS = { read_cursor: true, tunnel_status: true } as const;
 
-/** The event names that must name an audience: room events and read cursors. */
+/** The event names that must name an audience: room events, read cursors, the tunnel. */
 type ScopedEventLiteral =
   | Extract<DorkOsEventType, `${typeof ROOM_EVENT_PREFIX}${string}`>
   | keyof typeof SCOPED_EXACT_EVENTS;

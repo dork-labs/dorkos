@@ -99,7 +99,8 @@ export function ownerOnlyAudience(principal: CallerPrincipal): boolean {
  * an agent identity. The tunnel's status uses it on `GET /api/events` and
  * `GET /api/tunnel/status` alike (DOR-3650), so the stream and the route
  * answer the same callers. Only HTTP principals pass: a chat-platform button or
- * the session relay never reads front-door state.
+ * the session relay never reads front-door state. Kept apart from the inbox's
+ * `operatorAudience` on purpose: front-door state may tighten on its own.
  *
  * @param principal - What the connection registered itself as.
  */
