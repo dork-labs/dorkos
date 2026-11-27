@@ -41,9 +41,10 @@ export function registerExtensionListOpenApi(registry: OpenAPIRegistry): void {
     tags: ['Extensions'],
     summary: 'List installed extensions',
     description:
-      'Every extension DorkOS found, with where it stands: each copy that runs, by id Z to A, ' +
-      'then each older copy a newer one from the same trusted source shadows, with `shadowedBy` ' +
-      'set. An extension installed, removed or rescanned while paging can repeat or be missed.' +
+      'Every extension DorkOS found, with where it stands, in the order DorkOS found them: each ' +
+      'copy that runs, then each older copy a newer one from the same trusted source shadows, ' +
+      'with `shadowedBy` set. Every page in turn is the whole list in that order. An extension ' +
+      'installed, removed or rescanned while paging can repeat or be missed.' +
       EXTENSION_PAGES,
     request: { query: PageQuerySchema },
     responses: {

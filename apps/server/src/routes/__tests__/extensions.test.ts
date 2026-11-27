@@ -166,17 +166,21 @@ describe('Extension Routes', () => {
   }
 
   describe('GET /api/extensions', () => {
-    it('pages the copies that run, by id Z to A, then the copies they shadow', async () => {
-      const ids = (body: { extensions: { id: string; shadowedBy?: string }[] }) =>
-        body.extensions.map((e) => `${e.id}${e.shadowedBy ? ' (old)' : ''}`);
-      manager.listPublic.mockReturnValue([stubPublicRecord({ id: 'a' }), stubPublicRecord()]);
-      manager.listShadowedPublic.mockReturnValue([stubPublicRecord({ shadowedBy: '/x' })]);
-      const first = await request(fixtureServer).get('/api/extensions?limit=2');
-      expect(ids(first.body)).toEqual(['test-ext', 'a']);
-      const rest = await request(fixtureServer).get(
-        `/api/extensions?cursor=${first.body.nextCursor}`
+    it('reads, page by page, exactly the array it answered before it paged', async () => {
+      const running = ['zed', 'alpha', 'mid'].map((id) => stubPublicRecord({ id }));
+      const shadowed = ['/p1', '/p2'].map((at) =>
+        stubPublicRecord({ id: 'alpha', shadowedBy: at })
       );
-      expect([ids(rest.body), rest.body.nextCursor]).toEqual([['test-ext (old)'], null]);
+      manager.listPublic.mockReturnValue(running);
+      manager.listShadowedPublic.mockReturnValue(shadowed);
+      const read: unknown[] = [];
+      for (let cursor = ''; ;) {
+        const page = await request(fixtureServer).get(`/api/extensions?limit=2${cursor}`);
+        read.push(...page.body.extensions);
+        if (!page.body.nextCursor) break;
+        cursor = `&cursor=${page.body.nextCursor}`;
+      }
+      expect(read).toEqual([...running, ...shadowed]);
     });
 
     it('refuses a cursor it did not give, rather than starting over', async () => {

@@ -18,23 +18,13 @@ import type { Hono } from 'hono';
 import { problem } from '@dorkos/http-kit';
 import type { ApiEnv } from '../http/api-chain.js';
 import { answerPage } from '../lib/paging/hand-route-page.js';
-import type { PageKey } from '../lib/paging/keyset-page.js';
+import { listPosition } from '../lib/paging/keyset-page.js';
 import { logger } from '../lib/logger.js';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
 import { BINDINGS_STARTING } from './relay-problems.js';
 
 /** The empty first part of a key, for a list whose rows have no time. */
 const NO_TIME = '';
-
-/**
- * A row's place in a list kept in a set order: earlier rows sort first under
- * the pager's newest-first order.
- *
- * @param index - The row's place in the list, from 0.
- */
-function inListOrder(index: number): PageKey {
-  return [NO_TIME, String(999_999 - index).padStart(6, '0')];
-}
 
 /**
  * Mount the three lists. Register them before the `/:id` reads beside them.
@@ -49,7 +39,7 @@ export function registerAdapterListRoutes(router: Hono<ApiEnv>, adapterManager: 
         list: 'relay-adapter-catalog',
         noun: 'entries',
         read: () => adapterManager.getCatalog().map((entry, index) => ({ entry, index })),
-        keyOf: ({ index }) => inListOrder(index),
+        keyOf: ({ entry, index }) => [listPosition(index), entry.manifest.type],
         show: ({ entry }) => entry,
       });
     } catch (err) {

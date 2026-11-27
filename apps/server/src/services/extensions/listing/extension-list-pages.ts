@@ -6,7 +6,7 @@
  * a tie.
  *
  * None of these rows carries a time that never changes, so each key says what
- * it is. Mini apps and approvals come and go with a rescan or an answer, so
+ * it is: the installed list keeps its own order, the others go by id or plugin. Mini apps and approvals come and go with a rescan or an answer, so
  * one can repeat or be missed across pages; the OpenAPI descriptions say so.
  *
  * Two lists show a reader that is not the person (an agent) the same rows
@@ -20,16 +20,18 @@ import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import type { ExtensionApprovalSet } from '@dorkos/shared/extension-approval-schemas';
 import type { StaleExtensionApproval } from '@dorkos/shared/extension-list-schemas';
 import { answerPage } from '../../../lib/paging/hand-route-page.js';
-import type { PageKey } from '../../../lib/paging/keyset-page.js';
+import { listPosition, type PageKey } from '../../../lib/paging/keyset-page.js';
 import type { ExtensionManager } from '../extension-manager.js';
 
 /** The empty first part of a key, for a list whose rows have no time: the order is by id alone. */
 const NO_TIME = '';
 
 /**
- * Answer one page of `GET /api/extensions`: every copy that runs (by id, Z to
- * A), then each older copy a newer one of the same trusted source shadows.
- * Shadowed copies of one id keep the order discovery found them in.
+ * Answer one page of `GET /api/extensions`, in the order the whole list has
+ * always come in: every copy that runs, in discovery order, then each older
+ * copy a newer one of the same trusted source shadows. The key is each row's
+ * place in that order, so a reader of every page gets the same array the list
+ * answered before it paged. A rescan between pages can repeat or miss a row.
  *
  * @param c - The Hono context.
  * @param manager - The extension manager.
@@ -41,23 +43,12 @@ export function answerExtensionList(
   return answerPage(c, {
     list: 'extensions',
     noun: 'extensions',
-    read: () => {
-      const seen = new Map<string, number>();
-      const shadowed = manager.listShadowedPublic().map((record) => {
-        const copy = `${record.id}\u0000${record.shadowedBy ?? ''}`;
-        const n = (seen.get(copy) ?? 0) + 1;
-        seen.set(copy, n);
-        // A higher number sorts first: count down so the first copy found leads.
-        const key: PageKey = ['0', `${copy}\u0000${String(1e6 - n).padStart(7, '0')}`];
-        return { record, key };
-      });
-      const running = manager.listPublic().map((record) => ({
+    read: () =>
+      [...manager.listPublic(), ...manager.listShadowedPublic()].map((record, index) => ({
         record,
-        key: ['1', record.id] as PageKey,
-      }));
-      return [...running, ...shadowed];
-    },
-    keyOf: ({ key }) => key,
+        index,
+      })),
+    keyOf: ({ record, index }): PageKey => [listPosition(index), record.id],
     show: ({ record }): ExtensionRecordPublic => record,
   });
 }

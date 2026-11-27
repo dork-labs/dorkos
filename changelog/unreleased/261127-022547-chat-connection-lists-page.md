@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(api): the chat connection lists come a page at a time (DOR-4982)'
+  - 'fix(api): the installed mini app list pages in the order it always came in (DOR-4982)'
 ---
 
 ### Changed

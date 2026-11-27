@@ -22,7 +22,8 @@ interface ExtensionListPage {
 }
 
 /**
- * Every extension that runs, read page by page in the server's order. An older copy
+ * Every extension that runs, read page by page in the server's order (the order
+ * DorkOS found them, which loading follows). An older copy
  * a newer one shadows is listed for extensions to read, never for the app to
  * draw, load or toggle (spec `flow-multiproject` §9.2).
  *
