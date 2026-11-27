@@ -79,12 +79,20 @@ export function seatCarryOf(row: NewChatMessage): AsideCarry {
   );
 }
 
+/**
+ * An agent's name as seat copy shows it: sanitized, defused, at most three words.
+ *
+ * @param raw - The server-held display name, if any.
+ * @param fallback - What to say when there is no usable name.
+ */
+export function seatName(raw: string | null | undefined, fallback: string): string {
+  return defuseMarkers(defuseUntrustedPrompt(sanitizeIdentity(raw ?? '') ?? fallback))
+    .split(/\s+/u)
+    .slice(0, 3)
+    .join(' ');
+}
+
 /** A short local trace, using server names only and never body/title/summary. */
 export function seatMessageNotice(sender: string, receiver: string): string {
-  const name = (raw: string) =>
-    defuseMarkers(defuseUntrustedPrompt(sanitizeIdentity(raw) ?? 'An agent'))
-      .split(/\s+/u)
-      .slice(0, 3)
-      .join(' ');
-  return `${name(sender)} sent ${name(receiver)} a private message.`;
+  return `${seatName(sender, 'An agent')} sent ${seatName(receiver, 'An agent')} a private message.`;
 }
