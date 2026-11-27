@@ -327,7 +327,8 @@ async function main() {
   const rss = procStatus(child.pid, 'VmRSS');
   if (rss) console.log(`INFO  memory while serving: ${rss}`);
 
-  // Cloud stops a sleeping hub with SIGINT and a 5-second grace period.
+  // When the hosting service has to stop a hub (a hub ends its own wake by
+  // exiting with status zero), it sends SIGINT with a 5-second grace period.
   const stopStarted = Date.now();
   child.kill('SIGINT');
   const stopCode = await exitWithin(child, 5_000);
