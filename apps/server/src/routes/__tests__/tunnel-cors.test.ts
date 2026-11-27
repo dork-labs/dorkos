@@ -269,7 +269,7 @@ function answer(
 // this computer or the person's own tunnel. A page on any other site must get no
 // CORS grant to read it, and a rebound Host must not reach it at all.
 describe('Remote Access reads refuse a foreign page and a foreign Host (DOR-3650)', () => {
-  const READS = ['/api/tunnel/status', '/api/tunnel/stream'];
+  const READS = ['/api/tunnel/status'];
 
   beforeEach(() => {
     vi.clearAllMocks();

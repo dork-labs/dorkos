@@ -52,6 +52,22 @@ export type ActionConsent = 'third-party-code' | 'standing-grant';
 export type McpServerId = 'in-session' | 'external';
 
 /**
+ * What an API operation promises an outside caller (ADR `261123-170832`),
+ * carried as `x-stability` on every operation in the OpenAPI document:
+ *
+ * - `stable`: meant for outside callers. It changes only by a breaking change
+ *   that fixes every caller in the repo and says so in the changelog.
+ * - `preview`: new or still being reshaped. Published, with a note that it may
+ *   change in any release.
+ * - `internal`: only DorkOS's own app, command line or desktop app calls it.
+ *   Served, but left out of the published document and the site.
+ */
+export const API_STABILITIES = ['stable', 'preview', 'internal'] as const;
+
+/** One of {@link API_STABILITIES}. */
+export type ApiStability = (typeof API_STABILITIES)[number];
+
+/**
  * HTTP methods a capability's `http` surface can project into OpenAPI.
  * Lowercase to match the OpenAPI document's path-item method keys.
  */
@@ -232,13 +248,19 @@ export type HttpPrecheck = 'connector-store';
  * path's `{name}` segments (see {@link HttpSurface.params}), the query string
  * (see {@link HttpSurface.query}) and, for `post`/`put`/`patch`, the JSON body.
  *
- * Still to come, each in its own change: the error codes a route may answer,
- * its page shape and its stability. Each joins this interface as a field of
- * its own.
+ * Still to come, each in its own change: the error codes a route may answer
+ * and its page shape. Each joins this interface as a field of its own.
  */
 export interface HttpSurface {
   /** HTTP method for the route. */
   method: HttpMethod;
+  /**
+   * What the route promises outside callers, emitted as `x-stability`. Absent,
+   * it is `internal` in a route group the document marks internal and
+   * `preview` everywhere else: a route is promised `stable` only by this line.
+   * See {@link ApiStability} and `contributing/api-reference.md`.
+   */
+  stability?: ApiStability;
   /** Route path in OpenAPI form, e.g. `/api/agents/{agentId}/pause`. */
   path: string;
   /**

@@ -163,13 +163,12 @@ describe('stopping a relay-dispatched run, end to end', () => {
   });
 
   it('is not made to look delivered by somebody merely WATCHING the bus', async () => {
-    // `GET /api/relay/stream?subject=relay.system.>` registers a passive
-    // handler exactly like this one, and the publish pipeline counts any
-    // handler that does not refuse as a delivery. If a stop can match a
-    // watcher's pattern, every Stop answers 200 while nothing was stopped and
-    // the honest `unconfirmed` answer becomes unreachable. The stop subject
-    // lives outside every pattern that route will accept, which is what this
-    // pins — the widest one it allows is `relay.system.>`.
+    // A watcher on `relay.system.>` (the removed `GET /api/relay/stream` was
+    // one) registers a passive handler exactly like this one, and the publish
+    // pipeline counts any handler that does not refuse as a delivery. If a
+    // stop can match a watcher's pattern, every Stop answers 200 while nothing
+    // was stopped and the honest `unconfirmed` answer becomes unreachable. The
+    // stop subject lives outside `relay.system.>`, which is what this pins.
     const observed: RelayEnvelope[] = [];
     relay.subscribe('relay.system.>', (envelope) => {
       observed.push(envelope);

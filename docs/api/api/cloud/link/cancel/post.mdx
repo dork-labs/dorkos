@@ -10,7 +10,11 @@ _openapi:
   structuredData:
     headings: []
     contents:
-      - content: Stops polling at once between token requests. A token request already
+      - content: >-
+          **Preview.** This operation may change in any release.
+
+
+          Stops polling at once between token requests. A token request already
           sent finishes first, and a key it issues is kept. Settles in `linked`
           while this instance holds a key, else `idle`, and answers that state.
 ---

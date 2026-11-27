@@ -1,15 +1,14 @@
 /**
- * Tunnel route — endpoints to start/stop/stream ngrok tunnel status.
+ * Tunnel route — endpoints to start and stop the ngrok tunnel and read its status.
+ * Status changes stream on `GET /api/events` (`tunnel_status`).
  *
  * @module routes/tunnel
  */
 import { createHash } from 'node:crypto';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { problem } from '@dorkos/http-kit';
-import type { TunnelStatus } from '@dorkos/shared/types';
 import type { ApiEnv } from '../http/api-chain.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
-import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { env } from '../env.js';
 import { getLocalCockpitPort } from '../lib/trusted-origins.js';
@@ -49,33 +48,6 @@ const refuseAgentRead: MiddlewareHandler<ApiEnv> = async (c, next) =>
 
 /** GET /api/tunnel/status — on-demand status check. */
 router.get('/status', refuseAgentRead, (c) => c.json(tunnelManager.status));
-
-/**
- * GET /api/tunnel/stream — SSE endpoint for real-time tunnel status events.
- * Written straight to the Node response (`http/raw-node-stream.ts`), and held
- * open until the client leaves.
- */
-router.get('/stream', refuseAgentRead, (c) =>
-  streamToNodeResponse(c, async (res, { signal }) => {
-    logger.warn('[DEPRECATED] GET /api/tunnel/stream — use GET /api/events instead');
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-    });
-
-    // Send current status immediately on connection
-    res.write(`event: tunnel_status\ndata: ${JSON.stringify(tunnelManager.status)}\n\n`);
-
-    const handler = (status: TunnelStatus) => {
-      res.write(`event: tunnel_status\ndata: ${JSON.stringify(status)}\n\n`);
-    };
-
-    tunnelManager.on('status_change', handler);
-    if (!signal.aborted) await new Promise((resolve) => signal.addEventListener('abort', resolve));
-    tunnelManager.off('status_change', handler);
-  })
-);
 
 /**
  * The `409 tunnel_running` for a tunnel already open, with its address in

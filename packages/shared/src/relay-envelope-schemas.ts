@@ -570,12 +570,12 @@ export type TaskDispatchPayload = z.infer<typeof TaskDispatchPayloadSchema>;
  * do instead — a subscription the adapter registers on start.
  *
  * NOT under `relay.system.` at all, which is subtler and worse. A subscriber is
- * counted as a DELIVERY unless it explicitly refuses, and `GET
- * /api/relay/stream` lets anyone watch `relay.system.>` with a handler that
- * only forwards what it sees. A watcher attached to a stop's subject therefore
- * makes every stop report "delivered" while nothing was stopped — the honest
- * "nobody took it" answer becomes unreachable precisely when it is true.
- * `relay.control.` is outside every prefix that route will accept, and the bus
+ * counted as a DELIVERY unless it explicitly refuses, and a watcher on
+ * `relay.system.>` (the removed `GET /api/relay/stream` was one) has a handler
+ * that only forwards what it sees. A watcher attached to a stop's subject
+ * therefore makes every stop report "delivered" while nothing was stopped — the
+ * honest "nobody took it" answer becomes unreachable precisely when it is true.
+ * `relay.control.` is outside `relay.system.`, and the bus
  * refuses a mailbox there outright — not because a mailbox would swallow the
  * stop (it would not: the Maildir watcher re-dispatches to the same
  * subscribers, so the handler still runs), but because `deliveredTo` would

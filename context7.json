@@ -4,7 +4,7 @@
   "description": "A workspace for people and agents: talk with your agents in channels and threads, run them on a schedule, and let them work your other apps. Open source, on your own machine.",
   "folders": ["docs"],
   "excludeFolders": ["docs/api/api"],
-  "excludeFiles": ["docs/api/openapi.json"],
+  "excludeFiles": ["docs/api/openapi.json", "docs/api/openapi-internal.json"],
   "rules": [],
   "previousVersions": []
 }

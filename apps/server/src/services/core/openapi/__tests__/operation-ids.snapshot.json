@@ -165,7 +165,6 @@
   "GET /api/relay/messages/{id}": "relay.getMessages",
   "GET /api/relay/messages/{messageId}/status": "relay.getMessagesStatus",
   "GET /api/relay/metrics": "relay.getMetrics",
-  "GET /api/relay/stream": "relay.stream",
   "GET /api/relay/unclaimed-chats": "relay.getUnclaimedChats",
   "GET /api/rooms": "rooms.list",
   "GET /api/rooms/threads": "rooms.listThreads",

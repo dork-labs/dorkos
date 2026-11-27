@@ -1,7 +1,7 @@
 /**
  * Contract for the Relay route groups, which move to Hono together in
  * DOR-2811: the message bus (`/api/relay/messages`, `/endpoints`,
- * `/dead-letters`, `/metrics`, the traces and the deprecated `/stream`), the
+ * `/dead-letters`, `/metrics` and the traces; `/stream` is gone), the
  * connections and their chat routes (`/adapters`, `/bindings`), the signed
  * webhook receiver (`POST /webhooks/:adapterId`) and the claim feed
  * (`/unclaimed-chats`). That PR must pass this file unchanged.
@@ -17,9 +17,8 @@
  *    answers, the reserved-sender and reserved-subject refusals, 404s, HEAD,
  *    trailing slashes, and the refusals a caller earns with headers alone.
  * 2. Relay on, login off, driven by hand: a webhook connection signed into
- *    and refused, the byte ceiling, an endpoint registered and read, a chat
- *    route made, moved, tested and deleted for a seeded agent, and the event
- *    stream's first frame.
+ *    and refused, the byte ceiling, an endpoint registered and read, and a
+ *    chat route made, moved, tested and deleted for a seeded agent.
  * 3. Relay on, login on: no credential is refused at the gate, the webhook
  *    receiver included; the owner's cookie passes.
  * 4. Relay off: none of these paths exist.
@@ -349,20 +348,9 @@ contractSuite('the Relay groups, login off, nothing set up', [
     expect: { status: 200, headers: JSON_TYPE, schema: z.object({}).loose() },
   },
   {
-    name: 'GET /stream with an unscoped pattern is refused',
-    path: '/api/relay/stream?subject=%3E',
-    expect: {
-      status: 400,
-      body: problemBody('invalid_request', {
-        detail: 'That subject pattern isn’t one this stream allows.',
-        extensions: { allowedPrefixes: ['relay.human.console.', 'relay.system.', 'relay.signal.'] },
-      }),
-    },
-  },
-  {
-    name: 'GET /stream with a pattern outside the allowed prefixes is refused',
-    path: '/api/relay/stream?subject=relay.agent.%3E',
-    expect: { status: 400, schema: problemWith('invalid_request') },
+    name: 'GET /stream is gone: live Relay activity is on GET /api/events',
+    path: '/api/relay/stream',
+    expect: { status: 404, body: NOT_FOUND },
   },
   // --- adapters ---
   {
@@ -714,30 +702,6 @@ async function check(
   await checkContractCase(server!.baseUrl, { name: ask.path, ...ask });
 }
 
-/** The first event-stream frame a server sends, its status and headers, then the stream closed. */
-function firstFrame(
-  server: ComposedServer | undefined,
-  url: string
-): Promise<{ status: number; headers: http.IncomingHttpHeaders; frame: string }> {
-  return new Promise((resolve, reject) => {
-    const req = http.get(new URL(url, server!.baseUrl), (res) => {
-      let text = '';
-      res.setEncoding('utf8');
-      res.on('data', (chunk: string) => {
-        text += chunk;
-        const end = text.indexOf('\n\n');
-        if (end === -1) return;
-        resolve({ status: res.statusCode ?? 0, headers: res.headers, frame: text.slice(0, end) });
-        req.destroy();
-      });
-      res.on('error', () => undefined);
-    });
-    req.on('error', (error) => {
-      if (!req.destroyed) reject(error);
-    });
-  });
-}
-
 /**
  * The status line a server answers a chunked upload of `bytes` bytes with, a
  * body whose length nothing declared up front, so only counting can stop it.
@@ -843,32 +807,6 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
     await sink?.close();
     if (agent) rmSync(agent.agentDir, { recursive: true, force: true });
   }, 30_000);
-
-  it('streams relay events, opening with relay_connected', async () => {
-    const { status, headers, frame } = await firstFrame(
-      server,
-      '/api/relay/stream?subject=relay.human.console.contract'
-    );
-    expect(status).toBe(200);
-    expect(headers['content-type']).toBe('text/event-stream');
-    expect(headers['cache-control']).toBe('no-cache');
-    expect(headers['x-accel-buffering']).toBe('no');
-    expect(headers['x-content-type-options']).toBe('nosniff');
-    const [event, data] = frame.split('\n');
-    expect(event).toBe('event: relay_connected');
-    expect(JSON.parse(data!.replace(/^data: /, ''))).toEqual({
-      pattern: 'relay.human.console.contract',
-      connectedAt: expect.any(String),
-    });
-    // The server is still answering after the client left.
-    await check(server, { path: '/api/relay/metrics', expect: { status: 200 } });
-  });
-
-  it('streams the console pattern when no subject is named', async () => {
-    const { status, frame } = await firstFrame(server, '/api/relay/stream');
-    expect(status).toBe(200);
-    expect(frame).toContain('"pattern":"relay.human.console.>"');
-  });
 
   it('registers an endpoint, reads its inbox, and removes it', async () => {
     const subject = `contract.mailbox.${randomUUID().slice(0, 8)}`;
@@ -1233,7 +1171,6 @@ describe('contract: the Relay groups with login on', () => {
       ['POST', '/api/relay/messages'],
       ['GET', `/api/relay/messages/${UNKNOWN_MESSAGE_ID}/status`],
       ['GET', '/api/relay/endpoints'],
-      ['GET', '/api/relay/stream'],
       ['GET', '/api/relay/adapters'],
       ['GET', '/api/relay/bindings'],
       ['POST', '/api/relay/bindings/x/test'],
@@ -1308,11 +1245,6 @@ contractSuite(
     {
       name: 'GET /unclaimed-chats does not exist',
       path: '/api/relay/unclaimed-chats',
-      expect: { status: 404, body: NOT_FOUND },
-    },
-    {
-      name: 'GET /stream does not exist',
-      path: '/api/relay/stream',
       expect: { status: 404, body: NOT_FOUND },
     },
     {

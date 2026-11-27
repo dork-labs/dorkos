@@ -264,7 +264,7 @@ export function useRelayConversations(enabled = true) {
 
 Put the subscription in the hook that owns the query, so the list stays live on every surface that shows it. A poll stays only as a backstop for changes no event announces, and `QUERY_TIMING.EVENT_BACKSTOP_REFETCH_MS` is the default for that.
 
-> **Migration note**: The unified stream replaces raw `new EventSource('/api/tunnel/stream')` and per-endpoint SSE hooks that each opened a dedicated HTTP connection. Use `useEventSubscription('event_name', handler)` instead for all system-wide events. The per-session durable stream (`GET /api/sessions/:id/events`) is owned by `StreamManager` — do not open ad-hoc per-session streams.
+> **One stream**: the unified stream replaced the per-endpoint streams (the tunnel and Relay ones are gone from the server). Use `useEventSubscription('event_name', handler)` instead for all system-wide events. The per-session durable stream (`GET /api/sessions/:id/events`) is owned by `StreamManager` — do not open ad-hoc per-session streams.
 
 ### ETag Caching on Messages
 

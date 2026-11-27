@@ -1088,9 +1088,10 @@ not: it is not under `relay.system.tasks.`, which the adapter claims for
 delivery — `deliver()` holds a concurrency slot for the whole run, so a stop
 routed through it queues behind the run it is trying to end. And it is not under
 `relay.system.` at all, because a subscriber counts as a DELIVERY unless it
-explicitly refuses, and `GET /api/relay/stream` lets anyone watch
-`relay.system.>` with a handler that only forwards what it sees — a watcher on a
-stop's subject makes every Stop report success while nothing was stopped. The
+explicitly refuses, and a watcher on `relay.system.>` (the removed
+`GET /api/relay/stream` was one) has a handler that only forwards what it sees —
+a watcher on a stop's subject makes every Stop report success while nothing was
+stopped. The
 namespace is reserved in the bus itself (`packages/relay/src/lib/reserved-subjects.ts`),
 which both the agent tool surface and `POST /api/relay/endpoints` consult, and
 `EndpointRegistry` refuses a `relay.control.*` mailbox outright with no opt-out.

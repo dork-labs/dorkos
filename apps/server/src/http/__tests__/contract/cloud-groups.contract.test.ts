@@ -1,8 +1,8 @@
 /**
  * Contract for the cloud and remote-access route groups, which move to Hono
  * together in DOR-2806: the DorkOS account (`/api/cloud`), its hosted spaces
- * (`/api/cloud/communities`), the person's own tunnel (`/api/tunnel`, with its
- * event stream) and DorkOS managed remote access (`/api/remote-access`). That
+ * (`/api/cloud/communities`), the person's own tunnel (`/api/tunnel`; its
+ * status changes stream on `/api/events`) and DorkOS managed remote access (`/api/remote-access`). That
  * PR must pass this file unchanged.
  *
  * Nothing here leaves the machine. Every server is a `DORKOS_TEST_RUNTIME`
@@ -15,7 +15,7 @@
  * 1. Login off, unlinked: every read's shape, the writes' refusals and
  *    not-linked answers, 404s, HEAD, trailing slashes, the refusals a caller
  *    earns with headers alone, and the hosted-space gate with spaces off.
- * 2. Login off, driven by hand: the tunnel's event stream; an account linked
+ * 2. Login off, driven by hand: an account linked
  *    through the fake approval page, read, refused by the fake where it serves
  *    nothing, checked and unlinked; the hosted spaces with spaces on.
  * 3. Login off, reached at a trusted host name that is not this computer:
@@ -24,7 +24,6 @@
  *    a person, so it may not start a tunnel, link the account or change remote
  *    access; the owner's cookie may.
  */
-import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
@@ -660,30 +659,6 @@ async function setup(
   return { json: text ? (JSON.parse(text) as Record<string, unknown>) : {}, headers: res.headers };
 }
 
-/** The first event-stream frame a server sends, its status and headers, then the stream closed. */
-function firstFrame(
-  server: ComposedServer | undefined,
-  url: string
-): Promise<{ status: number; headers: http.IncomingHttpHeaders; frame: string }> {
-  return new Promise((resolve, reject) => {
-    const req = http.get(new URL(url, server!.baseUrl), (res) => {
-      let text = '';
-      res.setEncoding('utf8');
-      res.on('data', (chunk: string) => {
-        text += chunk;
-        const end = text.indexOf('\n\n');
-        if (end === -1) return;
-        resolve({ status: res.statusCode ?? 0, headers: res.headers, frame: text.slice(0, end) });
-        req.destroy();
-      });
-      res.on('error', () => undefined);
-    });
-    req.on('error', (error) => {
-      if (!req.destroyed) reject(error);
-    });
-  });
-}
-
 /** Poll until `ready` holds or the budget runs out. */
 async function eventually(ready: () => Promise<boolean>, what: string): Promise<void> {
   const deadline = Date.now() + 15_000;
@@ -702,22 +677,6 @@ describe('contract: the cloud and tunnel groups, driven by hand (login off)', ()
   afterAll(async () => {
     await server?.close();
   }, 30_000);
-
-  it('streams the tunnel’s status as an event stream, then lets the client go', async () => {
-    const { status, headers, frame } = await firstFrame(server, '/api/tunnel/stream');
-    expect(status).toBe(200);
-    expect(headers['content-type']).toBe('text/event-stream');
-    expect(headers['cache-control']).toBe('no-cache');
-    expect(headers['x-content-type-options']).toBe('nosniff');
-    const [event, data] = frame.split('\n');
-    expect(event).toBe('event: tunnel_status');
-    expect(TUNNEL_STATUS.parse(JSON.parse(data!.replace(/^data: /, '')))).toBeTruthy();
-    // The server is still answering after the client left.
-    await check(server, {
-      path: '/api/tunnel/status',
-      expect: { status: 200, schema: TUNNEL_STATUS },
-    });
-  });
 
   it('links the account through the approval page, reads it, and unlinks', async () => {
     const started = await setup(server, 'POST', '/api/cloud/link/start');
@@ -1083,7 +1042,6 @@ describe('contract: the same groups with login on', () => {
       ['POST', '/api/cloud/link/start'],
       ['GET', '/api/cloud/communities/sign-in'],
       ['GET', '/api/tunnel/status'],
-      ['GET', '/api/tunnel/stream'],
       ['POST', '/api/tunnel/stop'],
       ['GET', '/api/remote-access/report'],
       ['POST', '/api/remote-access/close'],
