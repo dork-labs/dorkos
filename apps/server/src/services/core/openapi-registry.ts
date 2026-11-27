@@ -2219,33 +2219,6 @@ registry.registerPath({
   },
 });
 
-registry.registerPath({
-  method: 'get',
-  path: '/api/relay/stream',
-  tags: ['Relay'],
-  summary: 'SSE event stream for relay activity',
-  description:
-    'Server-Sent Events stream for real-time relay activity. ' +
-    'Supports server-side subject filtering via query param. ' +
-    'Event types: relay_connected, relay_message, relay_delivery, relay_dead_letter, relay_metrics.',
-  request: {
-    query: z.object({
-      subject: z.string().optional().openapi({ description: 'Subject pattern filter' }),
-    }),
-  },
-  responses: {
-    500: INTERNAL_ERROR_RESPONSE,
-    200: {
-      description: 'SSE event stream',
-      content: {
-        'text/event-stream': {
-          schema: z.string().openapi({ description: 'Server-Sent Events stream' }),
-        },
-      },
-    },
-  },
-});
-
 // --- Mesh ---
 
 registry.registerPath({

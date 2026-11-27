@@ -455,7 +455,13 @@ Unified SSE stream for all real-time system events, on one connection. Clients f
 
 **The contract** (ADR `261123-170833`). Every event is a `DorkOsEvent`, `{ seq, at, type, payload }`, and every type is a member of one union in `packages/shared/src/dorkos-events.ts`, which also names each type's area (a permission area, or `null` with a note). The fan-out's `broadcast` only takes members, `event-union-census.test.ts` checks every call site, and the client's `GENERIC_EVENTS` derives from the union. On this stream `type` is the `event:` name, `payload` the `data:` (unchanged), and `seq` the last part of the frame id. `seq` only grows within one stream, may skip numbers, and is never compared across streams. A new domain adds its own table to the union.
 
-**Replay.** Every broadcast frame carries `id: events-<epoch>-<generation>-<seq>`, written by `streamFrameId` and read by `parseResumeCursor` like the chat and room streams. `Last-Event-ID` (or `?resume=` on the socket) inside the window replays the gap, filtered per reader by the same audience and redaction rules, asked with the rights the reader has when it resumes (a room's membership now, not when the event was sent), and the `connected` frame says `resumed: true`. The window is `EVENT_REPLAY_LIMITS` in `lib/event-stream/event-replay-buffer.ts` (500 events, 512 KiB counted as the bytes of both wire renderings; an event over the whole budget is sent live, not kept, and empties the window). The API document describes what is sent today: `event:` is the type, `data:` the bare payload, `id:` the opaque cursor; the envelope on the wire is DOR-5474. A cursor older than the window, ahead of the counter, from another generation or process, or for another stream is a cold connect: `connected` and the `session_status` snapshot, the same answer the chat stream gives when its replay floor has moved past a cursor. The opening frames (`connected`, the snapshot) carry no id. Three older streams overlap it: `GET /api/tunnel/stream`, `GET /api/extensions/events` and `GET /api/relay/stream`. They are `internal` (see [Stability](#stability); `/api/tunnel/stream` is not documented at all) until `/api/events` carries everything they do, and then each is removed in the change that moves every caller onto `/api/events` (ADR `261123-170833`, A7, DOR-4986). New code reads `/api/events` only.
+**Replay.** Every broadcast frame carries `id: events-<epoch>-<generation>-<seq>`, written by `streamFrameId` and read by `parseResumeCursor` like the chat and room streams. `Last-Event-ID` (or `?resume=` on the socket) inside the window replays the gap, filtered per reader by the same audience and redaction rules, asked with the rights the reader has when it resumes (a room's membership now, not when the event was sent), and the `connected` frame says `resumed: true`. The window is `EVENT_REPLAY_LIMITS` in `lib/event-stream/event-replay-buffer.ts` (500 events, 512 KiB counted as the bytes of both wire renderings; an event over the whole budget is sent live, not kept, and empties the window).
+
+The API document describes what is sent today: `event:` is the type, `data:` the bare payload, `id:` the opaque cursor; the envelope on the wire is DOR-5474. A cursor older than the window, ahead of the counter, from another generation or process, or for another stream is a cold connect: `connected` and the snapshot, the same answer the chat stream gives when its replay floor has moved past a cursor.
+
+**The snapshot** is the current `tunnel_status` (to a reader `frontDoorReadAudience` admits: the person or their key, never an agent) and the `session_status` frames. The opening frames (`connected`, the snapshot) carry no id.
+
+**Retired streams.** `GET /api/tunnel/stream`, `GET /api/extensions/events` and `GET /api/relay/stream` are gone (ADR `261123-170833`, A7, DOR-4986): their events ride `/api/events`, except the relay stream's `relay.system.*` and `relay.signal.*` subjects, which no screen read. `/api/events` takes no subject filter. New code reads `/api/events` only.
 
 **Events:**
 
@@ -466,7 +472,7 @@ Unified SSE stream for all real-time system events, on one connection. Clients f
 | `session_upserted`   | Session created or metadata changed                                                                                   | `{ session: Session }`                            |
 | `session_removed`    | Session deleted                                                                                                       | `{ sessionId: string }`                           |
 | `session_status`     | Session status projection changed; `retiredSessionId` announces a first-turn rekey (drop state held under the old id) | `{ sessionId, cwd?, retiredSessionId?, status }`  |
-| `tunnel_status`      | Tunnel state changed                                                                                                  | Tunnel status object                              |
+| `tunnel_status`      | Tunnel state changed; also in every connect's opening frames. Never sent to an agent                                  | Tunnel status object                              |
 | `extension_reloaded` | Extension(s) recompiled                                                                                               | `{ type, extensionIds: string[], timestamp }`     |
 | `relay_connected`    | Relay SSE connection established                                                                                      | Connection metadata                               |
 | `relay_message`      | New relay message published                                                                                           | Relay envelope                                    |
@@ -1118,28 +1124,6 @@ Relay system metrics.
 **Responses:**
 
 - `200` - `{ totalMessages: number, totalEndpoints: number, totalDeadLetters: number }`
-
-### GET /api/relay/stream
-
-> **Internal until A7.** New code uses `GET /api/events` (event names: `relay_connected`, `relay_message`, `relay_backpressure`, `relay_signal`). This stream is not a strict duplicate yet: it accepts `relay.system.*` and `relay.signal.*` subjects, which `/api/events` does not carry. It is marked `internal`, left out of the published document, until `/api/events` carries those subjects; then it is removed with every caller moved (ADR `261123-170833`, A7, DOR-4986).
-
-SSE event stream for real-time relay activity. Supports server-side subject filtering.
-
-**Query params:**
-
-- `subject` (optional) - Subject pattern filter (e.g., `relay.agent.*`)
-
-**Events:**
-
-- `relay_connected` - Connection established
-- `relay_message` - New message published
-- `relay_delivery` - Message delivered to endpoint
-- `relay_dead_letter` - Message became dead letter
-- `relay_metrics` - Periodic metrics update
-
-**Keepalive:** `: keepalive\n\n` comment every 15 seconds.
-
-**Usage:** Clients should close the EventSource when the relay panel is not visible.
 
 ### GET /api/relay/messages/:id/trace
 
@@ -1935,13 +1919,11 @@ Always available even when the extension system is not initialized.
 
 Compiles the extension and activates it against a server-side mock API. Reports per-slot contribution counts on success, or structured errors with file/line/column on failure.
 
-### SSE Extension Events
+### Extension reload events
 
-**Endpoint**: `GET /api/extensions/events`
+**Endpoint**: `GET /api/events` (the old `GET /api/extensions/events` is gone, ADR `261123-170833`)
 
-> **Still served; to be removed.** New code uses `GET /api/events` (event name: `extension_reloaded`). Under ADR `261123-170833` this stream is removed in the change that moves its callers onto `/api/events`.
-
-**Event**: `extension_reloaded`
+**Event**: `extension_reloaded` (area `extensions`)
 
 ```json
 { "type": "extension_reloaded", "extensionIds": ["ext-id"], "timestamp": 1711461000000 }
@@ -1950,7 +1932,7 @@ Compiles the extension and activates it against a server-side mock API. Reports 
 - `extensionIds` — array of extension IDs that were reloaded
 - `timestamp` — numeric epoch milliseconds (`Date.now()`)
 
-Sent when extensions are recompiled via `reload_extensions` or `create_extension`. The client uses this to trigger a live reload of the extension bundle.
+Sent when extensions are recompiled via `reload_extensions` or `create_extension`, or turned on, approved or reloaded by hand. The app's extension host uses this to reload the bundle; a mini app's frame never opens `/api/events`, and the host's reload is what it sees.
 
 ### Client Configuration
 

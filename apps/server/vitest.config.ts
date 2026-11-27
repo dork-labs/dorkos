@@ -128,8 +128,8 @@ export default defineConfig({
     //   hardcoded literal checked against a shared constant is a drift guard, and it
     //   only guards anything if the constant under test comes from `src/`. The wire
     //   subject is load-bearing beyond formatting — moving it back under
-    //   `relay.system.` puts it inside the pattern `GET /api/relay/stream` will
-    //   accept, where a passive watcher makes every Stop report success (DOR-808).
+    //   `relay.system.` puts it inside a passive watcher's pattern, which makes
+    //   every Stop report success (DOR-808).
     //   Measured: changing the prefix in `src/` with `dist/` left stale reddens 2 with
     //   this alias and 0 without it.
     // - `@dorkos/relay/approver-allowlist` backs `mayApprove`, the single answer to

@@ -384,16 +384,17 @@ This single persistent connection multiplexes all background events, distinguish
 | `config_changed`                | `{ sections: string[], changedAt: string }`                                                                                 | Settings were written. Section names only, never a value. Sent for every write, including one that stored the same value, except one that only saved where you last were in a space. Addressed (see below)        |
 | `community_connections_changed` | `{ changedAt: string }`                                                                                                     | A space connection was added, connected, needs reconnecting, or was removed, for example because you left the space. Nothing else: read `GET /api/community-connections` for your own list. Addressed (see below) |
 | `relay_*`                       | varies                                                                                                                      | Relay adapter activity, message delivery                                                                                                                                                                          |
-| `tunnel_*`                      | varies                                                                                                                      | Tunnel start/stop, URL changes                                                                                                                                                                                    |
+| `tunnel_status`                 | `TunnelStatus`                                                                                                              | Remote access opened, closed, dropped or changed address. A new connection gets the current one in its opening frames. Never sent to an agent                                                                     |
+| `extension_reloaded`            | `{ type: 'extension_reloaded', extensionIds: string[], timestamp: number }`                                                 | Extensions were rebuilt, turned on or approved. Reload what you show of them                                                                                                                                      |
 | `ext:{id}:*`                    | varies                                                                                                                      | Extension-emitted events (namespaced per extension ID)                                                                                                                                                            |
 
 These chat-list events keep sidebars and dashboards live without polling `GET /api/sessions`.
 
-### Six events go only to whoever they are about
+### Seven events go only to whoever they are about
 
-Most events on this stream are written to every connection. Six are not:
+Most events on this stream are written to every connection. Seven are not:
 `interaction_pending`, `approval_pending`, `notification`, `notification_read`,
-`config_changed` and `community_connections_changed`. Each carries something about what your agents are doing, what is waiting on
+`config_changed`, `community_connections_changed` and `tunnel_status`. Each carries something about what your agents are doing, what is waiting on
 you, or what you have set up, so each goes only to a connection that could act on it.
 
 `interaction_pending` carries what an agent is waiting for: the tool it wants to run, the
@@ -405,6 +406,8 @@ value, because settings hold credentials, but which settings you are editing is 
 `community_connections_changed` says only that a space connection changed. It names no
 space, no connection and no person, because this stream cannot tell which of this machine's
 owners a window belongs to. A window that hears it reads its own list back.
+`tunnel_status` carries this computer's public address when remote access is on, so it goes to
+you and to your API keys, never to an agent, the same as `GET /api/tunnel/status`.
 
 `agents_changed` is deliberately NOT filtered. An agent's own roster changing is legitimate news
 for agents as well as people, and that is only safe because the payload is names and ids. It does
@@ -436,7 +439,11 @@ seen this" is a claim only a person looking at a screen can make.
 
 ### What you get when you connect
 
-Shortly after connecting you receive one `session_status` event for every chat the server
+Right after `connected` (and any events you missed) you receive one `tunnel_status` with remote
+access as it is now, unless the connection presents an agent. You never need a second call to
+learn it.
+
+Shortly after connecting you also receive one `session_status` event for every chat the server
 currently sees as working, waiting on a person, or stopped with an error. Chats that are idle
 send nothing, because there is nothing to say about them. Treat these as ordinary `session_status`
 events: same shape, same handler, no special ordering to wait for.
@@ -467,9 +474,8 @@ stream with one from another stream.
 
 <Callout type="info">
   The DorkOS client uses a single `GET /api/events` connection for all background state. The older
-  per-resource streams (`/api/relay/stream`, `/api/tunnel/stream`) are internal: they stay only
-  until `GET /api/events` carries everything they do, and then they are removed. Build integrations
-  against `GET /api/events` only.
+  per-resource streams (`/api/tunnel/stream`, `/api/extensions/events`, `/api/relay/stream`) are
+  gone. Build integrations against `GET /api/events` only.
 </Callout>
 
 ## Chat Write Coordination

@@ -611,11 +611,11 @@ describe('Tunnel Route', () => {
         connected: true,
         url: 'https://made-up.ngrok.io',
       };
-      for (const path of ['/api/tunnel/status', '/api/tunnel/stream']) {
-        const res = await request(server).get(path).set('x-dorkos-agent', 'agent-token');
-        expect(res.status).toBe(403);
-        expect(JSON.stringify(res.body)).not.toContain('made-up.ngrok.io');
-      }
+      const res = await request(server)
+        .get('/api/tunnel/status')
+        .set('x-dorkos-agent', 'agent-token');
+      expect(res.status).toBe(403);
+      expect(JSON.stringify(res.body)).not.toContain('made-up.ngrok.io');
     });
 
     it('returns current tunnel status', async () => {

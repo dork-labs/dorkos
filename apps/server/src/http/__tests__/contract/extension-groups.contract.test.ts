@@ -1199,29 +1199,30 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
     });
   });
 
-  it('streams the deprecated lifecycle events', async () => {
-    const opened = await new Promise<{
-      status: number;
-      headers: http.IncomingHttpHeaders;
-      first: string;
-    }>((resolve, reject) => {
-      const req = http.get(
-        new URL('/api/extensions/events', server!.baseUrl),
-        { agent: false },
-        (res) => {
-          res.setEncoding('utf8');
-          res.once('data', (chunk: string) => {
-            resolve({ status: res.statusCode ?? 0, headers: res.headers, first: chunk });
-            req.destroy();
-          });
+  it('tells a reader of /api/events when an extension reloads', async () => {
+    // `/api/extensions/events` is gone; its one event rides the global stream.
+    const req = http.get(new URL('/api/events', server!.baseUrl), { agent: false });
+    let text = '';
+    try {
+      const res = (await once(req, 'response'))[0] as http.IncomingMessage;
+      res.setEncoding('utf8');
+      for await (const chunk of res) {
+        const connecting = !text.includes('event: connected');
+        text += chunk as string;
+        if (/event: extension_reloaded\ndata: [^\n]*"contract-routed"/.test(text)) break;
+        if (connecting && text.includes('event: connected')) {
+          const answer = await call(server, 'POST', `/api/extensions/${ROUTED}/enable`, {});
+          expect(answer.status, answer.text).toBe(200);
         }
-      );
-      req.on('error', reject);
+      }
+    } finally {
+      req.destroy();
+    }
+    expect(JSON.parse(/event: extension_reloaded\ndata: (.*)\n/.exec(text)![1]!)).toEqual({
+      type: 'extension_reloaded',
+      extensionIds: [ROUTED],
+      timestamp: expect.any(Number),
     });
-    expect(opened.status).toBe(200);
-    expect(opened.headers['content-type']).toBe('text/event-stream; charset=utf-8');
-    expect(opened.headers['cache-control']).toBe('no-cache');
-    expect(opened.first).toBe(':ok\n\n');
   });
 });
 

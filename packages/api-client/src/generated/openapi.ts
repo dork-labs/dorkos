@@ -1205,7 +1205,7 @@ export interface paths {
          * The global event stream (SSE, or WebSocket at the same path)
          * @description **Preview.** This operation may change in any release.
          *
-         *     One stream for the chat list and everything else that changes: rooms, tasks, agents, settings, approvals, Relay, extensions. Each SSE frame is `event:` (the event type), `data:` (that type's payload, described below) and, on every event after the opening frames, `id:` (an opaque resume cursor; send it back whole). Every connect opens with `connected` (with `resumed: true` when it picked up from your cursor), then any missed events, then one `session_status` for each chat that is working, waiting on a person or stopped with an error; those opening frames have no `id:`. The server keeps the last 500 events (at most 512 KiB) for replay, filtered with the rights you have when you reconnect. Over SSE a `heartbeat` frame with empty data arrives every 15 seconds. The same path answers a WebSocket upgrade, which is what the DorkOS app uses: each message a JSON frame `{ event, data, id }`, resuming from `?resume=`. An event addressed to a person (settings, the inbox, an ask's detail) never reaches a reader that presents an agent token.
+         *     One stream for the chat list and everything else that changes: rooms, tasks, agents, settings, approvals, Relay, extensions. Each SSE frame is `event:` (the event type), `data:` (that type's payload, described below) and, on every event after the opening frames, `id:` (an opaque resume cursor; send it back whole). Every connect opens with `connected` (with `resumed: true` when it picked up from your cursor), then any missed events, then `tunnel_status` with remote access as it is now (never to an agent), then one `session_status` for each chat that is working, waiting on a person or stopped with an error; those opening frames have no `id:`. The server keeps the last 500 events (at most 512 KiB) for replay, filtered with the rights you have when you reconnect. Over SSE a `heartbeat` frame with empty data arrives every 15 seconds. The same path answers a WebSocket upgrade, which is what the DorkOS app uses: each message a JSON frame `{ event, data, id }`, resuming from `?resume=`. An event addressed to a person (settings, the inbox, an ask's detail, remote access) never reaches a reader that presents an agent token.
          */
         get: operations["events.get"];
         put?: never;
@@ -8317,26 +8317,6 @@ export interface paths {
          * @description Statically serves a local file from the signed token's `cwd` so relative assets resolve, with the remainder re-confined against `cwd` (a `..`/symlink escape is rejected). Needs no sign-in: the signed token in the URL is the credential, because the browser frame has no origin of its own and sends no cookie. `{splat}` stands in for the whole remainder of the path (it may contain `/`); the bare `/api/workbench/serve/{token}` form (root → index.html) is registered the same way with no remainder.
          */
         get: operations["workbench.getServe"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/relay/stream": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * SSE event stream for relay activity
-         * @description Server-Sent Events stream for real-time relay activity. Supports server-side subject filtering via query param. Event types: relay_connected, relay_message, relay_delivery, relay_dead_letter, relay_metrics.
-         */
-        get: operations["relay.stream"];
         put?: never;
         post?: never;
         delete?: never;
@@ -58540,30 +58520,6 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-        };
-    };
-    "relay.stream": {
-        parameters: {
-            query?: {
-                /** @description Subject pattern filter */
-                subject?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description SSE event stream */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": string;
-                };
-            };
-            500: components["responses"]["InternalErrorProblem"];
         };
     };
     "approvals.getPending": {

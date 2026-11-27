@@ -146,10 +146,6 @@ export const OPERATION_STABILITY: Readonly<Record<string, ApiStability>> = {
   'POST /api/sessions/{id}/mcp-app/resource': 'internal',
   'POST /api/sessions/{id}/command-intents/{intent}': 'internal',
   'GET /api/sessions/daily-counts': 'internal',
-  // Kept only until GET /api/events carries everything it does (A7, DOR-4986).
-  // GET /api/tunnel/stream is the same, but undocumented: describing it would
-  // add a verb-path finding, so it waits for A7 to remove it.
-  'GET /api/relay/stream': 'internal',
   // Public docs tell outside callers to use these, in groups otherwise internal.
   'PUT /api/runtimes/claude-code/project-accounts': 'preview',
   'PUT /api/extensions/{id}/secrets/{key}': 'preview',
