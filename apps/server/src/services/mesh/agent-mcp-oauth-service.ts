@@ -27,7 +27,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { auth } from '@modelcontextprotocol/sdk/client/auth.js';
-import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
+import { ExtensionSecretStore } from '../../lib/secret-store/extension-secrets.js';
 import type { Logger } from '@dorkos/shared/logger';
 import type { McpClientOrigin } from '@dorkos/shared/mesh-schemas';
 import type { McpClientCredentials } from '@dorkos/shared/transport';

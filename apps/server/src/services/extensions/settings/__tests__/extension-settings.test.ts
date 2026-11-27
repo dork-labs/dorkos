@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ExtensionSettingsStore } from '../extension-settings.js';
-import { InvalidExtensionIdError } from '../extension-id.js';
+import { InvalidExtensionIdError } from '@dorkos/shared/extension-id';
 
 let tmpDir: string;
 

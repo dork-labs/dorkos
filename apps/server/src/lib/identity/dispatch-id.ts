@@ -26,10 +26,10 @@
  *   a session id. That is what makes it admissible as a span attribute under the
  *   no-PII allowlist (ADR 260711-154514 §4): there is no content to leak.
  *
- * It lives in `shared` rather than in the server because `packages/relay` needs
- * {@link isDispatchId} to validate the field an envelope carries across the bus.
+ * It lives in the server's `lib/` because rooms, sessions, relay and tasks all
+ * mint or read it, and it knows none of them.
  *
- * @module dispatch-id
+ * @module lib/identity/dispatch-id
  */
 import { monotonicFactory } from 'ulidx';
 

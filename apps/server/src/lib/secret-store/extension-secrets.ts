@@ -5,13 +5,13 @@
  * The host key lives at `{dorkHome}/host.key` (mode 0o600).
  * Encryption format: base64(IV[16] || AuthTag[16] || Ciphertext).
  *
- * @module shared/extension-secrets
+ * @module lib/secret-store/extension-secrets
  */
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { withFileLock } from './atomic-write.js';
-import { assertValidExtensionId } from './extension-id.js';
+import { withFileLock } from '@dorkos/shared/atomic-write';
+import { assertValidExtensionId } from '@dorkos/shared/extension-id';
 import { claimSecretBytes } from './secret-file.js';
 
 const ALGORITHM = 'aes-256-gcm';

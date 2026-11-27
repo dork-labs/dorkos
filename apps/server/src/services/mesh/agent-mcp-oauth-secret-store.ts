@@ -18,7 +18,7 @@ import type {
   OAuthTokens,
 } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { McpClientOrigin } from '@dorkos/shared/mesh-schemas';
-import type { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
+import type { ExtensionSecretStore } from '../../lib/secret-store/extension-secrets.js';
 
 /** Milliseconds per second, for converting the relative `expires_in` to an absolute clock. */
 const MS_PER_SECOND = 1000;

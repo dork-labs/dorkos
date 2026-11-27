@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
-import type { PromptKindKey } from '@dorkos/shared/prompts/prompt-kinds';
+import type { PromptKindKey } from '../prompt-kinds.js';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import { resolveCallPermission } from '../../capabilities/permission-enforcement.js';

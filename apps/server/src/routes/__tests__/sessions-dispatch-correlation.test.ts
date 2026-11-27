@@ -15,7 +15,7 @@ import { MainRequestAdmission } from '../../services/core/lifecycle/main-request
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
-import { isDispatchId } from '@dorkos/shared/dispatch-id';
+import { isDispatchId } from '../../lib/identity/dispatch-id.js';
 
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),

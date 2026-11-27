@@ -74,7 +74,6 @@ function runChild(env: Record<string, string>): Promise<void> {
       process.execPath,
       ['--import', TSX_LOADER_URL, '--input-type=module', '-e', CHILD_SOURCE],
       {
-        // eslint-disable-next-line no-restricted-syntax -- handing a child process the parent's environment, not reading a DorkOS setting
         env: { ...process.env, ...env },
         stdio: ['ignore', 'ignore', 'pipe'],
       }

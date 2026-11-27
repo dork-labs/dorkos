@@ -51,7 +51,7 @@
  * @module services/core/project-root/resolve-project-root
  */
 import path from 'node:path';
-import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
+import { canonicalDirectory } from '../../../lib/fs/canonical-directory.js';
 
 import { Slots } from '../../../lib/concurrency/slots.js';
 import { GitRepoConfigUnsafeError, runSafeGit } from '@dorkos/shared/safe-git';
@@ -95,7 +95,7 @@ export interface ProjectRootDeps {
   runGit: typeof runSafeGit;
   /** The clock, in epoch ms. */
   now: () => number;
-  /** Canonical spelling of a directory (`@dorkos/shared/canonical-directory`). */
+  /** Canonical spelling of a directory (`lib/fs/canonical-directory`). */
   canonical: (directory: string) => string;
 }
 

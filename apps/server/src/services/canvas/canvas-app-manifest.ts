@@ -3,7 +3,7 @@ import { Ajv, type ValidateFunction } from 'ajv';
 import {
   CanvasChannelEventTypeSchema,
   inspectCanvasChannelJson,
-} from './canvas-channel-schemas.js';
+} from '@dorkos/shared/canvas-channel-schemas';
 
 /** Maximum UTF-8 manifest size, before parsing or compilation. */
 export const CANVAS_APP_MANIFEST_BYTES = 64 * 1024;

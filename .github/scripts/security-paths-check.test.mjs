@@ -85,6 +85,10 @@ const pairs = [
   ],
   ['apps/server/src/lib/trusted-origins.ts', 'apps/server/src/lib/trusted-originsx.ts'],
   [
+    'apps/server/src/lib/secret-store/secret-file.ts',
+    'apps/server/src/lib/secret-storex/secret-file.ts',
+  ],
+  [
     'apps/server/src/lib/http/agent-identity-header.ts',
     'apps/server/src/lib/http/agent-identity-headerx.ts',
   ],
@@ -100,6 +104,10 @@ const pairs = [
   ['apps/server/src/env.ts', 'apps/server/src/envx.ts'],
   ['apps/server/src/index.ts', 'apps/server/src/indexer.ts'],
   ['apps/server/src/lib/process/network-fault.ts', 'apps/server/src/lib/processx/x.ts'],
+  [
+    'apps/server/src/services/extensions/settings/extension-settings.ts',
+    'apps/server/src/services/extensionsx/x.ts',
+  ],
   ...['relay', 'mesh', 'a2a-gateway', 'extension-api', 'connector-providers', 'cloud-api'].map(
     (p) => [`packages/${p}/x.ts`, `packages/${p}x/x.ts`]
   ),

@@ -19,7 +19,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { resetKeyCache } from '@dorkos/shared/extension-secrets';
+import { resetKeyCache } from '../../../lib/secret-store/extension-secrets.js';
 
 import {
   AgentMcpOAuthService,

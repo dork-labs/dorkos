@@ -1,6 +1,6 @@
 /** Server-owned placement identity is separate from the agent's OpenCode harness manifest. */
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
-import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
+import { canonicalDirectory } from '../../lib/fs/canonical-directory.js';
 
 /** One durable computer record hydrates this exact agent/path binding at startup. */
 export class ComputerAgentBinding {

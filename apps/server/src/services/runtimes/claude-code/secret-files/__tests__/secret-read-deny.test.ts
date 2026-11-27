@@ -11,7 +11,10 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { DirectoryGrantError } from '@dorkos/shared/directory-grants';
-import { EXTENSION_SECRETS_FOLDER, HOST_KEY_FILE_NAME } from '@dorkos/shared/extension-secrets';
+import {
+  EXTENSION_SECRETS_FOLDER,
+  HOST_KEY_FILE_NAME,
+} from '../../../../../lib/secret-store/extension-secrets.js';
 import { TOKEN_FILE_NAME } from '../../../../core/auth/mcp-local-token.js';
 import { SECRET_FILE_NAME } from '../../../../core/auth/secret.js';
 import { vapidKeyPath } from '../../../../notifications/channels/web-push.js';

@@ -12,7 +12,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const secretStore = new Map<string, string>();
 
-vi.mock('@dorkos/shared/extension-secrets', () => ({
+vi.mock('../../lib/secret-store/extension-secrets.js', () => ({
   ExtensionSecretStore: vi.fn().mockImplementation(function () {
     return {
       get: vi.fn(async (key: string) => secretStore.get(key) ?? null),

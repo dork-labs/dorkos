@@ -44,7 +44,7 @@ vi.mock('../../services/core/agent-identity/agent-identity-service.js', () => ({
 /** In-memory secret store keyed by extensionId -> key -> value. */
 const secretStores = new Map<string, Map<string, string>>();
 
-vi.mock('@dorkos/shared/extension-secrets', () => ({
+vi.mock('../../lib/secret-store/extension-secrets.js', () => ({
   ExtensionSecretStore: vi.fn().mockImplementation(function (extensionId: string) {
     if (!secretStores.has(extensionId)) secretStores.set(extensionId, new Map());
     const store = secretStores.get(extensionId)!;
@@ -60,7 +60,7 @@ vi.mock('@dorkos/shared/extension-secrets', () => ({
 /** In-memory settings store keyed by extensionId -> key -> value. */
 const settingStores = new Map<string, Map<string, string | number | boolean>>();
 
-vi.mock('@dorkos/shared/extension-settings', () => ({
+vi.mock('../../services/extensions/settings/extension-settings.js', () => ({
   ExtensionSettingsStore: vi.fn().mockImplementation(function (_dorkHome: string, id: string) {
     if (!settingStores.has(id)) settingStores.set(id, new Map());
     const store = settingStores.get(id)!;

@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resetKeyCache } from '@dorkos/shared/extension-secrets';
+import { resetKeyCache } from '../../../lib/secret-store/extension-secrets.js';
 import {
   DefaultCredentialProvider,
   EncryptedFileCredentialStore,

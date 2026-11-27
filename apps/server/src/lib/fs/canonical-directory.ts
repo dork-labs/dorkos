@@ -2,8 +2,8 @@
  * The ONE spelling of a working directory, for the places that have to compare
  * one against another.
  *
- * Two server seams need it, which is why it lives here — reached as
- * `@dorkos/shared/canonical-directory` — rather than inside either of them.
+ * Two server seams need it, which is why it lives in the server's `lib/fs/`
+ * rather than inside either of them.
  *
  * **The OpenCode sidecar** answers about directories inconsistently: `POST
  * /session` canonicalizes the `directory` it is given (real path) and stores
@@ -35,14 +35,12 @@
  *   invent a transformation neither seam was measured to apply.
  *
  * **Server-side only.** It touches the filesystem, so it is not importable from
- * the client — which is exactly why {@link isWithinDirectory} in `./paths`
- * stays dependency-free and says so, and why the two live side by side rather
- * than merged: `paths` is the rule, this is the reconciliation the rule cannot
- * perform for itself. Reached only through the `./canonical-directory` export
- * subpath, like the other filesystem-touching modules in this package
- * (`atomic-write`, `instance-lock`, `process-liveness`).
+ * the client — which is exactly why {@link isWithinDirectory} in `@dorkos/shared/paths`
+ * stays dependency-free and says so, and why the two stay apart rather than
+ * merged: `paths` is the rule, this is the reconciliation the rule cannot
+ * perform for itself. Only the server reads it.
  *
- * @module canonical-directory
+ * @module lib/fs/canonical-directory
  */
 import { realpathSync } from 'node:fs';
 import path from 'node:path';

@@ -4,7 +4,7 @@ import { statSync, existsSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import { ExtensionSecretStore, resetKeyCache } from '../extension-secrets.js';
-import { InvalidExtensionIdError } from '../extension-id.js';
+import { InvalidExtensionIdError } from '@dorkos/shared/extension-id';
 
 // === Helpers ===
 

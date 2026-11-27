@@ -29,7 +29,7 @@ import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-run
 import { recordTurnLevels } from '../../core/turn-power/turn-levels.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 import type { Db } from '@dorkos/db';
-import { isDispatchId } from '@dorkos/shared/dispatch-id';
+import { isDispatchId } from '../../../lib/identity/dispatch-id.js';
 
 // The neutral context bag is assembled off the real filesystem (git status);
 // these cases care about dispatch order, not context, so keep it inert.

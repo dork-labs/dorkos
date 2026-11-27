@@ -33,7 +33,7 @@ import { lookup as dnsLookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import path from 'node:path';
 import os from 'node:os';
-import { claimSecretText } from '@dorkos/shared/secret-file';
+import { claimSecretText } from '../../../lib/secret-store/secret-file.js';
 import {
   RELAY_LINK_CODE_ALPHABET,
   RELAY_LINK_PATH,
