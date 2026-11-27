@@ -158,6 +158,11 @@
     "hubs/agent-computer-activity-request.json": "AgentComputerActivityRequestSchema",
     "hubs/next-wake-request.json": "HubNextWakeRequestSchema",
     "hubs/hub-wake.json": "HubWakeResponseSchema",
-    "remote/command-agent-computer-assignment-changed.json": "RemoteCommandSchema"
+    "remote/command-agent-computer-assignment-changed.json": "RemoteCommandSchema",
+    "hubs/assignment-content-host.json": "HubAssignmentSchema",
+    "hubs/assignment-org-computer-only.json": "HubAssignmentSchema",
+    "hubs/page-report-request.json": "PageReportRequestSchema",
+    "hubs/page-report.json": "PageReportResponseSchema",
+    "remote/command-page-take-down.json": "RemoteCommandSchema"
   }
 }

@@ -189,6 +189,8 @@ const MECHANISM_ENUMS: Record<string, string> = {
   RemoteCommandOutcomeSchema: 'what an instance did with a command it leased',
   RemoteCeilingUnitSchema: 'what a usage figure is counted in, not what anybody bought',
   RemoteCeilingStateSchema: 'where an account stands against a limit, not which limit it has',
+  PageReportReasonSchema: 'why a page was reported or taken down; names no allowance',
+  PageReportReasonReadSchema: 'the same reasons, read tolerantly; names no allowance',
   HostedCommunityStateSchema: 'the Community server`s own lifecycle, not what anybody bought',
   HostedSpaceKindSchema: 'a team space or an open community; a structural fact',
   HostedCommunityHoldReasonSchema: 'which way out of a hold to offer; names no allowance',

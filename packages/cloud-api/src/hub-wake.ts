@@ -5,7 +5,7 @@ import { TimestampSchema } from './primitives.js';
 /**
  * What wakes a person's DorkOS in the cloud (a hub) while it is asleep.
  *
- * A hub may sleep when nobody is using it. Four things wake it, and nothing
+ * A hub may sleep when nobody is using it. Five things wake it, and nothing
  * else does:
  *
  * 1. **Its own next-wake time.** The hub says when its next schedule is due
@@ -17,13 +17,24 @@ import { TimestampSchema } from './primitives.js';
  *    that agent. It too arrives through the front door as a request for that
  *    hub.
  * 4. **A request from one of the account's own computers** to wake the
- *    account's hub so the computer can deliver a notice to it
+ *    account's hub so the computer can deliver a notice to it, or send or
+ *    call for one of its owner's published pages
  *    (`POST /v1/instances/hub-wake`, {@link HubWakeResponseSchema}). The
  *    computer signs it with its own instance key.
+ * 5. **A request for one of its published pages**, on its content host
+ *    (`contentHost` in its assignment). A page is public by its link, so this
+ *    is the one wake without a person's credential, and it is capped for each
+ *    hub: at most {@link HUB_CONTENT_HOST_WAKE_MAX_PER_MINUTE} a minute and
+ *    {@link HUB_CONTENT_HOST_WAKE_MAX_PER_HOUR} an hour, counted by the front
+ *    door for that hub. Past either, the request answers `503` with
+ *    `Retry-After` and the line "This page is starting. Try again in a
+ *    minute." Only a request whose `Host` is a page's name under the content
+ *    host counts; it reaches the hub's page server and nothing else.
  *
  * Nothing else a computer does wakes its hub. A computer that wants the hub's
- * list of agents reads it only while the hub is already awake. **An unsigned
- * request never wakes a hub.**
+ * list of agents reads it only while the hub is already awake. **On the hub's
+ * own address, an unsigned request never wakes a hub;** the content host's
+ * capped wake is the only exception, and only for a page.
  *
  * A wake grants nothing. It starts the hub and nothing more: the hub still
  * checks a computer's dial against its own pin, and every other request as it
@@ -69,6 +80,18 @@ export const HubNextWakeRequestSchema = z
 export type HubNextWakeRequest = z.infer<typeof HubNextWakeRequestSchema>;
 
 /**
+ * The most wakes a hub's content host may cause in any minute, counted by the
+ * front door for that hub. One more answers `503` with `Retry-After`.
+ */
+export const HUB_CONTENT_HOST_WAKE_MAX_PER_MINUTE = 1 as const;
+
+/**
+ * The most wakes a hub's content host may cause in any hour, counted by the
+ * front door for that hub. One more answers `503` with `Retry-After`.
+ */
+export const HUB_CONTENT_HOST_WAKE_MAX_PER_HOUR = 30 as const;
+
+/**
  * The shortest gap the service leaves between two wakes it accepts from one
  * computer through `POST /v1/instances/hub-wake`. One sooner is
  * `rate_limited`.
@@ -84,7 +107,7 @@ export const HUB_WAKE_REQUEST_MAX_PER_HOUR = 30 as const;
 /**
  * The answer to `POST /v1/instances/hub-wake`: a person's own computer
  * asks the service to wake its account's hub, so it can deliver a notice to
- * it. Answered `202`.
+ * it, or send or call for a published page. Answered `202`.
  *
  * - **Who may call.** A person's own computer only (an instance with the role
  *   `computer`), with its own instance key. A hub, a cloud agent computer, an
@@ -95,7 +118,8 @@ export const HUB_WAKE_REQUEST_MAX_PER_HOUR = 30 as const;
  * - **Only the caller's own account's hub.** The request names no hub: the
  *   service wakes the hub that the calling key's own account owns, and no
  *   other. An account with no hub is `not_found`.
- * - **Why it may ask.** To deliver a notice, and nothing else. A computer that
+ * - **Why it may ask.** To deliver a notice, or to send a published page's
+ *   copy to the hub or call on one there, and nothing else. A computer that
  *   only wants to read the hub's list waits until the hub is awake for another
  *   reason.
  * - **Nothing read, nothing granted.** The service checks only that the key's
@@ -105,13 +129,15 @@ export const HUB_WAKE_REQUEST_MAX_PER_HOUR = 30 as const;
  *   {@link HUB_WAKE_REQUEST_MIN_INTERVAL_SECONDS} and
  *   {@link HUB_WAKE_REQUEST_MAX_PER_HOUR} an hour for each computer that asks.
  *   Past either, the answer is `429` with the `rate_limited` problem and its
- *   `retryAfterMs`, and the computer keeps the notice in its outbox.
+ *   `retryAfterMs`, and the computer keeps the notice or the page's send in
+ *   its outbox.
  * - **Accepted is not awake.** `202` says the service will wake the hub, or
  *   that it is already awake. The computer then dials the hub at the address
  *   it pinned, retrying as it does today until the hub answers.
  * - **No body.** The request carries none, and the answer is only when the
  *   service accepted it. A service that does not serve this route answers
- *   `not_found`; the computer then keeps the notice in its outbox until the
+ *   `not_found`; the computer then keeps the notice or the page's send in its
+ *   outbox until the
  *   hub is awake for another reason.
  */
 export const HubWakeResponseSchema = z

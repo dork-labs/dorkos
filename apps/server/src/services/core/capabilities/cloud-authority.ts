@@ -35,8 +35,9 @@
  *    published kinds carry no authority: `inbox_pending` only signals the
  *    seat path, `viewer_open` only asks this computer to dial the hub it
  *    pinned, `hub_assignment_changed` and `agent_computer_assignment_changed`
- *    only ask a hub or an agent computer to re-read its assignment, and
- *    `keepalive` is a heartbeat. A verb Cloud adds later is
+ *    only ask a hub or an agent computer to re-read its assignment,
+ *    `page_take_down` is for a hub's published pages and the command stream
+ *    drops it in this build, and `keepalive` is a heartbeat. A verb Cloud adds later is
  *    refused here until this list is changed on purpose, which a test forces.
  *    There is no `enrol`, no mode selection and no ingress configuration:
  *    those are a person's, on this computer, behind their own guards.
@@ -102,7 +103,7 @@ export interface CloudCommandContext extends Pick<CloudV1Context, 'isCurrent'> {
 export type CloudAuthorityRefusal =
   /** The command does not parse against the published schema. */
   | 'malformed-command'
-  /** A published kind that carries no authority (`inbox_pending`, `viewer_open`, `hub_assignment_changed`, `agent_computer_assignment_changed`, `keepalive`). */
+  /** A published kind that carries no authority (`inbox_pending`, `viewer_open`, `hub_assignment_changed`, `agent_computer_assignment_changed`, `page_take_down`, `keepalive`). */
   | 'not-authorizing'
   /** No lease token to settle it with. */
   | 'no-lease'
