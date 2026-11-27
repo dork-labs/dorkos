@@ -301,29 +301,28 @@ Both settings are tunable in `~/.dork/relay/config.json` and hot-reloaded withou
 </Step>
 </Steps>
 
-## SSE Stream for Real-Time Monitoring
+## Live Relay Activity
 
-Subscribe to the Relay SSE stream for live visibility:
+Relay's live activity is on the app's one event stream, `GET /api/events`:
 
 ```bash
-curl -N http://localhost:4242/api/relay/stream?subject=%3E
+curl -N http://localhost:4242/api/events
 ```
 
-The `subject` query parameter filters which messages appear. Use `>` (URL-encoded as `%3E`) to see all messages, or provide a pattern like `relay.agent.*` to filter by audience.
-
-The stream emits four event types:
+It carries the messages and signals sent to the DorkOS app's own console address (`relay.human.console.>`), beside the app's other live events. Pick out the Relay ones by event name:
 
 | Event                | Description                                                                      |
 | -------------------- | -------------------------------------------------------------------------------- |
-| `relay_connected`    | Initial connection confirmation with the filter pattern                          |
-| `relay_message`      | A message envelope matching the subscription pattern                             |
+| `relay_connected`    | Relay started, with the address pattern the stream follows                       |
+| `relay_message`      | A message sent to the app's console address                                      |
 | `relay_backpressure` | A backpressure signal from an endpoint approaching or exceeding mailbox capacity |
-| `relay_signal`       | Other signals (dead letters, typing indicators, delivery receipts)               |
+| `relay_signal`       | Other signals (typing indicators, delivery receipts)                             |
+
+To read messages sent anywhere else, use the REST API (`GET /api/relay/messages`) or the Connections page in DorkOS. The older `GET /api/relay/stream` is for DorkOS's own use and will be removed.
 
 <Callout type="warn">
-  The SSE stream is for debugging and monitoring. Long-lived SSE connections consume server
-  resources, so close them when no longer needed. For production monitoring, use the REST API or the
-  Connections page in DorkOS.
+  Long-lived event-stream connections use server resources, so close them when you no longer need
+  them.
 </Callout>
 
 ## Next Steps

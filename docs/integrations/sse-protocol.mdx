@@ -453,9 +453,9 @@ connect until it moves again. Reconnecting is not what clears it.
 
 <Callout type="info">
   The DorkOS client uses a single `GET /api/events` connection for all background state. The older
-  per-resource SSE endpoints (`/api/relay/stream`, `/api/tunnel/stream`) still exist for backward
-  compatibility, but they're deprecated and log a warning on every connection. Build new
-  integrations against `GET /api/events` only.
+  per-resource streams (`/api/relay/stream`, `/api/tunnel/stream`) are internal: they stay only
+  until `GET /api/events` carries everything they do, and then they are removed. Build integrations
+  against `GET /api/events` only.
 </Callout>
 
 ## Chat Write Coordination

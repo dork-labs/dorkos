@@ -16,6 +16,17 @@ describe('createApiDocsRoutes', () => {
     expect((await routes.request('/docs')).status).toBe(200);
   });
 
+  it('serves the published document by default: no internal operation (DOR-4983)', async () => {
+    const res = await createApiDocsRoutes().request('/openapi.json');
+    const doc = (await res.json()) as { paths: Record<string, Record<string, unknown>> };
+    const stabilities = Object.values(doc.paths).flatMap((item) =>
+      Object.values(item).map((op) => (op as { 'x-stability'?: string })['x-stability'])
+    );
+    expect(stabilities.length).toBeGreaterThan(0);
+    expect(stabilities).toContain('stable');
+    expect(stabilities).not.toContain('internal');
+  });
+
   it('never throws when the document cannot be built, and answers 503 instead', async () => {
     const broken: ApiDocumentBuilder = () => {
       throw new Error('Two operations share the operationId "x.y"');

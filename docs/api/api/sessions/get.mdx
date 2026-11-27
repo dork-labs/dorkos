@@ -10,7 +10,11 @@ _openapi:
   structuredData:
     headings: []
     contents:
-      - content: One page of the chats in a folder, aggregated across every registered
+      - content: >-
+          **Preview.** This operation may change in any release.
+
+
+          One page of the chats in a folder, aggregated across every registered
           runtime (ADR-0310), latest activity first (`updatedAt`, then id); pass
           `nextCursor` as `cursor` for the next page. A chat updated while
           paging can repeat or be missed. A caller presenting `X-DorkOS-Agent`

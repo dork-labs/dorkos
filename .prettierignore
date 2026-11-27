@@ -14,12 +14,14 @@ package-lock.json
 apps/server/src/core-extensions/
 
 # Generated API-reference artifacts — emitted verbatim by their generators:
-#   docs/api/openapi.json  ← `pnpm docs:export-api` (scripts/export-openapi.ts)
+#   docs/api/openapi.json, docs/api/openapi-internal.json
+#                          ← `pnpm docs:export-api` (scripts/export-openapi.ts)
 #   docs/api/api/**        ← `generate:api-docs` (apps/site, fumadocs generateFiles)
 # Prettier-formatting them would diverge from the generator output and make the
 # docs-openapi-check CI guard (regenerate + git diff) fail on every run.
 # The hand-authored docs/api/meta.json and .gitkeep are deliberately NOT ignored.
 docs/api/openapi.json
+docs/api/openapi-internal.json
 docs/api/api/
 # The typed API client, written by `pnpm api-client:generate` from that spec and
 # compared by the same check.

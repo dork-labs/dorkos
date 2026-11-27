@@ -10,7 +10,11 @@ _openapi:
   structuredData:
     headings: []
     contents:
-      - content: A control action, not a message, scoped to one agent. It interrupts
+      - content: >-
+          **Preview.** This operation may change in any release.
+
+
+          A control action, not a message, scoped to one agent. It interrupts
           that agent’s in-flight turn here, throws away the answer if the turn
           streams one anyway, drops the messages it had not read yet in this
           room, releases its working indicator, and writes one `halted` notice

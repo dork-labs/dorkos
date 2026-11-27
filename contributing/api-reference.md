@@ -40,6 +40,7 @@ surfaces: {
     // query: ['dryRun'],                // a write's fields that come from the query string
     // success: 201,                     // 200 unless declared; 204 sends no body
     // audience: 'person',               // only a person may call it; an agent gets 403 person_only
+    // stability: 'stable',              // promise it to outside callers; preview unless declared (see Stability)
   },
 },
 ```
@@ -98,7 +99,44 @@ The document declares two schemes, `sessionCookie` and `apiKey`, and a default o
 
 A `registerPath` call that sets `security` keeps it. A local install with "Ask for a password on this computer too" off takes calls from this computer with no credential; the `info.description` and both scheme descriptions say so. `X-DorkOS-Agent` is an identity header, not a credential, so it is not a scheme; `docs/api/index.mdx` describes it. `services/core/openapi/__tests__/security-schemes.test.ts` asks the real session gate about every documented operation and fails when the document calls a path open that the gate guards, or the reverse.
 
+## Stability
+
+Every operation carries `x-stability`: `stable`, `preview` or `internal` (ADR `261123-170832`, DOR-4983).
+
+| Value      | Means                                                                                                                                                               | Published                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `stable`   | Meant for outside callers: scripts, other programs, agents.                                                                                                         | Yes                                                             |
+| `preview`  | New or still being reshaped: an area the roadmap is rebuilding, a list that just started paging, any capability route not yet promised.                             | Yes, its description opens with "**Preview.**"                  |
+| `internal` | Only DorkOS's own app, command line or desktop app calls it: sign-in steps, settings pages, the app's plumbing, debug and test hooks. It can change without notice. | No: served, but left out of the published document and the site |
+
+**The rule for a group:** one that public docs tell outside callers to use is never `internal`.
+
+**No deprecation period.** Until the API is a stable v1.0, a breaking change lands at once with every caller in the repo fixed in the same change, and a changelog fragment that names what broke and what replaces it. There are no `deprecated` flags on operations, no `Deprecation` or `Sunset` headers and no aliases. `stable` means an operation changes only that way, never quietly.
+
+**Where the value comes from**, first match wins (`services/core/openapi/stability.ts`):
+
+1. The operation's own declaration: `stability` on a capability's `http` surface, or `'x-stability'` on a hand `registerPath` call. For hand routes the place is `OPERATION_STABILITY`, one table beside the groups: the session list's paging, the session routes only the app calls, the two old streams kept until `/api/events` replaces them, and the operations public docs send people to in otherwise internal groups (a project's Claude accounts, an extension's secrets and the extension list). A key the document lacks fails the export.
+2. A capability with none is `internal` in a group marked internal, and `preview` everywhere else. A capability route is promised `stable` only by its own `stability: 'stable'`.
+3. A hand route with none takes its route group's value in `GROUP_STABILITY`. A group missing from that table fails `pnpm docs:export-api`, so a new group is classified the day it is documented.
+
+**The groups**, from `GROUP_STABILITY`:
+
+| Value      | Route groups                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stable`   | `activity`, `agents`, `audit`, `capabilities`, `connectors`, `events`, `files`, `health`, `heartbeats`, `marketplace`, `mcp-servers`, `mesh`, `models`, `openapi.json`, `search`, `sessions`, `tasks`, `templates`, `todo-promises`, `todos`, `work-queues`, `workspaces`                                                                                                                                                                                                                                                                                                                                                     |
+| `preview`  | `canvas`, `cloud`, `commands`, `community-connections`, `computers`, `config`, `diff`, `direct-chats`, `documents`, `hub`, `links`, `notifications`, `read-cursors`, `relay`, `rooms`, `shapes`, `tunnel` (being rebuilt, or app settings that public guides point people to)                                                                                                                                                                                                                                                                                                                                                 |
+| `internal` | `admin`, `agent-instructions`, `approvals`, `auth`, `browser-viewers`, `communities`, `debug`, `desktop`, `devices`, `directory`, `discovery`, `errors`, `extension-decisions`, `extension-frame`, `extensions`, `feedback`, `git`, `harness`, `keep-awake`, `lan-access`, `local-browser`, `mcp-config`, `onboarding`, `owner-factors`, `owner-sign-in`, `permissions`, `person-session`, `profile`, `projects`, `push`, `remote-access`, `runtimes`, `session-locations`, `session-relay`, `sign-in-landings`, `step-up`, `subagents`, `system`, `team`, `terminal`, `uploads`, `wifi-sign-in`, `workbench`, `your-browser` |
+
+`events`, `openapi.json` and most `internal` groups above are served but not documented yet (the lint gate's `undocumented-route`); they are classified already, so each takes its value the day its routes are documented.
+
+**Two files.** `pnpm docs:export-api` splits the document (`services/core/openapi/published-document.ts`):
+
+- `docs/api/openapi.json` is the published document: every operation that is not `internal`, and every component except those only `internal` operations use. The site's API pages, `/api/openapi.json` and `/api/docs` all show it.
+- `docs/api/openapi-internal.json` holds the `internal` operations and the components only they use. It has no `info`, so a release never touches it. The generated client (`packages/api-client`) and the API lint gate read it merged into the published one (`packages/api-client/scripts/api-document.ts`): the app calls internal operations, and every operation is held to the same lint rules. `openapi-fresh` compares both.
+
 The document's `info.version` is the product version: the running server's version at `/api/openapi.json`, and the repo `VERSION` in the committed `docs/api/openapi.json`. A release bumps `VERSION`, so the release PR regenerates the docs too (`.claude/commands/system/release.md`, Phase 6).
+
+**The census.** `services/core/openapi/__tests__/stability-census.test.ts` fails when an operation has no `x-stability` or an unknown one, when the committed published document holds an `internal` operation or the internal part a published one, and when the published document's `info.version` differs from `VERSION`.
 
 ## Errors
 
@@ -246,7 +284,7 @@ The last answers built by hand moved to problem documents, and every reader drop
 Anything that changes `openapi-registry.ts`, including a description or a response code, has to be regenerated and committed:
 
 ```bash
-pnpm docs:export-api                          # 1. registry  -> docs/api/openapi.json
+pnpm docs:export-api                          # 1. registry  -> docs/api/openapi.json (+ openapi-internal.json)
 pnpm --filter=@dorkos/site generate:api-docs  # 2. that JSON -> docs/api/api/**/*.mdx
 ```
 
@@ -256,7 +294,7 @@ The `docs-openapi-check` workflow runs both and fails on any difference, so CI c
 
 ## The API lint gate
 
-The API lint gate (DOR-4996) stops the HTTP API from getting worse while old routes are migrated area by area (DOR-4977). It reads two committed files, `docs/api/openapi.json` and the route census `apps/server/src/http/__tests__/route-census.baseline.json`, and holds what it finds to a baseline that may only go down. It is one of the ratchets `pnpm ratchet` runs (`scripts/ratchets/registry.ts`), in the `Ratchets (DOR-4948)` step of the required `typecheck` job.
+The API lint gate (DOR-4996) stops the HTTP API from getting worse while old routes are migrated area by area (DOR-4977). It reads committed files: `docs/api/openapi.json` with its internal part `docs/api/openapi-internal.json` merged in (internal operations are documented, only not published, so they count as documented and every rule holds them), and the route census `apps/server/src/http/__tests__/route-census.baseline.json`, and holds what it finds to a baseline that may only go down. It is one of the ratchets `pnpm ratchet` runs (`scripts/ratchets/registry.ts`), in the `Ratchets (DOR-4948)` step of the required `typecheck` job.
 
 | Concept                  | Location                                                      |
 | ------------------------ | ------------------------------------------------------------- |
@@ -413,7 +451,7 @@ Schemas live in `packages/shared/src/session-stream.ts`; the handler in `apps/se
 
 ### GET /api/events
 
-Unified SSE stream for all real-time system events, on one connection. Clients filter by the SSE `event:` field. Three older streams that overlap it are still served today: `GET /api/tunnel/stream`, `GET /api/extensions/events` and `GET /api/relay/stream`. The plan (ADR `261123-170833`) is to remove each one, not deprecate it, in the change that moves every caller onto `/api/events`. New code reads `/api/events` only.
+Unified SSE stream for all real-time system events, on one connection. Clients filter by the SSE `event:` field. Three older streams overlap it: `GET /api/tunnel/stream`, `GET /api/extensions/events` and `GET /api/relay/stream`. They are `internal` (see [Stability](#stability); `/api/tunnel/stream` is not documented at all) until `/api/events` carries everything they do, and then each is removed in the change that moves every caller onto `/api/events` (ADR `261123-170833`, A7, DOR-4986). New code reads `/api/events` only.
 
 **Events:**
 
@@ -1079,7 +1117,7 @@ Relay system metrics.
 
 ### GET /api/relay/stream
 
-> **Still served; to be removed.** New code uses `GET /api/events` (event names: `relay_connected`, `relay_message`, `relay_backpressure`, `relay_signal`). This stream is not a strict duplicate yet: it accepts `relay.system.*` and `relay.signal.*` subjects, which `/api/events` does not carry. Under ADR `261123-170833` it is removed once `/api/events` carries those subjects and every caller has moved.
+> **Internal until A7.** New code uses `GET /api/events` (event names: `relay_connected`, `relay_message`, `relay_backpressure`, `relay_signal`). This stream is not a strict duplicate yet: it accepts `relay.system.*` and `relay.signal.*` subjects, which `/api/events` does not carry. It is marked `internal`, left out of the published document, until `/api/events` carries those subjects; then it is removed with every caller moved (ADR `261123-170833`, A7, DOR-4986).
 
 SSE event stream for real-time relay activity. Supports server-side subject filtering.
 

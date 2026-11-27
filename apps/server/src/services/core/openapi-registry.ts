@@ -32,11 +32,10 @@ import { RUNTIME_CREDITS_PROTOCOLS } from '@dorkos/shared/agent-runtime';
 import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-openapi';
 import { env } from '../../env.js';
 import { registerDomainOpenApi } from './openapi/domains.js';
-import { assignOperationIds } from './openapi/operation-ids.js';
+import { finishDocument } from './openapi/finish-document.js';
 import {
   API_DESCRIPTION,
   DOCUMENT_SECURITY,
-  assignOperationSecurity,
   registerSecuritySchemes,
 } from './openapi/security-schemes.js';
 import { SERVER_VERSION } from '../../lib/version.js';
@@ -6678,7 +6677,10 @@ registry.registerPath({
 });
 
 // projection throws if a capability path shadows a hand-registered one.
-registerCapabilitiesInOpenApi(composeCapabilityRegistryForDocs(), registry);
+const capabilityRoutes = registerCapabilitiesInOpenApi(
+  composeCapabilityRegistryForDocs(),
+  registry
+);
 
 // Extension decisions and per-project settings (spec `flow-multiproject` §7).
 registerExtensionDecisionsOpenApi(registry);
@@ -6707,7 +6709,9 @@ export interface GenerateOpenAPISpecOptions {
  * Generate the full OpenAPI 3.1.0 document from registered paths and schemas,
  * with an `operationId` on every operation (`openapi/operation-ids.ts`) and a
  * `security` on each one that differs from the default
- * (`openapi/security-schemes.ts`).
+ * (`openapi/security-schemes.ts`) and an `x-stability` on every one
+ * (`openapi/stability.ts`). Internal operations are still in it: split it
+ * with `splitPublishedDocument` (`openapi/published-document.ts`) to publish.
  *
  * @param options - See {@link GenerateOpenAPISpecOptions}.
  * @throws If two operations share an `operationId`.
@@ -6726,7 +6730,6 @@ export function generateOpenAPISpec(
     servers: [{ url: `http://localhost:${env.DORKOS_PORT}` }],
     security: DOCUMENT_SECURITY,
   });
-  assignOperationIds(document);
-  assignOperationSecurity(document);
+  finishDocument(document, capabilityRoutes);
   return document;
 }

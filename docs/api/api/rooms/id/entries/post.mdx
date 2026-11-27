@@ -10,7 +10,11 @@ _openapi:
   structuredData:
     headings: []
     contents:
-      - content: Returns 202 with the entry identity only. The entry itself reaches
+      - content: >-
+          **Preview.** This operation may change in any release.
+
+
+          Returns 202 with the entry identity only. The entry itself reaches
           every reader — including the poster — over `GET
           /api/rooms/{id}/events`, mirroring `POST /api/sessions/{id}/messages`
           (ADR-0264). The author is resolved server-side from the caller
