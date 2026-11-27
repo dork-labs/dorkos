@@ -1,0 +1,56 @@
+---
+id: 261127-215412
+title: Data is read through capabilities over the entity-and-edge model; every surface is generated from one declaration, and a read-only GraphQL comes last
+status: proposed
+created: 2026-11-27
+spec: null
+superseded-by: null
+amends: [261123-170830]
+---
+
+# 261127-215412. Data is read through capabilities over the entity-and-edge model; every surface is generated from one declaration, and a read-only GraphQL comes last
+
+## Status
+
+Proposed (DOR-4973). It goes to Dorian with a pick once it has been reviewed.
+
+Capability-first is not decided here. Dorian chose it on 2026-11-21, and it is recorded as accepted in [261123-170830](261123-170830-http-api-is-a-projection-of-capabilities.md). This record decides the other half, which has no decision of his on record yet: how DorkOS's data is read from outside.
+
+**Amends** [261123-170830](261123-170830-http-api-is-a-projection-of-capabilities.md), which stays Accepted, in the same additive way that record amends [260723-050219](260723-050219-one-boot-composed-registry-generates-every-agent-surface.md). Its list of projections (the REST paths, the invoke endpoint, MCP tools and `dorkos call`) gains two planned ones: generated CLI verbs and, last, a read-only GraphQL. Nothing in it is retired.
+
+## Context
+
+The capability registry is now the one definition of an action and of its HTTP route. Nothing yet says the same about data: which agents a person has, which chats an agent ran, which pull requests and tickets a chat led to. The roadmap promises everything programmable, and the epic that once held that promise (DOR-2754) was canceled on 2026-11-10 without a record to replace it. With no rule, the easy answers are a query endpoint written by hand, database access for power users, or each surface describing the same data its own way. Each of those would let a read reach outside callers without the checks an action passes. The work graph's first reads (W4, DOR-4970) are the first data DorkOS serves this way, so the rule is needed now.
+
+## Decision
+
+1. **What the data is.** Every DorkOS thing is an entity named by its one `dork:` reference (ADR [261122-124821](261122-124821-one-dork-reference-ids-for-machines-addresses-for-people.md)). How things relate is a set of edges in the append-only link store (ADR [261124-131941](261124-131941-one-append-only-work-link-store.md)).
+2. **A read is a capability.** We will declare each read once, like an action, and project it to REST and OpenAPI, MCP and the CLI. So every read passes the registry's one gate: who is calling, the permission area, the member check when it lands (spec `member-checks`), the audit read side's visibility rule as W4 built it (spec `audit-trail` §3.4), and the shared page shape.
+3. **The rule in one sentence:** a read never returns what its caller could not read in the app.
+4. **No data door beside the registry.** There will be no query endpoint written by hand, no table or database access as an API, and no export of tables. Such a door would not run the gate. The schema is internal: it is split across two stores today (this computer's store and the space store) and is moving to the space store (ADR [261122-173853](261122-173853-one-space-model.md)). And what DorkOS promises outside callers covers the public API's shapes, each marked stable, preview or internal (ADR [261123-170832](261123-170832-api-stability-without-deprecation-periods.md)), not tables.
+5. **A projection adds no behaviour.** Everything a surface does is on the declaration, so each projection can be checked against the others by a census. The fields that carry it are in ADR [261125-114705](261125-114705-capability-http-surface-rules.md).
+6. **GraphQL comes later, read-only.** It will offer queries and subscriptions only. It will be generated from the same declarations and the entity-and-edge model, never written by hand, and built only when an outside SDK needs it. Its subscriptions will be a projection of the one event contract (ADR [261123-170833](261123-170833-one-event-contract.md)), with the same visibility as every other read. It will never offer mutations: an action stays a capability, so approvals, permission levels and the audit trail apply to it.
+7. **The order:** the link data (W2 to W6); then REST and MCP reads from one declaration (W4, and the proof in DOR-4973); then generated CLI verbs (a later ticket); then GraphQL, when an outside SDK needs it.
+8. **Where it stops.** These are space-side capabilities. What lives on a computer is reached through the contract between the two sides (ADR [261124-150516](261124-150516-space-side-and-computer-side-one-contract-two-entries.md)), not through a second API. The space server's own routes are outside the projection, as 261123-170830 says.
+
+### Options not taken
+
+- **A database or SQL door.** It would not run the gate, and it would make the internal schema a public promise.
+- **A GraphQL written by hand now.** No outside SDK needs it yet, and a hand-written schema would drift from the declarations it should come from.
+- **REST generated from tables.** It ties the public shape to storage that is split today and moving, and it skips the gate.
+- **Leaving each surface hand-built.** Four descriptions of the same data, each checked its own way, with nothing to show they agree.
+
+## Consequences
+
+### Positive
+
+- One place to add a read, and every surface learns it with the same checks.
+- One rule for what a caller may see, the same in the app, over REST, over MCP and later in GraphQL.
+- Storage can move from this computer's store to the space store without changing any public shape.
+- The roadmap's promise to make everything programmable becomes an ordered plan.
+
+### Negative
+
+- Every new read needs a declaration, so a one-off question takes longer to answer than a query would.
+- People outside who want GraphQL wait until an outside SDK needs it.
+- Generated shapes are plainer than shapes made by hand for one surface.
