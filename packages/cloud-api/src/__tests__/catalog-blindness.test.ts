@@ -190,6 +190,7 @@ const MECHANISM_ENUMS: Record<string, string> = {
   RemoteCeilingUnitSchema: 'what a usage figure is counted in, not what anybody bought',
   RemoteCeilingStateSchema: 'where an account stands against a limit, not which limit it has',
   HostedCommunityStateSchema: 'the Community server`s own lifecycle, not what anybody bought',
+  HostedSpaceKindSchema: 'a team space or an open community; a structural fact',
   HostedCommunityHoldReasonSchema: 'which way out of a hold to offer; names no allowance',
   CommunityNameUnavailableReasonSchema: 'why a short name cannot be used right now',
   CommunityMoveStateSchema: 'the stages of reading an owner export into a new community',

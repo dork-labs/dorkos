@@ -326,7 +326,14 @@ that server's single-use owner claim; it never owns one itself.
   Either way the token stays usable. `maxBytes` is still the largest single upload. Without
   `parts`, send one `PUT`. A closed window fails the move with `upload_expired`; a failed or cancelled
   move frees its short name at once, so starting again with the same name works.
-- **New states do not break a page.** A hosted community's `state` and hold `reason`, and a
+- **A team space or a community.** A start request may carry `kind: 'team' | 'community'`
+  (`HostedSpaceKindSchema`), and each listed hosted space carries its `kind`. A request with no
+  `kind`, and a listed space with no `kind`, both read as `community`, so an older service and an
+  older app keep working. The app offers a team space only after the service supports it; until
+  then an older service ignores the field and starts a community. A repeated start compares
+  bodies as parsed, so a left-out `kind` equals `community`. A sender builds
+  `CommunityStartRequestInput`, where `kind` may be left out.
+- **New states do not break a page.** A hosted community's `state`, `kind` and hold `reason`, and a
   move's `state` and `failureCode`, are tolerant (`tolerantEnum`): a value added in a later
   release reads as `unrecognised`, and every other item in the list still parses. Render it
   generically. The known members stay published as their own enums.
