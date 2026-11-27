@@ -70,16 +70,16 @@ export function createPermissionMethods(baseUrl: string) {
       });
     },
 
-    // Stays hand-written: the generated body for `agents.updatePermissions` drops the
-    // `null` that puts an area back to its default (DOR-5473).
-    patchAgentPermissions(
+    async patchAgentPermissions(
       agentId: string,
       body: PatchAgentPermissionsBody
     ): Promise<PermissionWriteResult<AgentPermissionsResponse>> {
-      return fetchJSON(baseUrl, `/agents/${encodeURIComponent(agentId)}/permissions`, {
-        method: 'PATCH',
-        body: JSON.stringify(body),
-      });
+      // The document types each change as a loose record; the server sends
+      // `PermissionChange`s, so the cast keeps today's type.
+      return (await api.call('agents.updatePermissions', {
+        path: { agentId },
+        body,
+      })) as PermissionWriteResult<AgentPermissionsResponse>;
     },
 
     // Stays hand-written: `GET /api/permissions/history` has no operationId (DOR-5473).

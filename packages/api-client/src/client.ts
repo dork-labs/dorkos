@@ -130,8 +130,6 @@ export interface ApiClient {
   ): Promise<OperationResult<Id>>;
 }
 
-const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH']);
-
 /** Fill an operation's path template, encoding each value. */
 function fillPath(operationId: string, template: string, values: Record<string, unknown> = {}) {
   return template.replace(/\{([^}]+)\}/g, (_, name: string) => {
@@ -159,8 +157,8 @@ function queryString(values: Record<string, unknown> = {}): string {
 /**
  * Create a client bound to one API mount.
  *
- * A write (`POST`, `PUT`, `PATCH`) with no body sends `{}`, as the app's
- * hand-written transport always has; reads and deletes send none unless given.
+ * A call sends a body only when it is given one, writes included, as the
+ * app's hand-written writes do.
  *
  * @param options - The base URL and the `fetch` to send with.
  * @returns The client.
@@ -176,12 +174,7 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
         body?: unknown;
       };
       const url = `${options.baseUrl}${fillPath(operationId, route.path, loose.path)}${queryString(loose.query)}`;
-      const body =
-        loose.body !== undefined
-          ? JSON.stringify(loose.body)
-          : WRITE_METHODS.has(route.method)
-            ? '{}'
-            : undefined;
+      const body = loose.body === undefined ? undefined : JSON.stringify(loose.body);
       const headers = new Headers(callOptions?.headers);
       if (body !== undefined && !headers.has('Content-Type')) {
         headers.set('Content-Type', 'application/json');

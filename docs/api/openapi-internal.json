@@ -22048,15 +22048,12 @@
         "type": "object",
         "properties": {
           "project": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/ProjectRef"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           }
@@ -22935,15 +22932,12 @@
         "type": "object",
         "properties": {
           "stop": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/PermissionStop"
               },
               {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           },
@@ -23069,15 +23063,12 @@
           "areas": {
             "type": "object",
             "additionalProperties": {
-              "allOf": [
+              "anyOf": [
                 {
                   "$ref": "#/components/schemas/PermissionState"
                 },
                 {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": "null"
                 }
               ]
             }
@@ -23085,15 +23076,12 @@
           "actions": {
             "type": "object",
             "additionalProperties": {
-              "allOf": [
+              "anyOf": [
                 {
                   "$ref": "#/components/schemas/PermissionState"
                 },
                 {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": "null"
                 }
               ]
             }
@@ -24487,15 +24475,12 @@
             ]
           },
           "project": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/ProjectRef"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           },
@@ -25458,15 +25443,12 @@
             "type": "string"
           },
           "permissions": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/ExtensionApprovalPermissions"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           },

@@ -90,7 +90,7 @@ export function createDeviceMethods(baseUrl: string) {
       }
     },
     async declineWifiSignIn(id: string): Promise<void> {
-      // A write with no body sends `{}`, as this call always has.
+      // Sends no body: the document gives it none and the route reads none.
       await api.call('devices.declineSignInRequests', { path: { id } });
     },
     async listOwnerFactors(): Promise<OwnerFactorList> {

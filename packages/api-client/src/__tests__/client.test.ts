@@ -23,9 +23,10 @@ describe('createApiClient', () => {
     expect(result).toEqual({ id: 'notes', status: 'compiled', bundleReady: true });
     const [url, init] = fetch.mock.calls[0]!;
     expect(url).toBe('/api/extensions/notes%20app/restart');
-    // A write the document gives no body still sends `{}`, as the hand transport did.
-    expect(init).toMatchObject({ method: 'POST', body: '{}' });
-    expect(new Headers(init?.headers).get('Content-Type')).toBe('application/json');
+    // A write the document gives no body sends none, like the hand-written writes.
+    expect(init).toMatchObject({ method: 'POST' });
+    expect(init?.body).toBeUndefined();
+    expect(new Headers(init?.headers).has('Content-Type')).toBe(false);
   });
 
   it('serializes the query and sends no body on a read', async () => {

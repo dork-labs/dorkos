@@ -85,7 +85,7 @@ describe('createDeviceMethods', () => {
         {
           url: '/api/devices/sign-in-requests/r%2F1/decline',
           method: 'POST',
-          body: '{}',
+          body: undefined,
           type: json,
         },
       ],
