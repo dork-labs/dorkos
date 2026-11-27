@@ -11,7 +11,7 @@
       "apps/server/src/services/canvas/doc-channel/route-controls/openapi.ts": 3,
       "apps/server/src/services/canvas/doc-channel/writes/file-save-recovery/openapi.ts": 2,
       "apps/server/src/services/computers/computer-openapi.ts": 1,
-      "apps/server/src/services/connectors/access/exclusions-openapi.ts": 7,
+      "apps/server/src/services/connectors/access/exclusions-openapi.ts": 6,
       "apps/server/src/services/connectors/events/openapi.ts": 5,
       "apps/server/src/services/connectors/execution/holds-openapi.ts": 1,
       "apps/server/src/services/connectors/extensions/mini-app-access-openapi.ts": 2,

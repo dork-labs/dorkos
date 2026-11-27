@@ -17,11 +17,14 @@ export interface ConnectionManagementDeps {
   /** Programs' requests for an account change, as the owner reviews them. */
   readonly reviews: Pick<ConnectorManagementReviewService, 'get'>;
   /** Agents' requests for an app; absent while agent identity is off. */
-  readonly agentRequests?: Pick<ConnectorAgentRequestService, 'pollAuthentication'>;
+  readonly agentRequests?: Pick<
+    ConnectorAgentRequestService,
+    'pollAuthentication' | 'resolve' | 'startAuthentication'
+  >;
   /** Which agents may use what. */
   readonly reconciliation: Pick<ConnectorReconciliationService, 'revokeEveryAgent'>;
   /** Agents left out of a connection's every-agent share. */
-  readonly exclusions: Pick<ConnectorGrantExclusionService, 'leaveOut'>;
+  readonly exclusions: Pick<ConnectorGrantExclusionService, 'leaveOut' | 'letBackIn'>;
   /** The owner's usage of connected apps. */
   readonly usage: Pick<ConnectorAccessQueryService, 'listOperatorUsage'>;
 }

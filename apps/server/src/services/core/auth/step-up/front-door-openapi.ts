@@ -243,7 +243,8 @@ const NOT_THIS_BROWSER = problemResponse(
 
 /** A held action that is gone. */
 const EXPIRED = problemResponse(
-  'The action expired, was cancelled or already ran (`expired`, answered as `404`)'
+  'The action expired, was cancelled or already ran, or a held call’s own caller bar refused ' +
+    'this caller (`expired`, answered as `404`)'
 );
 
 /** Describe the existing ceremony, including the action kinds the sheet can show. */

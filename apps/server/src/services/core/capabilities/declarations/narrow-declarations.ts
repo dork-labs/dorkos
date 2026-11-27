@@ -47,11 +47,18 @@ export const WIFI_MODE_CAPABILITY_IDS: ReadonlyMap<string, CapabilityWifiMode> =
  *   for heartbeat checks.
  * - `mcp.add_global_server`, `mcp.replace_global_server` (`front-door`): what
  *   an MCP server every agent gets runs (DOR-4978).
+ * - `connectors.let_agent_back_in`, `connectors.answer_agent_request` (a yes
+ *   only), `connectors.start_agent_request_sign_in` (`front-door`, behind the
+ *   account-decision caller bar): giving an agent access to a connected app
+ *   (DOR-4355, DOR-4978).
  */
 export const CONFIRM_FIRST_CAPABILITY_IDS: ReadonlyMap<string, ConfirmFirstBar> = new Map([
   ['heartbeat.choose_triage_credits', 'account-owner'],
   ['mcp.add_global_server', 'front-door'],
   ['mcp.replace_global_server', 'front-door'],
+  ['connectors.let_agent_back_in', 'front-door'],
+  ['connectors.answer_agent_request', 'front-door'],
+  ['connectors.start_agent_request_sign_in', 'front-door'],
 ]);
 
 /**
@@ -99,10 +106,14 @@ export function assertNarrowDeclarations(
 /**
  * Refuse a caller bar (`http.callerBar`, DOR-4978) anywhere an agent could
  * reach it or the bar would mean less: it needs `audience: 'person'` (so every
- * list an agent reads shows it closed to agents), and takes no MCP surface, no
- * network mode and no confirm-first hold (a held call's confirmation does not
- * re-run the bar yet). Each bar names its own fixed words: `account-decision`
- * its `owner_only` sentence, `person` its copy; neither takes the other's.
+ * list an agent reads shows it closed to agents), and takes no MCP surface and
+ * no network mode. It takes a confirm-first hold only behind the `front-door`
+ * bar (Security t1j, 2026-11-27): the mount runs the caller bar afresh on the
+ * confirming request, refuses a confirm from another kind of caller, and keeps
+ * no pass with the hold (`routes/capability-confirm-first.ts`). Never with the
+ * `account-owner` hold, which runs its own owner bar in its own words. Each
+ * bar names its own fixed words: `account-decision` its `owner_only`
+ * sentence, `person` its copy; neither takes the other's.
  *
  * @param capability - The capability being composed.
  * @throws Naming what the declaration may not have.
@@ -132,5 +143,7 @@ function assertCallerBar(
   }
   if (surfaces.mcp !== undefined) fail('has a caller bar, so it has no MCP surface');
   if (capability.wifi !== undefined) fail('has a caller bar, so it has no network mode');
-  if (capability.confirmFirst !== undefined) fail('has a caller bar, so it can’t be confirm-first');
+  if (capability.confirmFirst !== undefined && capability.confirmFirst.bar !== 'front-door') {
+    fail('has a caller bar, so its confirm-first hold takes the front-door bar');
+  }
 }

@@ -169,6 +169,12 @@ export function conformanceSampleInputs(
     'connectors.stop_every_agent_share': { connectionId: 'conformance-connection' },
     'connectors.leave_agent_out': { connectionId: 'conformance-connection', agentId: 'agent-a' },
     'connectors.list_usage': {},
+    'connectors.let_agent_back_in': { connectionId: 'conformance-connection', agentId: 'agent-a' },
+    'connectors.answer_agent_request': { requestId: 'conformance-request', decision: 'denied' },
+    'connectors.start_agent_request_sign_in': {
+      requestId: 'conformance-request',
+      providerInstanceId: 'conformance-provider',
+    },
     // Behind the person bar: refused before the handler without the mount's pass.
     'extensions.dismiss_approval': {
       id: 'conformance-ext',
