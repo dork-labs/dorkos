@@ -98,13 +98,11 @@ export function registerMiniAppAccessTests(harness: MiniAppAccessHarness): void 
       expect(enabled.ok(), await enabled.text()).toBe(true);
       // A person's yes to run it, pinned to these files: that is what lets it ask at all.
       const listed = (await (
-        await request.get(`${harness.apiUrl}/api/extensions`)
-      ).json()) as Array<{
-        id: string;
-        manifest: { version: string };
-        digest?: string;
-      }>;
-      const shown = listed.find((ext) => ext.id === EXT_ID);
+        await request.get(`${harness.apiUrl}/api/extensions?limit=200`)
+      ).json()) as {
+        extensions: Array<{ id: string; manifest: { version: string }; digest?: string }>;
+      };
+      const shown = listed.extensions.find((ext) => ext.id === EXT_ID);
       const approved = await request.post(`${harness.apiUrl}/api/extensions/${EXT_ID}/approve`, {
         data: { version: shown?.manifest.version, expectedDigest: shown?.digest },
       });

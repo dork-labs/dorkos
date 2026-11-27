@@ -8,6 +8,7 @@
 import { useQuery } from '@tanstack/react-query';
 import type { ExtensionApprovalSet } from '@dorkos/shared/extension-approval-schemas';
 import { resolveApiBaseUrl } from '@/layers/shared/lib';
+import { pageQuery, readAllPages } from '@/layers/shared/lib/read-all-pages';
 import { extensionQueryKeys } from './use-pending-extension-approvals';
 
 /** The query key for the waiting sets. Under `['extensions']`, so one refresh covers it. */
@@ -28,9 +29,21 @@ export function useApprovalSets() {
   return useQuery({
     queryKey: approvalSetsKey,
     queryFn: async ({ signal }) => {
-      const res = await fetch(`${resolveApiBaseUrl()}/extensions/approval-sets`, { signal });
-      if (!res.ok) throw new Error(`Couldn’t check which extensions are waiting (${res.status}).`);
-      return ((await res.json()) as { sets: ExtensionApprovalSet[] }).sets;
+      const { rows } = await readAllPages(
+        async (cursor) => {
+          const res = await fetch(
+            `${resolveApiBaseUrl()}/extensions/approval-sets${pageQuery(cursor)}`,
+            { signal }
+          );
+          if (!res.ok) {
+            throw new Error(`Couldn’t check which extensions are waiting (${res.status}).`);
+          }
+          return (await res.json()) as { sets: ExtensionApprovalSet[]; nextCursor: string | null };
+        },
+        (page) => page.sets,
+        '/extensions/approval-sets'
+      );
+      return rows.sort((a, b) => a.plugin.localeCompare(b.plugin));
     },
   });
 }

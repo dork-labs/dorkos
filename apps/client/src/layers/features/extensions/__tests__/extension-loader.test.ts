@@ -74,12 +74,14 @@ function makeCompiledRecord(id = 'test-ext'): ExtensionRecordPublic {
   });
 }
 
-function mockFetch(records: ExtensionRecordPublic[]) {
-  global.fetch = vi.fn().mockResolvedValue({
-    ok: true,
-    json: () => Promise.resolve(records),
-  });
-}
+/** The list's URL, and the list answered as its one page (DOR-4982). */
+const LIST = '/api/extensions?limit=200';
+const page = (extensions: unknown[]) => ({
+  ok: true,
+  json: async () => ({ extensions, nextCursor: null }),
+});
+
+const mockFetch = (records: unknown[]) => (global.fetch = vi.fn().mockResolvedValue(page(records)));
 
 /** The URLs `fetch` was asked for, in order. */
 function fetchedUrls(): string[] {
@@ -427,7 +429,7 @@ describe('ExtensionLoader server lifecycle coordination', () => {
     // fetch is called twice: once for the extension list, once for init-server
     const fetchSpy = vi
       .fn()
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([rec]) })
+      .mockResolvedValueOnce(page([rec]))
       .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ ok: true }) });
     global.fetch = fetchSpy;
 
@@ -440,7 +442,7 @@ describe('ExtensionLoader server lifecycle coordination', () => {
 
     // The second answer has no bundle text, so the real import fails, activation
     // never happens, and init-server is never asked: the list, then the bundle.
-    expect(fetchedUrls()).toEqual(['/api/extensions', '/api/extensions/server-ext/bundle']);
+    expect(fetchedUrls()).toEqual([LIST, '/api/extensions/server-ext/bundle']);
   });
 
   // 15. No server init for browser-only extension
@@ -461,7 +463,7 @@ describe('ExtensionLoader server lifecycle coordination', () => {
     await loader.initialize();
 
     // The list, then the bundle, and never init-server.
-    expect(fetchedUrls()).toEqual(['/api/extensions', '/api/extensions/browser-ext/bundle']);
+    expect(fetchedUrls()).toEqual([LIST, '/api/extensions/browser-ext/bundle']);
   });
 
   // 15b. Desktop origin resolution (DOR-243): when the renderer runs under
@@ -485,7 +487,7 @@ describe('ExtensionLoader server lifecycle coordination', () => {
       const loader = new ExtensionLoader(makeDeps());
       await loader.initialize();
 
-      expect(global.fetch).toHaveBeenCalledWith('http://localhost:6242/api/extensions');
+      expect(global.fetch).toHaveBeenCalledWith('http://localhost:6242/api/extensions?limit=200');
     });
 
     it('resolves the init-server POST against the preload server port', async () => {
@@ -501,7 +503,7 @@ describe('ExtensionLoader server lifecycle coordination', () => {
       });
       const fetchSpy = vi
         .fn()
-        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([rec]) })
+        .mockResolvedValueOnce(page([rec]))
         .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ ok: true }) });
       global.fetch = fetchSpy;
 
@@ -514,7 +516,7 @@ describe('ExtensionLoader server lifecycle coordination', () => {
       // The bundle import fails in jsdom, so activation (and thus init-server)
       // never fires — only the list fetch happens. This still proves the list
       // fetch itself was resolved against the Electron origin, not a bare path.
-      expect(fetchSpy).toHaveBeenCalledWith('http://localhost:6242/api/extensions');
+      expect(fetchSpy).toHaveBeenCalledWith('http://localhost:6242/api/extensions?limit=200');
     });
   });
 
@@ -539,7 +541,7 @@ describe('ExtensionLoader server lifecycle coordination', () => {
 
     // The bundle answer has no text, so the real import fails and init-server
     // is never asked: the list, then the bundle.
-    expect(fetchedUrls()).toEqual(['/api/extensions', '/api/extensions/proxy-ext/bundle']);
+    expect(fetchedUrls()).toEqual([LIST, '/api/extensions/proxy-ext/bundle']);
   });
 
   // 17. Server init failure is non-blocking — test via direct invocation pattern
@@ -576,7 +578,7 @@ describe('ExtensionLoader server lifecycle coordination', () => {
     // Simulate: list returns the extension, init-server returns 400
     const fetchSpy = vi
       .fn()
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([rec]) })
+      .mockResolvedValueOnce(page([rec]))
       .mockResolvedValueOnce({
         ok: false,
         statusText: 'Bad Request',
@@ -606,7 +608,7 @@ describe('ExtensionLoader server lifecycle coordination', () => {
     // Simulate: list returns extension, init-server throws
     const fetchSpy = vi
       .fn()
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([rec]) })
+      .mockResolvedValueOnce(page([rec]))
       .mockRejectedValueOnce(new Error('Network error'));
     global.fetch = fetchSpy;
 

@@ -13592,331 +13592,6 @@
           }
         }
       },
-      "PendingExtensionApprovalsResponse": {
-        "type": "object",
-        "properties": {
-          "approvals": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PendingExtensionApproval"
-            }
-          }
-        },
-        "required": [
-          "approvals"
-        ]
-      },
-      "PendingExtensionApproval": {
-        "type": "object",
-        "properties": {
-          "requestCode": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "name": {
-            "type": "string",
-            "minLength": 1
-          },
-          "version": {
-            "type": "string",
-            "minLength": 1
-          },
-          "path": {
-            "type": "string",
-            "minLength": 1
-          },
-          "plugin": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "minLength": 1
-          },
-          "sourceLabel": {
-            "type": "string"
-          },
-          "runsInServer": {
-            "type": "boolean"
-          },
-          "adds": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "since": {
-            "type": "string"
-          },
-          "why": {
-            "type": "string"
-          },
-          "permissions": {
-            "$ref": "#/components/schemas/ExtensionApprovalPermissions"
-          },
-          "added": {
-            "$ref": "#/components/schemas/ExtensionApprovalAdditions"
-          },
-          "agentTools": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ExtensionAgentToolSummary"
-            },
-            "default": []
-          },
-          "agentSkills": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ExtensionAgentSkillSummary"
-            },
-            "default": []
-          },
-          "digest": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "default": null
-          },
-          "changedFiles": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "string"
-            },
-            "default": null
-          },
-          "updatedFrom": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "default": null
-          },
-          "placesOnly": {
-            "type": "boolean",
-            "default": false
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "version",
-          "plugin",
-          "sourceLabel",
-          "runsInServer",
-          "adds",
-          "since",
-          "why"
-        ]
-      },
-      "ExtensionApprovalPermissions": {
-        "type": [
-          "object",
-          "null"
-        ],
-        "properties": {
-          "runtime": {
-            "type": "string",
-            "enum": [
-              "in-process",
-              "subprocess"
-            ]
-          },
-          "net": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "run": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string"
-                },
-                "found": {
-                  "type": "boolean"
-                },
-                "refusedReason": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "name",
-                "found"
-              ]
-            }
-          },
-          "agents": {
-            "type": "boolean"
-          },
-          "hasPage": {
-            "type": "boolean"
-          },
-          "slots": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "writes": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "data",
-                "canvas",
-                "inbox",
-                "work",
-                "files",
-                "rooms",
-                "forward"
-              ]
-            }
-          },
-          "apps": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string"
-                },
-                "name": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "access": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "enum": [
-                    "reads",
-                    "changes",
-                    "both",
-                    null
-                  ]
-                },
-                "opens": {
-                  "type": "boolean"
-                }
-              },
-              "required": [
-                "id",
-                "name",
-                "access"
-              ]
-            }
-          }
-        },
-        "default": null,
-        "required": [
-          "runtime",
-          "net",
-          "run",
-          "agents",
-          "hasPage"
-        ]
-      },
-      "ExtensionApprovalAdditions": {
-        "type": [
-          "object",
-          "null"
-        ],
-        "properties": {
-          "net": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "run": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "agents": {
-            "type": "boolean"
-          },
-          "runtime": {
-            "type": "boolean"
-          },
-          "apps": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "slots": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "default": null,
-        "required": [
-          "net",
-          "run",
-          "agents",
-          "runtime"
-        ]
-      },
-      "ExtensionAgentToolSummary": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1
-          },
-          "title": {
-            "type": "string",
-            "minLength": 1
-          },
-          "tier": {
-            "type": "string",
-            "enum": [
-              "observe",
-              "act",
-              "destructive"
-            ]
-          },
-          "refusedReason": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "title",
-          "tier"
-        ]
-      },
-      "ExtensionAgentSkillSummary": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1
-          },
-          "droppedReason": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "name"
-        ]
-      },
       "ExtensionTrustOffer": {
         "type": "object",
         "properties": {
@@ -23313,32 +22988,26 @@
           "reason"
         ]
       },
-      "StaleExtensionApproval": {
+      "ExtensionApprovalSetsPage": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string",
-            "description": "The extension id the approval names."
+          "sets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtensionApprovalSet"
+            }
           },
-          "path": {
+          "nextCursor": {
             "type": [
               "string",
               "null"
             ],
-            "description": "The folder the approval was given to; null for a caller that is not the person."
-          },
-          "plugin": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The plugin that carried it, when it came inside one."
+            "description": "Pass as `cursor` for the next page; null on the last one."
           }
         },
         "required": [
-          "id",
-          "path",
-          "plugin"
+          "sets",
+          "nextCursor"
         ]
       },
       "ExtensionApprovalSet": {
@@ -23560,6 +23229,116 @@
           "tooMany"
         ]
       },
+      "ExtensionApprovalPermissions": {
+        "type": "object",
+        "properties": {
+          "runtime": {
+            "type": "string",
+            "enum": [
+              "in-process",
+              "subprocess"
+            ]
+          },
+          "net": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "run": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "found": {
+                  "type": "boolean"
+                },
+                "refusedReason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "found"
+              ]
+            }
+          },
+          "agents": {
+            "type": "boolean"
+          },
+          "hasPage": {
+            "type": "boolean"
+          },
+          "slots": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "writes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "data",
+                "canvas",
+                "inbox",
+                "work",
+                "files",
+                "rooms",
+                "forward"
+              ]
+            }
+          },
+          "apps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "access": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "reads",
+                    "changes",
+                    "both",
+                    null
+                  ]
+                },
+                "opens": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "access"
+              ]
+            }
+          }
+        },
+        "required": [
+          "runtime",
+          "net",
+          "run",
+          "agents",
+          "hasPage"
+        ]
+      },
       "ApproveExtensionSetRequest": {
         "type": "object",
         "properties": {
@@ -23673,6 +23452,392 @@
           "plugin",
           "members",
           "setHash"
+        ]
+      },
+      "ExtensionListPage": {
+        "type": "object",
+        "properties": {
+          "extensions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtensionListItem"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` for the next page; null on the last one."
+          }
+        },
+        "required": [
+          "extensions",
+          "nextCursor"
+        ]
+      },
+      "ExtensionListItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The mini app’s id."
+          },
+          "manifest": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "version"
+            ],
+            "additionalProperties": {},
+            "description": "Its `extension.json`, as read."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "discovered",
+              "incompatible",
+              "invalid",
+              "disabled",
+              "enabled",
+              "compiled",
+              "compile_error",
+              "active",
+              "activate_error"
+            ],
+            "description": "Where it stands, from found to running."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "local"
+            ]
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "core",
+              "user"
+            ],
+            "description": "Whether it ships with DorkOS or was installed."
+          },
+          "approvedToRun": {
+            "type": "boolean",
+            "description": "Whether a person allowed it to run code in DorkOS."
+          },
+          "bundleReady": {
+            "type": "boolean"
+          },
+          "shadowedBy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The path of the newer copy that runs instead of this one; null for one that runs."
+          }
+        },
+        "required": [
+          "id",
+          "manifest",
+          "status",
+          "scope",
+          "origin",
+          "approvedToRun",
+          "bundleReady",
+          "shadowedBy"
+        ],
+        "additionalProperties": {}
+      },
+      "PendingExtensionApprovalsPage": {
+        "type": "object",
+        "properties": {
+          "approvals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingExtensionApproval"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` for the next page; null on the last one."
+          }
+        },
+        "required": [
+          "approvals",
+          "nextCursor"
+        ]
+      },
+      "PendingExtensionApproval": {
+        "type": "object",
+        "properties": {
+          "requestCode": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "plugin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "sourceLabel": {
+            "type": "string"
+          },
+          "runsInServer": {
+            "type": "boolean"
+          },
+          "adds": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "since": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          },
+          "permissions": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ExtensionApprovalPermissions"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "added": {
+            "$ref": "#/components/schemas/ExtensionApprovalAdditions"
+          },
+          "agentTools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAgentToolSummary"
+            },
+            "default": []
+          },
+          "agentSkills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAgentSkillSummary"
+            },
+            "default": []
+          },
+          "digest": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "changedFiles": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "default": null
+          },
+          "updatedFrom": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "placesOnly": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "plugin",
+          "sourceLabel",
+          "runsInServer",
+          "adds",
+          "since",
+          "why"
+        ]
+      },
+      "ExtensionApprovalAdditions": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "net": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "run": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "agents": {
+            "type": "boolean"
+          },
+          "runtime": {
+            "type": "boolean"
+          },
+          "apps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "slots": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "default": null,
+        "required": [
+          "net",
+          "run",
+          "agents",
+          "runtime"
+        ]
+      },
+      "ExtensionAgentToolSummary": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "observe",
+              "act",
+              "destructive"
+            ]
+          },
+          "refusedReason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "tier"
+        ]
+      },
+      "ExtensionAgentSkillSummary": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "droppedReason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "StaleExtensionApprovalsPage": {
+        "type": "object",
+        "properties": {
+          "approvals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StaleExtensionApproval"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` for the next page; null on the last one."
+          }
+        },
+        "required": [
+          "approvals",
+          "nextCursor"
+        ]
+      },
+      "StaleExtensionApproval": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The extension id the approval names."
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The folder the approval was given to; null for a caller that is not the person."
+          },
+          "plugin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The plugin that carried it, when it came inside one."
+          }
+        },
+        "required": [
+          "id",
+          "path",
+          "plugin"
         ]
       },
       "ExtensionMediaTicket": {
@@ -83488,31 +83653,6 @@
         "operationId": "approvals.createAskAgain"
       }
     },
-    "/api/extensions/pending-approvals": {
-      "get": {
-        "tags": [
-          "Extensions"
-        ],
-        "summary": "List extensions waiting to be turned on",
-        "description": "Every installed extension that is waiting for a person to let it run, oldest first (DOR-2517). An extension is listed when it was installed by a person or the marketplace (DorkOS’s own never ask), is not turned off, may not run yet, and has not been declined with \"Not now\" at its current path, plugin and version. The Activity inbox draws one row per item. `sourceLabel` and `why` are display text and are never used to decide trust. A caller that may not read the person’s inbox (an agent) gets the list without `path` and without any folder in `sourceLabel`.",
-        "responses": {
-          "200": {
-            "description": "Extensions waiting to be turned on",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingExtensionApprovalsResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalErrorProblem"
-          }
-        },
-        "operationId": "extensions.getPendingApprovals"
-      }
-    },
     "/api/extensions/{id}/approve": {
       "post": {
         "tags": [
@@ -123400,74 +123540,57 @@
         "operationId": "extensions.startWork"
       }
     },
-    "/api/extensions/stale-approvals": {
-      "get": {
-        "tags": [
-          "Extensions"
-        ],
-        "summary": "List approvals whose extension is no longer installed",
-        "description": "Every extension id that still has a run approval, approved source or permission set recorded although no copy of it is installed anywhere. Settings shows each as \"Folder missing\" with Forget. Paths are only sent to the person.",
-        "responses": {
-          "200": {
-            "description": "The approvals left behind, A–Z",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "approvals": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/StaleExtensionApproval"
-                      }
-                    }
-                  },
-                  "required": [
-                    "approvals"
-                  ]
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "`internal_error`: the list could not be read",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "extensions.getStaleApprovals"
-      }
-    },
     "/api/extensions/approval-sets": {
       "get": {
         "tags": [
           "Extensions"
         ],
         "summary": "List plugins whose extensions wait to be allowed together",
-        "description": "One entry per plugin with two or more extensions waiting for a first OK. A member joins only when the plugin’s installed-files record lists its manifest with matching bytes: an extension an agent made, a dev link, or a folder added to the plugin later never joins. A member allowed before keeps its own card. `grant` is the waiting members’ combined grant, from the same members `setHash` binds.",
+        "description": "One entry per plugin with two or more extensions waiting for a first OK. A member joins only when the plugin’s installed-files record lists its manifest with matching bytes: an extension an agent made, a dev link, or a folder added to the plugin later never joins. A member allowed before keeps its own card. `grant` is the waiting members’ combined grant, from the same members `setHash` binds. By plugin, Z to A; a set allowed or changed while paging can repeat or be missed. A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did not give is refused with `400 invalid_request`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
-            "description": "The sets, by plugin A–Z",
+            "description": "One page of the sets",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "sets": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/ExtensionApprovalSet"
-                      }
-                    }
-                  },
-                  "required": [
-                    "sets"
-                  ]
+                  "$ref": "#/components/schemas/ExtensionApprovalSetsPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: `limit` is out of range, the query has another field, or the cursor was not given by this list",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -123483,7 +123606,7 @@
             }
           }
         },
-        "operationId": "extensions.getApprovalSets"
+        "operationId": "extensions.listApprovalSets"
       }
     },
     "/api/extensions/approve-set": {
@@ -123599,6 +123722,213 @@
           }
         },
         "operationId": "extensions.approveSet"
+      }
+    },
+    "/api/extensions": {
+      "get": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "List installed extensions",
+        "description": "Every extension DorkOS found, with where it stands: each copy that runs, by id Z to A, then each older copy a newer one from the same trusted source shadows, with `shadowedBy` set. An extension installed, removed or rescanned while paging can repeat or be missed. A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did not give is refused with `400 invalid_request`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of installed extensions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtensionListPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: `limit` is out of range, the query has another field, or the cursor was not given by this list",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: the list could not be read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "extensions.list"
+      }
+    },
+    "/api/extensions/pending-approvals": {
+      "get": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "List extensions waiting to be turned on",
+        "description": "Every installed extension that is waiting for a person to let it run, newest waiting first (DOR-2517). An extension is listed when it was installed by a person or the marketplace (DorkOS’s own never ask), is not turned off, may not run yet, and has not been declined with \"Not now\" at its current path, plugin and version. The Activity inbox draws one row per item. `sourceLabel` and `why` are display text and are never used to decide trust. A caller that may not read the person’s inbox (an agent) gets the list without `path` and without any folder in `sourceLabel`, and its cursors are its own. One answered while paging, or one whose wait restarts when DorkOS does, can repeat or be missed. A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did not give is refused with `400 invalid_request`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of extensions waiting to be turned on",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingExtensionApprovalsPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: `limit` is out of range, the query has another field, or the cursor was not given by this list",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: the list could not be read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "extensions.listPendingApprovals"
+      }
+    },
+    "/api/extensions/stale-approvals": {
+      "get": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "List approvals whose extension is no longer installed",
+        "description": "Every extension id that still has a run approval, approved source or permission set recorded although no copy of it is installed anywhere. Settings shows each as \"Folder missing\" with Forget. Paths are only sent to the person, and a cursor is bound to the kind of reader it was given to. By id, Z to A; one forgotten or reinstalled while paging can repeat or be missed. A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did not give is refused with `400 invalid_request`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the approvals left behind",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaleExtensionApprovalsPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: `limit` is out of range, the query has another field, or the cursor was not given by this list",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: the list could not be read",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "extensions.listStaleApprovals"
       }
     },
     "/api/extensions/{id}/media-tickets": {

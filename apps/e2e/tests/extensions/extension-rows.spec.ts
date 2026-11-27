@@ -75,16 +75,18 @@ async function serveList(page: Page, answer: () => { status: number; body: unkno
     async (route: Route) => {
       if (route.request().method() !== 'GET') return route.continue();
       const { status, body } = answer();
-      await route.fulfill({ status, json: body });
+      // A list answers as its one page (DOR-4982); a refusal as itself.
+      const json = Array.isArray(body) ? { extensions: body, nextCursor: null } : body;
+      await route.fulfill({ status, json });
     }
   );
   await page.route(
     (url) => url.pathname === '/api/extensions/pending-approvals',
-    (route: Route) => route.fulfill({ json: { approvals: [] } })
+    (route: Route) => route.fulfill({ json: { approvals: [], nextCursor: null } })
   );
   await page.route(
     (url) => url.pathname === '/api/extensions/stale-approvals',
-    (route: Route) => route.fulfill({ json: { approvals: [] } })
+    (route: Route) => route.fulfill({ json: { approvals: [], nextCursor: null } })
   );
 }
 

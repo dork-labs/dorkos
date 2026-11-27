@@ -44,8 +44,9 @@ const desk = {
 /** Answers the extension list with `status` and `body`; anything else is a 404. */
 function answerList(status: number, body: unknown) {
   mockFetch.mockImplementation((url: string) => {
-    if (String(url).endsWith('/api/extensions')) {
-      return Promise.resolve({ ok: status < 400, status, json: () => Promise.resolve(body) });
+    if (String(url).endsWith('/api/extensions?limit=200')) {
+      const page = Array.isArray(body) ? { extensions: body, nextCursor: null } : body;
+      return Promise.resolve({ ok: status < 400, status, json: () => Promise.resolve(page) });
     }
     return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
   });
@@ -53,7 +54,8 @@ function answerList(status: number, body: unknown) {
 
 /** How many times the extension list was asked for. */
 function listFetches(): number {
-  return mockFetch.mock.calls.filter(([url]) => String(url).endsWith('/api/extensions')).length;
+  return mockFetch.mock.calls.filter(([url]) => String(url).endsWith('/api/extensions?limit=200'))
+    .length;
 }
 
 function ExtensionCount() {

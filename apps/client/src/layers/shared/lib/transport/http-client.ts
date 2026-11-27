@@ -4,6 +4,7 @@
  * @module shared/lib/transport/http-client
  */
 import { setAuthRequired, setSignInWith } from '../auth-signal';
+import { LIST_PAGE_LIMIT, readAllPages } from '../read-all-pages';
 import { getCommunityAuthority, invalidateCommunityAuthority } from '../community-authority-state';
 import { errorFromReading, readResponseError } from '../response-error';
 
@@ -173,24 +174,18 @@ export function buildQueryString(
   return qs ? `?${qs}` : '';
 }
 
-/** The most one page of a list holds; the full-list reads below ask for this many at a time. */
-const LIST_PAGE_LIMIT = 200;
-
-/** The most pages one full-list read follows: 10,000 rows, far past any list the app shows. */
-const LIST_PAGE_CAP = 50;
-
 /**
  * Every row of a paged list (`cursor` and `limit` in, `nextCursor` back), read
- * page by page, for a surface that shows the whole list.
+ * page by page through {@link fetchJSON}, for a surface that shows the whole list.
  *
  * @param baseUrl - The API's base URL.
  * @param path - The list's path, without a query string.
  * @param params - The list's own query fields.
  * @param rowsOf - The rows one page holds.
  * @returns The first page, as the server sent it, and every row in server order.
- * @throws {Error} When a cursor comes back twice, or past {@link LIST_PAGE_CAP} pages.
+ * @throws {Error} When a cursor comes back twice, or the list never ends.
  */
-export async function fetchAllPages<P extends { nextCursor: string | null }, T>(
+export function fetchAllPages<P extends { nextCursor: string | null }, T>(
   baseUrl: string,
   path: string,
   params: Record<string, string | number | boolean | undefined>,
@@ -201,18 +196,5 @@ export async function fetchAllPages<P extends { nextCursor: string | null }, T>(
       baseUrl,
       `${path}${buildQueryString({ ...params, cursor, limit: LIST_PAGE_LIMIT })}`
     );
-  const first = await read();
-  const rows: T[] = [...rowsOf(first)];
-  const seen = new Set<string>();
-  for (let cursor = first.nextCursor, pages = 1; cursor; pages++) {
-    // A server that hands back a cursor twice, or never ends, must not spin the app forever.
-    if (seen.has(cursor) || pages >= LIST_PAGE_CAP) {
-      throw new Error(`${path} kept giving more pages; stopped after ${pages}.`);
-    }
-    seen.add(cursor);
-    const page = await read(cursor);
-    rows.push(...rowsOf(page));
-    cursor = page.nextCursor;
-  }
-  return { first, rows };
+  return readAllPages(read, rowsOf, path);
 }

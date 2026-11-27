@@ -57,6 +57,7 @@ import { registerExtensionPrefsRoutes } from './extensions-prefs.js';
 import { liveForwardDeps, registerExtensionForwardRoutes } from './extensions-forward.js';
 import type { PersonForwardDeps } from '../services/extensions/forward/person-forward.js';
 import { refusedNotAPerson } from './extensions-person-bar.js';
+import { answerExtensionList } from '../services/extensions/listing/extension-list-pages.js';
 import {
   EXTENSION_TOGGLE_BAR,
   SAFE_EXT_ID,
@@ -170,12 +171,11 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
     })
   );
 
-  // GET /api/extensions -- List all discovered extensions with status: every
-  // copy that runs, then each older copy a newer one of the same trusted
-  // source shadows, with `shadowedBy` set (spec `flow-multiproject` §9.2).
-  router.get('/', (c) => {
+  // GET /api/extensions -- Every discovered extension, a page at a time (DOR-4982;
+  // the order: `services/extensions/listing/extension-list-pages.ts`).
+  router.get('/', async (c) => {
     try {
-      return c.json([...extensionManager.listPublic(), ...extensionManager.listShadowedPublic()]);
+      return await answerExtensionList(c, extensionManager);
     } catch (err) {
       logger.error('[Extensions] Failed to list extensions', err);
       return failed(c, 'list extensions');

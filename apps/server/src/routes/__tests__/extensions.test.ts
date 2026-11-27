@@ -166,23 +166,23 @@ describe('Extension Routes', () => {
   }
 
   describe('GET /api/extensions', () => {
-    it('returns array of extension records', async () => {
-      const records = [stubPublicRecord(), stubPublicRecord({ id: 'ext-2' })];
-      manager.listPublic.mockReturnValue(records);
-
-      const res = await request(fixtureServer).get('/api/extensions');
-
-      expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(2);
-      expect(res.body[0].id).toBe('test-ext');
-      expect(res.body[1].id).toBe('ext-2');
+    it('pages the copies that run, by id Z to A, then the copies they shadow', async () => {
+      const ids = (body: { extensions: { id: string; shadowedBy?: string }[] }) =>
+        body.extensions.map((e) => `${e.id}${e.shadowedBy ? ' (old)' : ''}`);
+      manager.listPublic.mockReturnValue([stubPublicRecord({ id: 'a' }), stubPublicRecord()]);
+      manager.listShadowedPublic.mockReturnValue([stubPublicRecord({ shadowedBy: '/x' })]);
+      const first = await request(fixtureServer).get('/api/extensions?limit=2');
+      expect(ids(first.body)).toEqual(['test-ext', 'a']);
+      const rest = await request(fixtureServer).get(
+        `/api/extensions?cursor=${first.body.nextCursor}`
+      );
+      expect([ids(rest.body), rest.body.nextCursor]).toEqual([['test-ext (old)'], null]);
     });
 
-    it('returns empty array when no extensions discovered', async () => {
-      const res = await request(fixtureServer).get('/api/extensions');
-
-      expect(res.status).toBe(200);
-      expect(res.body).toEqual([]);
+    it('refuses a cursor it did not give, rather than starting over', async () => {
+      const res = await request(fixtureServer).get('/api/extensions?cursor=not-a-cursor');
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ code: 'invalid_request' });
     });
   });
 

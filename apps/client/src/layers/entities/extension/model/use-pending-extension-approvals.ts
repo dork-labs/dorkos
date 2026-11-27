@@ -5,11 +5,10 @@
  * @module entities/extension/model/use-pending-extension-approvals
  */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  PendingExtensionApprovalsResponseSchema,
-  type PendingExtensionApproval,
-} from '@dorkos/shared/extension-approval-schemas';
+import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
+import { PendingExtensionApprovalsPageSchema } from '@dorkos/shared/extension-list-schemas';
 import { resolveApiBaseUrl } from '@/layers/shared/lib';
+import { pageQuery, readAllPages } from '@/layers/shared/lib/read-all-pages';
 import { useEventSubscription } from '@/layers/shared/model';
 import { createRefreshLeader } from './refresh-leader';
 
@@ -50,11 +49,22 @@ export interface PendingExtensionApprovalsState {
  * @returns The extensions waiting, oldest first.
  */
 async function fetchPendingApprovals(signal?: AbortSignal): Promise<PendingExtensionApproval[]> {
-  const res = await fetch(`${resolveApiBaseUrl()}/extensions/pending-approvals`, { signal });
-  if (!res.ok) {
-    throw new Error(`Couldn’t check for extensions waiting to be turned on (${res.status})`);
-  }
-  return PendingExtensionApprovalsResponseSchema.parse(await res.json()).approvals;
+  const { rows } = await readAllPages(
+    async (cursor) => {
+      const res = await fetch(
+        `${resolveApiBaseUrl()}/extensions/pending-approvals${pageQuery(cursor)}`,
+        { signal }
+      );
+      if (!res.ok) {
+        throw new Error(`Couldn’t check for extensions waiting to be turned on (${res.status})`);
+      }
+      return PendingExtensionApprovalsPageSchema.parse(await res.json());
+    },
+    (page) => page.approvals,
+    '/extensions/pending-approvals'
+  );
+  // The server pages newest first; the inbox has always queued oldest first.
+  return rows.sort((a, b) => a.since.localeCompare(b.since) || a.id.localeCompare(b.id));
 }
 
 /**

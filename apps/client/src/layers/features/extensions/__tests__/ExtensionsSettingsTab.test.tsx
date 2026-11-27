@@ -100,20 +100,24 @@ function mockFetch(responses: Record<string, unknown>) {
       const key = Object.keys(responses)
         .filter((k) => url.includes(k))
         .sort((a, b) => b.length - a.length)[0];
-      if (key) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve(responses[key]),
-        });
-      }
+      const body = key ? asPage(key, responses[key]) : { error: 'Not found' };
       return Promise.resolve({
-        ok: false,
-        status: 404,
-        json: () => Promise.resolve({ error: 'Not found' }),
+        ok: !!key,
+        status: key ? 200 : 404,
+        json: async () => body,
       });
     })
   );
 }
+
+/** A list answered as its one page, the way the server pages it (DOR-4982). */
+const listed = (...extensions: unknown[]) => ({ extensions, nextCursor: null });
+const asPage = (key: string, body: unknown) =>
+  key === '/api/extensions'
+    ? listed(...(body as unknown[]))
+    : Array.isArray(body)
+      ? body
+      : { nextCursor: null, ...(body as object) };
 
 /** Open one extension's row, as a click on its name does. */
 function openRow(id: string) {
@@ -141,12 +145,12 @@ describe('ExtensionsSettingsTab', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((url: string) => {
-        if (url.endsWith('/api/extensions')) {
+        if (url.endsWith('/api/extensions?limit=200')) {
           attempts += 1;
           if (attempts === 1) {
             return Promise.resolve({ ok: false, status: 401, json: () => Promise.resolve({}) });
           }
-          return Promise.resolve({ ok: true, json: () => Promise.resolve([makeExtension()]) });
+          return Promise.resolve({ ok: true, json: async () => listed(makeExtension()) });
         }
         return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
       })
@@ -364,7 +368,7 @@ describe('ExtensionsSettingsTab', () => {
           }
           return Promise.resolve({
             ok: true,
-            json: () => Promise.resolve([makeExtension({ id: 'my-ext', status: 'disabled' })]),
+            json: async () => listed(makeExtension({ id: 'my-ext', status: 'disabled' })),
           });
         })
       );
@@ -816,10 +820,8 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
         }
         return Promise.resolve({
           ok: true,
-          json: () =>
-            Promise.resolve([
-              makeExtension({ id: 'full-stack', hasServerEntry: true, approvedToRun: false }),
-            ]),
+          json: async () =>
+            listed(makeExtension({ id: 'full-stack', hasServerEntry: true, approvedToRun: false })),
         });
       })
     );
@@ -858,10 +860,8 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
         }
         return Promise.resolve({
           ok: true,
-          json: () =>
-            Promise.resolve([
-              makeExtension({ id: 'full-stack', hasServerEntry: true, approvedToRun: false }),
-            ]),
+          json: async () =>
+            listed(makeExtension({ id: 'full-stack', hasServerEntry: true, approvedToRun: false })),
         });
       })
     );
@@ -1021,10 +1021,8 @@ describe('what an extension can reach (DOR-2686)', () => {
         }
         return Promise.resolve({
           ok: true,
-          json: () =>
-            Promise.resolve([
-              makeExtension({ id: 'mail', approvedToRun: false, isolation: current }),
-            ]),
+          json: async () =>
+            listed(makeExtension({ id: 'mail', approvedToRun: false, isolation: current })),
         });
       })
     );

@@ -209,7 +209,8 @@ function fakeFetch(input: RequestInfo | URL): Promise<Response> {
   if (extensionReadsHang) return new Promise<Response>(() => {});
   const url = String(input);
   const json = (body: unknown) => Promise.resolve(new Response(JSON.stringify(body)));
-  if (url.endsWith('/extensions/pending-approvals')) return json({ approvals: [] });
+  if (url.endsWith('/extensions/pending-approvals?limit=200'))
+    return json({ approvals: [], nextCursor: null });
   if (url.endsWith('/extension-decisions') && decisionsReadFails) {
     return Promise.resolve(new Response('{"error":"boom"}', { status: 500 }));
   }

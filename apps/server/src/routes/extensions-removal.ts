@@ -17,6 +17,11 @@ import { honoRequestFacts } from '../http/request-facts.js';
 import { notificationEntitlement } from '../services/notifications/notification-entitlement.js';
 import { logger } from '../lib/logger.js';
 import { problem } from '@dorkos/http-kit';
+import { answerPage } from '../lib/paging/hand-route-page.js';
+import {
+  readerList,
+  staleApprovalKey,
+} from '../services/extensions/listing/extension-list-pages.js';
 
 /**
  * Mount the stale-approval list onto the extensions router.
@@ -29,14 +34,18 @@ export function registerExtensionRemovalRoutes(
   extensionManager: ExtensionManager
 ): void {
   // GET /api/extensions/stale-approvals -- Approvals whose extension is no
-  // longer installed anywhere (DOR-3372). Paths only for the person.
-  router.get('/stale-approvals', (c) => {
+  // longer installed anywhere (DOR-3372), a page at a time by id (DOR-4982).
+  // Paths only for the person; the cursor is bound to the kind of reader.
+  router.get('/stale-approvals', async (c) => {
     try {
       const forPerson =
         notificationEntitlement(readCallerPrincipal(honoRequestFacts(c))) !== 'none';
-      const stale = listStaleApprovals(extensionManager);
-      return c.json({
-        approvals: forPerson ? stale : stale.map(({ id, plugin }) => ({ id, path: null, plugin })),
+      return await answerPage(c, {
+        list: readerList('stale-approvals', forPerson),
+        noun: 'approvals',
+        read: () => listStaleApprovals(extensionManager),
+        keyOf: staleApprovalKey,
+        show: (row) => (forPerson ? row : { id: row.id, path: null, plugin: row.plugin }),
       });
     } catch (err) {
       logger.error('[Extensions] Failed to list approvals left behind', err);
