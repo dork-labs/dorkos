@@ -58,6 +58,11 @@
  * once the seat is free. Nothing is posted into the room unless the seat's turn
  * posts one of the three project updates or an answer (DOR-4469).
  *
+ * A seat's old chat, after the seat moved to a fresh session, still answers for
+ * spin-offs started by the move. A spin-off started there later is that chat's
+ * own work: the seat refuses it, and it reports into the old chat as a chat
+ * message, like any spin-off (`takesReportsAsChat`, DOR-3753).
+ *
  * ## A report that cannot be delivered
  *
  * It is logged and tried again on {@link DELIVERY_RETRY_MS}, with the parent read
