@@ -1,5 +1,6 @@
 /**
- * Web push Transport method factory (spec `notification-system` task 4.3).
+ * Web push Transport method factory (spec `notification-system` task 4.3),
+ * through the generated API client (DOR-5473).
  *
  * Four calls: read the key a browser needs before it can subscribe, hand over a
  * subscription, list the ones this install has, and drop one. Nothing streams —
@@ -14,7 +15,8 @@ import type {
   RegisterPushSubscriptionResponse,
   VapidPublicKeyResponse,
 } from '@dorkos/shared/notification-schemas';
-import { fetchAllPages, fetchJSON } from './http-client';
+import { createTransportApiClient } from './api-client';
+import { fetchAllPages } from './http-client';
 
 /**
  * Create the web push methods bound to a base URL.
@@ -22,21 +24,20 @@ import { fetchAllPages, fetchJSON } from './http-client';
  * @param baseUrl - Server base URL (already includes `/api`).
  */
 export function createPushMethods(baseUrl: string) {
+  const api = createTransportApiClient(baseUrl);
   return {
     getPushVapidPublicKey(): Promise<VapidPublicKeyResponse> {
-      return fetchJSON<VapidPublicKeyResponse>(baseUrl, '/push/vapid-public-key');
+      return api.call('push.getVapidPublicKey', {});
     },
 
     registerPushSubscription(
       subscription: RegisterPushSubscriptionRequest
     ): Promise<RegisterPushSubscriptionResponse> {
-      return fetchJSON<RegisterPushSubscriptionResponse>(baseUrl, '/push/subscriptions', {
-        method: 'POST',
-        body: JSON.stringify(subscription),
-      });
+      return api.call('push.createSubscriptions', { body: subscription });
     },
 
-    // The list comes in pages, newest first; Settings shows it whole, in that order.
+    // Stays on fetchAllPages: the list pages (DOR-4982), and the read-all loop owns the cursor.
+    // It comes in pages, newest first; Settings shows it whole, in that order.
     async listPushSubscriptions(): Promise<Pick<ListPushSubscriptionsResponse, 'subscriptions'>> {
       const { rows } = await fetchAllPages(
         baseUrl,
@@ -48,11 +49,7 @@ export function createPushMethods(baseUrl: string) {
     },
 
     deletePushSubscription(id: string): Promise<DeletePushSubscriptionResponse> {
-      return fetchJSON<DeletePushSubscriptionResponse>(
-        baseUrl,
-        `/push/subscriptions/${encodeURIComponent(id)}`,
-        { method: 'DELETE' }
-      );
+      return api.call('push.deleteSubscriptions', { path: { id } });
     },
   };
 }
