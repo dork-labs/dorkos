@@ -222,7 +222,7 @@ export interface PermissionsRouterDeps {
  * registered, so the group answers nothing else under `/api`.
  *
  * @param deps - See {@link PermissionsRouterDeps}.
- * @returns The routes serving `/permissions*` and `PATCH /agents/:id/permissions`; one agent's
+ * @returns The routes serving `/permissions*` and `PATCH /agents/:agentId/permissions`; one agent's
  *   reads are capabilities (`services/core/permissions/agent-permission-views.ts`).
  */
 export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEnv> {
@@ -343,12 +343,12 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
     );
   });
 
-  router.patch('/agents/:id/permissions', async (c) => {
+  router.patch('/agents/:agentId/permissions', async (c) => {
     const caller = person(c);
     if ('refusal' in caller) return caller.refusal;
     const body = PatchAgentPermissionsBodySchema.safeParse(readJsonBody(c));
     if (!body.success) return validationProblem(c, body.error);
-    const id = c.req.param('id');
+    const id = c.req.param('agentId');
     let raises: boolean;
     try {
       raises = agentPatchRaises(body.data, await permissions.getAgent(id));

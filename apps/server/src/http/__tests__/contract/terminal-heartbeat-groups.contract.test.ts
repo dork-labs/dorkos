@@ -1,7 +1,7 @@
 /**
  * Contract for the last route groups Express served: the embedded terminal's
  * REST half (`POST /api/terminal`, `DELETE /api/terminal/:id`), an agent's
- * Heartbeat page (`GET /api/agents/:id/heartbeat`) and the cheap-checks credit
+ * Heartbeat page (`GET /api/agents/:agentId/heartbeat`) and the cheap-checks credit
  * answer (`PUT /api/heartbeats/triage-credits`). They move to Hono in DOR-2818;
  * that PR must pass this file unchanged.
  *
@@ -109,12 +109,12 @@ describe('contract: the terminal and heartbeat routes', () => {
       expect: { status: 204, body: '' },
     },
     {
-      name: 'GET /api/agents/:id/heartbeat of an unknown agent is a 404',
+      name: 'GET /api/agents/:agentId/heartbeat of an unknown agent is a 404',
       path: `/api/agents/${UNKNOWN_ULID}/heartbeat`,
       expect: { status: 404, body: NO_AGENT },
     },
     {
-      name: 'GET /api/agents/:id/heartbeat refuses ?days=0',
+      name: 'GET /api/agents/:agentId/heartbeat refuses ?days=0',
       path: `/api/agents/${UNKNOWN_ULID}/heartbeat?days=0`,
       expect: {
         status: 400,
@@ -122,7 +122,7 @@ describe('contract: the terminal and heartbeat routes', () => {
       },
     },
     {
-      name: 'GET /api/agents/:id/heartbeat refuses ?days=91',
+      name: 'GET /api/agents/:agentId/heartbeat refuses ?days=91',
       path: `/api/agents/${UNKNOWN_ULID}/heartbeat?days=91`,
       expect: {
         status: 400,
@@ -130,7 +130,7 @@ describe('contract: the terminal and heartbeat routes', () => {
       },
     },
     {
-      name: 'GET /api/agents/:id/heartbeat refuses ?days=abc',
+      name: 'GET /api/agents/:agentId/heartbeat refuses ?days=abc',
       path: `/api/agents/${UNKNOWN_ULID}/heartbeat?days=abc`,
       expect: {
         status: 400,
@@ -138,12 +138,12 @@ describe('contract: the terminal and heartbeat routes', () => {
       },
     },
     {
-      name: 'GET /api/agents/:id/heartbeat with a trailing slash answers the same',
+      name: 'GET /api/agents/:agentId/heartbeat with a trailing slash answers the same',
       path: `/api/agents/${UNKNOWN_ULID}/heartbeat/`,
       expect: { status: 404, body: NO_AGENT },
     },
     {
-      name: 'POST /api/agents/:id/heartbeat is the API 404',
+      name: 'POST /api/agents/:agentId/heartbeat is the API 404',
       method: 'POST',
       path: `/api/agents/${UNKNOWN_ULID}/heartbeat`,
       expect: { status: 404, body: API_NOT_FOUND },

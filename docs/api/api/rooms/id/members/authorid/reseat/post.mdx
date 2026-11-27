@@ -32,7 +32,7 @@ export default function Layout(props) {
   return (
     <>
       {props.children}
-      <Comp document="../../docs/api/openapi.json" operations={[{"path":"/api/rooms/{roomId}/members/{agentId}/reseat","method":"post"}]} showDescription />
+      <Comp document="../../docs/api/openapi.json" operations={[{"path":"/api/rooms/{id}/members/{authorId}/reseat","method":"post"}]} showDescription />
     </>
   );
 }

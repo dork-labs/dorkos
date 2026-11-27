@@ -10,7 +10,7 @@
  * - `permissions set|reset <target>`   → `PATCH /api/permissions/defaults`
  * - `permissions history`              → `GET /api/permissions/history`
  * - `permissions undo <id> [--force]`  → `POST /api/permissions/history/:id/undo`
- * - `agent permissions <agent> …`      → `GET|PATCH /api/agents/:id/permissions`
+ * - `agent permissions <agent> …`      → `GET|PATCH /api/agents/:agentId/permissions`
  *
  * Nothing here writes config or an agent's manifest itself: every write carries
  * `surface: 'cli'`, and a refusal prints the server's own sentence.

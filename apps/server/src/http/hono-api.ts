@@ -202,7 +202,7 @@ export interface ComposedGroupDeps {
    * started. The Activity feed is {@link ComposedGroupDeps.activity}.
    */
   extensions?: Omit<ExtensionsRouterDeps, 'activity'>;
-  /** What agents may do (`/api/permissions*`, `PATCH /api/agents/:id/permissions`). */
+  /** What agents may do (`/api/permissions*`, `PATCH /api/agents/:agentId/permissions`). */
   permissions?: PermissionsRouterDeps;
   /** What every agent is told, and what one agent will be told (spec `context-viewer`). */
   agentInstructions?: AgentInstructionsRouterDeps;
@@ -529,7 +529,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.discovery) app.route('/api/discovery', createDiscoveryRoutes(deps.discovery));
   // Five groups answer under `/api/agents`: the capability mount, the permissions group,
   // agent instructions and these two. Each registers only its own concrete paths. The one
-  // path two share is `/api/agents/:id/permissions`: the mount (mounted first) serves its GET
+  // path two share is `/api/agents/:agentId/permissions`: the mount (mounted first) serves its GET
   // and the permissions group its PATCH, so the methods keep them apart. The agents group's
   // paths are all fixed words (`/current`, `/resolve`, `/create`), never an `:id`.
   if (deps.mcpOAuth) app.route('/api/agents/mcp-oauth', createMcpOAuthRoutes(deps.mcpOAuth));

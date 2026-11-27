@@ -1,5 +1,5 @@
 /**
- * `GET /api/agents/:id/heartbeat` (spec `heartbeats` §7.6, §13): what the
+ * `GET /api/agents/:agentId/heartbeat` (spec `heartbeats` §7.6, §13): what the
  * Heartbeat page reads, over a real heartbeat store, real measures and a real
  * HEARTBEAT.md on disk. Served by the capability mount (`heartbeat.view_page`,
  * DOR-4978): a person's page, which an agent and a program are refused.
@@ -100,7 +100,7 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-describe('GET /api/agents/:id/heartbeat', () => {
+describe('GET /api/agents/:agentId/heartbeat', () => {
   it('answers how the agent wakes, its next beat, its last beats and what is held for people', async () => {
     // The fixtures below are fixed instants, and what is held and reported
     // depends on the clock. Pinned to the afternoon they describe, or the test

@@ -94,11 +94,11 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
   [
     'a work queue’s routes are a person’s; agents use their own tools, over /mcp',
     [
-      'DELETE /api/agents/:id/work-queue/items/:itemId',
-      'PATCH /api/agents/:id/work-queue',
-      'POST /api/agents/:id/work-queue/items',
-      'POST /api/agents/:id/work-queue/items/:itemId/requeue',
-      'PUT /api/agents/:id/work-queue/order',
+      'DELETE /api/agents/:agentId/work-queue/items/:itemId',
+      'PATCH /api/agents/:agentId/work-queue',
+      'POST /api/agents/:agentId/work-queue/items',
+      'POST /api/agents/:agentId/work-queue/items/:itemId/requeue',
+      'PUT /api/agents/:agentId/work-queue/order',
       'PUT /api/work-queues/stop',
     ],
   ],
@@ -109,7 +109,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
   ["a person's; agents use todo_promise_update", ['PATCH /api/todo-promises/:id']],
   [
     "a person's promise for an agent (todos.add_promise_for_agent, person-only); agents use their own tools",
-    ['POST /api/agents/:id/todo-promises'],
+    ['POST /api/agents/:agentId/todo-promises'],
   ],
   [
     'an agent makes and changes to-dos with its own tools, which carry its turn’s power; the mount refuses an agent’s write (DOR-3088)',
@@ -428,7 +428,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'DELETE /api/mesh/agents/:id',
       'DELETE /api/mesh/agents/:id/data',
       'DELETE /api/mesh/denied',
-      'PATCH /api/agents/:id/permissions',
+      'PATCH /api/agents/:agentId/permissions',
       'PATCH /api/agents/current',
       // Pausing stays open (anyone may stop any agent); resuming one a person
       // paused is that person's call, never an agent's.

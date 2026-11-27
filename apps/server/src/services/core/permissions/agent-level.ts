@@ -1,6 +1,6 @@
 /**
  * The level an agent actually runs at, for its profile's Level row
- * (`GET /api/agents/:id/level`).
+ * (`GET /api/agents/:agentId/level`).
  *
  * Read-only, and never a second copy of the launch rule: the effective level is
  * `resolveAgentLaunchLevel`, the very call a room turn launches with, and the

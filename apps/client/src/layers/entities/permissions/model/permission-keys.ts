@@ -14,9 +14,9 @@ export const permissionKeys = {
   all: PERMISSIONS_KEY,
   /** `GET /api/permissions`. */
   overview: () => [...PERMISSIONS_KEY, 'overview'] as const,
-  /** `GET /api/agents/:id/permissions`. */
+  /** `GET /api/agents/:agentId/permissions`. */
   agent: (agentId: string) => [...PERMISSIONS_KEY, 'agent', agentId] as const,
-  /** `GET /api/agents/:id/level`. Under the prefix, so every permission write refreshes it. */
+  /** `GET /api/agents/:agentId/level`. Under the prefix, so every permission write refreshes it. */
   level: (agentId: string) => [...PERMISSIONS_KEY, 'level', agentId] as const,
   /** `GET /api/permissions/history`, optionally for one agent. */
   history: (agentId?: string) => [...PERMISSIONS_KEY, 'history', agentId ?? 'all'] as const,

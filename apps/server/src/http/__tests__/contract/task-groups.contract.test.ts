@@ -352,7 +352,7 @@ contractSuite(
       expect: { status: 404, body: NOT_FOUND },
     },
     {
-      name: 'GET /api/runtimes/:runtime/accounts/usage refuses a runtime with no ledger',
+      name: 'GET /api/runtimes/:type/accounts/usage refuses a runtime with no ledger',
       path: '/api/runtimes/not-a-runtime/accounts/usage',
       expect: {
         status: 400,

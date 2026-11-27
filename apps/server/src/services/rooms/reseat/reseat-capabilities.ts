@@ -66,7 +66,11 @@ export const reseatCapabilities = [
         // the best account it may use), and the accounts and their usage stay the owner's view.
         servers: ['external'],
       },
-      http: { method: 'get', path: '/api/rooms/{roomId}/members/{agentId}/reseat-options' },
+      http: {
+        method: 'get',
+        path: '/api/rooms/{id}/members/{authorId}/reseat-options',
+        params: { id: 'roomId', authorId: 'agentId' },
+      },
     },
     invoke: (deps, input, context) => {
       const rooms = requireRoomDeps(deps);
@@ -114,7 +118,11 @@ export const reseatCapabilities = [
         // Not idempotent: each call starts another fresh session.
         annotations: { idempotentHint: false },
       },
-      http: { method: 'post', path: '/api/rooms/{roomId}/members/{agentId}/reseat' },
+      http: {
+        method: 'post',
+        path: '/api/rooms/{id}/members/{authorId}/reseat',
+        params: { id: 'roomId', authorId: 'agentId' },
+      },
     },
     invoke: (deps, input, context) => {
       const rooms = requireRoomDeps(deps);

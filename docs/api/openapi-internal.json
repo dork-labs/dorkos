@@ -15797,7 +15797,7 @@
         "x-stability": "internal"
       }
     },
-    "/api/runtimes/{runtime}/accounts/usage": {
+    "/api/runtimes/{type}/accounts/usage": {
       "get": {
         "operationId": "runtimes.account_usage",
         "tags": [
@@ -15819,7 +15819,7 @@
             },
             "required": true,
             "description": "The runtime slug.",
-            "name": "runtime",
+            "name": "type",
             "in": "path"
           }
         ],
