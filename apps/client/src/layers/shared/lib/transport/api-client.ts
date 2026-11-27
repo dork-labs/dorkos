@@ -17,7 +17,13 @@ import { fetchResponse } from './http-client';
  * A generated client bound to this server's API mount.
  *
  * @param baseUrl - The transport's base URL, the `/api` mount.
+ * @param timeout - How long a call may wait, in ms, when it is not the usual
+ *   request timeout (a call that copies a whole database, for one).
  */
-export function createTransportApiClient(baseUrl: string): ApiClient {
-  return createApiClient({ baseUrl, fetch: (url, init) => fetchResponse('', url, init) });
+export function createTransportApiClient(baseUrl: string, timeout?: number): ApiClient {
+  return createApiClient({
+    baseUrl,
+    fetch: (url, init) =>
+      fetchResponse('', url, timeout === undefined ? init : { ...init, timeout }),
+  });
 }

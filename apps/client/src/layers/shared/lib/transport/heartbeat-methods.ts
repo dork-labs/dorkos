@@ -1,12 +1,12 @@
 /**
  * Heartbeat Transport method factory (spec `heartbeats` §7.6): what an agent's
- * Heartbeat page reads.
+ * Heartbeat page reads, through the generated API client (DOR-5473).
  *
  * @module shared/lib/transport/heartbeat-methods
  */
 import type { HeartbeatStatus, TriageCreditsChoice } from '@dorkos/shared/heartbeat-schemas';
 import type { WakersOff } from '@dorkos/shared/waker-schemas';
-import { fetchJSON } from './http-client';
+import { createTransportApiClient } from './api-client';
 
 /**
  * Create the heartbeat methods bound to a base URL.
@@ -14,18 +14,20 @@ import { fetchJSON } from './http-client';
  * @param baseUrl - Server base URL (already includes `/api`).
  */
 export function createHeartbeatMethods(baseUrl: string) {
+  const api = createTransportApiClient(baseUrl);
+  // The document also lists each capability's 202 approval answer, which a
+  // person's own call never gets; the casts keep today's types.
   return {
-    getAgentHeartbeat(agentId: string): Promise<HeartbeatStatus> {
-      return fetchJSON(baseUrl, `/agents/${encodeURIComponent(agentId)}/heartbeat`);
+    async getAgentHeartbeat(agentId: string): Promise<HeartbeatStatus> {
+      return (await api.call('heartbeat.view_page', { path: { id: agentId } })) as HeartbeatStatus;
     },
-    chooseTriageCredits(useCredits: boolean): Promise<TriageCreditsChoice> {
-      return fetchJSON(baseUrl, '/heartbeats/triage-credits', {
-        method: 'PUT',
-        body: JSON.stringify({ useCredits }),
-      });
+    async chooseTriageCredits(useCredits: boolean): Promise<TriageCreditsChoice> {
+      return (await api.call('heartbeat.choose_triage_credits', {
+        body: { useCredits },
+      })) as TriageCreditsChoice;
     },
-    listWakersOff(): Promise<WakersOff> {
-      return fetchJSON(baseUrl, '/heartbeats/wakers-off');
+    async listWakersOff(): Promise<WakersOff> {
+      return (await api.call('heartbeat.wakers_off', {})) as WakersOff;
     },
   };
 }
