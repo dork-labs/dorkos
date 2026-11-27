@@ -17,7 +17,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { MeshCore } from '@dorkos/mesh';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { TaskStore } from '../../../../tasks/task-store.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { armedScheduleNote } from '../tasks/task-tool-copy.js';
 import { getTasksTools } from '../tasks/task-tools.js';
 import { handRegisteredInSessionTools } from '../index.js';
@@ -66,7 +66,7 @@ const GOOD_ARGS = {
 
 describe('tasks_* on a Trusted install', () => {
   let store: TaskStore;
-  let deps: McpToolDeps;
+  let deps: AgentToolDeps;
   let emit: ReturnType<typeof vi.fn>;
   let dorkHome: string;
   let agentHome: string;
@@ -91,7 +91,7 @@ describe('tasks_* on a Trusted install', () => {
         // The in-session tool set reads the relay subject of the session's agent.
         getSubjectByPath: () => undefined,
       } as unknown as MeshCore,
-    } as unknown as McpToolDeps;
+    } as unknown as AgentToolDeps;
   });
 
   afterEach(async () => {

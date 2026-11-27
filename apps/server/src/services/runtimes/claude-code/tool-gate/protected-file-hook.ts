@@ -12,7 +12,7 @@
  */
 import type { HookCallback, HookCallbackMatcher } from '@anthropic-ai/claude-agent-sdk';
 import { preGateMessage } from '../../../core/capabilities/pre-gate-refusals.js';
-import { IN_SESSION_TOOL_PREFIX } from '../mcp-tools/tool-exposure.js';
+import { IN_SESSION_TOOL_PREFIX } from '../../../core/tool-names/tool-names.js';
 
 /** Each guarded tool, by its in-session name, and the id its early check is registered under. */
 const GUARDED: Readonly<Record<string, string>> = {

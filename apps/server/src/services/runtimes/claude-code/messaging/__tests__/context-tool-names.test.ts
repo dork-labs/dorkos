@@ -123,7 +123,7 @@ import {
   _buildRelayConnectionsBlock,
 } from '../context-builder.js';
 import { createDorkOsToolServer } from '../../mcp-tools/index.js';
-import { IN_SESSION_TOOL_PREFIX } from '../../mcp-tools/tool-exposure.js';
+import { IN_SESSION_TOOL_PREFIX } from '../../../../core/tool-names/tool-names.js';
 import { composeCapabilityRegistryForDocs } from '../../../../core/self-description/dorkos-registry.js';
 import { GEN_UI_CONTEXT } from '../../../shared/gen-ui-context.js';
 import { buildRoomToolsBlock } from '../../../shared/room-tools-context.js';
@@ -132,9 +132,9 @@ import type { RoomContextData } from '@dorkos/shared/additional-context';
 import {
   CODEX_DORKOS_TOOL_PREFIX,
   OPENCODE_DORKOS_TOOL_PREFIX,
-} from '../../../shared/dorkos-tool-names.js';
+} from '../../../../core/tool-names/tool-names.js';
 import { buildAgentContextAppend } from '../../../shared/agent-context.js';
-import type { McpToolDeps } from '../../mcp-tools/types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import type { RelayContextDeps } from '../context-builder.js';
 import {
@@ -158,12 +158,12 @@ const CWD = '/tmp/dor-1292-probe-cwd';
  * prose against a fraction of the real surface and let a bare name through. Only
  * registration is exercised, never a handler, so opaque stubs are enough.
  */
-function createFullDeps(): McpToolDeps {
+function createFullDeps(): AgentToolDeps {
   const stub = {} as never;
   return {
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
-    } as unknown as McpToolDeps['transcriptReader'],
+    } as unknown as AgentToolDeps['transcriptReader'],
     defaultCwd: CWD,
     dorkHome: '/tmp/dorkos-test-home',
     taskStore: stub,
@@ -733,7 +733,6 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'cli-invocation.ts',
       'derive-title.ts',
       'dorkos-mcp-injection.ts',
-      'dorkos-tool-names.ts',
       'empty-stream-guard.ts',
       'gen-ui-context.ts',
       'home-skill-commands.ts',
@@ -753,10 +752,12 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'staged-context-block.ts',
     ]);
     // Read by every runtime too, from outside this directory (DOR-4928): the `control_ui`
-    // contract beside the capability that serves it, and the fence every block uses.
+    // contract beside the capability that serves it, and the fence every block uses, and the names
+    // every block spells (moved to the kernel in C9a).
     const elsewhere = [
       '../../../../session/browser-seat/ui-tool-contract.ts',
       '../../../../core/untrusted-text/untrusted-fence.ts',
+      '../../../../core/tool-names/tool-names.ts',
     ].map((path) => fileURLToPath(new URL(path, import.meta.url)));
 
     const offenders: string[] = [];

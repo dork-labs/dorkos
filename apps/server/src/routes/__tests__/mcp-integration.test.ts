@@ -50,7 +50,7 @@ import { createExternalMcpServer } from '../../services/core/mcp-server.js';
 import type { ApiEnv } from '../../http/api-chain.js';
 import { apiRequestBody } from '../../http/request-body.js';
 import { createMcpEndpoint, createMcpRoutes } from '../mcp.js';
-import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../services/core/agent-tool-kit/agent-tool-kit.js';
 
 /**
  * ONE listener for the whole file, with the app behind it swapped per test
@@ -66,14 +66,14 @@ const LOCAL_TOKEN = `dork_mcp_local_${'a'.repeat(64)}`;
 const TOKEN_PATH = '/tmp/dork/mcp-local-token';
 
 /**
- * Create minimal McpToolDeps with mock services.
+ * Create minimal AgentToolDeps with mock services.
  * Only required fields are set; optional services are omitted.
  */
-function createMinimalDeps(): McpToolDeps {
+function createMinimalDeps(): AgentToolDeps {
   return {
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
-    } as unknown as McpToolDeps['transcriptReader'],
+    } as unknown as AgentToolDeps['transcriptReader'],
     defaultCwd: '/tmp/test',
     dorkHome: '/tmp/dorkos-test-home',
   };

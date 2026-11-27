@@ -6,8 +6,8 @@
  *
  * @module services/runtimes/claude-code/mcp-tools/tasks/task-delete-tool
  */
-import type { McpToolDeps } from '../types.js';
-import { jsonContent, requireTasks } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
+import { jsonContent, requireTasks } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import {
   agentDeleteRefusal,
   removeScheduledTaskFile,
@@ -25,7 +25,7 @@ import { resolveParkedScheduleRemoved } from '../../../../notifications/emitters
  * agent had been told it was gone. `DELETE /api/tasks/:id` always removed the
  * file, and now both doors do it through the same seam.
  */
-export function createDeleteScheduleHandler(deps: McpToolDeps) {
+export function createDeleteScheduleHandler(deps: AgentToolDeps) {
   return async (args: { id: string }) => {
     const err = requireTasks(deps);
     if (err) return err;

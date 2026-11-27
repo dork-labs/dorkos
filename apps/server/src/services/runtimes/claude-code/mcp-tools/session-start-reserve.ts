@@ -8,7 +8,7 @@
 import { getStartWorkService, type StartReservation } from '../../../extensions/start-work.js';
 import { scheduledOriginStamp } from '../../../tasks/agent-mode/agent-mode-run-origin.js';
 import type { SessionStartPermission } from './session-start-permission.js';
-import type { McpToolDeps } from './types.js';
+import type { AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
 
 /**
  * Claim a start slot for a chat started from `parentSessionId`, recording who
@@ -24,7 +24,7 @@ export function reserveChatStart(start: {
   reason: string | undefined;
   permission: SessionStartPermission;
   reportBack: boolean;
-  taskStore: McpToolDeps['taskStore'];
+  taskStore: AgentToolDeps['taskStore'];
   unattended?: boolean;
 }): { ok: true; reservation: StartReservation | null } | { ok: false; message: string } {
   const { sessionId, parentSessionId, reason, permission, reportBack, taskStore } = start;

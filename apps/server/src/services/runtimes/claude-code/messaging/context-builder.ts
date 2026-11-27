@@ -15,7 +15,7 @@ import {
   wrapContextTag as wrapTag,
 } from '../../shared/prose/prose-context.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
-import { IN_SESSION_TOOL_PREFIX } from '../mcp-tools/tool-exposure.js';
+import { IN_SESSION_TOOL_PREFIX } from '../../../core/tool-names/tool-names.js';
 import { WORKBENCH } from '../../../../config/constants.js';
 import { TASKS_TOOLS_CONTEXT } from '../mcp-tools/tasks/tasks-tools-context.js';
 

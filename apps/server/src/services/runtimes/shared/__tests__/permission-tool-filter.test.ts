@@ -27,7 +27,7 @@ import { permissionActions } from '../../../core/permissions/index.js';
 import { composeCapabilityRegistryForDocs } from '../../../core/self-description/dorkos-registry.js';
 import { registerCapabilitiesAsMcpTools } from '../../../core/external-mcp/capability-mcp-tools.js';
 import { createDorkOsToolServer } from '../../claude-code/mcp-tools/index.js';
-import type { McpToolDeps } from '../../claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
 
 /** The tools in the Rooms area, in-session or not. */
 const ROOM_AREA_TOOLS = [
@@ -149,7 +149,7 @@ describe('the builders', () => {
 
   it("claude-code's in-session server leaves hidden tools out", async () => {
     const stub = {} as never;
-    const deps: McpToolDeps = {
+    const deps: AgentToolDeps = {
       transcriptReader: { listSessions: vi.fn().mockResolvedValue([]) } as never,
       defaultCwd: '/tmp/permission-filter',
       dorkHome: '/tmp/permission-filter-home',

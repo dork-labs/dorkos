@@ -11,7 +11,7 @@
  * @module services/core/external-mcp/agent-extension-tools
  */
 import type { ToolRegistrar } from '../mcp-tool-gate.js';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import { getAgentTools } from '../../runtimes/claude-code/mcp-tools/agent-tools.js';
 import { extensionToolDefinitions } from '../../runtimes/claude-code/mcp-tools/extension-tools.js';
 import { ToolAnnotationPresets } from '../mcp-tool-metadata.js';
@@ -42,7 +42,10 @@ const EXTENSION_EXTERNAL_CONFIGS: ExternalToolConfigs = {
  *   tool's permission tier before its handler.
  * @param deps - Shared MCP tool dependencies.
  */
-export function registerAgentAndExtensionTools(registrar: ToolRegistrar, deps: McpToolDeps): void {
+export function registerAgentAndExtensionTools(
+  registrar: ToolRegistrar,
+  deps: AgentToolDeps
+): void {
   registerFromDefinitions(registrar, getAgentTools(deps), AGENT_EXTERNAL_CONFIGS);
   registerFromDefinitions(registrar, extensionToolDefinitions(deps), EXTENSION_EXTERNAL_CONFIGS);
 }

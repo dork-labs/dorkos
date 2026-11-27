@@ -62,7 +62,7 @@ import {
   CLAUDE_CODE_DORKOS_TOOL_PREFIX,
   CODEX_DORKOS_TOOL_PREFIX,
   OPENCODE_DORKOS_TOOL_PREFIX,
-} from '../runtimes/shared/dorkos-tool-names.js';
+} from '../core/tool-names/tool-names.js';
 import { homeOf, resolveAgentHome, turnAgentOf } from '../core/agent-identity/agent-home.js';
 import { MCP_TOOL_TIERS } from '../core/mcp-tool-tiers.js';
 import { auditTrail, recordAudit } from './audit-trail.js';

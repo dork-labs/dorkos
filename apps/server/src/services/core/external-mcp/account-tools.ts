@@ -10,7 +10,7 @@
 import { z } from 'zod';
 import { AccountUsageSchema } from '@dorkos/shared/account-usage';
 import type { ToolRegistrar } from '../mcp-tool-gate.js';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import { getAccountTools } from '../../runtimes/claude-code/mcp-tools/account-tools.js';
 import { ToolAnnotationPresets } from '../mcp-tool-metadata.js';
 import { registerFromDefinitions, type ExternalToolConfigs } from './register-from-definitions.js';
@@ -35,6 +35,6 @@ const ACCOUNT_EXTERNAL_CONFIGS: ExternalToolConfigs = {
  * @param registrar - The gated tool registrar from `mcp-server.ts`.
  * @param deps - Shared MCP tool dependencies.
  */
-export function registerAccountTools(registrar: ToolRegistrar, deps: McpToolDeps): void {
+export function registerAccountTools(registrar: ToolRegistrar, deps: AgentToolDeps): void {
   registerFromDefinitions(registrar, getAccountTools(deps), ACCOUNT_EXTERNAL_CONFIGS);
 }

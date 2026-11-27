@@ -13,7 +13,7 @@ import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { PermissionModeId } from '@dorkos/shared/schemas';
 import { MCP_TOOL_TIERS } from '../../../../core/mcp-tool-tiers.js';
 import { composeCapabilityRegistryForDocs } from '../../../../core/self-description/dorkos-registry.js';
-import { inSessionToolName } from '../../mcp-tools/tool-exposure.js';
+import { inSessionToolName } from '../../../../core/tool-names/tool-names.js';
 import { DORKOS_AGENT_TOOLS } from '../auto-allow.js';
 import { createNeverAskHook } from '../never-ask-hook.js';
 import {

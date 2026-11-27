@@ -21,7 +21,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { Session } from '@dorkos/shared/schemas';
 import { createExternalMcpServer } from '../mcp-server.js';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import type { RuntimeRegistry } from '../runtime-registry.js';
 
 const NOW = new Date().toISOString();
@@ -95,12 +95,12 @@ describe('external MCP dorkos:// resources (real resources/list + resources/read
     const fakeMeshCore = {
       list: () => [AGENT],
       get: (agentId: string) => (agentId === AGENT.id ? AGENT : undefined),
-    } as unknown as McpToolDeps['meshCore'];
+    } as unknown as AgentToolDeps['meshCore'];
 
-    const deps: McpToolDeps = {
+    const deps: AgentToolDeps = {
       transcriptReader: {
         listSessions: async () => [],
-      } as unknown as McpToolDeps['transcriptReader'],
+      } as unknown as AgentToolDeps['transcriptReader'],
       defaultCwd: workspaceDir,
       runtimeRegistry: fakeRuntimeRegistry,
       meshCore: fakeMeshCore,
@@ -243,10 +243,10 @@ describe('external MCP dorkos:// resources (real resources/list + resources/read
       },
       getInternalSessionId: (sessionId: string) => sessionId,
     };
-    const deps: McpToolDeps = {
+    const deps: AgentToolDeps = {
       transcriptReader: {
         listSessions: async () => [],
-      } as unknown as McpToolDeps['transcriptReader'],
+      } as unknown as AgentToolDeps['transcriptReader'],
       defaultCwd: workspaceDir,
       runtimeRegistry: {
         listRuntimes: () => [healthyRuntime, brokenRuntime],

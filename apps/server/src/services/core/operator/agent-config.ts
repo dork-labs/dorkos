@@ -40,7 +40,7 @@ import { chatReadOutsideWords } from '../turn-power/chat-outside-words.js';
 import { redactSecretsInText } from '../approvals/approval-summary.js';
 import { hasHiddenCardCharacters } from '../../harness/hook-card.js';
 import { validateBoundaryOrDorkHome } from '../../../lib/boundary.js';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import { agentSelectorSchema } from './agent-file-inputs.js';
 import {
   agentUpdateFailure,
@@ -203,7 +203,7 @@ async function ensureRealDir(dir: string): Promise<string | null> {
  * @param deps - Tool deps (`meshCore` for `agent_id` resolution).
  * @param callerAgentPath - The calling agent's verified home, when one called.
  */
-export function createUpdateAgentConfigHandler(deps: McpToolDeps, callerAgentPath?: string) {
+export function createUpdateAgentConfigHandler(deps: AgentToolDeps, callerAgentPath?: string) {
   return async (args: UpdateAgentConfigArgs): Promise<OperatorToolResult> => {
     try {
       const segments = agentConfigSegments(args.path);
@@ -275,7 +275,7 @@ export function createUpdateAgentConfigHandler(deps: McpToolDeps, callerAgentPat
  *
  * @param requireDeps - The operator domain's dependency check.
  */
-export function defineUpdateAgentConfig(requireDeps: (deps: CapabilityDeps) => McpToolDeps) {
+export function defineUpdateAgentConfig(requireDeps: (deps: CapabilityDeps) => AgentToolDeps) {
   return defineCapability({
     id: ID,
     title: "Change another agent's setup file",

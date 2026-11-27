@@ -4,7 +4,11 @@ import {
   CONNECTOR_RUNTIME_MCP_SERVER_NAME,
   type ConnectorRuntimeTools,
 } from '../connector-tools.js';
-import { DORKOS_MCP_SERVER_NAME, dorkosToolNameFor, mcpToolNameFor } from './dorkos-tool-names.js';
+import {
+  DORKOS_MCP_SERVER_NAME,
+  dorkosToolNameFor,
+  mcpToolNameFor,
+} from '../../core/tool-names/tool-names.js';
 import { SERVICE_CATALOG_TOOL_NAME } from '@dorkos/shared/connections-lease';
 import { outsideWordsNote } from '../../core/turn-power/marked-turn-copy.js';
 

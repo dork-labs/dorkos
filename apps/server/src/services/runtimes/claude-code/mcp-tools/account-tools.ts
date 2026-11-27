@@ -19,8 +19,8 @@ import {
 } from '../accounts/account-probe.js';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
-import type { McpToolDeps } from './types.js';
-import { jsonContent, structuredJsonContent } from './types.js';
+import type { AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
+import { jsonContent, structuredJsonContent } from '../../../core/agent-tool-kit/agent-tool-kit.js';
 import { turnReadOutsideWords } from '../../../core/turn-power/outsider-turn.js';
 import { markedTurnRunsAtFull } from '../../../core/turn-power/full-autonomy.js';
 import type { TaskProvenanceResolver } from './tasks/task-tools.js';
@@ -144,7 +144,7 @@ export async function handleAccountsProbe(args: { account: string }, marked = fa
  * @param resolveProvenance - The calling session and agent, in a session; absent
  *   on the sessionless external server, which has no turn to be marked.
  */
-export function getAccountTools(_deps: McpToolDeps, resolveProvenance?: TaskProvenanceResolver) {
+export function getAccountTools(_deps: AgentToolDeps, resolveProvenance?: TaskProvenanceResolver) {
   return [
     tool(
       'accounts_usage',

@@ -1,6 +1,6 @@
 import { MCP_SERVER_OPTIONS } from './capabilities/mcp-input/limits.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { McpToolDeps } from '../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from './agent-tool-kit/agent-tool-kit.js';
 import { resolveSenderIdentity } from '../runtimes/claude-code/mcp-tools/relay-helpers.js';
 import { registerCoreTools } from './external-mcp/core-tools.js';
 import { registerAccountTools } from './external-mcp/account-tools.js';
@@ -81,7 +81,7 @@ import { gatedToolRegistrar } from './mcp-tool-gate.js';
  *   agent's own settings when it identified itself, the defaults otherwise.
  */
 export function createExternalMcpServer(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   marketplaceDeps?: MarketplaceMcpDeps,
   registry?: CapabilityRegistry,
   identity?: AgentIdentity,

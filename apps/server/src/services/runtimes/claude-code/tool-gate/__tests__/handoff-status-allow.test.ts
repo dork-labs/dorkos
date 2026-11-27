@@ -3,7 +3,7 @@
  * a chat with an agent identity, Never ask included, and for no chat without one.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { inSessionToolName } from '../../mcp-tools/tool-exposure.js';
+import { inSessionToolName } from '../../../../core/tool-names/tool-names.js';
 import { NEVER_ASK_MODE_ID } from '../../runtime-constants.js';
 import { dorkosAutoAllows } from '../auto-allow.js';
 import { neverAskAllows } from '../never-ask-hook.js';

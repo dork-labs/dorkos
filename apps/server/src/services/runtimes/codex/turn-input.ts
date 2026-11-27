@@ -18,7 +18,7 @@ import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import type { EffortLevel, SessionSettings } from '@dorkos/shared/types';
 import { GEN_UI_CONTEXT } from '../shared/gen-ui-context.js';
-import { CODEX_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
+import { CODEX_DORKOS_TOOL_PREFIX } from '../../core/tool-names/tool-names.js';
 import { formatRoomContext } from '../shared/room-context-block.js';
 import { renderProseContextBlock, type ProseContextEntry } from '../shared/prose/prose-context.js';
 import { recordTurnContext, turnPlaceOf } from '../../session/turn-context/record-turn-context.js';

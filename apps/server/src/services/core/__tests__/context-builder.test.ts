@@ -39,7 +39,7 @@ import { isRelayEnabled } from '../../relay/relay-state.js';
 import { isTasksEnabled } from '../../tasks/task-state.js';
 import { configManager } from '../config-manager.js';
 import { toolDocGates } from '../../runtimes/claude-code/messaging/tool-doc-gates.js';
-import { IN_SESSION_TOOL_PREFIX } from '../../runtimes/claude-code/mcp-tools/tool-exposure.js';
+import { IN_SESSION_TOOL_PREFIX } from '../tool-names/tool-names.js';
 import {
   clearTestHomes,
   registerEveryFolderAsHome,

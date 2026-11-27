@@ -9,7 +9,7 @@ import {
   handleAccountsUsage,
   usageAttention,
 } from '../account-tools.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 
 describe('accounts_usage', () => {
   afterEach(() => setAccountUsageStore(undefined));
@@ -78,7 +78,7 @@ describe('accounts_probe', () => {
   });
 
   it('is declared with an `account` input', () => {
-    const probe = getAccountTools({} as McpToolDeps).find((t) => t.name === 'accounts_probe');
+    const probe = getAccountTools({} as AgentToolDeps).find((t) => t.name === 'accounts_probe');
     expect(probe).toBeDefined();
     expect(Object.keys(probe!.inputSchema)).toEqual(['account']);
   });

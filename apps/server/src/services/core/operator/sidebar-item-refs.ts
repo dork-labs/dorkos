@@ -42,7 +42,7 @@
  * room id back out of the answer.
  *
  * So the room roster handed to this module is the caller's own
- * (`McpToolDeps.listVisibleRooms`), and every room miss answers with ONE
+ * (`AgentToolDeps.listVisibleRooms`), and every room miss answers with ONE
  * sentence carrying nothing learned from the store: no id, no count, no title.
  * A room that does not exist and a room the caller may not see are
  * byte-identical here. The caller's OWN words are echoed back, because a refusal

@@ -131,7 +131,7 @@ const { READ_ONLY_MCP_TOOL_NAMES } = await import('../../external-mcp/tool-secur
 const { createDorkLinkLookups } = await import('../../links/link-lookups.js');
 const { callerAuthor } = await import('../../../rooms/service/room-caller-author.js');
 import type { CapabilityDeps } from '../capability-definition.js';
-import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../agent-tool-kit/agent-tool-kit.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 import { AgentRegistry } from '@dorkos/mesh';
 import { AgentMcpServerService } from '../../../mesh/agent-mcp-server-service.js';
@@ -148,7 +148,7 @@ const operatorDeps = {
   activityService: { list: async () => ({ items: [], nextCursor: null }) },
   runtimeRegistry: { listRuntimes: () => [] },
   meshCore: { listWithPaths: () => [] },
-} as unknown as McpToolDeps;
+} as unknown as AgentToolDeps;
 
 /**
  * Set by the fake `uninstallFlow` if it is ever reached. The destructive-gate

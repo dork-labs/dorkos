@@ -13,8 +13,8 @@ import { createScanBrowserWarner } from '../../../browser/agent-browser-lint.js'
 import { notifyAgentCreated } from '../../../core/agent-created-hook.js';
 import { resolveNamedAgentIdentity } from '../../../mesh/normalize-agent-identity.js';
 import { currentCreatorAccountId } from '../../../heartbeats/reports-to.js';
-import type { McpToolDeps } from './types.js';
-import { jsonContent, structuredJsonContent } from './types.js';
+import type { AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
+import { jsonContent, structuredJsonContent } from '../../../core/agent-tool-kit/agent-tool-kit.js';
 import { installedFromOutside } from '../../../marketplace/installed-metadata.js';
 
 /**
@@ -24,7 +24,7 @@ import { installedFromOutside } from '../../../marketplace/installed-metadata.js
  * team wrote (DOR-3969).
  */
 async function asListedAgent<T extends { id: string }>(
-  mesh: NonNullable<McpToolDeps['meshCore']>,
+  mesh: NonNullable<AgentToolDeps['meshCore']>,
   agent: T
 ): Promise<T & { ref: string | null; fromPackage?: true }> {
   const home = mesh.getProjectPath(agent.id);
@@ -33,7 +33,7 @@ async function asListedAgent<T extends { id: string }>(
 }
 
 /** Guard that returns an error response when Mesh is disabled. */
-function requireMesh(deps: McpToolDeps) {
+function requireMesh(deps: AgentToolDeps) {
   if (!deps.meshCore) {
     return jsonContent({ error: 'The agent directory is off', code: 'MESH_DISABLED' }, true);
   }
@@ -70,7 +70,7 @@ async function resolveBoundedPath(
 }
 
 /** Discover agents by scanning directories. */
-export function createMeshDiscoverHandler(deps: McpToolDeps) {
+export function createMeshDiscoverHandler(deps: AgentToolDeps) {
   return async (args: { roots: string[]; maxDepth?: number; includeRegistered?: boolean }) => {
     const err = requireMesh(deps);
     if (err) return err;
@@ -129,7 +129,7 @@ export function createMeshDiscoverHandler(deps: McpToolDeps) {
  * two HTTP register routes share — three doors, one answer. Read its header for
  * why whitespace is the whole test, and what a wider one would have moved.
  */
-export function createMeshRegisterHandler(deps: McpToolDeps) {
+export function createMeshRegisterHandler(deps: AgentToolDeps) {
   return async (args: {
     path: string;
     name?: string;
@@ -253,7 +253,7 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
  * machine, and this tool is not on any hot path; revisit if a mesh ever gets
  * large enough for that to stop being true.
  */
-export function createMeshListHandler(deps: McpToolDeps) {
+export function createMeshListHandler(deps: AgentToolDeps) {
   return async (args: { runtime?: string; capability?: string; callerNamespace?: string }) => {
     const err = requireMesh(deps);
     if (err) return err;
@@ -279,7 +279,7 @@ export function createMeshListHandler(deps: McpToolDeps) {
 }
 
 /** Deny a candidate path from future discovery. */
-export function createMeshDenyHandler(deps: McpToolDeps) {
+export function createMeshDenyHandler(deps: AgentToolDeps) {
   return async (args: { path: string; reason?: string }) => {
     const err = requireMesh(deps);
     if (err) return err;
@@ -300,7 +300,7 @@ export function createMeshDenyHandler(deps: McpToolDeps) {
 }
 
 /** Unregister an agent by ID. */
-export function createMeshUnregisterHandler(deps: McpToolDeps) {
+export function createMeshUnregisterHandler(deps: AgentToolDeps) {
   return async (args: { agentId: string }) => {
     const err = requireMesh(deps);
     if (err) return err;
@@ -325,7 +325,7 @@ export function createMeshUnregisterHandler(deps: McpToolDeps) {
 }
 
 /** Get aggregate mesh health status. */
-export function createMeshStatusHandler(deps: McpToolDeps) {
+export function createMeshStatusHandler(deps: AgentToolDeps) {
   return async () => {
     const err = requireMesh(deps);
     if (err) return err;
@@ -335,7 +335,7 @@ export function createMeshStatusHandler(deps: McpToolDeps) {
 }
 
 /** Inspect a specific agent — manifest, health status, and its Relay endpoint for integrations. */
-export function createMeshInspectHandler(deps: McpToolDeps) {
+export function createMeshInspectHandler(deps: AgentToolDeps) {
   return async (args: { agentId: string }) => {
     const err = requireMesh(deps);
     if (err) return err;
@@ -354,7 +354,7 @@ export function createMeshInspectHandler(deps: McpToolDeps) {
 }
 
 /** Query the agent network topology visible to a given namespace. */
-export function createMeshQueryTopologyHandler(deps: McpToolDeps) {
+export function createMeshQueryTopologyHandler(deps: AgentToolDeps) {
   return async (args: { namespace?: string }) => {
     const err = requireMesh(deps);
     if (err) return err;
@@ -375,7 +375,7 @@ export function createMeshQueryTopologyHandler(deps: McpToolDeps) {
  *
  * @param deps - Shared MCP tool dependencies.
  */
-export function meshToolDefinitions(deps: McpToolDeps) {
+export function meshToolDefinitions(deps: AgentToolDeps) {
   return [
     tool(
       'mesh_discover',
@@ -494,7 +494,7 @@ export function meshToolDefinitions(deps: McpToolDeps) {
  *
  * @param deps - Shared MCP tool dependencies.
  */
-export function getMeshTools(deps: McpToolDeps) {
+export function getMeshTools(deps: AgentToolDeps) {
   if (!deps.meshCore) return [];
   return meshToolDefinitions(deps);
 }

@@ -4,8 +4,8 @@ import {
   createBindingCreateHandler,
   createBindingDeleteHandler,
   createDorkOsToolServer,
-  type McpToolDeps,
 } from '../../runtimes/claude-code/mcp-tools/index.js';
+import { type AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import { createBindingListSessionsHandler } from '../../runtimes/claude-code/mcp-tools/binding-tools.js';
 import { initSessionVisibility, resetSessionVisibility } from '../../audit/session-visibility.js';
 
@@ -56,12 +56,12 @@ function makeMockBindingStore(overrides?: Record<string, unknown>) {
 
 function makeMockDeps(
   bindingStore?: ReturnType<typeof makeMockBindingStore> | undefined
-): McpToolDeps {
+): AgentToolDeps {
   return {
-    transcriptReader: {} as McpToolDeps['transcriptReader'],
+    transcriptReader: {} as AgentToolDeps['transcriptReader'],
     defaultCwd: '/test',
     dorkHome: '/tmp/dorkos-test-home',
-    bindingStore: bindingStore as unknown as McpToolDeps['bindingStore'],
+    bindingStore: bindingStore as unknown as AgentToolDeps['bindingStore'],
   };
 }
 
@@ -250,14 +250,14 @@ describe('Binding MCP Tools', () => {
         bindingRouter?: ReturnType<typeof makeMockBindingRouter>;
         adapterManager?: ReturnType<typeof makeMockAdapterManager>;
       } = {}
-    ): McpToolDeps {
+    ): AgentToolDeps {
       return {
-        transcriptReader: {} as McpToolDeps['transcriptReader'],
+        transcriptReader: {} as AgentToolDeps['transcriptReader'],
         defaultCwd: '/test',
         dorkHome: '/tmp/dorkos-test-home',
-        bindingStore: opts.bindingStore as unknown as McpToolDeps['bindingStore'],
-        bindingRouter: opts.bindingRouter as unknown as McpToolDeps['bindingRouter'],
-        adapterManager: opts.adapterManager as unknown as McpToolDeps['adapterManager'],
+        bindingStore: opts.bindingStore as unknown as AgentToolDeps['bindingStore'],
+        bindingRouter: opts.bindingRouter as unknown as AgentToolDeps['bindingRouter'],
+        adapterManager: opts.adapterManager as unknown as AgentToolDeps['adapterManager'],
       };
     }
 

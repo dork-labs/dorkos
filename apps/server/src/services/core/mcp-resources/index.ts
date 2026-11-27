@@ -40,7 +40,7 @@
  */
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import type { CapabilityRegistry } from '../capabilities/index.js';
 import { registerSessionResources } from './session-resources.js';
 import { registerAgentResources } from './agent-resources.js';
@@ -65,7 +65,7 @@ import { registerCapabilitiesResource } from './capabilities-resource.js';
  */
 export function registerDorkOsResources(
   server: McpServer,
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   registry: CapabilityRegistry,
   projectDir: string
 ): void {

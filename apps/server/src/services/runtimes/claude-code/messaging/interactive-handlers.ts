@@ -32,7 +32,8 @@ import {
   type InteractiveSession,
 } from './interaction-wait.js';
 import { toSdkQuestionAnswers } from '../sessions/question-answers.js';
-import { IN_SESSION_TOOL_PREFIX, isHostServedOrUnattributed } from '../mcp-tools/tool-exposure.js';
+import { isHostServedOrUnattributed } from '../mcp-tools/tool-exposure.js';
+import { IN_SESSION_TOOL_PREFIX } from '../../../core/tool-names/tool-names.js';
 import { recordAutoModeStop } from '../../../observability/auto-mode-stops.js';
 import {
   approvalTimeoutDenial,

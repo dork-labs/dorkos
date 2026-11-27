@@ -41,7 +41,7 @@ vi.mock('../../config-manager.js', () => ({
 vi.mock('../../update-checker.js', () => ({ getLatestVersion: mocks.getLatestVersion }));
 vi.mock('../../../session/index.js', () => ({ listRecentSessions: mocks.listRecentSessions }));
 
-import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../agent-tool-kit/agent-tool-kit.js';
 import {
   createUpdateAgentHandler,
   createConfigGetHandler,
@@ -58,9 +58,9 @@ function parsePayload<T = unknown>(result: OperatorToolResult): T {
 }
 
 /** Build a deps bundle populated only with the fields a given test exercises. */
-function buildDeps(overrides: Partial<McpToolDeps> = {}): McpToolDeps {
+function buildDeps(overrides: Partial<AgentToolDeps> = {}): AgentToolDeps {
   return {
-    transcriptReader: {} as McpToolDeps['transcriptReader'],
+    transcriptReader: {} as AgentToolDeps['transcriptReader'],
     defaultCwd: '/tmp/test',
     dorkHome: '/tmp/dorkos-test-home',
     ...overrides,
@@ -382,10 +382,10 @@ describe('agents_recent_activity', () => {
       warnings: [],
     });
     const deps = buildDeps({
-      runtimeRegistry: { listRuntimes: () => [] } as unknown as McpToolDeps['runtimeRegistry'],
+      runtimeRegistry: { listRuntimes: () => [] } as unknown as AgentToolDeps['runtimeRegistry'],
       meshCore: {
         listWithPaths: () => [{ id: '1', name: 'a', projectPath: '/agents/a' }],
-      } as unknown as McpToolDeps['meshCore'],
+      } as unknown as AgentToolDeps['meshCore'],
     });
 
     const result = await createAgentsRecentActivityHandler(deps)({ limit: 5 });

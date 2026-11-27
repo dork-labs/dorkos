@@ -75,7 +75,8 @@ import { applyBrowserToolDeny, mcpToolHookMatchers } from '../tool-gate/mcp-tool
 import { applySecretReadDeny } from '../secret-files/secret-read-deny.js';
 import { heldRuntimeNotice } from '../folder-settings/held-runtime-notice.js';
 import { applyLaunchHeldFolderDeny } from '../folder-settings/dev-link-deny.js';
-import { IN_SESSION_TOOL_PREFIX, loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
+import { loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
+import { IN_SESSION_TOOL_PREFIX } from '../../../core/tool-names/tool-names.js';
 import { env } from '../../../../env.js';
 import {
   CLASSIFIER_CONTEXT_MATCHER,

@@ -108,7 +108,7 @@ vi.mock('../../../../tasks/agent-mode/agent-mode-sources.js', async () => {
 });
 
 import { TaskStore } from '../../../../tasks/task-store.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { getTasksTools } from '../tasks/task-tools.js';
 import {
   initPermissionGate,
@@ -183,7 +183,7 @@ interface SessionTool {
 
 describe('tasks_update and a SKILL file changed outside the tools (M4)', () => {
   let store: TaskStore;
-  let deps: McpToolDeps;
+  let deps: AgentToolDeps;
   let emit: ReturnType<typeof vi.fn>;
   let dorkHome: string;
   let homeA: string;
@@ -217,7 +217,7 @@ describe('tasks_update and a SKILL file changed outside the tools (M4)', () => {
         getProjectPath: (id: string) => agents.find((a) => a.id === id)?.projectPath,
         getSubjectByPath: () => undefined,
       } as unknown as MeshCore,
-    } as unknown as McpToolDeps;
+    } as unknown as AgentToolDeps;
     config = { preset: 'trusted', defaults: { areas: {}, actions: {} } };
     initPermissionGate({ readConfig: () => config });
     hooks.onRead = undefined;

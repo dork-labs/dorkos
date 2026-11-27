@@ -22,7 +22,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { Task } from '@dorkos/shared/schemas';
 import { TaskStore } from '../../../../tasks/task-store.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { getTasksTools } from '../tasks/task-tools.js';
 import { RULES_NOTE } from '../../../../tasks/agent-mode/agent-mode-asked-for.js';
 import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
@@ -64,7 +64,7 @@ describe('tasks_create / tasks_update carry runtime, model and effort', () => {
         getProjectPath: () => projectPath,
         listWithPaths: () => [{ id: 'fixture-agent', projectPath }],
       },
-    } as unknown as McpToolDeps;
+    } as unknown as AgentToolDeps;
     tools = Object.fromEntries(
       (
         getTasksTools(deps, undefined, undefined, () => projectPath) as unknown as SessionTool[]

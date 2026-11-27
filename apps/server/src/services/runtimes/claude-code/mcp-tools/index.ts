@@ -6,13 +6,10 @@
  */
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { bindsOpenerWhenAvailable, requiresDocPrincipal } from './doc-principal-policy.js';
-import type { McpToolDeps, McpToolSession } from './types.js';
-import {
-  DORKOS_MCP_SERVER_NAME,
-  toolExposure,
-  alwaysLoadedToolsFor,
-  loadsAgentToAgentTools,
-} from './tool-exposure.js';
+import type { McpToolSession } from './types.js';
+import type { AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
+import { toolExposure, alwaysLoadedToolsFor, loadsAgentToAgentTools } from './tool-exposure.js';
+import { DORKOS_MCP_SERVER_NAME } from '../../../core/tool-names/tool-names.js';
 import { DORKOS_MCP_TOOL_TIMEOUT_MS } from './tool-timeout.js';
 import { recordToolSurface } from './tool-surface.js';
 import { getCoreTools } from './core-tools.js';
@@ -70,7 +67,7 @@ import { readsCallerConnections } from '../../../connectors/runtime-capability-s
 // straight from the domain module instead, so the tool is described once for both
 // servers (DOR-499). Production reaches this barrel only for
 // `createDorkOsToolServer`, from `apps/server/src/index.ts`.
-export type { McpToolDeps, McpToolSession } from './types.js';
+export type { McpToolSession } from './types.js';
 export { dorkosToolSurfaceOf } from './tool-surface.js';
 export {
   handlePing,
@@ -155,7 +152,7 @@ function turnNarrowsReads(session: McpToolSession | undefined): boolean {
  * @throws If any tool declares no tier in `MCP_TOOL_TIERS`.
  */
 export function handRegisteredInSessionTools(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   options: HandRegisteredInSessionOptions = {}
 ): SdkMcpTool[] {
   return handRegisteredInSessionToolSet(deps, options).tools;
@@ -197,7 +194,7 @@ export interface HandRegisteredInSessionOptions {
  *   session's eager-loading set, which the capability half reads too.
  */
 export function handRegisteredInSessionToolSet(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   options: HandRegisteredInSessionOptions = {}
 ): { tools: SdkMcpTool[]; reach: HandToolReach; alwaysLoaded: ReadonlySet<string> } {
   const { session, sessionId, resolveContext, hold } = options;
@@ -408,7 +405,7 @@ function withToolExposure(tools: SdkMcpTool[], alwaysLoaded: ReadonlySet<string>
  *   session holds a turn's connector context, for callers that are not a launch.
  */
 export function createDorkOsToolServer(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   session?: McpToolSession &
     Pick<import('../agent-types.js').AgentSession, 'connectorTurn' | 'unattendedApprovals'>,
   sessionId?: string,

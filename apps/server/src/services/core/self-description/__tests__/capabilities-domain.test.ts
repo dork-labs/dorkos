@@ -23,7 +23,7 @@ import { invokeCapabilityAsMcpResult } from '../../capabilities/mcp-projection.j
 import { MCP_TOOL_TIERS } from '../../mcp-tool-tiers.js';
 import { operatorDomain } from '../../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../../marketplace-mcp/marketplace-capabilities.js';
-import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../agent-tool-kit/agent-tool-kit.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 import { capabilitiesDomain, UNREGISTERED_TOOL_FAMILIES } from '../capabilities-domain.js';
 import {
@@ -34,7 +34,7 @@ import {
 } from '../catalog-projection.js';
 import { composeDorkOsCapabilityRegistry } from '../dorkos-registry.js';
 
-const stubOperatorDeps = {} as McpToolDeps;
+const stubOperatorDeps = {} as AgentToolDeps;
 const stubMarketplaceDeps = {} as MarketplaceMcpDeps;
 
 describe('composeDorkOsCapabilityRegistry', () => {
@@ -268,7 +268,7 @@ describe('list_capabilities surface', () => {
       const text = description().toLowerCase();
       const catalogToolNames = composeDorkOsCapabilityRegistry({
         logger: noopLogger,
-        operatorDeps: {} as McpToolDeps,
+        operatorDeps: {} as AgentToolDeps,
       }).capabilities.flatMap((c) => (c.surfaces.mcp ? [c.surfaces.mcp.toolName] : []));
 
       const segmentsOf = (toolName: string) => new Set(toolName.split('_'));
@@ -313,7 +313,7 @@ describe('list_capabilities surface', () => {
       // The catalog answers for them instead.
       const catalog = composeDorkOsCapabilityRegistry({
         logger: noopLogger,
-        operatorDeps: {} as McpToolDeps,
+        operatorDeps: {} as AgentToolDeps,
       });
       const uiTools = catalog.capabilities
         .filter((c) => c.id.startsWith('ui.'))

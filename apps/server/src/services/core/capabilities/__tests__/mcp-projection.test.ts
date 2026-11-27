@@ -24,7 +24,7 @@ import {
 } from '../mcp-projection.js';
 import { composeRegistry } from '../index.js';
 import { noopLogger } from '@dorkos/shared/logger';
-import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../agent-tool-kit/agent-tool-kit.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 
 // Stub deps: this test inspects the static projection (tool names, annotations,
@@ -32,7 +32,7 @@ import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mc
 // runs during composition, so supply empty bags to satisfy it.
 const registry = composeRegistry([operatorDomain, marketplaceDomain], {
   logger: noopLogger,
-  operatorDeps: {} as McpToolDeps,
+  operatorDeps: {} as AgentToolDeps,
   marketplaceDeps: {} as MarketplaceMcpDeps,
 });
 

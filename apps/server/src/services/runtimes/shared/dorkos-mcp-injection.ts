@@ -24,7 +24,7 @@ import {
   CONNECTOR_RUNTIME_KIND_HEADER,
   type ConnectorRuntimeMcpInjection,
 } from '../connector-tools.js';
-import { DORKOS_MCP_SERVER_NAME } from './dorkos-tool-names.js';
+import { DORKOS_MCP_SERVER_NAME } from '../../core/tool-names/tool-names.js';
 
 export { DORKOS_MCP_SERVER_NAME };
 

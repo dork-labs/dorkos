@@ -35,7 +35,7 @@ import type { ConfirmationProvider } from './confirmation-provider.js';
 
 /**
  * Dependency bundle for the marketplace MCP tools. Mirrors the existing
- * `McpToolDeps` pattern in `services/runtimes/claude-code/mcp-tools/types.ts`
+ * `AgentToolDeps` pattern in `services/runtimes/claude-code/mcp-tools/types.ts`
  * but is scoped to the marketplace surface so tool handlers do not need to
  * pull in unrelated services.
  *

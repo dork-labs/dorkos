@@ -11,7 +11,7 @@
 import { z } from 'zod';
 import { TaskSchema } from '@dorkos/shared/schemas';
 import type { ToolRegistrar } from '../mcp-tool-gate.js';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import { getTasksTools } from '../../runtimes/claude-code/mcp-tools/tasks/task-tools.js';
 import { ToolAnnotationPresets } from '../mcp-tool-metadata.js';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
@@ -47,7 +47,7 @@ const TASKS_EXTERNAL_CONFIGS: ExternalToolConfigs = {
  */
 export function registerTaskTools(
   registrar: ToolRegistrar,
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   identity?: AgentIdentity
 ): void {
   registerFromDefinitions(

@@ -10,7 +10,7 @@ import {
   CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS,
   connectorRuntimeHeaders,
 } from '../../connector-tools.js';
-import { DORKOS_MCP_SERVER_NAME } from '../../shared/dorkos-tool-names.js';
+import { DORKOS_MCP_SERVER_NAME } from '../../../core/tool-names/tool-names.js';
 import { codexCreditsThreadConfig } from '../credits-launch.js';
 import { withLiteralHeaders } from '../mcp-server-config.js';
 import { guardedMountTargetRecorder } from './writable-missing-targets.js';

@@ -70,7 +70,7 @@ import {
   DORKOS_AGENT_TOOLS,
   IDENTITY_SCOPED_TOOLS,
 } from '../../runtimes/claude-code/tool-gate/auto-allow.js';
-import { IN_SESSION_TOOL_PREFIX } from '../../runtimes/claude-code/mcp-tools/tool-exposure.js';
+import { IN_SESSION_TOOL_PREFIX } from '../tool-names/tool-names.js';
 import {
   composeCapabilityRegistryForDocs,
   composeDorkOsCapabilityRegistry,
@@ -84,7 +84,7 @@ import { askFor } from '../capabilities/__tests__/permission-gate-fixtures.js';
 import { ApprovalService } from '../approvals/index.js';
 import { eventFanOut } from '../event-fan-out.js';
 import type { AgentIdentity } from '../agent-identity/index.js';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import { auditEvents, type Db } from '@dorkos/db';
 import { AuditLog } from '../../audit/audit-log.js';
 import { AccountIds } from '../../audit/account-ids.js';
@@ -124,7 +124,7 @@ const TARGET_AGENT_ID = '01JXAMPLE0000000000000TEST';
  * The two destructive handlers get real behaviour, because "the call did not
  * happen" has to be read off the service they would have reached.
  */
-function createDeps(): McpToolDeps {
+function createDeps(): AgentToolDeps {
   return {
     transcriptReader: { listSessions: vi.fn().mockResolvedValue([]) },
     defaultCwd: '/tmp/mcp-tool-gate',
@@ -151,7 +151,7 @@ function createDeps(): McpToolDeps {
     adapterManager: {},
     traceStore: {},
     extensionManager: {},
-  } as unknown as McpToolDeps;
+  } as unknown as AgentToolDeps;
 }
 
 /** A registered tool as both servers expose it to this file. */

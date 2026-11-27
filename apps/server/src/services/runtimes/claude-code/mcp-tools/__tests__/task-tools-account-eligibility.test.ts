@@ -39,7 +39,7 @@ vi.mock('../../../../core/usage/account-eligibility.js', async (importOriginal) 
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Task } from '@dorkos/shared/schemas';
 import { TaskStore } from '../../../../tasks/task-store.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { getTasksTools } from '../tasks/task-tools.js';
 import {
   NotificationService,
@@ -77,7 +77,7 @@ const BASE = {
 let store: TaskStore;
 let tools: Record<string, SessionTool>;
 let root: string;
-let deps: McpToolDeps;
+let deps: AgentToolDeps;
 let projectPath: string;
 
 beforeEach(async () => {
@@ -108,7 +108,7 @@ beforeEach(async () => {
       getProjectPath: () => projectPath,
       listWithPaths: () => [{ id: 'fixture-agent', projectPath }],
     },
-  } as unknown as McpToolDeps;
+  } as unknown as AgentToolDeps;
   tools = Object.fromEntries(
     (getTasksTools(deps, undefined, undefined, () => projectPath) as unknown as SessionTool[]).map(
       (t) => [t.name, t]

@@ -41,17 +41,17 @@ import { roomsDomain } from '../../../rooms/room-capabilities.js';
 import { capabilitiesDomain } from '../../self-description/capabilities-domain.js';
 import { uiDomain } from '../../../session/browser-seat/ui-capabilities.js';
 import { composeDorkOsCapabilityRegistry } from '../../self-description/dorkos-registry.js';
-import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../agent-tool-kit/agent-tool-kit.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 
 const requestTarget = swappableServer();
 
-/** Minimal McpToolDeps — only the fields registration touches are set. */
-function createMinimalDeps(): McpToolDeps {
+/** Minimal AgentToolDeps — only the fields registration touches are set. */
+function createMinimalDeps(): AgentToolDeps {
   return {
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
-    } as unknown as McpToolDeps['transcriptReader'],
+    } as unknown as AgentToolDeps['transcriptReader'],
     defaultCwd: '/tmp/test',
     dorkHome: '/tmp/dorkos-test-home',
   };

@@ -6,8 +6,8 @@
  *
  * @module services/runtimes/claude-code/mcp-tools/extension-create-tool
  */
-import type { McpToolDeps } from './types.js';
-import { jsonContent } from './types.js';
+import type { AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
+import { jsonContent } from '../../../core/agent-tool-kit/agent-tool-kit.js';
 import { resolveProposerName } from '../../../tasks/task-provenance.js';
 import { turnReadOutsideWords } from '../../../core/turn-power/outsider-turn.js';
 import {
@@ -57,7 +57,7 @@ export type ExtensionCreatorResolver = () => {
  * @param resolveCreator - Who is creating it; absent on the external `/mcp` server.
  */
 export function createCreateExtensionHandler(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   resolveCreator?: ExtensionCreatorResolver
 ) {
   return async (args: {
