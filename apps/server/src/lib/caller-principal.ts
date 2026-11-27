@@ -92,3 +92,17 @@ export function readCallerPrincipal(
 export function ownerOnlyAudience(principal: CallerPrincipal): boolean {
   return principal.kind === 'operator';
 }
+
+/**
+ * The audience of front-door state a person may read and an agent may not: the
+ * person, or a program holding one of their keys, never anything presenting
+ * an agent identity. The tunnel's status uses it on `GET /api/events` and
+ * `GET /api/tunnel/status` alike (DOR-3650), so the stream and the route
+ * answer the same callers. Only HTTP principals pass: a chat-platform button or
+ * the session relay never reads front-door state.
+ *
+ * @param principal - What the connection registered itself as.
+ */
+export function frontDoorReadAudience(principal: CallerPrincipal): boolean {
+  return principal.kind === 'operator' || principal.kind === 'program';
+}

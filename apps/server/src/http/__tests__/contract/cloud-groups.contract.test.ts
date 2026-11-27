@@ -660,20 +660,28 @@ async function setup(
   return { json: text ? (JSON.parse(text) as Record<string, unknown>) : {}, headers: res.headers };
 }
 
-/** The first event-stream frame a server sends, its status and headers, then the stream closed. */
-function firstFrame(
+/**
+ * Open `GET /api/events` and read it until the frame `event` arrives; then the
+ * stream is closed. Returns that frame's `event:` and `data:` lines.
+ */
+function frameOn(
   server: ComposedServer | undefined,
-  url: string
+  event: string
 ): Promise<{ status: number; headers: http.IncomingHttpHeaders; frame: string }> {
   return new Promise((resolve, reject) => {
-    const req = http.get(new URL(url, server!.baseUrl), (res) => {
+    const req = http.get(new URL('/api/events', server!.baseUrl), (res) => {
       let text = '';
       res.setEncoding('utf8');
       res.on('data', (chunk: string) => {
         text += chunk;
-        const end = text.indexOf('\n\n');
+        const start = text.indexOf(`event: ${event}\n`);
+        const end = start === -1 ? -1 : text.indexOf('\n\n', start);
         if (end === -1) return;
-        resolve({ status: res.statusCode ?? 0, headers: res.headers, frame: text.slice(0, end) });
+        resolve({
+          status: res.statusCode ?? 0,
+          headers: res.headers,
+          frame: text.slice(start, end),
+        });
         req.destroy();
       });
       res.on('error', () => undefined);
@@ -703,12 +711,11 @@ describe('contract: the cloud and tunnel groups, driven by hand (login off)', ()
     await server?.close();
   }, 30_000);
 
-  it('streams the tunnel’s status as an event stream, then lets the client go', async () => {
-    const { status, headers, frame } = await firstFrame(server, '/api/tunnel/stream');
+  it('opens /api/events with the tunnel’s status, then lets the client go', async () => {
+    // `GET /api/tunnel/stream` is gone; a new reader of the global stream learns
+    // the status from the connect snapshot, with no second call.
+    const { status, frame } = await frameOn(server, 'tunnel_status');
     expect(status).toBe(200);
-    expect(headers['content-type']).toBe('text/event-stream');
-    expect(headers['cache-control']).toBe('no-cache');
-    expect(headers['x-content-type-options']).toBe('nosniff');
     const [event, data] = frame.split('\n');
     expect(event).toBe('event: tunnel_status');
     expect(TUNNEL_STATUS.parse(JSON.parse(data!.replace(/^data: /, '')))).toBeTruthy();
@@ -1083,7 +1090,6 @@ describe('contract: the same groups with login on', () => {
       ['POST', '/api/cloud/link/start'],
       ['GET', '/api/cloud/communities/sign-in'],
       ['GET', '/api/tunnel/status'],
-      ['GET', '/api/tunnel/stream'],
       ['POST', '/api/tunnel/stop'],
       ['GET', '/api/remote-access/report'],
       ['POST', '/api/remote-access/close'],

@@ -1,15 +1,14 @@
 /**
- * Tunnel route — endpoints to start/stop/stream ngrok tunnel status.
+ * Tunnel route — endpoints to start and stop the ngrok tunnel and read its
+ * status. Live changes come on `GET /api/events` as `tunnel_status`.
  *
  * @module routes/tunnel
  */
 import { createHash } from 'node:crypto';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { problem } from '@dorkos/http-kit';
-import type { TunnelStatus } from '@dorkos/shared/types';
 import type { ApiEnv } from '../http/api-chain.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
-import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { env } from '../env.js';
 import { getLocalCockpitPort } from '../lib/trusted-origins.js';
@@ -30,7 +29,7 @@ import {
   requireOperatorCookieUnderLogin,
 } from '../lib/caller-authority.js';
 import { logger, logError } from '../lib/logger.js';
-import { presentsAgentIdentity } from '../lib/http/agent-identity-header.js';
+import { frontDoorReadAudience, readCallerPrincipal } from '../lib/caller-principal.js';
 
 const router = new Hono<ApiEnv>();
 
@@ -39,43 +38,16 @@ const router = new Hono<ApiEnv>();
  * Another device already needs a sign-in or a key to get here (the session
  * gate, pinned by the cloud-groups contract); this keeps out a caller that says
  * it is an agent, here or anywhere. A key holder still reads it, as the
- * contract says. The app reads remote-access state elsewhere, so nothing it
- * does meets this.
+ * contract says. The same rule decides who hears `tunnel_status` on
+ * `GET /api/events` ({@link frontDoorReadAudience}), so the two cannot drift.
  */
 const refuseAgentRead: MiddlewareHandler<ApiEnv> = async (c, next) =>
-  presentsAgentIdentity(honoRequestFacts(c))
-    ? problem(c, 'person_only', { detail: 'Agents can’t read remote access.' })
-    : next();
+  frontDoorReadAudience(readCallerPrincipal(honoRequestFacts(c)))
+    ? next()
+    : problem(c, 'person_only', { detail: 'Agents can’t read remote access.' });
 
 /** GET /api/tunnel/status — on-demand status check. */
 router.get('/status', refuseAgentRead, (c) => c.json(tunnelManager.status));
-
-/**
- * GET /api/tunnel/stream — SSE endpoint for real-time tunnel status events.
- * Written straight to the Node response (`http/raw-node-stream.ts`), and held
- * open until the client leaves.
- */
-router.get('/stream', refuseAgentRead, (c) =>
-  streamToNodeResponse(c, async (res, { signal }) => {
-    logger.warn('[DEPRECATED] GET /api/tunnel/stream — use GET /api/events instead');
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-    });
-
-    // Send current status immediately on connection
-    res.write(`event: tunnel_status\ndata: ${JSON.stringify(tunnelManager.status)}\n\n`);
-
-    const handler = (status: TunnelStatus) => {
-      res.write(`event: tunnel_status\ndata: ${JSON.stringify(status)}\n\n`);
-    };
-
-    tunnelManager.on('status_change', handler);
-    if (!signal.aborted) await new Promise((resolve) => signal.addEventListener('abort', resolve));
-    tunnelManager.off('status_change', handler);
-  })
-);
 
 /**
  * The `409 tunnel_running` for a tunnel already open, with its address in

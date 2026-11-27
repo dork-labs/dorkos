@@ -4,7 +4,8 @@
  *
  * The case that matters most is the filter: a replay must never hand a reader a
  * frame it could not have received live, so a resuming agent gets neither an
- * event addressed to the person nor the full rendering of a redacted one.
+ * event addressed to the person nor the full rendering of a redacted one. The
+ * tunnel's status is the snapshot's other part, and it is the person's only.
  */
 import fs from 'node:fs';
 import http from 'node:http';
@@ -16,7 +17,8 @@ import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import eventsRoutes from '../events.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { EVENT_REPLAY_LIMITS } from '../../lib/event-stream/event-replay-buffer.js';
-import type { CallerPrincipal } from '../../lib/caller-principal.js';
+import { frontDoorReadAudience, type CallerPrincipal } from '../../lib/caller-principal.js';
+import { tunnelManager } from '../../services/core/tunnel-manager.js';
 import { initConfigManager } from '../../services/core/config-manager.js';
 
 const AGENT = { 'x-dorkos-agent': 'tok_revoked' };
@@ -174,5 +176,61 @@ describe('GET /api/events replay', () => {
       const text = await read({ 'last-event-id': lastEventId }, (t) => t.includes('\n\n'));
       expect(text, lastEventId).toMatch(/^event: connected\ndata: \{"connectedAt":"[^"]+"\}\n\n/);
     }
+  });
+});
+
+describe('tunnel status on GET /api/events (it replaced GET /api/tunnel/stream)', () => {
+  /** The `tunnel_status` payloads in a body, in order. */
+  const tunnelFrames = (text: string): unknown[] =>
+    [...text.matchAll(/event: tunnel_status\ndata: (.*)\n\n/g)].map(([, data]) =>
+      JSON.parse(data!)
+    );
+
+  /**
+   * Open a stream and read it until a live marker sent after the connect: the
+   * opening frames go out in the connect's own tick, so all of them are in.
+   */
+  async function openingFrames(headers: Record<string, string>): Promise<string> {
+    const reader = stream(headers);
+    await reader((t) => t.includes('event: connected'));
+    eventFanOut.broadcast('tasks_changed', { opened: headers['last-event-id'] ?? 'cold' });
+    return reader((t) => t.includes('"opened"'));
+  }
+
+  it('opens with the current status, after any replay, for a person but never an agent', async () => {
+    const cursor = await marker();
+    eventFanOut.broadcast('tunnel_status', { stale: true }, frontDoorReadAudience);
+
+    const cold = await openingFrames({});
+    expect(tunnelFrames(cold)).toEqual([tunnelManager.status]);
+    expect(cold.indexOf('event: tunnel_status')).toBeGreaterThan(cold.indexOf('event: connected'));
+
+    // The replayed change, then the snapshot, so the last one held is current.
+    const resumed = await openingFrames({ 'last-event-id': cursor });
+    expect(tunnelFrames(resumed)).toEqual([{ stale: true }, tunnelManager.status]);
+
+    for (const headers of [AGENT, { ...AGENT, 'last-event-id': cursor }]) {
+      expect(await openingFrames(headers)).not.toContain('tunnel_status');
+    }
+  });
+
+  it('sends a change live to the person, not to an agent', async () => {
+    const person = stream({});
+    const agent = stream(AGENT);
+    await person((t) => t.includes('event: connected'));
+    await agent((t) => t.includes('event: connected'));
+    eventFanOut.broadcast('tunnel_status', { live: 1 }, frontDoorReadAudience);
+    eventFanOut.broadcast('tasks_changed', { after: 'tunnel' });
+    const personText = await person((t) => t.includes('"after":"tunnel"'));
+    const agentText = await agent((t) => t.includes('"after":"tunnel"'));
+    expect(tunnelFrames(personText).at(-1)).toEqual({ live: 1 });
+    expect(agentText).not.toContain('tunnel_status');
+  });
+
+  it('asks the rule GET /api/tunnel/status asks: a person or their key, never an agent', () => {
+    expect(frontDoorReadAudience({ kind: 'operator' })).toBe(true);
+    expect(frontDoorReadAudience({ kind: 'program', userId: 'u1' })).toBe(true);
+    expect(frontDoorReadAudience({ kind: 'agent' })).toBe(false);
+    expect(frontDoorReadAudience({ kind: 'relayed' })).toBe(false);
   });
 });
