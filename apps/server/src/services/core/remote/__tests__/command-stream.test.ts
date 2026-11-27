@@ -8,6 +8,8 @@ import { describe, expect, it, vi } from 'vitest';
 import openFixture from '@dork-labs/cloud-api/fixtures/v1/remote/command-open.json' with { type: 'json' };
 import keepaliveReconnect from '@dork-labs/cloud-api/fixtures/v1/remote/command-keepalive-reconnect.json' with { type: 'json' };
 
+import { logger } from '../../../../lib/logger.js';
+
 import {
   COMMAND_LEASE_MS,
   CommandStream,
@@ -135,6 +137,36 @@ describe('CommandStream', () => {
     await until(() => h.commands.length === 1);
     expect(h.commands).toEqual([openFixture]);
     h.stream.stop();
+  });
+
+  // Pins the drop until the step that serves published pages carries the
+  // take-down out; that step removes this test with the drop.
+  it('logs a page take-down and never hands it on, so it is never acknowledged', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const h = harness();
+    void h.stream.start();
+    await until(() => h.connections.length === 1);
+    const connection = h.connections[0]!;
+    connection.push(
+      `data: ${JSON.stringify({
+        kind: 'page_take_down',
+        id: 'cmd_take_down',
+        leaseToken: 'lt_take_down',
+        linkKey: 'abcdefghijklmnopqrstuvwxyz',
+        reason: 'malware',
+      })}\n\n`
+    );
+    connection.push(`data: ${JSON.stringify(openFixture)}\n\n`);
+    await until(() => h.commands.length === 1);
+    expect(h.commands).toEqual([openFixture]);
+    try {
+      expect(warn).toHaveBeenCalledWith('[RemoteAccess] Ignored a command this build cannot read', {
+        kind: 'page_take_down',
+      });
+    } finally {
+      warn.mockRestore();
+      h.stream.stop();
+    }
   });
 
   it('keeps keepalives to itself and honours their reconnect wait', async () => {

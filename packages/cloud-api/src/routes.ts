@@ -99,8 +99,15 @@ export const V1_ROUTES = {
    */
   hubNextWake: '/v1/hubs/self/next-wake',
   /**
+   * `POST` a report the hub received for one of its published pages
+   * (`PageReportRequestSchema`). Hub instance key only; answered 202 with
+   * `PageReportResponseSchema`.
+   */
+  hubPageReports: '/v1/hubs/self/page-reports',
+  /**
    * `POST` from a person's own computer, with its instance key and no body, to
-   * wake its own account's hub so it can deliver a notice. Answered 202 with
+   * wake its own account's hub so it can deliver a notice, or send or call
+   * for a published page. Answered 202 with
    * `HubWakeResponseSchema`; capped for each computer (`hub-wake.ts`).
    */
   instancesHubWake: '/v1/instances/hub-wake',

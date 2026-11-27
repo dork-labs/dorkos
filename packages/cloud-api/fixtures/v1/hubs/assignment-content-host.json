@@ -1,0 +1,18 @@
+{
+  "state": "assigned",
+  "assignmentId": "asg_0003",
+  "assignedAt": "2026-11-03T09:00:00Z",
+  "ownerAccountId": "acct_0003",
+  "issuer": "https://accounts.example.invalid",
+  "address": "https://hub-0003.example.invalid",
+  "frontDoorProof": {
+    "header": "x-example-front-door-proof",
+    "secret": "fdp_0003_opaque_00000000000000000000000000000"
+  },
+  "signIn": {
+    "clientId": "client_0003",
+    "redirectUri": "https://hub-0003.example.invalid/api/auth/callback/dorkos"
+  },
+  "privateSpaceHome": true,
+  "contentHost": "pages.example-pages.invalid"
+}

@@ -1,0 +1,17 @@
+{
+  "state": "assigned",
+  "assignmentId": "asg_0004",
+  "assignedAt": "2026-11-03T09:00:00Z",
+  "ownerAccountId": "acct_0004",
+  "issuer": "https://accounts.example.invalid",
+  "address": "https://hub-0004.example.invalid",
+  "frontDoorProof": {
+    "header": "x-example-front-door-proof",
+    "secret": "fdp_0004_opaque_00000000000000000000000000000"
+  },
+  "signIn": {
+    "clientId": "client_0004",
+    "redirectUri": "https://hub-0004.example.invalid/api/auth/callback/dorkos"
+  },
+  "privateSpaceHome": true
+}
