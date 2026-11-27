@@ -4,6 +4,7 @@
  * @module shared/lib/transport/http-client
  */
 import { setAuthRequired, setSignInWith } from '../auth-signal';
+import { LIST_PAGE_LIMIT, readAllPages } from '../read-all-pages';
 import { getCommunityAuthority, invalidateCommunityAuthority } from '../community-authority-state';
 import { errorFromReading, readResponseError } from '../response-error';
 
@@ -171,4 +172,29 @@ export function buildQueryString(
   }
   const qs = searchParams.toString();
   return qs ? `?${qs}` : '';
+}
+
+/**
+ * Every row of a paged list (`cursor` and `limit` in, `nextCursor` back), read
+ * page by page through {@link fetchJSON}, for a surface that shows the whole list.
+ *
+ * @param baseUrl - The API's base URL.
+ * @param path - The list's path, without a query string.
+ * @param params - The list's own query fields.
+ * @param rowsOf - The rows one page holds.
+ * @returns The first page, as the server sent it, and every row in server order.
+ * @throws {Error} When a cursor comes back twice, or the list never ends.
+ */
+export function fetchAllPages<P extends { nextCursor: string | null }, T>(
+  baseUrl: string,
+  path: string,
+  params: Record<string, string | number | boolean | undefined>,
+  rowsOf: (page: P) => readonly T[]
+): Promise<{ first: P; rows: T[] }> {
+  const read = (cursor?: string) =>
+    fetchJSON<P>(
+      baseUrl,
+      `${path}${buildQueryString({ ...params, cursor, limit: LIST_PAGE_LIMIT })}`
+    );
+  return readAllPages(read, rowsOf, path);
 }

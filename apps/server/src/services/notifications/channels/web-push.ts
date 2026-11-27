@@ -38,7 +38,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import webpush, { WebPushError } from 'web-push';
 import type { WebPushPayload } from '@dorkos/shared/notification-schemas';
-import { publishSecretFile, quarantineSecretFile } from '@dorkos/shared/secret-file';
+import { publishSecretFile, quarantineSecretFile } from '../../../lib/secret-store/secret-file.js';
 import { logger } from '../../../lib/logger.js';
 import type { PushSubscriptionStore, StoredPushSubscription } from '../push-subscription-store.js';
 
@@ -271,7 +271,7 @@ export function vapidKeyPath(dorkHome: string): string {
  * browsers stop being reachable until they re-subscribe — which the Settings tab
  * shows, and which is strictly better than a permanently dead push leg.
  *
- * The keypair is published first and read second (`@dorkos/shared/secret-file`),
+ * The keypair is published first and read second (`lib/secret-store/secret-file`),
  * never minted after a failed read. Two first boots at once would otherwise both
  * generate, and the loser would go on handing browsers a public key whose
  * private half is no longer on disk — subscriptions that can never be pushed to

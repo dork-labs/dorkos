@@ -31,6 +31,27 @@ export const ActorTypeSchema = z.enum(['user', 'agent', 'system', 'tasks']).open
 
 export type ActorType = z.infer<typeof ActorTypeSchema>;
 
+/** What the feed and the audit call a program the person bar let through with a key. */
+export const PROGRAM_ACTOR_LABEL = 'A program with an API key';
+
+/**
+ * The actor for an action behind the person bar (`http.callerBar: 'person'`),
+ * from who the bar let through: the person in the app, named `You` as the hand
+ * routes named them, or a program holding a key (let through with login off),
+ * named as a program and never as the person.
+ *
+ * @param caller - Who the person bar's pass says it saw.
+ * @returns The actor fields to spread into an Activity event.
+ */
+export function personBarActivityActor(caller: 'person' | 'program'): {
+  actorType: ActorType;
+  actorLabel: string;
+} {
+  return caller === 'program'
+    ? { actorType: 'system', actorLabel: PROGRAM_ACTOR_LABEL }
+    : { actorType: 'user', actorLabel: 'You' };
+}
+
 // === Response Schemas ===
 
 /** Single activity event returned by the API. */

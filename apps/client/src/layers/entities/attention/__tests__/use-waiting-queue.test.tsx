@@ -24,12 +24,12 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 import { TransportProvider } from '@/layers/shared/model';
 import { useWaitingQueue } from '../model/use-waiting-queue';
 
-/** The two extension reads are plain `fetch` calls, answered empty here. */
+/** The two extension reads are plain `fetch` calls, answered empty here (the waiting list as one page). */
 function fakeFetch(input: RequestInfo | URL): Promise<Response> {
   const url = String(input);
   const body = url.endsWith('/extension-decisions')
     ? { decisions: [], offers: [] }
-    : { approvals: [] };
+    : { approvals: [], nextCursor: null };
   return Promise.resolve(new Response(JSON.stringify(body)));
 }
 

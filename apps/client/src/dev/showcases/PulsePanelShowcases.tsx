@@ -210,6 +210,7 @@ function makeAttentionQueryClient(): QueryClient {
   qc.setQueryData(extensionDecisionsKey(), WAITING_DECISIONS);
   const recent: RecentSessionsResponse = {
     sessions: [WEDGED_SESSION],
+    nextCursor: null,
     agentActivity: {},
   };
   qc.setQueryData(sessionKeys.recent(RECENT_SESSIONS_WINDOW), recent);

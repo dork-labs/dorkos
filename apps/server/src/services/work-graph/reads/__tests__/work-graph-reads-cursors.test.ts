@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import { eq, sessionMetadata } from '@dorkos/db';
 import { recordChatRekey } from '../../index.js';
-import { cursorLayout } from '../page-cursor.js';
+import { cursorLayout } from '../../../../lib/paging/sealed-cursor.js';
 import {
   bind,
   get,

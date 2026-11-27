@@ -113,6 +113,26 @@ export const HostedCommunityStateSchema = z
 export type HostedCommunityState = z.infer<typeof HostedCommunityStateSchema>;
 
 /**
+ * What kind of space a hosted community is.
+ *
+ * - `community`: an open community, the kind every hosted space was before
+ *   this field existed.
+ * - `team`: a team space, for the people one owner invites.
+ *
+ * A start request or a listed space with no `kind` reads as `community`, so
+ * an older hosted service that sends none, and an older app that asks for
+ * none, both keep working. The app offers a team space only after the hosted
+ * service supports it; until then an older service ignores the field and
+ * starts a community.
+ */
+export const HostedSpaceKindSchema = z
+  .enum(['team', 'community'])
+  .describe('What kind of space a hosted community is: a team space or an open community.');
+
+/** What kind of space a hosted community is. */
+export type HostedSpaceKind = z.infer<typeof HostedSpaceKindSchema>;
+
+/**
  * Why a hosted community is on hold.
  *
  * A hold makes a community read-only: people can read it and its owner can
@@ -194,8 +214,8 @@ export const HostedCommunityKeepActionSchema = z
  * may carry a hold into another state (a held community whose deletion has
  * started, for instance), and that must still parse.
  *
- * `state` and `hold.reason` are tolerant: a value added in a later release
- * reads as `unrecognised` rather than failing the page it arrives in.
+ * `state`, `kind` and `hold.reason` are tolerant: a value added in a later
+ * release reads as `unrecognised` rather than failing the page it arrives in.
  */
 export const HostedCommunitySchema = z
   .object({
@@ -210,6 +230,11 @@ export const HostedCommunitySchema = z
     communityUrl: ServerUrlSchema.describe(
       'The community`s canonical link on its Community server, built on its permanent identifier. A runtime value; pair a DorkOS installation with this.'
     ),
+    kind: tolerantEnum(HostedSpaceKindSchema)
+      .default('community')
+      .describe(
+        'What kind of space this is. Absent reads as community, so an older service that sends none still parses. A kind this release does not know reads as unrecognised.'
+      ),
     state: tolerantEnum(HostedCommunityStateSchema).describe(
       'Where the community is in its lifecycle. A state this release does not know reads as unrecognised.'
     ),
@@ -367,7 +392,9 @@ export type CommunityNameCheckResponse = z.infer<typeof CommunityNameCheckRespon
  * Idempotent on `idempotencyKey`, scoped to the caller: the same key with the
  * same body returns the same community (with `replayed: true`) rather than
  * starting a second one, and the same key with a different body is refused
- * with `conflict`. A refusal a larger allowance would lift is
+ * with `conflict`. Bodies are compared as parsed, so a left-out `kind` and
+ * `kind: 'community'` are the same body, and a different kind is a
+ * `conflict`. A refusal a larger allowance would lift is
  * `entitlement_required`; a short name that cannot be used is
  * `community_name_taken` or `community_name_reserved`.
  */
@@ -381,11 +408,20 @@ export const CommunityStartRequestSchema = z
     orgId: IdSchema.optional().describe(
       'The organization whose account the community belongs to. Omitted means the caller`s personal one.'
     ),
+    kind: HostedSpaceKindSchema.default('community').describe(
+      'What kind of space to start. Omitted means community, so a request from an older app still parses.'
+    ),
   })
   .describe('Start a hosted community. Idempotent on the caller`s key.');
 
-/** Start a hosted community. */
+/** Start a hosted community, as parsed: `kind` is always set. */
 export type CommunityStartRequest = z.infer<typeof CommunityStartRequestSchema>;
+
+/**
+ * Start a hosted community, as a sender builds it: `kind` may be left out and
+ * then reads as `community`.
+ */
+export type CommunityStartRequestInput = z.input<typeof CommunityStartRequestSchema>;
 
 /**
  * A one-time link that makes a person the owner of a new community.

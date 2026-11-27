@@ -51,7 +51,8 @@ import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { DECISION_BAR, recordSettingsChange } from './extension-decisions.js';
 import { answerOutcome, decisionRefusal } from './extension-decision-problems.js';
-import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { refusedNotAPerson } from './extensions-person-bar.js';
+import type { PersonBarCopy } from '../lib/http/person-bar.js';
 
 /** What a caller is told while the inbox is not up. */
 const INBOX_NOT_READY = 'The inbox isn’t ready yet. Try again in a moment.';
@@ -60,8 +61,6 @@ const INBOX_NOT_READY = 'The inbox isn’t ready yet. Try again in a moment.';
 const SETTINGS_BAR: PersonBarCopy = {
   code: 'person_only',
   subject: "an extension's project settings",
-  crossSite: (origin) =>
-    `DorkOS changed nothing. ${origin} isn’t DorkOS. Change these settings in DorkOS itself.`,
   agent: 'DorkOS changed nothing. Only a person can change these settings, in DorkOS.',
 };
 

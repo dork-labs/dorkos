@@ -148,7 +148,8 @@ describe('GET /api/projects/resolve', () => {
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('person_only');
     expect(res.headers['content-type']).toContain('application/problem+json');
-    expect(res.body.detail).toContain('https://evil.example');
+    // A fixed sentence: the page's own origin is never repeated back (DOR-4978).
+    expect(res.body.detail).toBe('Open this from the DorkOS app.');
   });
 
   it('refuses a cross-site browser request that sends no Origin (an <img> or no-cors fetch)', async () => {

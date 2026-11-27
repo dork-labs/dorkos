@@ -10,6 +10,7 @@ import { fetchJSON } from './http-client';
 export function createAccountSigninMethods(baseUrl: string) {
   const base = '/runtimes/claude-code/signins';
   return {
+    // Stays hand-written: `POST /api/runtimes/{type}/login` has no operationId (DOR-5473).
     delegateRuntimeLogin(
       type: string,
       options?: DelegateLoginOptions
@@ -22,7 +23,9 @@ export function createAccountSigninMethods(baseUrl: string) {
         ...(Object.keys(pin).length ? { body: JSON.stringify(pin) } : {}),
       });
     },
+    // Stays hand-written: `GET /api/runtimes/claude-code/signins` has no operationId (DOR-5473).
     getClaudeSigninPolicy: () => fetchJSON<ClaudeSigninPolicyView>(baseUrl, base),
+    // Stays hand-written: the `/api/runtimes/claude-code/signins/*` writes have no operationId (DOR-5473).
     changeClaudeSigninPolicy(input: ClaudeSigninPolicyChange): Promise<{ ok: boolean }> {
       switch (input.action) {
         case 'add-org':

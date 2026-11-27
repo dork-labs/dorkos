@@ -20,7 +20,7 @@
  *   2. **A persisted `<dorkHome>/mcp-local-token` file** — read (and permission-
  *      repaired) if present, so the token is stable across restarts.
  *   3. **A freshly generated `dork_mcp_local_<hex>`** — created exclusively
- *      (`@dorkos/shared/secret-file`) and written `0600`, so two first boots at
+ *      (`lib/secret-store/secret-file`) and written `0600`, so two first boots at
  *      once settle on one token instead of overwriting each other's.
  *
  * The token works only for a person at this computer that asks for no password
@@ -34,7 +34,7 @@
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { claimSecretText } from '@dorkos/shared/secret-file';
+import { claimSecretText } from '../../../lib/secret-store/secret-file.js';
 import { env } from '../../../env.js';
 import { logger } from '../../../lib/logger.js';
 import { resolveDorkHome } from '../../../lib/dork-home.js';

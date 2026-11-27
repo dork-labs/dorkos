@@ -335,19 +335,6 @@ export const PendingExtensionApprovalSchema = z
 /** One extension waiting for a person to allow it to run. */
 export type PendingExtensionApproval = z.infer<typeof PendingExtensionApprovalSchema>;
 
-/** Response of `GET /api/extensions/pending-approvals`. */
-export const PendingExtensionApprovalsResponseSchema = z
-  .object({
-    /** Every extension that is waiting, oldest first. */
-    approvals: z.array(PendingExtensionApprovalSchema),
-  })
-  .openapi('PendingExtensionApprovalsResponse');
-
-/** Response of `GET /api/extensions/pending-approvals`. */
-export type PendingExtensionApprovalsResponse = z.infer<
-  typeof PendingExtensionApprovalsResponseSchema
->;
-
 /**
  * Body of `POST /api/extensions/:id/dismiss-approval` ("Not now").
  *

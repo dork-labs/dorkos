@@ -536,5 +536,30 @@ export class CapabilityToolError extends Error {
   }
 }
 
+/**
+ * The refusal for a page cursor a list can't go on from (`INVALID_CURSOR`,
+ * answered `400` with `INVALID_CURSOR_DETAIL` from `@dorkos/shared/paging`):
+ * never read as the first page.
+ */
+export function invalidCursor(): CapabilityToolError {
+  return new CapabilityToolError({
+    code: 'INVALID_CURSOR',
+    error: 'That cursor was not given by this list. Leave it out to start again.',
+  });
+}
+
+/**
+ * Whether an error is the refusal {@link invalidCursor} makes, for a hand
+ * route to answer it as the mount does.
+ *
+ * @param error - What was thrown.
+ */
+export function isInvalidCursor(error: unknown): boolean {
+  return (
+    error instanceof CapabilityToolError &&
+    (error.payload as { code?: unknown } | null)?.code === 'INVALID_CURSOR'
+  );
+}
+
 /** Seal server state a confirm-first hold binds (`ConfirmFirstSheet.heldState`), for a handler to compare. */
 export { sealHeldState } from './declarations/held-state.js';

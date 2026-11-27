@@ -319,7 +319,10 @@ export function assertCallerProofs(
         `made; these cannot both hold.`
     );
   }
-  const personOnly = capability.surfaces.http?.audience === 'person';
+  // A capability behind the person bar is checked by the bar's own pass
+  // instead (`context/owner-authority.ts`), never by a person proof.
+  const http = capability.surfaces.http;
+  const personOnly = http?.audience === 'person' && http.callerBar !== 'person';
   if (personOnly && !isPersonCaller(supplied.person) && !supplied.trusted) {
     // The surface may name the tool an agent uses instead: a fixed sentence, never free text.
     const error = capability.surfaces.http?.agentsUse ?? PERSON_ONLY_MESSAGE;

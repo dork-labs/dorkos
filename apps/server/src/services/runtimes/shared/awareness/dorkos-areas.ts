@@ -130,8 +130,13 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     // (`connectors.disconnect_impact`, `connectors.rename_connection`,
     // `connectors.remove_connection`, `connectors.get_sign_in`, `connectors.get_review`,
     // `connectors.get_agent_request_sign_in`, `connectors.stop_every_agent_share`,
-    // `connectors.leave_agent_out`, `connectors.list_usage`, DOR-4978), behind the
-    // account-decision bar, which refuse agents.
+    // `connectors.leave_agent_out`, `connectors.list_usage`, `connectors.let_agent_back_in`,
+    // `connectors.answer_agent_request`, `connectors.start_agent_request_sign_in`, DOR-4978;
+    // and the paged lists `connectors.list_every_agent_grants`, `connectors.list_agent_connections`,
+    // `connectors.list_session_connections`, `connectors.list_reviews`,
+    // `connectors.list_exclusions`, DOR-4982), behind the account-decision bar, which refuse
+    // agents; let_agent_back_in, answer_agent_request and start_agent_request_sign_in also
+    // wait for the owner to confirm it's them.
     covers: ['connector.', 'connectors.'],
     areas: ['permissions'],
     gate: 'per-app grant',
@@ -148,7 +153,16 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     // DOR-4978), which refuse agents.
     // `marketplace.` also covers the marketplace's reads on `/api/marketplace/*` (DOR-4978);
     // the dev links among them are a person's read.
-    covers: ['mcp.', 'marketplace.', 'create_extension', 'reload_extensions', 'test_extension'],
+    // `extensions.` covers a person's doors for mini apps on `/api/extensions` (restart,
+    // remove, forget a yes, "Not now", DOR-4978), behind the person bar, which refuse agents.
+    covers: [
+      'mcp.',
+      'marketplace.',
+      'extensions.',
+      'create_extension',
+      'reload_extensions',
+      'test_extension',
+    ],
     areas: ['packages'],
     gate: 'adding or changing an MCP server asks, and only a person adds one for all agents',
   },

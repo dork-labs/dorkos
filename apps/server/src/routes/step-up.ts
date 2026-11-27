@@ -77,6 +77,7 @@ import {
 } from '../services/core/auth/owner-password.js';
 import {
   cancelHeldStepUp,
+  admitsConfirm,
   peekHeldStepUp,
   spendStepUpTry,
   takeHeldStepUp,
@@ -296,9 +297,16 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     return undefined;
   }
 
-  /** The live held action this caller held, or the refusal. */
-  function heldOrRefusal(c: Context<ApiEnv>): HeldStepUp | Response {
-    const entry = peekHeldStepUp(c.req.param('heldActionId') ?? '');
+  /**
+   * The live held action this caller held, or the refusal. On a confirm, the
+   * held call's own bars run first and a refusal reads as no hold, leaving it
+   * held (DOR-4978). A read of the sheet or a cancel runs nothing and grants
+   * nothing, so it skips them.
+   */
+  function heldOrRefusal(c: Context<ApiEnv>, confirming = false): HeldStepUp | Response {
+    const id = c.req.param('heldActionId') ?? '';
+    if (confirming && !admitsConfirm(id, honoRequestFacts(c))) return refuse(c, 'expired');
+    const entry = peekHeldStepUp(id);
     if (!entry) return refuse(c, 'expired');
     const sessionId = honoRequestFacts(c).user?.sessionId ?? null;
     if (entry.sessionId !== sessionId) return refuse(c, 'held_by_another_browser');
@@ -524,7 +532,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
   router.post('/:heldActionId/password', async (c) => {
     const callerRefusal = refuseCaller(c, true);
     if (callerRefusal) return callerRefusal;
-    const entry = heldOrRefusal(c);
+    const entry = heldOrRefusal(c, true);
     if (entry instanceof Response) return entry;
     const { unavailable, risks } = await passwordUnavailable(c);
     if (unavailable) return refuseUnavailable(c, unavailable, risks);
@@ -545,7 +553,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
   router.post('/:heldActionId/change-password', async (c) => {
     const callerRefusal = refuseCaller(c, true);
     if (callerRefusal) return callerRefusal;
-    const entry = heldOrRefusal(c);
+    const entry = heldOrRefusal(c, true);
     if (entry instanceof Response) return entry;
     const { unavailable, risks } = await passwordUnavailable(c);
     if (unavailable) return refuseUnavailable(c, unavailable, risks);

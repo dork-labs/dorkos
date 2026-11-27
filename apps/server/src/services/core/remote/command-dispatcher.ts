@@ -73,7 +73,7 @@ import type { RemoteState } from './remote-state.js';
 export const MAX_DRAIN_DEADLINE_MS = 10 * 60_000;
 
 /** A leased command: every published kind but the keepalive. */
-export type LeasedCommand = Exclude<RemoteCommand, { kind: 'keepalive' }>;
+export type LeasedCommand = Exclude<RemoteCommand, { kind: 'keepalive' | 'page_take_down' }>;
 
 /** The link a command stream was opened under. */
 export interface CommandLink {

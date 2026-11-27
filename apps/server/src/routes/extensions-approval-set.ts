@@ -32,7 +32,10 @@ import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { logger } from '../lib/logger.js';
 import { broadcastExtensionReloaded } from './extensions.js';
-import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { refusedNotAPerson } from './extensions-person-bar.js';
+import type { PersonBarCopy } from '../lib/http/person-bar.js';
+import { answerPage } from '../lib/paging/hand-route-page.js';
+import { approvalSetKey } from '../services/extensions/listing/extension-list-pages.js';
 
 /**
  * A set refused before anything ran: `412 precondition_failed` when its
@@ -62,9 +65,15 @@ export function registerExtensionApprovalSetRoutes(
   // GET /api/extensions/approval-sets -- Each plugin whose installed
   // extensions wait to be allowed, with the hash "Allow all" echoes. A read:
   // it names ids, versions and display text the extensions list already shows.
+  // A page at a time, by plugin (DOR-4982).
   router.get('/approval-sets', async (c) => {
     try {
-      return c.json({ sets: await listApprovalSets(extensionManager) });
+      return await answerPage(c, {
+        list: 'approval-sets',
+        noun: 'sets',
+        read: () => listApprovalSets(extensionManager),
+        keyOf: approvalSetKey,
+      });
     } catch (err) {
       logger.error('[Extensions] Failed to list extension sets waiting for approval', err);
       return problem(c, 'internal_error', { detail: 'Couldn’t list sets waiting. Try again.' });

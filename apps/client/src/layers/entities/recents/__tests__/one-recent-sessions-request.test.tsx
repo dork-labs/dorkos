@@ -21,7 +21,12 @@ import { TransportProvider } from '@/layers/shared/model';
 import { RECENT_SESSIONS_WINDOW, useRecentSessions } from '@/layers/entities/session';
 import { useJumpBackIn } from '../model/use-jump-back-in';
 
-const envelope: RecentSessionsResponse = { sessions: [], agentActivity: {}, warnings: [] };
+const envelope: RecentSessionsResponse = {
+  sessions: [],
+  nextCursor: null,
+  agentActivity: {},
+  warnings: [],
+};
 
 describe('one recent-sessions request on boot', () => {
   it('serves both callers from a single fetch', async () => {

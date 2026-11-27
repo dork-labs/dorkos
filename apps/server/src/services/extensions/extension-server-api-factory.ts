@@ -20,8 +20,8 @@ import {
 } from '@dorkos/extension-api/server';
 import { LEDGER_RUNTIMES, type LedgerRuntime } from '@dorkos/shared/account-usage';
 import { writeFileAtomic } from '@dorkos/shared/atomic-write';
-import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
-import { ExtensionSettingsStore } from '@dorkos/shared/extension-settings';
+import { ExtensionSecretStore } from '../../lib/secret-store/extension-secrets.js';
+import { ExtensionSettingsStore } from './settings/extension-settings.js';
 import { eventFanOut } from '../core/event-fan-out.js';
 import type { HostConnectionsApi } from './connections/extension-connections-ctx.js';
 import { registerAccountAdvisor, toExtensionAccountUsage } from '../core/usage/account-advisor.js';

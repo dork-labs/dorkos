@@ -5,6 +5,7 @@
     "name": "Night shift",
     "shortName": "night-shift",
     "communityUrl": "https://community.example.invalid/c/9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+    "kind": "community",
     "state": "pending_owner",
     "hold": null,
     "deletionAt": null,

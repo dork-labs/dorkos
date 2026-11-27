@@ -98,11 +98,14 @@ import { registerClaudeCodeFacts } from '../../startup/register-claude-code-fact
 registerClaudeCodeFacts();
 
 const admission = new MainRequestAdmission();
+/** The session routes' deps; the `/recent` test lends them an agent folder. */
+const sessionDeps: { meshCore?: never } = {};
 // Routed as the running server routes: the diff routes answer from Hono, and
 // all but the raw bytes are capabilities the mount serves, as are the chat reads.
 const server = listeningServer(
   composedListener(admission, {
     capabilities: composeRegistry([diffDomain, sessionReadsDomain], { logger: noopLogger }),
+    sessions: sessionDeps,
   })
 );
 
@@ -168,6 +171,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete sessionDeps.meshCore;
   resetSessionVisibility();
   resetMessageDispatcher();
   setMessageQueueStore(undefined);
@@ -211,6 +215,37 @@ describe('an agent reading sessions', () => {
     const recent = await request(server).get('/api/sessions/recent').set(AGENT);
     expect(recent.status).toBe(200);
     expect(recent.body.sessions.map((s: { id: string }) => s.id)).not.toContain(PRIVATE);
+  });
+
+  it("GET / fills an agent's page past a person's chat, and its cursor works for nobody else", async () => {
+    // Newest first, the private chat first: filtered before the cut, the page still holds one.
+    const newer = { ...sessionRow(PRIVATE), updatedAt: '2026-10-02' };
+    fakeRuntime.listSessions.mockResolvedValue([newer, sessionRow(WORK)]);
+    const page = await request(server).get('/api/sessions?limit=1').set(AGENT);
+    expect(page.body.sessions.map((s: { id: string }) => s.id)).toEqual([WORK]);
+    const owners = await request(server).get('/api/sessions?limit=1');
+    expect(owners.body.sessions.map((s: { id: string }) => s.id)).toEqual([PRIVATE]);
+    const cursor = encodeURIComponent(owners.body.nextCursor);
+    expect((await request(server).get(`/api/sessions?cursor=${cursor}`)).status).toBe(200);
+    expect((await request(server).get(`/api/sessions?cursor=${cursor}`).set(AGENT)).status).toBe(
+      400
+    );
+  });
+
+  it("GET /recent fills an agent's page past a person's chat", async () => {
+    // One agent in the project folder, so `/recent` has a folder to list.
+    sessionDeps.meshCore = {
+      listWithPaths: () => [{ projectPath: '/mock/home/project' }],
+    } as never;
+    const newer = { ...sessionRow(PRIVATE), updatedAt: '2026-10-02', cwd: '/mock/home/project' };
+    fakeRuntime.listSessions.mockResolvedValue([
+      newer,
+      { ...sessionRow(WORK), cwd: '/mock/home/project' },
+    ]);
+    const recent = (headers = {}) =>
+      request(server).get('/api/sessions/recent?limit=1').set(headers);
+    expect((await recent(AGENT)).body.sessions.map((s: { id: string }) => s.id)).toEqual([WORK]);
+    expect((await recent()).body.sessions.map((s: { id: string }) => s.id)).toEqual([PRIVATE]);
   });
 
   it('GET /api/debug/sessions/:id applies the same check', async () => {
@@ -436,6 +471,7 @@ describe('the owner reading sessions', () => {
 
   it('lists every session', async () => {
     const list = await request(server).get('/api/sessions');
-    expect(list.body.sessions.map((s: { id: string }) => s.id)).toEqual([PRIVATE, WORK]);
+    // Same activity time: the higher id first, the tie-break a page cursor needs (DOR-4982).
+    expect(list.body.sessions.map((s: { id: string }) => s.id)).toEqual([WORK, PRIVATE]);
   });
 });

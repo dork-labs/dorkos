@@ -78,6 +78,7 @@ import {
 import { enrichTopology } from '../../routes/mesh-topology.js';
 import { sessionRelayDoorDeps } from '../../routes/session-relay.js';
 import { managedCloudRefusalCode } from '../../routes/managed-cloud-error.js';
+import { extensionPersonDoorDeps } from '../../routes/extensions-approval.js';
 import {
   projectComputerPlacement,
   projectComputerPlacementById,
@@ -268,6 +269,7 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
         refs.connectorAgentRequests,
         managedCloudRefusalCode
       ),
+      ...extensionPersonDoorDeps(refs.extensionManager, activityService), // DOR-4978
       sessionRelayDeps: sessionRelayDoorDeps(), // chat from the web's doors (DOR-4978)
       // The rooms domain (room-participation spec §10.2, §10.3): the verbs an
       // agent has in the rooms it belongs to. The SAME service instances the

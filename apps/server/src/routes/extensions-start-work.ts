@@ -27,14 +27,13 @@ import { problem, readJsonBody } from '@dorkos/http-kit';
 import type { ProblemCode } from '@dorkos/shared/problem';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { wifiTurnCeiling } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
-import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { refusedNotAPerson } from './extensions-person-bar.js';
+import type { PersonBarCopy } from '../lib/http/person-bar.js';
 
 /** What the route says when the bar refuses it. */
 const START_WORK_BAR: PersonBarCopy = {
   code: 'person_only',
   subject: 'work started from an extension',
-  crossSite: (origin) =>
-    `DorkOS started nothing. ${origin} isn’t DorkOS. Start this in DorkOS itself.`,
   agent: 'DorkOS started nothing. Only a person can start this, in DorkOS.',
 };
 

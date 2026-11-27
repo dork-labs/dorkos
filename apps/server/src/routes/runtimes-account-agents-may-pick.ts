@@ -30,7 +30,7 @@ import { accountDisplayName } from '../services/core/usage/account-eligibility.j
 import { writeAgentsMayPick } from '../services/core/usage/account-eligibility-writes.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
-import { assessPerson } from './extensions-person-bar.js';
+import { assessPerson } from '../lib/http/person-bar.js';
 import {
   AGENTS_MAY_PICK_BAR,
   AGENTS_MAY_PICK_FAILED,

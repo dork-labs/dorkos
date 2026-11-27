@@ -68,7 +68,7 @@ describe('useAgentSessions', () => {
     appStore.selectedCwd = '/window/cwd'; // window is looking at a DIFFERENT agent
     const agentSession = makeSession({ id: 'agent-session', cwd: '/agent/cwd' });
     const listSessions = vi.fn((cwd?: string) =>
-      Promise.resolve({ sessions: cwd === '/agent/cwd' ? [agentSession] : [] })
+      Promise.resolve({ sessions: cwd === '/agent/cwd' ? [agentSession] : [], nextCursor: null })
     );
     const transport = createMockTransport({ listSessions });
 

@@ -51,8 +51,9 @@ function desk(overrides: Partial<ExtensionRecordPublic> = {}): ExtensionRecordPu
 function answerLists(...bodies: ExtensionRecordPublic[][]) {
   let call = 0;
   mockFetch.mockImplementation((url: string) => {
-    if (String(url).endsWith('/api/extensions')) {
-      const body = bodies[Math.min(call++, bodies.length - 1)];
+    if (String(url).endsWith('/api/extensions?limit=200')) {
+      const extensions = bodies[Math.min(call++, bodies.length - 1)];
+      const body = { extensions, nextCursor: null };
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
     }
     return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });

@@ -9,10 +9,11 @@ import { z } from 'zod';
 import {
   ApprovalSetResultSchema,
   ApproveExtensionSetRequestSchema,
-  ExtensionApprovalSetSchema,
 } from '@dorkos/shared/extension-approval-schemas';
-
+import { PageQuerySchema } from '@dorkos/shared/paging';
+import { ExtensionApprovalSetsPageSchema } from '@dorkos/shared/extension-list-schemas';
 import { problemResponse as error } from '../../core/openapi/problem-openapi.js';
+import { EXTENSION_PAGES, PAGE_REFUSED } from '../listing/extension-list-openapi.js';
 
 /**
  * Register the approval-set routes.
@@ -30,14 +31,16 @@ export function registerExtensionApprovalSetOpenApi(registry: OpenAPIRegistry): 
       'only when the plugin’s installed-files record lists its manifest with matching bytes: an ' +
       'extension an agent made, a dev link, or a folder added to the plugin later never joins. ' +
       'A member allowed before keeps its own card. `grant` is the waiting members’ combined ' +
-      'grant, from the same members `setHash` binds.',
+      'grant, from the same members `setHash` binds. By plugin, Z to A; a set allowed or ' +
+      'changed while paging can repeat or be missed.' +
+      EXTENSION_PAGES,
+    request: { query: PageQuerySchema },
     responses: {
       200: {
-        description: 'The sets, by plugin A–Z',
-        content: {
-          'application/json': { schema: z.object({ sets: z.array(ExtensionApprovalSetSchema) }) },
-        },
+        description: 'One page of the sets',
+        content: { 'application/json': { schema: ExtensionApprovalSetsPageSchema } },
       },
+      400: PAGE_REFUSED,
       500: error('`internal_error`: the sets could not be read'),
     },
   });

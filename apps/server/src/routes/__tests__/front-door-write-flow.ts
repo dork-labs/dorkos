@@ -6,6 +6,9 @@ import ts from 'typescript';
  * each held by the mount, not a route file (ADR 261125-114705, decision 4).
  */
 export const CONFIRM_FIRST_ROUTES = [
+  'delete /api/connectors/connections/{connectionId}/exclusions/{agentId}',
+  'post /api/connectors/agent-requests/{requestId}/authentication-flows',
+  'post /api/connectors/agent-requests/{requestId}/decision',
   'post /api/mcp-servers',
   'put /api/heartbeats/triage-credits',
   'put /api/mcp-servers/{name}',

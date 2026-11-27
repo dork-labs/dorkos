@@ -4,6 +4,7 @@
  * Three calls and no more: read a page, mark one read, mark them all read.
  * Everything else the Inbox does — a row arriving, a badge clearing on the other
  * device — rides the global SSE stream, so there is nothing to poll here.
+ * The read goes through the generated API client (DOR-5473).
  *
  * @module shared/lib/transport/notification-methods
  */
@@ -12,7 +13,8 @@ import type {
   ListNotificationsResponse,
   MarkNotificationsReadResponse,
 } from '@dorkos/shared/notification-schemas';
-import { fetchJSON, buildQueryString } from './http-client';
+import { createTransportApiClient } from './api-client';
+import { fetchJSON } from './http-client';
 
 /**
  * Create the notification methods bound to a base URL.
@@ -20,9 +22,10 @@ import { fetchJSON, buildQueryString } from './http-client';
  * @param baseUrl - Server base URL (already includes `/api`).
  */
 export function createNotificationMethods(baseUrl: string) {
+  const api = createTransportApiClient(baseUrl);
   return {
     listNotifications(query?: Partial<ListNotificationsQuery>): Promise<ListNotificationsResponse> {
-      const qs = buildQueryString({
+      const values = {
         limit: query?.limit,
         before: query?.before,
         agentId: query?.agentId,
@@ -35,11 +38,12 @@ export function createNotificationMethods(baseUrl: string) {
         // absent lens must send nothing at all: `unread=false` and no `unread`
         // mean the same thing, and sending `false` for every unfiltered read
         // would put a meaningless parameter in every URL.
-        unread: query?.unread === true ? 'true' : undefined,
-      });
-      return fetchJSON<ListNotificationsResponse>(baseUrl, `/notifications${qs}`);
+        unread: query?.unread === true ? ('true' as const) : undefined,
+      };
+      return api.call('notifications.list', { query: values });
     },
 
+    // Stays hand-written: sends no body; the generated client sends {} on every write (DOR-5473).
     markNotificationRead(id: string): Promise<MarkNotificationsReadResponse> {
       return fetchJSON<MarkNotificationsReadResponse>(
         baseUrl,
@@ -48,6 +52,7 @@ export function createNotificationMethods(baseUrl: string) {
       );
     },
 
+    // Stays hand-written: sends no body; the generated client sends {} on every write (DOR-5473).
     markAllNotificationsRead(): Promise<MarkNotificationsReadResponse> {
       return fetchJSON<MarkNotificationsReadResponse>(baseUrl, '/notifications/read-all', {
         method: 'POST',

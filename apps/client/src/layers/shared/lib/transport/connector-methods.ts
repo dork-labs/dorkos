@@ -50,10 +50,13 @@ import type {
   ConnectorAccessChange,
   ConnectorAccessChangeUndo,
 } from '@dorkos/shared/connector-exclusion-schemas';
-import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
+import { fetchAllPages, fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 import type {
   ConnectorAgentConnections,
+  ConnectorAgentConnectionsPage,
   ConnectorEveryAgentGrants,
+  ConnectorEveryAgentGrantsPage,
+  ConnectorManagementReviewPage,
   ConnectorAuthenticationFlowCreateRequest,
   ConnectorAuthenticationFlowState,
   ConnectorCatalogResourcePage,
@@ -67,10 +70,25 @@ import type {
   ConnectorReconnectRequest,
   ConnectorSessionAccessUpdate,
   ConnectorSessionConnections,
+  ConnectorSessionConnectionsPage,
 } from '@dorkos/shared/connector-resource-schemas';
 
 /** Browser budget above the local 60s start cap so the server owns the outcome. */
 const CONNECTOR_AUTHENTICATION_START_TIMEOUT_MS = 75_000;
+
+/** Name order, then id: how the app shows a list of accounts. */
+function byLabel(left: { label: string; connectionId: string }, right: typeof left): number {
+  return (
+    left.label.localeCompare(right.label) || left.connectionId.localeCompare(right.connectionId)
+  );
+}
+
+/** Oldest asked first, then by id: the order an agent's requests wait in. */
+function oldestFirst(left: ConnectorAgentRequestItem, right: ConnectorAgentRequestItem): number {
+  return (
+    left.createdAt.localeCompare(right.createdAt) || left.requestId.localeCompare(right.requestId)
+  );
+}
 
 /** Create the connector methods bound to a base URL. */
 export function createConnectorMethods(baseUrl: string) {
@@ -104,8 +122,15 @@ export function createConnectorMethods(baseUrl: string) {
       });
     },
 
-    getConnectorConnections(): Promise<ConnectorConnectionListResource> {
-      return fetchJSON<ConnectorConnectionListResource>(baseUrl, '/connectors/connections');
+    // The lists below come in pages, newest first; these read them whole, in name order.
+    async getConnectorConnections(): Promise<Pick<ConnectorConnectionListResource, 'connections'>> {
+      const { rows } = await fetchAllPages(
+        baseUrl,
+        '/connectors/connections',
+        {},
+        (page: ConnectorConnectionListResource) => page.connections
+      );
+      return { connections: rows.sort(byLabel) };
     },
 
     getConnectorConnection(connectionId: string): Promise<ConnectorConnectionDetail> {
@@ -267,22 +292,37 @@ export function createConnectorMethods(baseUrl: string) {
       );
     },
 
-    getAgentConnectorConnections(agentId: string): Promise<ConnectorAgentConnections> {
-      return fetchJSON<ConnectorAgentConnections>(
+    async getAgentConnectorConnections(agentId: string): Promise<ConnectorAgentConnections> {
+      const path = `/connectors/agents/${encodeURIComponent(agentId)}/connections`;
+      const { first, rows } = await fetchAllPages(
         baseUrl,
-        `/connectors/agents/${encodeURIComponent(agentId)}/connections`
+        path,
+        {},
+        (page: ConnectorAgentConnectionsPage) => page.connections
       );
+      return { agentId: first.agentId, connections: rows.sort(byLabel) };
     },
 
-    getEveryAgentConnectorGrants(): Promise<ConnectorEveryAgentGrants> {
-      return fetchJSON<ConnectorEveryAgentGrants>(baseUrl, '/connectors/every-agent-grants');
+    async getEveryAgentConnectorGrants(): Promise<ConnectorEveryAgentGrants> {
+      const { rows } = await fetchAllPages(
+        baseUrl,
+        '/connectors/every-agent-grants',
+        {},
+        (page: ConnectorEveryAgentGrantsPage) => page.connections
+      );
+      return { connections: rows.sort(byLabel) };
     },
 
-    getSessionConnectorConnections(sessionId: string): Promise<ConnectorSessionConnections> {
-      return fetchJSON<ConnectorSessionConnections>(
+    async getSessionConnectorConnections(sessionId: string): Promise<ConnectorSessionConnections> {
+      const path = `/connectors/sessions/${encodeURIComponent(sessionId)}/connections`;
+      const { first, rows } = await fetchAllPages(
         baseUrl,
-        `/connectors/sessions/${encodeURIComponent(sessionId)}/connections`
+        path,
+        {},
+        (page: ConnectorSessionConnectionsPage) => page.connections
       );
+      const { nextCursor: _last, ...chat } = first;
+      return { ...chat, connections: rows.sort(byLabel) };
     },
 
     setSessionConnectorAccess(
@@ -384,11 +424,12 @@ export function createConnectorMethods(baseUrl: string) {
     getConnectorManagementReviews(
       state?: 'pending' | 'resolved'
     ): Promise<ConnectorManagementReviewItem[]> {
-      const qs = buildQueryString({ state });
-      return fetchJSON<{ reviews: ConnectorManagementReviewItem[] }>(
+      return fetchAllPages(
         baseUrl,
-        `/connectors/reviews${qs}`
-      ).then((response) => response.reviews);
+        '/connectors/reviews',
+        { state },
+        (page: ConnectorManagementReviewPage) => page.reviews
+      ).then(({ rows }) => rows);
     },
 
     getConnectorManagementReview(reviewRequestId: string): Promise<ConnectorManagementReviewItem> {
@@ -413,11 +454,14 @@ export function createConnectorMethods(baseUrl: string) {
       state?: 'pending' | 'resolved',
       sessionId?: string
     ): Promise<ConnectorAgentRequestItem[]> {
-      const qs = buildQueryString({ state, sessionId });
-      return fetchJSON<{ requests: ConnectorAgentRequestItem[] }>(
+      type Page = { requests: ConnectorAgentRequestItem[]; nextCursor: string | null };
+      return fetchAllPages(
         baseUrl,
-        `/connectors/agent-requests${qs}`
-      ).then((response) => response.requests);
+        '/connectors/agent-requests',
+        { state, sessionId },
+        (page: Page) => page.requests
+        // Oldest first, as the cards have always queued: the one asked longest ago leads.
+      ).then(({ rows }) => rows.sort(oldestFirst));
     },
 
     getConnectorAgentRequest(requestId: string): Promise<ConnectorAgentRequestItem> {

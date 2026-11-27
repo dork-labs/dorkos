@@ -4,8 +4,8 @@
  * A Claude account switch changes which transcript stores the server reads, so
  * every list a window cached before it can name chats from the account that is
  * no longer signed in. The switch says so live with `session_list_invalidated`,
- * but the global stream does not replay: a window whose stream was down at that
- * moment (a hidden tab releases it) never hears it. The time is therefore also
+ * but the global stream replays only a short window: a window whose stream was
+ * down for longer (a hidden tab releases it) never hears it. The time is therefore also
  * stated in every `connected` frame, so a window that reconnects can tell
  * whether its lists predate a switch it missed (DOR-2891).
  *

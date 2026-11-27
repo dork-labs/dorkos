@@ -118,7 +118,10 @@ describe('ExtensionLoader.reloadExtensions', () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () =>
-        Promise.resolve([makeRecord({ id: 'my-ext', status: 'compiled', bundleReady: true })]),
+        Promise.resolve({
+          extensions: [makeRecord({ id: 'my-ext', status: 'compiled', bundleReady: true })],
+          nextCursor: null,
+        }),
     });
 
     await loader.reloadExtensions(['my-ext']);
@@ -135,7 +138,7 @@ describe('ExtensionLoader.reloadExtensions', () => {
     const records = [makeRecord({ id: 'my-ext', status: 'compiled', bundleReady: true })];
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve(records),
+      json: () => Promise.resolve({ extensions: records, nextCursor: null }),
     });
 
     // The dynamic import will fail in jsdom (expected), but we can verify
@@ -168,10 +171,13 @@ describe('ExtensionLoader.reloadExtensions', () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () =>
-        Promise.resolve([
-          makeRecord({ id: 'ext-a', status: 'compiled', bundleReady: true }),
-          makeRecord({ id: 'ext-b', status: 'compiled', bundleReady: true }),
-        ]),
+        Promise.resolve({
+          extensions: [
+            makeRecord({ id: 'ext-a', status: 'compiled', bundleReady: true }),
+            makeRecord({ id: 'ext-b', status: 'compiled', bundleReady: true }),
+          ],
+          nextCursor: null,
+        }),
     });
 
     await loader.reloadExtensions(['ext-a']);
@@ -190,7 +196,10 @@ describe('ExtensionLoader.reloadExtensions', () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () =>
-        Promise.resolve([makeRecord({ id: 'bad-ext', status: 'compiled', bundleReady: true })]),
+        Promise.resolve({
+          extensions: [makeRecord({ id: 'bad-ext', status: 'compiled', bundleReady: true })],
+          nextCursor: null,
+        }),
     });
 
     // The dynamic import will fail in jsdom — this simulates reactivation failure
@@ -211,9 +220,12 @@ describe('ExtensionLoader.reloadExtensions', () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () =>
-        Promise.resolve([
-          makeRecord({ id: 'removed-ext', status: 'compile_error', bundleReady: false }),
-        ]),
+        Promise.resolve({
+          extensions: [
+            makeRecord({ id: 'removed-ext', status: 'compile_error', bundleReady: false }),
+          ],
+          nextCursor: null,
+        }),
     });
 
     const { loaded } = await loader.reloadExtensions(['removed-ext']);
@@ -229,7 +241,7 @@ describe('ExtensionLoader.reloadExtensions', () => {
     // Server returns empty list — extension was removed
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve([]),
+      json: () => Promise.resolve({ extensions: [], nextCursor: null }),
     });
 
     const { loaded, extensions } = await loader.reloadExtensions(['gone-ext']);
@@ -255,9 +267,12 @@ describe('ExtensionLoader.reloadExtensions', () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () =>
-        Promise.resolve([
-          makeRecord({ id: 'crash-deactivate', status: 'compiled', bundleReady: true }),
-        ]),
+        Promise.resolve({
+          extensions: [
+            makeRecord({ id: 'crash-deactivate', status: 'compiled', bundleReady: true }),
+          ],
+          nextCursor: null,
+        }),
     });
 
     // Should not throw even though deactivate and cleanup both throw
@@ -284,7 +299,7 @@ describe('ExtensionLoader.reloadExtensions', () => {
     ];
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve(serverRecords),
+      json: () => Promise.resolve({ extensions: serverRecords, nextCursor: null }),
     });
 
     const { extensions } = await loader.reloadExtensions(['ext-a']);
@@ -306,11 +321,14 @@ describe('ExtensionLoader.reloadExtensions', () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () =>
-        Promise.resolve([
-          makeRecord({ id: 'ext-a', status: 'compiled', bundleReady: true }),
-          makeRecord({ id: 'ext-b', status: 'compiled', bundleReady: true }),
-          makeRecord({ id: 'ext-c', status: 'compiled', bundleReady: true }),
-        ]),
+        Promise.resolve({
+          extensions: [
+            makeRecord({ id: 'ext-a', status: 'compiled', bundleReady: true }),
+            makeRecord({ id: 'ext-b', status: 'compiled', bundleReady: true }),
+            makeRecord({ id: 'ext-c', status: 'compiled', bundleReady: true }),
+          ],
+          nextCursor: null,
+        }),
     });
 
     await loader.reloadExtensions(['ext-a', 'ext-b']);
@@ -330,7 +348,10 @@ describe('ExtensionLoader.reloadExtensions', () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () =>
-        Promise.resolve([makeRecord({ id: 'phantom', status: 'compiled', bundleReady: true })]),
+        Promise.resolve({
+          extensions: [makeRecord({ id: 'phantom', status: 'compiled', bundleReady: true })],
+          nextCursor: null,
+        }),
     });
 
     // Should not throw — deactivation of nonexistent extension is a no-op
@@ -366,7 +387,10 @@ describe('ExtensionLoader.reloadAll', () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () =>
-        Promise.resolve([makeRecord({ id: 'ext-c', status: 'disabled', bundleReady: false })]),
+        Promise.resolve({
+          extensions: [makeRecord({ id: 'ext-c', status: 'disabled', bundleReady: false })],
+          nextCursor: null,
+        }),
     });
 
     await loader.reloadAll();
@@ -390,7 +414,10 @@ describe('ExtensionLoader.reloadAll', () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: () =>
-        Promise.resolve([makeRecord({ id: 'ext-new', status: 'disabled', bundleReady: false })]),
+        Promise.resolve({
+          extensions: [makeRecord({ id: 'ext-new', status: 'disabled', bundleReady: false })],
+          nextCursor: null,
+        }),
     });
     global.fetch = fetchMock;
 
@@ -406,7 +433,7 @@ describe('ExtensionLoader.reloadAll', () => {
 
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve([]),
+      json: () => Promise.resolve({ extensions: [], nextCursor: null }),
     });
 
     await loader.reloadAll();
@@ -434,7 +461,7 @@ describe('ExtensionLoader.reloadAll', () => {
 
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve([]),
+      json: () => Promise.resolve({ extensions: [], nextCursor: null }),
     });
 
     await expect(loader.reloadAll()).resolves.toBeDefined();
@@ -489,11 +516,10 @@ describe('ExtensionLoader generation guard (rapid-switch races)', () => {
   /** Build a deferred fetch response the test resolves on demand. */
   function deferredFetch() {
     let resolve!: (records: ExtensionRecordPublic[]) => void;
-    const promise = new Promise<{ ok: boolean; json: () => Promise<ExtensionRecordPublic[]> }>(
-      (r) => {
-        resolve = (records) => r({ ok: true, json: () => Promise.resolve(records) });
-      }
-    );
+    const promise = new Promise<{ ok: boolean; json: () => Promise<unknown> }>((r) => {
+      resolve = (records) =>
+        r({ ok: true, json: () => Promise.resolve({ extensions: records, nextCursor: null }) });
+    });
     return { promise, resolve };
   }
 
@@ -543,7 +569,12 @@ describe('ExtensionLoader generation guard (rapid-switch races)', () => {
       // First call: the SSE reload's list fetch, held pending.
       .mockImplementationOnce(() => sseFetch.promise)
       // Second call: the cwd-switch reloadAll's fetch, resolves immediately.
-      .mockImplementation(() => Promise.resolve({ ok: true, json: () => Promise.resolve([]) }));
+      .mockImplementation(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ extensions: [], nextCursor: null }),
+        })
+      );
 
     // SSE hot-reload starts (tears ext-a down synchronously, then awaits fetch)...
     const sseReload = loader.reloadExtensions(['ext-a']);

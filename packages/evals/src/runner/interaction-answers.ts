@@ -32,8 +32,12 @@
 import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
 import type { ConnectionRequestAnswerRecord, QuestionAnswerRecord } from '../types.js';
 
-/** The owner's list of agent requests still waiting for an answer. */
-export const PENDING_CONNECTION_REQUESTS_PATH = '/api/connectors/agent-requests?state=pending';
+/** The owner's list of agent requests still waiting for an answer, the largest page at a time. */
+export const PENDING_CONNECTION_REQUESTS_PATH =
+  '/api/connectors/agent-requests?state=pending&limit=200';
+
+/** The most pages one sweep reads: far past any eval's requests, and never an endless loop. */
+const MAX_PENDING_PAGES = 50;
 
 /** The durable stream member a question card arrives as. */
 const QUESTION_PROMPT = 'question_prompt';
@@ -128,12 +132,19 @@ export async function denyPendingConnectionRequests(
 ): Promise<{ records: ConnectionRequestAnswerRecord[]; errors: string[] }> {
   const records: ConnectionRequestAnswerRecord[] = [];
   const errors: string[] = [];
-  let pending: Array<{ requestId?: unknown }>;
+  const pending: Array<{ requestId?: unknown }> = [];
   try {
-    const res = await fetch(`${baseUrl}${PENDING_CONNECTION_REQUESTS_PATH}`);
-    if (!res.ok) return { records, errors: [`GET agent requests returned ${res.status}`] };
-    const body = (await res.json()) as { requests?: unknown };
-    pending = Array.isArray(body.requests) ? (body.requests as Array<{ requestId?: unknown }>) : [];
+    // Every page: a request past the first would otherwise wait unanswered.
+    let cursor: string | null = null;
+    for (let pages = 0; pages < MAX_PENDING_PAGES; pages++) {
+      const after: string = cursor ? `&cursor=${encodeURIComponent(cursor)}` : '';
+      const res = await fetch(`${baseUrl}${PENDING_CONNECTION_REQUESTS_PATH}${after}`);
+      if (!res.ok) return { records, errors: [`GET agent requests returned ${res.status}`] };
+      const body = (await res.json()) as { requests?: unknown; nextCursor?: unknown };
+      if (Array.isArray(body.requests)) pending.push(...(body.requests as typeof pending));
+      cursor = typeof body.nextCursor === 'string' ? body.nextCursor : null;
+      if (!cursor) break;
+    }
   } catch (err) {
     return { records, errors: [`GET agent requests failed: ${message(err)}`] };
   }

@@ -9,7 +9,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { notifications, type Db } from '@dorkos/db';
 import type { ProjectInfo, ProjectRef } from '@dorkos/extension-api/server';
 import { eventFanOut } from '../../../core/event-fan-out.js';
-import { assessPerson } from '../../../../routes/extensions-person-bar.js';
+import { assessPerson } from '../../../../lib/http/person-bar.js';
 import { setExtensionPersonBar } from '../extension-inbox-context.js';
 import { NotificationStore } from '../../../notifications/notification-store.js';
 import {

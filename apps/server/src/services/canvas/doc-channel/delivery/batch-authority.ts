@@ -11,7 +11,7 @@ import {
   matchesCanvasChannelEvent,
   type CanvasChannelDocEventsContext,
 } from '@dorkos/shared/canvas-channel-schemas';
-import { canonicalCanvasAppJson } from '@dorkos/shared/canvas-app-manifest';
+import { canonicalCanvasAppJson } from '../../canvas-app-manifest.js';
 import { PrivateSessionMessageRefusalError } from '../../../session/private-messages/acceptance.js';
 import { DocChannelStore, type DocBatchRow, type DocGrantRow } from '../store.js';
 import type { DocChannelGrants } from '../grants.js';

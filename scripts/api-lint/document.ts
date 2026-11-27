@@ -1,6 +1,8 @@
 /**
- * Reading the two committed files the API lint gate measures: the OpenAPI
- * document (`docs/api/openapi.json`, kept fresh by `docs-openapi-check`) and
+ * Reading the committed files the API lint gate measures: the OpenAPI
+ * document (`docs/api/openapi.json` with its internal part
+ * `docs/api/openapi-internal.json` merged in, both kept fresh by
+ * `docs-openapi-check`) and
  * the route census (`apps/server/src/http/__tests__/route-census.baseline.json`,
  * kept fresh by the booted census test). Shapes, path helpers and `$ref`
  * resolution live here so the rules module reads as rules.

@@ -5,6 +5,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createExtensionsRoutes } from '../extensions.js';
+import { extensionDoorRoutes } from '../../services/extensions/http-capabilities/__tests__/extension-doors-fixture.js';
 import { frontDoorStepUpHarness } from './front-door-step-up-harness.js';
 
 const RECORD = {
@@ -36,6 +37,8 @@ describe('extension enable confirmation', () => {
         getCwd: () => null,
       }),
     },
+    // Turning one off is on the capability mount (DOR-4978).
+    { path: '/', routes: extensionDoorRoutes(manager as never) },
   ]);
   beforeEach(() => {
     manager.enable.mockClear();

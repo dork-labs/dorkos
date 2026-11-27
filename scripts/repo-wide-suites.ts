@@ -34,10 +34,12 @@ export const REPO_WIDE_SUITES = [
   '__tests__/browser-proof-page.test.ts',
   '__tests__/browser-turbo-build-cache.test.ts',
   '__tests__/build-cache-workflow.test.ts',
-  // Reads docs/api/openapi.json, the route census and the server's hand-written
-  // OpenAPI registry (DOR-4996).
+  // Reads docs/api/openapi.json with docs/api/openapi-internal.json, the route
+  // census and the server's hand-written OpenAPI registry (DOR-4996).
   '__tests__/check-api-lint.test.ts',
   '__tests__/check-boundary.test.ts',
+  // Reads package.json, lefthook.yml and ci/required-checks.json (DOR-4947).
+  '__tests__/check-cli.test.ts',
   // Reads apps/server/src/services, the side map and the computer wall's baseline (DOR-5158).
   '__tests__/check-computer-wall.test.ts',
   '__tests__/check-design-tokens.test.ts',
@@ -106,6 +108,8 @@ export const REPO_WIDE_SUITES = [
   // Reads apps/server/vitest.config.ts and every server test file (DOR-4940).
   '__tests__/server-test-location-census.test.ts',
   '__tests__/session-link-boundary.test.ts',
+  // Reads packages/shared/package.json and every import of @dorkos/shared in the tree (DOR-4931).
+  '__tests__/shared-export-importers.test.ts',
   '__tests__/space-page-versions.test.ts',
   '__tests__/space-server.test.ts',
   // Reads .github/workflows/security-gate.yml through the classifier (DOR-4834).

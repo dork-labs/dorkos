@@ -3,10 +3,6 @@ import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import {
-  ConnectorAgentRequestAuthenticationInputSchema,
-  ConnectorAgentRequestDecisionSchema,
-} from '@dorkos/shared/connector-agent-request-schemas';
-import {
   ConnectorManagementReviewCreateRequestSchema,
   ConnectorManagementReviewDecisionSchema,
   ConnectorReconciliationApplyRequestSchema,
@@ -14,17 +10,16 @@ import {
   type ConnectorAgentApproval,
   type ConnectorAgentRequestItem,
 } from '@dorkos/shared/connector-schemas';
-import {
-  ConnectorGrantExclusionChangeSchema,
-  ConnectorGrantExclusionListSchema,
-} from '@dorkos/shared/connector-exclusion-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import {
-  ConnectorGrantExclusionError,
-  type ConnectorGrantExclusionService,
-} from '../services/connectors/access/grant-exclusions.js';
+import { ConnectorGrantExclusionError } from '../services/connectors/access/grant-exclusions.js';
 import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
+import { INVALID_CURSOR_DETAIL, PageQuerySchema } from '@dorkos/shared/paging';
+import { keysetPage } from '../lib/paging/keyset-page.js';
+import {
+  invalidCursor,
+  isInvalidCursor,
+} from '../services/core/capabilities/capability-definition.js';
 import { verifyRequestAuth, type RequestUser } from '../services/core/auth/session-gate.js';
 import {
   ConnectorManagementReviewError,
@@ -68,17 +63,11 @@ import {
   type ConnectorOwnerBoundaryDeps,
 } from './connector-owner-boundary.js';
 
-const ReviewListQuerySchema = z
-  .object({ state: z.enum(['pending', 'resolved']).optional() })
-  .strict();
-
 /** Agent requests list by lifecycle group and, for one conversation's cards, by session. */
-const AgentRequestListQuerySchema = z
-  .object({
-    state: z.enum(['pending', 'resolved']).optional(),
-    sessionId: z.string().min(1).optional(),
-  })
-  .strict();
+const AgentRequestListQuerySchema = PageQuerySchema.extend({
+  state: z.enum(['pending', 'resolved']).optional(),
+  sessionId: z.string().min(1).optional(),
+}).strict();
 
 /** Dependencies for the connector owner-management HTTP boundary. */
 export interface ConnectorManagementRouterDeps extends ConnectorOwnerBoundaryDeps {
@@ -87,17 +76,13 @@ export interface ConnectorManagementRouterDeps extends ConnectorOwnerBoundaryDep
   /** Durable management review lifecycle. */
   readonly reviews: Pick<
     ConnectorManagementReviewService,
-    'create' | 'getProgramStatus' | 'list' | 'resolve'
+    'create' | 'getProgramStatus' | 'resolve'
   >;
   /** Complete-catalog exact grant reconciliation. */
   readonly reconciliation: Pick<ConnectorReconciliationService, 'preview' | 'apply'>;
   /** Agents left out of a connection's every-agent share (DOR-3961). */
-  readonly exclusions: Pick<ConnectorGrantExclusionService, 'list' | 'letBackIn'>;
   /** Owner-only review and resolution for requests raised by runtime agents. */
-  readonly agentRequests?: Pick<
-    ConnectorAgentRequestService,
-    'listForOwner' | 'getForOwner' | 'resolve' | 'startAuthentication'
-  >;
+  readonly agentRequests?: Pick<ConnectorAgentRequestService, 'listForOwner' | 'getForOwner'>;
   /**
    * Another agent's approval of a request, as the field the owner's item spreads in
    * (`approvedBy`): read by the request's own id, so a card never depends on a window of recent
@@ -238,18 +223,6 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     }
   });
 
-  router.get('/reviews', (c) => {
-    const owner = resolveConnectorOperator(c, deps);
-    if (owner instanceof Response) return owner;
-    const query = ReviewListQuerySchema.safeParse(readQuery(c));
-    if (!query.success) return validationProblem(c, query.error);
-    try {
-      return c.json({ reviews: deps.reviews.list(owner, query.data.state) });
-    } catch (error) {
-      return managementErrorResponse(c, error);
-    }
-  });
-
   router.post('/reviews/:reviewRequestId/decision', async (c) => {
     const owner = resolveConnectorOperator(c, deps);
     if (owner instanceof Response) return owner;
@@ -284,13 +257,22 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     if (requests instanceof Response) return requests;
     const query = AgentRequestListQuerySchema.safeParse(readQuery(c));
     if (!query.success) return validationProblem(c, query.error);
+    const { state, sessionId, ...page } = query.data;
     try {
-      return c.json({
-        requests: requests
-          .listForOwner(owner, query.data.state, query.data.sessionId)
-          .map(withApproval),
-      });
+      // Newest first, a page at a time (DOR-4982). One answered while paging
+      // can repeat or be missed when the list is narrowed to a state.
+      const found = keysetPage(
+        `agent-requests:${state ?? 'all'}:${sessionId ?? ''}`,
+        requests.listForOwner(owner, state, sessionId),
+        (row) => [row.createdAt, row.requestId],
+        page,
+        invalidCursor
+      );
+      return c.json({ requests: found.items.map(withApproval), nextCursor: found.nextCursor });
     } catch (error) {
+      if (isInvalidCursor(error)) {
+        return problem(c, 'invalid_request', { detail: INVALID_CURSOR_DETAIL });
+      }
       return managementErrorResponse(c, error);
     }
   });
@@ -307,63 +289,6 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     }
   });
 
-  router.post('/agent-requests/:requestId/decision', async (c) => {
-    const owner = resolveConnectorOperator(c, deps);
-    if (owner instanceof Response) return owner;
-    const requests = requireAgentRequests(c);
-    if (requests instanceof Response) return requests;
-    const input = ConnectorAgentRequestDecisionSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!input.success) return validationProblem(c, input.error);
-    const requestId = c.req.param('requestId');
-    const decide = async () => {
-      const active = requestAbortSignal(c);
-      try {
-        return c.json(await requests.resolve(owner, requestId, input.data, active.signal));
-      } catch (error) {
-        return managementErrorResponse(c, error);
-      } finally {
-        active.dispose();
-      }
-    };
-    // A no is immediate; answering with access waits for the owner (DOR-4355).
-    if (input.data.decision === 'denied') return decide();
-    return runFrontDoorWrite(c, {
-      kind: 'connection.grant',
-      target: requestId,
-      input: { op: 'answer-agent-request', requestId, decision: input.data },
-      reason: 'Give an agent the access it asked for.',
-      subject: CONNECTED_APPS,
-      run: decide,
-    });
-  });
-
-  router.post('/agent-requests/:requestId/authentication-flows', async (c) => {
-    const owner = resolveConnectorOperator(c, deps);
-    if (owner instanceof Response) return owner;
-    const requests = requireAgentRequests(c);
-    if (requests instanceof Response) return requests;
-    const input = ConnectorAgentRequestAuthenticationInputSchema.safeParse(
-      readJsonBody(c, { emptyAs: {} })
-    );
-    if (!input.success) return validationProblem(c, input.error);
-    const requestId = c.req.param('requestId');
-    // Connecting an account for an agent waits for the owner (DOR-4355).
-    return runFrontDoorWrite(c, {
-      kind: 'connection.grant',
-      target: requestId,
-      input: { op: 'connect-for-agent-request', requestId, ...input.data },
-      reason: 'Connect an account for the agent that asked.',
-      subject: CONNECTED_APPS,
-      run: async () => {
-        try {
-          return c.json(await requests.startAuthentication(owner, requestId, input.data), 201);
-        } catch (error) {
-          return managementErrorResponse(c, error);
-        }
-      },
-    });
-  });
-
   router.post('/reconciliation/previews', async (c) => {
     const owner = resolveConnectorOperator(c, deps);
     if (owner instanceof Response) return owner;
@@ -378,53 +303,6 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     } catch (error) {
       return managementErrorResponse(c, error);
     }
-  });
-
-  // The agents left out of a connection's every-agent share (DOR-3961). Leaving
-  // one out, like reading one review, polling an agent request's sign-in and
-  // stopping the share, is on the capability mount behind the same bar
-  // (`services/connectors/resources/owner-management-capabilities.ts`, DOR-4978).
-  router.get('/connections/:connectionId/exclusions', (c) => {
-    const owner = resolveConnectorOperator(c, deps);
-    if (owner instanceof Response) return owner;
-    const connectionId = c.req.param('connectionId');
-    try {
-      return c.json(
-        ConnectorGrantExclusionListSchema.parse({
-          connectionId,
-          exclusions: deps.exclusions.list(owner, connectionId),
-        })
-      );
-    } catch (error) {
-      return managementErrorResponse(c, error);
-    }
-  });
-
-  // Letting an agent back in gives it the shared access again, so it waits for
-  // the owner (DOR-4355); leaving one out stays immediate.
-  router.delete('/connections/:connectionId/exclusions/:agentId', async (c) => {
-    const owner = resolveConnectorOperator(c, deps);
-    if (owner instanceof Response) return owner;
-    const connectionId = c.req.param('connectionId');
-    const agentId = c.req.param('agentId');
-    return runFrontDoorWrite(c, {
-      kind: 'connection.grant',
-      target: connectionId,
-      input: { op: 'let-agent-back-in', connectionId, agentId },
-      reason: 'Let this agent use the app again, like every other agent.',
-      subject: CONNECTED_APPS,
-      run: async () => {
-        try {
-          return c.json(
-            ConnectorGrantExclusionChangeSchema.parse(
-              await deps.exclusions.letBackIn(owner, connectionId, agentId)
-            )
-          );
-        } catch (error) {
-          return managementErrorResponse(c, error);
-        }
-      },
-    });
   });
 
   router.post('/reconciliation/apply', async (c) => {

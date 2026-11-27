@@ -162,7 +162,8 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
     }
   }
   if (url.endsWith('/extension-decisions')) return json({ decisions, offers });
-  if (url.endsWith('/extensions/pending-approvals')) return json({ approvals: [] });
+  if (url.endsWith('/extensions/pending-approvals?limit=200'))
+    return json({ approvals: [], nextCursor: null });
   return json({ error: 'not found' }, 404);
 }
 

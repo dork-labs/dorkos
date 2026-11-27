@@ -11,7 +11,7 @@
 import { wakeForBudgetRefusal } from '../../heartbeats/room-wakes.js';
 import { randomUUID } from 'node:crypto';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
-import { newDispatchId } from '@dorkos/shared/dispatch-id';
+import { newDispatchId } from '../../../lib/identity/dispatch-id.js';
 import { logError, logger } from '../../../lib/logger.js';
 import { type TriggerTarget } from '../room-claims.js';
 import { type RoomCollection } from '../room-collect.js';

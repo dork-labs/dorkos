@@ -24,7 +24,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { IsolatedExtensionHost } from '../../isolated-host.js';
 import { logger } from '../../../../../lib/logger.js';
 import type { ApiEnv } from '../../../../../http/api-chain.js';
-import { registerExtensionRestartRoute } from '../../../../../routes/extensions-restart.js';
+import { extensionDoorRoutes } from '../../../http-capabilities/__tests__/extension-doors-fixture.js';
 
 describe('an isolated extension goes live through the real lifecycle', () => {
   it(
@@ -311,9 +311,9 @@ describe('an isolated extension goes live through the real lifecycle', () => {
         c.set('user', { userId: 'owner', credential: 'cookie' });
         await next();
       });
-      registerExtensionRestartRoute(restart, st.manager, /^[a-z0-9][a-z0-9-]*$/, () => {});
+      restart.route('/', extensionDoorRoutes(st.manager));
       const restartedResponse = await restart.request(
-        `/${ID}/restart`,
+        `/api/extensions/${ID}/restart`,
         { method: 'POST' },
         {
           incoming: { headers: {}, socket: { remoteAddress: '127.0.0.1' }, method: 'POST' },

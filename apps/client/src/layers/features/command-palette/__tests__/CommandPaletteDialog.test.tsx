@@ -372,7 +372,7 @@ describe('CommandPaletteDialog', () => {
       resolveAcknowledgement = resolve;
     });
     vi.mocked(mockTransport.allocateSession).mockReturnValueOnce(acknowledgement);
-    vi.mocked(mockTransport.listSessions).mockResolvedValueOnce({ sessions: [] });
+    vi.mocked(mockTransport.listSessions).mockResolvedValueOnce({ sessions: [], nextCursor: null });
 
     function CommandAction() {
       const { handleCommandSelect } = usePaletteActions(vi.fn());

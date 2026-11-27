@@ -90,11 +90,11 @@ This starts both the server (port 6242) and the Vite dev server (port 6241). Ope
     'pnpm lint -- --fix': { type: 'command', description: 'Auto-fix ESLint issues' },
     'pnpm format': { type: 'command', description: 'Prettier format all files' },
     'pnpm format:check': { type: 'command', description: 'Check formatting without writing' },
-    'pnpm verify:preopen': {
+    'pnpm check preopen': {
       type: 'command',
       description: 'Optional lighter check, for debugging a failure (no package tests)',
     },
-    'pnpm verify': {
+    'pnpm check verify': {
       type: 'command',
       description: 'The full gate: typecheck, lint and tests for what your branch changed',
     },

@@ -1,6 +1,6 @@
 /**
  * Whether DorkOS asks a person before an agent acts, for each prompt kind in the registry
- * (`@dorkos/shared/prompts/prompt-kinds`). One function, {@link shouldAsk}, decides every kind,
+ * (`./prompt-kinds.ts`). One function, {@link shouldAsk}, decides every kind,
  * so a kind's rule lives in one place and its Activity line is written the same way each time.
  *
  * ## `connector.write.marked-same-source` (DOR-4794, Security's threat read of 2026-11-19)
@@ -32,11 +32,7 @@
  *
  * @module services/core/prompts/should-ask
  */
-import {
-  PROMPT_KINDS,
-  type PromptDecision,
-  type PromptKindKey,
-} from '@dorkos/shared/prompts/prompt-kinds';
+import { PROMPT_KINDS, type PromptDecision, type PromptKindKey } from './prompt-kinds.js';
 import { sessionPath } from '@dorkos/shared/session-link';
 import type { ActivityService } from '../../activity/activity-service.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';

@@ -26,7 +26,7 @@ import { generateKeyPairSync, type KeyObject } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { claimSecretText } from '@dorkos/shared/secret-file';
+import { claimSecretText } from '../../../lib/secret-store/secret-file.js';
 import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import { RelayPinnedHubKeySchema } from '@dorkos/shared/session-relay';
 import {

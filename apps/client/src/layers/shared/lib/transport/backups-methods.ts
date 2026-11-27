@@ -1,7 +1,10 @@
-/** HTTP implementation of Settings → Backups (DOR-4253). */
+/**
+ * HTTP implementation of Settings → Backups (DOR-4253), through the generated
+ * API client (DOR-5473).
+ */
 import type { Transport } from '@dorkos/shared/transport';
 import type { BackupCopiesResponse, BackupMoveResponse } from '@dorkos/shared/transport-backups';
-import { fetchJSON } from './http-client';
+import { createTransportApiClient } from './api-client';
 
 /** A Move copies a whole database and checks it, so it may outlast the usual timeout. */
 const MOVE_TIMEOUT_MS = 10 * 60_000;
@@ -10,20 +13,17 @@ const MOVE_TIMEOUT_MS = 10 * 60_000;
 export function createBackupsMethods(
   baseUrl: string
 ): Pick<Transport, 'listBackups' | 'removeBackup' | 'moveBackup'> {
-  const at = (name: string) => `/config/backups/${encodeURIComponent(name)}`;
+  const api = createTransportApiClient(baseUrl);
+  const moveApi = createTransportApiClient(baseUrl, MOVE_TIMEOUT_MS);
   return {
     listBackups(): Promise<BackupCopiesResponse> {
-      return fetchJSON(baseUrl, '/config/backups');
+      return api.call('config.listBackups', {});
     },
     async removeBackup(name: string): Promise<void> {
-      await fetchJSON(baseUrl, at(name), { method: 'DELETE' });
+      await api.call('config.deleteBackups', { path: { name } });
     },
     moveBackup(name: string, destination: string): Promise<BackupMoveResponse> {
-      return fetchJSON(baseUrl, `${at(name)}/move`, {
-        method: 'POST',
-        body: JSON.stringify({ destination }),
-        timeout: MOVE_TIMEOUT_MS,
-      });
+      return moveApi.call('config.moveBackups', { path: { name }, body: { destination } });
     },
   };
 }

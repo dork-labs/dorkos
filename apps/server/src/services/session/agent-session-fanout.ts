@@ -57,7 +57,7 @@
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { Session, SessionListWarning } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
-import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
+import { canonicalDirectory } from '../../lib/fs/canonical-directory.js';
 import { aggregateSessionList } from './catalog/aggregate-session-list.js';
 
 /**

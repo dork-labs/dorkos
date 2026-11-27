@@ -8,7 +8,7 @@ import {
   CanvasAppManifestError,
   canonicalCanvasAppJson,
   parseCanvasAppManifest,
-} from '@dorkos/shared/canvas-app-manifest';
+} from '../canvas-app-manifest.js';
 
 const MAX_COMPILED_MANIFESTS = 64;
 const compiled = new Map<string, CompiledCanvasAppManifest>();

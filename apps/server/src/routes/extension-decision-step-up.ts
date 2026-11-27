@@ -6,7 +6,7 @@ import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import type { ExtensionInboxService } from '../services/extensions/inbox/extension-inbox.js';
 import type { StepUpCommitResult } from '../services/core/auth/step-up/step-up-holds.js';
 import { problem, sendProblem } from '@dorkos/http-kit';
-import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { assessPerson, type PersonBarCopy } from '../lib/http/person-bar.js';
 import { wifiRefusal } from './extension-decision-problems.js';
 
 /** What a caller away from this computer without a signed-in session is told. */

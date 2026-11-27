@@ -20,6 +20,8 @@ import type { AgentIdentity } from '../agent-identity-service.js';
 import { wireAuditTrail } from '../../../audit/wire-audit-trail.js';
 import { recordAudit, resetAuditTrail } from '../../../audit/audit-trail.js';
 import { runWithAuditActor } from '../../../audit/audit-context.js';
+import { personBarPassed } from '../../capabilities/context/owner-authority.js';
+import { PROGRAM_ACTOR_LABEL, personBarActivityActor } from '@dorkos/shared/activity-schemas';
 
 const IDENTITY: AgentIdentity = {
   agentPath: '/projects/researcher',
@@ -71,6 +73,35 @@ describe('capability calls in the audit log', () => {
               output: z.object({ ok: z.boolean() }),
               surfaces: {},
               invoke: async () => ({ ok: true }),
+            }),
+            // Behind the person bar (DOR-4978): records its own Activity row from the pass.
+            defineCapability({
+              id: 'demo.barred',
+              title: 'Change a person’s thing',
+              description: 'Behind the person bar.',
+              tier: 'act',
+              area: null,
+              areaNote: 'a test',
+              input: z.object({}),
+              output: z.object({ ok: z.boolean() }),
+              surfaces: {
+                http: {
+                  method: 'post',
+                  path: '/api/demo/barred',
+                  audience: 'person',
+                  callerBar: 'person',
+                  personCopy: { code: 'person_only', subject: 'demo things', agent: 'No.' },
+                },
+              },
+              invoke: async (_deps, _input, context) => {
+                await activity.emit({
+                  ...personBarActivityActor(context.personBar!.caller),
+                  category: 'config',
+                  eventType: 'config.demo_changed',
+                  summary: 'Changed',
+                });
+                return { ok: true };
+              },
             }),
           ],
         },
@@ -145,5 +176,44 @@ describe('capability calls in the audit log', () => {
     await registry.invoke('demo.read', {});
     await flush();
     expect(audit()).toEqual([]);
+  });
+
+  it('names a program the person bar let through as a program, and the person as today', async () => {
+    const owner = {
+      actor: { accountId: 'install:inst-1', kind: 'person' as const, name: 'Owner' },
+      surface: 'app' as const,
+    };
+    // With login off a key-only caller passes the bar; it acted, not the owner.
+    await runWithAuditActor(owner, () =>
+      registry.invoke('demo.barred', {}, { personBar: personBarPassed('program') })
+    );
+    await flush();
+    const feed = () =>
+      db
+        .select()
+        .from(activityEvents)
+        .all()
+        .map((row) => [row.actorType, row.actorLabel]);
+    expect(feed()).toEqual([['system', PROGRAM_ACTOR_LABEL]]);
+    const invoked = db
+      .select()
+      .from(auditEvents)
+      .all()
+      .filter((row) => row.action === 'capability.invoked');
+    expect(invoked.map((row) => [row.actorKind, row.actorName])).toEqual([
+      ['system', PROGRAM_ACTOR_LABEL],
+    ]);
+
+    // The person in the app is named as the hand route named them: You, the owner.
+    await runWithAuditActor(owner, () =>
+      registry.invoke('demo.barred', {}, { personBar: personBarPassed('person') })
+    );
+    await flush();
+    expect(feed()[1]).toEqual(['user', 'You']);
+    expect(audit().filter(([action]) => action === 'capability.invoked')[1]).toEqual([
+      'capability.invoked',
+      'person',
+      'install:inst-1',
+    ]);
   });
 });

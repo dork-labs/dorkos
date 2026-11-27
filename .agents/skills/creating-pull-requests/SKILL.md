@@ -31,11 +31,11 @@ exists**. Opening the PR is the last step, not the first:
 5. Squash to one clean commit carrying one changelog fragment.
 6. **Open the PR with `scripts/open-pr.sh` and let CI judge.** No local check is a
    step before opening (decided 2026-11-24, when the shared heavy slot had 37 jobs
-   queued and agents waited hours for `pnpm verify:preopen`). The PR's CI runs the
+   queued and agents waited hours for `pnpm check preopen`). The PR's CI runs the
    same typecheck, lint and tests, and `scripts/open-pr.sh` turns on auto-merge at
    open, which waits for every required check, so a red PR never merges. Nothing
    arms on a local proof any more: `arm.sh`, which read full proofs, is retired
-   (DOR-5124). `pnpm verify:preopen` and `pnpm verify` are optional, for debugging
+   (DOR-5124). `pnpm check preopen` and `pnpm check verify` are optional, for debugging
    a failure; a PR touching `.github/` needs neither. Opening last means the
    automated review spends its single pass on final content.
 7. **If a check goes red, fix forward.** `gh pr checks <n>` names the failing check;
@@ -542,6 +542,7 @@ this block byte for byte, so it cannot drift quietly):
 <!-- prettier-ignore-start -->
 <!-- ci-steward:required-checks:start -->
 - `typecheck`
+- `policy`
 - `fragment-present`
 - `no-fragment-under-skip-label`
 - `version-outranks-base`
@@ -932,7 +933,7 @@ gh label create re-review    --description "Request another automated review pas
   cut short, so a re-review is owed. Read the comment before you go hunting in your
   diff. The wording comes from `scripts/classify-review-failure.sh`, and the shapes
   it must get right are pinned by `scripts/test-review-classifier.sh` (run by
-  `pnpm verify` and by the `scripts-test` workflow) — DOR-457 was that comment
+  `pnpm check verify` and by the `scripts-test` workflow) — DOR-457 was that comment
   confidently naming the wrong cause nine times, and then doing it again for a
   different shape that had no fixture, so add a fixture if you touch it.
 

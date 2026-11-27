@@ -124,8 +124,9 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
       return new Response(null, { status: 204 });
     }
   }
-  if (url.endsWith('/extensions/pending-approvals')) return json({ approvals: waiting });
-  if (url.endsWith('/extensions')) return json([]);
+  if (url.endsWith('/extensions/pending-approvals?limit=200'))
+    return json({ approvals: waiting, nextCursor: null });
+  if (url.endsWith('/extensions?limit=200')) return json({ extensions: [], nextCursor: null });
   return json({ error: 'not found' }, 404);
 }
 

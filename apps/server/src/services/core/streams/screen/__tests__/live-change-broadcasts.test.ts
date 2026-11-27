@@ -5,7 +5,7 @@
  * Every case is a mutation probe: dropping the `config_changed` audience, spreading
  * the in-process change instead of picking fields, dropping a subscription, or
  * letting a config value, Community owner or ref onto the wire turns one red.
- * That `index.ts` calls this function is checked by `sse-event-allowlist.test.ts`.
+ * That `index.ts` calls this function is checked by `event-union-census.test.ts`.
  *
  * @vitest-environment node
  */

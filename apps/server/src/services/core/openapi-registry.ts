@@ -32,17 +32,16 @@ import { RUNTIME_CREDITS_PROTOCOLS } from '@dorkos/shared/agent-runtime';
 import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-openapi';
 import { env } from '../../env.js';
 import { registerDomainOpenApi } from './openapi/domains.js';
-import { assignOperationIds } from './openapi/operation-ids.js';
+import { finishDocument } from './openapi/finish-document.js';
 import {
   API_DESCRIPTION,
   DOCUMENT_SECURITY,
-  assignOperationSecurity,
   registerSecuritySchemes,
 } from './openapi/security-schemes.js';
 import { SERVER_VERSION } from '../../lib/version.js';
 import { registerExtensionDecisionsOpenApi } from '../extensions/inbox/extension-decisions-openapi.js';
-import { registerExtensionRemovalOpenApi } from '../extensions/removal/extension-removal-openapi.js';
 import { registerExtensionApprovalSetOpenApi } from '../extensions/groups/extension-approval-set-openapi.js';
+import { registerExtensionListOpenApi } from '../extensions/listing/extension-list-openapi.js';
 import { registerExtensionMediaOpenApi } from '../extensions/http/media-openapi.js';
 import { registerConfigBackupsOpenApi } from './config/backups-openapi.js';
 import {
@@ -205,9 +204,7 @@ import { SessionSnapshotSchema, SessionEventSchema } from '@dorkos/shared/sessio
 import { registerApprovalsOpenApi } from './approvals/approval-openapi.js';
 import {
   ApproveExtensionRequestSchema,
-  DismissExtensionApprovalRequestSchema,
   ExtensionTrustOfferSchema,
-  PendingExtensionApprovalsResponseSchema,
   TrustedSourceRequestSchema,
   TrustedSourcesResponseSchema,
 } from '@dorkos/shared/extension-approval-schemas';
@@ -240,8 +237,6 @@ import {
   ConnectorUsagePageSchema,
 } from '@dorkos/shared/connector-schemas';
 import {
-  ConnectorAgentConnectionsSchema,
-  ConnectorEveryAgentGrantsSchema,
   ConnectorAuthenticationFlowCreateRequestSchema,
   ConnectorAuthenticationFlowStateSchema,
   ConnectorProvidersResourceSchema,
@@ -269,6 +264,7 @@ import {
   SetPermissionPresetBodySchema,
 } from '@dorkos/shared/permissions';
 import { z } from 'zod';
+import { PageQuerySchema } from '@dorkos/shared/paging';
 import { AccountUsageSchema, DismissFoundFolderRequestSchema } from '@dorkos/shared/account-usage';
 import { PackageTypeSchema } from '@dorkos/marketplace';
 import { DisclosedEffectsSchema } from '../marketplace/preview/disclosed-effects.js';
@@ -691,13 +687,13 @@ registry.registerPath({
   tags: ['Sessions'],
   summary: 'List all sessions',
   description:
-    'Aggregates sessions across every registered runtime (ADR-0310). Runtimes that fail or time out degrade to `warnings[]` entries with partial results. Each session carries its `accountId`, its live `status` (lifecycle and any usage limit; absent when the session is not live and has no stored limit, read as idle), and its flow `trackerItems` (every item it works on, newest first, including work it started in chats of their own) beside the deprecated `trackerItem` (the newest); the envelope carries `accountUsage` for the distinct accounts on the page, omitted when there are none.',
+    'One page of the chats in a folder, aggregated across every registered runtime (ADR-0310), latest activity first (`updatedAt`, then id); pass `nextCursor` as `cursor` for the next page. A chat updated while paging can repeat or be missed. A caller presenting `X-DorkOS-Agent` lists agent work only, filtered before the page is cut, and its cursor works only for it; a cursor another caller got, or one from before a restart, is refused 400. Runtimes that fail or time out degrade to `warnings[]` entries with partial results. Each session carries its `accountId`, its live `status` (lifecycle and any usage limit; absent when the session is not live and has no stored limit, read as idle), and its flow `trackerItems` (every item it works on, newest first, including work it started in chats of their own) beside the deprecated `trackerItem` (the newest); the envelope carries `accountUsage` for the distinct accounts on the page, omitted when there are none.',
   request: {
     query: ListSessionsQuerySchema,
   },
   responses: {
     200: {
-      description: 'Session list envelope (merged across runtimes, sorted by updatedAt desc)',
+      description: 'One page of the session list (merged across runtimes, latest activity first)',
       content: {
         'application/json': { schema: SessionListResponseSchema },
       },
@@ -728,13 +724,13 @@ registry.registerPath({
   tags: ['Sessions'],
   summary: 'List recent sessions across all agents',
   description:
-    'Fans out session listing across every registered agent (DOR-329), merges by `updatedAt` descending, trims to `limit`, and returns a per-agent latest-activity map plus per-runtime `warnings[]` (ADR-0310). With `touchedSince`, every session whose `lastTouchedByYouAt` is at or after that time is returned too, beyond `limit`, in its `updatedAt` place.',
+    "Fans out session listing across every registered agent (DOR-329) and returns one page, latest activity first (`updatedAt`, then id), with a per-agent latest-activity map and per-runtime `warnings[]` (ADR-0310); pass `nextCursor` as `cursor` for the next page. A chat updated while paging can repeat or be missed. With `touchedSince`, the first page also holds every session whose `lastTouchedByYouAt` is at or after that time, beyond `limit`, in its `updatedAt` place, and later pages leave out the ones it held (a chat opened again while paging can repeat); a later page asked with another `touchedSince`, or without it, is refused 400. An agent caller lists agent work only, and its cursor works only for it; another caller's cursor, or one from before a restart, is refused 400.",
   request: {
     query: RecentSessionsQuerySchema,
   },
   responses: {
     200: {
-      description: 'Recent sessions envelope with per-agent activity map',
+      description: 'One page of recent sessions, with the per-agent activity map',
       content: {
         'application/json': { schema: RecentSessionsResponseSchema },
       },
@@ -2217,33 +2213,6 @@ registry.registerPath({
             totalEndpoints: z.number(),
             totalDeadLetters: z.number(),
           }),
-        },
-      },
-    },
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/relay/stream',
-  tags: ['Relay'],
-  summary: 'SSE event stream for relay activity',
-  description:
-    'Server-Sent Events stream for real-time relay activity. ' +
-    'Supports server-side subject filtering via query param. ' +
-    'Event types: relay_connected, relay_message, relay_delivery, relay_dead_letter, relay_metrics.',
-  request: {
-    query: z.object({
-      subject: z.string().optional().openapi({ description: 'Subject pattern filter' }),
-    }),
-  },
-  responses: {
-    500: INTERNAL_ERROR_RESPONSE,
-    200: {
-      description: 'SSE event stream',
-      content: {
-        'text/event-stream': {
-          schema: z.string().openapi({ description: 'Server-Sent Events stream' }),
         },
       },
     },
@@ -3739,9 +3708,12 @@ registry.registerPath({
   path: '/api/connectors/connections',
   tags: ['Connectors'],
   summary: 'List the operator’s stable connections',
+  description:
+    'Newest connected first, a page at a time: pass `nextCursor` back as `cursor` for the next. An account connected or removed while paging can repeat or be missed.',
+  request: { query: PageQuerySchema },
   responses: {
     200: {
-      description: 'Owner-scoped stable connection inventory',
+      description: 'One page of the owner’s connected accounts',
       content: { 'application/json': { schema: ConnectorConnectionListResourceSchema } },
     },
     403: problemResponse('Verified operator authority is required'),
@@ -3865,52 +3837,6 @@ for (const action of ['pause', 'resume'] as const) {
 }
 
 registry.registerPath({
-  method: 'get',
-  path: '/api/connectors/agents/{agentId}/connections',
-  tags: ['Connectors'],
-  summary: 'Read exact connection grants for one owned agent',
-  request: { params: z.object({ agentId: z.string().min(1) }) },
-  responses: {
-    200: {
-      description: 'Canonical agent connection grants',
-      content: { 'application/json': { schema: ConnectorAgentConnectionsSchema } },
-    },
-    404: problemResponse('Agent absent or owned by someone else'),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/connectors/every-agent-grants',
-  tags: ['Connectors'],
-  summary: 'Read what every agent, including a new one, inherits',
-  description:
-    'Lists each connection whose owner gave every agent access, with the exact reviewed actions. There is no per-agent exclusion, so this is what any new agent gets the moment it is created.',
-  responses: {
-    500: INTERNAL_ERROR_RESPONSE,
-    200: {
-      description: 'Connections every agent can use, and at which level',
-      content: { 'application/json': { schema: ConnectorEveryAgentGrantsSchema } },
-    },
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/connectors/sessions/{sessionId}/connections',
-  tags: ['Connectors'],
-  summary: 'Read effective connector access for one session',
-  request: { params: z.object({ sessionId: z.string().min(1) }) },
-  responses: {
-    200: {
-      description: 'Canonical session connector access',
-      content: { 'application/json': { schema: ConnectorSessionConnectionsSchema } },
-    },
-    404: problemResponse('Session absent or owned by someone else'),
-  },
-});
-
-registry.registerPath({
   method: 'put',
   path: '/api/connectors/sessions/{sessionId}/connections/{connectionId}',
   tags: ['Connectors'],
@@ -3974,25 +3900,6 @@ registry.registerPath({
       content: { 'application/json': { schema: ConnectorProgramReviewStatusSchema } },
     },
     404: problemResponse('Review absent or belongs to another requester'),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/connectors/reviews',
-  tags: ['Connectors'],
-  summary: 'List owner-visible connector reviews',
-  request: { query: z.object({ state: z.enum(['pending', 'resolved']).optional() }) },
-  responses: {
-    500: INTERNAL_ERROR_RESPONSE,
-    200: {
-      description: 'Owner-visible reviews',
-      content: {
-        'application/json': {
-          schema: z.object({ reviews: z.array(ConnectorManagementReviewItemSchema) }).strict(),
-        },
-      },
-    },
   },
 });
 
@@ -4245,28 +4152,6 @@ registry.registerPath({
 registerApprovalsOpenApi(registry);
 
 registry.registerPath({
-  method: 'get',
-  path: '/api/extensions/pending-approvals',
-  tags: ['Extensions'],
-  summary: 'List extensions waiting to be turned on',
-  description:
-    'Every installed extension that is waiting for a person to let it run, oldest first ' +
-    '(DOR-2517). An extension is listed when it was installed by a person or the marketplace ' +
-    '(DorkOS’s own never ask), is not turned off, may not run yet, and has not been declined ' +
-    'with "Not now" at its current path, plugin and version. The Activity inbox draws one row ' +
-    'per item. `sourceLabel` and `why` are display text and are never used to decide trust. A ' +
-    'caller that may not read the person’s inbox (an agent) gets the list without `path` and ' +
-    'without any folder in `sourceLabel`.',
-  responses: {
-    500: INTERNAL_ERROR_RESPONSE,
-    200: {
-      description: 'Extensions waiting to be turned on',
-      content: { 'application/json': { schema: PendingExtensionApprovalsResponseSchema } },
-    },
-  },
-});
-
-registry.registerPath({
   method: 'post',
   path: '/api/extensions/{id}/approve',
   tags: ['Extensions'],
@@ -4308,34 +4193,6 @@ registry.registerPath({
     409: problemResponse(
       '`conflict`: the extension ships with DorkOS, or its copy cannot be checked (`detail` says which)'
     ),
-    412: problemResponse('`precondition_failed`: the copy changed since the person saw it'),
-  },
-});
-
-registry.registerPath({
-  method: 'post',
-  path: '/api/extensions/{id}/dismiss-approval',
-  tags: ['Extensions'],
-  summary: 'Say "Not now" to an extension waiting to be turned on',
-  description:
-    'Records that a person declined this copy of the extension at this version, so the Activity ' +
-    'inbox stops asking until its path, plugin or version changes. Never destructive: nothing is ' +
-    'uninstalled, turned off or revoked, and Settings → Extensions can still turn it on. The body ' +
-    'names the copy the person was shown; if the copy on disk is no longer that one the answer is ' +
-    'refused with `412 precondition_failed`. The same person bar as approving applies: a caller naming ' +
-    'itself an agent is refused in every posture, and a signed-in person is required when login ' +
-    'is on. There is no MCP tool for this.',
-  request: {
-    params: z.object({ id: z.string() }),
-    body: { content: { 'application/json': { schema: DismissExtensionApprovalRequestSchema } } },
-  },
-  responses: {
-    204: { description: 'Declined for now' },
-    400: problemResponse('`invalid_request`: an invalid extension id or body'),
-    401: problemResponse('`unauthenticated`: login is on and the caller is not signed in'),
-    403: problemResponse('`person_only`: an agent or another site cannot answer this'),
-    404: problemResponse('`not_found`: no such extension'),
-    409: problemResponse('`conflict`: the extension ships with DorkOS'),
     412: problemResponse('`precondition_failed`: the copy changed since the person saw it'),
   },
 });
@@ -6793,12 +6650,15 @@ registry.registerPath({
 });
 
 // projection throws if a capability path shadows a hand-registered one.
-registerCapabilitiesInOpenApi(composeCapabilityRegistryForDocs(), registry);
+const capabilityRoutes = registerCapabilitiesInOpenApi(
+  composeCapabilityRegistryForDocs(),
+  registry
+);
 
 // Extension decisions and per-project settings (spec `flow-multiproject` §7).
 registerExtensionDecisionsOpenApi(registry);
-registerExtensionRemovalOpenApi(registry);
 registerExtensionApprovalSetOpenApi(registry);
+registerExtensionListOpenApi(registry);
 registerExtensionMediaOpenApi(registry);
 registerConfigBackupsOpenApi(registry);
 
@@ -6822,7 +6682,9 @@ export interface GenerateOpenAPISpecOptions {
  * Generate the full OpenAPI 3.1.0 document from registered paths and schemas,
  * with an `operationId` on every operation (`openapi/operation-ids.ts`) and a
  * `security` on each one that differs from the default
- * (`openapi/security-schemes.ts`).
+ * (`openapi/security-schemes.ts`) and an `x-stability` on every one
+ * (`openapi/stability.ts`). Internal operations are still in it: split it
+ * with `splitPublishedDocument` (`openapi/published-document.ts`) to publish.
  *
  * @param options - See {@link GenerateOpenAPISpecOptions}.
  * @throws If two operations share an `operationId`.
@@ -6841,7 +6703,6 @@ export function generateOpenAPISpec(
     servers: [{ url: `http://localhost:${env.DORKOS_PORT}` }],
     security: DOCUMENT_SECURITY,
   });
-  assignOperationIds(document);
-  assignOperationSecurity(document);
+  finishDocument(document, capabilityRoutes);
   return document;
 }
