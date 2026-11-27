@@ -1150,14 +1150,15 @@ All adapter catalog endpoints are under `/api/relay/adapters/` and are available
 
 ### GET /api/relay/adapters/catalog
 
-Returns the full adapter catalog with manifests and running instances for each adapter type.
+Returns the adapter catalog with manifests and running instances for each adapter type, in the order the setup list shows them. Pages with `cursor` and `limit` (1 to 200, default 50): pass `nextCursor` back as `cursor` for the next page; it is `null` on the last. A cursor this list did not give is a `400 invalid_request`.
 
 **Responses:**
 
-- `200` - Array of `CatalogEntry` objects:
+- `200` - One page of `CatalogEntry` objects, `{ entries: CatalogEntry[], nextCursor }`:
 
 ```json
-[
+{
+  "entries": [
   {
     "manifest": {
       "type": "telegram",
@@ -1177,9 +1178,12 @@ Returns the full adapter catalog with manifests and running instances for each a
       }
     ]
   }
-]
+  ],
+  "nextCursor": null
+}
 ```
 
+- `400` - `invalid_request`: a bad `limit`, another query field, or a cursor this list did not give
 - `500` - Internal error
 
 ### POST /api/relay/adapters/reload
@@ -1290,11 +1294,12 @@ All binding endpoints are under `/api/relay/bindings/` and are available only wh
 
 ### GET /api/relay/bindings
 
-List all adapter-agent bindings.
+List the adapter-agent bindings, newest first. Pages with `cursor` and `limit` (1 to 200, default 50): pass `nextCursor` back as `cursor` for the next page; it is `null` on the last. A cursor this list did not give is a `400 invalid_request`.
 
 **Responses:**
 
-- `200` - `{ bindings: AdapterBinding[] }`
+- `200` - `{ bindings: AdapterBinding[], nextCursor: string | null }`
+- `400` - `invalid_request`: a bad `limit`, another query field, or a cursor this list did not give
 - `503` - Binding subsystem not available
 
 ### GET /api/relay/bindings/:id

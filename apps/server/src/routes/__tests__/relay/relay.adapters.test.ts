@@ -28,6 +28,23 @@ describe('Adapter routes', () => {
     target.mount(relayApp(relayCore, adapterManager));
   });
 
+  it('pages the connections and the catalog each in its own order, each with its own cursor', async () => {
+    // Config-file order, which is neither A to Z nor Z to A by id.
+    const [tg, wh] = adapterManager.listAdapters();
+    const config = [tg, { ...wh, config: { ...wh.config, id: 'aa-hook' } }, wh];
+    vi.mocked(adapterManager.listAdapters).mockReturnValue(config);
+    const first = await request(server).get('/api/relay/adapters?limit=2');
+    const rest = await request(server).get(`/api/relay/adapters?cursor=${first.body.nextCursor}`);
+    expect([...first.body.adapters, ...rest.body.adapters]).toEqual(config);
+    expect(rest.body.nextCursor).toBeNull();
+    const catalog = await request(server).get('/api/relay/adapters/catalog?limit=200');
+    expect(catalog.body.entries).toEqual(adapterManager.getCatalog());
+    const refused = await request(server).get(
+      `/api/relay/adapters/catalog?cursor=${first.body.nextCursor}`
+    );
+    expect(refused.status).toBe(400);
+  });
+
   it('returns a single adapter status', async () => {
     const res = await request(server).get('/api/relay/adapters/tg-main');
 

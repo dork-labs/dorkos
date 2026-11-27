@@ -51,6 +51,11 @@ import { APPROVAL_BAR } from '../services/extensions/http-capabilities/extension
 import type { ExtensionPersonDeps } from '../services/extensions/http-capabilities/extension-person-capabilities.js';
 import { registerExtensionRemovalRoutes } from './extensions-removal.js';
 import { registerExtensionApprovalSetRoutes } from './extensions-approval-set.js';
+import { answerPage } from '../lib/paging/hand-route-page.js';
+import {
+  pendingApprovalKey,
+  readerList,
+} from '../services/extensions/listing/extension-list-pages.js';
 
 /**
  * The person's extension doors on the capability mount (DOR-4978), over the
@@ -111,32 +116,35 @@ export function registerExtensionApprovalRoutes(
   activity?: Pick<ActivityService, 'emit'>
 ): void {
   // GET /api/extensions/pending-approvals -- Every installed extension waiting
-  // for a person to let it run, oldest first (DOR-2517). A read, so it carries
-  // no person bar: the list names ids and display text the extensions list
-  // already exposes, and the Activity inbox draws one row per item. A caller
-  // the notification pipeline would not show the person's inbox to (an agent)
-  // gets it without absolute paths or the home folder, the same rule the
-  // inbox itself answers by.
+  // for a person to let it run, a page at a time, newest waiting first
+  // (DOR-2517, DOR-4982). A read, so it carries no person bar: the list names
+  // ids and display text the extensions list already exposes, and the
+  // Activity inbox draws one row per item. A caller the notification pipeline
+  // would not show the person's inbox to (an agent) gets it without absolute
+  // paths or the home folder, the same rule the inbox itself answers by, and a
+  // cursor bound to that kind of reader.
   router.get('/pending-approvals', async (c) => {
     try {
       const forPerson =
         notificationEntitlement(readCallerPrincipal(honoRequestFacts(c))) !== 'none';
-      return c.json({
-        approvals: (await listPendingExtensionApprovals(extensionManager, { forPerson })).map(
-          (approval) => ({
-            ...approval,
-            ...(forPerson
-              ? {
-                  requestCode: requestCodeForHash(
-                    hashApprovalInput({
-                      effect: 'extension-approve',
-                      snapshot: extensionApprovalSnapshot(extensionManager.get(approval.id)),
-                    })
-                  ),
-                }
-              : {}),
-          })
-        ),
+      return await answerPage(c, {
+        list: readerList('pending-approvals', forPerson),
+        noun: 'approvals',
+        read: () => listPendingExtensionApprovals(extensionManager, { forPerson }),
+        keyOf: pendingApprovalKey,
+        show: (approval) => ({
+          ...approval,
+          ...(forPerson
+            ? {
+                requestCode: requestCodeForHash(
+                  hashApprovalInput({
+                    effect: 'extension-approve',
+                    snapshot: extensionApprovalSnapshot(extensionManager.get(approval.id)),
+                  })
+                ),
+              }
+            : {}),
+        }),
       });
     } catch (err) {
       logger.error('[Extensions] Failed to list extensions waiting for approval', err);

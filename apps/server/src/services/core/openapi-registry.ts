@@ -41,8 +41,8 @@ import {
 } from './openapi/security-schemes.js';
 import { SERVER_VERSION } from '../../lib/version.js';
 import { registerExtensionDecisionsOpenApi } from '../extensions/inbox/extension-decisions-openapi.js';
-import { registerExtensionRemovalOpenApi } from '../extensions/removal/extension-removal-openapi.js';
 import { registerExtensionApprovalSetOpenApi } from '../extensions/groups/extension-approval-set-openapi.js';
+import { registerExtensionListOpenApi } from '../extensions/listing/extension-list-openapi.js';
 import { registerExtensionMediaOpenApi } from '../extensions/http/media-openapi.js';
 import { registerConfigBackupsOpenApi } from './config/backups-openapi.js';
 import {
@@ -206,7 +206,6 @@ import { registerApprovalsOpenApi } from './approvals/approval-openapi.js';
 import {
   ApproveExtensionRequestSchema,
   ExtensionTrustOfferSchema,
-  PendingExtensionApprovalsResponseSchema,
   TrustedSourceRequestSchema,
   TrustedSourcesResponseSchema,
 } from '@dorkos/shared/extension-approval-schemas';
@@ -4181,28 +4180,6 @@ registry.registerPath({
 registerApprovalsOpenApi(registry);
 
 registry.registerPath({
-  method: 'get',
-  path: '/api/extensions/pending-approvals',
-  tags: ['Extensions'],
-  summary: 'List extensions waiting to be turned on',
-  description:
-    'Every installed extension that is waiting for a person to let it run, oldest first ' +
-    '(DOR-2517). An extension is listed when it was installed by a person or the marketplace ' +
-    '(DorkOS’s own never ask), is not turned off, may not run yet, and has not been declined ' +
-    'with "Not now" at its current path, plugin and version. The Activity inbox draws one row ' +
-    'per item. `sourceLabel` and `why` are display text and are never used to decide trust. A ' +
-    'caller that may not read the person’s inbox (an agent) gets the list without `path` and ' +
-    'without any folder in `sourceLabel`.',
-  responses: {
-    500: INTERNAL_ERROR_RESPONSE,
-    200: {
-      description: 'Extensions waiting to be turned on',
-      content: { 'application/json': { schema: PendingExtensionApprovalsResponseSchema } },
-    },
-  },
-});
-
-registry.registerPath({
   method: 'post',
   path: '/api/extensions/{id}/approve',
   tags: ['Extensions'],
@@ -6705,8 +6682,8 @@ registerCapabilitiesInOpenApi(composeCapabilityRegistryForDocs(), registry);
 
 // Extension decisions and per-project settings (spec `flow-multiproject` §7).
 registerExtensionDecisionsOpenApi(registry);
-registerExtensionRemovalOpenApi(registry);
 registerExtensionApprovalSetOpenApi(registry);
+registerExtensionListOpenApi(registry);
 registerExtensionMediaOpenApi(registry);
 registerConfigBackupsOpenApi(registry);
 

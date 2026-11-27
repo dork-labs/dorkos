@@ -63,9 +63,10 @@ const HOST_REFUSED = z.object({ code: z.literal('host_not_allowed') }).loose();
 const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 const MESSAGE_PAGE = z.object({ messages: z.array(z.unknown()) }).loose();
 const ENDPOINTS = z.array(z.object({ subject: z.string() }).loose());
-const ADAPTERS = z.array(z.object({ config: z.object({ id: z.string() }).loose() }).loose());
-const CATALOG = z.array(z.object({ manifest: z.object({ type: z.string() }).loose() }).loose());
-const BINDINGS = z.object({ bindings: z.array(z.unknown()) }).strict();
+const page = (noun: string, row: z.ZodType) => z.object({ [noun]: z.array(row) }).loose();
+const ADAPTERS = page('adapters', z.object({ config: z.object({ id: z.string() }).loose() }));
+const CATALOG = page('entries', z.object({ manifest: z.object({ type: z.string() }).loose() }));
+const BINDINGS = page('bindings', z.unknown());
 const BINDING_NOT_FOUND = problemBody('not_found', { detail: 'That chat route doesn’t exist.' });
 const CONNECTION_NOT_FOUND = problemBody('not_found', { detail: 'That connection doesn’t exist.' });
 const ENDPOINT_NOT_FOUND = problemBody('not_found', { detail: 'That address has no mailbox.' });
@@ -1046,9 +1047,8 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
 
   it('answers a webhook for a connection that is not a webhook with the flat 401', async () => {
     const adapters = await setup(server, 'GET', '/api/relay/adapters');
-    const other = (adapters.json as unknown as { config: { id: string; type: string } }[]).find(
-      (adapter) => adapter.config.type !== 'webhook'
-    );
+    const listed = adapters.json.adapters as { config: { id: string; type: string } }[];
+    const other = listed.find((adapter) => adapter.config.type !== 'webhook');
     if (!other) return;
     await check(server, {
       method: 'POST',

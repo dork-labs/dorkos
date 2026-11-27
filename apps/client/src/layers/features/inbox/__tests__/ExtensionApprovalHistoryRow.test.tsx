@@ -90,9 +90,11 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
     posts.push({ url, body: init.body ? JSON.parse(String(init.body)) : undefined });
     return new Response(JSON.stringify({ extension: { id: 'flow' } }), { status: 200 });
   }
-  if (url.endsWith('/extensions')) return new Response(JSON.stringify(extensions));
-  if (url.endsWith('/extensions/pending-approvals')) {
-    return new Response(JSON.stringify({ approvals: [] }));
+  if (url.endsWith('/extensions?limit=200')) {
+    return new Response(JSON.stringify({ extensions, nextCursor: null }));
+  }
+  if (url.endsWith('/extensions/pending-approvals?limit=200')) {
+    return new Response(JSON.stringify({ approvals: [], nextCursor: null }));
   }
   return new Response('{}', { status: 404 });
 }
@@ -184,9 +186,9 @@ describe('an answered extension approval in the Activity list', () => {
     await screen.findByText('Flow is off for now');
     // The list has landed (it asked for it and got a newer version back).
     await waitFor(() =>
-      expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/extensions'))).toBe(
-        true
-      )
+      expect(
+        vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/extensions?limit=200'))
+      ).toBe(true)
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.getByRole('button', { name: 'Turn it on' })).toHaveAttribute(

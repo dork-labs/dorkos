@@ -34,6 +34,18 @@ function newestFirst(left: PageKey, right: PageKey): number {
   return left[1] < right[1] ? 1 : -1;
 }
 
+/**
+ * The time part of a key for a list kept in a set order (a catalog, discovery
+ * order) instead of by a time: the row at `index` sorts before every later
+ * row, so a reader of every page gets the list in its own order. A list that
+ * changes between pages can repeat or miss a row; say so where it is described.
+ *
+ * @param index - The row's place in the list, from 0 (below one million).
+ */
+export function listPosition(index: number): string {
+  return String(999_999 - index).padStart(6, '0');
+}
+
 function encode(list: string, key: PageKey): string {
   return Buffer.from(JSON.stringify([list, key[0], key[1]]), 'utf8').toString('base64url');
 }

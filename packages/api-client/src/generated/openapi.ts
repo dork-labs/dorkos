@@ -918,7 +918,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List the chat connections
+         * @description Each chat app set up on this computer, with its settings (secrets hidden) and how it is doing, in the order the settings file holds them. One added or removed while paging can repeat or be missed. A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did not give is refused with `400 invalid_request`.
+         */
+        get: operations["relay.listAdapters"];
         put?: never;
         /** Add a chat connection */
         post: operations["relay.createAdapters"];
@@ -943,6 +947,50 @@ export interface paths {
         head?: never;
         /** Save a chat connection’s settings */
         patch: operations["relay.updateAdaptersConfig"];
+        trace?: never;
+    };
+    "/api/relay/adapters/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the kinds of chat connection
+         * @description Each kind that can be connected, with its setup fields and the connections of that kind, in the order the setup list shows them. A kind a plugin adds while paging can repeat or be missed. A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did not give is refused with `400 invalid_request`.
+         */
+        get: operations["relay.listAdaptersCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/relay/bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the chat routes
+         * @description Each route from a chat to an agent, newest first, the id breaking a tie. One made or removed while paging can repeat or be missed. `503` while chat routes start. A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did not give is refused with `400 invalid_request`.
+         */
+        get: operations["relay.listBindings"];
+        put?: never;
+        /**
+         * Confirm a lasting access or account change
+         * @description The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.
+         */
+        post: operations["relay.createBindings"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/connectors/access-changes": {
@@ -4501,26 +4549,6 @@ export interface paths {
          * @description Person-only, under the same authority checks as grant and deny. Rebuilds the current package request. Keeps the original denial and existing refusal until a fresh yes. Never grants permission or returns a token. No bulk action exists.
          */
         post: operations["approvals.createAskAgain"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/extensions/pending-approvals": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List extensions waiting to be turned on
-         * @description Every installed extension that is waiting for a person to let it run, oldest first (DOR-2517). An extension is listed when it was installed by a person or the marketplace (DorkOS’s own never ask), is not turned off, may not run yet, and has not been declined with "Not now" at its current path, plugin and version. The Activity inbox draws one row per item. `sourceLabel` and `why` are display text and are never used to decide trust. A caller that may not read the person’s inbox (an agent) gets the list without `path` and without any folder in `sourceLabel`.
-         */
-        get: operations["extensions.getPendingApprovals"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -8271,26 +8299,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/extensions/stale-approvals": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List approvals whose extension is no longer installed
-         * @description Every extension id that still has a run approval, approved source or permission set recorded although no copy of it is installed anywhere. Settings shows each as "Folder missing" with Forget. Paths are only sent to the person.
-         */
-        get: operations["extensions.getStaleApprovals"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/extensions/approval-sets": {
         parameters: {
             query?: never;
@@ -8300,9 +8308,9 @@ export interface paths {
         };
         /**
          * List plugins whose extensions wait to be allowed together
-         * @description One entry per plugin with two or more extensions waiting for a first OK. A member joins only when the plugin’s installed-files record lists its manifest with matching bytes: an extension an agent made, a dev link, or a folder added to the plugin later never joins. A member allowed before keeps its own card. `grant` is the waiting members’ combined grant, from the same members `setHash` binds.
+         * @description One entry per plugin with two or more extensions waiting for a first OK. A member joins only when the plugin’s installed-files record lists its manifest with matching bytes: an extension an agent made, a dev link, or a folder added to the plugin later never joins. A member allowed before keeps its own card. `grant` is the waiting members’ combined grant, from the same members `setHash` binds. By plugin, Z to A; a set allowed or changed while paging can repeat or be missed. A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did not give is refused with `400 invalid_request`.
          */
-        get: operations["extensions.getApprovalSets"];
+        get: operations["extensions.listApprovalSets"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8325,6 +8333,66 @@ export interface paths {
          * @description Derives the plugin’s waiting members from DorkOS’s own records and refuses unless the request names exactly those, and unless `setHash` (over each member’s id, version, digest and permission set) matches. Only after every check passes is each member approved, one at a time with its own digest: N approvals and N Activity entries, nothing stored about the group; each Activity entry is written as its member is allowed. A member that fails for any reason is reported in `results`, and the rest go on. The same person bar as approving one extension applies, and there is no MCP tool for this.
          */
         post: operations["extensions.approveSet"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/extensions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List installed extensions
+         * @description Every extension DorkOS found, with where it stands, in the order DorkOS found them: each copy that runs, then each older copy a newer one from the same trusted source shadows, with `shadowedBy` set. Every page in turn is the whole list in that order. An extension installed, removed or rescanned while paging can repeat or be missed. A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did not give is refused with `400 invalid_request`.
+         */
+        get: operations["extensions.list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/extensions/pending-approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List extensions waiting to be turned on
+         * @description Every installed extension that is waiting for a person to let it run, newest waiting first (DOR-2517). An extension is listed when it was installed by a person or the marketplace (DorkOS’s own never ask), is not turned off, may not run yet, and has not been declined with "Not now" at its current path, plugin and version. The Activity inbox draws one row per item. `sourceLabel` and `why` are display text and are never used to decide trust. A caller that may not read the person’s inbox (an agent) gets the list without `path` and without any folder in `sourceLabel`, and its cursors are its own. One answered while paging, or one whose wait restarts when DorkOS does, can repeat or be missed. A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did not give is refused with `400 invalid_request`.
+         */
+        get: operations["extensions.listPendingApprovals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/extensions/stale-approvals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List approvals whose extension is no longer installed
+         * @description Every extension id that still has a run approval, approved source or permission set recorded although no copy of it is installed anywhere. Settings shows each as "Folder missing" with Forget. Paths are only sent to the person, and a cursor is bound to the kind of reader it was given to. By id, Z to A; one forgotten or reinstalled while paging can repeat or be missed. A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did not give is refused with `400 invalid_request`.
+         */
+        get: operations["extensions.listStaleApprovals"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -9109,26 +9177,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/relay/bindings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Confirm a lasting access or account change
-         * @description The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.
-         */
-        post: operations["relay.createBindings"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/relay/bindings/{id}": {
         parameters: {
             query?: never;
@@ -9647,6 +9695,253 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        AdapterConfig: {
+            id: string;
+            type: components["schemas"]["AdapterType"];
+            /** @default true */
+            enabled: boolean;
+            label?: string;
+            builtin?: boolean;
+            plugin?: components["schemas"]["PluginSource"];
+            config: components["schemas"]["TelegramAdapterConfig"] | components["schemas"]["WebhookAdapterConfig"] | components["schemas"]["SlackAdapterConfig"] | {
+                [key: string]: unknown;
+            };
+        };
+        /** @enum {string} */
+        AdapterType: "telegram" | "webhook" | "claude-code" | "slack" | "plugin";
+        PluginSource: {
+            package?: string;
+            path?: string;
+        };
+        TelegramAdapterConfig: {
+            token: string;
+            /**
+             * @default polling
+             * @enum {string}
+             */
+            mode: "polling" | "webhook";
+            /** Format: uri */
+            webhookUrl?: string;
+            webhookPort?: number;
+            webhookSecret?: string;
+            /** @default true */
+            streaming: boolean;
+            /**
+             * @default thread-aware
+             * @enum {string}
+             */
+            respondMode: "always" | "mention-only" | "thread-aware";
+            /**
+             * @default allowlist
+             * @enum {string}
+             */
+            dmPolicy: "open" | "allowlist";
+            /** @default [] */
+            dmAllowlist: string[];
+            /** @default [] */
+            approverAllowlist: string[];
+        };
+        WebhookAdapterConfig: {
+            inbound: components["schemas"]["WebhookInboundConfig"];
+            outbound: components["schemas"]["WebhookOutboundConfig"];
+        };
+        WebhookInboundConfig: {
+            subject: string;
+            secret: string;
+            previousSecret?: string;
+        };
+        WebhookOutboundConfig: {
+            /** Format: uri */
+            url: string;
+            secret: string;
+            headers?: {
+                [key: string]: string;
+            };
+        };
+        SlackAdapterConfig: {
+            botToken: string;
+            appToken: string;
+            signingSecret: string;
+            /** @default true */
+            streaming: boolean;
+            /** @default true */
+            nativeStreaming: boolean;
+            /**
+             * @default reaction
+             * @enum {string}
+             */
+            typingIndicator: "none" | "reaction";
+            /**
+             * @default thread-aware
+             * @enum {string}
+             */
+            respondMode: "always" | "mention-only" | "thread-aware";
+            /**
+             * @default allowlist
+             * @enum {string}
+             */
+            dmPolicy: "open" | "allowlist";
+            /** @default [] */
+            dmAllowlist: string[];
+            /** @default [] */
+            approverAllowlist: string[];
+            /** @default {} */
+            channelOverrides: {
+                [key: string]: {
+                    enabled?: boolean;
+                    /** @enum {string} */
+                    respondMode?: "always" | "mention-only" | "thread-aware";
+                };
+            };
+        };
+        AdapterStatus: {
+            id: string;
+            type: components["schemas"]["AdapterType"];
+            displayName: string;
+            /** @enum {string} */
+            state: "connected" | "disconnected" | "error" | "starting" | "stopping" | "reconnecting";
+            messageCount: {
+                inbound: number;
+                outbound: number;
+            };
+            errorCount: number;
+            lastError?: string;
+            /** Format: date-time */
+            lastErrorAt?: string;
+            /** Format: date-time */
+            startedAt?: string;
+        };
+        CatalogEntry: {
+            manifest: components["schemas"]["AdapterManifest"];
+            instances: components["schemas"]["CatalogInstance"][];
+        };
+        AdapterManifest: {
+            type: string;
+            displayName: string;
+            description: string;
+            iconId?: string;
+            category: components["schemas"]["AdapterCategory"];
+            /** Format: uri */
+            docsUrl?: string;
+            builtin: boolean;
+            configFields: components["schemas"]["ConfigField"][];
+            setupSteps?: components["schemas"]["AdapterSetupStep"][];
+            setupInstructions?: string;
+            /** @default false */
+            multiInstance: boolean;
+            deprecated?: boolean;
+            apiVersion?: string;
+            actionButton?: {
+                label: string;
+                url: string;
+            };
+            setupGuide?: string;
+        };
+        /** @enum {string} */
+        AdapterCategory: "messaging" | "automation" | "internal" | "custom";
+        ConfigField: {
+            key: string;
+            label: string;
+            type: components["schemas"]["ConfigFieldType"];
+            required: boolean;
+            default?: string | number | boolean;
+            placeholder?: string;
+            description?: string;
+            options?: components["schemas"]["ConfigFieldOption"][];
+            section?: string;
+            showWhen?: {
+                field: string;
+                equals: string | boolean | number;
+            };
+            pattern?: string;
+            patternMessage?: string;
+            visibleByDefault?: boolean;
+            /** @enum {string} */
+            displayAs?: "radio-cards";
+            helpMarkdown?: string;
+            /** @enum {string} */
+            valueShape?: "id-list" | "json-object";
+        };
+        /** @enum {string} */
+        ConfigFieldType: "text" | "password" | "number" | "boolean" | "select" | "textarea" | "url";
+        ConfigFieldOption: {
+            label: string;
+            value: string;
+            description?: string;
+        };
+        AdapterSetupStep: {
+            stepId: string;
+            title: string;
+            description?: string;
+            fields: string[];
+        };
+        CatalogInstance: {
+            id: string;
+            enabled: boolean;
+            label?: string;
+            confirmation?: components["schemas"]["AdapterConfirmation"];
+            status: components["schemas"]["AdapterStatus"];
+            config?: {
+                [key: string]: unknown;
+            };
+        };
+        AdapterConfirmation: {
+            references: {
+                field: string;
+                ref: string;
+            }[];
+            host?: string;
+            fingerprint: string;
+            notSent: number;
+        };
+        AdapterBinding: {
+            /** Format: uuid */
+            id: string;
+            adapterId: string;
+            agentId: string;
+            chatId?: string;
+            channelType?: components["schemas"]["ChannelType"];
+            platformChatType?: components["schemas"]["PlatformChatType"];
+            sessionStrategy?: components["schemas"]["SessionStrategy"];
+            /** @default  */
+            label: string;
+            permissionMode?: components["schemas"]["PermissionMode"];
+            /** @default true */
+            enabled: boolean;
+            /** @default false */
+            canInitiate: boolean;
+            /** @default true */
+            canReply: boolean;
+            /** @default true */
+            canReceive: boolean;
+            /** @default true */
+            notifyOnTaskComplete: boolean;
+            /**
+             * @default off
+             * @enum {string}
+             */
+            bridge: "off" | "room";
+            /** @default null */
+            roomId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        /** @enum {string} */
+        ChannelType: "dm" | "group" | "channel" | "thread";
+        /** @enum {string} */
+        PlatformChatType: "private" | "group" | "supergroup" | "channel";
+        /**
+         * @default per-chat
+         * @enum {string}
+         */
+        SessionStrategy: "per-chat" | "per-user" | "stateless";
+        /**
+         * @default default
+         * @enum {string}
+         */
+        PermissionMode: "default" | "plan" | "acceptEdits" | "dontAsk" | "bypassPermissions" | "auto";
         ConnectorAccessChangeList: {
             changes: components["schemas"]["ConnectorAccessChange"][];
         };
@@ -11790,8 +12085,6 @@ export interface components {
             project?: components["schemas"]["ProjectRef"] & (Record<string, never> | null);
             health?: components["schemas"]["TaskHealth"];
         };
-        /** @enum {string} */
-        PermissionMode: "default" | "plan" | "acceptEdits" | "dontAsk" | "bypassPermissions" | "auto";
         TaskRunPlace: {
             /** @enum {string} */
             kind: "agent";
@@ -12413,49 +12706,6 @@ export interface components {
         BindingResponse: {
             binding: components["schemas"]["AdapterBinding"];
         };
-        AdapterBinding: {
-            /** Format: uuid */
-            id: string;
-            adapterId: string;
-            agentId: string;
-            chatId?: string;
-            channelType?: components["schemas"]["ChannelType"];
-            platformChatType?: components["schemas"]["PlatformChatType"];
-            sessionStrategy?: components["schemas"]["SessionStrategy"];
-            /** @default  */
-            label: string;
-            permissionMode?: components["schemas"]["PermissionMode"];
-            /** @default true */
-            enabled: boolean;
-            /** @default false */
-            canInitiate: boolean;
-            /** @default true */
-            canReply: boolean;
-            /** @default true */
-            canReceive: boolean;
-            /** @default true */
-            notifyOnTaskComplete: boolean;
-            /**
-             * @default off
-             * @enum {string}
-             */
-            bridge: "off" | "room";
-            /** @default null */
-            roomId: string | null;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-        };
-        /** @enum {string} */
-        ChannelType: "dm" | "group" | "channel" | "thread";
-        /** @enum {string} */
-        PlatformChatType: "private" | "group" | "supergroup" | "channel";
-        /**
-         * @default per-chat
-         * @enum {string}
-         */
-        SessionStrategy: "per-chat" | "per-user" | "stateless";
         MoveBindingRequest: {
             agentId: string;
         };
@@ -12520,78 +12770,6 @@ export interface components {
         };
         DenyApprovalBody: {
             reason?: string;
-        };
-        PendingExtensionApprovalsResponse: {
-            approvals: components["schemas"]["PendingExtensionApproval"][];
-        };
-        PendingExtensionApproval: {
-            requestCode?: string;
-            id: string;
-            name: string;
-            version: string;
-            path?: string;
-            plugin: string | null;
-            sourceLabel: string;
-            runsInServer: boolean;
-            adds: string | null;
-            since: string;
-            why: string;
-            permissions?: components["schemas"]["ExtensionApprovalPermissions"];
-            added?: components["schemas"]["ExtensionApprovalAdditions"];
-            /** @default [] */
-            agentTools: components["schemas"]["ExtensionAgentToolSummary"][];
-            /** @default [] */
-            agentSkills: components["schemas"]["ExtensionAgentSkillSummary"][];
-            /** @default null */
-            digest: string | null;
-            /** @default null */
-            changedFiles: string[] | null;
-            /** @default null */
-            updatedFrom: string | null;
-            /** @default false */
-            placesOnly: boolean;
-        };
-        /** @default null */
-        ExtensionApprovalPermissions: {
-            /** @enum {string} */
-            runtime: "in-process" | "subprocess";
-            net: string[];
-            run: {
-                name: string;
-                found: boolean;
-                refusedReason?: string;
-            }[];
-            agents: boolean;
-            hasPage: boolean;
-            slots?: string[];
-            writes?: ("data" | "canvas" | "inbox" | "work" | "files" | "rooms" | "forward")[];
-            apps?: {
-                id: string;
-                name: string | null;
-                /** @enum {string|null} */
-                access: "reads" | "changes" | "both" | null;
-                opens?: boolean;
-            }[];
-        } | null;
-        /** @default null */
-        ExtensionApprovalAdditions: {
-            net: string[];
-            run: string[];
-            agents: boolean;
-            runtime: boolean;
-            apps?: string[];
-            slots?: string[];
-        } | null;
-        ExtensionAgentToolSummary: {
-            name: string;
-            title: string;
-            /** @enum {string} */
-            tier: "observe" | "act" | "destructive";
-            refusedReason?: string;
-        };
-        ExtensionAgentSkillSummary: {
-            name: string;
-            droppedReason?: string;
         };
         ExtensionTrustOffer: {
             source: string;
@@ -14924,13 +15102,10 @@ export interface components {
             title: string;
             reason: string;
         };
-        StaleExtensionApproval: {
-            /** @description The extension id the approval names. */
-            id: string;
-            /** @description The folder the approval was given to; null for a caller that is not the person. */
-            path: string | null;
-            /** @description The plugin that carried it, when it came inside one. */
-            plugin: string | null;
+        ExtensionApprovalSetsPage: {
+            sets: components["schemas"]["ExtensionApprovalSet"][];
+            /** @description Pass as `cursor` for the next page; null on the last one. */
+            nextCursor: string | null;
         };
         ExtensionApprovalSet: {
             plugin: string;
@@ -14977,6 +15152,27 @@ export interface components {
             setHash: string;
             tooMany: boolean;
         };
+        ExtensionApprovalPermissions: {
+            /** @enum {string} */
+            runtime: "in-process" | "subprocess";
+            net: string[];
+            run: {
+                name: string;
+                found: boolean;
+                refusedReason?: string;
+            }[];
+            agents: boolean;
+            hasPage: boolean;
+            slots?: string[];
+            writes?: ("data" | "canvas" | "inbox" | "work" | "files" | "rooms" | "forward")[];
+            apps?: {
+                id: string;
+                name: string | null;
+                /** @enum {string|null} */
+                access: "reads" | "changes" | "both" | null;
+                opens?: boolean;
+            }[];
+        };
         ApproveExtensionSetRequest: {
             plugin: string;
             members: {
@@ -14998,6 +15194,107 @@ export interface components {
                 };
             }[];
             setHash: string;
+        };
+        ExtensionListPage: {
+            extensions: components["schemas"]["ExtensionListItem"][];
+            /** @description Pass as `cursor` for the next page; null on the last one. */
+            nextCursor: string | null;
+        };
+        ExtensionListItem: {
+            /** @description The mini app’s id. */
+            id: string;
+            /** @description Its `extension.json`, as read. */
+            manifest: {
+                id: string;
+                name: string;
+                version: string;
+            } & {
+                [key: string]: unknown;
+            };
+            /**
+             * @description Where it stands, from found to running.
+             * @enum {string}
+             */
+            status: "discovered" | "incompatible" | "invalid" | "disabled" | "enabled" | "compiled" | "compile_error" | "active" | "activate_error";
+            /** @enum {string} */
+            scope: "global" | "local";
+            /**
+             * @description Whether it ships with DorkOS or was installed.
+             * @enum {string}
+             */
+            origin: "core" | "user";
+            /** @description Whether a person allowed it to run code in DorkOS. */
+            approvedToRun: boolean;
+            bundleReady: boolean;
+            /** @description The path of the newer copy that runs instead of this one; null for one that runs. */
+            shadowedBy: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        PendingExtensionApprovalsPage: {
+            approvals: components["schemas"]["PendingExtensionApproval"][];
+            /** @description Pass as `cursor` for the next page; null on the last one. */
+            nextCursor: string | null;
+        };
+        PendingExtensionApproval: {
+            requestCode?: string;
+            id: string;
+            name: string;
+            version: string;
+            path?: string;
+            plugin: string | null;
+            sourceLabel: string;
+            runsInServer: boolean;
+            adds: string | null;
+            since: string;
+            why: string;
+            permissions?: components["schemas"]["ExtensionApprovalPermissions"] & (Record<string, never> | null);
+            added?: components["schemas"]["ExtensionApprovalAdditions"];
+            /** @default [] */
+            agentTools: components["schemas"]["ExtensionAgentToolSummary"][];
+            /** @default [] */
+            agentSkills: components["schemas"]["ExtensionAgentSkillSummary"][];
+            /** @default null */
+            digest: string | null;
+            /** @default null */
+            changedFiles: string[] | null;
+            /** @default null */
+            updatedFrom: string | null;
+            /** @default false */
+            placesOnly: boolean;
+        };
+        /** @default null */
+        ExtensionApprovalAdditions: {
+            net: string[];
+            run: string[];
+            agents: boolean;
+            runtime: boolean;
+            apps?: string[];
+            slots?: string[];
+        } | null;
+        ExtensionAgentToolSummary: {
+            name: string;
+            title: string;
+            /** @enum {string} */
+            tier: "observe" | "act" | "destructive";
+            refusedReason?: string;
+        };
+        ExtensionAgentSkillSummary: {
+            name: string;
+            droppedReason?: string;
+        };
+        StaleExtensionApprovalsPage: {
+            approvals: components["schemas"]["StaleExtensionApproval"][];
+            /** @description Pass as `cursor` for the next page; null on the last one. */
+            nextCursor: string | null;
+        };
+        StaleExtensionApproval: {
+            /** @description The extension id the approval names. */
+            id: string;
+            /** @description The folder the approval was given to; null for a caller that is not the person. */
+            path: string | null;
+            /** @description The plugin that carried it, when it came inside one. */
+            plugin: string | null;
         };
         ExtensionMediaTicket: {
             /** @description Where the video plays: `/api/extensions/media/<ticket>`, on this server. */
@@ -18732,6 +19029,47 @@ export interface operations {
             };
         };
     };
+    "relay.listAdapters": {
+        parameters: {
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of the chat connections */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        adapters: {
+                            config: components["schemas"]["AdapterConfig"];
+                            status: components["schemas"]["AdapterStatus"];
+                        }[];
+                        /** @description Pass as `cursor` for the next page; null on the last one. */
+                        nextCursor: string | null;
+                    };
+                };
+            };
+            /** @description `invalid_request`: `limit` is out of range, the query has another field, or the cursor was not given by this list */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     "relay.createAdapters": {
         parameters: {
             query?: never;
@@ -18869,6 +19207,135 @@ export interface operations {
             };
             /** @description `precondition_failed`: who may reach your agents here changed since an agent asked. */
             412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it. */
+            428: {
+                headers: {
+                    /** @description Always `no-store`: the held action is for this request only. */
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepUpRequired"];
+                };
+            };
+        };
+    };
+    "relay.listAdaptersCatalog": {
+        parameters: {
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of the kinds of chat connection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        entries: components["schemas"]["CatalogEntry"][];
+                        /** @description Pass as `cursor` for the next page; null on the last one. */
+                        nextCursor: string | null;
+                    };
+                };
+            };
+            /** @description `invalid_request`: `limit` is out of range, the query has another field, or the cursor was not given by this list */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "relay.listBindings": {
+        parameters: {
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of the chat routes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        bindings: components["schemas"]["AdapterBinding"][];
+                        /** @description Pass as `cursor` for the next page; null on the last one. */
+                        nextCursor: string | null;
+                    };
+                };
+            };
+            /** @description `invalid_request`: `limit` is out of range, the query has another field, or the cursor was not given by this list */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `temporarily_unavailable`: chat routes are still starting */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "relay.createBindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description The action completed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description This caller cannot change access here */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -37824,27 +38291,6 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-        };
-    };
-    "extensions.getPendingApprovals": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Extensions waiting to be turned on */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PendingExtensionApprovalsResponse"];
-                };
-            };
-            500: components["responses"]["InternalErrorProblem"];
         };
     };
     "extensions.approve": {
@@ -60648,55 +61094,36 @@ export interface operations {
             };
         };
     };
-    "extensions.getStaleApprovals": {
+    "extensions.listApprovalSets": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description The approvals left behind, A–Z */
+            /** @description One page of the sets */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        approvals: components["schemas"]["StaleExtensionApproval"][];
-                    };
+                    "application/json": components["schemas"]["ExtensionApprovalSetsPage"];
                 };
             };
-            /** @description `internal_error`: the list could not be read */
-            500: {
+            /** @description `invalid_request`: `limit` is out of range, the query has another field, or the cursor was not given by this list */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    "extensions.getApprovalSets": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The sets, by plugin A–Z */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        sets: components["schemas"]["ExtensionApprovalSet"][];
-                    };
                 };
             };
             /** @description `internal_error`: the sets could not be read */
@@ -60778,6 +61205,135 @@ export interface operations {
             };
             /** @description `precondition_failed`, nothing was turned on: the set or a member’s files or permissions changed since the card */
             412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "extensions.list": {
+        parameters: {
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of installed extensions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtensionListPage"];
+                };
+            };
+            /** @description `invalid_request`: `limit` is out of range, the query has another field, or the cursor was not given by this list */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `internal_error`: the list could not be read */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "extensions.listPendingApprovals": {
+        parameters: {
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of extensions waiting to be turned on */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingExtensionApprovalsPage"];
+                };
+            };
+            /** @description `invalid_request`: `limit` is out of range, the query has another field, or the cursor was not given by this list */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `internal_error`: the list could not be read */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "extensions.listStaleApprovals": {
+        parameters: {
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of the approvals left behind */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaleExtensionApprovalsPage"];
+                };
+            };
+            /** @description `invalid_request`: `limit` is out of range, the query has another field, or the cursor was not given by this list */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `internal_error`: the list could not be read */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -62901,50 +63457,6 @@ export interface operations {
                 id: string;
                 key: string;
             };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
-        responses: {
-            /** @description The action completed */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description This caller cannot change access here */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it. */
-            428: {
-                headers: {
-                    /** @description Always `no-store`: the held action is for this request only. */
-                    "Cache-Control"?: "no-store";
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StepUpRequired"];
-                };
-            };
-        };
-    };
-    "relay.createBindings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
             cookie?: never;
         };
         requestBody?: {

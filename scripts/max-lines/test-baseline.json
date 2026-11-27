@@ -42,7 +42,7 @@
     "apps/client/src/layers/features/extensions/__tests__/extension-api-factory.test.ts": 819,
     "apps/client/src/layers/features/extensions/__tests__/extension-frame-host.test.tsx": 681,
     "apps/client/src/layers/features/extensions/__tests__/extension-loader.test.ts": 586,
-    "apps/client/src/layers/features/extensions/__tests__/ExtensionsSettingsTab.test.tsx": 965,
+    "apps/client/src/layers/features/extensions/__tests__/ExtensionsSettingsTab.test.tsx": 961,
     "apps/client/src/layers/features/feedback/__tests__/FeedbackDialog.test.tsx": 1093,
     "apps/client/src/layers/features/file-explorer/__tests__/room-file-changes.test.tsx": 546,
     "apps/client/src/layers/features/file-explorer/__tests__/RoomFilesSection.test.tsx": 541,

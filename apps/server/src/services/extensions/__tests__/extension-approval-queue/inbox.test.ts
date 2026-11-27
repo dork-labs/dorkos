@@ -452,6 +452,31 @@ describe('an extension waiting to run asks in the inbox', () => {
     expect(asPerson.path).toBe(dir);
   });
 
+  it('refuses a cursor the person was given to an agent, and the other way round (DOR-4982)', async () => {
+    await installPlugin();
+    const dir = path.join(h.dorkHome, 'extensions', 'solo');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'extension.json'),
+      JSON.stringify({ id: 'solo', name: 'Solo', version: '2.0.0' })
+    );
+    fs.writeFileSync(path.join(dir, 'index.ts'), 'export function activate() {}\n');
+    await h.manager.enable('solo');
+    const list = (query: string, agent?: boolean) => {
+      const req = request(server).get(`/api/extensions/pending-approvals${query}`);
+      return agent ? req.set('x-dorkos-agent', 'agent-token-abc') : req;
+    };
+
+    const asPerson = await list('?limit=1');
+    expect(asPerson.body.approvals).toHaveLength(1);
+    const asAgent = await list('?limit=1', true);
+    expect((await list(`?cursor=${asPerson.body.nextCursor}`, true)).status).toBe(400);
+    expect((await list(`?cursor=${asAgent.body.nextCursor}`)).status).toBe(400);
+    const rest = await list(`?cursor=${asAgent.body.nextCursor}`, true);
+    expect(rest.status).toBe(200);
+    expect(rest.body.approvals).toHaveLength(1);
+  });
+
   it('keeps one row per copy across repeated re-scans', async () => {
     await installPlugin();
     await h.manager.reload();

@@ -11,8 +11,38 @@
 import { useQuery } from '@tanstack/react-query';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import { resolveApiBaseUrl } from '@/layers/shared/lib';
+import { pageQuery, readAllPages } from '@/layers/shared/lib/read-all-pages';
 import { extensionQueryKeys } from './use-pending-extension-approvals';
 import { runningCopiesOnly } from '../lib/running-copies';
+
+/** One page of `GET /api/extensions`. */
+interface ExtensionListPage {
+  extensions: ExtensionRecordPublic[];
+  nextCursor: string | null;
+}
+
+/**
+ * Every extension that runs, read page by page in the server's order (the order
+ * DorkOS found them, which loading follows). An older copy
+ * a newer one shadows is listed for extensions to read, never for the app to
+ * draw, load or toggle (spec `flow-multiproject` §9.2).
+ *
+ * @param failed - The error for a page the server refused, by its status.
+ */
+export async function readRunningExtensions(
+  failed: (status: number) => Error
+): Promise<ExtensionRecordPublic[]> {
+  const { rows } = await readAllPages(
+    async (cursor) => {
+      const res = await fetch(`${resolveApiBaseUrl()}/extensions${pageQuery(cursor)}`);
+      if (!res.ok) throw failed(res.status);
+      return (await res.json()) as ExtensionListPage;
+    },
+    (page) => page.extensions,
+    '/extensions'
+  );
+  return runningCopiesOnly(rows);
+}
 
 /**
  * Fetch all discovered extensions with their current status.
@@ -27,13 +57,8 @@ export function useExtensionList(options: { enabled?: boolean } = {}) {
   return useQuery<ExtensionRecordPublic[]>({
     enabled: options.enabled ?? true,
     queryKey: extensionQueryKeys.list(),
-    queryFn: async () => {
-      const res = await fetch(`${resolveApiBaseUrl()}/extensions`);
-      if (!res.ok) throw new Error(`Couldn’t load extensions (${res.status})`);
-      // An older copy a newer one shadows is listed for extensions to read,
-      // never for the app to draw or toggle (spec `flow-multiproject` §9.2).
-      return runningCopiesOnly((await res.json()) as ExtensionRecordPublic[]);
-    },
+    queryFn: () =>
+      readRunningExtensions((status) => new Error(`Couldn’t load extensions (${status})`)),
     staleTime: 10_000,
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,

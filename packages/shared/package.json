@@ -153,6 +153,10 @@
       "types": "./src/running-chats.ts",
       "default": "./dist/running-chats.js"
     },
+    "./extension-list-schemas": {
+      "types": "./src/extension-list-schemas.ts",
+      "default": "./dist/extension-list-schemas.js"
+    },
     "./paging": {
       "types": "./src/paging.ts",
       "default": "./dist/paging.js"

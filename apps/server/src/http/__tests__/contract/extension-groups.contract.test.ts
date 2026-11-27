@@ -110,17 +110,17 @@ const CASES: ContractCase[] = [
   {
     name: 'lists the installed extensions: none but what DorkOS ships',
     path: '/api/extensions',
-    expect: { status: 200, headers: JSON_TYPE, schema: EXTENSION_LIST },
+    expect: { status: 200, headers: JSON_TYPE, schema: z.object({ extensions: EXTENSION_LIST }) },
   },
   {
     name: 'a trailing slash reaches the same list',
     path: '/api/extensions/',
-    expect: { status: 200, schema: EXTENSION_LIST },
+    expect: { status: 200, schema: z.object({ extensions: EXTENSION_LIST }) },
   },
   {
     name: 'nothing is waiting for approval',
     path: '/api/extensions/pending-approvals',
-    expect: { status: 200, body: { approvals: [] } },
+    expect: { status: 200, body: { approvals: [], nextCursor: null } },
   },
   {
     name: 'no source is trusted yet',
@@ -733,7 +733,7 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
     const deadline = Date.now() + 30_000;
     for (;;) {
       const listed = await setup(server, 'GET', '/api/extensions');
-      const ids = (listed.json as unknown as { id: string }[]).map((e) => e.id);
+      const ids = (listed.json.extensions as { id: string }[]).map((e) => e.id);
       if ([ROUTED, PROXIED, ISOLATED].every((id) => ids.includes(id))) break;
       if (Date.now() > deadline) throw new Error(`Never listed: ${ids.join(', ')}`);
       await new Promise((resolve) => setTimeout(resolve, 250));
@@ -804,7 +804,7 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
 
   it('lists them as approved', async () => {
     const listed = await setup(server, 'GET', '/api/extensions');
-    const mine = (listed.json as unknown as { id: string; approvedToRun: boolean }[]).filter((e) =>
+    const mine = (listed.json.extensions as { id: string; approvedToRun: boolean }[]).filter((e) =>
       [ROUTED, PROXIED, ISOLATED].includes(e.id)
     );
     expect(mine.map((e) => e.approvedToRun)).toEqual([true, true, true]);
@@ -1290,7 +1290,7 @@ describe('contract: an extension served with a fetch handler (login off)', () =>
     const deadline = Date.now() + 30_000;
     for (;;) {
       const listed = await setup(server, 'GET', '/api/extensions');
-      const ids = (listed.json as unknown as { id: string }[]).map((e) => e.id);
+      const ids = (listed.json.extensions as { id: string }[]).map((e) => e.id);
       if ([FETCHED, FETCH_DEFAULT, ISOLATED_FETCHED].every((id) => ids.includes(id))) break;
       if (Date.now() > deadline) throw new Error(`Never listed: ${ids.join(', ')}`);
       await new Promise((resolve) => setTimeout(resolve, 250));
@@ -1500,7 +1500,7 @@ describe('contract: the extension routes with login on', () => {
     await check(server, {
       path: '/api/extensions',
       headers: apiKey,
-      expect: { status: 200, schema: EXTENSION_LIST },
+      expect: { status: 200, schema: z.object({ extensions: EXTENSION_LIST }) },
     });
     await check(server, {
       path: `/api/ext/${MISSING}/anything`,

@@ -20,7 +20,7 @@ import type {
   ClaimUnclaimedChatRequest,
   ClaimUnclaimedChatResponse,
 } from '@dorkos/shared/relay-schemas';
-import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
+import { fetchAllPages, fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 import { responseError } from '../response-error';
 
 /** Create all Relay methods bound to a base URL. */
@@ -159,8 +159,11 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
 
     // --- Relay Adapters ---
 
-    listRelayAdapters(): Promise<AdapterListItem[]> {
-      return fetchJSON(baseUrl, '/relay/adapters');
+    // The three connection lists come in pages (DOR-4982); these read them whole.
+    async listRelayAdapters(): Promise<AdapterListItem[]> {
+      type Page = { adapters: AdapterListItem[]; nextCursor: string | null };
+      const { rows } = await fetchAllPages(baseUrl, '/relay/adapters', {}, (p: Page) => p.adapters);
+      return rows;
     },
 
     toggleRelayAdapter(id: string, enabled: boolean): Promise<{ ok: boolean }> {
@@ -169,8 +172,11 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
       });
     },
 
-    getAdapterCatalog(): Promise<CatalogEntry[]> {
-      return fetchJSON(baseUrl, '/relay/adapters/catalog');
+    async getAdapterCatalog(): Promise<CatalogEntry[]> {
+      type Page = { entries: CatalogEntry[]; nextCursor: string | null };
+      const path = '/relay/adapters/catalog';
+      const { rows } = await fetchAllPages(baseUrl, path, {}, (p: Page) => p.entries);
+      return rows;
     },
 
     addRelayAdapter(
@@ -239,9 +245,12 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
 
     // --- Relay Bindings ---
 
-    getBindings(): Promise<AdapterBinding[]> {
-      return fetchJSON<{ bindings: AdapterBinding[] }>(baseUrl, '/relay/bindings').then(
-        (r) => r.bindings
+    async getBindings(): Promise<AdapterBinding[]> {
+      type Page = { bindings: AdapterBinding[]; nextCursor: string | null };
+      const { rows } = await fetchAllPages(baseUrl, '/relay/bindings', {}, (p: Page) => p.bindings);
+      // The server pages newest first; the app has always listed chat routes oldest first.
+      return rows.sort(
+        (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)
       );
     },
 
