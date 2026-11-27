@@ -78,6 +78,20 @@ function decode(list: string, cursor: string, sealedFor: string | undefined): Pa
 }
 
 /**
+ * The list name a sealed cursor was given for, or null for one this reader
+ * can't open. For a list whose name carries what page one was read under (the
+ * recent chats' `touchedSince` and when page one was read), so a later page
+ * reads it back instead of trusting the caller.
+ *
+ * @param cursor - The cursor as sent.
+ * @param sealedFor - The reader's key.
+ */
+export function sealedCursorList(cursor: string, sealedFor: string): string | null {
+  const position = openCursor(sealedFor, cursor)?.position;
+  return Array.isArray(position) && typeof position[0] === 'string' ? position[0] : null;
+}
+
+/**
  * Refuse a cursor this list did not give, before the list is read: a route
  * whose read has a cost (a sign-in check, a provider call) checks first.
  *

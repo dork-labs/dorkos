@@ -21,7 +21,7 @@ import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { boundaryRefusal } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
-import { assertPageCursor } from '../lib/paging/keyset-page.js';
+import { assertPageCursor, sealedCursorList } from '../lib/paging/keyset-page.js';
 import { readerKey } from '../lib/paging/sealed-cursor.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import {
@@ -128,17 +128,17 @@ export function mountSessionListRoutes(router: Hono<ApiEnv>, deps: SessionRouteD
     if (!parsed.success) return validationProblem(c, parsed.error);
     const { cursor, limit, touchedSince } = parsed.data;
     const facts = honoRequestFacts(c);
-    const options = {
-      list: 'sessions-recent',
-      query: { cursor, limit },
-      sealedFor: readerKey(readerOfRequest(facts)),
-      refuse: invalidCursor,
-    };
-    try {
-      assertPageCursor(options.list, cursor, invalidCursor, options.sealedFor);
-    } catch {
-      return cursorRefusal(c);
-    }
+    const sealedFor = readerKey(readerOfRequest(facts));
+    // The list's name carries the `touchedSince` page one was read under and
+    // when, sealed in every cursor: a later page leaves out exactly the chats
+    // page one kept, and one asked with another `touchedSince` is refused.
+    const ofQuery = `sessions-recent:${touchedSince ?? ''}:`;
+    const list =
+      cursor === undefined
+        ? ofQuery + new Date().toISOString()
+        : sealedCursorList(cursor, sealedFor);
+    if (list === null || !list.startsWith(ofQuery)) return cursorRefusal(c);
+    const options = { list, query: { cursor, limit }, sealedFor, refuse: invalidCursor };
 
     const agentPaths = deps.meshCore?.listWithPaths().map((a) => a.projectPath) ?? [];
     const { merged, agentActivity, warnings } = await mergeRecentSessions({
@@ -150,8 +150,10 @@ export function mountSessionListRoutes(router: Hono<ApiEnv>, deps: SessionRouteD
     const readable = readableSessions(facts, merged);
     // Every chat you touched since the caller's day began comes on the first
     // page, however many agent-busy chats outrank it (spec `your-activity-first` D6).
+    const keptUntil = cursor === undefined ? undefined : list.slice(ofQuery.length);
+    const resolveTouches = sessionOriginResolvers(deps).resolveTouches;
     const kept = touchedSince
-      ? touchedSinceKeeper(touchedSince, sessionOriginResolvers(deps).resolveTouches)(readable)
+      ? touchedSinceKeeper(touchedSince, resolveTouches, keptUntil)(readable)
       : new Set<string>();
     let page;
     try {

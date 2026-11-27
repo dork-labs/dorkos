@@ -98,11 +98,14 @@ import { registerClaudeCodeFacts } from '../../startup/register-claude-code-fact
 registerClaudeCodeFacts();
 
 const admission = new MainRequestAdmission();
+/** The session routes' deps; the `/recent` test lends them an agent folder. */
+const sessionDeps: { meshCore?: never } = {};
 // Routed as the running server routes: the diff routes answer from Hono, and
 // all but the raw bytes are capabilities the mount serves, as are the chat reads.
 const server = listeningServer(
   composedListener(admission, {
     capabilities: composeRegistry([diffDomain, sessionReadsDomain], { logger: noopLogger }),
+    sessions: sessionDeps,
   })
 );
 
@@ -168,6 +171,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete sessionDeps.meshCore;
   resetSessionVisibility();
   resetMessageDispatcher();
   setMessageQueueStore(undefined);
@@ -226,6 +230,22 @@ describe('an agent reading sessions', () => {
     expect((await request(server).get(`/api/sessions?cursor=${cursor}`).set(AGENT)).status).toBe(
       400
     );
+  });
+
+  it("GET /recent fills an agent's page past a person's chat", async () => {
+    // One agent in the project folder, so `/recent` has a folder to list.
+    sessionDeps.meshCore = {
+      listWithPaths: () => [{ projectPath: '/mock/home/project' }],
+    } as never;
+    const newer = { ...sessionRow(PRIVATE), updatedAt: '2026-10-02', cwd: '/mock/home/project' };
+    fakeRuntime.listSessions.mockResolvedValue([
+      newer,
+      { ...sessionRow(WORK), cwd: '/mock/home/project' },
+    ]);
+    const recent = (headers = {}) =>
+      request(server).get('/api/sessions/recent?limit=1').set(headers);
+    expect((await recent(AGENT)).body.sessions.map((s: { id: string }) => s.id)).toEqual([WORK]);
+    expect((await recent()).body.sessions.map((s: { id: string }) => s.id)).toEqual([PRIVATE]);
   });
 
   it('GET /api/debug/sessions/:id applies the same check', async () => {

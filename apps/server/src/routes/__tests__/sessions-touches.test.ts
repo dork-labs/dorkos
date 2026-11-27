@@ -288,6 +288,30 @@ describe('session touches', () => {
       expect(res.body.sessions.map((s: Session) => s.id)).toEqual(['busy', CHAT]);
     });
 
+    it('pages past the kept chats: one opened between pages still shows; a changed touchedSince is refused', async () => {
+      agentAt('/p1');
+      const since = 'touchedSince=2026-10-08T04:00:00.000Z';
+      const later = '2026-10-08T05:00:00.000Z';
+      runtime.listSessions.mockResolvedValue([
+        makeSession('busy', '2026-10-08T12:00:00.000Z'),
+        makeSession(CHAT, '2026-10-08T11:00:00.000Z'),
+        makeSession('opened-later', '2026-10-08T10:00:00.000Z'),
+        makeSession('old', '2026-10-08T09:00:00.000Z'),
+      ]);
+      store.recordOpened(CHAT, '2026-10-08T06:00:00.000Z');
+      const first = await request(server).get(`/api/sessions/recent?limit=1&${since}`);
+      expect(first.body.sessions.map((s: Session) => s.id)).toEqual(['busy', CHAT]);
+      // Opened after page one was read: its touch is newer than the sealed time.
+      store.recordOpened('opened-later', new Date(Date.now() + 60_000).toISOString());
+      const cursor = `cursor=${encodeURIComponent(first.body.nextCursor)}`;
+      const next = await request(server).get(`/api/sessions/recent?limit=5&${since}&${cursor}`);
+      expect(next.body.sessions.map((s: Session) => s.id)).toEqual(['opened-later', 'old']);
+      for (const other of ['', `touchedSince=${encodeURIComponent(later)}&`]) {
+        const refused = await request(server).get(`/api/sessions/recent?${other}${cursor}`);
+        expect(refused.status).toBe(400);
+      }
+    });
+
     it('refuses a touchedSince that is not a time', async () => {
       const res = await request(server).get('/api/sessions/recent?touchedSince=today');
       expect(res.status).toBe(400);

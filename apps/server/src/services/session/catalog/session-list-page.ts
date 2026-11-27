@@ -60,8 +60,10 @@ export function sessionListPage(
 /**
  * One page of the recent chats across every agent. The first page also holds
  * each chat named in `kept` (every chat you touched today, spec
- * `your-activity-first` D6) that falls past it, once, in its place, so no
- * page size drops one. Later pages leave the kept chats out, so none repeats.
+ * `your-activity-first` D6) that falls past it, once, added at the end of the
+ * page in activity order, so no page size drops one. Later pages leave the
+ * kept chats out, so none repeats: the route passes them the chats page one
+ * kept (the touches up to when page one was read, sealed in the cursor).
  *
  * @param rows - Every chat the reader may read, latest activity first.
  * @param kept - The chats the first page holds wherever they fall.

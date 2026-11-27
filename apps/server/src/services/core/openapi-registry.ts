@@ -725,7 +725,7 @@ registry.registerPath({
   tags: ['Sessions'],
   summary: 'List recent sessions across all agents',
   description:
-    "Fans out session listing across every registered agent (DOR-329) and returns one page, latest activity first (`updatedAt`, then id), with a per-agent latest-activity map and per-runtime `warnings[]` (ADR-0310); pass `nextCursor` as `cursor` for the next page. A chat updated while paging can repeat or be missed. With `touchedSince`, the first page also holds every session whose `lastTouchedByYouAt` is at or after that time, beyond `limit`, in its `updatedAt` place, and later pages leave those out. An agent caller lists agent work only, and its cursor works only for it; another caller's cursor, or one from before a restart, is refused 400.",
+    "Fans out session listing across every registered agent (DOR-329) and returns one page, latest activity first (`updatedAt`, then id), with a per-agent latest-activity map and per-runtime `warnings[]` (ADR-0310); pass `nextCursor` as `cursor` for the next page. A chat updated while paging can repeat or be missed. With `touchedSince`, the first page also holds every session whose `lastTouchedByYouAt` is at or after that time, beyond `limit`, in its `updatedAt` place, and later pages leave out the ones it held (a chat opened again while paging can repeat); a later page asked with another `touchedSince`, or without it, is refused 400. An agent caller lists agent work only, and its cursor works only for it; another caller's cursor, or one from before a restart, is refused 400.",
   request: {
     query: RecentSessionsQuerySchema,
   },
