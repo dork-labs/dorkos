@@ -186,7 +186,8 @@ export const marketplaceBrowseCapability = defineCapability({
   description:
     'Every package listed by every enabled marketplace, each tagged with its marketplace, ' +
     'with install counts and update dates when known. One source that fails is skipped. ' +
-    `Source by source, in the order each listing names its packages.${PAGES}`,
+    'Source by source, in the order each listing names its packages. A source that fails to ' +
+    `load between pages shifts the rows after it, so some can be missed.${PAGES}`,
   tier: 'observe',
   area: null,
   areaNote: READ_NOTE,

@@ -10,8 +10,8 @@ import { apiCall } from './api-client.js';
 /** The page size a whole-list read asks for: the most one page may hold. */
 const PAGE_LIMIT = 200;
 
-/** A list longer than this many pages is a server that never stops, not a long list. */
-const MAX_PAGES = 500;
+/** The most pages one whole-list read follows (10,000 rows), as the app's own reads stop. */
+const MAX_PAGES = 50;
 
 /**
  * Read every page of a list.
@@ -20,7 +20,7 @@ const MAX_PAGES = 500;
  * @param params - The list's own query fields; an undefined value is left out.
  * @param rowsOf - The rows one page holds.
  * @returns The first page, as the server sent it, and every row in server order.
- * @throws {Error} When the server keeps answering a cursor past {@link MAX_PAGES} pages.
+ * @throws {Error} When a cursor comes back twice, or the list runs past {@link MAX_PAGES} pages.
  */
 export async function readAllPages<P extends { nextCursor: string | null }, T>(
   path: string,
@@ -37,9 +37,14 @@ export async function readAllPages<P extends { nextCursor: string | null }, T>(
   };
   const first = await read(undefined);
   const rows = [...rowsOf(first)];
+  const seen = new Set<string>();
   let cursor = first.nextCursor;
   for (let pages = 1; cursor; pages++) {
-    if (pages >= MAX_PAGES) throw new Error(`${path} kept giving pages past ${MAX_PAGES}.`);
+    // A server that hands back a cursor twice, or never ends, must not spin the command forever.
+    if (seen.has(cursor) || pages >= MAX_PAGES) {
+      throw new Error(`${path} kept giving more pages; stopped after ${pages}.`);
+    }
+    seen.add(cursor);
     const page = await read(cursor);
     rows.push(...rowsOf(page));
     cursor = page.nextCursor;

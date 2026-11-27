@@ -7,6 +7,7 @@
  * page one.
  */
 import { describe, it, expect } from 'vitest';
+import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { MarketplaceJson } from '@dorkos/marketplace';
 import { useMarketplaceRoutes, writePackageManifest } from './marketplace.fixtures.js';
@@ -125,5 +126,34 @@ describe('the marketplace lists, a page at a time', () => {
 
     expect(own.status).toBe(200);
     expect(agent.status).toBe(400);
+  });
+
+  // Purpose: a cursor's size is bounded whatever the folder (review of DOR-4982):
+  // a very long project path still pages, and its cursor stays bound to that view.
+  it('pages a project view with a 1000-character path, and refuses its cursor elsewhere', async () => {
+    for (const name of ['p-one', 'p-two']) {
+      writePackageManifest(join(h.dorkHome, 'plugins', name), {
+        manifest: 1,
+        type: 'plugin',
+        name,
+        version: '1.0.0',
+      });
+    }
+    // Folders of 100 characters, then one that ends the path at 1010 characters,
+    // just under the 1024-byte path limit of macOS.
+    const parts = Array.from({ length: 9 }, (_, i) => `${i}`.repeat(100));
+    const head = join(h.dorkHome, ...parts.slice(0, -1));
+    const project = join(head, 'x'.repeat(1010 - head.length - 1));
+    mkdirSync(project, { recursive: true });
+    expect(project.length).toBeGreaterThan(1000);
+    const view = `/installed?projectPath=${encodeURIComponent(project)}`;
+
+    const paged = await readEveryPage(view, 'packages', 1);
+    const first = await h.get(`${view}&limit=1`);
+    const elsewhere = await h.get(`/installed?limit=1&cursor=${first.body.nextCursor}`);
+
+    expect(paged.names.filter((n) => n.startsWith('p-'))).toEqual(['p-one', 'p-two']);
+    expect(first.body.nextCursor).toEqual(expect.any(String));
+    expect(elsewhere.status).toBe(400);
   });
 });

@@ -32,6 +32,7 @@ const SCOUT = {
   id: 'agent-scout',
   name: 'scout',
   runtime: 'claude-code' as const,
+  registeredAt: '2026-11-01T00:00:00.000Z',
   persona: 'Scout’s own instructions.',
   permissions: { areas: { agents: 'allowed' } },
   mcpServers: [{ name: 'notes' }],

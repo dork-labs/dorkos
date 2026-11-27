@@ -4226,7 +4226,7 @@ export interface paths {
          * Browse packages
          * @description **Preview.** This operation may change in any release.
          *
-         *     Every package listed by every enabled marketplace, each tagged with its marketplace, with install counts and update dates when known. One source that fails is skipped. Source by source, in the order each listing names its packages. A page at a time, in the list’s own order: pass `nextCursor` back as `cursor` for the next page. One added or removed while paging can repeat or be missed.
+         *     Every package listed by every enabled marketplace, each tagged with its marketplace, with install counts and update dates when known. One source that fails is skipped. Source by source, in the order each listing names its packages. A source that fails to load between pages shifts the rows after it, so some can be missed. A page at a time, in the list’s own order: pass `nextCursor` back as `cursor` for the next page. One added or removed while paging can repeat or be missed.
          */
         get: operations["marketplace.browse"];
         put?: never;

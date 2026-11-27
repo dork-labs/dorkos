@@ -1,6 +1,7 @@
 ---
 covers:
   - "feat(api): the marketplace lists, Shapes, an agent's MCP servers and the agent roster come a page at a time (DOR-4982)"
+  - 'fix(api): a page cursor stays a fixed size however long a folder or filter is (DOR-4982)'
 ---
 
 ### Changed
