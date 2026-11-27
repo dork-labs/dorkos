@@ -218,6 +218,13 @@ import type { RetiringPump } from './diagnostics/retired-turn.js';
  * to a process that no longer exists, and the next window belongs to a different
  * one. {@link SessionTurnWindows.onCrash} carries the reasoning in full.
  *
+ * The other exception is a background HELPER's own frames (`parent_tool_use_id`
+ * set) when no window is open: a helper still working after its parent's reply
+ * ended. They open nothing and are left out, counted, rather than held
+ * (DOR-2698). The helper's report does not ride them: the CLI delivers it as a
+ * notification the agent answers on its main thread, and that answer opens the
+ * window. `frames/helper-frames-between-turns.ts` carries the reasoning in full.
+ *
  * This deliberately does NOT re-derive the projector's reopen predicate
  * (DOR-1100): a closed window reopens on raw model speech and nothing else, and
  * that rule keeps working unchanged INSIDE each window's stream.
@@ -241,6 +248,11 @@ import {
   type PumpCrash,
   type PumpDispatch,
 } from './session-pump-contract.js';
+import { beginsATurn, carriesVisibleContent, isHelperFrame } from './frames/frame-kinds.js';
+import {
+  dropSupersededProgress,
+  HelperFramesBetweenTurns,
+} from './frames/helper-frames-between-turns.js';
 
 /**
  * How long a window's accounting fetch may take before the window closes
@@ -878,123 +890,6 @@ function stoppedResult(crash: PumpCrash): SDKMessage {
 }
 
 /**
- * Whether this message is the CLI STARTING a turn, rather than bookkeeping it
- * emits between them.
- *
- * Two shapes prove it: `assistant`, and the `stream_event` partials that carry
- * one. A turn's own work is always preceded by an `assistant` — a tool call is
- * an `assistant` message before it is a `user` tool result — so within a turn
- * this is a sound signal.
- *
- * **It is not a complete one, and the caller does not treat it as one.** The
- * CLI emits frames BEFORE a continuation's first word that are not content at
- * all: an `api_retry` when the continuation's first request is retried, an
- * `auto` `compact_boundary` taken to make room for the steer's turn. Reading a
- * `false` here as "no continuation is coming" lost exactly those (DOR-1314
- * review, probe D). So a `false` does not close anything on its own — it means
- * "not yet proven", and {@link onMessage} answers it by re-arming the grace
- * within the cap rather than by letting the clock run out.
- *
- * The two shapes deliberately excluded are the ones the module doc names as
- * routine between-turn traffic: a `system` line, and the `user` tool result of
- * a tool that was still running when its turn ended. That late tool result
- * belongs to the turn that JUST FINISHED, so it is not evidence a new one
- * began — but it IS evidence the process is alive, which is why it re-arms.
- * The two answers are different questions and the split is the whole point:
- * only content stops the clock, anything else merely postpones it.
- *
- * @param message - The message the process just produced
- */
-function beginsATurn(message: SDKMessage): boolean {
-  return message.type === 'assistant' || message.type === 'stream_event';
-}
-
-/** Delta types the stream mapper turns into `text_delta` or `thinking_delta`. */
-const VISIBLE_DELTA_TYPES: ReadonlySet<string> = new Set(['text_delta', 'thinking_delta']);
-
-/**
- * Whether a `stream_event` maps to a content event: a text or thinking delta, or
- * a `tool_use` block starting (`tool_call_start`). A `server_tool_use` start,
- * `message_start`, `ping` and block stops map to nothing the guard counts.
- *
- * @param message - A `stream_event` from the main thread
- */
-function streamEventCarriesContent(message: SDKMessage): boolean {
-  const event = (
-    message as { event?: { type?: unknown; delta?: unknown; content_block?: unknown } }
-  ).event;
-  if (event?.type === 'content_block_delta') {
-    const deltaType = (event.delta as { type?: unknown } | undefined)?.type;
-    return typeof deltaType === 'string' && VISIBLE_DELTA_TYPES.has(deltaType);
-  }
-  if (event?.type === 'content_block_start') {
-    return (event.content_block as { type?: unknown } | undefined)?.type === 'tool_use';
-  }
-  return false;
-}
-
-/**
- * Whether a `user` message maps to a `tool_result`: a live (not replayed)
- * message whose block list holds a tool result naming its call.
- *
- * @param message - A `user` message from the main thread
- */
-function userMessageCarriesToolResult(message: SDKMessage): boolean {
-  if ((message as { isReplay?: unknown }).isReplay) return false;
-  const content = (message as { message?: { content?: unknown } }).message?.content;
-  if (!Array.isArray(content)) return false;
-  return content.some((block) => {
-    const b = block as { type?: unknown; tool_use_id?: unknown } | null;
-    return b?.type === 'tool_result' && typeof b.tool_use_id === 'string';
-  });
-}
-
-/**
- * Whether this frame carries something a person can see: the question the
- * empty-stream guard (`shared/empty-stream-guard.ts`) asks of the MAPPED
- * events, asked here of the raw frame so the two layers agree (DOR-2064).
- * `session-turn-windows-content-parity.test.ts` pushes every shape through the
- * production mapper and fails the moment the two answers part.
- *
- * What counts, row for row with the mappers:
- *
- * - a main-thread `stream_event` text or thinking delta, or a `tool_use` start;
- * - a main-thread, non-replayed `user` message carrying a tool result;
- * - a `tool_use_summary` naming at least one call (each becomes a `tool_result`);
- * - a MANUAL `compact_boundary`, which is the whole answer to `/compact`.
- *
- * What does not: anything forwarded from a subagent (`parent_tool_use_id`), a
- * complete `assistant` message (the live text already arrived as deltas, so the
- * mapper yields only bookkeeping for it), an automatic compaction, and every
- * other `system` line. Image attachments are announced from a tool result that
- * already counts, so they need no row of their own here.
- *
- * @param message - The message the process just produced
- * @internal Exported for the parity test.
- */
-export function carriesVisibleContent(message: SDKMessage): boolean {
-  if ((message as { parent_tool_use_id?: unknown }).parent_tool_use_id) return false;
-  switch (message.type) {
-    case 'stream_event':
-      return streamEventCarriesContent(message);
-    case 'user':
-      return userMessageCarriesToolResult(message);
-    case 'tool_use_summary': {
-      const calls = (message as { preceding_tool_use_ids?: unknown }).preceding_tool_use_ids;
-      return Array.isArray(calls) && calls.length > 0;
-    }
-    case 'system':
-      return (
-        (message as { subtype?: unknown }).subtype === 'compact_boundary' &&
-        (message as { compact_metadata?: { trigger?: unknown } }).compact_metadata?.trigger ===
-          'manual'
-      );
-    default:
-      return false;
-  }
-}
-
-/**
  * Whether this frame proves the CLI has STARTED the turn a steer is waiting on,
  * even though it has not spoken a word of it yet (claude-agent-sdk 0.3.260).
  *
@@ -1133,6 +1028,8 @@ export class SessionTurnWindows {
   private readonly closingWindows = new Set<Promise<void>>();
   /** Messages that arrived with no window open, waiting for the next one. */
   private readonly held: SDKMessage[] = [];
+  /** A helper's frames that arrived with no window open, left out and counted (DOR-2698). */
+  private readonly helpersBetweenTurns: HelperFramesBetweenTurns;
   /**
    * Every correlation id this session has pushed at the process and not yet
    * seen a `result` name — insertion-ordered, bounded by
@@ -1164,6 +1061,7 @@ export class SessionTurnWindows {
    */
   constructor(opts: SessionTurnWindowsOptions) {
     this.opts = opts;
+    this.helpersBetweenTurns = new HelperFramesBetweenTurns(opts.sessionId);
   }
 
   /** The window that is open right now, if any — what the stall watchdog guards. */
@@ -1498,6 +1396,9 @@ export class SessionTurnWindows {
       // is the SPEAKING one: the continuation has begun, it is simply thinking
       // before it says anything (see {@link provesSteeredTurnBegan}). Reading it
       // as mere chatter would put a five-second cap on a thinking turn.
+      //
+      // A helper's frame is chatter here, not speech: a background helper
+      // talking is not the agent's continuation beginning (DOR-2698).
       if (this.current.grace !== undefined) {
         if (beginsATurn(message) || provesSteeredTurnBegan(this.current, message)) {
           this.stopGrace(this.current);
@@ -1521,11 +1422,17 @@ export class SessionTurnWindows {
     // the module's rule that between-turn bookkeeping is HELD for the next window
     // is deliberately unchanged. The hold is flushed into this window when the
     // first real frame arrives, so nothing is lost by waiting for one.
+    //
+    // A helper's frames start nothing: a helper still working after its parent's
+    // reply ended is not the agent starting a turn (DOR-2698). They are left out
+    // and counted rather than held; `frames/helper-frames-between-turns.ts` says why,
+    // and how the helper's report still reaches the chat.
     if (beginsATurn(message)) {
       this.openRuntimeWindow(message);
       return;
     }
-    this.hold(message);
+    if (isHelperFrame(message)) this.helpersBetweenTurns.leaveOut(message);
+    else this.hold(message);
   }
 
   /**
@@ -2224,8 +2131,13 @@ export class SessionTurnWindows {
     }
   }
 
-  /** Hold a message that belongs to no window yet, bounded. */
+  /**
+   * Hold a message that belongs to no window yet, bounded. A progress line
+   * replaces the held one it supersedes, so a long helper's progress cannot
+   * push the agent's own frames out of the hold (DOR-2698).
+   */
   private hold(message: SDKMessage): void {
+    dropSupersededProgress(this.held, message);
     if (this.held.length >= MAX_UNATTRIBUTED_MESSAGES) {
       this.held.shift();
       logger.warn('[SessionTurnWindows] dropped a held message; no window has opened', {
@@ -2257,6 +2169,7 @@ export class SessionTurnWindows {
    * Never silent — see {@link onCrash} for why dropping is the right answer.
    */
   private discardHeld(): void {
+    this.helpersBetweenTurns.account();
     if (this.held.length === 0) return;
     logger.warn("[SessionTurnWindows] dropped a dead process's unattributed messages", {
       sessionId: this.opts.sessionId,
@@ -2265,8 +2178,12 @@ export class SessionTurnWindows {
     this.held.length = 0;
   }
 
-  /** Move everything held into the window that just opened. */
+  /**
+   * Move everything held into the window that just opened, and say how many of
+   * a helper's frames were left out since the last one.
+   */
   private flushHeld(record: WindowRecord): void {
+    this.helpersBetweenTurns.account();
     for (const message of this.held) {
       if (carriesVisibleContent(message)) record.contentFrames += 1;
       record.channel.push(message);

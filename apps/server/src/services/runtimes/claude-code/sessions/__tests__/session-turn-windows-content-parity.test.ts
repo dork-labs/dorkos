@@ -24,7 +24,7 @@ import { createToolState } from '../../agent-types.js';
 import type { AgentSession } from '../../agent-types.js';
 import { isContentEvent } from '../../../shared/empty-stream-guard.js';
 import { mapSdkMessage } from '../../sdk/sdk-event-mapper.js';
-import { carriesVisibleContent } from '../session-turn-windows.js';
+import { carriesVisibleContent } from '../frames/frame-kinds.js';
 
 const SESSION_ID = 'parity-session';
 
