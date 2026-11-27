@@ -64,6 +64,7 @@ import {
   SERVER_STOPPING_PROBLEM,
 } from '../middleware/terminal-admission.js';
 import { corsAllowsOrigin, corsRefusal, warnOnWildcardCorsOrigin } from './cors-policy.js';
+import { logPersonBarTrustedHosts } from '../lib/http/person-bar.js';
 import { createFirstContactMarker } from './first-contact.js';
 import { honoRequestFacts, type RequestFactsVariables } from './request-facts.js';
 import { classifyRequest, noteForeignOrigin } from '../lib/request-classifier.js';
@@ -189,6 +190,7 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
     await next();
   });
   warnOnWildcardCorsOrigin();
+  logPersonBarTrustedHosts();
   app.use(keepEachVaryFieldOnce);
   app.use(
     cors({

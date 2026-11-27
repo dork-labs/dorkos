@@ -104,7 +104,10 @@ Separate several names with commas and leave the port off. Turning on login cove
 other way: DorkOS trusts your sign-in instead of the address for ordinary requests and for live
 streams. **Set this anyway.** The embedded terminal is authorized by holding a hard-to-guess id
 rather than by your sign-in, so it always checks the address. With login on and this unset, the app
-works and the terminal will not open.
+works and the terminal will not open. The app's live updates, and the settings only a person may
+change, also accept a page served at a name on this list, over `https` (plain `http` only at a
+private address). DorkOS reads this list only from its own
+environment.
 See [Securing Your Instance](/docs/self-hosting/securing-your-instance).
 
 </Callout>

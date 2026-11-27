@@ -21,6 +21,7 @@ import {
 } from './lib/error-reporter.js';
 import { defaultDorkHome } from './lib/dork-home.js';
 import { stampCliLaunch } from './lib/distribution.js';
+import { loadProjectEnv } from './lib/project-env.js';
 import { parseCliArgs } from './parse-cli-args.js';
 import { recordInstallRef } from '@dorkos/shared/install-ref';
 
@@ -824,14 +825,9 @@ const logLevelName =
   (env.NODE_ENV === 'production' ? 'info' : 'debug');
 process.env.DORKOS_LOG_LEVEL = String(LOG_LEVEL_MAP[logLevelName] ?? 3);
 
-// Load .env from user's cwd (project-local, optional).
-// override:false (the default) ensures CLI flags and config values set above
-// are never overwritten by .env file values — preserving the precedence chain.
-const envPath = path.join(process.env.DORKOS_DEFAULT_CWD!, '.env');
-if (fs.existsSync(envPath)) {
-  const dotenv = await import('dotenv');
-  dotenv.config({ path: envPath, override: false });
-}
+// Load .env from user's cwd (project-local, optional): it never overrides a value
+// already set, and never sets a trust setting (lib/project-env.ts).
+loadProjectEnv(path.join(process.env.DORKOS_DEFAULT_CWD!, '.env'), process.env, console.warn);
 
 // Hand off error handling to the server, which installs its own reporter and
 // process handlers once imported — avoids double-reporting on the cockpit path.

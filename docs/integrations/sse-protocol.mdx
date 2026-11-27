@@ -470,7 +470,7 @@ These chat-list events keep sidebars and dashboards live without polling `GET /a
 The stream answers `403 person_only` to:
 
 - a caller presenting an `X-DorkOS-Agent` header or an approval token, whatever the settings;
-- a page on another site, including an app's frame (`Origin: null`);
+- a page on another site, including an app's frame (`Origin: null`). A page served at a name in `DORKOS_TRUSTED_HOSTS` counts as DorkOS's own, over `https` (plain `http` only at a private address);
 - with login on, a caller with an API key who has not signed in through a browser.
 
 With login off, a program with no agent header connects. Over a WebSocket the same refusals
