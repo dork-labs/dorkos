@@ -17,6 +17,7 @@ import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { initBoundary } from '../../lib/boundary.js';
 import { configManager } from '../../services/core/config-manager.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
+import { sessionLocationStore } from '../../services/core/runtime-seam/session-location-store.js';
 import {
   createChatRiseFacts,
   setChatRiseFacts,
@@ -91,7 +92,12 @@ const harness = frontDoorStepUpHarness(() => {
   runtimeRegistry.setDefault('test-mode');
   setChatRiseFacts(createChatRiseFacts(db));
   setMessageQueueStore(new MessageQueueStore(db));
-  return [{ path: '/api/sessions', routes: createSessionRoutes({ personBirthDb: db }) }];
+  return [
+    {
+      path: '/api/sessions',
+      routes: createSessionRoutes({ personBirth: sessionLocationStore(db) }),
+    },
+  ];
 });
 
 afterAll(async () => {

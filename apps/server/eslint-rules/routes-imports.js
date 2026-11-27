@@ -34,7 +34,6 @@ export const FS_ALLOWED = [
   'src/routes/files.ts',
   'src/routes/harness.ts',
   'src/routes/marketplace/packages.ts',
-  'src/routes/marketplace/shared.ts',
   'src/routes/mesh-agent-patch-http.ts',
   'src/routes/room-canvas.ts',
   'src/routes/session-recording.ts',
@@ -54,13 +53,12 @@ export const RUNTIME_ALLOWED = [
   'src/routes/mesh-agent-patch-http.ts',
   'src/routes/onboarding.ts',
   'src/routes/relay-binding-step-up.ts',
+  'src/routes/runtime-settings-reader.ts',
   'src/routes/runtimes-account-eligibility.ts',
-  'src/routes/runtimes-doe-setup.ts',
   'src/routes/runtimes.ts',
   'src/routes/sessions.ts',
   'src/routes/system-shell-check.ts',
   'src/routes/task-approval-rules.ts',
-  'src/routes/test-control-seed-approval.ts',
 ];
 
 /** `@dorkos/db` and its subpaths. */
