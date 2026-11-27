@@ -18,11 +18,13 @@ import {
   type NotificationKind,
 } from '@dorkos/shared/notification-schemas';
 import { useEventSubscription, useTransport } from '@/layers/shared/model';
+import { PAGE_LIMIT_MAX } from '@dorkos/shared/paging';
 import {
   applyNotificationRead,
   notificationsQueryKey,
   upsertNotification,
   type NotificationLens,
+  type NotificationPages,
 } from './notification-cache';
 
 /** How many rows one page holds. Matches the spec's cursor page size. */
@@ -93,7 +95,20 @@ export function useNotifications(lens?: NotificationLens): NotificationsState {
     queryKey,
     queryFn: ({ pageParam }) =>
       transport.listNotifications({
-        limit: PAGE_SIZE,
+        // Page one asks for at least as many rows as it already shows, so a
+        // refetch (after the live-page cap trimmed it, or on focus) never
+        // shrinks the list a person is looking at.
+        limit:
+          pageParam === undefined
+            ? Math.min(
+                PAGE_LIMIT_MAX,
+                Math.max(
+                  PAGE_SIZE,
+                  queryClient.getQueryData<NotificationPages>(queryKey)?.pages[0]?.notifications
+                    .length ?? 0
+                )
+              )
+            : PAGE_SIZE,
         ...(pageParam === undefined ? {} : { cursor: pageParam }),
         ...(agentId === undefined ? {} : { agentId }),
         ...(sessionId === undefined ? {} : { sessionId }),

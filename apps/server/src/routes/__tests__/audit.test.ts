@@ -119,6 +119,17 @@ describe('Audit routes', () => {
       expect(made.status).toBe(400);
     });
 
+    it.each(['/api/audit', '/api/audit/accounts/system/timeline'])(
+      'refuses the old beforeSeq on %s, naming cursor, rather than answering page one',
+      async (path) => {
+        const res = await request(fixtureServer).get(`${path}?beforeSeq=3`);
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('invalid_request');
+        expect(JSON.stringify(res.body)).toContain('pass the last page');
+        expect(JSON.stringify(res.body)).toMatch(/beforeSeq[^"]*cursor/);
+      }
+    );
+
     it('never shows an agent an admins row, in a list or by id', async () => {
       const list = await request(fixtureServer).get('/api/audit').set(AGENT);
       expect(list.body.events.map((e: { action: string }) => e.action)).not.toContain(

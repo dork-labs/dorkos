@@ -114,7 +114,7 @@ export function readAuditQuery(
   reader: AuditReader,
   readable: ReadableSessions
 ): AuditQueryResult {
-  const { cursor, ...filters } = query;
+  const { cursor, beforeSeq: _retired, ...filters } = query;
   const beforeSeq = auditCursorSeq('audit', cursor, reader);
   if (filtersUnreadableSession(reader, query.sessionId, readable)) return EMPTY_PAGE;
   const page = log.query({ ...filters, ...(beforeSeq ? { beforeSeq } : {}) }, reader);
@@ -135,7 +135,7 @@ export function readAuditTimeline(
   reader: AuditReader,
   readable: ReadableSessions
 ): AuditQueryResult {
-  const { cursor, ...filters } = query;
+  const { cursor, beforeSeq: _retired, ...filters } = query;
   const beforeSeq = auditCursorSeq('audit-timeline', cursor, reader);
   if (filtersUnreadableSession(reader, query.sessionId, readable)) return EMPTY_PAGE;
   const page = log.timeline({ ...filters, ...(beforeSeq ? { beforeSeq } : {}) }, reader);

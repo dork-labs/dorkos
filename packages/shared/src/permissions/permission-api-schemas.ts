@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from '../zod-openapi.js';
 import { CAPABILITY_TIERS } from '../capabilities.js';
 import { ProblemSchema } from '../problem.js';
-import { nextCursorOutput, pageCursorInput, pageLimitInput } from '../paging.js';
+import { nextCursorOutput, pageCursorInput, pageLimitInput, retiredPageParam } from '../paging.js';
 import {
   AgentPermissionsSchema,
   PermissionAreaIdSchema,
@@ -284,6 +284,7 @@ export const PermissionHistoryQuerySchema = z
       .optional()
       .describe('Only the changes that touched this agent, bulk changes included.'),
     cursor: pageCursorInput,
+    before: retiredPageParam('before'),
     limit: pageLimitInput(),
   })
   .openapi('PermissionHistoryQuery');

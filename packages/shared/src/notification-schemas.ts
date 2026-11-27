@@ -22,7 +22,7 @@
  */
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
-import { nextCursorOutput, pageCursorInput, pageLimitInput } from './paging.js';
+import { nextCursorOutput, pageCursorInput, pageLimitInput, retiredPageParam } from './paging.js';
 
 extendZodWithOpenApiOnce();
 
@@ -499,6 +499,8 @@ export const ListNotificationsQuerySchema = z
      * millisecond are neither skipped nor repeated.
      */
     cursor: pageCursorInput,
+    /** Refused: the old page key. */
+    before: retiredPageParam('before'),
     agentId: z.string().optional(),
     sessionId: z.string().optional(),
     /**

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(api): the inbox, the permission history and the audit record come a page at a time with a cursor (DOR-4982)'
+  - 'fix(api): old page parameters are refused by name, and an Inbox refetch after a trim never shrinks the list (DOR-4982)'
 ---
 
 ### Changed

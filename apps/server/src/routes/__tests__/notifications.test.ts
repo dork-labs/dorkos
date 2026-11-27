@@ -140,6 +140,7 @@ describe('GET /api/notifications', () => {
     expect(forged.body).toMatchObject({ code: 'invalid_request', detail: INVALID_CURSOR_DETAIL });
     const old = await request(app).get('/api/notifications').query({ before: ids[1] });
     expect(old.status).toBe(400);
+    expect(JSON.stringify(old.body)).toMatch(/before is no longer accepted[^"]*cursor/);
   });
 
   it('keeps a known notice with malformed payload JSON, without its action buttons', async () => {

@@ -9,7 +9,7 @@
  */
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
-import { nextCursorOutput, pageCursorInput, pageLimitInput } from './paging.js';
+import { nextCursorOutput, pageCursorInput, pageLimitInput, retiredPageParam } from './paging.js';
 
 extendZodWithOpenApiOnce();
 
@@ -231,6 +231,8 @@ export const AuditQuerySchema = z
     until: z.string().datetime({ offset: true }).optional(),
     /** The `nextCursor` of the page before; leave it out for the first page. */
     cursor: pageCursorInput,
+    /** Refused: the old page key. */
+    beforeSeq: retiredPageParam('beforeSeq'),
     /** How many, newest first. */
     limit: pageLimitInput(AUDIT_QUERY_MAX_LIMIT),
   })

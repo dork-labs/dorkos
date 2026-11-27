@@ -166,9 +166,11 @@ export function matchesLens(notification: NotificationDTO, lens: NotificationLen
  * the server's, opaque, and points past the last row the server sent, so the
  * dropped tail sits before it: "Load more" would skip it. Only the server can
  * give a cursor for the last row kept, so a trimmed lens is refetched
- * ({@link upsertNotification}), which pages it afresh and holds no more than it
- * did. Until then a trimmed page that was the only one offers no "Load more"
- * (`nextCursor: null`), so nothing is skipped meanwhile.
+ * ({@link refetchAfterBurst}), once per burst of arrivals. The refetch asks for
+ * page one at the size it is shown (`use-notifications.ts`), so the list never
+ * shrinks, and it holds no more than it did. Until then a trimmed page that was
+ * the only one offers no "Load more" (`nextCursor: null`), so nothing is
+ * skipped meanwhile.
  *
  * @param rows - The page's rows after the prepend, newest first.
  * @param cursor - The page's current cursor.
@@ -181,6 +183,31 @@ function capNewestPage(
 ): { notifications: NotificationDTO[]; nextCursor: string | null } | null {
   if (rows.length <= MAX_LIVE_PAGE_ROWS) return null;
   return { notifications: rows.slice(0, MAX_LIVE_PAGE_ROWS), nextCursor: only ? null : cursor };
+}
+
+/** How long a burst of live arrivals runs before a trimmed lens is read again. */
+export const TRIM_REFETCH_DELAY_MS = 250;
+
+/** The lenses waiting on a refetch, per client, by query key. */
+const refetchWaiting = new WeakMap<QueryClient, Set<string>>();
+
+/**
+ * Read a trimmed lens again once its burst of arrivals is over: one refetch
+ * per burst, however many rows the burst trimmed.
+ *
+ * @param queryClient - The client holding the lens.
+ * @param key - The lens's query key.
+ */
+function refetchAfterBurst(queryClient: QueryClient, key: QueryKey): void {
+  const waiting = refetchWaiting.get(queryClient) ?? new Set<string>();
+  refetchWaiting.set(queryClient, waiting);
+  const id = JSON.stringify(key);
+  if (waiting.has(id)) return;
+  waiting.add(id);
+  setTimeout(() => {
+    waiting.delete(id);
+    void queryClient.invalidateQueries({ queryKey: key, exact: true });
+  }, TRIM_REFETCH_DELAY_MS);
 }
 
 /**
@@ -302,7 +329,7 @@ export function upsertNotification(queryClient: QueryClient, notification: Notif
       ],
     };
   });
-  for (const key of trimmed) void queryClient.invalidateQueries({ queryKey: key, exact: true });
+  for (const key of trimmed) refetchAfterBurst(queryClient, key);
 }
 
 /**

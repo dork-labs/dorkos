@@ -400,4 +400,12 @@ describe('audit.running_chats at Never ask (DOR-3971)', () => {
         'in a bridged chat can set one; the link still opens the chat.'
     );
   });
+
+  it.each(['audit.query', 'audit.account_timeline'])(
+    'tells the agent in %s’s tool description that it pages (DOR-4982)',
+    (id) => {
+      const description = registry.get(id)?.description ?? '';
+      expect(description).toMatch(/a page at a time[^.]*nextCursor back as cursor/);
+    }
+  );
 });

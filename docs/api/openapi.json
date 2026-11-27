@@ -76348,6 +76348,16 @@
           },
           {
             "schema": {
+              "type": "string",
+              "description": "Refused: `before` was removed; page with `cursor`."
+            },
+            "required": false,
+            "description": "Refused: `before` was removed; page with `cursor`.",
+            "name": "before",
+            "in": "query"
+          },
+          {
+            "schema": {
               "type": "string"
             },
             "required": false,
@@ -96044,6 +96054,16 @@
           },
           {
             "schema": {
+              "type": "string",
+              "description": "Refused: `beforeSeq` was removed; page with `cursor`."
+            },
+            "required": false,
+            "description": "Refused: `beforeSeq` was removed; page with `cursor`.",
+            "name": "beforeSeq",
+            "in": "query"
+          },
+          {
+            "schema": {
               "type": "integer",
               "minimum": 1,
               "maximum": 200,
@@ -96380,6 +96400,16 @@
             "required": false,
             "description": "The `nextCursor` of the page before; leave it out for the first page.",
             "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Refused: `beforeSeq` was removed; page with `cursor`."
+            },
+            "required": false,
+            "description": "Refused: `beforeSeq` was removed; page with `cursor`.",
+            "name": "beforeSeq",
             "in": "query"
           },
           {

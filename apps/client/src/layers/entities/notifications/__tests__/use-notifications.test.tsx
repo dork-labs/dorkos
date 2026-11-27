@@ -19,6 +19,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 
 import { TransportProvider, useEventSubscription } from '@/layers/shared/model';
 import { useNotifications, useUnreadCount } from '../model/use-notifications';
+import { MAX_LIVE_PAGE_ROWS } from '../model/notification-cache';
 import { useMarkAllRead, useMarkRead } from '../model/use-mark-read';
 
 /** Build a notification, overriding only what a test cares about. */
@@ -173,6 +174,49 @@ describe('useNotifications', () => {
     await waitFor(() => expect(result.current.notifications).toHaveLength(2));
     expect(listNotifications).toHaveBeenLastCalledWith({ limit: 25, cursor: 'page-2' });
     expect(result.current.hasMore).toBe(false);
+  });
+
+  it('never shrinks what a person sees when the live-page cap trims and reads the lens again', async () => {
+    // The server answers newest first, `limit` rows of whatever it holds.
+    const held: NotificationDTO[] = Array.from({ length: 40 }, (_, i) =>
+      build({ id: `old-${String(40 - i).padStart(3, '0')}` })
+    );
+    const listNotifications = vi.fn(async (query?: { limit?: number }) => ({
+      notifications: held.slice(0, query?.limit ?? 25),
+      nextCursor: 'page-2',
+      unreadCount: 0,
+    }));
+    const lengths: number[] = [];
+    const { result } = renderInbox(
+      () => {
+        const state = useNotifications();
+        lengths.push(state.notifications.length);
+        return state;
+      },
+      { listNotifications }
+    );
+    await waitFor(() => expect(result.current.notifications).toHaveLength(25));
+
+    // A burst of live rows past the cap: the newest page is trimmed to 50.
+    act(() => {
+      for (let i = 0; i < 30; i += 1) {
+        const row = build({ id: `live-${String(i).padStart(3, '0')}` });
+        held.unshift(row);
+        handlers.get('notification')?.({ notification: row });
+      }
+    });
+    await waitFor(() => expect(result.current.notifications).toHaveLength(MAX_LIVE_PAGE_ROWS));
+    const shown = MAX_LIVE_PAGE_ROWS;
+    const seen = lengths.length;
+
+    // One refetch for the burst, asking for as many rows as are shown.
+    await waitFor(() => expect(listNotifications).toHaveBeenCalledTimes(2));
+    expect(listNotifications).toHaveBeenLastCalledWith({ limit: shown });
+    await waitFor(() => expect(result.current.hasMore).toBe(true));
+    expect(Math.min(...lengths.slice(seen))).toBeGreaterThanOrEqual(shown);
+    expect(result.current.notifications.map((n) => n.id)).toEqual(
+      held.slice(0, shown).map((n) => n.id)
+    );
   });
 
   it('says so when the list cannot be read', async () => {

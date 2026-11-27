@@ -23,10 +23,12 @@ import { invalidCursor } from '../core/capabilities/capability-definition.js';
 import type { AuditReader } from './visibility.js';
 
 /** A read of the log: the filters, the page size, and the `seq` the page starts below. */
-export type AuditLogQuery = Omit<AuditQuery, 'cursor'> & { beforeSeq?: number };
+export type AuditLogQuery = Omit<AuditQuery, 'cursor' | 'beforeSeq'> & { beforeSeq?: number };
 
 /** A per-account read of the log, paged like {@link AuditLogQuery}. */
-export type AuditLogTimelineQuery = Omit<AuditTimelineQuery, 'cursor'> & { beforeSeq?: number };
+export type AuditLogTimelineQuery = Omit<AuditTimelineQuery, 'cursor' | 'beforeSeq'> & {
+  beforeSeq?: number;
+};
 
 /** One page of rows, newest first, and whether more follow the last one. */
 export interface AuditLogPage {
@@ -52,6 +54,8 @@ export function auditCursorSeq(
   reader: AuditReader
 ): number | undefined {
   if (cursor === undefined) return undefined;
+  // The cursor carries [seq, id] (the shape every keyset cursor has); only seq
+  // orders, because seq alone is unique and never changes.
   const [seq] = openPageCursor(list, cursor, invalidCursor, readerKey(reader));
   const parsed = Number(seq);
   if (!Number.isSafeInteger(parsed) || parsed < 1) throw invalidCursor();

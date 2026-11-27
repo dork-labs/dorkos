@@ -171,6 +171,27 @@ describe('GET /api/permissions/history', () => {
     expect(ids).toHaveLength(4);
   });
 
+  it('refuses the old before parameter, naming cursor, rather than answering page one', async () => {
+    const res = await request(build()).get('/api/permissions/history?before=2026-09-01T00:00:00Z');
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('invalid_request');
+    expect(JSON.stringify(res.body)).toMatch(/before is no longer accepted[^"]*cursor/);
+  });
+
+  it('is read by an agent too, as the hand route let it', async () => {
+    await fourChanges();
+    const res = await request(build(AS_TEST_BOT)).get('/api/permissions/history');
+    expect(res.status).toBe(200);
+    expect(res.body.entries).toHaveLength(4);
+  });
+
+  it('tells an agent the list pages', () => {
+    const history = permissionViewsDomain.capabilities.find(
+      (capability) => capability.id === 'permissions.view_history'
+    );
+    expect(history?.description).toMatch(/a page at a time.*nextCursor/);
+  });
+
   it('refuses a cursor it did not give, rather than starting again', async () => {
     const res = await request(build()).get('/api/permissions/history?cursor=yesterday');
     expect(res.status).toBe(400);
