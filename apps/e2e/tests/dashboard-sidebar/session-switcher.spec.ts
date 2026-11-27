@@ -478,7 +478,7 @@ test.describe('session switcher, from ⌘K', { tag: SOLE_SIDEBAR_TAG }, () => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ sessions }),
+          body: JSON.stringify({ sessions, nextCursor: null }),
         });
         return;
       }
@@ -572,7 +572,7 @@ test.describe('session switcher, from ⌘K', { tag: SOLE_SIDEBAR_TAG }, () => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ sessions: [roomRun, conversation] }),
+          body: JSON.stringify({ sessions: [roomRun, conversation], nextCursor: null }),
         });
         return;
       }

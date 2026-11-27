@@ -40,7 +40,7 @@ beforeEach(() => {
   vi.mocked(transport.createSessionLocation).mockResolvedValue({ id: 'opaque-location' });
   vi.mocked(transport.getSessionLocation).mockResolvedValue({ cwd: '/chosen/project' });
   vi.mocked(transport.getDefaultCwd).mockResolvedValue({ path: '/default' });
-  vi.mocked(transport.listSessions).mockResolvedValue({ sessions: [] });
+  vi.mocked(transport.listSessions).mockResolvedValue({ sessions: [], nextCursor: null });
   vi.mocked(transport.getSession).mockResolvedValue(
     createMockSession({ id: 'existing', cwd: '/actual/project' })
   );
@@ -201,8 +201,8 @@ describe('session route identity and launch lifecycle', () => {
   });
 
   it('allocates once when the real router click overlaps a read-only intent preload', async () => {
-    let resolveLookup!: (value: { sessions: Session[] }) => void;
-    const lookup = new Promise<{ sessions: Session[] }>((resolve) => {
+    let resolveLookup!: (value: { sessions: Session[]; nextCursor: null }) => void;
+    const lookup = new Promise<{ sessions: Session[]; nextCursor: null }>((resolve) => {
       resolveLookup = resolve;
     });
     vi.mocked(transport.listSessions).mockReturnValue(lookup);
@@ -227,7 +227,7 @@ describe('session route identity and launch lifecycle', () => {
     expect(transport.allocateSession).not.toHaveBeenCalled();
 
     const navigation = router.navigate(options);
-    resolveLookup({ sessions: [] });
+    resolveLookup({ sessions: [], nextCursor: null });
     await Promise.all([preloading, navigation]);
     expect(router.state.location.search).toMatchObject({
       session: 'hover-then-click',
@@ -244,6 +244,7 @@ describe('session route identity and launch lifecycle', () => {
   it('resumes a real conversation and drops instructions aimed at a fresh one', async () => {
     vi.mocked(transport.listSessions).mockResolvedValue({
       sessions: [createMockSession({ id: 'existing', cwd: '/actual/project' })],
+      nextCursor: null,
     });
     const target = await destination({
       dir: '/actual/project',

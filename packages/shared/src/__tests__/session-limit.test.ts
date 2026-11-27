@@ -179,7 +179,9 @@ describe('SessionSchema fleet fields', () => {
 
 describe('SessionListResponseSchema accountUsage', () => {
   it('is optional, and carries account usage when present', () => {
-    expect(SessionListResponseSchema.parse({ sessions: [] })).not.toHaveProperty('accountUsage');
+    expect(SessionListResponseSchema.parse({ sessions: [], nextCursor: null })).not.toHaveProperty(
+      'accountUsage'
+    );
     const accountUsage = [
       {
         runtime: 'claude-code',
@@ -197,8 +199,8 @@ describe('SessionListResponseSchema accountUsage', () => {
         updatedAt: null,
       },
     ];
-    expect(SessionListResponseSchema.parse({ sessions: [], accountUsage }).accountUsage).toEqual(
-      accountUsage
-    );
+    expect(
+      SessionListResponseSchema.parse({ sessions: [], nextCursor: null, accountUsage }).accountUsage
+    ).toEqual(accountUsage);
   });
 });

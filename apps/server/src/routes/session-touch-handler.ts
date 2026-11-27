@@ -77,18 +77,22 @@ export function recordWroteIfPerson(facts: RequestFacts, chatId: string): void {
  *
  * @param touchedSince - ISO-8601 time from the query.
  * @param resolveTouches - The batched lookup; absent means nothing is kept.
+ * @param until - Keep only touches at or before this time: what page one kept.
  */
 export function touchedSinceKeeper(
   touchedSince: string,
-  resolveTouches: ResolveTouches | undefined
+  resolveTouches: ResolveTouches | undefined,
+  until?: string
 ): (merged: readonly { id: string }[]) => ReadonlySet<string> {
   const since = Date.parse(touchedSince);
+  const last = until === undefined ? Infinity : Date.parse(until);
   return (merged) => {
     const kept = new Set<string>();
     if (!resolveTouches || merged.length === 0) return kept;
     for (const [id, touch] of resolveTouches(merged.map((s) => s.id))) {
       const touchedAt = laterIso(touch.openedAt, touch.wroteAt);
-      if (touchedAt && Date.parse(touchedAt) >= since) kept.add(id);
+      const at = touchedAt ? Date.parse(touchedAt) : NaN;
+      if (at >= since && at <= last) kept.add(id);
     }
     return kept;
   };

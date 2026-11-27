@@ -221,7 +221,7 @@ describe('session resolution for an agent this window has never opened', () => {
   /** A transport whose session list actually depends on which directory is asked for. */
   function createPerDirectoryHarness(byCwd: Record<string, Session[]>) {
     const listSessions = vi.fn((cwd?: string) =>
-      Promise.resolve({ sessions: cwd ? (byCwd[cwd] ?? []) : [] })
+      Promise.resolve({ sessions: cwd ? (byCwd[cwd] ?? []) : [], nextCursor: null })
     );
     return { listSessions, ...createHarness(undefined, { listSessions }) };
   }

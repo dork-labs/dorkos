@@ -418,11 +418,11 @@ export function withSpacesExperiment<T extends Transport>(transport: T, enabled 
 /** Create a mock Transport with all methods stubbed via `vi.fn()`. */
 export function createMockTransport(overrides: Partial<Transport> = {}): Transport {
   return {
-    // Aggregated-list envelope (ADR-0310): { sessions, warnings? }, not a bare array.
-    listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
+    // One page of the aggregated list (ADR-0310): { sessions, nextCursor, warnings? }.
+    listSessions: vi.fn().mockResolvedValue({ sessions: [], nextCursor: null }),
     listRecentSessions: vi
       .fn()
-      .mockResolvedValue({ sessions: [], agentActivity: {}, warnings: [] }),
+      .mockResolvedValue({ sessions: [], nextCursor: null, agentActivity: {}, warnings: [] }),
     getSessionDailyCounts: vi
       .fn()
       .mockResolvedValue({ days: 7, dailyCounts: [0, 0, 0, 0, 0, 0, 0], warnings: [] }),

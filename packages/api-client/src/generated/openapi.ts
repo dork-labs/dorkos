@@ -2389,7 +2389,7 @@ export interface paths {
         };
         /**
          * List all sessions
-         * @description Aggregates sessions across every registered runtime (ADR-0310). Runtimes that fail or time out degrade to `warnings[]` entries with partial results. Each session carries its `accountId`, its live `status` (lifecycle and any usage limit; absent when the session is not live and has no stored limit, read as idle), and its flow `trackerItems` (every item it works on, newest first, including work it started in chats of their own) beside the deprecated `trackerItem` (the newest); the envelope carries `accountUsage` for the distinct accounts on the page, omitted when there are none.
+         * @description One page of the chats in a folder, aggregated across every registered runtime (ADR-0310), latest activity first (`updatedAt`, then id); pass `nextCursor` as `cursor` for the next page. A chat updated while paging can repeat or be missed. A caller presenting `X-DorkOS-Agent` lists agent work only, filtered before the page is cut, and its cursor works only for it; a cursor another caller got, or one from before a restart, is refused 400. Runtimes that fail or time out degrade to `warnings[]` entries with partial results. Each session carries its `accountId`, its live `status` (lifecycle and any usage limit; absent when the session is not live and has no stored limit, read as idle), and its flow `trackerItems` (every item it works on, newest first, including work it started in chats of their own) beside the deprecated `trackerItem` (the newest); the envelope carries `accountUsage` for the distinct accounts on the page, omitted when there are none.
          */
         get: operations["sessions.list"];
         put?: never;
@@ -2429,7 +2429,7 @@ export interface paths {
         };
         /**
          * List recent sessions across all agents
-         * @description Fans out session listing across every registered agent (DOR-329), merges by `updatedAt` descending, trims to `limit`, and returns a per-agent latest-activity map plus per-runtime `warnings[]` (ADR-0310). With `touchedSince`, every session whose `lastTouchedByYouAt` is at or after that time is returned too, beyond `limit`, in its `updatedAt` place.
+         * @description Fans out session listing across every registered agent (DOR-329) and returns one page, latest activity first (`updatedAt`, then id), with a per-agent latest-activity map and per-runtime `warnings[]` (ADR-0310); pass `nextCursor` as `cursor` for the next page. A chat updated while paging can repeat or be missed. With `touchedSince`, the first page also holds every session whose `lastTouchedByYouAt` is at or after that time, beyond `limit`, in its `updatedAt` place, and later pages leave out the ones it held (a chat opened again while paging can repeat); a later page asked with another `touchedSince`, or without it, is refused 400. An agent caller lists agent work only, and its cursor works only for it; another caller's cursor, or one from before a restart, is refused 400.
          */
         get: operations["sessions.listRecent"];
         put?: never;
@@ -10110,6 +10110,8 @@ export interface components {
         };
         SessionListResponse: {
             sessions: components["schemas"]["Session"][];
+            /** @description Pass as `cursor` for the next page; null on the last one. */
+            nextCursor: string | null;
             warnings?: components["schemas"]["SessionListWarning"][];
             accountUsage?: components["schemas"]["AccountUsage"][];
         };
@@ -10305,6 +10307,8 @@ export interface components {
         ElicitationMode: "form" | "url";
         RecentSessionsResponse: {
             sessions: components["schemas"]["Session"][];
+            /** @description Pass as `cursor` for the next page; null on the last one. */
+            nextCursor: string | null;
             agentActivity: {
                 [key: string]: string;
             };
@@ -25007,6 +25011,9 @@ export interface operations {
     "sessions.list": {
         parameters: {
             query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
                 limit?: number;
                 cwd?: string;
                 runtime?: string;
@@ -25017,7 +25024,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Session list envelope (merged across runtimes, sorted by updatedAt desc) */
+            /** @description One page of the session list (merged across runtimes, latest activity first) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -25061,6 +25068,9 @@ export interface operations {
     "sessions.listRecent": {
         parameters: {
             query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
                 limit?: number;
                 touchedSince?: string;
             };
@@ -25070,7 +25080,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Recent sessions envelope with per-agent activity map */
+            /** @description One page of recent sessions, with the per-agent activity map */
             200: {
                 headers: {
                     [name: string]: unknown;

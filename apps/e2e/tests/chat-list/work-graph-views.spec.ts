@@ -146,7 +146,8 @@ test.describe('pull requests by chat and by agent', () => {
         const url = new URL(route.request().url());
         if (route.request().method() !== 'GET') return route.continue();
         if (url.pathname === `/api/sessions/${chatId}/work`) return json(route, pullRequests);
-        if (url.pathname === '/api/sessions') return json(route, { sessions: [chat] });
+        if (url.pathname === '/api/sessions')
+          return json(route, { sessions: [chat], nextCursor: null });
         if (url.pathname === `/api/sessions/${chatId}`) return json(route, chat);
         return route.continue();
       });
