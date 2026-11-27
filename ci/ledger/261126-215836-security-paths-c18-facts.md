@@ -22,8 +22,23 @@ the slots and points the home resolver at the live registry
 folders the list does not hold (`services/runtimes/`, `services/harness/`,
 `services/session/turn-port/` and `services/diff/` `agent-facts.ts`; the
 `workspace/` and `browser/` slots are inside folders the list holds, and the
-slot for the files directly in `services/core/` lives in `git-status.ts`,
-which is not on the list). Also `services/harness/marketplace-repo-key.ts`, moved out of
+slot for the files directly in `services/core/` lives in `git-status.ts`). Also `services/harness/marketplace-repo-key.ts`, moved out of
 `services/marketplace/`, which the list holds. Added in `security-gate.yml`'s
 `SECURITY_PATH_PATTERN`, its regex fixture and `Policy.swift`, with a parity
 row each and a look-alike that stays off. Same shape as 261126-123204 (C14).
+
+Also on the main list, at Security's ask:
+`apps/server/src/startup/steps/core-stores\.ts$`, which hands the turn-context
+record the local `/mcp` token to sweep for, and
+`apps/server/src/services/session/turn-context/index\.ts$`, the record's
+install, whose token argument is now required. Neither was held by an existing
+alternative. Two parity rows, each with a look-alike that stays off.
+
+And `apps/server/src/services/core/git-status\.ts$`, which holds git's kill
+switch for git status and the file lister: only that one answer, never the
+agent facts port. It stays there, not in `core/agent-identity/facts/`, because
+importing that from `core/` would re-add the `core -> core/agent-identity` pair
+and two computer wall crossings; `services/core/` is at its file limit, so it is
+not a file of its own. `file-lister.ts` holds no slot state and reads the guard
+from `git-status.ts`, so it is not added. One parity row, with a look-alike that
+stays off.

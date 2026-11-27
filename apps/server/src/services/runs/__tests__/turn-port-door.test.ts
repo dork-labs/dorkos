@@ -17,7 +17,11 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import type { StartTurnInput } from '@dorkos/shared/turn-port';
 
 import { runtimeRegistry } from '../../core/runtime-registry.js';
-import { setAgentHomeRegistry } from '../../core/agent-identity/agent-home.js';
+// The fixture also wires the agent facts port a launch reads the rooms folder through.
+import {
+  clearTestHomes,
+  registerTestHomes,
+} from '../../core/agent-identity/__tests__/agent-home-fixture.js';
 import {
   dispatchMessage,
   resetMessageDispatcher,
@@ -255,12 +259,7 @@ beforeEach(() => {
       updatedAt: now,
     })
     .run();
-  setAgentHomeRegistry({
-    isRegisteredHome: (dir) => dir === AGENT.home,
-    listRegisteredHomes: () => [AGENT.home],
-    managedWorkspaceOwner: () => null,
-    roomsDir: null,
-  });
+  registerTestHomes([AGENT.home]);
   setMessageQueueStore(new MessageQueueStore(db));
   errors = vi.spyOn(logger, 'error');
   inner = new FakeAgentRuntime('port-demo').withScenarios([quick, quick, quick]);
@@ -288,7 +287,7 @@ afterEach(async () => {
   uninstallRunRecord();
   setMessageQueueStore(undefined);
   disposeProjector(sessionId);
-  setAgentHomeRegistry(undefined);
+  clearTestHomes();
   vi.restoreAllMocks();
 });
 

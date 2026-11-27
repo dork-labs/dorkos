@@ -2,27 +2,33 @@ import { runSafeGit } from '@dorkos/shared/safe-git';
 import type { GitStatusResponse, GitStatusError } from '@dorkos/shared/types';
 import { GIT } from '../../config/constants.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
-import { createAgentFactsSlot, type AgentFactsPort } from '@dorkos/shared/agent-facts';
-
-// The agent facts port as the computer-side files directly in `core/` hold it
-// (git status and the file lister read git's kill switch through it; spec
-// `computer-side-starts-alone` §5.3). It lives here, not in a file of its own,
-// because `services/core/` is at its file limit. Startup fills it
-// (`startup/agent-facts.ts`); unwired it fails closed and git runs nowhere.
-const factsSlot = createAgentFactsSlot();
+// Git's kill switch, as the computer-side files directly in `core/` read it (git
+// status and the file lister; spec `computer-side-starts-alone` §5.3). Only the
+// one answer is held here, never the agent facts port, so nothing else about an
+// agent is reachable through this file. It stays here rather than in a file of
+// its own because `services/core/` is at its file limit, and rather than in
+// `core/agent-identity/facts/` because importing that would cross the computer
+// wall. Startup fills it from the port (`startup/agent-facts.ts`); unwired,
+// git runs nowhere.
+let gitGuard: ((dir: string) => boolean) | undefined;
 
 /**
- * Hand the computer-side files in `core/` the agent facts port, or clear it.
+ * Hand this code git's kill switch, or clear it.
  *
- * @param next - The port, or `undefined` to clear it.
+ * @param next - Whether DorkOS may run git in a folder, or `undefined` to clear it.
  */
-export function setCoreFacts(next: AgentFactsPort | undefined): void {
-  factsSlot.set(next);
+export function setGitGuard(next: ((dir: string) => boolean) | undefined): void {
+  gitGuard = next;
 }
 
-/** The agent facts port, or the fail-closed one before startup hands it over. */
-export function coreFacts(): AgentFactsPort {
-  return factsSlot.get();
+/**
+ * Whether DorkOS may run git in a folder: the kill switch startup hands over,
+ * or no before it does.
+ *
+ * @param dir - The folder git would run in.
+ */
+export function mayRunGitIn(dir: string): boolean {
+  return gitGuard ? gitGuard(dir) : false;
 }
 
 /**
@@ -48,7 +54,7 @@ export function coreFacts(): AgentFactsPort {
  * @param cwd - Directory to check (must be inside a git repo)
  */
 export async function getGitStatus(cwd: string): Promise<GitStatusResponse | GitStatusError> {
-  if (!coreFacts().mayRunGit(cwd)) return { error: 'not_git_repo' as const };
+  if (!mayRunGitIn(cwd)) return { error: 'not_git_repo' as const };
   try {
     await validateBoundary(cwd);
   } catch (err) {

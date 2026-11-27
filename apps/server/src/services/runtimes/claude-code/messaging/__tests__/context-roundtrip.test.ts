@@ -15,7 +15,11 @@ import '../../../../core/agent-identity/__tests__/wire-test-facts.js';
 // context-builder.ts pulls these app-wide collaborators at module load; mock
 // them so importing `renderContextEntry` doesn't require real wiring (mirrors
 // services/core/__tests__/context-builder.test.ts).
-vi.mock('../../../../core/git-status.js', () => ({ getGitStatus: vi.fn() }));
+vi.mock('../../../../core/git-status.js', async (importOriginal) => ({
+  // The real module keeps the agent facts slot it holds; only the read is faked.
+  ...(await importOriginal<typeof import('../../../../core/git-status.js')>()),
+  getGitStatus: vi.fn(),
+}));
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn() }));
 vi.mock('../../../../../lib/logger.js', () => ({
   logger: {

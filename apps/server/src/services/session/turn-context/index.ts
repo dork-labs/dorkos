@@ -45,11 +45,12 @@ export {
  *
  * @param db - The DorkOS database.
  * @param handedSecrets - The live secret values the space side holds, read per record.
+ *   Required, so a boot path that installs the record always says what it sweeps for.
  * @returns The installed store.
  */
 export function installTurnContextStore(
   db: Db,
-  handedSecrets: () => readonly string[] = () => []
+  handedSecrets: () => readonly string[]
 ): TurnContextStore {
   const knownSecrets = () => [...secretValuesFromEnv(), ...handedSecrets()];
   const store = new TurnContextStore(db, { knownSecrets });

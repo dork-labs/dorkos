@@ -29,7 +29,7 @@ import {
 import { writeManifest } from '@dorkos/shared/manifest';
 import { agentFacts, wireAgentFacts } from '../../../../../startup/agent-facts.js';
 import { browserFacts, setBrowserFacts } from '../../../../browser/agent-facts.js';
-import { coreFacts, setCoreFacts } from '../../../../core/git-status.js';
+import { mayRunGitIn, setGitGuard } from '../../../../core/git-status.js';
 import { diffFacts, setDiffFacts } from '../../../../diff/agent-facts.js';
 import { harnessPackageFacts, setHarnessPackageFacts } from '../../../../harness/agent-facts.js';
 import { runtimeFacts, setRuntimeFacts } from '../../../../runtimes/agent-facts.js';
@@ -54,7 +54,7 @@ const clearSlots = () => {
   setSessionAgentFacts(undefined);
   setWorkspaceFacts(undefined);
   setDiffFacts(undefined);
-  setCoreFacts(undefined);
+  setGitGuard(undefined);
   setBrowserFacts(undefined);
   setHarnessPackageFacts(undefined);
 };
@@ -100,10 +100,12 @@ afterAll(() => {
 describe('unwired', () => {
   it('every slot reads the fail-closed port', () => {
     clearSlots();
-    for (const read of [runtimeFacts, sessionAgentFacts, workspaceFacts, diffFacts, coreFacts]) {
+    for (const read of [runtimeFacts, sessionAgentFacts, workspaceFacts, diffFacts]) {
       expect(read()).toBe(UNWIRED_AGENT_FACTS);
     }
     expect(browserFacts()).toBe(UNWIRED_AGENT_FACTS);
+    // Git status and the file lister hold only git's kill switch, and it answers no.
+    expect(mayRunGitIn(home)).toBe(false);
     expect(harnessPackageFacts()).toBe(UNWIRED_PACKAGE_FACTS);
   });
 
@@ -112,6 +114,8 @@ describe('unwired', () => {
     expect(facts.home(home)).toEqual({ kind: 'none' });
     expect(facts.home(home, home)).toEqual({ kind: 'refused', reason: 'unregistered-owner' });
     expect(facts.mayRunGit(home)).toBe(false);
+    // A launch is refused inside the rooms' files, so unwired every folder counts as one.
+    expect(facts.insideRoomsDir(home)).toBe(true);
     const refusal = facts.deskRefusal(home, home, 'home');
     expect(refusal?.message).toBe(AGENT_FACTS_UNWIRED);
     roundTrips(DeskRefusalSchema, refusal!);
@@ -142,11 +146,18 @@ describe('unwired', () => {
 describe('wired', () => {
   it('fills every computer-side slot with one port', () => {
     wireAgentFacts();
-    for (const read of [runtimeFacts, sessionAgentFacts, workspaceFacts, diffFacts, coreFacts]) {
+    for (const read of [runtimeFacts, sessionAgentFacts, workspaceFacts, diffFacts]) {
       expect(read()).toBe(agentFacts);
     }
     expect(browserFacts()).toBe(agentFacts);
     expect(harnessPackageFacts()).toBe(agentFacts);
+  });
+
+  it("hands git status and the file lister only git's kill switch, read from the port", () => {
+    let asked: string | undefined;
+    wireAgentFacts({ ...agentFacts, mayRunGit: (dir) => ((asked = dir), true) });
+    expect(mayRunGitIn(home)).toBe(true);
+    expect(asked).toBe(home);
   });
 
   it("serves an agent's facts as the agents.sync body plus its home, desks and author", async () => {

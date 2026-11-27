@@ -298,6 +298,21 @@ for (const [match, miss] of [
     'apps/server/src/services/harness/marketplace-repo-key.ts',
     'apps/server/src/services/harness/marketplace-repo-keys.ts',
   ],
+  // C18 (DOR-5462), at Security's ask: the step that hands the turn-context record the
+  // local /mcp token to sweep for, and the record's install that takes it.
+  [
+    'apps/server/src/startup/steps/core-stores.ts',
+    'apps/server/src/startup/steps/core-stores-old.ts',
+  ],
+  [
+    'apps/server/src/services/session/turn-context/index.ts',
+    'apps/server/src/services/session/turn-context/record-turn-context.ts',
+  ],
+  // C18 (DOR-5462): git status holds git's kill switch for the files directly in core/.
+  [
+    'apps/server/src/services/core/git-status.ts',
+    'apps/server/src/services/core/git-status-old.ts',
+  ],
   // The bars in lib/ every door asks (DOR-4978, Security t1j): who the caller is, and who may
   // make an account decision. Each file by name; a look-alike stays off.
   ['apps/server/src/lib/caller-authority.ts', 'apps/server/src/lib/caller-authority-extra.ts'],

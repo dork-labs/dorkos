@@ -24,9 +24,10 @@
  *
  * Each computer-side folder that reads facts keeps a slot that startup fills
  * ({@link createAgentFactsSlot}). Unwired, the port fails closed
- * ({@link UNWIRED_AGENT_FACTS}): no folder is anybody's home, git runs nowhere,
- * no desk is an agent's, no token is minted, and a renderer throws and names
- * the missing wiring rather than leave a block out.
+ * ({@link UNWIRED_AGENT_FACTS}): no folder is anybody's home, every folder is
+ * treated as the rooms' own files, git runs nowhere, no desk is an agent's, no
+ * token is minted, and a renderer throws and names the missing wiring rather
+ * than leave a block out.
  *
  * The pure helpers every reader of a home needs ({@link homeOf},
  * {@link turnAgentOf}, {@link readHomeManifest}, {@link canonicalDir}) live
@@ -444,8 +445,9 @@ const unwired = (): never => {
 
 /**
  * The port before a space side wires it. It fails closed: no agent, no folder
- * is anybody's home (a turn for a named agent is refused), git runs nowhere,
- * no desk is an agent's, no token, every switch off, and each renderer and
+ * is anybody's home (a turn for a named agent is refused), every folder counts
+ * as inside the rooms' files (so no launch stands there), git runs nowhere, no
+ * desk is an agent's, no token, every switch off, and each renderer and
  * package read throws {@link AGENT_FACTS_UNWIRED}.
  */
 export const UNWIRED_AGENT_FACTS: AgentFactsPort = Object.freeze({
@@ -455,7 +457,7 @@ export const UNWIRED_AGENT_FACTS: AgentFactsPort = Object.freeze({
   folderOfChat: () => undefined,
   home: (_dir: string | undefined, forAgent?: string): HomeResolution =>
     forAgent === undefined ? { kind: 'none' } : { kind: 'refused', reason: 'unregistered-owner' },
-  insideRoomsDir: () => false,
+  insideRoomsDir: () => true,
   mayRunGit: () => false,
   deskRefusal: (forAgent: string, cwd: string): DeskRefusal => ({
     message: AGENT_FACTS_UNWIRED,

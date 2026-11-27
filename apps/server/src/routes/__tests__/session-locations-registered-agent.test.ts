@@ -4,6 +4,8 @@ import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
+// A launch reads the rooms folder through the agent facts port, wired as boot does.
+import '../../services/core/agent-identity/__tests__/wire-test-facts.js';
 import {
   agents,
   eq,

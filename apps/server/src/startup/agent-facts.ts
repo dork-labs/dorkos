@@ -48,7 +48,7 @@ import { isRelayEnabled } from '../services/relay/relay-state.js';
 import { buildTaskAppend } from '../services/tasks/task-append.js';
 import { isTasksEnabled } from '../services/tasks/task-state.js';
 import { setBrowserFacts } from '../services/browser/agent-facts.js';
-import { setCoreFacts } from '../services/core/git-status.js';
+import { setGitGuard } from '../services/core/git-status.js';
 import { setDiffFacts } from '../services/diff/agent-facts.js';
 import { setRuntimeFacts } from '../services/runtimes/agent-facts.js';
 import { setSessionAgentFacts } from '../services/session/turn-port/agent-facts.js';
@@ -97,7 +97,7 @@ export function wireAgentFacts(facts: AgentFactsPort = agentFacts): void {
   setSessionAgentFacts(facts);
   setWorkspaceFacts(facts);
   setDiffFacts(facts);
-  setCoreFacts(facts);
+  setGitGuard((dir) => facts.mayRunGit(dir));
   setBrowserFacts(facts);
   setHarnessPackageFacts(facts);
 }
