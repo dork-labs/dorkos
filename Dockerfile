@@ -173,9 +173,11 @@ ENTRYPOINT ["tini", "--", "dorkos"]
 #
 # Cloud mounts a new volume at the data folder owned by root, so the image
 # starts as root, and scripts/hub-entrypoint.sh gives the folder to node and
-# drops to node before DorkOS starts. DorkOS itself never runs as root. Cloud
-# stops a sleeping hub with SIGINT and a 5-second grace period; tini passes it
-# on.
+# drops to node before DorkOS starts. DorkOS itself never runs as root. A hub
+# ends its own wake (packages/cloud-api, hub-wake.ts and agent-computers.ts):
+# it exits with status zero and is left stopped until a wake. When the hosting
+# service has to stop one for another reason, it sends SIGINT with a 5-second
+# grace period; tini passes it on.
 FROM served AS hub
 LABEL org.opencontainers.image.description="DorkOS hub: a person's own DorkOS in the cloud"
 ENV DORKOS_SERVER_ROLE=hub

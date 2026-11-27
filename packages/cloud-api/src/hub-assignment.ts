@@ -4,12 +4,33 @@ import { HttpsUrlSchema, IdSchema, TimestampSchema } from './primitives.js';
 import { RemoteEdgeProofSchema } from './remote.js';
 
 /*
- * A hub's assignment: who a person's DorkOS in the cloud belongs to, and the
- * keys it serves with (`GET /v1/hubs/self/assignment` and its confirmation).
+ * A person's own DorkOS in the cloud, and the agent computers it runs agents on.
  *
- * Moved out of `hubs.ts` unchanged, so that file stops growing. What a hub is,
- * and its agent computers, stay in `hubs.ts`; what wakes a hub is in
- * `hub-wake.ts`.
+ * A **hub** is a person's DorkOS in the cloud. For a person with no computer
+ * of their own it is the home of their private space; for a person with one,
+ * that computer is the home and the hub is their way in. Either way it is the
+ * home of the agents they run on cloud agent computers. It runs no agents
+ * itself. Cloud keeps a warm pool of hubs that belong to nobody; one is
+ * **assigned** to a person the first time they open the full app. An **agent
+ * computer** is where a cloud agent runs.
+ * A hub never holds a hosting supplier's credentials: it asks this service to
+ * start or stop its own computers, and the service makes the call, so a hub
+ * that is compromised cannot reach anybody else's machines.
+ *
+ * Every hub and every agent computer is an instance in the `/v1/instances`
+ * sense, with its own instance API key. The routes in this file answer only
+ * the caller's own hub.
+ *
+ * "Hub" is a word for this wire and for code. Nothing a person reads says it:
+ * the app says "your DorkOS in the cloud", or "Private" where it is the home of
+ * the private space.
+ *
+ * What wakes a hub that is asleep, and its next-wake time, are in
+ * `hub-wake.ts`. Agent computers, how they boot, link and report being busy,
+ * are in `agent-computers.ts`.
+ *
+ * This file holds a hub's assignment: who it belongs to, and the keys it
+ * serves with (`GET /v1/hubs/self/assignment` and its confirmation).
  */
 /**
  * Where a hub is in being given to a person.

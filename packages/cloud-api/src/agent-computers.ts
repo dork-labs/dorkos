@@ -10,29 +10,10 @@ import {
 import { HttpsOriginSchema } from './hub-assignment.js';
 
 /**
- * A person's own DorkOS in the cloud, and the agent computers it runs agents on.
+ * Cloud agent computers: where a person's cloud agents run, for their hub.
  *
- * A **hub** is a person's DorkOS in the cloud. For a person with no computer
- * of their own it is the home of their private space; for a person with one,
- * that computer is the home and the hub is their way in. Either way it is the
- * home of the agents they run on cloud agent computers. It runs no agents
- * itself. Cloud keeps a warm pool of hubs that belong to nobody; one is
- * **assigned** to a person the first time they open the full app. An **agent
- * computer** is where a cloud agent runs.
- * A hub never holds a hosting supplier's credentials: it asks this service to
- * start or stop its own computers, and the service makes the call, so a hub
- * that is compromised cannot reach anybody else's machines.
- *
- * Every hub and every agent computer is an instance in the `/v1/instances`
- * sense, with its own instance API key. The routes here answer only the
- * caller's own hub and its own account's computers.
- *
- * "Hub" is a word for this wire and for code. Nothing a person reads says it:
- * the app says "your DorkOS in the cloud", or "Private" where it is the home of
- * the private space.
- *
- * What wakes a hub that is asleep, and its next-wake time, are in
- * `hub-wake.ts`.
+ * Moved out of `hubs.ts`; what a hub is, is in `hub-assignment.ts`. Every agent computer is an
+ * instance in the `/v1/instances` sense, with its own instance API key.
  *
  * **How an agent computer boots.** The service starts it with three values and
  * nothing else that grants anything:
@@ -74,6 +55,21 @@ import { HttpsOriginSchema } from './hub-assignment.js';
  * (`GET /v1/agent-computers/self/assignment`) and redeems it at its hub, which
  * pins the public half of the computer's own signing key, as it does for a
  * Mac. The service only carries the code; it never vouches for a key.
+ *
+ * **What keeps a home awake, and what ends its wake.** A person's DorkOS in
+ * the cloud (a hub) ends its own wake: its program decides by its own idle
+ * rule that it is idle and exits with status zero. The service treats a clean
+ * exit as sleep: the hub is left stopped, never restarted, until something in
+ * `hub-wake.ts` wakes it. Any other exit is a failure, and the service may
+ * start the hub again. The hosting service never stops a running hub for
+ * being idle and keeps no idle window for it. A home from a build that has no
+ * idle rule never ends its wake: it stays awake until it is ended or it fails.
+ * So keeping a home awake is the home's own duty: a home is not idle while a
+ * start of one of its computers that it asked for is outstanding (for at most
+ * five minutes after each start call; a wait between retries keeps it awake
+ * only within those five minutes), or while one of its cloud agent computers
+ * is connected to it. A computer that needs a home that is
+ * asleep anyway asks for the wake in `hub-wake.ts` with its own key.
  */
 
 /**
@@ -95,10 +91,13 @@ export type CloudComputerState = z.infer<typeof CloudComputerStateSchema>;
  * `requested` (its hub or its owner stopped it), `idle` (nothing was due),
  * `out_of_credits` (shown read-only, data kept), `held` (the account is on
  * hold), `suspended` (this one computer was switched off by the service; its
- * `reasonText` says why). Names no allowance and no price.
+ * `reasonText` says why), `time_limit` (it ran for
+ * {@link AGENT_COMPUTER_BUSY_MAX_SECONDS} without a break). Names no allowance
+ * and no price. Read tolerantly, so an older app reads a reason it does not
+ * know as unrecognised.
  */
 export const CloudComputerStopReasonSchema = z
-  .enum(['requested', 'idle', 'out_of_credits', 'held', 'suspended'])
+  .enum(['requested', 'idle', 'out_of_credits', 'held', 'suspended', 'time_limit'])
   .describe('Why a cloud agent computer is stopped, in terms the app can show.');
 
 /** Why a cloud agent computer is stopped. */
@@ -155,7 +154,10 @@ export type CloudComputerListResponse = z.infer<typeof CloudComputerListResponse
  *
  * Retry-safe by `idempotencyKey`, scoped to the caller: a repeat answers the
  * same computer with `replayed: true`. A refusal a larger allowance or a card
- * would lift is `entitlement_required`, with the service's own words.
+ * would lift is `entitlement_required`, with the service's own words. Such a
+ * refusal makes nothing and records nothing against its key, so sending the
+ * same key again after the card step makes the computer; only a create that
+ * made one is replayed. A fresh key works as well.
  */
 export const CloudComputerCreateRequestSchema = z
   .object({
@@ -189,6 +191,14 @@ export type CloudComputerCreateResponse = z.infer<typeof CloudComputerCreateResp
  * gets there on its own. Starting a running computer, or stopping a stopped
  * one, is not an error: it answers the computer as it is. Only the account's
  * own hub (its instance key) or the account's own person may call either.
+ *
+ * - **A start of a computer that is `stopping`** is accepted but not acted on:
+ *   it answers the computer as it is, `stopping`, and no start waits behind
+ *   the stop. Ask again once the computer reads `stopped`.
+ * - **A computer stopped for `out_of_credits`, `held` or `suspended`** cannot
+ *   be started, not even to read its history or move an agent out. A start
+ *   answers it as it is, stopped, with the same reason and the service's own
+ *   words where it has them. Its data stays on its disk while it is stopped.
  */
 export const CloudComputerTransitionResponseSchema = z
   .object({
@@ -416,6 +426,13 @@ export type AgentComputerAssignment = z.infer<typeof AgentComputerAssignmentSche
 export const AGENT_COMPUTER_BUSY_TTL_SECONDS = 600 as const;
 
 /**
+ * An agent computer's idle window: how long it must go with `busy` false or
+ * expired before the service stops it for being idle. The same stretch of idle
+ * is what counts as a break for {@link AGENT_COMPUTER_BUSY_MAX_SECONDS}.
+ */
+export const AGENT_COMPUTER_IDLE_WINDOW_SECONDS = 600 as const;
+
+/**
  * The longest an agent computer runs without a break, however often it says
  * it is busy: six hours. Past it the service stops the computer and tells the
  * owner, whatever `busy` says.
@@ -435,7 +452,13 @@ export const AGENT_COMPUTER_BUSY_MAX_SECONDS = 21600 as const;
  *   of running without a break the service stops the computer and tells the
  *   owner, whatever `busy` says.
  * - **Idle stop.** The service stops a computer for being idle only once its
- *   idle window has passed with `busy` false or expired.
+ *   idle window ({@link AGENT_COMPUTER_IDLE_WINDOW_SECONDS}) has passed with
+ *   `busy` false or expired.
+ * - **Busy before a stop.** After the service answers `204` to `busy: true`,
+ *   it does not begin an idle stop until that report expires. So a computer
+ *   that was idle takes a new turn only after a `busy: true` answered `204`.
+ *   Once a stop has begun, `busy: true` is answered `409` `conflict`, never
+ *   `204`: the computer takes no new turn and lets the stop finish.
  */
 export const AgentComputerActivityRequestSchema = z
   .object({
@@ -446,7 +469,7 @@ export const AgentComputerActivityRequestSchema = z
       ),
   })
   .describe(
-    'Whether an agent computer is in the middle of work. That computer`s instance key only; answered 204.'
+    'Whether an agent computer is in the middle of work. That computer`s instance key only; answered 204, or 409 for busy once a stop has begun.'
   );
 
 /** Whether an agent computer is in the middle of work. */

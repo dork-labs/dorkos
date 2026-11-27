@@ -27,6 +27,15 @@
       "reasonText": "This computer was switched off. Contact support to turn it back on.",
       "createdAt": "2026-11-04T10:00:00Z",
       "stateChangedAt": "2026-11-06T10:00:00Z"
+    },
+    {
+      "id": "cmp_0004",
+      "instanceId": "inst_0104",
+      "displayName": "Fourth cloud computer",
+      "state": "stopped",
+      "stopReason": "time_limit",
+      "createdAt": "2026-11-04T10:00:00Z",
+      "stateChangedAt": "2026-11-06T16:00:00Z"
     }
   ]
 }
