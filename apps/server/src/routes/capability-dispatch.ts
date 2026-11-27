@@ -73,6 +73,7 @@ import { heldWifiOwner, personProof } from '../services/todos/caller.js';
 import type { RequestFacts } from '../http/request-facts.js';
 import { gateResponse, loggableRefusal, toolRefusalProblem } from './capability-refusals.js';
 import { holdConfirmFirst } from './capability-confirm-first.js';
+import { requestAbortSignal } from './connector-owner-boundary.js';
 import { isDocOperatorAccount } from '../services/canvas/doc-channel/doc-source-policy.js';
 import { problemRefusalUnlessOwner } from './cloud-owner-bar.js';
 import { CONFIRM_ANOTHER_WAY, frontDoorProblem } from './front-door-step-up.js';
@@ -94,6 +95,14 @@ const STILL_STARTING = 'DorkOS is still starting. Try again in a moment.';
 
 /** What an id no capability has answers. */
 const UNKNOWN_CAPABILITY = 'No action has that id. List them with `dorkos capabilities`.';
+
+/**
+ * The capabilities whose call stops when its client goes away, as their hand
+ * routes did (`requestAbortSignal`): the live request's signal reaches the
+ * handler as `context.signal`. A held call's commit gets none, as the hand
+ * route's closure over the asking request never fired once that request ended.
+ */
+const FOLLOWS_CLIENT: ReadonlySet<string> = new Set(['connectors.answer_agent_request']);
 
 /** What a commit answers when its confirmation was not for the call it ran. */
 const CONFIRMED_ANOTHER_CALL = 'That confirmation was for a different request. Confirm this one.';
@@ -408,8 +417,11 @@ async function invokeAs(
         )
       : undefined;
 
+  const active =
+    confirmed === undefined && FOLLOWS_CLIENT.has(id) ? requestAbortSignal(c) : undefined;
   try {
     const result = await registry.invoke(id, input, {
+      ...(active ? { signal: active.signal } : {}),
       ...(identity ? { identity } : {}),
       ...(agentIdentityPresented ? { agentIdentityPresented } : {}),
       ...(user ? { userId: user.userId } : {}),
@@ -448,6 +460,8 @@ async function invokeAs(
     }
     logger.error('[capabilities] invoke failed', { id, err });
     return problem(c, 'internal_error', { detail: CAPABILITY_FAILED });
+  } finally {
+    active?.dispose();
   }
 }
 

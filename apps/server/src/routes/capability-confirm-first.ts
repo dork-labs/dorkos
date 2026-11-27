@@ -26,6 +26,11 @@
  *   runs, before anything about the hold, the caller bar afresh, the same-kind
  *   check, then the front-door bar and its ingress; a refusal reads as no
  *   hold and leaves it held. The call then runs with the confirm's own pass.
+ *   So a confirm that came another way in answers `404 expired` here, where a
+ *   front-door hold with no caller bar (#4526's MCP holds) answers `403`
+ *   `CONFIRM_ANOTHER_WAY` after the password: behind a caller bar the
+ *   check runs before anything about the hold, and Security's terms (t1j,
+ *   2026-11-27) say such a refusal tells the caller nothing about it.
  * - **Audited without the input**: the hold and the confirm each leave a row
  *   naming the capability and its bar, and nothing it was sent.
  *

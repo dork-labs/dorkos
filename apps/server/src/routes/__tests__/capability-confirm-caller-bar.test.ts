@@ -25,6 +25,7 @@ import {
 import {
   composeRegistry,
   type CapabilityHandlerContext,
+  type CapabilityInvocationContext,
 } from '../../services/core/capabilities/index.js';
 import { defineCapability } from '../../services/core/capabilities/capability-definition.js';
 import { CONFIRM_FIRST_CAPABILITY_IDS } from '../../services/core/capabilities/declarations/narrow-declarations.js';
@@ -35,6 +36,20 @@ import { frontDoorStepUpHarness } from './front-door-step-up-harness.js';
 
 /** What each run's handler saw: the passes the registry handed it. */
 const ran: Array<Pick<CapabilityHandlerContext, 'ownerAuthority' | 'personBar'>> = [];
+
+/**
+ * Every pass the registry was handed, ask and commit alike, read by a
+ * preflight that runs before the hold: the commit's must be a new one.
+ */
+const supplied: unknown[] = [];
+const recordPass = async (
+  _deps: unknown,
+  _input: unknown,
+  context: CapabilityInvocationContext
+) => {
+  supplied.push(context.accountDecision ?? context.personBar);
+  return undefined as never;
+};
 
 /** A front-door hold on a made-up write, with the sheet built from its input alone. */
 const hold = {
@@ -67,6 +82,7 @@ const account = defineCapability({
       ownerOnly: ACCOUNT_DECISION_OWNER_ONLY[0],
     },
   },
+  preflight: recordPass,
   invoke: async (_deps, { n }, context) => {
     ran.push({ ownerAuthority: context.ownerAuthority });
     return { ran: n };
@@ -92,6 +108,7 @@ const person = defineCapability({
       personCopy: { code: 'operator_only', subject: 'made-up things', agent: 'Not for agents.' },
     },
   },
+  preflight: recordPass,
   invoke: async (_deps, { n }, context) => {
     ran.push({ personBar: context.personBar });
     return { ran: n };
@@ -142,6 +159,7 @@ beforeEach(() => {
   resetHeldStepUpsForTests();
   ownerSuffix = '';
   ran.length = 0;
+  supplied.length = 0;
   audited = [];
   initAuditTrail({
     log: {
@@ -238,6 +256,11 @@ describe.each(ROWS)('the %s bar with the front-door hold, through %s', (bar, doo
     } else {
       expect(ran[0]!.personBar?.caller).toBe('person');
     }
+    // The ask's pass and the commit's: two, and never the same one.
+    expect(supplied).toHaveLength(2);
+    expect(supplied[0]).toBeDefined();
+    expect(supplied[1]).toBeDefined();
+    expect(supplied[1]).not.toBe(supplied[0]);
   });
 
   it('2. a confirm by another kind of caller is refused, never relabelled, and the hold stays usable', async () => {
@@ -338,13 +361,44 @@ describe.each(ROWS)('the %s bar with the front-door hold, through %s', (bar, doo
     }
   });
 
-  it('keeps #4526’s proofs: the ingress it was asked by, and no agent path', async () => {
-    const heldId = await ask(door, id, path);
-    const tunnel = await owner
-      .call('post', `/api/step-up/${heldId}/password`, 'own-tunnel')
-      .set('Cookie', owner.currentCookie('direct'))
+  it('a confirm that came another way in answers as no hold, and the hold still confirms the way it was asked', async () => {
+    const asked = await owner
+      .call('post', door === 'rest' ? path : `/api/capabilities/${id}/invoke`, 'own-tunnel')
+      .send({ n: 5 });
+    expect(asked.status).toBe(428);
+    const heldId = asked.body.heldActionId as string;
+    // Over HTTP a sign-in never crosses ways in: the session gate refuses the
+    // tunnel's session at the computer before the step-up route runs.
+    const here = await owner
+      .call('post', `/api/step-up/${heldId}/password`)
+      .set('Cookie', owner.currentCookie('own-tunnel'))
       .send({ password: 'made-up-correct-horse-battery' });
-    expect(tunnel.body.ok).not.toBe(true);
+    expect(here.status).toBe(401);
+    // Behind it, the hold's own check refuses the very session that asked at the
+    // computer, so the step-up route answers as no hold (404 expired, below).
+    const atComputer = { ...confirming(heldId), connectionEncrypted: true };
+    expect(admitsConfirm(heldId, atComputer)).toBe(false);
+    expect(audited.map((row) => row.error)).toContain('not-admitted-ingress');
+    expect(await noHoldAnswer()).toMatchObject({
+      status: 404,
+      body: { detail: 'That took too long. Nothing changed.' },
+    });
+    expect(ran).toHaveLength(0);
+    const done = await owner.confirm(heldId, 'own-tunnel');
+    expect(done.body).toMatchObject({ ok: true, status: 200, result: { ran: 5 } });
+  });
+
+  it('a sheet read or a cancel runs no caller bar and records no refused confirm', async () => {
+    const heldId = await ask(door, id, path);
+    if (bar === 'account-decision') ownerSuffix = '-someone-else';
+    expect((await owner.call('get', `/api/step-up/${heldId}`)).status).toBe(200);
+    expect((await owner.call('delete', `/api/step-up/${heldId}`)).status).toBe(204);
+    ownerSuffix = '';
+    expect(audited.filter((row) => row.error?.startsWith('not-admitted-'))).toEqual([]);
+  });
+
+  it('keeps #4526’s proofs: no agent path', async () => {
+    const heldId = await ask(door, id, path);
     const agent = await owner
       .call('post', door === 'rest' ? path : `/api/capabilities/${id}/invoke`)
       .set('X-DorkOS-Agent', 'made-up-agent-token')
