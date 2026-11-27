@@ -1255,6 +1255,114 @@
           "allow"
         ]
       },
+      "KeepAwakeStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "The `keepAwake.whileAgentsWork` setting."
+          },
+          "supported": {
+            "type": "boolean",
+            "description": "Whether this computer can be held awake right now. False with reason `denied` is temporary: it is retried."
+          },
+          "reason": {
+            "$ref": "#/components/schemas/KeepAwakeUnsupportedReason"
+          },
+          "asserted": {
+            "type": "boolean",
+            "description": "Whether the operating system is being told to stay awake right now."
+          },
+          "working": {
+            "type": "object",
+            "properties": {
+              "chats": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Agent turns in flight that are not room replies or task runs."
+              },
+              "rooms": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Room replies in flight."
+              },
+              "tasks": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Task runs in flight. A run counts once, including its turn."
+              },
+              "waking": {
+                "type": "boolean",
+                "description": "Awake for a scheduled run that is about to start."
+              }
+            },
+            "required": [
+              "chats",
+              "rooms",
+              "tasks",
+              "waking"
+            ],
+            "description": "What is keeping the computer awake. Each piece of work counts once."
+          },
+          "wake": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "setup": {
+                "type": "string",
+                "enum": [
+                  "ready",
+                  "needed",
+                  "unsupported"
+                ]
+              },
+              "nextWakeAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "setupCommand": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "enabled",
+              "setup",
+              "nextWakeAt",
+              "setupCommand"
+            ],
+            "description": "Waking the computer for scheduled runs. Not built yet: always disabled, `unsupported`, with no next wake and no setup command."
+          }
+        },
+        "required": [
+          "enabled",
+          "supported",
+          "reason",
+          "asserted",
+          "working",
+          "wake"
+        ]
+      },
+      "KeepAwakeUnsupportedReason": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "container",
+          "tool-missing",
+          "denied",
+          "platform",
+          null
+        ],
+        "description": "Why not, when `supported` is false; null otherwise. `denied` is retried on a backoff and when the setting is switched off and on; the others last until restart."
+      },
       "FileDocumentSaveReceipt": {
         "type": "object",
         "properties": {
@@ -2785,124 +2893,1440 @@
           }
         ]
       },
-      "HealthResponse": {
-        "type": "object",
-        "properties": {
-          "status": {
-            "type": "string"
+      "DorkOsEvent": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "connected"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
           },
-          "version": {
-            "type": "string"
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "heartbeat"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
           },
-          "uptime": {
-            "type": "number"
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "session_upserted"
+                ]
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "session_upserted"
+                    ]
+                  },
+                  "session": {
+                    "$ref": "#/components/schemas/Session"
+                  }
+                },
+                "required": [
+                  "type",
+                  "session"
+                ]
+              }
+            },
+            "required": [
+              "seq",
+              "at",
+              "type",
+              "payload"
+            ]
           },
-          "tunnel": {
-            "$ref": "#/components/schemas/TunnelStatus"
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "session_removed"
+                ]
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "session_removed"
+                    ]
+                  },
+                  "sessionId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "sessionId"
+                ]
+              }
+            },
+            "required": [
+              "seq",
+              "at",
+              "type",
+              "payload"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "session_status"
+                ]
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "session_status"
+                    ]
+                  },
+                  "sessionId": {
+                    "type": "string"
+                  },
+                  "cwd": {
+                    "type": "string"
+                  },
+                  "retiredSessionId": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "$ref": "#/components/schemas/SessionStatus"
+                  }
+                },
+                "required": [
+                  "type",
+                  "sessionId",
+                  "status"
+                ]
+              }
+            },
+            "required": [
+              "seq",
+              "at",
+              "type",
+              "payload"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "session_list_invalidated"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "account_usage"
+                ]
+              },
+              "payload": {
+                "$ref": "#/components/schemas/AccountUsage"
+              }
+            },
+            "required": [
+              "seq",
+              "at",
+              "type",
+              "payload"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "interaction_pending"
+                ]
+              },
+              "payload": {
+                "$ref": "#/components/schemas/InteractionPendingEvent"
+              }
+            },
+            "required": [
+              "seq",
+              "at",
+              "type",
+              "payload"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "interaction_resolved"
+                ]
+              },
+              "payload": {
+                "$ref": "#/components/schemas/InteractionResolvedEvent"
+              }
+            },
+            "required": [
+              "seq",
+              "at",
+              "type",
+              "payload"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "approval_pending"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "approval_resolved"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "standing_pending"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "standing_resolved"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "notification"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "notification_read"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "read_cursor"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "room_created"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "room_updated"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "room_member_added"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "room_member_removed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "room_activity"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "room_presence"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "room_awaiting"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "relay_connected"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "relay_message"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "relay_backpressure"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "relay_signal"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "relay_flow"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "relay_dead_letter"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "relay_bindings_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "relay_adapters_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "relay_chat_unclaimed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "relay_chat_unclaimed_burst"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "connector_agent_requests_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tasks_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "task_run_failed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "task_run_finished"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "task_run_updated"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "agents_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "agent_pauses_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "mesh_liveness_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "extension_reloaded"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "capabilities_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "commands_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "marketplace_dev_link_reloaded"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "config_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "keep_awake_status"
+                ]
+              },
+              "payload": {
+                "$ref": "#/components/schemas/KeepAwakeStatus"
+              }
+            },
+            "required": [
+              "seq",
+              "at",
+              "type",
+              "payload"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tunnel_status"
+                ]
+              },
+              "payload": {
+                "$ref": "#/components/schemas/TunnelStatus"
+              }
+            },
+            "required": [
+              "seq",
+              "at",
+              "type",
+              "payload"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "session_relay_presence"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "local_browser_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "community_connections_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server recorded the event, ISO 8601."
+              },
+              "type": {
+                "type": "string",
+                "pattern": "^ext:[^:]+:.+$",
+                "description": "`ext:<extensionId>:<event>`, an event an extension emits."
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
           }
-        },
-        "required": [
-          "status",
-          "version",
-          "uptime"
-        ]
-      },
-      "TunnelStatus": {
-        "type": "object",
-        "properties": {
-          "enabled": {
-            "type": "boolean"
-          },
-          "connected": {
-            "type": "boolean"
-          },
-          "isRunning": {
-            "type": "boolean"
-          },
-          "url": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "port": {
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "startedAt": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "authEnabled": {
-            "type": "boolean"
-          },
-          "tokenConfigured": {
-            "type": "boolean"
-          },
-          "domain": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "mode": {
-            "type": "string",
-            "enum": [
-              "off",
-              "byo",
-              "managed"
-            ]
-          }
-        },
-        "required": [
-          "enabled",
-          "connected",
-          "isRunning",
-          "url",
-          "port",
-          "startedAt",
-          "authEnabled",
-          "tokenConfigured",
-          "domain"
-        ]
-      },
-      "SessionListResponse": {
-        "type": "object",
-        "properties": {
-          "sessions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Session"
-            }
-          },
-          "nextCursor": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Pass as `cursor` for the next page; null on the last one."
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SessionListWarning"
-            }
-          },
-          "accountUsage": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AccountUsage"
-            }
-          }
-        },
-        "required": [
-          "sessions",
-          "nextCursor"
-        ]
+        ],
+        "description": "One event on the global stream: `{ seq, at, type, payload }`. `seq` only grows within one stream, may skip numbers, and is never compared across streams."
       },
       "Session": {
         "type": "object",
@@ -3322,42 +4746,299 @@
           }
         ]
       },
-      "SessionListWarning": {
+      "SessionStatus": {
         "type": "object",
         "properties": {
-          "runtime": {
+          "contextUsage": {
+            "$ref": "#/components/schemas/SessionContextUsage"
+          },
+          "cost": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageStatus"
+          },
+          "accountUsage": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AccountUsage"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "cacheStats": {
+            "$ref": "#/components/schemas/SessionCacheStats"
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "permissionMode": {
+            "$ref": "#/components/schemas/PermissionModeId"
+          },
+          "todoCounts": {
+            "$ref": "#/components/schemas/SessionTodoCounts"
+          },
+          "runningSubagentCount": {
+            "type": "integer",
+            "default": 0
+          },
+          "runningSubagents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunningTask"
+            }
+          },
+          "lifecycle": {
+            "$ref": "#/components/schemas/SessionLifecycle"
+          },
+          "lastError": {
+            "$ref": "#/components/schemas/ErrorEvent"
+          },
+          "limit": {
+            "$ref": "#/components/schemas/SessionLimit"
+          },
+          "activity": {
+            "$ref": "#/components/schemas/SessionActivity"
+          },
+          "steerable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "contextUsage",
+          "cost",
+          "cacheStats",
+          "model",
+          "permissionMode",
+          "todoCounts",
+          "lifecycle"
+        ]
+      },
+      "SessionContextUsage": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "totalTokens": {
+            "type": "integer"
+          },
+          "maxTokens": {
+            "type": "integer"
+          },
+          "outputTokens": {
+            "type": "integer"
+          },
+          "cacheReadTokens": {
+            "type": "integer"
+          },
+          "cacheCreationTokens": {
+            "type": "integer"
+          },
+          "observedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "totalTokens",
+          "maxTokens",
+          "outputTokens",
+          "cacheReadTokens",
+          "cacheCreationTokens"
+        ]
+      },
+      "UsageStatus": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "subscription",
+              "pay-as-you-go"
+            ]
+          },
+          "utilization": {
+            "type": "number",
+            "minimum": 0
+          },
+          "windowLabel": {
             "type": "string"
           },
+          "resetsAt": {
+            "type": "string"
+          },
+          "costUsd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "costBasis": {
+            "type": "string",
+            "enum": [
+              "list",
+              "managed",
+              "unknown"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/UsageState"
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "default": null,
+        "required": [
+          "kind"
+        ]
+      },
+      "UsageState": {
+        "type": "string",
+        "enum": [
+          "ok",
+          "warning",
+          "exhausted"
+        ]
+      },
+      "SessionCacheStats": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "cacheReadTokens": {
+            "type": "integer"
+          },
+          "cacheCreationTokens": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cacheReadTokens",
+          "cacheCreationTokens"
+        ]
+      },
+      "SessionTodoCounts": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "completed": {
+            "type": "integer"
+          },
+          "inProgress": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "completed",
+          "inProgress"
+        ]
+      },
+      "RunningTask": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "taskType": {
+            "$ref": "#/components/schemas/BackgroundTaskType"
+          },
+          "description": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "taskId"
+        ]
+      },
+      "BackgroundTaskType": {
+        "type": "string",
+        "enum": [
+          "agent",
+          "bash",
+          "other"
+        ]
+      },
+      "ErrorEvent": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
           "message": {
             "type": "string"
           },
-          "account": {
+          "code": {
+            "type": "string"
+          },
+          "category": {
+            "$ref": "#/components/schemas/ErrorCategory"
+          },
+          "details": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "sourceDispatchId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "default": null,
+        "required": [
+          "message"
+        ]
+      },
+      "ErrorCategory": {
+        "type": "string",
+        "enum": [
+          "max_turns",
+          "execution_error",
+          "budget_exceeded",
+          "output_format_error",
+          "auth_error",
+          "model_unavailable",
+          "runtime_update_required"
+        ]
+      },
+      "SessionActivity": {
+        "type": "object",
+        "properties": {
+          "toolName": {
+            "type": "string"
+          },
+          "target": {
             "type": "string"
           }
         },
         "required": [
-          "runtime",
-          "message"
-        ]
-      },
-      "PendingInteractionsResponse": {
-        "type": "object",
-        "properties": {
-          "interactions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/InteractionPendingEvent"
-            }
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "interactions"
+          "toolName"
         ]
       },
       "InteractionPendingEvent": {
@@ -3627,6 +5308,196 @@
         "enum": [
           "form",
           "url"
+        ]
+      },
+      "InteractionResolvedEvent": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "interactionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "answered",
+              "cancelled",
+              "expired"
+            ]
+          },
+          "resolvedAt": {
+            "type": "string"
+          },
+          "resolvedBy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "interactionId",
+          "outcome",
+          "resolvedAt"
+        ]
+      },
+      "TunnelStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "isRunning": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "port": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "startedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "authEnabled": {
+            "type": "boolean"
+          },
+          "tokenConfigured": {
+            "type": "boolean"
+          },
+          "domain": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "off",
+              "byo",
+              "managed"
+            ]
+          }
+        },
+        "required": [
+          "enabled",
+          "connected",
+          "isRunning",
+          "url",
+          "port",
+          "startedAt",
+          "authEnabled",
+          "tokenConfigured",
+          "domain"
+        ]
+      },
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "uptime": {
+            "type": "number"
+          },
+          "tunnel": {
+            "$ref": "#/components/schemas/TunnelStatus"
+          }
+        },
+        "required": [
+          "status",
+          "version",
+          "uptime"
+        ]
+      },
+      "SessionListResponse": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Session"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` for the next page; null on the last one."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionListWarning"
+            }
+          },
+          "accountUsage": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccountUsage"
+            }
+          }
+        },
+        "required": [
+          "sessions",
+          "nextCursor"
+        ]
+      },
+      "SessionListWarning": {
+        "type": "object",
+        "properties": {
+          "runtime": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "account": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "runtime",
+          "message"
+        ]
+      },
+      "PendingInteractionsResponse": {
+        "type": "object",
+        "properties": {
+          "interactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InteractionPendingEvent"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "interactions"
         ]
       },
       "RecentSessionsResponse": {
@@ -4230,14 +6101,6 @@
           "startedAt"
         ]
       },
-      "BackgroundTaskType": {
-        "type": "string",
-        "enum": [
-          "agent",
-          "bash",
-          "other"
-        ]
-      },
       "BackgroundTaskStatus": {
         "type": "string",
         "enum": [
@@ -4300,18 +6163,6 @@
         "required": [
           "type",
           "message"
-        ]
-      },
-      "ErrorCategory": {
-        "type": "string",
-        "enum": [
-          "max_turns",
-          "execution_error",
-          "budget_exceeded",
-          "output_format_error",
-          "auth_error",
-          "model_unavailable",
-          "runtime_update_required"
         ]
       },
       "ElicitationPart": {
@@ -7260,132 +9111,6 @@
           }
         ]
       },
-      "UsageStatus": {
-        "type": [
-          "object",
-          "null"
-        ],
-        "properties": {
-          "kind": {
-            "type": "string",
-            "enum": [
-              "subscription",
-              "pay-as-you-go"
-            ]
-          },
-          "utilization": {
-            "type": "number",
-            "minimum": 0
-          },
-          "windowLabel": {
-            "type": "string"
-          },
-          "resetsAt": {
-            "type": "string"
-          },
-          "costUsd": {
-            "type": "number",
-            "minimum": 0
-          },
-          "costBasis": {
-            "type": "string",
-            "enum": [
-              "list",
-              "managed",
-              "unknown"
-            ]
-          },
-          "state": {
-            "$ref": "#/components/schemas/UsageState"
-          },
-          "detail": {
-            "type": "string"
-          }
-        },
-        "default": null,
-        "required": [
-          "kind"
-        ]
-      },
-      "UsageState": {
-        "type": "string",
-        "enum": [
-          "ok",
-          "warning",
-          "exhausted"
-        ]
-      },
-      "SessionCacheStats": {
-        "type": [
-          "object",
-          "null"
-        ],
-        "properties": {
-          "cacheReadTokens": {
-            "type": "integer"
-          },
-          "cacheCreationTokens": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "cacheReadTokens",
-          "cacheCreationTokens"
-        ]
-      },
-      "SessionTodoCounts": {
-        "type": [
-          "object",
-          "null"
-        ],
-        "properties": {
-          "total": {
-            "type": "integer"
-          },
-          "completed": {
-            "type": "integer"
-          },
-          "inProgress": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "total",
-          "completed",
-          "inProgress"
-        ]
-      },
-      "ErrorEvent": {
-        "type": [
-          "object",
-          "null"
-        ],
-        "properties": {
-          "message": {
-            "type": "string"
-          },
-          "code": {
-            "type": "string"
-          },
-          "category": {
-            "$ref": "#/components/schemas/ErrorCategory"
-          },
-          "details": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "sourceDispatchId": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "default": null,
-        "required": [
-          "message"
-        ]
-      },
       "TaskItem": {
         "type": "object",
         "properties": {
@@ -9412,155 +11137,6 @@
         "enum": [
           "restart_stopped",
           null
-        ]
-      },
-      "SessionStatus": {
-        "type": "object",
-        "properties": {
-          "contextUsage": {
-            "$ref": "#/components/schemas/SessionContextUsage"
-          },
-          "cost": {
-            "type": [
-              "number",
-              "null"
-            ]
-          },
-          "usage": {
-            "$ref": "#/components/schemas/UsageStatus"
-          },
-          "accountUsage": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AccountUsage"
-              },
-              {
-                "type": [
-                  "object",
-                  "null"
-                ]
-              }
-            ]
-          },
-          "cacheStats": {
-            "$ref": "#/components/schemas/SessionCacheStats"
-          },
-          "model": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "permissionMode": {
-            "$ref": "#/components/schemas/PermissionModeId"
-          },
-          "todoCounts": {
-            "$ref": "#/components/schemas/SessionTodoCounts"
-          },
-          "runningSubagentCount": {
-            "type": "integer",
-            "default": 0
-          },
-          "runningSubagents": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RunningTask"
-            }
-          },
-          "lifecycle": {
-            "$ref": "#/components/schemas/SessionLifecycle"
-          },
-          "lastError": {
-            "$ref": "#/components/schemas/ErrorEvent"
-          },
-          "limit": {
-            "$ref": "#/components/schemas/SessionLimit"
-          },
-          "activity": {
-            "$ref": "#/components/schemas/SessionActivity"
-          },
-          "steerable": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "contextUsage",
-          "cost",
-          "cacheStats",
-          "model",
-          "permissionMode",
-          "todoCounts",
-          "lifecycle"
-        ]
-      },
-      "SessionContextUsage": {
-        "type": [
-          "object",
-          "null"
-        ],
-        "properties": {
-          "totalTokens": {
-            "type": "integer"
-          },
-          "maxTokens": {
-            "type": "integer"
-          },
-          "outputTokens": {
-            "type": "integer"
-          },
-          "cacheReadTokens": {
-            "type": "integer"
-          },
-          "cacheCreationTokens": {
-            "type": "integer"
-          },
-          "observedAt": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "totalTokens",
-          "maxTokens",
-          "outputTokens",
-          "cacheReadTokens",
-          "cacheCreationTokens"
-        ]
-      },
-      "RunningTask": {
-        "type": "object",
-        "properties": {
-          "taskId": {
-            "type": "string"
-          },
-          "taskType": {
-            "$ref": "#/components/schemas/BackgroundTaskType"
-          },
-          "description": {
-            "type": "string"
-          },
-          "command": {
-            "type": "string"
-          },
-          "startedAt": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "taskId"
-        ]
-      },
-      "SessionActivity": {
-        "type": "object",
-        "properties": {
-          "toolName": {
-            "type": "string"
-          },
-          "target": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "toolName"
         ]
       },
       "SessionUpdateResponse": {
@@ -29396,6 +30972,61 @@
           }
         },
         "operationId": "documents.resolve",
+        "x-stability": "preview"
+      }
+    },
+    "/api/events": {
+      "get": {
+        "tags": [
+          "Events"
+        ],
+        "summary": "The global event stream (SSE, or WebSocket at the same path)",
+        "description": "**Preview.** This operation may change in any release.\n\nOne stream for the chat list and everything else that changes: rooms, tasks, agents, settings, approvals, Relay, extensions. Each frame is one `DorkOsEvent`: the SSE `event:` line is its `type`, `data:` is its `payload`, and every event after the opening frames has an `id:` whose last part is its `seq`. `seq` only grows within this stream and may skip numbers, since you are not sent events that are not yours. Every connect opens with `connected` (with `resumed: true` when it picked up from your cursor), then any missed events, then one `session_status` for each chat that is working, waiting on a person or stopped with an error; those opening frames have no `id:`. The server keeps the last 500 events (at most 512 KiB) for replay, filtered for each reader exactly as live events are. Over SSE a `heartbeat` frame arrives every 15 seconds. The same path answers a WebSocket upgrade, which is what the DorkOS app uses: each message a JSON frame `{ event, data, id }`, resuming from `?resume=`. An event addressed to a person (settings, the inbox, an ask's detail) never reaches a connection that presents an agent token.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The `id` of the last frame you received, whole: `events-<epoch>-<generation>-<seq>`. Sends the events after it that you may read, then live ones. A cursor older than the window the server keeps, from before a restart, or for another stream starts a fresh connect instead, which is the snapshot to rebuild from. For WebSocket clients, which cannot set headers; `Last-Event-ID` wins when both are sent."
+            },
+            "required": false,
+            "description": "The `id` of the last frame you received, whole: `events-<epoch>-<generation>-<seq>`. Sends the events after it that you may read, then live ones. A cursor older than the window the server keeps, from before a restart, or for another stream starts a fresh connect instead, which is the snapshot to rebuild from. For WebSocket clients, which cannot set headers; `Last-Event-ID` wins when both are sent.",
+            "name": "resume",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The `id` of the last frame you received, whole: `events-<epoch>-<generation>-<seq>`. Sends the events after it that you may read, then live ones. A cursor older than the window the server keeps, from before a restart, or for another stream starts a fresh connect instead, which is the snapshot to rebuild from."
+            },
+            "required": false,
+            "description": "The `id` of the last frame you received, whole: `events-<epoch>-<generation>-<seq>`. Sends the events after it that you may read, then live ones. A cursor older than the window the server keeps, from before a restart, or for another stream starts a fresh connect instead, which is the snapshot to rebuild from.",
+            "name": "Last-Event-ID",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An SSE stream of `DorkOsEvent` frames.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/DorkOsEvent"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: too many live connections are open. Try again soon.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "events.get",
         "x-stability": "preview"
       }
     },

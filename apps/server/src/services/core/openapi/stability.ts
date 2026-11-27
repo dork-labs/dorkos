@@ -73,6 +73,8 @@ export const GROUP_STABILITY: Readonly<Record<string, ApiStability>> = {
   diff: 'preview',
   'direct-chats': 'preview',
   documents: 'preview',
+  // Replay is new (A7, DOR-4986), and most payloads are not described yet.
+  events: 'preview',
   hub: 'preview',
   links: 'preview',
   relay: 'preview',
@@ -105,7 +107,6 @@ export const GROUP_STABILITY: Readonly<Record<string, ApiStability>> = {
   'your-browser': 'internal',
   // Served but not documented yet (the API lint gate's `undocumented-route`).
   // Classified now, so each takes its value the day its routes are documented.
-  events: 'stable',
   'openapi.json': 'stable',
   admin: 'internal',
   'agent-instructions': 'internal',

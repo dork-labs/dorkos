@@ -1194,6 +1194,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The global event stream (SSE, or WebSocket at the same path)
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     One stream for the chat list and everything else that changes: rooms, tasks, agents, settings, approvals, Relay, extensions. Each frame is one `DorkOsEvent`: the SSE `event:` line is its `type`, `data:` is its `payload`, and every event after the opening frames has an `id:` whose last part is its `seq`. `seq` only grows within this stream and may skip numbers, since you are not sent events that are not yours. Every connect opens with `connected` (with `resumed: true` when it picked up from your cursor), then any missed events, then one `session_status` for each chat that is working, waiting on a person or stopped with an error; those opening frames have no `id:`. The server keeps the last 500 events (at most 512 KiB) for replay, filtered for each reader exactly as live events are. Over SSE a `heartbeat` frame arrives every 15 seconds. The same path answers a WebSocket upgrade, which is what the DorkOS app uses: each message a JSON frame `{ event, data, id }`, resuming from `?resume=`. An event addressed to a person (settings, the inbox, an ask's detail) never reaches a connection that presents an agent token.
+         */
+        get: operations["events.get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -10005,6 +10027,39 @@ export interface components {
             project: string;
             allow: string[] | null;
         };
+        KeepAwakeStatus: {
+            /** @description The `keepAwake.whileAgentsWork` setting. */
+            enabled: boolean;
+            /** @description Whether this computer can be held awake right now. False with reason `denied` is temporary: it is retried. */
+            supported: boolean;
+            reason: components["schemas"]["KeepAwakeUnsupportedReason"];
+            /** @description Whether the operating system is being told to stay awake right now. */
+            asserted: boolean;
+            /** @description What is keeping the computer awake. Each piece of work counts once. */
+            working: {
+                /** @description Agent turns in flight that are not room replies or task runs. */
+                chats: number;
+                /** @description Room replies in flight. */
+                rooms: number;
+                /** @description Task runs in flight. A run counts once, including its turn. */
+                tasks: number;
+                /** @description Awake for a scheduled run that is about to start. */
+                waking: boolean;
+            };
+            /** @description Waking the computer for scheduled runs. Not built yet: always disabled, `unsupported`, with no next wake and no setup command. */
+            wake: {
+                enabled: boolean;
+                /** @enum {string} */
+                setup: "ready" | "needed" | "unsupported";
+                nextWakeAt: string | null;
+                setupCommand: string | null;
+            };
+        };
+        /**
+         * @description Why not, when `supported` is false; null otherwise. `denied` is retried on a backoff and when the setting is switched off and on; the others last until restart.
+         * @enum {string|null}
+         */
+        KeepAwakeUnsupportedReason: "container" | "tool-missing" | "denied" | "platform" | null;
         FileDocumentSaveReceipt: {
             documentId: string;
             eventId: string;
@@ -10432,31 +10487,438 @@ export interface components {
             /** @description A direct message holding only the person and one agent. Any other room is refused with NOT_A_DIRECT_CHAT, because it opens as a room. */
             roomId: string;
         };
-        HealthResponse: {
-            status: string;
-            version: string;
-            uptime: number;
-            tunnel?: components["schemas"]["TunnelStatus"];
-        };
-        TunnelStatus: {
-            enabled: boolean;
-            connected: boolean;
-            isRunning: boolean;
-            url: string | null;
-            port: number | null;
-            startedAt: string | null;
-            authEnabled: boolean;
-            tokenConfigured: boolean;
-            domain: string | null;
+        /** @description One event on the global stream: `{ seq, at, type, payload }`. `seq` only grows within one stream, may skip numbers, and is never compared across streams. */
+        DorkOsEvent: {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
             /** @enum {string} */
-            mode?: "off" | "byo" | "managed";
-        };
-        SessionListResponse: {
-            sessions: components["schemas"]["Session"][];
-            /** @description Pass as `cursor` for the next page; null on the last one. */
-            nextCursor: string | null;
-            warnings?: components["schemas"]["SessionListWarning"][];
-            accountUsage?: components["schemas"]["AccountUsage"][];
+            type: "connected";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "heartbeat";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "session_upserted";
+            payload: {
+                /** @enum {string} */
+                type: "session_upserted";
+                session: components["schemas"]["Session"];
+            };
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "session_removed";
+            payload: {
+                /** @enum {string} */
+                type: "session_removed";
+                sessionId: string;
+            };
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "session_status";
+            payload: {
+                /** @enum {string} */
+                type: "session_status";
+                sessionId: string;
+                cwd?: string;
+                retiredSessionId?: string;
+                status: components["schemas"]["SessionStatus"];
+            };
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "session_list_invalidated";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "account_usage";
+            payload: components["schemas"]["AccountUsage"];
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "interaction_pending";
+            payload: components["schemas"]["InteractionPendingEvent"];
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "interaction_resolved";
+            payload: components["schemas"]["InteractionResolvedEvent"];
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "approval_pending";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "approval_resolved";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "standing_pending";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "standing_resolved";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "notification";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "notification_read";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "read_cursor";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "room_created";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "room_updated";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "room_member_added";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "room_member_removed";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "room_activity";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "room_presence";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "room_awaiting";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "relay_connected";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "relay_message";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "relay_backpressure";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "relay_signal";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "relay_flow";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "relay_dead_letter";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "relay_bindings_changed";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "relay_adapters_changed";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "relay_chat_unclaimed";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "relay_chat_unclaimed_burst";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "connector_agent_requests_changed";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "tasks_changed";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "task_run_failed";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "task_run_finished";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "task_run_updated";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "agents_changed";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "agent_pauses_changed";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "mesh_liveness_changed";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "extension_reloaded";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "capabilities_changed";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "commands_changed";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "marketplace_dev_link_reloaded";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "config_changed";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "keep_awake_status";
+            payload: components["schemas"]["KeepAwakeStatus"];
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "tunnel_status";
+            payload: components["schemas"]["TunnelStatus"];
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "session_relay_presence";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "local_browser_changed";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @enum {string} */
+            type: "community_connections_changed";
+            payload?: unknown;
+        } | {
+            /** @description Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id. */
+            seq: number;
+            /** @description When the server recorded the event, ISO 8601. */
+            at: string;
+            /** @description `ext:<extensionId>:<event>`, an event an extension emits. */
+            type: string;
+            payload?: unknown;
         };
         Session: {
             warnings?: components["schemas"]["SessionLaunchWarning"][];
@@ -10567,14 +11029,79 @@ export interface components {
                 sameAsStarter: boolean;
             } | null;
         };
-        SessionListWarning: {
-            runtime: string;
-            message: string;
-            account?: string;
+        SessionStatus: {
+            contextUsage: components["schemas"]["SessionContextUsage"];
+            cost: number | null;
+            usage?: components["schemas"]["UsageStatus"];
+            accountUsage?: components["schemas"]["AccountUsage"] & (Record<string, never> | null);
+            cacheStats: components["schemas"]["SessionCacheStats"];
+            model: string | null;
+            permissionMode: components["schemas"]["PermissionModeId"];
+            todoCounts: components["schemas"]["SessionTodoCounts"];
+            /** @default 0 */
+            runningSubagentCount: number;
+            runningSubagents?: components["schemas"]["RunningTask"][];
+            lifecycle: components["schemas"]["SessionLifecycle"];
+            lastError?: components["schemas"]["ErrorEvent"];
+            limit?: components["schemas"]["SessionLimit"];
+            activity?: components["schemas"]["SessionActivity"];
+            steerable?: boolean;
         };
-        PendingInteractionsResponse: {
-            interactions: components["schemas"]["InteractionPendingEvent"][];
-            warnings?: string[];
+        SessionContextUsage: {
+            totalTokens: number;
+            maxTokens: number;
+            outputTokens: number;
+            cacheReadTokens: number;
+            cacheCreationTokens: number;
+            observedAt?: string;
+        } | null;
+        /** @default null */
+        UsageStatus: {
+            /** @enum {string} */
+            kind: "subscription" | "pay-as-you-go";
+            utilization?: number;
+            windowLabel?: string;
+            resetsAt?: string;
+            costUsd?: number;
+            /** @enum {string} */
+            costBasis?: "list" | "managed" | "unknown";
+            state?: components["schemas"]["UsageState"];
+            detail?: string;
+        } | null;
+        /** @enum {string} */
+        UsageState: "ok" | "warning" | "exhausted";
+        SessionCacheStats: {
+            cacheReadTokens: number;
+            cacheCreationTokens: number;
+        } | null;
+        SessionTodoCounts: {
+            total: number;
+            completed: number;
+            inProgress: number;
+        } | null;
+        RunningTask: {
+            taskId: string;
+            taskType?: components["schemas"]["BackgroundTaskType"];
+            description?: string;
+            command?: string;
+            startedAt?: number;
+        };
+        /** @enum {string} */
+        BackgroundTaskType: "agent" | "bash" | "other";
+        /** @default null */
+        ErrorEvent: {
+            message: string;
+            code?: string;
+            category?: components["schemas"]["ErrorCategory"];
+            details?: string;
+            reason?: string;
+            sourceDispatchId?: string;
+        } | null;
+        /** @enum {string} */
+        ErrorCategory: "max_turns" | "execution_error" | "budget_exceeded" | "output_format_error" | "auth_error" | "model_unavailable" | "runtime_update_required";
+        SessionActivity: {
+            toolName: string;
+            target?: string;
         };
         InteractionPendingEvent: {
             sessionId: string;
@@ -10648,6 +11175,49 @@ export interface components {
         };
         /** @enum {string} */
         ElicitationMode: "form" | "url";
+        InteractionResolvedEvent: {
+            sessionId: string;
+            interactionId: string;
+            /** @enum {string} */
+            outcome: "answered" | "cancelled" | "expired";
+            resolvedAt: string;
+            resolvedBy?: string;
+        };
+        TunnelStatus: {
+            enabled: boolean;
+            connected: boolean;
+            isRunning: boolean;
+            url: string | null;
+            port: number | null;
+            startedAt: string | null;
+            authEnabled: boolean;
+            tokenConfigured: boolean;
+            domain: string | null;
+            /** @enum {string} */
+            mode?: "off" | "byo" | "managed";
+        };
+        HealthResponse: {
+            status: string;
+            version: string;
+            uptime: number;
+            tunnel?: components["schemas"]["TunnelStatus"];
+        };
+        SessionListResponse: {
+            sessions: components["schemas"]["Session"][];
+            /** @description Pass as `cursor` for the next page; null on the last one. */
+            nextCursor: string | null;
+            warnings?: components["schemas"]["SessionListWarning"][];
+            accountUsage?: components["schemas"]["AccountUsage"][];
+        };
+        SessionListWarning: {
+            runtime: string;
+            message: string;
+            account?: string;
+        };
+        PendingInteractionsResponse: {
+            interactions: components["schemas"]["InteractionPendingEvent"][];
+            warnings?: string[];
+        };
         RecentSessionsResponse: {
             sessions: components["schemas"]["Session"][];
             /** @description Pass as `cursor` for the next page; null on the last one. */
@@ -10810,8 +11380,6 @@ export interface components {
             ambient?: boolean;
         };
         /** @enum {string} */
-        BackgroundTaskType: "agent" | "bash" | "other";
-        /** @enum {string} */
         BackgroundTaskStatus: "running" | "complete" | "error" | "stopped" | "untracked";
         ThinkingPart: {
             /**
@@ -10835,8 +11403,6 @@ export interface components {
             code?: string;
             reason?: string;
         };
-        /** @enum {string} */
-        ErrorCategory: "max_turns" | "execution_error" | "budget_exceeded" | "output_format_error" | "auth_error" | "model_unavailable" | "runtime_update_required";
         ElicitationPart: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -11567,39 +12133,6 @@ export interface components {
             type: "run_update";
             runs: components["schemas"]["ChatRun"][];
         };
-        /** @default null */
-        UsageStatus: {
-            /** @enum {string} */
-            kind: "subscription" | "pay-as-you-go";
-            utilization?: number;
-            windowLabel?: string;
-            resetsAt?: string;
-            costUsd?: number;
-            /** @enum {string} */
-            costBasis?: "list" | "managed" | "unknown";
-            state?: components["schemas"]["UsageState"];
-            detail?: string;
-        } | null;
-        /** @enum {string} */
-        UsageState: "ok" | "warning" | "exhausted";
-        SessionCacheStats: {
-            cacheReadTokens: number;
-            cacheCreationTokens: number;
-        } | null;
-        SessionTodoCounts: {
-            total: number;
-            completed: number;
-            inProgress: number;
-        } | null;
-        /** @default null */
-        ErrorEvent: {
-            message: string;
-            code?: string;
-            category?: components["schemas"]["ErrorCategory"];
-            details?: string;
-            reason?: string;
-            sourceDispatchId?: string;
-        } | null;
         TaskItem: {
             id: string;
             subject: string;
@@ -12009,43 +12542,6 @@ export interface components {
         RunEnding: "completed" | "failed" | "stopped" | "limited" | "refused" | "shutdown" | "process_died" | null;
         /** @enum {string|null} */
         RunNotice: "restart_stopped" | null;
-        SessionStatus: {
-            contextUsage: components["schemas"]["SessionContextUsage"];
-            cost: number | null;
-            usage?: components["schemas"]["UsageStatus"];
-            accountUsage?: components["schemas"]["AccountUsage"] & (Record<string, never> | null);
-            cacheStats: components["schemas"]["SessionCacheStats"];
-            model: string | null;
-            permissionMode: components["schemas"]["PermissionModeId"];
-            todoCounts: components["schemas"]["SessionTodoCounts"];
-            /** @default 0 */
-            runningSubagentCount: number;
-            runningSubagents?: components["schemas"]["RunningTask"][];
-            lifecycle: components["schemas"]["SessionLifecycle"];
-            lastError?: components["schemas"]["ErrorEvent"];
-            limit?: components["schemas"]["SessionLimit"];
-            activity?: components["schemas"]["SessionActivity"];
-            steerable?: boolean;
-        };
-        SessionContextUsage: {
-            totalTokens: number;
-            maxTokens: number;
-            outputTokens: number;
-            cacheReadTokens: number;
-            cacheCreationTokens: number;
-            observedAt?: string;
-        } | null;
-        RunningTask: {
-            taskId: string;
-            taskType?: components["schemas"]["BackgroundTaskType"];
-            description?: string;
-            command?: string;
-            startedAt?: number;
-        };
-        SessionActivity: {
-            toolName: string;
-            target?: string;
-        };
         SessionUpdateResponse: components["schemas"]["Session"] & {
             /** @enum {boolean} */
             permissionModePendingUntilNextTurn?: true;
@@ -15027,39 +15523,6 @@ export interface components {
         AgentsMayPick: {
             agentsMayPick: boolean;
         };
-        KeepAwakeStatus: {
-            /** @description The `keepAwake.whileAgentsWork` setting. */
-            enabled: boolean;
-            /** @description Whether this computer can be held awake right now. False with reason `denied` is temporary: it is retried. */
-            supported: boolean;
-            reason: components["schemas"]["KeepAwakeUnsupportedReason"];
-            /** @description Whether the operating system is being told to stay awake right now. */
-            asserted: boolean;
-            /** @description What is keeping the computer awake. Each piece of work counts once. */
-            working: {
-                /** @description Agent turns in flight that are not room replies or task runs. */
-                chats: number;
-                /** @description Room replies in flight. */
-                rooms: number;
-                /** @description Task runs in flight. A run counts once, including its turn. */
-                tasks: number;
-                /** @description Awake for a scheduled run that is about to start. */
-                waking: boolean;
-            };
-            /** @description Waking the computer for scheduled runs. Not built yet: always disabled, `unsupported`, with no next wake and no setup command. */
-            wake: {
-                enabled: boolean;
-                /** @enum {string} */
-                setup: "ready" | "needed" | "unsupported";
-                nextWakeAt: string | null;
-                setupCommand: string | null;
-            };
-        };
-        /**
-         * @description Why not, when `supported` is false; null otherwise. `denied` is retried on a backoff and when the setting is switched off and on; the others last until restart.
-         * @enum {string|null}
-         */
-        KeepAwakeUnsupportedReason: "container" | "tool-missing" | "denied" | "platform" | null;
         PasskeyCheckRequired: {
             code: string;
             options?: unknown;
@@ -20493,6 +20956,41 @@ export interface operations {
             };
             /** @description `internal_error`: the docs could not be looked through */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "events.get": {
+        parameters: {
+            query?: {
+                /** @description The `id` of the last frame you received, whole: `events-<epoch>-<generation>-<seq>`. Sends the events after it that you may read, then live ones. A cursor older than the window the server keeps, from before a restart, or for another stream starts a fresh connect instead, which is the snapshot to rebuild from. For WebSocket clients, which cannot set headers; `Last-Event-ID` wins when both are sent. */
+                resume?: string;
+            };
+            header?: {
+                /** @description The `id` of the last frame you received, whole: `events-<epoch>-<generation>-<seq>`. Sends the events after it that you may read, then live ones. A cursor older than the window the server keeps, from before a restart, or for another stream starts a fresh connect instead, which is the snapshot to rebuild from. */
+                "Last-Event-ID"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description An SSE stream of `DorkOsEvent` frames. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["DorkOsEvent"];
+                };
+            };
+            /** @description `temporarily_unavailable`: too many live connections are open. Try again soon. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
