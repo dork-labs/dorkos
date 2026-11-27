@@ -213,6 +213,21 @@ describe('an agent reading sessions', () => {
     expect(recent.body.sessions.map((s: { id: string }) => s.id)).not.toContain(PRIVATE);
   });
 
+  it("GET / fills an agent's page past a person's chat, and its cursor works for nobody else", async () => {
+    // Newest first, the private chat first: filtered before the cut, the page still holds one.
+    const newer = { ...sessionRow(PRIVATE), updatedAt: '2026-10-02' };
+    fakeRuntime.listSessions.mockResolvedValue([newer, sessionRow(WORK)]);
+    const page = await request(server).get('/api/sessions?limit=1').set(AGENT);
+    expect(page.body.sessions.map((s: { id: string }) => s.id)).toEqual([WORK]);
+    const owners = await request(server).get('/api/sessions?limit=1');
+    expect(owners.body.sessions.map((s: { id: string }) => s.id)).toEqual([PRIVATE]);
+    const cursor = encodeURIComponent(owners.body.nextCursor);
+    expect((await request(server).get(`/api/sessions?cursor=${cursor}`)).status).toBe(200);
+    expect((await request(server).get(`/api/sessions?cursor=${cursor}`).set(AGENT)).status).toBe(
+      400
+    );
+  });
+
   it('GET /api/debug/sessions/:id applies the same check', async () => {
     expect((await request(server).get(`/api/debug/sessions/${PRIVATE}`).set(AGENT)).status).toBe(
       404
@@ -436,6 +451,7 @@ describe('the owner reading sessions', () => {
 
   it('lists every session', async () => {
     const list = await request(server).get('/api/sessions');
-    expect(list.body.sessions.map((s: { id: string }) => s.id)).toEqual([PRIVATE, WORK]);
+    // Same activity time: the higher id first, the tie-break a page cursor needs (DOR-4982).
+    expect(list.body.sessions.map((s: { id: string }) => s.id)).toEqual([WORK, PRIVATE]);
   });
 });

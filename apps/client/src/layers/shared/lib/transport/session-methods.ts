@@ -107,8 +107,8 @@ export function createSessionMethods(
     // ── Session CRUD ────────────────────────────────────────────────────────
 
     listSessions(cwd?: string): Promise<SessionListResponse> {
-      const qs = buildQueryString({ cwd });
-      // Aggregated-list envelope (ADR-0310): { sessions, warnings? }.
+      // The first page, 200 chats, latest activity first: what the rail always showed.
+      const qs = buildQueryString({ cwd, limit: 200 });
       return fetchJSON<SessionListResponse>(baseUrl, `/sessions${qs}`);
     },
 

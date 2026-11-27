@@ -123,20 +123,27 @@ describe('GET /api/sessions/recent', () => {
     expect(res.body.warnings).toEqual([]);
   });
 
-  it('defaults limit to 10 when omitted', async () => {
+  it('comes a page at a time, and agentActivity covers every agent on each page', async () => {
     const paths = Array.from({ length: 15 }, (_, i) => `/p${String(i).padStart(2, '0')}`);
     setAgentPaths(paths);
     runtime.listSessions.mockImplementation((dir: string) =>
       Promise.resolve([makeSession(`s-${dir}`, `2026-03-${dir.slice(-2)}T00:00:00.000Z`, dir)])
     );
 
-    const res = await request(testServer).get('/api/sessions/recent');
+    const first = await request(testServer).get('/api/sessions/recent?limit=10');
+    expect(first.body.sessions).toHaveLength(10);
+    expect(Object.keys(first.body.agentActivity)).toHaveLength(15);
+    const cursor = encodeURIComponent(first.body.nextCursor);
+    const next = await request(testServer).get(`/api/sessions/recent?limit=10&cursor=${cursor}`);
+    expect(next.body.sessions.map((s: Session) => s.id)).toEqual(
+      ['/p04', '/p03', '/p02', '/p01', '/p00'].map((p) => `s-${p}`)
+    );
+    expect(next.body.nextCursor).toBeNull();
+  });
 
-    expect(res.status).toBe(200);
-    // 15 agents each with a session, trimmed to the default limit of 10.
-    expect(res.body.sessions).toHaveLength(10);
-    // agentActivity is complete (pre-trim) across all 15 agents.
-    expect(Object.keys(res.body.agentActivity)).toHaveLength(15);
+  it('refuses a cursor it did not give instead of starting over', async () => {
+    const res = await request(testServer).get('/api/sessions/recent?cursor=not-a-cursor');
+    expect(res.status).toBe(400);
   });
 
   it('honors an explicit valid limit', async () => {
@@ -157,8 +164,8 @@ describe('GET /api/sessions/recent', () => {
     expect(res.status).toBe(400);
   });
 
-  it('rejects a limit above 50', async () => {
-    const res = await request(testServer).get('/api/sessions/recent?limit=100');
+  it('rejects a limit above 200', async () => {
+    const res = await request(testServer).get('/api/sessions/recent?limit=201');
     expect(res.status).toBe(400);
   });
 
@@ -171,7 +178,7 @@ describe('GET /api/sessions/recent', () => {
     setAgentPaths([]);
     const res = await request(testServer).get('/api/sessions/recent');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ sessions: [], agentActivity: {}, warnings: [] });
+    expect(res.body).toEqual({ sessions: [], nextCursor: null, agentActivity: {}, warnings: [] });
   });
 
   it('applies the Pulse task-origin overlay (session-origin-legibility)', async () => {

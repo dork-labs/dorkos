@@ -3,11 +3,12 @@
  * newest first on a key that never changes (`[at, id]`, the id breaking a
  * tie), cut after the filters ran, so a page is never short because of them.
  *
- * The cursor is opaque but not sealed: it names the list it came from and the
- * key the page stopped at, nothing a reader could not already see. Use it for
- * lists every reader of the route sees whole; a list whose rows can be private
- * to some readers seals its cursor to the reader instead
- * (`services/work-graph/reads/page-cursor.ts`). A cursor of another list, or
+ * The cursor is opaque: it names the list it came from and the key the page
+ * stopped at. Given no reader, it is not sealed, which suits a list every
+ * reader of the route sees whole. A list whose rows can be private to some
+ * readers (the chat lists) names its reader, and the cursor is sealed and bound
+ * to them (`sealed-cursor.ts`), because a page can stop on a row the reader may
+ * not read. A cursor of another list or another reader, or
  * one that does not read as a position, is refused `INVALID_CURSOR`, never
  * read as the first page: the caller passes the refusal to throw
  * (`invalidCursor` from the capability port), so this file needs no service.
@@ -15,6 +16,7 @@
  * @module lib/paging/keyset-page
  */
 import type { PageQuery } from '@dorkos/shared/paging';
+import { openCursor, sealCursor } from './sealed-cursor.js';
 
 /** A row's place in the order: a key that never changes (a time, as ISO 8601), then its id. */
 export type PageKey = readonly [at: string, id: string];
@@ -46,24 +48,31 @@ export function listPosition(index: number): string {
   return String(999_999 - index).padStart(6, '0');
 }
 
-function encode(list: string, key: PageKey): string {
-  return Buffer.from(JSON.stringify([list, key[0], key[1]]), 'utf8').toString('base64url');
+function encode(list: string, key: PageKey, sealedFor: string | undefined): string {
+  const position = [list, key[0], key[1]];
+  if (sealedFor !== undefined) return sealCursor(sealedFor, position);
+  return Buffer.from(JSON.stringify(position), 'utf8').toString('base64url');
 }
 
-function decode(list: string, cursor: string): PageKey | null {
-  try {
-    const parsed: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
-    if (
-      Array.isArray(parsed) &&
-      parsed.length === 3 &&
-      parsed[0] === list &&
-      typeof parsed[1] === 'string' &&
-      typeof parsed[2] === 'string'
-    ) {
-      return [parsed[1], parsed[2]];
+function decode(list: string, cursor: string, sealedFor: string | undefined): PageKey | null {
+  let parsed: unknown;
+  if (sealedFor !== undefined) {
+    parsed = openCursor(sealedFor, cursor)?.position;
+  } else {
+    try {
+      parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+    } catch {
+      return null;
     }
-  } catch {
-    // Falls through to the refusal.
+  }
+  if (
+    Array.isArray(parsed) &&
+    parsed.length === 3 &&
+    parsed[0] === list &&
+    typeof parsed[1] === 'string' &&
+    typeof parsed[2] === 'string'
+  ) {
+    return [parsed[1], parsed[2]];
   }
   return null;
 }
@@ -75,9 +84,15 @@ function decode(list: string, cursor: string): PageKey | null {
  * @param list - The list's name, as {@link keysetPage} is given it.
  * @param cursor - The cursor as sent, if any.
  * @param refuse - The error to throw for a cursor this list did not give.
+ * @param sealedFor - The reader's key, for a list whose cursors are sealed to it.
  */
-export function assertPageCursor(list: string, cursor: string | undefined, refuse: () => Error) {
-  if (cursor !== undefined && decode(list, cursor) === null) throw refuse();
+export function assertPageCursor(
+  list: string,
+  cursor: string | undefined,
+  refuse: () => Error,
+  sealedFor?: string
+) {
+  if (cursor !== undefined && decode(list, cursor, sealedFor) === null) throw refuse();
 }
 
 /**
@@ -88,15 +103,18 @@ export function assertPageCursor(list: string, cursor: string | undefined, refus
  * @param keyOf - A row's fixed key.
  * @param query - The cursor, if any, and the page size.
  * @param refuse - The error for a cursor this list did not give, thrown instead of page one.
+ * @param sealedFor - The reader's key (`readerKey`), when rows can be private to
+ *   some readers: the cursor is sealed and only this reader's opens.
  */
 export function keysetPage<T>(
   list: string,
   rows: readonly T[],
   keyOf: (row: T) => PageKey,
   query: PageQuery,
-  refuse: () => Error
+  refuse: () => Error,
+  sealedFor?: string
 ): KeysetPage<T> {
-  const after = query.cursor === undefined ? null : decode(list, query.cursor);
+  const after = query.cursor === undefined ? null : decode(list, query.cursor, sealedFor);
   if (query.cursor !== undefined && after === null) throw refuse();
   const keyed = rows
     .map((row) => ({ row, key: keyOf(row) }))
@@ -106,6 +124,6 @@ export function keysetPage<T>(
   const last = page.at(-1);
   return {
     items: page.map(({ row }) => row),
-    nextCursor: keyed.length > query.limit && last ? encode(list, last.key) : null,
+    nextCursor: keyed.length > query.limit && last ? encode(list, last.key, sealedFor) : null,
   };
 }

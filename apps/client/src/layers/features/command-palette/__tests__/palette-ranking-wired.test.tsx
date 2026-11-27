@@ -139,6 +139,7 @@ beforeEach(() => {
   });
   vi.mocked(mockTransport.listRooms).mockResolvedValue(ALL_ROOMS);
   vi.mocked(mockTransport.listRecentSessions).mockResolvedValue({
+    nextCursor: null,
     sessions: [],
     // The one agent with a run behind it. It is what lifts `orbit` above
     // `#orbit`, which is what makes the Agents heading repeat below.

@@ -47,4 +47,16 @@ describe('keysetPage', () => {
       );
     }
   });
+
+  it('seals a reader-bound cursor that walks the same order and opens for no other reader', () => {
+    const first = keysetPage('list', rows, keyOf, { limit: 2 }, refuse, 'agent:a');
+    expect(first.nextCursor).not.toContain('list');
+    const next = { limit: 2, cursor: first.nextCursor! };
+    expect(keysetPage('list', rows, keyOf, next, refuse, 'agent:a').items.map((r) => r.id)).toEqual(
+      ['d', 'a']
+    );
+    for (const reader of ['agent:b', 'owner', undefined]) {
+      expect(() => keysetPage('list', rows, keyOf, next, refuse, reader)).toThrow('refused');
+    }
+  });
 });

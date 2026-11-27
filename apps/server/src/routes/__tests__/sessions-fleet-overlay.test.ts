@@ -149,7 +149,8 @@ describe('GET /api/sessions: the fleet fields', () => {
     const res = await request(server).get('/api/sessions');
 
     expect(res.status).toBe(200);
-    const [limited, quiet] = res.body.sessions as Session[];
+    const byId = (id: string) => (res.body.sessions as Session[]).find((s) => s.id === id);
+    const [limited, quiet] = [byId(LIMITED), byId(QUIET)];
     expect(limited!.accountId).toBe('work');
     expect(limited!.status).toEqual({ lifecycle: 'idle', limit: LIMIT });
     expect(quiet!.accountId).toBe('work');
