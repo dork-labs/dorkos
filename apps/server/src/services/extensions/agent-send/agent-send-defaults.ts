@@ -103,6 +103,11 @@ export interface SessionFacts {
   startedByExtension: string | null;
   /** Whether a room answers for this chat (its room binding). */
   roomBound: boolean;
+  /**
+   * Whether the room binding port was there to ask, so a false `roomBound` means no room answers
+   * for the chat rather than that rooms are not wired yet. Unset reads as not known.
+   */
+  roomsWired?: boolean;
 }
 
 /**
@@ -114,13 +119,17 @@ export interface SessionFacts {
 export function describeSessionFor(
   roomSessionPlace: (() => RoomSessionPlacePort | undefined) | undefined
 ): (sessionId: string) => Promise<SessionFacts> {
-  return async (sessionId) => ({
-    bound: (await runtimeRegistry.resolveSessionRuntime(sessionId)).bound,
-    launchOrigin: runtimeRegistry.getSessionLaunchOrigin(sessionId),
-    agentPath: await runtimeRegistry.getSessionAgentPath(sessionId),
-    startedByExtension: getSessionStartedByStore()?.get(sessionId)?.originExtensionId ?? null,
-    roomBound: (roomSessionPlace?.()?.roomFor(sessionId) ?? null) !== null,
-  });
+  return async (sessionId) => {
+    const rooms = roomSessionPlace?.();
+    return {
+      bound: (await runtimeRegistry.resolveSessionRuntime(sessionId)).bound,
+      launchOrigin: runtimeRegistry.getSessionLaunchOrigin(sessionId),
+      agentPath: await runtimeRegistry.getSessionAgentPath(sessionId),
+      startedByExtension: getSessionStartedByStore()?.get(sessionId)?.originExtensionId ?? null,
+      roomBound: (rooms?.roomFor(sessionId) ?? null) !== null,
+      roomsWired: rooms !== undefined,
+    };
+  };
 }
 
 /**

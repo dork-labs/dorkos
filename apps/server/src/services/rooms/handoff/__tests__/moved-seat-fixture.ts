@@ -133,8 +133,13 @@ export function startChild(db: Db, parent: string, startedAt: number): void {
  * binding), and the launch records each message and runs it at once.
  *
  * @param db - The database.
+ * @param edges - `roomsWired` false: the rooms link is not wired yet. `launchFull`: while it
+ *   answers true, every launch is refused for a full launch cap.
  */
-export function chatServiceOn(db: Db): {
+export function chatServiceOn(
+  db: Db,
+  edges: { roomsWired?: boolean; launchFull?: () => boolean } = {}
+): {
   service: ChatMessageService;
   dispatched: DispatchSessionMessageOpts[];
 } {
@@ -158,13 +163,15 @@ export function chatServiceOn(db: Db): {
         launchOrigin: row?.launchOrigin ?? null,
         agentPath: row?.agentPath ?? null,
         startedByExtension: null,
-        roomBound: ledger.bindingForSession(sessionId) !== undefined,
+        roomBound: edges.roomsWired !== false && ledger.bindingForSession(sessionId) !== undefined,
+        roomsWired: edges.roomsWired !== false,
       };
     },
     chatTitle: async () => null,
     sessionCwd: async () => undefined,
     isBusy: async () => false,
     dispatch: async (opts): Promise<DispatchSessionMessageResult> => {
+      if (edges.launchFull?.()) return { refused: 'LAUNCH_CAP_FULL', message: 'Launch cap full.' };
       dispatched.push(opts);
       const messageId = opts.messageId ?? 'unset';
       return {

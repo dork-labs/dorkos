@@ -135,6 +135,9 @@ export class DurableReportBack {
   async deliverSaved(row: ReportOutboxRow, saved: SavedReport, parent: string): Promise<void> {
     const journal = this.deps.outbox!.reports;
     try {
+      // The seat it was saved for may be gone by now: then it goes to the chat (DOR-3753).
+      const released = journal.releaseGoneSeat(row);
+      if (released) [row, saved] = [journal.get(row.id) ?? row, released];
       if (!journal.valid(row)) throw new Error('The saved report scope changed.');
       const agentPath = await this.deps.agentPathOf(row.sourceSessionId);
       if (this.isStopped()) return;
@@ -188,6 +191,9 @@ export class DurableReportBack {
       if (this.isStopped()) return;
       const current = journal.get(row.id);
       const state = current?.state;
+      // The agent left while the report waited on its busy seat: the old chat takes it now.
+      const released = current && state === 'ready' ? journal.releaseGoneSeat(current) : null;
+      if (released) return this.deliverSaved(journal.get(row.id)!, released, parent);
       const wait = this.retrySteps[saved.attempt];
       if (
         current &&

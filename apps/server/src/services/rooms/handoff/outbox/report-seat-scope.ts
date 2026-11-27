@@ -64,6 +64,8 @@ export function reportSeatScope(
     (moved && Date.parse(member.joinedAt) > moved.movedAt)
   )
     // The seat it moved to is gone or is a later membership: the old chat takes it, as live does.
+    // An archived room keeps its current seat's binding, so that seat's spin-offs end as a notice
+    // while the old chat's go to the old chat: each report follows where its own chat stands.
     return moved ? null : 'unavailable';
   return {
     roomId: seat.roomId,

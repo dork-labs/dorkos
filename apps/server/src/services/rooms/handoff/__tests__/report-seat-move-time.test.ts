@@ -42,14 +42,17 @@ function startChild(parent: string, startedAt: number): void {
   startChildIn(db, parent, startedAt);
 }
 
+type ToRoomSeat = NonNullable<ChatReportBackDeps['toRoomSeat']>;
+
+/** A seat hand-in that takes the report when the outbox lets the seat's turn run. */
+const seatTakes: ToRoomSeat = async (_parent, report) => report.beforeRun?.() ?? false;
+
 /** Run one finished turn of `child` through the real report outbox and chat-message service. */
-async function reportFrom(parent: string) {
+async function reportFrom(parent: string, seat: ToRoomSeat = seatTakes) {
   const { service, dispatched } = chatServiceOn(db);
   const send = vi.spyOn(service, 'send');
   const onUndelivered = vi.fn().mockResolvedValue(undefined);
-  const toRoomSeat = vi.fn<NonNullable<ChatReportBackDeps['toRoomSeat']>>(
-    async (_parent, report) => report.beforeRun?.() ?? false
-  );
+  const toRoomSeat = vi.fn<ToRoomSeat>(seat);
   const reports = new ChatReportBack({
     service,
     store: { listStopsOf: () => [], latestInterruptFrom: () => undefined },
@@ -193,6 +196,33 @@ describe('a saved report from a spin-off of a moved seat (DOR-3753)', () => {
       expect(saved.seat).toBeNull();
       expect(chatsReached(dispatched)).toEqual([parent]);
       expect(row.state).toBe('delivered');
+    }
+  });
+
+  it('saved while the seat was busy, then the agent left: the chat that started it gets it', async () => {
+    for (const [parent, startedAt] of [
+      ['seat-now', SECOND_MOVE + 60_000],
+      ['old-seat', FIRST_MOVE - 60_000],
+    ] as const) {
+      db = seedMovedSeat();
+      startChild(parent, startedAt);
+      let waits = 0;
+      let checkedFor: unknown;
+      // The seat is busy; while the report waits on it, the agent leaves the room.
+      const { dispatched, onUndelivered, row, saved } = await reportFrom(parent, async (_p, r) => {
+        if (waits++ > 0) return r.beforeRun?.() ?? false;
+        checkedFor = r.seat;
+        new DepartedSeatStore(db).removeFromChannels(
+          [{ authorId: 'river-author', manifestId: 'river' }],
+          iso(NOW)
+        );
+        throw new Error('The report did not reach the room seat.');
+      });
+      expect(checkedFor, parent).toEqual({ roomId: 'team', authorId: 'river-author' });
+      expect(saved.seat, parent).toBeNull();
+      expect(chatsReached(dispatched)).toEqual([parent]);
+      expect(row.state).toBe('delivered');
+      expect(onUndelivered).not.toHaveBeenCalled();
     }
   });
 
