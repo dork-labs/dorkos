@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb, runMigrations } from '@dorkos/db';
 import { env } from '../../env.js';
 import { createConnectorAccessChangeRoutes } from '../connector-access-changes.js';
+import { accessChangeReads } from '../../services/connectors/access/access-change-ledger.js';
 import { frontDoorStepUpHarness } from './front-door-step-up-harness.js';
 
 const OWNER = { kind: 'local_install', installationId: 'northwind-install' } as const;
@@ -23,7 +24,7 @@ describe('access change undo confirmation', () => {
         path: '/api/connectors',
         routes: createConnectorAccessChangeRoutes({
           narrowing,
-          db,
+          ledger: accessChangeReads(db),
           resolveOwner: () => OWNER,
           loginEnabled: () => true,
           trustedOrigins: () => [ORIGIN],

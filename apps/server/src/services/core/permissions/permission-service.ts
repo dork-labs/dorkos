@@ -955,7 +955,7 @@ export class PermissionService {
    * One agent's resolved state per area and action, with where each came from.
    *
    * @param agentId - The agent.
-   * @returns The `GET /api/agents/:id/permissions` body.
+   * @returns The `GET /api/agents/:agentId/permissions` body.
    */
   async getAgent(agentId: string): Promise<AgentPermissionsResponse> {
     const [agent] = this.agentsById([agentId]);

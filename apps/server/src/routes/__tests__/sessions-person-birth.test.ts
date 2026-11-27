@@ -27,6 +27,7 @@ import {
 } from '../../services/session/message-queue-store.js';
 import { disposeProjector } from '../../services/session/session-state-projector.js';
 import { createSessionLocationsRoutes } from '../session-locations.js';
+import { sessionLocationStore } from '../../services/core/runtime-seam/session-location-store.js';
 import { createSessionRoutes } from '../sessions.js';
 import { frontDoorStepUpHarness } from './front-door-step-up-harness.js';
 
@@ -64,8 +65,14 @@ const harness = frontDoorStepUpHarness(() => {
   runtimeRegistry.setDefault('opencode');
   setMessageQueueStore(new MessageQueueStore(db));
   return [
-    { path: '/api/session-locations', routes: createSessionLocationsRoutes(db, { mintChatId }) },
-    { path: '/api/sessions', routes: createSessionRoutes({ personBirthDb: db }) },
+    {
+      path: '/api/session-locations',
+      routes: createSessionLocationsRoutes(sessionLocationStore(db), { mintChatId }),
+    },
+    {
+      path: '/api/sessions',
+      routes: createSessionRoutes({ personBirth: sessionLocationStore(db) }),
+    },
   ];
 });
 

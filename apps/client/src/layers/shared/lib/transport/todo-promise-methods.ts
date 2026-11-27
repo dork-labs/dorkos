@@ -40,7 +40,7 @@ export function createTodoPromiseMethods(baseUrl: string) {
 
     async createTodoPromise(agentId: string, body: CreateTodoPromiseRequest): Promise<TodoPromise> {
       return (await api.call('todos.add_promise_for_agent', {
-        path: { id: agentId },
+        path: { agentId },
         body,
       })) as TodoPromise;
     },

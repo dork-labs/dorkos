@@ -61,6 +61,8 @@ import { getWorkspaceManager } from '../services/workspace/index.js';
 const workspaces = await getWorkspaceManager().list({ projectKey });
 ```
 
+Lint holds this (DOR-4923, `apps/server/eslint-rules/routes-imports.js`): a non-test file under `src/routes/` may not import `@dorkos/db` or `drizzle-orm` (types included), `fs`/`node:fs`, or a concrete runtime adapter under `services/runtimes/{claude-code,codex,opencode,doe}/`. A query goes in the service that owns the data, behind a named function; a route that needs the database takes that service bound to it (as `sessionLocationStore(db)` or `searchAnswerer(db)` are), never a `Db`. The files that still import `fs` or a concrete runtime are listed there, and those lists only shrink.
+
 ## Security Checklist
 
 - [ ] Validate all input with Zod

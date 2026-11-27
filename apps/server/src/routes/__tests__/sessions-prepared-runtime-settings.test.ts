@@ -25,6 +25,7 @@ import { DoeRuntime } from '../../services/runtimes/doe/doe-runtime.js';
 import { TestModeSessionRegistry } from '../../services/runtimes/test-mode/session-registry.js';
 import { TestModeRuntime } from '../../services/runtimes/test-mode/test-mode-runtime.js';
 import { createSessionLocationsRoutes } from '../session-locations.js';
+import { sessionLocationStore } from '../../services/core/runtime-seam/session-location-store.js';
 import { createSessionRoutes } from '../sessions.js';
 import { frontDoorStepUpHarness } from './front-door-step-up-harness.js';
 
@@ -74,8 +75,14 @@ const harness = frontDoorStepUpHarness(() => {
   }
   setChatRiseFacts(createChatRiseFacts(db));
   return [
-    { path: '/api/session-locations', routes: createSessionLocationsRoutes(db) },
-    { path: '/api/sessions', routes: createSessionRoutes({ personBirthDb: db }) },
+    {
+      path: '/api/session-locations',
+      routes: createSessionLocationsRoutes(sessionLocationStore(db)),
+    },
+    {
+      path: '/api/sessions',
+      routes: createSessionRoutes({ personBirth: sessionLocationStore(db) }),
+    },
   ];
 });
 

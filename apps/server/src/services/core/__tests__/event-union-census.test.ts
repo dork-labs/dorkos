@@ -37,7 +37,7 @@ const SERVER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
 const NAMED_BY_EXPRESSION: Record<string, string> = {
   'services/session/catalog/session-list-broadcaster.ts: outgoing.type':
     "a SessionListEvent's own type: session_upserted, session_removed or session_status",
-  'startup/steps/core-routes.ts: eventType': 'relay_backpressure or relay_signal',
+  'startup/steps/relay-routes.ts: eventType': 'relay_backpressure or relay_signal',
 };
 
 /** Union members no call site sends by a literal name, and why. */
@@ -47,8 +47,8 @@ const NOT_SENT_BY_LITERAL: Record<string, string> = {
   session_upserted: 'outgoing.type in session-list-broadcaster.ts',
   session_removed: 'outgoing.type in session-list-broadcaster.ts',
   session_status: 'outgoing.type in session-list-broadcaster.ts',
-  relay_backpressure: 'eventType in core-routes.ts',
-  relay_signal: 'eventType in core-routes.ts',
+  relay_backpressure: 'eventType in relay-routes.ts',
+  relay_signal: 'eventType in relay-routes.ts',
 };
 
 /** One `eventFanOut.broadcast(` or `.broadcastRedacted(` call and its first argument. */

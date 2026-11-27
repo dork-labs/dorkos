@@ -1,7 +1,7 @@
 /**
  * What the Heartbeat page reads (spec `heartbeats` §7.6): how an agent wakes,
  * its next beat, its last beats from the record, and the raises held for
- * people's hours. `GET /api/agents/:id/heartbeat` answers with it.
+ * people's hours. `GET /api/agents/:agentId/heartbeat` answers with it.
  *
  * - **The same settings the runner uses.** An invalid header shows the last
  *   valid one in force, and `fileError` says why the file does not read.

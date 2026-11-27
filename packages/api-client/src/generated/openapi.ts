@@ -3135,7 +3135,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/agents/{id}/permissions": {
+    "/api/agents/{agentId}/permissions": {
         parameters: {
             query?: never;
             header?: never;
@@ -4921,7 +4921,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/rooms/{roomId}/members/{agentId}/reseat-options": {
+    "/api/rooms/{id}/members/{authorId}/reseat-options": {
         parameters: {
             query?: never;
             header?: never;
@@ -4943,7 +4943,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/rooms/{roomId}/members/{agentId}/reseat": {
+    "/api/rooms/{id}/members/{authorId}/reseat": {
         parameters: {
             query?: never;
             header?: never;
@@ -4987,7 +4987,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/agents/{id}/todo-promises": {
+    "/api/agents/{agentId}/todo-promises": {
         parameters: {
             query?: never;
             header?: never;
@@ -5109,7 +5109,7 @@ export interface paths {
         patch: operations["todos.change_as_person"];
         trace?: never;
     };
-    "/api/agents/{id}/work-queue": {
+    "/api/agents/{agentId}/work-queue": {
         parameters: {
             query?: never;
             header?: never;
@@ -5159,7 +5159,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/agents/{id}/work-queue/order": {
+    "/api/agents/{agentId}/work-queue/order": {
         parameters: {
             query?: never;
             header?: never;
@@ -5181,7 +5181,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/agents/{id}/work-queue/items": {
+    "/api/agents/{agentId}/work-queue/items": {
         parameters: {
             query?: never;
             header?: never;
@@ -5203,7 +5203,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/agents/{id}/work-queue/items/{itemId}": {
+    "/api/agents/{agentId}/work-queue/items/{itemId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -5225,7 +5225,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/agents/{id}/work-queue/items/{itemId}/requeue": {
+    "/api/agents/{agentId}/work-queue/items/{itemId}/requeue": {
         parameters: {
             query?: never;
             header?: never;
@@ -5809,7 +5809,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/agents/{id}/level": {
+    "/api/agents/{agentId}/level": {
         parameters: {
             query?: never;
             header?: never;
@@ -5831,7 +5831,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/agents/{id}/heartbeat": {
+    "/api/agents/{agentId}/heartbeat": {
         parameters: {
             query?: never;
             header?: never;
@@ -9066,7 +9066,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/runtimes/{runtime}/accounts/usage": {
+    "/api/runtimes/{type}/accounts/usage": {
         parameters: {
             query?: never;
             header?: never;
@@ -33190,7 +33190,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The agent’s id. */
-                id: string;
+                agentId: string;
             };
             cookie?: never;
         };
@@ -33302,7 +33302,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                id: string;
+                agentId: string;
             };
             cookie?: never;
         };
@@ -43386,9 +43386,9 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The room or DM, by its id — not its #name. You must be able to see it. */
-                roomId: string;
+                id: string;
                 /** @description The agent member whose seat moves, by its author id from the room’s roster. */
-                agentId: string;
+                authorId: string;
             };
             cookie?: never;
         };
@@ -43501,9 +43501,9 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The room or DM, by its id — not its #name. You must be able to see it. */
-                roomId: string;
+                id: string;
                 /** @description The agent member whose seat moves, by its author id from the room’s roster. */
-                agentId: string;
+                authorId: string;
             };
             cookie?: never;
         };
@@ -43738,7 +43738,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The Mesh id of the agent that promised it. */
-                id: string;
+                agentId: string;
             };
             cookie?: never;
         };
@@ -44577,7 +44577,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The Mesh id of the agent whose queue this is. */
-                id: string;
+                agentId: string;
             };
             cookie?: never;
         };
@@ -44690,7 +44690,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The Mesh id of the agent whose queue this is. */
-                id: string;
+                agentId: string;
             };
             cookie?: never;
         };
@@ -44925,7 +44925,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The Mesh id of the agent whose queue this is. */
-                id: string;
+                agentId: string;
             };
             cookie?: never;
         };
@@ -45044,7 +45044,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The Mesh id of the agent whose queue this is. */
-                id: string;
+                agentId: string;
             };
             cookie?: never;
         };
@@ -45165,7 +45165,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The Mesh id of the agent whose queue this is. */
-                id: string;
+                agentId: string;
                 /** @description The work item. */
                 itemId: string;
             };
@@ -45278,7 +45278,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The Mesh id of the agent whose queue this is. */
-                id: string;
+                agentId: string;
                 /** @description The work item. */
                 itemId: string;
             };
@@ -49009,7 +49009,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The agent’s id. */
-                id: string;
+                agentId: string;
             };
             cookie?: never;
         };
@@ -49125,7 +49125,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The agent’s id. */
-                id: string;
+                agentId: string;
             };
             cookie?: never;
         };
@@ -61679,7 +61679,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description The runtime slug. */
-                runtime: "claude-code" | "codex" | "opencode" | "doe";
+                type: "claude-code" | "codex" | "opencode" | "doe";
             };
             cookie?: never;
         };

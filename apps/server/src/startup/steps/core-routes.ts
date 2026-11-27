@@ -9,7 +9,11 @@
  */
 import { setInstructionsReader } from '../../services/runtimes/context-preview/instructions-capability.js';
 import { configManager } from '../../services/core/config-manager.js';
-import { approvedByField } from '../../services/connectors/access/access-change-ledger.js';
+import {
+  accessChangeReads,
+  approvedByField,
+} from '../../services/connectors/access/access-change-ledger.js';
+import { writesBackStore } from '../../services/connectors/access/writes-back-store.js';
 import path from 'node:path';
 import { setStepUpExtensionRiskInputs } from '../../services/extensions/step-up/step-up-extension-risk.js';
 import { useStepUpRiskLedgerFile } from '../../services/extensions/step-up/step-up-risk-ledger.js';
@@ -18,8 +22,7 @@ import type { ConnectorRoutesDeps } from '../../routes/connectors.js';
 import { credentialStore } from '../../services/core/credential-provider.js';
 import { ConnectorSessionAccessService } from '../../services/connectors/resources/session-access-service.js';
 import { miniAppAccessFor } from '../../services/extensions/connections/extension-connections-ctx.js';
-import { setRelayEnabled } from '../../services/relay/relay-state.js';
-import { eventFanOut } from '../../services/core/event-fan-out.js';
+import { mountRelayRoutes } from './relay-routes.js';
 import type { SessionOriginResolvers } from '../../services/session/index.js';
 import { getSessionStartedByStore } from '../../services/session/origin/session-started-by-store.js';
 import { getSessionTouchStore } from '../../services/session/origin/session-touch-store.js';
@@ -178,6 +181,9 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   };
   // The monthly spend limit on paid app actions (DOR-4204 PR 2): one meter for the routes, the gate and the broker.
   const connectorSpending = wireConnectorSpending(db, activityService);
+  // The person's access-change list and writes-back switch, bound here so their routes never hold db.
+  const ledger = accessChangeReads(db);
+  const switchStore = writesBackStore(db);
   const connectorRoutes: ConnectorRoutesDeps = {
     providers: { bootstrapper: connectorBootstrapper, credentialStore },
     events: {
@@ -212,9 +218,9 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     },
     holds: { holds: connectorHolds },
     spending: { spending: connectorSpending, activity: activityService },
-    accessChanges: { ...connectorOwnerBoundary, narrowing: connectorAccessNarrowing, db },
+    accessChanges: { ...connectorOwnerBoundary, narrowing: connectorAccessNarrowing, ledger },
     // A person's per-app switch; never reachable by an agent (DOR-4794).
-    writesBack: { ...connectorOwnerBoundary, db, activity: activityService },
+    writesBack: { ...connectorOwnerBoundary, store: switchStore, activity: activityService },
     // Read at request time: the extension manager starts after these routes.
     miniAppAccess: {
       access: () => miniAppAccessFor(() => refs.extensionManager?.listRecords() ?? []),
@@ -231,67 +237,7 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   mountedRouters.push('connectors');
 
   // Relay routes, only when Relay is enabled and started.
-  if (relayEnabled && refs.relayCore) {
-    deps.relay = {
-      relayCore: refs.relayCore,
-      ...(refs.adapterManager && { adapterManager: refs.adapterManager }),
-      ...(refs.traceStore && { traceStore: refs.traceStore }),
-      activity: activityService,
-      // Follows a renamed session to its successor, so a room conversation's retired id is
-      // refused too.
-      isRoomSession: (sessionId) =>
-        roomStore.sessionLedger.bindingForSession(sessionId) !== undefined,
-      // Read at request time, as an agent registers after these routes mount.
-      agentSubjectOf: (agentPath) => refs.meshCore?.getSubjectByPath(agentPath)?.subject,
-      chatMesh: () => refs.meshCore,
-      agentSessions: () => refs.adapterManager?.getAgentSessionStore(),
-    };
-    // The claim feed (connection-scoping spec §Part 3) — mounted only when
-    // the store was actually wired (relay enabled + binding subsystem up).
-    const unclaimedChatsStore = refs.adapterManager?.getUnclaimedChats();
-    const bindingStoreForClaims = refs.adapterManager?.getBindingStore();
-    if (unclaimedChatsStore && bindingStoreForClaims) {
-      // The claim card's "Answer in a channel" primary action (DOR-882) needs
-      // the same lifecycle coordinator DOR-878's "Bridge to a channel" route
-      // uses — optional, so a claim still lands (privately) on an install
-      // where bridging isn't wired.
-      const lifecycleForClaims = refs.adapterManager?.getBridgeLifecycle();
-      // The group-add claim flow's "Leave" action (DOR-883) — bound to this
-      // one narrowed reference rather than closing over `adapterManager`
-      // itself, so the route keeps asking for exactly the one capability it
-      // needs (and so TS can see the closure below is over a value already
-      // known non-null, not the outer optional).
-      const leaveChatForClaims = refs.adapterManager;
-      deps.unclaimedChats = {
-        store: unclaimedChatsStore,
-        bindingStore: bindingStoreForClaims,
-        ...(refs.meshCore && { meshCore: refs.meshCore }),
-        ...(lifecycleForClaims && { lifecycle: lifecycleForClaims }),
-        ...(leaveChatForClaims && {
-          leaveChat: (adapterId: string, chatId: string) =>
-            leaveChatForClaims.leaveChat(adapterId, chatId),
-        }),
-      };
-    }
-    setRelayEnabled(true);
-
-    // Wire relay events to unified SSE stream
-    refs.relayCore.subscribe('relay.human.console.>', (envelope) => {
-      eventFanOut.broadcast('relay_message', envelope);
-    });
-
-    refs.relayCore.onSignal('relay.human.console.>', (_subject, signal) => {
-      const eventType = signal.type === 'backpressure' ? 'relay_backpressure' : 'relay_signal';
-      eventFanOut.broadcast(eventType, signal);
-    });
-
-    eventFanOut.broadcast('relay_connected', {
-      pattern: 'relay.human.console.>',
-      connectedAt: new Date().toISOString(),
-    });
-
-    mountedRouters.push('relay');
-  }
+  if (relayEnabled && refs.relayCore) mountRelayRoutes(refs, built);
 
   // Session-origin overlays (session-origin-legibility, team-room-home §D2.3):
   // two narrow batched lookups, mirroring the meshCore/relayCore pattern. Each

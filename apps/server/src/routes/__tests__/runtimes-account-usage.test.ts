@@ -24,7 +24,7 @@ const server = listeningServer(honoGroupListener(capabilityGroup(runtimeReadsDom
 
 const usage = { runtime: 'codex', accountId: 'default' } as AccountUsage;
 
-describe('GET /api/runtimes/:runtime/accounts/usage (spec claude-account-fleet D2)', () => {
+describe('GET /api/runtimes/:type/accounts/usage (spec claude-account-fleet D2)', () => {
   afterEach(() => setAccountUsageStore(undefined));
 
   it("serves the runtime's accounts from the store", async () => {

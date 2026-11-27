@@ -39,7 +39,7 @@ export {
   type SweepResult,
 } from './indexer.js';
 export { searchMessages } from './query.js';
-export { answerSearch } from './answer-search.js';
+export { answerSearch, searchAnswerer, type SearchAnswerer } from './answer-search.js';
 export { searchForCaller, type SearchScope, type SessionReadFilter } from './search-service.js';
 export {
   SEARCH_SOURCES,

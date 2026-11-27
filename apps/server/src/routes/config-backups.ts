@@ -15,24 +15,23 @@
  *
  * @module routes/config-backups
  */
-import fs from 'node:fs';
-import path from 'node:path';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import {
-  listBackupCopies,
-  moveOlderBackupCopy,
-  removeOlderBackupCopy,
-  type BackupMoveRefusal,
-} from '@dorkos/db';
 import type { ApiEnv } from '../http/api-chain.js';
 import { problemBody, readJsonBody, sendProblem, type ProblemStatus } from '@dorkos/http-kit';
 import type { Problem, ProblemCode } from '@dorkos/shared/problem';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { requirePersonAtThisComputer } from '../lib/caller-authority.js';
-import { expandTilde, getBoundary, isContained } from '../lib/boundary.js';
-import { resolveDorkHome } from '../lib/dork-home.js';
+import { expandTilde } from '../lib/boundary.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
+import {
+  backupsDir,
+  listDatabaseBackups,
+  moveOlderDatabaseBackup,
+  removeOlderDatabaseBackup,
+  resolveBackupDestination,
+  type BackupMoveRefusal,
+} from '../services/core/config/database-backups.js';
 
 /** A listed copy's file name: no folder part, at most a sane length. */
 export const BackupNameSchema = z
@@ -46,18 +45,9 @@ export const MoveBackupRequestSchema = z
   .object({ destination: z.string().min(1).max(4096) })
   .strict();
 
-/** Where the backup copies live; read per request so a test's data folder applies. */
-function backupsDir(): string {
-  return path.join(resolveDorkHome(), 'backups');
-}
-
 /** Refusals the route decides before `@dorkos/db` is asked. */
 type RouteRefusal =
   'person_only' | 'not_at_this_computer' | 'destination_outside' | 'destination_in_data_folder';
-
-/** Why a Move's destination was refused before the copy, as a code the table answers. */
-type DestinationRefusal =
-  'destination_invalid' | 'destination_outside' | 'destination_in_data_folder';
 
 /** What each refusal says, and the problem code it answers with. */
 const REFUSAL_WORDS: Record<
@@ -121,66 +111,6 @@ const REFUSALS = Object.fromEntries(
   ])
 ) as Record<keyof typeof REFUSAL_WORDS, Problem>;
 
-/** Whether `child` is strictly below `parent` (both already real paths). */
-function strictlyInside(child: string, parent: string): boolean {
-  const relative = path.relative(parent, child);
-  return (
-    relative !== '' &&
-    relative !== '..' &&
-    !relative.startsWith(`..${path.sep}`) &&
-    !path.isAbsolute(relative)
-  );
-}
-
-/**
- * Where a Move may write, decided once on the destination's real path, so a
- * link is followed exactly once and every check reads the folder that will be
- * written to. Allowed: an existing folder inside the directory boundary, or on
- * an external drive (`<volumesRoot>/<drive>/…`, which is what Security chose
- * for backups). Never the data folder or anything in it, wherever the path
- * that named it lives: that would only rename the copy to where retention
- * can't see it.
- *
- * @returns The real folder, or why it is refused.
- */
-function resolveDestination(
-  asked: string,
-  volumesRoot: string
-): { folder: string } | { refused: DestinationRefusal } {
-  const decided = decideDestination(asked, volumesRoot);
-  // A real folder is always absolute; a refusal code never is.
-  return path.isAbsolute(decided)
-    ? { folder: decided }
-    : { refused: decided as DestinationRefusal };
-}
-
-/** {@link resolveDestination}'s decision: a real absolute folder, or a refusal code. */
-function decideDestination(asked: string, volumesRoot: string): string {
-  let real: string;
-  try {
-    real = fs.realpathSync.native(asked);
-    if (!fs.statSync(real).isDirectory()) return 'destination_invalid';
-  } catch {
-    return 'destination_invalid';
-  }
-  let home: string;
-  try {
-    home = fs.realpathSync.native(resolveDorkHome());
-  } catch {
-    // No data folder to compare with: refuse rather than guess.
-    return 'destination_in_data_folder';
-  }
-  if (real === home || strictlyInside(real, home)) return 'destination_in_data_folder';
-  if (isContained(real, getBoundary())) return real;
-  let volumes: string | undefined;
-  try {
-    volumes = fs.realpathSync.native(volumesRoot);
-  } catch {
-    volumes = undefined;
-  }
-  return volumes !== undefined && strictlyInside(real, volumes) ? real : 'destination_outside';
-}
-
 /**
  * Why this caller may not act, or `undefined` for a person at this computer
  * (or the owner over an encrypted connection). The owner on plain-http Wi-Fi is
@@ -225,8 +155,7 @@ export function createConfigBackupsRoutes(options: ConfigBackupsRoutesOptions = 
   router.get('/', (c) => {
     const refused = personRefusal(c);
     if (refused) return sendProblem(c, REFUSALS[refused]);
-    const folder = backupsDir();
-    return c.json({ folder, ...listBackupCopies(folder) });
+    return c.json(listDatabaseBackups());
   });
 
   /** DELETE /:name — remove one older copy. */
@@ -235,7 +164,7 @@ export function createConfigBackupsRoutes(options: ConfigBackupsRoutesOptions = 
     if (refused) return sendProblem(c, REFUSALS[refused]);
     const name = BackupNameSchema.safeParse(c.req.param('name'));
     if (!name.success) return sendProblem(c, REFUSALS.not_found);
-    const result = removeOlderBackupCopy(backupsDir(), name.data);
+    const result = removeOlderDatabaseBackup(name.data);
     if (result !== 'removed') return sendProblem(c, REFUSALS[result]);
     audit(name.data);
     return c.json({ success: true });
@@ -249,9 +178,9 @@ export function createConfigBackupsRoutes(options: ConfigBackupsRoutesOptions = 
     if (!name.success) return sendProblem(c, REFUSALS.not_found);
     const body = MoveBackupRequestSchema.safeParse(readJsonBody(c));
     if (!body.success) return sendProblem(c, REFUSALS.destination_invalid);
-    const destination = resolveDestination(expandTilde(body.data.destination), volumesRoot);
+    const destination = resolveBackupDestination(expandTilde(body.data.destination), volumesRoot);
     if ('refused' in destination) return sendProblem(c, REFUSALS[destination.refused]);
-    const result = await moveOlderBackupCopy(backupsDir(), name.data, destination.folder);
+    const result = await moveOlderDatabaseBackup(name.data, destination.folder);
     if (result.status !== 'moved') return sendProblem(c, REFUSALS[result.status]);
     audit(name.data, result.destinationPath);
     return c.json({ destinationPath: result.destinationPath });

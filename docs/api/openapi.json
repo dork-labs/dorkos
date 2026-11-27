@@ -70094,7 +70094,7 @@
         "x-stability": "stable"
       }
     },
-    "/api/agents/{id}/permissions": {
+    "/api/agents/{agentId}/permissions": {
       "patch": {
         "tags": [
           "Permissions"
@@ -70107,7 +70107,7 @@
               "type": "string"
             },
             "required": true,
-            "name": "id",
+            "name": "agentId",
             "in": "path"
           }
         ],
@@ -70239,7 +70239,7 @@
             },
             "required": true,
             "description": "The agent’s id.",
-            "name": "id",
+            "name": "agentId",
             "in": "path"
           }
         ],
@@ -91575,7 +91575,7 @@
         "x-stability": "preview"
       }
     },
-    "/api/rooms/{roomId}/members/{agentId}/reseat-options": {
+    "/api/rooms/{id}/members/{authorId}/reseat-options": {
       "get": {
         "operationId": "rooms.reseat_options",
         "tags": [
@@ -91591,7 +91591,7 @@
             },
             "required": true,
             "description": "The room or DM, by its id — not its #name. You must be able to see it.",
-            "name": "roomId",
+            "name": "id",
             "in": "path"
           },
           {
@@ -91601,7 +91601,7 @@
             },
             "required": true,
             "description": "The agent member whose seat moves, by its author id from the room’s roster.",
-            "name": "agentId",
+            "name": "authorId",
             "in": "path"
           }
         ],
@@ -91718,7 +91718,7 @@
         "x-stability": "preview"
       }
     },
-    "/api/rooms/{roomId}/members/{agentId}/reseat": {
+    "/api/rooms/{id}/members/{authorId}/reseat": {
       "post": {
         "operationId": "rooms.reseat",
         "tags": [
@@ -91734,7 +91734,7 @@
             },
             "required": true,
             "description": "The room or DM, by its id — not its #name. You must be able to see it.",
-            "name": "roomId",
+            "name": "id",
             "in": "path"
           },
           {
@@ -91744,7 +91744,7 @@
             },
             "required": true,
             "description": "The agent member whose seat moves, by its author id from the room’s roster.",
-            "name": "agentId",
+            "name": "authorId",
             "in": "path"
           }
         ],
@@ -92037,7 +92037,7 @@
         "x-stability": "preview"
       }
     },
-    "/api/agents/{id}/todo-promises": {
+    "/api/agents/{agentId}/todo-promises": {
       "post": {
         "operationId": "todos.add_promise_for_agent",
         "tags": [
@@ -92054,7 +92054,7 @@
             },
             "required": true,
             "description": "The Mesh id of the agent that promised it.",
-            "name": "id",
+            "name": "agentId",
             "in": "path"
           }
         ],
@@ -93181,7 +93181,7 @@
         "x-stability": "preview"
       }
     },
-    "/api/agents/{id}/work-queue": {
+    "/api/agents/{agentId}/work-queue": {
       "get": {
         "operationId": "work-queue.view_queue",
         "tags": [
@@ -93198,7 +93198,7 @@
             },
             "required": true,
             "description": "The Mesh id of the agent whose queue this is.",
-            "name": "id",
+            "name": "agentId",
             "in": "path"
           }
         ],
@@ -93332,7 +93332,7 @@
             },
             "required": true,
             "description": "The Mesh id of the agent whose queue this is.",
-            "name": "id",
+            "name": "agentId",
             "in": "path"
           }
         ],
@@ -93607,7 +93607,7 @@
         "x-stability": "preview"
       }
     },
-    "/api/agents/{id}/work-queue/order": {
+    "/api/agents/{agentId}/work-queue/order": {
       "put": {
         "operationId": "work-queue.set_order",
         "tags": [
@@ -93624,7 +93624,7 @@
             },
             "required": true,
             "description": "The Mesh id of the agent whose queue this is.",
-            "name": "id",
+            "name": "agentId",
             "in": "path"
           }
         ],
@@ -93766,7 +93766,7 @@
         "x-stability": "preview"
       }
     },
-    "/api/agents/{id}/work-queue/items": {
+    "/api/agents/{agentId}/work-queue/items": {
       "post": {
         "operationId": "work-queue.add_item",
         "tags": [
@@ -93783,7 +93783,7 @@
             },
             "required": true,
             "description": "The Mesh id of the agent whose queue this is.",
-            "name": "id",
+            "name": "agentId",
             "in": "path"
           }
         ],
@@ -93931,7 +93931,7 @@
         "x-stability": "preview"
       }
     },
-    "/api/agents/{id}/work-queue/items/{itemId}": {
+    "/api/agents/{agentId}/work-queue/items/{itemId}": {
       "delete": {
         "operationId": "work-queue.remove_item",
         "tags": [
@@ -93948,7 +93948,7 @@
             },
             "required": true,
             "description": "The Mesh id of the agent whose queue this is.",
-            "name": "id",
+            "name": "agentId",
             "in": "path"
           },
           {
@@ -94071,7 +94071,7 @@
         "x-stability": "preview"
       }
     },
-    "/api/agents/{id}/work-queue/items/{itemId}/requeue": {
+    "/api/agents/{agentId}/work-queue/items/{itemId}/requeue": {
       "post": {
         "operationId": "work-queue.requeue_item",
         "tags": [
@@ -94088,7 +94088,7 @@
             },
             "required": true,
             "description": "The Mesh id of the agent whose queue this is.",
-            "name": "id",
+            "name": "agentId",
             "in": "path"
           },
           {
@@ -100042,7 +100042,7 @@
         "x-stability": "preview"
       }
     },
-    "/api/agents/{id}/level": {
+    "/api/agents/{agentId}/level": {
       "get": {
         "operationId": "permissions.view_agent_level",
         "tags": [
@@ -100060,7 +100060,7 @@
             },
             "required": true,
             "description": "The agent’s id.",
-            "name": "id",
+            "name": "agentId",
             "in": "path"
           }
         ],
@@ -100179,7 +100179,7 @@
         "x-stability": "preview"
       }
     },
-    "/api/agents/{id}/heartbeat": {
+    "/api/agents/{agentId}/heartbeat": {
       "get": {
         "operationId": "heartbeat.view_page",
         "tags": [
@@ -100197,7 +100197,7 @@
             },
             "required": true,
             "description": "The agent’s id.",
-            "name": "id",
+            "name": "agentId",
             "in": "path"
           },
           {

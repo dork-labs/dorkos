@@ -21,8 +21,7 @@
 import { Hono } from 'hono';
 import type { MeshCore } from '@dorkos/mesh';
 import type { RelayCore } from '@dorkos/relay';
-import type { Db } from '@dorkos/db';
-import { createA2aGateway } from '@dorkos/a2a-gateway';
+import { createA2aGateway, type A2aGatewayDeps } from '@dorkos/a2a-gateway';
 import type { ApiEnv } from '../http/api-chain.js';
 import { closeResponseWithSignIn } from '../http/raw-node-stream.js';
 import { readJsonBody } from '@dorkos/http-kit';
@@ -36,8 +35,8 @@ export interface A2aRouteDeps {
   meshCore: MeshCore;
   /** RelayCore instance for message routing. */
   relay: RelayCore;
-  /** Drizzle database instance for task persistence. */
-  db: Db;
+  /** Where the gateway keeps its tasks; the route hands it on and never reads it. */
+  db: A2aGatewayDeps['db'];
   /** Base URL advertised on agent cards (public URL when configured). */
   baseUrl: string;
   /** DorkOS version string. */

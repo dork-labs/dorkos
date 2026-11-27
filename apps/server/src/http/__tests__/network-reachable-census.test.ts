@@ -4,7 +4,7 @@
  * until the API-key audience lands, DOR-5267).
  *
  * The set is pinned: adding one is Security's call. And one of them,
- * `PATCH /api/agents/:id/permissions`, is network-reachable only to LOWER an
+ * `PATCH /api/agents/:agentId/permissions`, is network-reachable only to LOWER an
  * agent's power: from Wi-Fi any raise is refused with `not_from_wifi`
  * (`wifi-raise-guard.ts`, DOR-3037). These rows fail if that guard is ever
  * dropped from the route, in its code or in what it answers.
@@ -83,7 +83,7 @@ describe('network-reachable hand routes', () => {
     expect(reachable.sort()).toEqual(
       [
         // The four agent routes (this census's own ruling).
-        'PATCH /api/agents/:id/permissions',
+        'PATCH /api/agents/:agentId/permissions',
         'PATCH /api/agents/current',
         'POST /api/agents/resolve',
         'POST /api/mesh/agents/:id/heartbeat',
@@ -106,7 +106,7 @@ describe('network-reachable hand routes', () => {
 
   it('keep the Wi-Fi raise guard in the agent permissions write', () => {
     const source = readFileSync(PERMISSIONS_ROUTES, 'utf8');
-    const start = source.indexOf("router.patch('/agents/:id/permissions'");
+    const start = source.indexOf("router.patch('/agents/:agentId/permissions'");
     expect(start, 'the route is still a hand route in routes/permissions.ts').toBeGreaterThan(-1);
     const handler = source.slice(start, source.indexOf('router.', start + 10));
     expect(handler).toContain('agentPatchRaises(');

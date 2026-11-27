@@ -8,6 +8,7 @@ import problemOnly from './eslint-rules/problem-only.js';
 import turnPort from './eslint-rules/turn-port-boundary.js';
 import computerWall from './eslint-rules/computer-wall.js';
 import importBoundary from './eslint-rules/import-boundary.js';
+import { routesImportBlocks } from './eslint-rules/routes-imports.js';
 
 // Services never import middleware (DOR-4922): a middleware step calls a service,
 // never the reverse. A service that needs a step's function declares the function
@@ -402,6 +403,10 @@ export default defineConfig([
       ],
     },
   },
+
+  // Routes never import the database, fs or a concrete runtime (DOR-4923); the two shrink-only
+  // lists and the reasons are in `eslint-rules/routes-imports.js`.
+  ...routesImportBlocks(ALL_CONFINED, HOMEDIR_BANS),
 
   // os.homedir() call ban — one block for the whole server, because unlike the
   // import bans it has no per-directory exceptions, only per-file ones. The

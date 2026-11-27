@@ -1,6 +1,6 @@
 /**
  * A person's work queue doors (DOR-3462) as capabilities the mount serves on
- * `/api/agents/{id}/work-queue/*` and `/api/work-queues/stop` (ADR 261123-170830).
+ * `/api/agents/{agentId}/work-queue/*` and `/api/work-queues/stop` (ADR 261123-170830).
  *
  * Every one is person-only (`http.audience: 'person'`): an agent reads and
  * changes queues with its own tools (`work-queue-capabilities.ts`), which carry
@@ -123,8 +123,6 @@ function refusing<T>(run: () => T): T {
 const AgentId = z.string().min(1).describe('The Mesh id of the agent whose queue this is.');
 /** The item a path names. */
 const ItemId = z.string().min(1).describe('The work item.');
-/** `{id}` in the path fills `agentId`. */
-const AGENT_PARAM = { id: 'agentId' } as const;
 /** Why a person-only door is closed to agents, for the catalog. */
 const PERSON_ONLY_NOTE = 'a person’s own queue controls; agents use the work queue tools';
 
@@ -143,8 +141,7 @@ export const workQueueGetCapability = defineCapability({
   surfaces: {
     http: {
       method: 'get',
-      path: '/api/agents/{id}/work-queue',
-      params: AGENT_PARAM,
+      path: '/api/agents/{agentId}/work-queue',
       audience: 'person',
     },
   },
@@ -169,8 +166,7 @@ export const workQueueUpdateCapability = defineCapability({
   surfaces: {
     http: {
       method: 'patch',
-      path: '/api/agents/{id}/work-queue',
-      params: AGENT_PARAM,
+      path: '/api/agents/{agentId}/work-queue',
       audience: 'person',
     },
   },
@@ -210,8 +206,7 @@ export const workQueueSetOrderCapability = defineCapability({
   surfaces: {
     http: {
       method: 'put',
-      path: '/api/agents/{id}/work-queue/order',
-      params: AGENT_PARAM,
+      path: '/api/agents/{agentId}/work-queue/order',
       audience: 'person',
     },
   },
@@ -232,8 +227,7 @@ export const workQueueAddItemCapability = defineCapability({
   surfaces: {
     http: {
       method: 'post',
-      path: '/api/agents/{id}/work-queue/items',
-      params: AGENT_PARAM,
+      path: '/api/agents/{agentId}/work-queue/items',
       success: 201,
       audience: 'person',
     },
@@ -258,8 +252,7 @@ export const workQueueRemoveItemCapability = defineCapability({
   surfaces: {
     http: {
       method: 'delete',
-      path: '/api/agents/{id}/work-queue/items/{itemId}',
-      params: AGENT_PARAM,
+      path: '/api/agents/{agentId}/work-queue/items/{itemId}',
       success: 204,
       audience: 'person',
     },
@@ -283,8 +276,7 @@ export const workQueueRequeueItemCapability = defineCapability({
   surfaces: {
     http: {
       method: 'post',
-      path: '/api/agents/{id}/work-queue/items/{itemId}/requeue',
-      params: AGENT_PARAM,
+      path: '/api/agents/{agentId}/work-queue/items/{itemId}/requeue',
       audience: 'person',
     },
   },

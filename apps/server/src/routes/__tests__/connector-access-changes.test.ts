@@ -11,6 +11,7 @@ import { initConfigManager } from '../../services/core/config-manager.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { AccessNarrowingError } from '../../services/connectors/access/access-narrowing.js';
 import { createConnectorAccessChangeRoutes } from '../connector-access-changes.js';
+import { accessChangeReads } from '../../services/connectors/access/access-change-ledger.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const fixtureTarget = swappableServer();
@@ -39,7 +40,7 @@ describe('access-change routes', () => {
         path: '/api/connectors',
         routes: createConnectorAccessChangeRoutes({
           narrowing,
-          db,
+          ledger: accessChangeReads(db),
           resolveOwner: () => OWNER,
           loginEnabled: () => options.loginEnabled ?? false,
           trustedOrigins: () => ['http://localhost:4242'],

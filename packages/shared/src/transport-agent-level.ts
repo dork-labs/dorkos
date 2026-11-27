@@ -10,7 +10,7 @@ import type { AgentLevelResponse } from './permissions/permission-api-schemas.js
 export interface AgentLevelTransport {
   /**
    * The level a new chat of this agent starts at, before any per-chat limit,
-   * and whether a person's setting holds it there (`GET /api/agents/:id/level`).
+   * and whether a person's setting holds it there (`GET /api/agents/:agentId/level`).
    *
    * @param agentId - The agent's id.
    */

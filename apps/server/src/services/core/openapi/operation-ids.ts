@@ -58,7 +58,7 @@
  * | `POST`   | `/api/sessions/{id}/messages`                           | `sessions.createMessages`                         |
  * | `POST`   | `/api/connectors/connections/{id}/events/subscriptions` | `connectors.createConnectionsEventsSubscriptions` |
  * | `POST`   | `/api/sessions/{id}/continue/cancel`                    | `sessions.cancelContinue`                         |
- * | `POST`   | `/api/agents/{id}/pause`                                | `agents.pause`                                    |
+ * | `POST`   | `/api/agents/{agentId}/pause`                           | `agents.pause`                                    |
  * | `POST`   | `/api/notifications/read-all`                           | `notifications.readAll`                           |
  * | `POST`   | `/api/auth/revoke-session`                              | `auth.revokeSession`                              |
  * | `POST`   | `/api/hub/computers/link-code` (a named segment)        | `hub.createComputersLinkCode`                     |

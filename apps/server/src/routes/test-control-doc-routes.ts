@@ -8,18 +8,13 @@
  * service as the request's own operator principal, so declaring a route grants
  * nothing, exactly as in production.
  *
- * `openerSession` names the agent that runs a session as the document's opener.
- * `/api/test/seed-agent` registers its agent as `codex` so that its sessions run
- * on the test-mode runtime instead; a route to that agent's session needs the two
- * to agree, so this aligns the seeded agent's recorded runtime with its session
- * first. That is fixture repair a real install never needs, which is why it
- * lives here and nowhere else.
+ * `openerSession` names the agent that runs a session as the document's opener,
+ * found (and its seeded runtime aligned) by `services/canvas/doc-channel/route-controls/test-opener.ts`.
  *
  * @module routes/test-control-doc-routes
  */
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { agents, sessionMetadata, eq, type Db } from '@dorkos/db';
 import { CanvasChannelDeclarationSchema } from '@dorkos/shared/canvas-channel-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
@@ -27,6 +22,7 @@ import { honoRequestFacts } from '../http/request-facts.js';
 import { logger } from '../lib/logger.js';
 import type { DocChannelHttp } from './canvas-doc-events.js';
 import type { DocChannelGrants } from '../services/canvas/doc-channel/grants.js';
+import type { TestDocOpener } from '../services/canvas/doc-channel/route-controls/test-opener.js';
 
 const ConfigureSchema = z
   .object({
@@ -36,37 +32,22 @@ const ConfigureSchema = z
   })
   .strict();
 
-/** The registered agent that runs a session, aligned with the session's runtime. */
-function openerOf(db: Db, sessionId: string): string | undefined {
-  const session = db
-    .select()
-    .from(sessionMetadata)
-    .where(eq(sessionMetadata.sessionId, sessionId))
-    .get();
-  if (!session?.agentPath || !session.runtime) return undefined;
-  const agent = db.select().from(agents).where(eq(agents.projectPath, session.agentPath)).get();
-  if (!agent) return undefined;
-  if (agent.runtime !== session.runtime)
-    db.update(agents).set({ runtime: session.runtime }).where(eq(agents.id, agent.id)).run();
-  return agent.id;
-}
-
 /**
  * Build the test-only declaration route.
  *
  * @param http - The server's document channel composition.
- * @param db - The database the agents and sessions are recorded in.
+ * @param openerOf - The registered agent that runs a session, with its seeded runtime aligned.
  */
 export function createTestDocRouteGroup(
   http: Pick<DocChannelHttp, 'actor'> & { grants: DocChannelGrants },
-  db: Db
+  openerOf: TestDocOpener
 ): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
   router.post('/configure', (c) => {
     const parsed = ConfigureSchema.safeParse(readJsonBody(c));
     if (!parsed.success) return validationProblem(c, parsed.error);
     const { documentId, declaration, openerSession } = parsed.data;
-    const openerAgentId = openerSession ? openerOf(db, openerSession) : undefined;
+    const openerAgentId = openerSession ? openerOf(openerSession) : undefined;
     if (openerSession && !openerAgentId)
       return problem(c, 'not_found', { detail: 'No registered agent runs that chat.' });
     try {
