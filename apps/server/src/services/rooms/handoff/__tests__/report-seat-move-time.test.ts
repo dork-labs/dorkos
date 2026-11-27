@@ -47,13 +47,14 @@ type ToRoomSeat = NonNullable<ChatReportBackDeps['toRoomSeat']>;
 /** A seat hand-in that takes the report when the outbox lets the seat's turn run. */
 const seatTakes: ToRoomSeat = async (_parent, report) => report.beforeRun?.() ?? false;
 
-/** Run one finished turn of `child` through the real report outbox and chat-message service. */
-async function reportFrom(parent: string, seat: ToRoomSeat = seatTakes) {
-  const { service, dispatched } = chatServiceOn(db);
-  const send = vi.spyOn(service, 'send');
-  const onUndelivered = vi.fn().mockResolvedValue(undefined);
-  const toRoomSeat = vi.fn<ToRoomSeat>(seat);
-  const reports = new ChatReportBack({
+/** Report-back for `child`, over a fresh outbox store as each server lifetime has. */
+function reportBack(
+  parent: string,
+  service: ChatReportBackDeps['service'],
+  toRoomSeat: ToRoomSeat,
+  onUndelivered: ChatReportBackDeps['onUndelivered']
+) {
+  return new ChatReportBack({
     service,
     store: { listStopsOf: () => [], latestInterruptFrom: () => undefined },
     reportTargetOf: () => ({ parentSessionId: parent }),
@@ -71,7 +72,17 @@ async function reportFrom(parent: string, seat: ToRoomSeat = seatTakes) {
     toRoomSeat,
     onUndelivered,
   });
-  await reports.onTurnEnd('child', null, { to: NOW });
+}
+
+/** Run one finished turn of `child` through the real report outbox and chat-message service. */
+async function reportFrom(parent: string, seat: ToRoomSeat = seatTakes) {
+  const { service, dispatched } = chatServiceOn(db);
+  const send = vi.spyOn(service, 'send');
+  const onUndelivered = vi.fn().mockResolvedValue(undefined);
+  const toRoomSeat = vi.fn<ToRoomSeat>(seat);
+  await reportBack(parent, service, toRoomSeat, onUndelivered).onTurnEnd('child', null, {
+    to: NOW,
+  });
   service.stop();
   const row = db.select().from(roomReportOutbox).get()!;
   return {
@@ -82,6 +93,27 @@ async function reportFrom(parent: string, seat: ToRoomSeat = seatTakes) {
     row,
     saved: new HandoffOutboxStore(db).reports.decode(row),
   };
+}
+
+/**
+ * Save `child`'s report, stop the server while the report waits on the seat, run `meanwhile`,
+ * then recover the saved report in a new server lifetime.
+ */
+async function savedThenRestarted(parent: string, meanwhile: () => void = () => {}) {
+  const before = chatServiceOn(db);
+  const parked = vi.fn<ToRoomSeat>(() => new Promise<boolean>(() => {}));
+  const first = reportBack(parent, before.service, parked, vi.fn());
+  void first.onTurnEnd('child', null, { to: NOW });
+  await vi.waitFor(() => expect(parked).toHaveBeenCalled());
+  first.stop();
+  before.service.stop();
+  meanwhile();
+  const { service, dispatched } = chatServiceOn(db);
+  const onUndelivered = vi.fn().mockResolvedValue(undefined);
+  await reportBack(parent, service, seatTakes, onUndelivered).recoverPending();
+  service.stop();
+  const row = db.select().from(roomReportOutbox).get()!;
+  return { dispatched, onUndelivered, row, saved: new HandoffOutboxStore(db).reports.decode(row) };
 }
 
 /** The chat each report-back message was launched into. */
@@ -224,6 +256,33 @@ describe('a saved report from a spin-off of a moved seat (DOR-3753)', () => {
       expect(row.state).toBe('delivered');
       expect(onUndelivered).not.toHaveBeenCalled();
     }
+  });
+
+  it('saved for the reopened old chat and recovered after a restart, is delivered there', async () => {
+    startChild('old-seat', FIRST_MOVE + 60_000);
+
+    const { dispatched, onUndelivered, row, saved } = await savedThenRestarted('old-seat');
+
+    expect(saved.seat).toBeNull();
+    expect(chatsReached(dispatched)).toEqual(['old-seat']);
+    expect(row.state).toBe('delivered');
+    expect(onUndelivered).not.toHaveBeenCalled();
+  });
+
+  it('saved for the seat, then the agent left while the server was down: the chat gets it', async () => {
+    startChild('seat-now', SECOND_MOVE + 60_000);
+
+    const { dispatched, onUndelivered, row, saved } = await savedThenRestarted('seat-now', () =>
+      new DepartedSeatStore(db).removeFromChannels(
+        [{ authorId: 'river-author', manifestId: 'river' }],
+        iso(NOW)
+      )
+    );
+
+    expect(saved.seat).toBeNull();
+    expect(chatsReached(dispatched)).toEqual(['seat-now']);
+    expect(row.state).toBe('delivered');
+    expect(onUndelivered).not.toHaveBeenCalled();
   });
 
   it('after a rejoin, a report from before the move goes to the old chat, not the new seat', async () => {

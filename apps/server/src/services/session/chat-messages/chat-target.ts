@@ -66,7 +66,7 @@ export type ChatSendKind = Extract<ChatMessageKind, 'message' | 'report'>;
  * Only when the rooms are wired (`roomsWired`): before that, an unbound answer is not known to
  * mean no room answers for the chat, and a seat must never take a report as a chat message.
  * A removed community room's old chats take reports too, by decision: the turn runs under the
- * spin-off's marks and the chat's own, and the room it could speak to is gone.
+ * spin-off's marks, and the room it could speak to is gone.
  *
  * @param facts - The target's binding, origin and room standing.
  * @param kind - What is being sent.

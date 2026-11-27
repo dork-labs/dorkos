@@ -7,7 +7,12 @@
  * The real chat-message service on a migrated database; only the launch stands in.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { chatMessages, sessionMetadata, eq, type Db } from '@dorkos/db';
+import { authors, chatMessages, sessionMetadata, eq, type Db } from '@dorkos/db';
+import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { describeSessionFor } from '../../../extensions/agent-send/agent-send-defaults.js';
+import { runtimeRegistry } from '../../../core/runtime-registry.js';
+import { roomSessionPlace } from '../../repo/room-turn-place.js';
+import { RoomSessionLedger } from '../../session-bindings/room-session-ledger.js';
 import type { CommunityRef } from '@dorkos/shared/community-adapter';
 import { purgeContent } from '../../../communities/remote/mirror-store/lifecycle.js';
 import type { ChatMessageService } from '../../../session/chat-messages/chat-message-service.js';
@@ -51,6 +56,37 @@ describe('takesReportsAsChat', () => {
       );
     }
   );
+});
+
+describe('what DorkOS reads about a room’s chat (describeSessionFor)', () => {
+  beforeEach(() => {
+    runtimeRegistry.setDb(db);
+    runtimeRegistry.register(new FakeAgentRuntime('claude-code'));
+  });
+
+  it('says the rooms are wired, and which chat the room answers for, once the port is there', async () => {
+    const place = roomSessionPlace({
+      bindings: new RoomSessionLedger(db),
+      authors: {
+        getById: (id: string) => db.select().from(authors).where(eq(authors.id, id)).get() ?? null,
+      } as never,
+      worktrees: () => null,
+    });
+    const factsOf = describeSessionFor(() => place);
+    expect(await factsOf('old-seat')).toMatchObject({
+      bound: true,
+      launchOrigin: 'room',
+      roomBound: false,
+      roomsWired: true,
+    });
+    expect(await factsOf('seat-now')).toMatchObject({ roomBound: true, roomsWired: true });
+  });
+
+  it('says the rooms are not wired before the port is set', async () => {
+    const factsOf = describeSessionFor(() => undefined);
+    for (const chat of ['old-seat', 'seat-now'])
+      expect(await factsOf(chat)).toMatchObject({ roomBound: false, roomsWired: false });
+  });
 });
 
 describe('before the rooms link is wired (DOR-3753)', () => {

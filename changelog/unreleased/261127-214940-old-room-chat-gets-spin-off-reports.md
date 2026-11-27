@@ -2,6 +2,7 @@
 covers:
   - 'fix(rooms): a spin-off started from an old room chat reports back to that chat (DOR-3753)'
   - 'fix(rooms): reports to an old room chat survive a full launch queue and an agent leaving the room (DOR-3753)'
+  - 'fix(rooms): saved reports for an old room chat resume once the rooms are wired (DOR-3753)'
 ---
 
 ### Fixed

@@ -406,17 +406,18 @@ export class ReportOutboxStore {
           .all();
         const ready: ReportOutboxRow[] = [];
         for (const row of rows) {
-          if (!this.valid(row)) {
+          this.set(row.id, { bootOwner: this.owner });
+          const owned = { ...row, bootOwner: this.owner };
+          // A seat gone while the server was down: the chat that started it takes it (DOR-3753).
+          const current = this.releaseGoneSeat(owned) ? (this.get(row.id) ?? owned) : owned;
+          if (!this.valid(current)) {
             this.set(row.id, {
               state: 'quarantined',
               settledAt: now,
               noticeState: 'ready',
               terminalReason: 'Stored report scope could not be verified.',
             });
-          } else {
-            this.set(row.id, { bootOwner: this.owner });
-            ready.push({ ...row, bootOwner: this.owner });
-          }
+          } else ready.push(current);
         }
         return ready;
       },
