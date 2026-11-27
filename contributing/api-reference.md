@@ -1935,13 +1935,11 @@ Always available even when the extension system is not initialized.
 
 Compiles the extension and activates it against a server-side mock API. Reports per-slot contribution counts on success, or structured errors with file/line/column on failure.
 
-### SSE Extension Events
+### Extension reload events
 
-**Endpoint**: `GET /api/extensions/events`
+**Endpoint**: `GET /api/events` (the old `GET /api/extensions/events` is gone, ADR `261123-170833`)
 
-> **Still served; to be removed.** New code uses `GET /api/events` (event name: `extension_reloaded`). Under ADR `261123-170833` this stream is removed in the change that moves its callers onto `/api/events`.
-
-**Event**: `extension_reloaded`
+**Event**: `extension_reloaded` (area `extensions`)
 
 ```json
 { "type": "extension_reloaded", "extensionIds": ["ext-id"], "timestamp": 1711461000000 }
@@ -1950,7 +1948,7 @@ Compiles the extension and activates it against a server-side mock API. Reports 
 - `extensionIds` — array of extension IDs that were reloaded
 - `timestamp` — numeric epoch milliseconds (`Date.now()`)
 
-Sent when extensions are recompiled via `reload_extensions` or `create_extension`. The client uses this to trigger a live reload of the extension bundle.
+Sent when extensions are recompiled via `reload_extensions` or `create_extension`, or turned on, approved or reloaded by hand. The app's extension host uses this to reload the bundle; a mini app's frame never opens `/api/events`, and the host's reload is what it sees.
 
 ### Client Configuration
 

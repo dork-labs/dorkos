@@ -28,7 +28,6 @@
  *
  * @module routes/extensions
  */
-import type { ServerResponse } from 'node:http';
 import fs from 'fs/promises';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
@@ -44,7 +43,6 @@ import { resolveBlobPath } from '../services/extensions/extension-data-paths.js'
 import { noteStepUpRisksBeforeServing } from '../services/extensions/step-up/step-up-extension-risk.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { registerExtensionApprovalRoutes } from './extensions-approval.js';
@@ -65,38 +63,19 @@ import {
 import { runFrontDoorWrite } from './front-door-step-up.js';
 import { markedExtensionSecretRefusal } from './extension-secret-agent-gate.js';
 
-/** Connected SSE clients for extension lifecycle events. */
-const sseClients = new Set<ServerResponse>();
-
 /**
- * Broadcast an `extension_reloaded` event to all connected SSE clients.
- * Only call this after at least one extension has compiled successfully.
+ * Tell every reader of `GET /api/events` that extensions were reloaded, as
+ * `extension_reloaded`. Only call this after at least one extension has
+ * compiled successfully.
  *
  * @param extensionIds - IDs of the extensions that were reloaded
  */
 export function broadcastExtensionReloaded(extensionIds: string[]): void {
-  const data = JSON.stringify({
-    type: 'extension_reloaded',
-    extensionIds,
-    timestamp: Date.now(),
-  });
-
-  // Broadcast to unified stream
   eventFanOut.broadcast('extension_reloaded', {
     type: 'extension_reloaded',
     extensionIds,
     timestamp: Date.now(),
   });
-
-  // Backward compat: also broadcast to old SSE clients (deprecated endpoint)
-  for (const client of sseClients) {
-    try {
-      client.write(`event: extension_reloaded\ndata: ${data}\n\n`);
-    } catch {
-      // Client disconnected — will be removed on close event
-      sseClients.delete(client);
-    }
-  }
 }
 
 const CwdChangedBodySchema = z.object({
@@ -146,30 +125,6 @@ const failed = (c: Context<ApiEnv>, what: string) =>
 export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv> {
   const { manager: extensionManager, dorkHome, getCwd, activity } = deps;
   const router = new Hono<ApiEnv>();
-
-  // GET /api/extensions/events -- SSE stream for extension lifecycle events
-  router.get('/events', (c) =>
-    streamToNodeResponse(c, (res, { signal }) => {
-      logger.warn('[DEPRECATED] GET /api/extensions/events — use GET /api/events instead');
-      res.writeHead(200, {
-        'Content-Type': 'text/event-stream; charset=utf-8',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      });
-      // Send initial heartbeat so the client knows the connection is live
-      res.write(':ok\n\n');
-      sseClients.add(res);
-      // Clean up on disconnect
-      return new Promise<void>((resolve) => {
-        const leave = (): void => {
-          sseClients.delete(res);
-          resolve();
-        };
-        if (signal.aborted) leave();
-        else signal.addEventListener('abort', leave, { once: true });
-      });
-    })
-  );
 
   // GET /api/extensions -- Every discovered extension, a page at a time (DOR-4982;
   // the order: `services/extensions/listing/extension-list-pages.ts`).

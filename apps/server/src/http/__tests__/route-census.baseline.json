@@ -235,7 +235,6 @@
     "GET /api/extensions/:id/secrets",
     "GET /api/extensions/:id/settings",
     "GET /api/extensions/approval-sets",
-    "GET /api/extensions/events",
     "GET /api/extensions/pending-approvals",
     "GET /api/extensions/stale-approvals",
     "GET /api/extensions/step-up-risks",
