@@ -229,9 +229,9 @@ Error codes: NO_CHAT (only an agent in a chat can do this), SELF (that is your o
  */
 function meshToolsContext(agentSession: boolean): string {
   const listEntry = agentSession
-    ? `5. ${T}mesh_list(runtime?, capability?) — filter agents by runtime or capability; every entry
-   carries the agent's id, which ${T}chat_send takes as its "to"`
-    : `5. ${T}mesh_list(runtime?, capability?) — filter agents by runtime or capability`;
+    ? `5. ${T}mesh_list(runtime?, capability?, cursor?) — filter agents; pages: pass nextCursor as cursor until null.
+   Every entry carries the agent's id, which ${T}chat_send takes as its "to"`
+    : `5. ${T}mesh_list(runtime?, capability?, cursor?) — filter agents; pages: pass nextCursor as cursor until null`;
   const messageLine = agentSession
     ? `\n- Message another agent: ${T}chat_send(to=<their agent id from ${T}mesh_list>, message="…")`
     : '';
@@ -587,7 +587,7 @@ async function buildPeerAgentsBlock(
     const howToMessage = agentSession
       ? `\n\nTo message a peer: take its id from ${T}mesh_list(), then ${T}chat_send(to=<their agent id>, message="…").`
       : '';
-    return `<peer_agents>\nRegistered agents on this machine (use ${T}mesh_list() for live data):\n${lines}${howToMessage}\n</peer_agents>`;
+    return `<peer_agents>\nRegistered agents on this machine (use ${T}mesh_list() for live data, every page to a null nextCursor):\n${lines}${howToMessage}\n</peer_agents>`;
   } catch {
     return '';
   }

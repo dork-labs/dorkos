@@ -66,7 +66,7 @@ from it: more precise than the docs, and free.
 
 **This instance, right now.** Read it with tools. Never look it up.
 
-- "Which agents do I have?" -> \`mesh_list\`, or \`dorkos agent list --json\`
+- "Which agents do I have?" -> \`mesh_list\` (every page, to a null \`nextCursor\`), or \`dorkos agent list --json\`
 - "What ran last night?" -> \`activity_list\`, or \`dorkos activity --json\`
 - "Did my nightly task work?" -> \`tasks_get_run_history\`, or \`dorkos task runs\`
 - "What version am I on?" -> \`check_update\`, or \`dorkos version --check\`

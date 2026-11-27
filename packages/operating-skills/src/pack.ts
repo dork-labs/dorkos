@@ -495,8 +495,11 @@ export interface OperatingSkill {
  *   `operator_only`. An agent seeded at 72 would look for a code that never comes.
  * - 74: `using-the-marketplace` says both list tools page (DOR-4982). An agent
  *   seeded at 73 would read the first page of installs as all of them.
+ * - 75: `mesh_list` pages (DOR-5480). `managing-agents`, `answering-dorkos-questions`
+ *   and `operating-dorkos` say to follow `nextCursor`; an agent seeded at 74 would
+ *   read the first fifty agents as the whole roster.
  */
-export const OPERATING_SKILLS_VERSION = 74;
+export const OPERATING_SKILLS_VERSION = 75;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

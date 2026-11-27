@@ -116,7 +116,11 @@ export function createExternalMcpServer(
   registerTaskTools(registrar, deps, identity);
   registerRelayTools(registrar, deps, relayIdentity);
   registerBindingTools(registrar, deps);
-  registerMeshTools(registrar, deps);
+  registerMeshTools(registrar, deps, {
+    ...(identity ? { identity } : {}),
+    ...(agentIdentityPresented ? { agentIdentityPresented } : {}),
+    ...(userId ? { userId } : {}),
+  });
   registerAgentAndExtensionTools(registrar, deps);
 
   // ── Registry-backed tools (operator + marketplace + self-description) ─────

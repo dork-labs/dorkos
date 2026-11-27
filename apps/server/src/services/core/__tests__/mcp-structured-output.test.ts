@@ -230,7 +230,7 @@ describe('external MCP structured-output tools (real tools/call pipeline)', () =
 
   it('mesh_list returns schema-valid structuredContent', async () => {
     const structured = await callStructured('mesh_list');
-    expect(structured).toMatchObject({ count: 1 });
+    expect(structured).toMatchObject({ agents: [{ id: MANIFEST.id }], nextCursor: null });
     // The manifest plus the address to send to (DOR-1337). This assertion is
     // what proves the added field passes the tool's declared `outputSchema` —
     // the MCP SDK validates `structuredContent` against it and an unexpected
