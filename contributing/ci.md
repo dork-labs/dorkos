@@ -71,6 +71,7 @@ Ruleset 19893973 is the **only** protection on `main`. Classic branch protection
 <!-- prettier-ignore-start -->
 <!-- ci-steward:required-checks:start -->
 - `typecheck`
+- `policy`
 - `fragment-present`
 - `no-fragment-under-skip-label`
 - `version-outranks-base`

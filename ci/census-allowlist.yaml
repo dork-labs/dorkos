@@ -63,6 +63,11 @@ entries:
     step: Save the pnpm store for the queue and pull requests
     kind: step-if
     reason: Saves the pnpm store only on refs/heads/main (this workflow's own scheduled runs there) and only on a restore miss, right after the install (DOR-4537, ledger 261117-141554). It asserts nothing; on pull_request and merge_group the job restores main's store and saves none, because a PR merge ref's or a queue ref's cache scope is unreadable by any other ref.
+  - workflow: typecheck.yml
+    job: policy
+    step: CI Steward ledger coverage
+    kind: step-if
+    reason: The same step as in typecheck, moved with the policy gates (DOR-4949). Coverage needs the PR's diff and branch name, which only pull_request carries, and it cannot change between the PR and the queue, where ledger validity re-runs. Dependabot PRs skip it too; Dependabot cannot write a ledger entry, and its PRs would otherwise stay red forever.
 
   # --- lint.yml ---
   - workflow: lint.yml
