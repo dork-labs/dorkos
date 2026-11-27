@@ -16,12 +16,12 @@ Read top to bottom. Stop early when there is nothing to do. Most beats should be
 - [ ] Anything addressed to me (a #dorkos mention, a DM, a chat from another agent)? Answer it or do it.
 - [ ] My commitments due? Keep it, or move it with a note to whoever I promised it to.
 - [ ] **Approved lanes started?** (PM 11-12, after three approved lanes never started.) Read `.temp/coord/approved-lanes.md`. For each lane past its start date with no chat that is running or finished, start it this beat, or tell @dorkos-pm this beat why not. A newly approved lane gets its row there the same turn.
-- [ ] **No idle P0 or P1** (PM 11-02, until DOR-3673's idle alarm ships): for each open P0/P1 item (FIX-QUEUE 00* rows, red or held P0 PRs), check that a chat is **running** on it (`running_chats`, then `chat_read` with status). If none is, wake its lane with the exact next step, or start one on Claude4, Claude5 or Codex (never Main or claude-ab1). Then tell @dorkos-pm by DM, with the lane link. A lane whose turn ended is not "running".
+- [ ] **No idle P0 or P1** (PM 11-02, until DOR-3673's idle alarm ships): for each open P0/P1 item (from `flow order --json`: every `issues[]` entry with band `pin` or `urgent`, everything in `inFlight[]`, and the Urgent ones in `held[]`; `-n` cuts only `issues[]`, so don't use it here; plus red or held P0 PRs), check that a chat is **running** on it (`running_chats`, then `chat_read` with status). If none is, wake its lane with the exact next step, or start one on Claude4, Claude5 or Codex (never Main or claude-ab1). Then tell @dorkos-pm by DM, with the lane link. A lane whose turn ended is not "running".
 
 ## On a sweep (every 2h)
 
 - [ ] Project leads and build lanes (the list is in `.temp/coord/checkin.md`): check each one's status. If one is idle with work left, nudge it with its next step, and remind it to keep its turn alive.
-- [ ] A lead or lane freed up? It takes the next project the PM briefed, or else the highest-ranked unstarted Must in `.temp/coord/FIX-QUEUE.md`, unless the PM named something else (PM rule, 10-25).
+- [ ] A lead or lane freed up? Start from `flow order`, never a list of my own (DOR-5064). A free lead takes the top Started project in `flow order --projects` that has no lead. A free lane takes the first issue of its project in `flow order --for-project <P> --json`; if it isn't ready, make it ready or ask with `agent/needs-input` first. Unless the PM or Dorian named something else.
 - [ ] Room check (DOR-4466): did I post status or relay a lane in a room since the last sweep? Move that kind of update to a DM next time. Rooms get started, blocked on Dorian, or shipped.
 - [ ] My open PRs, and red required checks on `main`: re-arm once, rerun once, or fix.
 - [ ] A PR of mine merged or closed? Remove its lane's worktree, plus any Docker container or image the lane built (`docker ps -a`, `docker images`), unless it's running or another container still uses it (PM 11-12).
@@ -33,7 +33,7 @@ Read top to bottom. Stop early when there is nothing to do. Most beats should be
 - [ ] Look for ALERT lines in `~/Library/Logs/dorkos-worktree-janitor.log`, and check free disk. Under the 25 GB disk floor (`contributing/ci.md`): clean up merged worktrees, then `pnpm store prune`.
 - [ ] Look at what's unreleased since the last tag. If it's worth shipping, tell @dorkos-pm.
 - [ ] Linear: are tickets marked Done really done? Partial PRs close them automatically, so reopen any that aren't.
-- [ ] Any FIX-QUEUE F1–F3 item still in Todo after 24h? Flag it in the report with the reason (PM rule, 10-25).
+- [ ] Run `flow order -n 5 --json` and quote the five in the report, with its run time (`generatedAt`), so it can be checked against the PM's digest. Any of them still in Todo after 24h with no lane? Flag it with the reason.
 
 ## Never unasked
 

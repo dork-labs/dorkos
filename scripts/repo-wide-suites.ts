@@ -116,6 +116,8 @@ export const REPO_WIDE_SUITES = [
   '__tests__/text-only-scope.test.ts',
   '__tests__/tsconfig-extends-resolve.test.ts',
   '__tests__/vitest-projects.test.ts',
+  // Reads contributing/prioritization.md, .dork/HEARTBEAT.md and AGENTS.md (DOR-5064).
+  '__tests__/work-order-callers.test.ts',
   // Imports packages/shared/src/config-schema.ts and reads the migrations table:
   // a config schema change without `pnpm check:config-migration -- --update`
   // turns it red (DOR-5123).

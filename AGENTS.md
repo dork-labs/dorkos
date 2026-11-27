@@ -107,6 +107,8 @@ Rules today:
 
 **Filing an issue means triaging it** ([contributing/prioritization.md](contributing/prioritization.md)): a MoSCoW priority, a size, a project, proof, a "done when" and a duplicate check. Group small follow-ups from one PR in one parent issue.
 
+**What to work on next is `flow order`, and nothing else** ([how the order is computed](contributing/prioritization.md#how-the-order-is-computed)): one list ranked from Linear fields, the same for every agent and person. To move an issue, change its field; never keep or reorder a list of your own.
+
 If compaction fires mid-`/flow`, keep verbatim: the work item id and title, stage and sub-step, gate state, spec dir, worktree path and branch, `flow-state.json`, open PR, and your assumptions.
 
 ## Worktrees
