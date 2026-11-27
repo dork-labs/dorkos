@@ -1,22 +1,24 @@
 /**
- * The docs in one space, for wiki links (DOR-2982).
+ * The docs in one space, for wiki links (DOR-2982), through the generated API
+ * client (DOR-5473).
  *
  * @module shared/lib/transport/doc-link-methods
  */
 import type { DocIndex, DocResolve } from '@dorkos/shared/doc-links';
-import { fetchJSON } from './http-client';
+import { createTransportApiClient } from './api-client';
 
 /** Create the doc-link methods bound to a base URL. */
 export function createDocLinkMethods(baseUrl: string) {
+  const api = createTransportApiClient(baseUrl);
   return {
     getDocIndex(cwd: string): Promise<DocIndex> {
-      const params = new URLSearchParams({ cwd });
-      return fetchJSON<DocIndex>(baseUrl, `/documents/index?${params}`);
+      return api.call('documents.getIndex', { query: { cwd } });
     },
 
     resolveDocLink(cwd: string, target: string, from: string | null): Promise<DocResolve> {
-      const params = new URLSearchParams({ cwd, target, ...(from ? { from } : {}) });
-      return fetchJSON<DocResolve>(baseUrl, `/documents/resolve?${params}`);
+      return api.call('documents.resolve', {
+        query: { cwd, target, ...(from ? { from } : {}) },
+      });
     },
   };
 }
