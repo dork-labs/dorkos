@@ -25,19 +25,22 @@ import { migratePersonaCapability } from '../doors/agent-persona-capability.js';
 import { agentCurrentCapability } from '../doors/agent-current-capability.js';
 import type { AuditActor } from '@dorkos/shared/audit-schemas';
 import {
-  AgentPauseListSchema,
   AgentPauseRequestSchema,
   AgentPauseResultSchema,
+  AgentPauseSchema,
 } from '@dorkos/shared/mesh-schemas';
+import { PageQuerySchema, nextCursorOutput } from '@dorkos/shared/paging';
 import { z } from 'zod';
 import { type CapabilityHandlerContext } from '../../core/capabilities/index.js';
 import {
   CapabilityToolError,
   defineCapability,
+  invalidCursor,
   type CapabilityDeps,
   type CapabilityDomain,
 } from '../../core/capabilities/capability-definition.js';
 import { auditTrail } from '../../audit/audit-trail.js';
+import { keysetPage, listPosition } from '../../../lib/paging/keyset-page.js';
 import { currentAuditActor } from '../../audit/audit-context.js';
 import {
   CannotResumeSelfError,
@@ -179,12 +182,15 @@ export const agentPauseDomain: CapabilityDomain = {
     defineCapability({
       id: 'agent.list_paused',
       title: 'List paused agents',
-      description: 'List every agent that is paused right now, with who paused it, when, and why.',
+      description:
+        'List every agent that is paused right now, with who paused it, when, and why. Oldest ' +
+        'pause first, a page at a time: pass `nextCursor` back as `cursor` for the next page ' +
+        'until it is null. A pause made or lifted while paging can repeat or be missed.',
       tier: 'observe',
       area: null,
       areaNote: 'reading',
-      input: z.object({}),
-      output: AgentPauseListSchema,
+      input: PageQuerySchema,
+      output: z.object({ pauses: z.array(AgentPauseSchema), nextCursor: nextCursorOutput }),
       surfaces: {
         mcp: {
           toolName: 'list_paused_agents',
@@ -193,7 +199,20 @@ export const agentPauseDomain: CapabilityDomain = {
         },
         http: { method: 'get', path: '/api/agents/pauses' },
       },
-      invoke: async (deps) => ({ pauses: requirePauseDeps(deps).list() }),
+      invoke: async (deps, query) => {
+        // The service's own order, oldest pause first, kept by each row's place in it.
+        const rows = requirePauseDeps(deps)
+          .list()
+          .map((pause, index) => ({ pause, index }));
+        const page = keysetPage(
+          'agent-pauses',
+          rows,
+          ({ pause, index }) => [listPosition(index), pause.agentId],
+          query,
+          invalidCursor
+        );
+        return { pauses: page.items.map(({ pause }) => pause), nextCursor: page.nextCursor };
+      },
     }),
     // A person's move of an old persona into SOUL.md, and the agent a folder belongs to
     // (`GET /api/agents/current`), ride in this `agent` domain (DOR-4978).

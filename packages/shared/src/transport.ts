@@ -2746,8 +2746,8 @@ export interface Transport extends TransportSlices {
     subscription: RegisterPushSubscriptionRequest
   ): Promise<RegisterPushSubscriptionResponse>;
 
-  /** Every browser currently subscribed, for the device list in Settings. */
-  listPushSubscriptions(): Promise<ListPushSubscriptionsResponse>;
+  /** Every browser currently subscribed, every page read, for the device list in Settings. */
+  listPushSubscriptions(): Promise<Pick<ListPushSubscriptionsResponse, 'subscriptions'>>;
 
   /**
    * Stop pushing to one browser.
