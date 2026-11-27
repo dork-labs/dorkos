@@ -54,8 +54,6 @@ function span(
     endedAt: to === null ? null : minute(to),
     endedBy,
     handedTo: null,
-    takenOver: false,
-    handedFrom: null,
     ...extra,
   };
 }
@@ -88,19 +86,14 @@ describe('pairing claims into spans', () => {
     expect(pair()).toEqual([span('new-lane', 1, null, null)]);
   });
 
-  it('names both ends of a hand-over, by the ids they have now, for the read to judge', () => {
+  it('names the taker of a hand-over, by the id it has now, for the read to judge', () => {
     at('a', 'claims', 1);
     at('a', 'released', 4, 'hand-over', 'b-old');
     at('b-old', 'claims', 4, 'hand-over', 'b-old');
     expect(pair(new Map([['b-old', 'b']]))).toEqual([
       span('a', 1, 4, 'handed-over', { handedTo: 'b' }),
-      span('b', 4, null, null, { takenOver: true, handedFrom: 'a' }),
+      span('b', 4, null, null),
     ]);
-  });
-
-  it('marks a hand-over whose giver’s row is missing as taken over from no one known', () => {
-    at('b', 'claims', 4, 'hand-over', 'b');
-    expect(pair()).toEqual([span('b', 4, null, null, { takenOver: true })]);
   });
 
   it('ignores a claims row no claim writer wrote', () => {

@@ -228,11 +228,10 @@ export const WorkItemSpanSchema = z.union([
     /** The chat, by the id it has now. */
     chatId: z.string(),
     /**
-     * When the chat claimed it, an exact time (ISO 8601) and nothing else. Null
-     * when it took the claim from a chat the reader may not read: then only
-     * `startDay` says when, so nothing here times that chat.
+     * When the chat claimed it, an exact time (ISO 8601). A hand-over's time is
+     * visible to the space; the chat that gave it is never named.
      */
-    claimedAt: z.string().nullable(),
+    claimedAt: z.string(),
     /** The day it began (`YYYY-MM-DD`). */
     startDay: z.string(),
     /**
@@ -264,9 +263,8 @@ export type WorkItemSpan = z.infer<typeof WorkItemSpanSchema>;
 /**
  * One page of the chats that claimed a ticket or pull request, and when.
  * Spans list by the day they began, oldest first. Within a day: the spans of
- * chats the reader may read with an exact `claimedAt`, by `claimedAt` then
- * `chatId`; then those whose start is the day only, by `chatId`; then the
- * spans of chats the reader may not read, by the day they ended, open last.
+ * chats the reader may read, by `claimedAt` then `chatId`; then the spans of
+ * chats the reader may not read, by the day they ended, open last.
  * Those private spans carry days only, and two with the same days read as
  * one, so their place says no finer time. Spans start and end between pages,
  * so a span can repeat or be missed while paging.

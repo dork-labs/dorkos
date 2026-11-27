@@ -31,10 +31,12 @@
  * spans on the same days read as one, with no count, so they need no order
  * between them; private spans are never ordered by a time. A span the reader
  * may read that was handed over to a chat it may not read ends on the day
- * only (`endedAt` null, `endDay` set), as handed over and to no one named;
- * one taken over from such a chat starts on the day only (`claimedAt` null,
- * `startDay` set) and names no giver. So nothing on it times or names the
- * other chat. A hand-over between two chats it may read stays exact.
+ * only (`endedAt` null, `endDay` set), as handed over and to no one named.
+ * A hand-over's time is visible to the space, and its giver is not: a span
+ * that took its claim from a chat the reader may not read keeps its exact
+ * `claimedAt` (the space already sees that time in the taker's start, its
+ * audit row and its `claims` link) and names no giver. A hand-over between
+ * two chats it may read stays exact.
  *
  * @module services/work-graph/reads/work-item-chats
  */
@@ -76,10 +78,6 @@ export interface ChatSpan {
   endedBy: ClaimSpanEnd | null;
   /** For a hand-over, the chat that took it, by its current id; otherwise null. Never shown. */
   handedTo: string | null;
-  /** Whether the span began with a hand-over to this chat. */
-  takenOver: boolean;
-  /** For a hand-over to this chat, the chat that gave it, when its row was found. Never shown. */
-  handedFrom: string | null;
 }
 
 /** The writers whose `claims` row opens a span. */
@@ -113,13 +111,6 @@ export function pairClaimSpans(
   currentOf: ReadonlyMap<string, string>
 ): ChatSpan[] {
   const current = (id: string) => currentOf.get(id) ?? id;
-  // A hand-over writes the giver's `released` and the taker's `claims` at one time, both
-  // naming the taker as the recording chat: the giver is found from the taker and the time.
-  const giverOf = new Map<string, string>();
-  for (const link of links) {
-    if (link.relation === 'released' && link.source === 'hand-over' && link.recordingChatId)
-      giverOf.set(`${current(link.recordingChatId)}\n${link.recordedAt}`, current(link.from.id));
-  }
   const byChat = new Map<string, WorkLink[]>();
   for (const link of links) {
     const chatId = currentOf.get(link.from.id) ?? link.from.id;
@@ -130,31 +121,26 @@ export function pairClaimSpans(
     const ordered = [...own].sort(
       (a, b) => compare(a.recordedAt, b.recordedAt) || compare(a.id, b.id)
     );
-    let open: Pick<ChatSpan, 'claimedAt' | 'takenOver' | 'handedFrom'> | null = null;
+    let open: string | null = null;
     for (const link of ordered) {
       if (link.relation === 'claims') {
         if (!STARTED_BY_WRITER.has(link.source)) continue;
         if (open !== null)
           spans.push({
             chatId,
-            ...open,
+            claimedAt: open,
             endedAt: link.recordedAt,
             endedBy: 'unknown',
             handedTo: null,
           });
-        const takenOver = link.source === 'hand-over';
-        open = {
-          claimedAt: link.recordedAt,
-          takenOver,
-          handedFrom: takenOver ? (giverOf.get(`${chatId}\n${link.recordedAt}`) ?? null) : null,
-        };
+        open = link.recordedAt;
         continue;
       }
       if (open === null) continue;
       if (link.source !== NEVER_STARTED) {
         spans.push({
           chatId,
-          ...open,
+          claimedAt: open,
           endedAt: link.recordedAt,
           endedBy: END_BY_WRITER[link.source] ?? 'unknown',
           handedTo:
@@ -166,7 +152,7 @@ export function pairClaimSpans(
       open = null;
     }
     if (open !== null)
-      spans.push({ chatId, ...open, endedAt: null, endedBy: null, handedTo: null });
+      spans.push({ chatId, claimedAt: open, endedAt: null, endedBy: null, handedTo: null });
   }
   return spans;
 }
@@ -178,11 +164,12 @@ interface Shown {
 }
 
 /**
- * Day it began; within a day, the readable spans with an exact start by that time then
- * chat, then the readable ones whose start is the day only, by chat, then the private ones
- * by the day they ended (open last). No key holds a time the reader may not see.
+ * Day it began; within a day, the readable spans by their start then chat, then the
+ * private ones by the day they ended (open last). No key holds a time the reader may not
+ * see: a readable span's chat id breaks a tie only between two starts in one millisecond,
+ * both of which the reader sees.
  */
-type SortKey = [day: string, group: '0' | '1' | '2', a: string, b: string];
+type SortKey = [day: string, group: '0' | '1', a: string, b: string];
 
 /**
  * One page of the chats that claimed `ref`, as the reader may see them.
@@ -204,9 +191,7 @@ export function readWorkItemChats(
   const spans = pairClaimSpans(links, currentOf);
   const mayRead = readable([
     ...new Set(
-      spans.flatMap((span) =>
-        [span.chatId, span.handedTo, span.handedFrom].filter((id): id is string => id !== null)
-      )
+      spans.flatMap((span) => (span.handedTo ? [span.chatId, span.handedTo] : [span.chatId]))
     ),
   ]);
 
@@ -216,22 +201,20 @@ export function readWorkItemChats(
     const day = span.claimedAt.slice(0, 10);
     const endDay = span.endedAt?.slice(0, 10) ?? null;
     if (mayRead.has(span.chatId)) {
-      // Handed to, or taken from, a chat this reader may not read (or one whose row is
-      // missing): that end or start is the day only, and no one is named.
+      // Handed to a chat this reader may not read: the end is the day only, and no one is
+      // named. A start is always exact, and never names a giver (see the module header).
       const endHidden = span.handedTo !== null && !mayRead.has(span.handedTo);
-      const startHidden =
-        span.takenOver && (span.handedFrom === null || !mayRead.has(span.handedFrom));
       shown.push({
         span: {
           relation: 'claims',
           chatId: span.chatId,
-          claimedAt: startHidden ? null : span.claimedAt,
+          claimedAt: span.claimedAt,
           startDay: day,
           endedAt: endHidden ? null : span.endedAt,
           endDay,
           endedBy: span.endedBy,
         },
-        key: startHidden ? [day, '1', '', span.chatId] : [day, '0', span.claimedAt, span.chatId],
+        key: [day, '0', span.claimedAt, span.chatId],
       });
       continue;
     }
@@ -241,7 +224,7 @@ export function readWorkItemChats(
     // A null end sorts after every day.
     shown.push({
       span: { relation: 'claims', startDay: day, endDay },
-      key: [day, '2', endDay ?? '~', ''],
+      key: [day, '1', endDay ?? '~', ''],
     });
   }
   shown.sort((a, b) => compareKeys(a.key, b.key));
@@ -276,7 +259,7 @@ function keyOf(position: unknown): SortKey {
     Array.isArray(position) &&
     position.length === 4 &&
     position.every((part) => typeof part === 'string') &&
-    (position[1] === '0' || position[1] === '1' || position[1] === '2')
+    (position[1] === '0' || position[1] === '1')
   ) {
     return position as SortKey;
   }

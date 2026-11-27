@@ -220,7 +220,7 @@ describe('a hand-over', () => {
     expect(owner.body.spans[0].endedAt).toBe('2026-11-26T09:07:00.000Z');
   });
 
-  it('starts a readable span on the day only, naming no one, when the giver is private', async () => {
+  it('starts a span taken from a private chat at its exact time, naming no giver', async () => {
     bind('c-space', 'space');
     bind('c-private', 'private');
     claims.claim(SCOUT.id, 'c-private', 'DOR-1');
@@ -231,7 +231,7 @@ describe('a hand-over', () => {
       {
         relation: 'claims',
         chatId: 'c-space',
-        claimedAt: null,
+        claimedAt: '2026-11-26T09:07:00.000Z',
         startDay: DAY,
         endedAt: null,
         endDay: null,
@@ -239,9 +239,20 @@ describe('a hand-over', () => {
       },
       { relation: 'claims', startDay: DAY, endDay: DAY },
     ]);
+    // Exactly these fields: nothing names the chat it came from.
+    expect(Object.keys(res.body.spans[0]).sort()).toEqual([
+      'chatId',
+      'claimedAt',
+      'endDay',
+      'endedAt',
+      'endedBy',
+      'relation',
+      'startDay',
+    ]);
+    expect(JSON.stringify(res.body)).not.toContain('c-private');
   });
 
-  it('shows the owner the exact time a chat took a claim from a private chat', async () => {
+  it('shows the owner the same exact time a chat took a claim from a private chat', async () => {
     bind('c-space', 'space');
     bind('c-private', 'private');
     claims.claim(SCOUT.id, 'c-private', 'DOR-1');
