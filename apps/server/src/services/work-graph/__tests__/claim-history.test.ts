@@ -110,7 +110,9 @@ describe('a claim and its release', () => {
         relation: 'claims',
         chatId: 'chat-a',
         claimedAt: '2026-11-26T12:00:00.000Z',
+        startDay: '2026-11-26',
         endedAt: '2026-11-26T12:02:00.000Z',
+        endDay: '2026-11-26',
         endedBy: 'released',
       },
     ]);
@@ -253,6 +255,20 @@ describe('three transitions in one millisecond', () => {
     expect(db.select().from(workClaims).all()).toHaveLength(1);
     expect(spans()).toEqual([
       expect.objectContaining({ chatId: 'chat-a', endedBy: 'released', endedAt: iso(now) }),
+    ]);
+  });
+
+  it('reads a release and a re-claim in one millisecond as the end of one span and a new one', () => {
+    claims.claim(AGENT, 'chat-a', 'DOR-1234');
+    const first = iso(now);
+    now += 1;
+    // The release lands first, then the claim, at one time: ordered by id, the release closes
+    // the first span and the claim opens a second, still held.
+    claims.release(AGENT, 'chat-a', 'DOR-1234');
+    claims.claim(AGENT, 'chat-a', 'DOR-1234');
+    expect(spans()).toEqual([
+      expect.objectContaining({ claimedAt: first, endedAt: iso(now), endedBy: 'released' }),
+      expect.objectContaining({ claimedAt: iso(now), endedAt: null, endedBy: null }),
     ]);
   });
 });

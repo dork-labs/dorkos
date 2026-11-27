@@ -140,11 +140,6 @@ export function useWorkGraphReads(): void {
   afterEach(() => resetSessionVisibility());
 }
 
-/** The identity an agent reader's turn binds, for a call made from its chat. */
-export function agentIdentityOf(reader: 'scout' | 'ranger'): AgentIdentity {
-  return identityOf(reader)!;
-}
-
 /**
  * GET a path as `reader`. An agent presents its header (and the chain resolved
  * its identity); `unidentified` presents a header nobody could resolve. A key

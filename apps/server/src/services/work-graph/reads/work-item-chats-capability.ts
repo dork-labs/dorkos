@@ -69,11 +69,12 @@ export function workItemChatsCapability(ports: WorkGraphReadPorts) {
     id: 'work-graph.work_item_chats',
     title: 'See who worked on a ticket or pull request',
     description:
-      'The chats that claimed one ticket or pull request, and when: each span with the chat, ' +
-      'when it was claimed, when it ended and how (released, lapsed, handed over), or still ' +
-      'held. Every agent’s chats are listed. A chat you may not read shows only the days its ' +
-      'span began and ended. ref is a ticket (DOR-1234) or a pull request (owner/repo#42 or ' +
-      'PR #42). Page with `limit` and the returned `nextCursor`.',
+      'The chats that claimed one ticket or pull request, and when, oldest first: each span ' +
+      'with the chat, when it was claimed, when it ended and how (released, lapsed, handed ' +
+      'over), or still held. Every agent’s chats are listed. A span of a chat you may not ' +
+      'read carries only the days it began and ended. ref is a ticket (DOR-1234) or a pull ' +
+      'request (owner/repo#42 or PR #42). Page with `limit` and the returned `nextCursor`; ' +
+      'spans start and end between pages, so one can repeat or be missed while paging.',
     tier: 'observe',
     area: null,
     areaNote: 'reading',
