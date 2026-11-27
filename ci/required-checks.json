@@ -2,6 +2,7 @@
   "ruleset": 19893973,
   "contexts": [
     "typecheck",
+    "policy",
     "fragment-present",
     "no-fragment-under-skip-label",
     "version-outranks-base",

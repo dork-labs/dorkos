@@ -542,6 +542,7 @@ this block byte for byte, so it cannot drift quietly):
 <!-- prettier-ignore-start -->
 <!-- ci-steward:required-checks:start -->
 - `typecheck`
+- `policy`
 - `fragment-present`
 - `no-fragment-under-skip-label`
 - `version-outranks-base`

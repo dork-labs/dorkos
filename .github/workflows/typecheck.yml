@@ -594,12 +594,11 @@ jobs:
 
   # The policy gates on their own, so a red `typecheck` means tsc (DOR-4949).
   #
-  # STAGE 1 OF 2. Every step below also still runs in the `typecheck` job above,
-  # because `policy` is not a required check yet and a gate on a check that is
-  # not required is not a gate. Once `policy` has run green on pull_request and
-  # merge_group, a person adds it to the "main: merge queue" ruleset and to
-  # ci/required-checks.json (ledger 261126-231130 has the exact change); stage 2
-  # then removes these steps from `typecheck`, which keeps tsc and the ratchets.
+  # STAGE 2 OF 3. `policy` is a required check (ci/required-checks.json); every
+  # step below also still runs in the `typecheck` job above until the
+  # "main: merge queue" ruleset requires `policy` too (ledger 261126-231130).
+  # Stage 3 then removes these steps from `typecheck`, which keeps tsc and the
+  # ratchets.
   #
   # Same triggers as `typecheck` (pull_request, merge_group, the main canary),
   # no path filter, so it can become required without a deadlock.
