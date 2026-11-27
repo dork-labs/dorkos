@@ -4,14 +4,15 @@
  * made-up body, so a call whose own schema refuses it is let go.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ZodError } from 'zod';
 import { createLocalBrowserMethods } from '../local-browser-methods';
 
 afterEach(() => vi.unstubAllGlobals());
 
-/** Record every request, answering each with an empty JSON object. */
+/** Record every request, answering each with an empty profile list. */
 function record() {
   const fetchMock = vi.fn(
-    async (_url: string, _init?: RequestInit) => new Response('{}', { status: 200 })
+    async (_url: string, _init?: RequestInit) => new Response('{"profiles":[]}', { status: 200 })
   );
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
@@ -26,9 +27,16 @@ function sent(fetchMock: ReturnType<typeof record>) {
   }));
 }
 
-/** Run each call, ignoring what its own schema makes of the made-up answer. */
+/**
+ * Run each call, letting go only its own schema refusing the made-up answer;
+ * any other error fails the test.
+ */
 async function settle(calls: Array<() => Promise<unknown>>) {
-  for (const call of calls) await call().catch(() => undefined);
+  for (const call of calls) {
+    await call().catch((error: unknown) => {
+      if (!(error instanceof ZodError)) throw error;
+    });
+  }
 }
 
 describe('createLocalBrowserMethods', () => {
@@ -149,6 +157,14 @@ describe('createLocalBrowserMethods', () => {
         method: 'POST',
         body: '{"handoffId":"handoff-1"}',
       },
+    ]);
+  });
+
+  it('encodes a chat selector as a query value', async () => {
+    const fetchMock = record();
+    await settle([() => methods.takeOverLocalBrowser('chat a')]);
+    expect(sent(fetchMock)).toEqual([
+      { url: '/api/local-browser/take-over?sessionId=chat+a', method: 'POST', body: '{}' },
     ]);
   });
 });
