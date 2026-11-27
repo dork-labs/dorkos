@@ -47,11 +47,18 @@ export const WIFI_MODE_CAPABILITY_IDS: ReadonlyMap<string, CapabilityWifiMode> =
  *   for heartbeat checks.
  * - `mcp.add_global_server`, `mcp.replace_global_server` (`front-door`): what
  *   an MCP server every agent gets runs (DOR-4978).
+ * - `connectors.let_agent_back_in`, `connectors.answer_agent_request` (a yes
+ *   only), `connectors.start_agent_request_sign_in` (`front-door`, behind the
+ *   account-decision caller bar): giving an agent access to a connected app
+ *   (DOR-4355, DOR-4978).
  */
 export const CONFIRM_FIRST_CAPABILITY_IDS: ReadonlyMap<string, ConfirmFirstBar> = new Map([
   ['heartbeat.choose_triage_credits', 'account-owner'],
   ['mcp.add_global_server', 'front-door'],
   ['mcp.replace_global_server', 'front-door'],
+  ['connectors.let_agent_back_in', 'front-door'],
+  ['connectors.answer_agent_request', 'front-door'],
+  ['connectors.start_agent_request_sign_in', 'front-door'],
 ]);
 
 /**

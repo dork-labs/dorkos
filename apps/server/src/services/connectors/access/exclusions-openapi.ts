@@ -12,9 +12,7 @@ import {
   ConnectorAccessChangeListSchema,
   ConnectorAccessChangeSchema,
   ConnectorAccessChangeUndoSchema,
-  ConnectorGrantExclusionChangeSchema,
   ConnectorGrantExclusionListSchema,
-  ConnectorGrantExclusionParamsSchema,
   ConnectorWritesBackChangeRequestSchema,
   ConnectorWritesBackChangeSchema,
   ConnectorWritesBackSchema,
@@ -95,22 +93,6 @@ export function registerConnectorExclusionsOpenApi(registry: OpenAPIRegistry): v
       },
       404: problemResponse('`not_found`: nothing to undo under that id'),
       412: problemResponse('`precondition_failed`: access changed since'),
-    },
-  });
-  registry.registerPath({
-    method: 'delete',
-    path: '/api/connectors/connections/{connectionId}/exclusions/{agentId}',
-    tags: ['Connectors'],
-    summary: "Let one agent back into a connection's every-agent share",
-    description:
-      'Owner only. The agent gets whatever the share gives every agent now. Only a person can do this.',
-    request: { params: ConnectorGrantExclusionParamsSchema },
-    responses: {
-      200: {
-        description: 'The agent is no longer left out',
-        content: { 'application/json': { schema: ConnectorGrantExclusionChangeSchema } },
-      },
-      404: notFound,
     },
   });
   registry.registerPath({

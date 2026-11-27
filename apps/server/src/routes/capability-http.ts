@@ -123,6 +123,12 @@ export const SKIPPABLE_MIDDLEWARE: Readonly<Record<string, string>> = Object.fre
   'PUT /api/connectors/connections/:connectionId/exclusions/:agentId skips ALL /api/connectors/*':
     CONNECTOR_GATE_FOLDED_IN,
   'GET /api/connectors/usage/operator skips ALL /api/connectors/*': CONNECTOR_GATE_FOLDED_IN,
+  'DELETE /api/connectors/connections/:connectionId/exclusions/:agentId skips ALL /api/connectors/*':
+    CONNECTOR_GATE_FOLDED_IN,
+  'POST /api/connectors/agent-requests/:requestId/decision skips ALL /api/connectors/*':
+    CONNECTOR_GATE_FOLDED_IN,
+  'POST /api/connectors/agent-requests/:requestId/authentication-flows skips ALL /api/connectors/*':
+    CONNECTOR_GATE_FOLDED_IN,
   'GET /api/tasks skips ALL /api/tasks': TASK_STEP_UP_WRITES_ONLY,
   'GET /api/tasks skips ALL /api/tasks/*': TASK_STEP_UP_WRITES_ONLY,
   'GET /api/tasks/runs skips ALL /api/tasks/*': TASK_STEP_UP_WRITES_ONLY,

@@ -2392,32 +2392,6 @@
         ],
         "additionalProperties": false
       },
-      "ConnectorGrantExclusionChange": {
-        "type": "object",
-        "properties": {
-          "connectionId": {
-            "type": "string",
-            "minLength": 1
-          },
-          "agentId": {
-            "type": "string",
-            "minLength": 1
-          },
-          "excluded": {
-            "type": "boolean"
-          },
-          "changed": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "connectionId",
-          "agentId",
-          "excluded",
-          "changed"
-        ],
-        "additionalProperties": false
-      },
       "ConnectorWritesBack": {
         "type": "object",
         "properties": {
@@ -19441,6 +19415,32 @@
           }
         ]
       },
+      "ConnectorGrantExclusionChange": {
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "agentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "excluded": {
+            "type": "boolean"
+          },
+          "changed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "connectionId",
+          "agentId",
+          "excluded",
+          "changed"
+        ],
+        "additionalProperties": false
+      },
       "ListTodoPromisesResponse": {
         "type": "object",
         "properties": {
@@ -31779,223 +31779,6 @@
           }
         },
         "operationId": "connectors.undoAccessChanges"
-      }
-    },
-    "/api/connectors/connections/{connectionId}/exclusions/{agentId}": {
-      "delete": {
-        "tags": [
-          "Connectors"
-        ],
-        "summary": "Let one agent back into a connection's every-agent share",
-        "description": "Owner only. The agent gets whatever the share gives every agent now. Only a person can do this.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": true,
-            "name": "connectionId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": true,
-            "name": "agentId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The agent is no longer left out",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConnectorGrantExclusionChange"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "`not_found`: no such app account here, it belongs to someone else, or no such agent",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
-            "headers": {
-              "Cache-Control": {
-                "description": "Always `no-store`: the held action is for this request only.",
-                "schema": {
-                  "type": "string",
-                  "enum": [
-                    "no-store"
-                  ]
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StepUpRequired"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "connectors.deleteConnectionsExclusions"
-      },
-      "put": {
-        "operationId": "connectors.leave_agent_out",
-        "tags": [
-          "Connectors"
-        ],
-        "summary": "Leave an agent out of a shared account",
-        "description": "Leave one agent out of a connected account shared with every agent. It keeps only what it was given by name. Only the owner of this DorkOS.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "description": "The connected account’s id."
-            },
-            "required": true,
-            "description": "The connected account’s id.",
-            "name": "connectionId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "description": "The agent left out."
-            },
-            "required": true,
-            "description": "The agent left out.",
-            "name": "agentId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Leave an agent out of a shared account result",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConnectorGrantExclusionChange"
-                }
-              }
-            }
-          },
-          "202": {
-            "description": "A person must allow the call first; nothing ran",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "The capability refused because of the state it met, such as `conflict`",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "412": {
-            "description": "`precondition_failed`: something changed since the caller looked",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "`internal_error`: something went wrong running it",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "`signin_unreachable`: the remote server did not answer",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        }
       }
     },
     "/api/connectors/connections/{connectionId}/writes-back": {
@@ -106313,6 +106096,317 @@
         }
       }
     },
+    "/api/connectors/connections/{connectionId}/exclusions/{agentId}": {
+      "put": {
+        "operationId": "connectors.leave_agent_out",
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Leave an agent out of a shared account",
+        "description": "Leave one agent out of a connected account shared with every agent. It keeps only what it was given by name. Only the owner of this DorkOS.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The connected account’s id."
+            },
+            "required": true,
+            "description": "The connected account’s id.",
+            "name": "connectionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The agent left out."
+            },
+            "required": true,
+            "description": "The agent left out.",
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Leave an agent out of a shared account result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorGrantExclusionChange"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "connectors.let_agent_back_in",
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Let an agent back into a shared account",
+        "description": "Let one agent use a connected account shared with every agent again, after it was left out. Waits for the owner to confirm it’s them. Only the owner of this DorkOS.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The connected account’s id."
+            },
+            "required": true,
+            "description": "The connected account’s id.",
+            "name": "connectionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The agent let back in."
+            },
+            "required": true,
+            "description": "The agent let back in.",
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Let an agent back into a shared account result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorGrantExclusionChange"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Always `no-store`: the held action is for this request only.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpRequired"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/connectors/usage/operator": {
       "get": {
         "operationId": "connectors.list_usage",
@@ -106543,6 +106637,1175 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/agent-requests/{requestId}/decision": {
+      "post": {
+        "operationId": "connectors.answer_agent_request",
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Answer an agent’s request for an app",
+        "description": "Answer one agent’s request for a connected app: no, or yes with the access it holds now. A yes waits for the owner to confirm it’s them. Only the owner of this DorkOS.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The agent’s request."
+            },
+            "required": true,
+            "description": "The agent’s request.",
+            "name": "requestId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "denied",
+                      "current_access"
+                    ],
+                    "description": "`denied`, or `current_access`: answer with the access the agent holds now."
+                  },
+                  "connectionId": {
+                    "type": "string",
+                    "description": "For `current_access`: the account."
+                  },
+                  "eventScopes": {
+                    "type": "array",
+                    "items": {},
+                    "description": "For `current_access`: the updates the agent may hear about."
+                  }
+                },
+                "required": [
+                  "decision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Answer an agent’s request for an app result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "requestId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "serviceSlug": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "reason": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "access": {
+                              "type": "string",
+                              "enum": [
+                                "read",
+                                "read-write"
+                              ]
+                            },
+                            "requestedEvents": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "expiresAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "note": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "awaiting_owner"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "requestId",
+                            "serviceSlug",
+                            "reason",
+                            "access",
+                            "requestedEvents",
+                            "createdAt",
+                            "expiresAt",
+                            "note",
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "requestId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "serviceSlug": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "reason": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "access": {
+                              "type": "string",
+                              "enum": [
+                                "read",
+                                "read-write"
+                              ]
+                            },
+                            "requestedEvents": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "expiresAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "note": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "access_pending"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "requestId",
+                            "serviceSlug",
+                            "reason",
+                            "access",
+                            "requestedEvents",
+                            "createdAt",
+                            "expiresAt",
+                            "note",
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "requestId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "serviceSlug": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "reason": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "access": {
+                              "type": "string",
+                              "enum": [
+                                "read",
+                                "read-write"
+                              ]
+                            },
+                            "requestedEvents": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "expiresAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "note": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "granted"
+                              ]
+                            },
+                            "connectionId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "grantedOperationRevisionIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "grantedEvents": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "notGranted": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "read",
+                                  "write"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "requestId",
+                            "serviceSlug",
+                            "reason",
+                            "access",
+                            "requestedEvents",
+                            "createdAt",
+                            "expiresAt",
+                            "note",
+                            "status",
+                            "connectionId",
+                            "grantedOperationRevisionIds",
+                            "grantedEvents",
+                            "notGranted"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "requestId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "serviceSlug": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "reason": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "access": {
+                              "type": "string",
+                              "enum": [
+                                "read",
+                                "read-write"
+                              ]
+                            },
+                            "requestedEvents": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "expiresAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "note": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "denied"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "requestId",
+                            "serviceSlug",
+                            "reason",
+                            "access",
+                            "requestedEvents",
+                            "createdAt",
+                            "expiresAt",
+                            "note",
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "requestId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "serviceSlug": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "reason": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "access": {
+                              "type": "string",
+                              "enum": [
+                                "read",
+                                "read-write"
+                              ]
+                            },
+                            "requestedEvents": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "expiresAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "note": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "expired"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "requestId",
+                            "serviceSlug",
+                            "reason",
+                            "access",
+                            "requestedEvents",
+                            "createdAt",
+                            "expiresAt",
+                            "note",
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "requestId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "serviceSlug": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "reason": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "access": {
+                              "type": "string",
+                              "enum": [
+                                "read",
+                                "read-write"
+                              ]
+                            },
+                            "requestedEvents": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "expiresAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "note": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "authentication_failed"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "requestId",
+                            "serviceSlug",
+                            "reason",
+                            "access",
+                            "requestedEvents",
+                            "createdAt",
+                            "expiresAt",
+                            "note",
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "requestId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "serviceSlug": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "reason": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "access": {
+                              "type": "string",
+                              "enum": [
+                                "read",
+                                "read-write"
+                              ]
+                            },
+                            "requestedEvents": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "createdAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "expiresAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "note": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "target_deleted"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "requestId",
+                            "serviceSlug",
+                            "reason",
+                            "access",
+                            "requestedEvents",
+                            "createdAt",
+                            "expiresAt",
+                            "note",
+                            "status"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "agent": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "displayName": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "displayName"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "sessionId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "roomId": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "agent",
+                        "sessionId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Always `no-store`: the held action is for this request only.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpRequired"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/agent-requests/{requestId}/authentication-flows": {
+      "post": {
+        "operationId": "connectors.start_agent_request_sign_in",
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Connect an account for an agent’s request",
+        "description": "Start signing in to an app for the agent that asked for it. Waits for the owner to confirm it’s them. Only the owner of this DorkOS.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The agent’s request."
+            },
+            "required": true,
+            "description": "The agent’s request.",
+            "name": "requestId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "providerInstanceId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "providerInstanceId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Connect an account for an agent’s request result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "flowId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "providerInstanceId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "toolkit": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "starting"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "flowId",
+                        "providerInstanceId",
+                        "toolkit",
+                        "createdAt",
+                        "expiresAt",
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "flowId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "providerInstanceId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "toolkit": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "pending"
+                          ]
+                        },
+                        "authorizeUrl": {
+                          "type": "string",
+                          "format": "uri"
+                        }
+                      },
+                      "required": [
+                        "flowId",
+                        "providerInstanceId",
+                        "toolkit",
+                        "createdAt",
+                        "expiresAt",
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "flowId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "providerInstanceId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "toolkit": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "connected"
+                          ]
+                        },
+                        "connectionId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "completedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "flowId",
+                        "providerInstanceId",
+                        "toolkit",
+                        "createdAt",
+                        "expiresAt",
+                        "state",
+                        "connectionId",
+                        "completedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "flowId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "providerInstanceId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "toolkit": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "failed"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000
+                        },
+                        "failureCode": {
+                          "type": "string",
+                          "enum": [
+                            "service_not_ready",
+                            "setup_needs_fix",
+                            "account_link_required",
+                            "service_unavailable"
+                          ]
+                        },
+                        "completedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "flowId",
+                        "providerInstanceId",
+                        "toolkit",
+                        "createdAt",
+                        "expiresAt",
+                        "state",
+                        "reason",
+                        "completedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "flowId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "providerInstanceId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "toolkit": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "expired"
+                          ]
+                        },
+                        "completedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "flowId",
+                        "providerInstanceId",
+                        "toolkit",
+                        "createdAt",
+                        "expiresAt",
+                        "state",
+                        "completedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "flowId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "providerInstanceId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "toolkit": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "start_unknown"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000
+                        },
+                        "completedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "flowId",
+                        "providerInstanceId",
+                        "toolkit",
+                        "createdAt",
+                        "expiresAt",
+                        "state",
+                        "reason",
+                        "completedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Always `no-store`: the held action is for this request only.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpRequired"
                 }
               }
             }
@@ -122277,7 +123540,7 @@
             }
           },
           "404": {
-            "description": "The action expired, was cancelled or already ran (`expired`, answered as `404`)",
+            "description": "The action expired, was cancelled or already ran, or a held call’s own caller bar refused this caller (`expired`, answered as `404`)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -122358,7 +123621,7 @@
             }
           },
           "404": {
-            "description": "The action expired, was cancelled or already ran (`expired`, answered as `404`)",
+            "description": "The action expired, was cancelled or already ran, or a held call’s own caller bar refused this caller (`expired`, answered as `404`)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -122458,7 +123721,7 @@
             }
           },
           "404": {
-            "description": "The action expired, was cancelled or already ran (`expired`, answered as `404`)",
+            "description": "The action expired, was cancelled or already ran, or a held call’s own caller bar refused this caller (`expired`, answered as `404`)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -122604,7 +123867,7 @@
             }
           },
           "404": {
-            "description": "The action expired, was cancelled or already ran (`expired`, answered as `404`)",
+            "description": "The action expired, was cancelled or already ran, or a held call’s own caller bar refused this caller (`expired`, answered as `404`)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -124300,148 +125563,6 @@
           }
         },
         "operationId": "communityConnections.updateTeammateSpend"
-      }
-    },
-    "/api/connectors/agent-requests/{requestId}/decision": {
-      "post": {
-        "tags": [
-          "Access"
-        ],
-        "summary": "Confirm a lasting access or account change",
-        "description": "The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "requestId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {}
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The action completed",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "403": {
-            "description": "This caller cannot change access here",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
-            "headers": {
-              "Cache-Control": {
-                "description": "Always `no-store`: the held action is for this request only.",
-                "schema": {
-                  "type": "string",
-                  "enum": [
-                    "no-store"
-                  ]
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StepUpRequired"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "connectors.createAgentRequestsDecision"
-      }
-    },
-    "/api/connectors/agent-requests/{requestId}/authentication-flows": {
-      "post": {
-        "tags": [
-          "Access"
-        ],
-        "summary": "Confirm a lasting access or account change",
-        "description": "The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "requestId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {}
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The action completed",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "403": {
-            "description": "This caller cannot change access here",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
-            "headers": {
-              "Cache-Control": {
-                "description": "Always `no-store`: the held action is for this request only.",
-                "schema": {
-                  "type": "string",
-                  "enum": [
-                    "no-store"
-                  ]
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StepUpRequired"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "connectors.createAgentRequestsAuthenticationFlows"
       }
     },
     "/api/connectors/mini-app-access/decision": {
