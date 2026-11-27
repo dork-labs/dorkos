@@ -7,6 +7,10 @@
  * connection per resource, which is why one window needs one of these however
  * many features it is showing.
  *
+ * Each message is one `DorkOsEvent` envelope with its resume cursor beside it
+ * as `id` (DOR-5474), unlike the chat and room sockets' `{ event, data, id }`;
+ * the keepalive is a `heartbeat` envelope too.
+ *
  * It moved off SSE with the other two durable streams (ADR 260805-041016). This
  * one mattered most: every window opens it unconditionally, so it was two of
  * the six sockets a three-window cockpit spent before it stopped responding.
@@ -16,7 +20,7 @@
 import type { WebSocket } from 'ws';
 import { upgradeCaller } from '../services/core/streams/stream-upgrade-auth.js';
 import { STREAM_RESUME_PARAM } from '@dorkos/shared/stream-socket';
-import { eventFanOut, type FanOutClient } from '../services/core/event-fan-out.js';
+import { encodeBroadcast, eventFanOut, type FanOutClient } from '../services/core/event-fan-out.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { openGlobalStream } from './global-events-connect.js';
 import { DurableStreamSocket } from '../services/core/streams/stream-socket.js';
@@ -77,7 +81,8 @@ export const globalEventsRoute: UpgradeRoute = {
       open: (ws) => {
         // Heartbeats and close teardown come from the shared socket wrapper; the
         // fan-out only ever pushes, so nothing here drives a send loop.
-        const socket = new DurableStreamSocket(ws);
+        // Its keepalive is a `heartbeat` envelope like every other frame here.
+        const socket = new DurableStreamSocket(ws, () => encodeBroadcast('heartbeat', null).json);
         const client = fanOutClient(ws);
         // `StreamUpgradeLocals` carries a request's identity fields precisely so
         // this reads the same principal an HTTP request would, with no second

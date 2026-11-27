@@ -37,6 +37,11 @@ export interface StreamSocketOptions {
    * caller can turn the ending into whatever error its retry loop reads.
    */
   onClosed?: (closed: StreamSocketClosed) => void;
+  /**
+   * Reads one message into a frame. Default: {@link decodeStreamFrame}. The
+   * global stream's messages are `DorkOsEvent` envelopes and need their own.
+   */
+  decodeFrame?: (raw: string) => StreamFrame | null;
 }
 
 /**
@@ -56,7 +61,7 @@ export async function* streamSocketFrames(
   url: string,
   options: StreamSocketOptions = {}
 ): AsyncIterable<StreamFrame> {
-  const { signal, onClosed } = options;
+  const { signal, onClosed, decodeFrame = decodeStreamFrame } = options;
   const socket = new WebSocket(toStreamSocketUrl(url));
 
   /** Frames delivered but not yet pulled by the consumer. */
@@ -95,7 +100,7 @@ export async function* streamSocketFrames(
   socket.onmessage = (event: MessageEvent<unknown>): void => {
     heard();
     if (typeof event.data !== 'string') return;
-    const frame = decodeStreamFrame(event.data);
+    const frame = decodeFrame(event.data);
     if (!frame || frame.event === STREAM_HEARTBEAT_EVENT) return;
     queue.push(frame);
     notify();

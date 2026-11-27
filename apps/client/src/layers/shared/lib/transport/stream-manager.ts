@@ -62,7 +62,11 @@ import { SESSION_LIST_EVENT_TYPES } from './session-stream-methods';
 import { SESSION_EVENT_TYPES } from './session-event-types';
 import { postStreamHealthReport } from './stream-health-report';
 import type { StreamHealthReport } from '@dorkos/shared/schemas';
-import { GENERIC_EVENTS, type GenericEventName } from './generic-events';
+import {
+  decodeGlobalEventFrame,
+  globalStreamHandlers,
+  type GenericEventName,
+} from './generic-events';
 import type { Transport } from '@dorkos/shared/transport';
 import { ownDocChannelConnection } from './doc-channel-ownership';
 import {
@@ -861,6 +865,8 @@ export class StreamManager {
     return this.createConnection(`${this.source.baseUrl}/events`, {
       eventHandlers,
       onStateChange,
+      // Every message is a whole `DorkOsEvent`; each handler gets the envelope.
+      decodeFrame: decodeGlobalEventFrame,
     });
   }
 
@@ -911,22 +917,17 @@ export class StreamManager {
   /**
    * Build the global-stream handlers: the {@link SESSION_LIST_EVENT_TYPES} names (validated,
    * forwarded to the binding) plus the {@link GENERIC_EVENTS} (dispatched verbatim
-   * to {@link subscribeEvent} subscribers, looked up live at dispatch time).
+   * to {@link subscribeEvent} subscribers, looked up live at dispatch time). Each
+   * handler is handed the whole `DorkOsEvent` and passes its payload on.
    */
   private buildListEventHandlers(): Record<string, (data: unknown) => void> {
-    const handlers: Record<string, (data: unknown) => void> = {};
-    const onListEvent = (data: unknown): void => this.handleListEvent(data);
-    for (const type of SESSION_LIST_EVENT_TYPES) {
-      handlers[type] = onListEvent;
-    }
-    for (const name of GENERIC_EVENTS) {
-      handlers[name] = (data: unknown) => {
-        const set = this.genericListeners.get(name);
-        if (!set) return;
-        for (const handler of set) handler(data);
-      };
-    }
-    return handlers;
+    return globalStreamHandlers(
+      SESSION_LIST_EVENT_TYPES,
+      (payload) => this.handleListEvent(payload),
+      (name, payload) => {
+        for (const handler of this.genericListeners.get(name) ?? []) handler(payload);
+      }
+    );
   }
 
   private handleSnapshot(sessionId: string, data: unknown): void {

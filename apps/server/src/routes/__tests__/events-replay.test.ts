@@ -86,14 +86,45 @@ function read(
   return stream(headers, path)(until);
 }
 
-/** The ids and names of the numbered frames in a body, in order. */
-function numbered(text: string): { id: string; event: string; data: string }[] {
+/** One numbered frame: its cursor, its type, its envelope's place and time, and its payload as JSON. */
+interface NumberedFrame {
+  id: string;
+  event: string;
+  seq: number;
+  at: string;
+  data: string;
+}
+
+/**
+ * The numbered frames in a body, in order. Each `data:` is a whole envelope
+ * whose `type` is the `event:` line and whose `seq` is the cursor's last part.
+ */
+function numbered(text: string): NumberedFrame[] {
   return [...text.matchAll(/id: (\S+)\nevent: (\S+)\ndata: (.*)\n\n/g)].map(
-    ([, id, event, data]) => ({
-      id: id!,
-      event: event!,
-      data: data!,
-    })
+    ([, id, event, data]) => {
+      const envelope = JSON.parse(data!) as {
+        seq: number;
+        at: string;
+        type: string;
+        payload: unknown;
+      };
+      expect(envelope.type).toBe(event);
+      expect(id!.endsWith(`-${envelope.seq}`)).toBe(true);
+      return {
+        id: id!,
+        event: event!,
+        seq: envelope.seq,
+        at: envelope.at,
+        data: JSON.stringify(envelope.payload),
+      };
+    }
+  );
+}
+
+/** The opening `connected` frame: `seq` 0, no id, its payload as given. */
+function connectedFrame(payload: string): RegExp {
+  return new RegExp(
+    `^event: connected\\ndata: \\{"seq":0,"at":"[^"]+","type":"connected","payload":${payload}\\}\\n\\n`
   );
 }
 
@@ -118,7 +149,7 @@ describe('GET /api/events replay', () => {
     const person = await read({ 'last-event-id': cursor }, done);
     const agent = await read({ ...AGENT, 'last-event-id': cursor }, done);
 
-    expect(person).toMatch(/^event: connected\ndata: \{"connectedAt":"[^"]+","resumed":true\}\n\n/);
+    expect(person).toMatch(connectedFrame('\\{"connectedAt":"[^"]+","resumed":true\\}'));
     expect(numbered(person).map((f) => [f.event, f.data])).toEqual([
       ['config_changed', '{"sections":["spaces"]}'],
       ['session_status', '{"full":1}'],
@@ -153,6 +184,21 @@ describe('GET /api/events replay', () => {
     eventFanOut.broadcast('tasks_changed', { live: true });
     const frames = numbered(await resumed((t) => t.includes('"live":true')));
     expect(frames.map((f) => f.data)).toEqual(['{"missed":true}', '{"live":true}']);
+    expect(frames[1]!.seq).toBeGreaterThan(frames[0]!.seq);
+  });
+
+  it('replays an event with the seq and the time it was first sent', async () => {
+    const live = stream({});
+    await live((text) => text.includes('event: connected'));
+    const cursor = await marker();
+    eventFanOut.broadcast('tasks_changed', { first: true });
+    const sent = numbered(await live((t) => t.includes('"first":true'))).at(-1)!;
+    expect(new Date(sent.at).toISOString()).toBe(sent.at);
+
+    const replayed = numbered(
+      await read({ 'last-event-id': cursor }, (t) => t.includes('"first":true'))
+    ).at(-1)!;
+    expect(replayed).toEqual(sent);
   });
 
   it('resumes from ?resume= too, the cursor a socket sends', async () => {
@@ -174,7 +220,7 @@ describe('GET /api/events replay', () => {
     const stale = cursor.replace(/-g\d+-/, '-g999999-');
     for (const lastEventId of [cursor, stale, '42', `rooms${cursor.slice('events'.length)}`]) {
       const text = await read({ 'last-event-id': lastEventId }, (t) => t.includes('\n\n'));
-      expect(text, lastEventId).toMatch(/^event: connected\ndata: \{"connectedAt":"[^"]+"\}\n\n/);
+      expect(text, lastEventId).toMatch(connectedFrame('\\{"connectedAt":"[^"]+"\\}'));
     }
   });
 });
@@ -182,8 +228,8 @@ describe('GET /api/events replay', () => {
 describe('tunnel status on GET /api/events (it replaced GET /api/tunnel/stream)', () => {
   /** The `tunnel_status` payloads in a body, in order. */
   const tunnelFrames = (text: string): unknown[] =>
-    [...text.matchAll(/event: tunnel_status\ndata: (.*)\n\n/g)].map(([, data]) =>
-      JSON.parse(data!)
+    [...text.matchAll(/event: tunnel_status\ndata: (.*)\n\n/g)].map(
+      ([, data]) => (JSON.parse(data!) as { payload: unknown }).payload
     );
 
   /**

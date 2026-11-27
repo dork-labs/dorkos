@@ -10,6 +10,16 @@ export interface SseFrame {
   data: unknown;
 }
 
+/**
+ * The payload of a frame off the global stream, `GET /api/events`, whose
+ * `data:` is a whole `DorkOsEvent`, `{ seq, at, type, payload }`.
+ *
+ * @param frame - A frame read off `/api/events`.
+ */
+export function envelopePayload(frame: SseFrame): unknown {
+  return (frame.data as { payload?: unknown } | null)?.payload;
+}
+
 /** One collected `GET /api/sessions/:id/events` connection. */
 export interface DurableEventsResult {
   /** Frames parsed off the wire, in delivery order. */

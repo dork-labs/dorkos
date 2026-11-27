@@ -33,6 +33,7 @@ import {
   statusFromCloseCode,
   STREAM_HEARTBEAT_EVENT,
   STREAM_RESUME_PARAM,
+  type StreamFrame,
 } from '@dorkos/shared/stream-socket';
 
 import { SSE_RESILIENCE } from '../constants';
@@ -116,6 +117,12 @@ export interface StreamConnectionOptions {
    * is dropped and reported with both ids (DOR-4552). Unset: frames go unchecked.
    */
   resourceId?: string;
+  /**
+   * Reads one message into a frame. Default: {@link decodeStreamFrame}, the
+   * chat and room streams' `{ event, data, id }`. The global stream sends
+   * `DorkOsEvent` envelopes instead and passes its own (DOR-5474).
+   */
+  decodeFrame?: (raw: string) => StreamFrame | null;
 }
 
 /** Resolved options with all defaults applied. */
@@ -230,6 +237,7 @@ export class WSConnection {
       backoffCapMs: options.backoffCapMs ?? SSE_RESILIENCE.BACKOFF_CAP_MS,
       disconnectedThreshold: options.disconnectedThreshold ?? SSE_RESILIENCE.DISCONNECTED_THRESHOLD,
       stabilityWindowMs: options.stabilityWindowMs ?? SSE_RESILIENCE.STABILITY_WINDOW_MS,
+      decodeFrame: options.decodeFrame ?? decodeStreamFrame,
     };
   }
 
@@ -313,7 +321,7 @@ export class WSConnection {
       this.resetWatchdog();
       this.payWake();
       if (typeof event.data !== 'string') return;
-      const frame = decodeStreamFrame(event.data);
+      const frame = this.options.decodeFrame(event.data);
       if (!frame) {
         console.warn('[WSConnection] dropping unparseable frame', { url: this.url });
         return;

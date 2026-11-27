@@ -157,16 +157,16 @@ describe('watchRoomAwaiting', () => {
       listener({ sessionId: 'ses-ops' });
       expect(inside.send).toHaveBeenCalledTimes(1);
       expect(JSON.parse(inside.send.mock.calls[0][0].json)).toMatchObject({
-        event: 'room_awaiting',
-        data: { roomId: room.id, awaiting: 1 },
+        type: 'room_awaiting',
+        payload: { roomId: room.id, awaiting: 1 },
       });
       expect(outside.send).not.toHaveBeenCalled();
       expect(agent.send).not.toHaveBeenCalled();
 
       service.removeMember(room.id, human, member.id);
       expect(JSON.parse(inside.send.mock.calls.at(-1)![0].json)).toMatchObject({
-        event: 'room_member_removed',
-        data: { roomId: room.id, authorId: member.id },
+        type: 'room_member_removed',
+        payload: { roomId: room.id, authorId: member.id },
       });
       expect(outside.send).not.toHaveBeenCalled();
       expect(agent.send).not.toHaveBeenCalled();

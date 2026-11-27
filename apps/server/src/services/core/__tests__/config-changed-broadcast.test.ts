@@ -73,7 +73,7 @@ function connect(principal: CallerPrincipal): RecordingClient {
 function payloads(client: RecordingClient): Array<Record<string, unknown>> {
   return client.received
     .filter((b) => b.event === 'config_changed')
-    .map((b) => JSON.parse(b.json).data as Record<string, unknown>);
+    .map((b) => JSON.parse(b.json).payload as Record<string, unknown>);
 }
 
 beforeEach(async () => {

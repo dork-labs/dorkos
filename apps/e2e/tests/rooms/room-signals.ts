@@ -311,8 +311,16 @@ async function pushFrame(page: Page, key: string, eventName: string, data: unkno
       if (!tap?.push) throw new Error('The stream closed before this frame could be sent.');
       tap.push(frame);
     },
-    // A JSON stream frame, the WebSocket wire format — the same shape
-    // `encodeStreamFrame` produces server-side.
-    [key, JSON.stringify({ event: eventName, data })] as [string, string]
+    // The WebSocket wire format the server writes for that stream: a room's is
+    // `encodeStreamFrame`'s `{ event, data }`; the global stream's is a whole
+    // `DorkOsEvent`, here one with no place in the numbering (`seq` 0, no id).
+    [
+      key,
+      JSON.stringify(
+        key === '__globalStream'
+          ? { seq: 0, at: new Date().toISOString(), type: eventName, payload: data }
+          : { event: eventName, data }
+      ),
+    ] as [string, string]
   );
 }

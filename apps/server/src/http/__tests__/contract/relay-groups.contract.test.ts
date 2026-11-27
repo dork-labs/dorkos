@@ -853,7 +853,7 @@ describe('contract: the Relay groups, driven by hand (login off)', () => {
       });
       expect(sent.status).toBe(200);
     });
-    expect(JSON.parse(data)).toMatchObject({ subject, payload: 'hello' });
+    expect(JSON.parse(data).payload).toMatchObject({ subject, payload: 'hello' });
   });
 
   it('registers an endpoint, reads its inbox, and removes it', async () => {

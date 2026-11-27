@@ -50,8 +50,12 @@ const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 const MAX_CLIENTS = 500;
 /** The heartbeat interval (`SSE.HEARTBEAT_INTERVAL_MS`), and a margin past it. */
 const HEARTBEAT_WAIT_MS = 15_000 + 5_000;
-/** The `connected` frame, byte for byte, and nothing before it. */
-const CONNECTED_FRAME = /^event: connected\ndata: \{"connectedAt":"\d{4}-\d\d-\d\dT[\d:.]+Z"\}\n\n/;
+/**
+ * The `connected` frame, byte for byte, and nothing before it: a whole
+ * `DorkOsEvent` with `seq` 0 and no `id:` line.
+ */
+const CONNECTED_FRAME =
+  /^event: connected\ndata: \{"seq":0,"at":"[^"]+","type":"connected","payload":\{"connectedAt":"\d{4}-\d\d-\d\dT[\d:.]+Z"\}\}\n\n/;
 /** The headers every stream answers with, whoever asks. */
 const STREAM_HEADERS = {
   'content-type': 'text/event-stream',
@@ -382,11 +386,11 @@ describe('contract: the global event stream, driven by hand (login off)', () => 
 
     const personText = await person.waitFor((text) => text.includes(name));
     expect(personText).toMatch(
-      /\nevent: config_changed\ndata: \{"sections":\["spaces"\],"changedAt":"[^"]+"\}\n\n/
+      /\nevent: config_changed\ndata: \{"seq":\d+,"at":"[^"]+","type":"config_changed","payload":\{"sections":\["spaces"\],"changedAt":"[^"]+"\}\}\n\n/
     );
     expect(personText).toMatch(
       new RegExp(
-        `\\nevent: read_cursor\\ndata: \\{"userId":"[^"]+","threadKind":"session","threadId":"${thread}","lastReadSeq":3\\}\\n\\n`
+        `\\nevent: read_cursor\\ndata: \\{"seq":\\d+,"at":"[^"]+","type":"read_cursor","payload":\\{"userId":"[^"]+","threadKind":"session","threadId":"${thread}","lastReadSeq":3\\}\\}\\n\\n`
       )
     );
     expect(eventNames(personText).indexOf('config_changed')).toBeLessThan(
@@ -414,7 +418,9 @@ describe('contract: the global event stream, driven by hand (login off)', () => 
         (sent) => sent.includes('event: heartbeat'),
         HEARTBEAT_WAIT_MS
       );
-      expect(text).toContain('\n\nevent: heartbeat\ndata: \n\n');
+      expect(text).toMatch(
+        /\n\nevent: heartbeat\ndata: \{"seq":0,"at":"[^"]+","type":"heartbeat","payload":null\}\n\n/
+      );
       expect(stream.ended()).toBe(false);
       stream.close();
     },
@@ -547,7 +553,7 @@ describe('contract: the global event stream with login on', () => {
     const memberText = await member.waitFor((text) => text.includes(name));
     const cursorAt = memberText.search(
       new RegExp(
-        `\\nevent: read_cursor\\ndata: \\{"userId":"[^"]+","threadKind":"room","threadId":"${roomId}","lastReadSeq":1,"unreadCount":\\d+\\}\\n\\n`
+        `\\nevent: read_cursor\\ndata: \\{"seq":\\d+,"at":"[^"]+","type":"read_cursor","payload":\\{"userId":"[^"]+","threadKind":"room","threadId":"${roomId}","lastReadSeq":1,"unreadCount":\\d+\\}\\}\\n\\n`
       )
     );
     expect(cursorAt, memberText).toBeGreaterThan(-1);

@@ -15,13 +15,14 @@ vi.mock('../../../lib/logger.js', () => ({
  */
 const { encodeSpy } = vi.hoisted(() => ({ encodeSpy: vi.fn() }));
 
-vi.mock('@dorkos/shared/stream-socket', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@dorkos/shared/stream-socket')>();
+vi.mock('../../../lib/event-stream/global-event-frames.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../../lib/event-stream/global-event-frames.js')>();
   return {
     ...actual,
-    encodeStreamFrame: (frame: Parameters<typeof actual.encodeStreamFrame>[0]) => {
-      encodeSpy(frame);
-      return actual.encodeStreamFrame(frame);
+    encodeBroadcast: (...args: Parameters<typeof actual.encodeBroadcast>) => {
+      encodeSpy(...args);
+      return actual.encodeBroadcast(...args);
     },
   };
 });
@@ -85,14 +86,18 @@ describe('EventFanOut', () => {
 
     eventFanOut.broadcast('tasks_changed', { id: '123' });
 
-    // Numbered for replay: the same frame id on both wires.
+    // Numbered for replay: the same frame id on both wires, and one whole
+    // envelope on each, its `seq` the id's last part (DOR-5474).
     const sent = client.send.mock.calls[0]![0];
-    const id = /^id: (events-\d+-g\d+-\d+)\n/.exec(sent.sse)?.[1];
+    const [, id, seq] = /^id: (events-\d+-g\d+-(\d+))\n/.exec(sent.sse) ?? [];
     expect(id).toBeDefined();
+    const at = (JSON.parse(sent.json) as { at: string }).at;
+    expect(new Date(at).toISOString()).toBe(at);
+    const envelope = `{"seq":${seq},"at":"${at}","type":"tasks_changed","payload":{"id":"123"}}`;
     expect(sent).toEqual({
       event: 'tasks_changed',
-      json: `{"event":"tasks_changed","data":{"id":"123"},"id":"${id}"}`,
-      sse: `id: ${id}\nevent: tasks_changed\ndata: {"id":"123"}\n\n`,
+      json: `{"seq":${seq},"at":"${at}","type":"tasks_changed","payload":{"id":"123"},"id":"${id}"}`,
+      sse: `id: ${id}\nevent: tasks_changed\ndata: ${envelope}\n\n`,
     });
   });
 
@@ -110,9 +115,11 @@ describe('EventFanOut', () => {
     const first = socketReader.send.mock.calls[0]?.[0];
     const second = sseReader.send.mock.calls[0]?.[0];
     expect(first, 'both readers get the identical object, not two encodings').toBe(second);
-    expect(first?.json).toMatch(/^\{"event":"tasks_changed","data":\{"n":1\},"id":"events-/);
+    expect(first?.json).toMatch(
+      /^\{"seq":\d+,"at":"[^"]+","type":"tasks_changed","payload":\{"n":1\},"id":"events-/
+    );
     expect(first?.sse).toMatch(
-      /^id: events-\d+-g\d+-\d+\nevent: tasks_changed\ndata: \{"n":1\}\n\n$/
+      /^id: events-\d+-g\d+-\d+\nevent: tasks_changed\ndata: \{"seq":\d+,"at":"[^"]+","type":"tasks_changed","payload":\{"n":1\}\}\n\n$/
     );
   });
 
@@ -309,7 +316,7 @@ describe('EventFanOut', () => {
     /** Every payload a client was written, decoded back off its JSON frame. */
     function payloads(client: MockClient): unknown[] {
       return client.send.mock.calls.map(
-        ([broadcast]) => (JSON.parse(broadcast.json) as { data: unknown }).data
+        ([broadcast]) => (JSON.parse(broadcast.json) as { payload: unknown }).payload
       );
     }
 

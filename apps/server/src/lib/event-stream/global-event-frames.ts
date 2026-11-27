@@ -5,7 +5,8 @@
  *
  * @module lib/event-stream/global-event-frames
  */
-import { encodeStreamFrame } from '@dorkos/shared/stream-socket';
+import { UNNUMBERED_SEQ, type DorkOsEventFrame } from '@dorkos/shared/dorkos-event-frame';
+import type { DorkOsEvent, DorkOsEventType } from '@dorkos/shared/dorkos-events';
 import type { CallerPrincipal } from '../caller-principal.js';
 
 /**
@@ -19,10 +20,20 @@ import type { CallerPrincipal } from '../caller-principal.js';
 export interface EncodedBroadcast {
   /** The event name, e.g. `room_created`. */
   readonly event: string;
-  /** The JSON stream frame — the WebSocket wire format. */
+  /** The envelope with its cursor as `id`, as JSON — the WebSocket wire format. */
   readonly json: string;
-  /** The `event:`/`data:` lines — the SSE wire format. */
+  /** The `id:`/`event:`/`data:` lines, `data:` the envelope — the SSE wire format. */
   readonly sse: string;
+}
+
+/** Where a numbered event sits in the stream, and when it was emitted. */
+export interface FramePlace {
+  /** The frame id, the opaque resume cursor. */
+  readonly id: string;
+  /** The event's `seq`. */
+  readonly seq: number;
+  /** When the server emitted it, ISO 8601. Kept as is when the event is replayed. */
+  readonly at: string;
 }
 
 /**
@@ -42,7 +53,9 @@ export interface EncodedBroadcast {
 export type BroadcastAudience = (principal: CallerPrincipal) => boolean;
 
 /**
- * Render one event into both wire formats.
+ * Render one event into both wire formats, as a whole `DorkOsEvent` envelope
+ * (DOR-5474): the SSE `data:` line is the envelope, and the socket message is
+ * the envelope with the cursor beside it as `id`.
  *
  * Exported because a frame does not always go to everyone: a client that has
  * just connected is sent its own connect preamble — the `connected` frame and
@@ -51,18 +64,28 @@ export type BroadcastAudience = (principal: CallerPrincipal) => boolean;
  * same {@link FanOutClient.send} port as a broadcast, so they need the same
  * encoding, and there must be exactly one encoder or the two paths drift.
  *
- * @param eventName - The event name, e.g. `session_status`.
- * @param data - The payload; serialized once per format.
- * @param id - The frame id, for a frame with a place in the stream. A preamble
- *   frame is a snapshot and has none.
+ * @param type - The event type, e.g. `session_status`.
+ * @param payload - The event's data; serialized once per format.
+ * @param place - The frame's place in the stream, for a numbered event. A
+ *   preamble frame or a keepalive is not one: it goes out with `seq` 0, the
+ *   time now and no id.
  */
-export function encodeBroadcast(eventName: string, data: unknown, id?: string): EncodedBroadcast {
+export function encodeBroadcast(
+  type: DorkOsEventType,
+  payload: unknown,
+  place?: FramePlace
+): EncodedBroadcast {
+  const envelope: DorkOsEvent = {
+    seq: place?.seq ?? UNNUMBERED_SEQ,
+    at: place?.at ?? new Date().toISOString(),
+    type,
+    payload,
+  };
+  const frame: DorkOsEventFrame = place ? { ...envelope, id: place.id } : envelope;
   return {
-    event: eventName,
-    json: encodeStreamFrame(
-      id === undefined ? { event: eventName, data } : { event: eventName, data, id }
-    ),
-    sse: `${id === undefined ? '' : `id: ${id}\n`}event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`,
+    event: type,
+    json: JSON.stringify(frame),
+    sse: `${place ? `id: ${place.id}\n` : ''}event: ${type}\ndata: ${JSON.stringify(envelope)}\n\n`,
   };
 }
 

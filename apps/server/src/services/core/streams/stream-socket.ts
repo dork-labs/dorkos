@@ -37,14 +37,21 @@ export class DurableStreamSocket implements DurableStreamSink {
    * Wrap an open WebSocket and start its heartbeat.
    *
    * @param ws - The socket handed over by the upgrade router.
+   * @param heartbeatFrame - The liveness message, for a stream whose frames are
+   *   not {@link StreamFrame}s: the global stream sends its own `heartbeat`
+   *   envelope, so one socket never carries two frame shapes. Defaults to the
+   *   {@link STREAM_HEARTBEAT_EVENT} frame.
    */
-  constructor(ws: WebSocket) {
+  constructor(
+    ws: WebSocket,
+    heartbeatFrame: () => string = () => encodeStreamFrame({ event: STREAM_HEARTBEAT_EVENT })
+  ) {
     this.ws = ws;
     this.heartbeat = setInterval(() => {
       // A protocol-level ping cannot be observed by browser JavaScript, so
       // liveness has to be an ordinary frame — see STREAM_HEARTBEAT_EVENT.
       if (this.ws.readyState !== WS_OPEN) return;
-      this.ws.send(encodeStreamFrame({ event: STREAM_HEARTBEAT_EVENT }));
+      this.ws.send(heartbeatFrame());
     }, SSE.HEARTBEAT_INTERVAL_MS);
 
     const teardown = (): void => {

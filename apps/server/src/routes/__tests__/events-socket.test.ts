@@ -13,7 +13,8 @@
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import type { WebSocket } from 'ws';
-import { decodeStreamFrame } from '@dorkos/shared/stream-socket';
+import { decodeDorkOsEventFrame, type DorkOsEventFrame } from '@dorkos/shared/dorkos-event-frame';
+import { SSE } from '../../config/constants.js';
 
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
@@ -37,10 +38,14 @@ import type { UpgradeAttempt } from '../../services/core/streams/upgrade-router.
 const ERRORED_ID = '88888888-8888-4888-8888-888888888888';
 const IDLE_ID = '99999999-9999-4999-8999-999999999999';
 
-/** A recording stand-in for an upgraded socket; collects every frame sent. */
+/**
+ * A recording stand-in for an upgraded socket; collects every frame sent. Each
+ * is a whole `DorkOsEvent`, with its cursor as `id` when it has one; a message
+ * that is not one is dropped, so a frame in the old shape fails the case.
+ */
 function recordingSocket(): {
   ws: WebSocket;
-  frames: () => { event: string; data?: unknown; id?: string }[];
+  frames: () => DorkOsEventFrame[];
 } {
   const sent: string[] = [];
   const ws = {
@@ -54,7 +59,7 @@ function recordingSocket(): {
     ws,
     frames: () =>
       sent.flatMap((raw) => {
-        const frame = decodeStreamFrame(raw);
+        const frame = decodeDorkOsEventFrame(raw);
         return frame ? [frame] : [];
       }),
   };
@@ -84,9 +89,7 @@ function upgradeAttempt(attempt: Partial<UpgradeAttempt> = {}): UpgradeAttempt {
  * @param attempt - The upgrade to authorize; a credential-free cockpit by
  *   default.
  */
-async function connect(
-  attempt: Partial<UpgradeAttempt> = {}
-): Promise<{ event: string; data?: unknown }[]> {
+async function connect(attempt: Partial<UpgradeAttempt> = {}): Promise<DorkOsEventFrame[]> {
   const decision = await globalEventsRoute.authorize(upgradeAttempt(attempt));
   if (!decision.ok) throw new Error('the fan-out refused the connection');
   const { ws, frames } = recordingSocket();
@@ -108,11 +111,13 @@ describe('globalEventsRoute — connect preamble', () => {
 
     const frames = await connect();
 
-    expect(frames[0]?.event).toBe('connected');
+    expect(frames[0]).toMatchObject({ seq: 0, type: 'connected' });
+    expect(frames[0]).not.toHaveProperty('id');
     expect(frames.slice(1)).toContainEqual(
       expect.objectContaining({
-        event: 'session_status',
-        data: expect.objectContaining({
+        seq: 0,
+        type: 'session_status',
+        payload: expect.objectContaining({
           sessionId: ERRORED_ID,
           cwd: '/work/alpha',
           status: expect.objectContaining({ lifecycle: 'error' }),
@@ -130,8 +135,8 @@ describe('globalEventsRoute — connect preamble', () => {
     errored.ingest({ type: 'turn_end', terminalReason: 'error' } as RawSessionEvent);
 
     const statuses = (await connect())
-      .filter((frame) => frame.event === 'session_status')
-      .map((frame) => frame.data as { sessionId: string });
+      .filter((frame) => frame.type === 'session_status')
+      .map((frame) => frame.payload as { sessionId: string });
 
     // The errored one is what proves the preamble ran at all, so the silence
     // about the idle one below is a decision rather than an empty stream.
@@ -195,10 +200,26 @@ describe('globalEventsRoute — resuming from ?resume=', () => {
     eventFanOut.broadcast('tasks_changed', { n: 3 });
 
     const frames = second.frames();
-    expect(frames[0]).toMatchObject({ event: 'connected', data: { resumed: true } });
+    expect(frames[0]).toMatchObject({ type: 'connected', payload: { resumed: true } });
     const numbered = frames.filter((frame) => frame.id !== undefined);
-    expect(numbered.map((frame) => frame.data)).toEqual([{ n: 2 }, { n: 3 }]);
-    const seqs = numbered.map((frame) => Number(frame.id!.split('-').at(-1)));
-    expect(seqs[1]).toBe(seqs[0]! + 1);
+    expect(numbered.map((frame) => frame.payload)).toEqual([{ n: 2 }, { n: 3 }]);
+    // The client reads `seq` from the frame, never from the id.
+    expect(numbered[1]!.seq).toBe(numbered[0]!.seq + 1);
+  });
+});
+
+describe('globalEventsRoute — keepalive', () => {
+  it('is a heartbeat envelope, not the chat and room sockets’ frame', async () => {
+    vi.useFakeTimers();
+    try {
+      const socket = recordingSocket();
+      const decision = await globalEventsRoute.authorize(upgradeAttempt());
+      if (!decision.ok) throw new Error('refused');
+      decision.open(socket.ws);
+      vi.advanceTimersByTime(SSE.HEARTBEAT_INTERVAL_MS);
+      expect(socket.frames().at(-1)).toMatchObject({ seq: 0, type: 'heartbeat', payload: null });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

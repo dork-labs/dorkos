@@ -15,9 +15,11 @@
  * The stream is written straight to the Node response
  * (`http/raw-node-stream.ts`), so the frames are the same bytes Express wrote.
  *
- * Every broadcast frame carries an `id:`, `events-<epoch>-<generation>-<seq>`.
- * A reader that reconnects with it as `Last-Event-ID` is sent what it missed
- * from the bounded window (`routes/global-events-connect.ts`).
+ * Every frame's `data:` is one whole `DorkOsEvent`, `{ seq, at, type, payload }`,
+ * and its `event:` repeats the type (DOR-5474). Every broadcast frame carries an
+ * `id:`, `events-<epoch>-<generation>-<seq>`. A reader that reconnects with it as
+ * `Last-Event-ID` is sent what it missed from the bounded window
+ * (`routes/global-events-connect.ts`).
  *
  * @module routes/events
  */
@@ -30,7 +32,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { initSSEStream } from '../services/core/streams/stream-adapter.js';
-import { eventFanOut, type FanOutClient } from '../services/core/event-fan-out.js';
+import { encodeBroadcast, eventFanOut, type FanOutClient } from '../services/core/event-fan-out.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { openGlobalStream } from './global-events-connect.js';
 
@@ -95,7 +97,7 @@ router.get('/', (c) => {
         return;
       }
       try {
-        res.write('event: heartbeat\ndata: \n\n');
+        res.write(encodeBroadcast('heartbeat', null).sse);
       } catch {
         clearInterval(heartbeat);
       }

@@ -712,7 +712,7 @@ describe('contract: the cloud and tunnel groups, driven by hand (login off)', ()
     expect(status).toBe(200);
     const [event, data] = frame.split('\n');
     expect(event).toBe('event: tunnel_status');
-    expect(TUNNEL_STATUS.parse(JSON.parse(data!.replace(/^data: /, '')))).toBeTruthy();
+    expect(TUNNEL_STATUS.parse(JSON.parse(data!.replace(/^data: /, '')).payload)).toBeTruthy();
     // The server is still answering after the client left.
     await check(server, {
       path: '/api/tunnel/status',

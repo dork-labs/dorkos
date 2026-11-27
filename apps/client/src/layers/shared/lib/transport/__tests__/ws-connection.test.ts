@@ -8,6 +8,7 @@ import {
 } from '@dorkos/shared/stream-socket';
 
 import { WSConnection, StreamRefusedError, toStreamSocketUrl } from '../ws-connection';
+import { decodeGlobalEventFrame } from '../generic-events';
 
 /** WSConnection tests. */
 
@@ -114,6 +115,30 @@ describe('WSConnection', () => {
     const reconnected = new URL(latest().url);
     expect(reconnected.searchParams.get(STREAM_RESUME_PARAM)).toBe('abc-999-42');
     expect(reconnected.searchParams.get('cwd'), 'the original query survives').toBe('/work');
+    conn.destroy();
+  });
+
+  it('reads the global stream’s envelopes, handing over the whole event and keeping its id', () => {
+    const onStatus = vi.fn();
+    const conn = new WSConnection('/api/events', {
+      eventHandlers: { session_status: onStatus },
+      decodeFrame: decodeGlobalEventFrame,
+    });
+    conn.connect();
+    latest().open();
+    const event = { seq: 42, at: '2026-11-27T00:00:00.000Z', type: 'session_status', payload: {} };
+    latest().onmessage?.({
+      data: JSON.stringify({ ...event, id: 'events-1-g1-42' }),
+    } as MessageEvent<unknown>);
+    // The old `{ event, data }` frame is not an envelope: dropped, not dispatched.
+    latest().deliver({ event: 'session_status', data: {}, id: 'events-1-g1-43' });
+
+    expect(onStatus.mock.calls).toEqual([[event]]);
+    latest().drop();
+    vi.advanceTimersByTime(60_000);
+    expect(new URL(latest().url, 'http://x').searchParams.get(STREAM_RESUME_PARAM)).toBe(
+      'events-1-g1-42'
+    );
     conn.destroy();
   });
 

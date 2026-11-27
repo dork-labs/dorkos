@@ -2893,6 +2893,1440 @@
           }
         ]
       },
+      "DorkOsEvent": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "connected"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "heartbeat"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "session_upserted"
+                ]
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "session_upserted"
+                    ]
+                  },
+                  "session": {
+                    "$ref": "#/components/schemas/Session"
+                  }
+                },
+                "required": [
+                  "type",
+                  "session"
+                ]
+              }
+            },
+            "required": [
+              "seq",
+              "at",
+              "type",
+              "payload"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "session_removed"
+                ]
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "session_removed"
+                    ]
+                  },
+                  "sessionId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "sessionId"
+                ]
+              }
+            },
+            "required": [
+              "seq",
+              "at",
+              "type",
+              "payload"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "session_status"
+                ]
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "session_status"
+                    ]
+                  },
+                  "sessionId": {
+                    "type": "string"
+                  },
+                  "cwd": {
+                    "type": "string"
+                  },
+                  "retiredSessionId": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "$ref": "#/components/schemas/SessionStatus"
+                  }
+                },
+                "required": [
+                  "type",
+                  "sessionId",
+                  "status"
+                ]
+              }
+            },
+            "required": [
+              "seq",
+              "at",
+              "type",
+              "payload"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "session_list_invalidated"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "account_usage"
+                ]
+              },
+              "payload": {
+                "$ref": "#/components/schemas/AccountUsage"
+              }
+            },
+            "required": [
+              "seq",
+              "at",
+              "type",
+              "payload"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "interaction_pending"
+                ]
+              },
+              "payload": {
+                "$ref": "#/components/schemas/InteractionPendingEvent"
+              }
+            },
+            "required": [
+              "seq",
+              "at",
+              "type",
+              "payload"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "interaction_resolved"
+                ]
+              },
+              "payload": {
+                "$ref": "#/components/schemas/InteractionResolvedEvent"
+              }
+            },
+            "required": [
+              "seq",
+              "at",
+              "type",
+              "payload"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "approval_pending"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "approval_resolved"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "standing_pending"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "standing_resolved"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "notification"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "notification_read"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "read_cursor"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "room_created"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "room_updated"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "room_member_added"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "room_member_removed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "room_activity"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "room_presence"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "room_awaiting"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "relay_connected"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "relay_message"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "relay_backpressure"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "relay_signal"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "relay_flow"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "relay_dead_letter"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "relay_bindings_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "relay_adapters_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "relay_chat_unclaimed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "relay_chat_unclaimed_burst"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "connector_agent_requests_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tasks_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "task_run_failed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "task_run_finished"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "task_run_updated"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "agents_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "agent_pauses_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "mesh_liveness_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "extension_reloaded"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "capabilities_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "commands_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "marketplace_dev_link_reloaded"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "config_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "keep_awake_status"
+                ]
+              },
+              "payload": {
+                "$ref": "#/components/schemas/KeepAwakeStatus"
+              }
+            },
+            "required": [
+              "seq",
+              "at",
+              "type",
+              "payload"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tunnel_status"
+                ]
+              },
+              "payload": {
+                "$ref": "#/components/schemas/TunnelStatus"
+              }
+            },
+            "required": [
+              "seq",
+              "at",
+              "type",
+              "payload"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "session_relay_presence"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "local_browser_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "community_connections_changed"
+                ]
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+              },
+              "at": {
+                "type": "string",
+                "description": "When the server emitted the event, ISO 8601. A replayed event keeps its first one."
+              },
+              "type": {
+                "type": "string",
+                "pattern": "^ext:[^:]+:.+$",
+                "description": "`ext:<extensionId>:<event>`, an event an extension emits."
+              },
+              "payload": {}
+            },
+            "required": [
+              "seq",
+              "at",
+              "type"
+            ]
+          }
+        ]
+      },
       "Session": {
         "type": "object",
         "properties": {
@@ -29537,7 +30971,7 @@
           "Events"
         ],
         "summary": "The global event stream (SSE, or WebSocket at the same path)",
-        "description": "**Preview.** This operation may change in any release.\n\nOne stream for the chat list and everything else that changes: rooms, tasks, agents, settings, approvals, Relay, extensions. Each SSE frame is `event:` (the event type), `data:` (that type's payload, described below) and, on every event after the opening frames, `id:` (an opaque resume cursor; send it back whole). Every connect opens with `connected` (with `resumed: true` when it picked up from your cursor), then any missed events, then `tunnel_status` with remote access as it is now (never to an agent), then one `session_status` for each chat that is working, waiting on a person or stopped with an error; those opening frames have no `id:`. The server keeps the last 500 events (at most 512 KiB) for replay, filtered with the rights you have when you reconnect. Over SSE a `heartbeat` frame with empty data arrives every 15 seconds. The same path answers a WebSocket upgrade, which is what the DorkOS app uses: each message a JSON frame `{ event, data, id }`, resuming from `?resume=`. An event addressed to a person (settings, the inbox, an ask's detail, remote access) never reaches a reader that presents an agent token.",
+        "description": "**Preview.** This operation may change in any release.\n\nOne stream for the chat list and everything else that changes: rooms, tasks, agents, settings, approvals, Relay, extensions. Each SSE frame's `data:` is one event, `{ seq, at, type, payload }` (described below): `seq` is its place in this stream (it only grows and may skip; 0 on the opening frames and the heartbeat), `at` when the server emitted it, `type` the event type and `payload` its data. `event:` repeats the type and, on every event after the opening frames, `id:` is an opaque resume cursor (send it back whole; read `seq` from `data:`, never from the id). Every connect opens with `connected` (with `resumed: true` when it picked up from your cursor), then any missed events, then `tunnel_status` with remote access as it is now (never to an agent), then one `session_status` for each chat that is working, waiting on a person or stopped with an error; those opening frames have no `id:`. The server keeps the last 500 events (at most 512 KiB) for replay, filtered with the rights you have when you reconnect; a replayed event keeps its first `at`. A `heartbeat` event arrives every 15 seconds. The same path answers a WebSocket upgrade, which is what the DorkOS app uses: each message is the same event, `{ seq, at, type, payload }`, with the cursor beside it as `id`, resuming from `?resume=`. An event addressed to a person (settings, the inbox, an ask's detail, remote access) never reaches a reader that presents an agent token.",
         "parameters": [
           {
             "schema": {
@@ -29562,96 +30996,11 @@
         ],
         "responses": {
           "200": {
-            "description": "An SSE stream; each frame's `data:` is the payload of its `event:` type.",
+            "description": "An SSE stream; each frame's `data:` is one `DorkOsEvent`.",
             "content": {
               "text/event-stream": {
                 "schema": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "session_upserted"
-                          ]
-                        },
-                        "session": {
-                          "$ref": "#/components/schemas/Session"
-                        }
-                      },
-                      "required": [
-                        "type",
-                        "session"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "session_removed"
-                          ]
-                        },
-                        "sessionId": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "type",
-                        "sessionId"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "session_status"
-                          ]
-                        },
-                        "sessionId": {
-                          "type": "string"
-                        },
-                        "cwd": {
-                          "type": "string"
-                        },
-                        "retiredSessionId": {
-                          "type": "string"
-                        },
-                        "status": {
-                          "$ref": "#/components/schemas/SessionStatus"
-                        }
-                      },
-                      "required": [
-                        "type",
-                        "sessionId",
-                        "status"
-                      ]
-                    },
-                    {
-                      "$ref": "#/components/schemas/InteractionPendingEvent"
-                    },
-                    {
-                      "$ref": "#/components/schemas/InteractionResolvedEvent"
-                    },
-                    {
-                      "$ref": "#/components/schemas/AccountUsage"
-                    },
-                    {
-                      "$ref": "#/components/schemas/KeepAwakeStatus"
-                    },
-                    {
-                      "$ref": "#/components/schemas/TunnelStatus"
-                    },
-                    {
-                      "type": "object",
-                      "additionalProperties": {},
-                      "description": "The payload of a type that has no described schema yet."
-                    }
-                  ]
+                  "$ref": "#/components/schemas/DorkOsEvent"
                 }
               }
             }

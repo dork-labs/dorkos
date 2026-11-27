@@ -47,7 +47,9 @@ export class FakeEventStream {
         return;
       }
       res.writeHead(200, { 'content-type': 'text/event-stream' });
-      res.write('event: connected\ndata: {"connectedAt":"2026-07-26T00:00:00.000Z"}\n\n');
+      res.write(
+        `event: connected\ndata: ${envelope('connected', { connectedAt: '2026-07-26T00:00:00.000Z' }, 0)}\n\n`
+      );
       this.clients.push(res);
       for (const waiter of this.waiters.splice(0)) waiter();
     });
@@ -106,9 +108,9 @@ export class FakeEventStream {
     for (const client of this.clients) client.write(frame);
   }
 
-  /** Push one named event with a JSON payload, exactly as `eventFanOut.broadcast` writes it. */
+  /** Push one named event in its envelope, exactly as `eventFanOut.broadcast` writes it. */
   sendEvent(name: string, payload: unknown): void {
-    this.send(`event: ${name}\ndata: ${JSON.stringify(payload)}\n\n`);
+    this.send(`event: ${name}\ndata: ${envelope(name, payload)}\n\n`);
   }
 
   /** Push a `session_status` event, exactly as `session-list-broadcaster.ts` writes it. */
@@ -129,6 +131,18 @@ export class FakeEventStream {
     this.dropClients();
     await new Promise<void>((resolve) => this.server.close(() => resolve()));
   }
+}
+
+/**
+ * One frame's `data:` as the server writes it: a whole `DorkOsEvent`, spelled
+ * out here rather than borrowed from the server's encoder (see the class doc).
+ *
+ * @param type - The event type.
+ * @param payload - The event's data.
+ * @param seq - Its place in the stream; 0 for a frame outside the numbering.
+ */
+export function envelope(type: string, payload: unknown, seq = 1): string {
+  return JSON.stringify({ seq, at: '2026-07-26T00:00:00.000Z', type, payload });
 }
 
 /** Whether a `Cookie` header carries this exact `name=value` pair. */
@@ -206,13 +220,13 @@ export class FakeEventSource {
   }
 
   /**
-   * Deliver one named event with a JSON payload, as `eventFanOut.broadcast` writes it.
+   * Deliver one named event in its envelope, as `eventFanOut.broadcast` writes it.
    *
    * @param name - The event name.
-   * @param payload - The object to serialise into the frame's `data`.
+   * @param payload - The object to put in the envelope of the frame's `data`.
    */
   emitEvent(name: string, payload: unknown): void {
-    this.emit(name, JSON.stringify(payload));
+    this.emit(name, envelope(name, payload));
   }
 
   /**

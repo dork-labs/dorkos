@@ -51,8 +51,9 @@ describe('EventReplayBuffer', () => {
   });
 
   it('counts both wire copies of every rendering, in bytes', () => {
-    const full = encodeBroadcast('tasks_changed', { name: 'café' }, 'events-1-g1-1');
-    const redacted = encodeBroadcast('tasks_changed', {}, 'events-1-g1-1');
+    const place = { id: 'events-1-g1-1', seq: 1, at: '2026-11-27T00:00:00.000Z' };
+    const full = encodeBroadcast('tasks_changed', { name: 'café' }, place);
+    const redacted = encodeBroadcast('tasks_changed', {}, place);
     const bytes = (s: string) => Buffer.byteLength(s);
     expect(deliveryBytes({ full, redacted })).toBe(
       bytes(full.sse) + bytes(full.json) + bytes(redacted.sse) + bytes(redacted.json)
