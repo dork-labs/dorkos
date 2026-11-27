@@ -131,9 +131,12 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     // `connectors.remove_connection`, `connectors.get_sign_in`, `connectors.get_review`,
     // `connectors.get_agent_request_sign_in`, `connectors.stop_every_agent_share`,
     // `connectors.leave_agent_out`, `connectors.list_usage`, `connectors.let_agent_back_in`,
-    // `connectors.answer_agent_request`, `connectors.start_agent_request_sign_in`, DOR-4978),
-    // behind the account-decision bar, which refuse agents; the last three also wait for
-    // the owner to confirm it's them.
+    // `connectors.answer_agent_request`, `connectors.start_agent_request_sign_in`, DOR-4978;
+    // and the paged lists `connectors.list_every_agent_grants`, `connectors.list_agent_connections`,
+    // `connectors.list_session_connections`, `connectors.list_reviews`,
+    // `connectors.list_exclusions`, DOR-4982), behind the account-decision bar, which refuse
+    // agents; let_agent_back_in, answer_agent_request and start_agent_request_sign_in also
+    // wait for the owner to confirm it's them.
     covers: ['connector.', 'connectors.'],
     areas: ['permissions'],
     gate: 'per-app grant',

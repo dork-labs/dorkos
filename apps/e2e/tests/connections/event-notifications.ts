@@ -705,7 +705,7 @@ async function cleanupComposio(request: APIRequestContext, apiUrl: string): Prom
         }
       ).appConnections.ways.find((way) => way.type === PROVIDER)?.providerInstanceId
     : undefined;
-  const list = await request.get(`${apiUrl}/api/connectors/connections`);
+  const list = await request.get(`${apiUrl}/api/connectors/connections?limit=200`);
   if (ownKeyId && list.ok()) {
     const { connections } = (await list.json()) as { connections: ConnectionSummary[] };
     for (const connection of connections) {

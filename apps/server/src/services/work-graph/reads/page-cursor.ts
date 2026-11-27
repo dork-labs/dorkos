@@ -19,7 +19,7 @@
  * @module services/work-graph/reads/page-cursor
  */
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { CapabilityToolError } from '../../core/capabilities/capability-definition.js';
+import { invalidCursor } from '../../core/capabilities/capability-definition.js';
 import type { AuditReader } from '../../audit/visibility.js';
 
 /** This process's cursor key. */
@@ -118,12 +118,4 @@ export function pairOf(position: unknown): [string, string] {
     return [position[0], position[1]];
   }
   throw invalidCursor();
-}
-
-/** The refusal for a cursor this read can't go on from. */
-export function invalidCursor(): CapabilityToolError {
-  return new CapabilityToolError({
-    code: 'INVALID_CURSOR',
-    error: 'That cursor was not given by this list. Leave it out to start again.',
-  });
 }

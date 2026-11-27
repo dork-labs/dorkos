@@ -12,7 +12,6 @@ import {
   ConnectorAccessChangeListSchema,
   ConnectorAccessChangeSchema,
   ConnectorAccessChangeUndoSchema,
-  ConnectorGrantExclusionListSchema,
   ConnectorWritesBackChangeRequestSchema,
   ConnectorWritesBackChangeSchema,
   ConnectorWritesBackSchema,
@@ -29,21 +28,6 @@ const notFound = problemResponse(
  * @param registry - The server's OpenAPI registry.
  */
 export function registerConnectorExclusionsOpenApi(registry: OpenAPIRegistry): void {
-  registry.registerPath({
-    method: 'get',
-    path: '/api/connectors/connections/{connectionId}/exclusions',
-    tags: ['Connectors'],
-    summary: "Agents left out of a connection's every-agent share",
-    description: 'Owner only. Lists the agents the every-agent share does not reach.',
-    request: { params: z.object({ connectionId: z.string().min(1) }) },
-    responses: {
-      200: {
-        description: 'The agents left out, oldest first',
-        content: { 'application/json': { schema: ConnectorGrantExclusionListSchema } },
-      },
-      404: notFound,
-    },
-  });
   registry.registerPath({
     method: 'get',
     path: '/api/connectors/access-changes',

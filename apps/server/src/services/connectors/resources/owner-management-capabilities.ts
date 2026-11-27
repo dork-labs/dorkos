@@ -18,9 +18,9 @@
  * 2026-11-27); the write runs with the owner the confirm resolved. Each sheet
  * binds what its hand route bound, so the 428 and its request code are unchanged.
  *
- * The rest of those groups stay hand routes for now: the lists until they
- * page, the reads that follow the client going away, a program's own review
- * doors, and the writes held on a stored state or a write's own answer.
+ * The paged lists are in `owner-lists/`. The rest of those groups stay hand
+ * routes for now: the reads that follow the client going away, a program's
+ * own review doors, and the writes held on a stored state or a write's own answer.
  *
  * @module services/connectors/resources/owner-management-capabilities
  */
@@ -69,7 +69,7 @@ import { AGENT_REQUESTS_OFF_TOOL_CODE } from './owner-refusals.js';
  * @param deps - The registry's deps.
  * @param error - What the service threw.
  */
-function managementRefusal(deps: CapabilityDeps, error: unknown): never {
+export function managementRefusal(deps: CapabilityDeps, error: unknown): never {
   if (error instanceof z.ZodError) throw new Error('A connection service failed a schema check.');
   throw (
     knownConnectionRefusal(deps, error, [
@@ -88,7 +88,7 @@ function managementRefusal(deps: CapabilityDeps, error: unknown): never {
  * @param schema - The answer's schema.
  * @param answer - What the service answered.
  */
-function heldTo<T>(schema: z.ZodType<T>, answer: unknown): T {
+export function heldTo<T>(schema: z.ZodType<T>, answer: unknown): T {
   const parsed = schema.safeParse(answer);
   if (!parsed.success) throw new Error('A connection answer did not match its schema.');
   return parsed.data;

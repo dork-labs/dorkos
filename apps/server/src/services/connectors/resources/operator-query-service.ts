@@ -73,6 +73,7 @@ import type { ConnectorRegistry } from '../registry.js';
 import type { RelayAdapterCatalog } from '../routing.js';
 import { BUILT_IN_APPS, type BuiltInApp } from './built-in-apps.js';
 import { LEGACY_PENDING_REASON } from './managed-authority-sync-service.js';
+import { connectionCreatedAt } from '../owner-lists/connection-ages.js';
 
 const CatalogCursorSchema = z
   .object({ offset: z.number().int().nonnegative(), queryHash: z.string().length(64) })
@@ -260,6 +261,8 @@ export class ConnectorOperatorQueryService {
   private readonly appConnections: (() => Promise<ConnectorAppConnections>) | undefined;
   private readonly wayHealth: ConnectionWayHealthPort;
   private readonly keptLogos: (() => Promise<ReadonlySet<string>>) | undefined;
+  /** When each connection was first made, by id: the fixed key its lists page on. */
+  readonly createdAtOf = (ids: readonly string[]) => connectionCreatedAt(this.db, ids);
 
   /** Construct owner projections over canonical connector state. */
   constructor(options: ConnectorOperatorQueryServiceOptions) {
@@ -547,10 +550,8 @@ export class ConnectorOperatorQueryService {
         )
       )
       .all();
-    return (await Promise.all(rows.map((row) => this.connectionSummary(row, signal)))).sort(
-      (left, right) =>
-        left.label.localeCompare(right.label) || left.connectionId.localeCompare(right.connectionId)
-    );
+    // In no order: the route pages them newest first.
+    return Promise.all(rows.map((row) => this.connectionSummary(row, signal)));
   }
 
   /** Return owner-visible detail for one exact stable connection. */

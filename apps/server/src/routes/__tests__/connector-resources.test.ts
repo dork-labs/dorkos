@@ -43,6 +43,7 @@ describe('connector resource routes', () => {
         listConnections: vi.fn().mockReturnValue([]),
         getConnection: vi.fn().mockReturnValue({ connection: { connectionId: 'connection-a' } }),
         disconnectImpact: vi.fn().mockReturnValue({ connectionId: 'connection-a' }),
+        createdAtOf: vi.fn().mockReturnValue(new Map()),
         agentConnections: vi.fn().mockResolvedValue({ agentId: 'agent-a', connections: [] }),
         sessionConnections: vi
           .fn()
@@ -427,10 +428,13 @@ describe('connector resource routes', () => {
     await api().post('/api/connectors/connections/connection-a/pause').send({}).expect(200);
     await api()
       .get('/api/connectors/agents/agent-a/connections')
-      .expect(200, { agentId: 'agent-a', connections: [] });
-    await api()
-      .get('/api/connectors/sessions/session-a/connections')
-      .expect(200, { sessionId: 'session-a', agentId: 'agent-a', connections: [] });
+      .expect(200, { agentId: 'agent-a', connections: [], nextCursor: null });
+    await api().get('/api/connectors/sessions/session-a/connections').expect(200, {
+      sessionId: 'session-a',
+      agentId: 'agent-a',
+      connections: [],
+      nextCursor: null,
+    });
 
     expect(deps.lifecycle.pause).toHaveBeenCalledWith(
       OWNER,

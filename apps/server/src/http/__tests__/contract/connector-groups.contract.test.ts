@@ -275,12 +275,12 @@ contractSuite('the connector groups, login off, nothing set up', [
   {
     name: 'GET /connections lists none',
     path: '/api/connectors/connections',
-    expect: { status: 200, body: { connections: [] } },
+    expect: { status: 200, body: { connections: [], nextCursor: null } },
   },
   {
     name: 'GET /connections/ with a trailing slash is the same route',
     path: '/api/connectors/connections/',
-    expect: { status: 200, body: { connections: [] } },
+    expect: { status: 200, body: { connections: [], nextCursor: null } },
   },
   {
     name: 'HEAD /connections answers with no body',
@@ -381,7 +381,7 @@ contractSuite('the connector groups, login off, nothing set up', [
   {
     name: 'GET /every-agent-grants lists none',
     path: '/api/connectors/every-agent-grants',
-    expect: { status: 200, body: { connections: [] } },
+    expect: { status: 200, body: { connections: [], nextCursor: null } },
   },
   {
     name: 'GET /agents/:id/connections for no agent is a 404',
@@ -411,7 +411,7 @@ contractSuite('the connector groups, login off, nothing set up', [
   {
     name: 'GET /reviews lists none',
     path: '/api/connectors/reviews',
-    expect: { status: 200, body: { reviews: [] } },
+    expect: { status: 200, body: { reviews: [], nextCursor: null } },
   },
   {
     name: 'GET /reviews with an unknown state is a validation failure',
@@ -468,7 +468,7 @@ contractSuite('the connector groups, login off, nothing set up', [
   {
     name: 'GET /agent-requests lists none',
     path: '/api/connectors/agent-requests',
-    expect: { status: 200, body: { requests: [] } },
+    expect: { status: 200, body: { requests: [], nextCursor: null } },
   },
   {
     name: 'GET /agent-requests with an unknown key is a validation failure',
@@ -1021,6 +1021,7 @@ describe('contract: the connector groups, driven by hand (login off)', () => {
             connections: z
               .array(z.object({ connectionId: z.string(), lifecycle: z.string() }).loose())
               .length(1),
+            nextCursor: z.null(),
           })
           .strict(),
       },
@@ -1299,10 +1300,9 @@ describe('contract: the connector groups, driven by hand (login off)', () => {
           .object({
             agentId: z.literal(agent.agentId),
             connections: z
-              .array(
-                z.object({ operationRevisionIds: z.tuple([z.literal(revisions.read)]) }).loose()
-              )
+              .array(z.object({ operationRevisionIds: z.tuple([z.literal(revisions.read)]) }))
               .length(1),
+            nextCursor: z.null(),
           })
           .strict(),
       },
@@ -1662,7 +1662,7 @@ describe('contract: the connector groups with login on', () => {
     await check(server, {
       path: '/api/connectors/connections',
       headers: cookie,
-      expect: { status: 200, body: { connections: [] } },
+      expect: { status: 200, body: { connections: [], nextCursor: null } },
     });
     await check(server, {
       path: '/api/connectors/connections',
@@ -1672,7 +1672,7 @@ describe('contract: the connector groups with login on', () => {
     await check(server, {
       path: '/api/connectors/reviews',
       headers: cookie,
-      expect: { status: 200, body: { reviews: [] } },
+      expect: { status: 200, body: { reviews: [], nextCursor: null } },
     });
     await check(server, {
       path: '/api/connectors/usage/operator',

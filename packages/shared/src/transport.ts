@@ -3208,8 +3208,8 @@ export interface Transport extends TransportSlices {
     limit?: number;
   }): Promise<ConnectorCatalogResourcePage>;
 
-  /** Read every stable connection owned by the current operator. */
-  getConnectorConnections(): Promise<ConnectorConnectionListResource>;
+  /** Read every stable connection owned by the current operator, every page, in name order. */
+  getConnectorConnections(): Promise<Pick<ConnectorConnectionListResource, 'connections'>>;
 
   /** Read owner-visible detail for one stable connection. */
   getConnectorConnection(connectionId: string): Promise<ConnectorConnectionDetail>;
