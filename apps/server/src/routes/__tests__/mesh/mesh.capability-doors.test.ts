@@ -158,6 +158,25 @@ describe('a person’s registry doors', () => {
     expect(meshCore.denyCrossNamespace).toHaveBeenCalledWith('*', '*');
   });
 
+  it('page the denied folders in the order the list keeps, newest first', async () => {
+    const rows = ['/c', '/b', '/a'].map((path, i) => ({
+      path,
+      deniedBy: 'owner',
+      deniedAt: `2026-11-2${7 - i}T00:00:00.000Z`,
+    }));
+    meshCore.listDenied.mockReturnValue(rows);
+    serve();
+    const first = await request(fixtureServer).get('/api/mesh/denied?limit=2');
+    const next = encodeURIComponent(first.body.nextCursor);
+    const second = await request(fixtureServer).get(`/api/mesh/denied?limit=2&cursor=${next}`);
+    const paths = [...first.body.denied, ...second.body.denied].map(
+      (r: { path: string }) => r.path
+    );
+    expect(paths).toEqual(['/c', '/b', '/a']);
+    expect(second.body.nextCursor).toBeNull();
+    expect((await request(fixtureServer).get('/api/mesh/denied?cursor=nope')).status).toBe(400);
+  });
+
   it('refuse a bad icon in a fixed sentence that does not echo what was sent', () => {
     const sent = 'Invalid icon "xx". An agent\'s icon is exactly one emoji, e.g. "🔮".';
     expect(toolRefusalProblem(meshRefusal('MESH_INVALID_ICON', sent).payload)).toMatchObject({

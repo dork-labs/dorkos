@@ -5330,7 +5330,7 @@ export interface paths {
          * List the folders hidden from discovery
          * @description **Preview.** This operation may change in any release.
          *
-         *     The folders a person hid from agent discovery, with why and when.
+         *     The folders a person hid from agent discovery, with why and when. Newest first, the folder breaking a tie, a page at a time: pass `nextCursor` back as `cursor` for the next.
          */
         get: operations["mesh.list_denied"];
         put?: never;
@@ -5688,7 +5688,7 @@ export interface paths {
          * List paused agents
          * @description **Preview.** This operation may change in any release.
          *
-         *     List every agent that is paused right now, with who paused it, when, and why.
+         *     List every agent that is paused right now, with who paused it, when, and why. Oldest pause first, a page at a time: pass `nextCursor` back as `cursor` for the next page until it is null. A pause made or lifted while paging can repeat or be missed.
          */
         get: operations["agent.list_paused"];
         put?: never;
@@ -8085,6 +8085,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/push/vapid-public-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the VAPID public key a browser needs to subscribe
+         * @description Generates this install’s keypair on the first call. Answers `key: null` when web push is unavailable here, so a client can say so instead of offering a button that fails.
+         */
+        get: operations["push.getVapidPublicKey"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/push/subscriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the browsers DorkOS may push to
+         * @description Never returns an endpoint, only the push service’s hostname and the dates. Newest subscribed first, the id breaking a tie, a page at a time: pass `nextCursor` back as `cursor` for the next. A cursor this list did not give is refused with `400 invalid_request`. A browser added or removed while paging can repeat or be missed.
+         */
+        get: operations["push.listSubscriptions"];
+        put?: never;
+        /**
+         * Let DorkOS push to this browser
+         * @description Idempotent by endpoint, so a client may call it on every load to refresh keys the browser rotated without accumulating dead rows.
+         */
+        post: operations["push.createSubscriptions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/push/subscriptions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Stop pushing to one browser */
+        delete: operations["push.deleteSubscriptions"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions/daily-counts": {
         parameters: {
             query?: never;
@@ -8496,9 +8557,9 @@ export interface paths {
         };
         /**
          * List the code sources a person trusts
-         * @description Every source a person chose to trust outright, in the order they trusted it. An extension whose copy provably came from one of these (DorkOS’s own installer recorded fetching it from there) runs without asking first. A copy that only claims a source never counts.
+         * @description Every source a person chose to trust outright, in the order they trusted it. An extension whose copy provably came from one of these (DorkOS’s own installer recorded fetching it from there) runs without asking first. A copy that only claims a source never counts. A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did not give is refused with `400 invalid_request`. A source trusted or dropped while paging can repeat or be missed.
          */
-        get: operations["extensions.getTrustedSources"];
+        get: operations["extensions.listTrustedSources"];
         put?: never;
         /**
          * Trust every extension from a source
@@ -8798,67 +8859,6 @@ export interface paths {
          */
         post: operations["harness.createAdopt"];
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/push/vapid-public-key": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Read the VAPID public key a browser needs to subscribe
-         * @description Generates this install’s keypair on the first call. Answers `key: null` when web push is unavailable here, so a client can say so instead of offering a button that fails.
-         */
-        get: operations["push.getVapidPublicKey"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/push/subscriptions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List the browsers DorkOS may push to
-         * @description Never returns an endpoint — only the push service’s hostname and the dates.
-         */
-        get: operations["push.listSubscriptions"];
-        put?: never;
-        /**
-         * Let DorkOS push to this browser
-         * @description Idempotent by endpoint, so a client may call it on every load to refresh keys the browser rotated without accumulating dead rows.
-         */
-        post: operations["push.createSubscriptions"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/push/subscriptions/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Stop pushing to one browser */
-        delete: operations["push.deleteSubscriptions"];
         options?: never;
         head?: never;
         patch?: never;
@@ -14502,9 +14502,6 @@ export interface components {
             pausedAt: string;
             reason?: string;
         };
-        AgentPauseList: {
-            pauses: components["schemas"]["AgentPause"][];
-        };
         ResolvedDorkLink: {
             /** @enum {string} */
             kind: "chat";
@@ -15074,6 +15071,39 @@ export interface components {
             code: string;
             options?: unknown;
         };
+        VapidPublicKeyResponse: {
+            key: string | null;
+        };
+        ListPushSubscriptionsResponse: {
+            subscriptions: components["schemas"]["PushSubscriptionDTO"][];
+            /** @description Pass as `cursor` for the next page; null on the last one. */
+            nextCursor: string | null;
+        };
+        PushSubscriptionDTO: {
+            id: string;
+            service: string;
+            createdAt: string;
+            lastSeenAt: string;
+        };
+        RegisterPushSubscriptionResponse: {
+            /** @enum {boolean} */
+            ok: true;
+            subscription: components["schemas"]["PushSubscriptionDTO"];
+        };
+        RegisterPushSubscriptionRequest: {
+            /** Format: uri */
+            endpoint: string;
+            keys: components["schemas"]["PushSubscriptionKeys"];
+        };
+        PushSubscriptionKeys: {
+            p256dh: string;
+            auth: string;
+        };
+        DeletePushSubscriptionResponse: {
+            /** @enum {boolean} */
+            ok: true;
+            removed: number;
+        };
         SessionDailyCountsResponse: {
             days: number;
             dailyCounts: number[];
@@ -15203,12 +15233,12 @@ export interface components {
             };
             expectedDigest?: string;
         };
-        TrustedSourcesResponse: {
-            sources: components["schemas"]["TrustedSource"][];
-        };
         TrustedSource: {
             source: string;
             trustedAt: string;
+        };
+        TrustedSourcesResponse: {
+            sources: components["schemas"]["TrustedSource"][];
         };
         TrustedSourceRequest: {
             source: string;
@@ -15516,37 +15546,6 @@ export interface components {
         };
         ProfileAvatarResponse: {
             imageUrl: string;
-        };
-        VapidPublicKeyResponse: {
-            key: string | null;
-        };
-        ListPushSubscriptionsResponse: {
-            subscriptions: components["schemas"]["PushSubscriptionDTO"][];
-        };
-        PushSubscriptionDTO: {
-            id: string;
-            service: string;
-            createdAt: string;
-            lastSeenAt: string;
-        };
-        RegisterPushSubscriptionResponse: {
-            /** @enum {boolean} */
-            ok: true;
-            subscription: components["schemas"]["PushSubscriptionDTO"];
-        };
-        RegisterPushSubscriptionRequest: {
-            /** Format: uri */
-            endpoint: string;
-            keys: components["schemas"]["PushSubscriptionKeys"];
-        };
-        PushSubscriptionKeys: {
-            p256dh: string;
-            auth: string;
-        };
-        DeletePushSubscriptionResponse: {
-            /** @enum {boolean} */
-            ok: true;
-            removed: number;
         };
         FoundClaudeFolder: {
             path: string;
@@ -45914,7 +45913,12 @@ export interface operations {
     };
     "mesh.list_denied": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -45929,6 +45933,8 @@ export interface operations {
                 content: {
                     "application/json": {
                         denied: components["schemas"]["DenialRecord"][];
+                        /** @description Pass as `cursor` for the next page; null on the last one. */
+                        nextCursor: string | null;
                     };
                 };
             };
@@ -48093,7 +48099,12 @@ export interface operations {
     };
     "agent.list_paused": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -48106,7 +48117,11 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AgentPauseList"];
+                    "application/json": {
+                        pauses: components["schemas"]["AgentPause"][];
+                        /** @description Pass as `cursor` for the next page; null on the last one. */
+                        nextCursor: string | null;
+                    };
                 };
             };
             /** @description A person must allow the call first; nothing ran */
@@ -57993,6 +58008,151 @@ export interface operations {
             };
         };
     };
+    "push.getVapidPublicKey": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The public key, or null */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VapidPublicKeyResponse"];
+                };
+            };
+            /** @description `operator_only`: only the operator may see this install’s push setup */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "push.listSubscriptions": {
+        parameters: {
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of subscribed browsers, newest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListPushSubscriptionsResponse"];
+                };
+            };
+            /** @description `invalid_request`: a bad `limit`, or a cursor this list did not give */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `operator_only`: only the operator may list push devices */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "push.createSubscriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RegisterPushSubscriptionRequest"];
+            };
+        };
+        responses: {
+            /** @description The subscription as it now stands */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegisterPushSubscriptionResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `operator_only`: only the operator may subscribe a device */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "push.deleteSubscriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description How many rows went away — 0 when it was already gone */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletePushSubscriptionResponse"];
+                };
+            };
+            /** @description `operator_only`: only the operator may remove a push device */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     "sessions.getDailyCounts": {
         parameters: {
             query?: {
@@ -59008,22 +59168,40 @@ export interface operations {
             };
         };
     };
-    "extensions.getTrustedSources": {
+    "extensions.listTrustedSources": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description The trusted sources */
+            /** @description One page of the trusted sources */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TrustedSourcesResponse"];
+                    "application/json": {
+                        sources: components["schemas"]["TrustedSource"][];
+                        /** @description Pass as `cursor` for the next page; null on the last one. */
+                        nextCursor: string | null;
+                    };
+                };
+            };
+            /** @description `invalid_request`: a bad `limit`, or a cursor this list did not give */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             500: components["responses"]["InternalErrorProblem"];
@@ -60314,137 +60492,6 @@ export interface operations {
             };
             /** @description `internal_error`: the adopt failed. The reason is logged, never echoed */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    "push.getVapidPublicKey": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The public key, or null */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["VapidPublicKeyResponse"];
-                };
-            };
-            /** @description `operator_only`: only the operator may see this install’s push setup */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    "push.listSubscriptions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Every subscribed browser, newest first */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ListPushSubscriptionsResponse"];
-                };
-            };
-            /** @description `operator_only`: only the operator may list push devices */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    "push.createSubscriptions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["RegisterPushSubscriptionRequest"];
-            };
-        };
-        responses: {
-            /** @description The subscription as it now stands */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RegisterPushSubscriptionResponse"];
-                };
-            };
-            /** @description Validation error */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description `operator_only`: only the operator may subscribe a device */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    "push.deleteSubscriptions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description How many rows went away — 0 when it was already gone */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DeletePushSubscriptionResponse"];
-                };
-            };
-            /** @description `operator_only`: only the operator may remove a push device */
-            403: {
                 headers: {
                     [name: string]: unknown;
                 };

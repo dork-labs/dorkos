@@ -17,6 +17,7 @@ import type {
 import { resolveApiBaseUrl } from '@/layers/shared/lib';
 import { extensionQueryKeys } from './use-pending-extension-approvals';
 import { readResponseError } from '@/layers/shared/lib';
+import { pageQuery, readAllPages } from '@/layers/shared/lib/read-all-pages';
 
 /** The query key for the trusted list. */
 export const trustedSourcesQueryKey = [...extensionQueryKeys.all, 'trusted-sources'] as const;
@@ -37,14 +38,22 @@ async function writeTrustedSource(method: 'POST' | 'DELETE', source: string): Pr
   if (!res.ok) throw await failureOf(res);
 }
 
-/** Every source the person trusts, in the order they trusted them. */
+/** Every source the person trusts, every page read, in the order they trusted them. */
 export function useTrustedSources() {
   return useQuery<TrustedSource[]>({
     queryKey: trustedSourcesQueryKey,
     queryFn: async () => {
-      const res = await fetch(`${resolveApiBaseUrl()}/extensions/trusted-sources`);
-      if (!res.ok) throw await failureOf(res);
-      return ((await res.json()) as TrustedSourcesResponse).sources;
+      const { rows } = await readAllPages(
+        async (cursor) => {
+          const url = `${resolveApiBaseUrl()}/extensions/trusted-sources${pageQuery(cursor)}`;
+          const res = await fetch(url);
+          if (!res.ok) throw await failureOf(res);
+          return (await res.json()) as TrustedSourcesResponse & { nextCursor: string | null };
+        },
+        (page) => page.sources,
+        '/extensions/trusted-sources'
+      );
+      return rows;
     },
     staleTime: 30_000,
   });

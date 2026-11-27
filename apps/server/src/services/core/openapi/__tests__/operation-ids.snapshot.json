@@ -114,7 +114,7 @@
   "GET /api/extensions/media/{ticket}": "extensions.getMedia",
   "GET /api/extensions/pending-approvals": "extensions.listPendingApprovals",
   "GET /api/extensions/stale-approvals": "extensions.listStaleApprovals",
-  "GET /api/extensions/trusted-sources": "extensions.getTrustedSources",
+  "GET /api/extensions/trusted-sources": "extensions.listTrustedSources",
   "GET /api/extensions/{id}/decisions": "extensions.getDecisions",
   "GET /api/extensions/{id}/project-settings": "extensions.getProjectSettings",
   "GET /api/files/content": "files.read_text",

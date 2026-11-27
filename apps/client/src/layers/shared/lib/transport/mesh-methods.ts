@@ -18,7 +18,7 @@ import type {
   UpdateAccessRuleRequest,
   CrossNamespaceRule,
 } from '@dorkos/shared/mesh-schemas';
-import { fetchJSON, buildQueryString } from './http-client';
+import { fetchAllPages, fetchJSON, buildQueryString } from './http-client';
 
 /** Create all Mesh + Agent Identity methods bound to a base URL. */
 export function createMeshMethods(baseUrl: string) {
@@ -93,8 +93,15 @@ export function createMeshMethods(baseUrl: string) {
       });
     },
 
-    listDeniedMeshAgents(): Promise<{ denied: DenialRecord[] }> {
-      return fetchJSON(baseUrl, '/mesh/denied');
+    // Both lists below come in pages; these read them whole, in the server's order.
+    async listDeniedMeshAgents(): Promise<{ denied: DenialRecord[] }> {
+      const { rows } = await fetchAllPages(
+        baseUrl,
+        '/mesh/denied',
+        {},
+        (page: { denied: DenialRecord[]; nextCursor: string | null }) => page.denied
+      );
+      return { denied: rows };
     },
 
     /**
@@ -109,8 +116,14 @@ export function createMeshMethods(baseUrl: string) {
 
     // --- Pausing an agent everywhere (spec `audit-trail` PR5) ---
 
-    listAgentPauses(): Promise<AgentPauseList> {
-      return fetchJSON(baseUrl, '/agents/pauses');
+    async listAgentPauses(): Promise<AgentPauseList> {
+      const { rows } = await fetchAllPages(
+        baseUrl,
+        '/agents/pauses',
+        {},
+        (page: AgentPauseList & { nextCursor: string | null }) => page.pauses
+      );
+      return { pauses: rows };
     },
 
     pauseAgent(agentId: string, reason?: string): Promise<AgentPauseResult> {

@@ -28,6 +28,8 @@ import { honoRequestFacts } from '../http/request-facts.js';
 import { refusedNotAPerson } from './extensions-person-bar.js';
 import type { PersonBarCopy } from '../lib/http/person-bar.js';
 import { refuseFrontDoorChange } from '../lib/caller-authority.js';
+import { answerPage } from '../lib/paging/hand-route-page.js';
+import { listPosition } from '../lib/paging/keyset-page.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 
 /** What the trusted-source routes say when the bar refuses them. */
@@ -60,12 +62,22 @@ export function registerTrustedSourceRoutes(
   extensionManager: ExtensionManager,
   activity?: Pick<ActivityService, 'emit'>
 ): void {
-  // GET /api/extensions/trusted-sources -- The sources a person trusts. A read
-  // of `owner/repo` names only, so it carries no bar.
-  router.get('/trusted-sources', (c) => {
-    const sources = configManager.get('extensions').trustedSources ?? [];
-    return c.json({ sources });
-  });
+  // GET /api/extensions/trusted-sources -- The sources a person trusts, a page
+  // at a time in the order they were trusted (the settings file's order, kept
+  // by each row's place in it). A read of `owner/repo` names only: no bar.
+  router.get('/trusted-sources', (c) =>
+    answerPage(c, {
+      list: 'trusted-sources',
+      noun: 'sources',
+      read: () =>
+        (configManager.get('extensions').trustedSources ?? []).map((row, index) => ({
+          row,
+          index,
+        })),
+      keyOf: ({ row, index }) => [listPosition(index), row.source],
+      show: ({ row }) => row,
+    })
+  );
 
   // POST /api/extensions/trusted-sources -- "Yes" on "Next time, trust
   // everything from <source>?". Only a source some installed copy provably

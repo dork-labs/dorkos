@@ -184,7 +184,7 @@ contractSuite('notification, push, approval, extension-decision, permission and 
   {
     name: 'GET /api/push/subscriptions lists no devices',
     path: '/api/push/subscriptions',
-    expect: { status: 200, body: { subscriptions: [] } },
+    expect: { status: 200, body: { subscriptions: [], nextCursor: null } },
   },
   {
     name: 'HEAD /api/push/subscriptions answers the GET’s status with no body',
@@ -646,7 +646,7 @@ contractSuite('notification, push, approval, extension-decision, permission and 
   {
     name: 'GET /api/agents/pauses lists no paused agents',
     path: '/api/agents/pauses',
-    expect: { status: 200, headers: JSON_TYPE, body: { pauses: [] } },
+    expect: { status: 200, headers: JSON_TYPE, body: { pauses: [], nextCursor: null } },
   },
   {
     name: 'GET /api/agents/pauses/ answers with a trailing slash, to an agent too',
@@ -1033,7 +1033,7 @@ describe('contract: the same groups with login on', () => {
     await check(server, {
       path: '/api/push/subscriptions',
       headers: cookie,
-      expect: { status: 200, body: { subscriptions: [] } },
+      expect: { status: 200, body: { subscriptions: [], nextCursor: null } },
     });
   });
 
