@@ -1,15 +1,12 @@
 /** Keep a person's acknowledged chat tied to its exact source until first binding. */
-import { agents, and, eq, sessionBirthAllocations, sessionLocations, type Db } from '@dorkos/db';
 import type { MeshCore } from '@dorkos/mesh';
 import type { RequestFacts } from '../http/request-facts.js';
 import { BoundaryError, validateBoundaryOrDorkHome } from '../lib/boundary.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import { PreparedSettingsWriteError } from '../services/core/runtime-seam/prepared-settings-write.js';
-import {
-  readDraftSource,
-  type PersonChatBinding,
-} from '../services/core/runtime-seam/person-draft-settings.js';
+import type { PersonChatBinding } from '../services/core/runtime-seam/person-draft-settings.js';
 import { SessionBirthWriteError } from '../services/core/runtime-seam/session-birth-write.js';
+import type { SessionLocationStore } from '../services/core/runtime-seam/session-location-store.js';
 import { primaryOf } from '../services/session/resolution/session-key-registry.js';
 import { problemBody } from '@dorkos/http-kit';
 import type { Problem } from '@dorkos/shared/problem';
@@ -67,20 +64,16 @@ type PreparedPersonChat =
   | { binding: PersonChatBinding; registeredAgentPath: string; cwd?: never };
 
 /** Capture the exact source before runtime/model or placement reads can yield. */
-export function observePersonChat(db: Db, id: string) {
-  const allocation = db
-    .select()
-    .from(sessionBirthAllocations)
-    .where(eq(sessionBirthAllocations.sessionId, id))
-    .get();
-  const draft = readDraftSource(db, id);
+export function observePersonChat(store: SessionLocationStore, id: string) {
+  const allocation = store.birthAllocation(id);
+  const draft = store.draftSource(id);
   if ((!allocation || allocation.sourceKind === 'internal') && !draft) return;
   return { allocation, draft };
 }
 
 /** Revalidate an observed source for either ordinary settings or ordinary first send. */
 export async function preparePersonChat(
-  db: Db,
+  store: SessionLocationStore,
   id: string,
   facts: RequestFacts,
   source: NonNullable<ReturnType<typeof observePersonChat>>,
@@ -108,7 +101,7 @@ export async function preparePersonChat(
       meshCore?.getProjectPath(registeredAgentId) !== recordedPath
     )
       return { refusal: personChatMissing };
-    const agent = db.select().from(agents).where(eq(agents.id, registeredAgentId)).get();
+    const agent = store.registeredAgent(registeredAgentId);
     if (!agent || agent.projectPath !== recordedPath) return { refusal: personChatMissing };
     if (draft) {
       if (draft.sourceCreatedAt !== agent.registeredAt) return { refusal: personChatMissing };
@@ -134,11 +127,7 @@ export async function preparePersonChat(
     };
   }
   if (!owned.locationId) return { refusal: personChatMissing };
-  const location = db
-    .select()
-    .from(sessionLocations)
-    .where(and(eq(sessionLocations.id, owned.locationId), eq(sessionLocations.ownerId, ownerId)))
-    .get();
+  const location = store.owned(owned.locationId, ownerId);
   if (!location) return { refusal: personChatMissing };
   try {
     if (

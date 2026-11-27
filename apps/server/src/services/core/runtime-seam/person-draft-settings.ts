@@ -38,6 +38,24 @@ export function readDraftSource(db: Db | DbTransaction, id: string) {
   return db.select().from(sessionDraftSources).where(eq(sessionDraftSources.sessionId, id)).get();
 }
 
+/** The registered agent `agentId`, as the agent registry recorded it. */
+export function readRegisteredAgent(db: Db | DbTransaction, agentId: string) {
+  return db.select().from(agents).where(eq(agents.id, agentId)).get();
+}
+
+/** Whether a freshly minted chat id already names a session, a runtime binding or a room's chat. */
+export function chatIdInUse(tx: DbTransaction, sessionId: string): boolean {
+  return Boolean(
+    tx.select().from(sessionMetadata).where(eq(sessionMetadata.sessionId, sessionId)).get() ||
+    tx
+      .select()
+      .from(sessionNativeBindings)
+      .where(eq(sessionNativeBindings.sessionId, sessionId))
+      .get() ||
+    tx.select().from(roomSessions).where(eq(roomSessions.sessionId, sessionId)).get()
+  );
+}
+
 function matchesCurrentSource(tx: DbTransaction, witness: PersonDraftWitness): boolean {
   if (witness.sourceKind === 'person-agent') {
     const agent = tx.select().from(agents).where(eq(agents.id, witness.registeredAgentId)).get();

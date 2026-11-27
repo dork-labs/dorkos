@@ -54,6 +54,19 @@ export function answerSearch(db: Db, scope: SearchScope, raw: unknown): SearchAn
   };
 }
 
+/** {@link answerSearch} bound to the database holding the index: what the search route calls. */
+export type SearchAnswerer = (scope: SearchScope, raw: unknown) => SearchAnswer;
+
+/**
+ * Bind {@link answerSearch} to the database holding the index, so the route never holds it.
+ *
+ * @param db - The database holding the index.
+ * @returns The answerer the `/api/search` route calls.
+ */
+export function searchAnswerer(db: Db): SearchAnswerer {
+  return (scope, raw) => answerSearch(db, scope, raw);
+}
+
 /**
  * The sentence that says what was actually wrong with the request.
  *
