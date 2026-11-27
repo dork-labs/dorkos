@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(api): every GET /api/events frame carries the whole event, { seq, at, type, payload } (DOR-5474)'
+  - 'feat(api): frames outside the numbering on /api/events carry seq null (DOR-5474)'
 ---
 
 ### Changed

@@ -313,12 +313,12 @@ async function pushFrame(page: Page, key: string, eventName: string, data: unkno
     },
     // The WebSocket wire format the server writes for that stream: a room's is
     // `encodeStreamFrame`'s `{ event, data }`; the global stream's is a whole
-    // `DorkOsEvent`, here one with no place in the numbering (`seq` 0, no id).
+    // `DorkOsEvent`, here one with no place in the numbering (`seq: null`, no id).
     [
       key,
       JSON.stringify(
         key === '__globalStream'
-          ? { seq: 0, at: new Date().toISOString(), type: eventName, payload: data }
+          ? { seq: null, at: new Date().toISOString(), type: eventName, payload: data }
           : { event: eventName, data }
       ),
     ] as [string, string]

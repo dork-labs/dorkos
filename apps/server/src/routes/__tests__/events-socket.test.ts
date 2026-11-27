@@ -111,11 +111,11 @@ describe('globalEventsRoute — connect preamble', () => {
 
     const frames = await connect();
 
-    expect(frames[0]).toMatchObject({ seq: 0, type: 'connected' });
+    expect(frames[0]).toMatchObject({ seq: null, type: 'connected' });
     expect(frames[0]).not.toHaveProperty('id');
     expect(frames.slice(1)).toContainEqual(
       expect.objectContaining({
-        seq: 0,
+        seq: null,
         type: 'session_status',
         payload: expect.objectContaining({
           sessionId: ERRORED_ID,
@@ -204,7 +204,43 @@ describe('globalEventsRoute — resuming from ?resume=', () => {
     const numbered = frames.filter((frame) => frame.id !== undefined);
     expect(numbered.map((frame) => frame.payload)).toEqual([{ n: 2 }, { n: 3 }]);
     // The client reads `seq` from the frame, never from the id.
-    expect(numbered[1]!.seq).toBe(numbered[0]!.seq + 1);
+    expect(numbered[1]!.seq).toBe(numbered[0]!.seq! + 1);
+  });
+
+  it('gets its snapshot through a reader that drops frames at or below the last seq it saw', async () => {
+    // A common client: skip what it already has. The opening frames carry
+    // `seq: null`, so such a reader never takes them for repeats.
+    let lastSeq = 0;
+    const kept: DorkOsEventFrame[] = [];
+    const read = (frames: DorkOsEventFrame[]): void => {
+      for (const frame of frames) {
+        if (frame.seq !== null && frame.seq <= lastSeq) continue;
+        if (frame.seq !== null) lastSeq = frame.seq;
+        kept.push(frame);
+      }
+    };
+    const first = recordingSocket();
+    const opened = await globalEventsRoute.authorize(upgradeAttempt());
+    if (!opened.ok) throw new Error('refused');
+    opened.open(first.ws);
+    eventFanOut.broadcast('tasks_changed', { n: 1 });
+    read(first.frames());
+    expect(lastSeq).toBeGreaterThan(0);
+
+    // The server restarted: the old cursor names nothing, so this is a cold connect.
+    const errored = getOrCreateProjector(ERRORED_ID, '/work/alpha');
+    errored.ingest({ type: 'turn_start' });
+    errored.ingest({ type: 'turn_end', terminalReason: 'error' } as RawSessionEvent);
+    kept.length = 0;
+    read(await connect({ url: new URL('http://localhost/api/events?resume=events-1-g999999-1') }));
+
+    expect(kept[0]).toMatchObject({ seq: null, type: 'connected' });
+    expect(kept).toContainEqual(
+      expect.objectContaining({
+        type: 'session_status',
+        payload: expect.objectContaining({ sessionId: ERRORED_ID }),
+      })
+    );
   });
 });
 
@@ -217,7 +253,7 @@ describe('globalEventsRoute — keepalive', () => {
       if (!decision.ok) throw new Error('refused');
       decision.open(socket.ws);
       vi.advanceTimersByTime(SSE.HEARTBEAT_INTERVAL_MS);
-      expect(socket.frames().at(-1)).toMatchObject({ seq: 0, type: 'heartbeat', payload: null });
+      expect(socket.frames().at(-1)).toMatchObject({ seq: null, type: 'heartbeat', payload: null });
     } finally {
       vi.useRealTimers();
     }

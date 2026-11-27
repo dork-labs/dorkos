@@ -5,7 +5,7 @@
  *
  * @module lib/event-stream/global-event-frames
  */
-import { UNNUMBERED_SEQ, type DorkOsEventFrame } from '@dorkos/shared/dorkos-event-frame';
+import type { DorkOsEventFrame } from '@dorkos/shared/dorkos-event-frame';
 import type { DorkOsEvent, DorkOsEventType } from '@dorkos/shared/dorkos-events';
 import type { CallerPrincipal } from '../caller-principal.js';
 
@@ -67,7 +67,7 @@ export type BroadcastAudience = (principal: CallerPrincipal) => boolean;
  * @param type - The event type, e.g. `session_status`.
  * @param payload - The event's data; serialized once per format.
  * @param place - The frame's place in the stream, for a numbered event. A
- *   preamble frame or a keepalive is not one: it goes out with `seq` 0, the
+ *   preamble frame or a keepalive is not one: it goes out with `seq: null`, the
  *   time now and no id.
  */
 export function encodeBroadcast(
@@ -76,7 +76,7 @@ export function encodeBroadcast(
   place?: FramePlace
 ): EncodedBroadcast {
   const envelope: DorkOsEvent = {
-    seq: place?.seq ?? UNNUMBERED_SEQ,
+    seq: place?.seq ?? null,
     at: place?.at ?? new Date().toISOString(),
     type,
     payload,

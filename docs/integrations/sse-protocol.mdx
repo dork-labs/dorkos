@@ -378,14 +378,19 @@ data: {"seq":118,"at":"2026-11-27T12:00:00.000Z","type":"session_status","payloa
 
 The `data:` line is the event, with four fields:
 
-| Field     | Meaning                                                                                                                                               |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `seq`     | Its place in this stream. It only grows and may skip numbers. It is `0` on the opening frames and the `heartbeat`, which have no place in the stream. |
-| `at`      | When the server sent it, as an ISO 8601 time. A replayed event keeps the time it was first sent.                                                      |
-| `type`    | The event type, from the table below. The `event:` line repeats it, so you can listen by type.                                                        |
-| `payload` | The event's data, in the shape the table below gives.                                                                                                 |
+| Field     | Meaning                                                                                                                                                                |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `seq`     | Its place in this stream. It only grows and may skip numbers. It is `null` on the opening frames, the snapshot and the `heartbeat`, which have no place in the stream. |
+| `at`      | When the server sent it, as an ISO 8601 time. A replayed event keeps the time it was first sent.                                                                       |
+| `type`    | The event type, from the table below. The `event:` line repeats it, so you can listen by type.                                                                         |
+| `payload` | The event's data, in the shape the table below gives.                                                                                                                  |
 
 The `id:` line is your resume cursor (see below). Read `seq` from `data:`, never from the id.
+
+A frame whose `seq` is `null` is outside the numbering. Never store it as your position, and never
+use it to put frames in order or to drop one as a repeat. If you skip frames whose `seq` is at or
+below the last one you saw, let the `null` ones through: they are how you get the fresh snapshot
+after a reconnect.
 
 ```js
 const events = new EventSource('http://localhost:4242/api/events');
@@ -493,7 +498,7 @@ the connection drops, reconnect with the last one as `Last-Event-ID` (browsers' 
 does this for you). The server sends the events you missed, then live ones, and the `connected`
 frame says `resumed: true`. You get the missed events you may read now, when you reconnect.
 
-The server keeps the last 500 events (up to 512 KiB) for this. If you were gone longer, or the
+The server keeps the last 500 events (up to 512 KiB, so fewer when events are large) for this. If you were gone longer, or the
 server restarted, you get an ordinary fresh connect instead: `connected` without `resumed`, then
 the current chat statuses. Read back anything else you show, the same as on a first connect.
 
@@ -622,7 +627,9 @@ when the event has one:
 {"id":"events-1764201600000-g1-118","seq":118,"at":"2026-11-27T12:00:00.000Z","type":"session_status","payload":{...}}
 ```
 
-Its keepalive is an event too: `type` is `heartbeat`, `seq` is `0` and `payload` is `null`.
+Its keepalive is an event too: `type` is `heartbeat`, `seq` is `null` and `payload` is `null`.
+The chat and room sockets keep their own `__heartbeat` frame on purpose: their frames did not
+change, only the global stream's did.
 
 Four differences to know about:
 

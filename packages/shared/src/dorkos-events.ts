@@ -203,10 +203,11 @@ export function dorkOsEventArea(type: DorkOsEventType): DorkOsEventTypeInfo {
 export interface DorkOsEvent<T extends DorkOsEventType = DorkOsEventType, P = unknown> {
   /**
    * Position in this stream: only grows, may skip, never compared across
-   * streams. 0 on a frame outside the numbering (the opening frames, the
-   * keepalive).
+   * streams. `null` on a frame outside the numbering (the opening frames, the
+   * cold-connect snapshot, the keepalive), which is never stored as a position
+   * and never used to order or drop a frame.
    */
-  readonly seq: number;
+  readonly seq: number | null;
   /** When the server emitted the event, ISO 8601. A replay keeps the first one. */
   readonly at: string;
   /** The event type, a member of the union. */
@@ -231,9 +232,10 @@ const envelopeShape = {
   seq: z
     .number()
     .int()
-    .nonnegative()
+    .positive()
+    .nullable()
     .describe(
-      "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. 0 on a frame with no place in the stream (`connected`, the snapshot after it, `heartbeat`), which also has no id."
+      "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. `null` on a frame outside the numbering (`connected`, the cold-connect snapshot after it, `heartbeat`), which also has no id: never store it as a position, and never use it to order or drop a frame."
     ),
   at: z
     .string()

@@ -50,10 +50,10 @@ export class FakeStreamSocket {
 
   /**
    * Deliver one global-stream message: a whole `DorkOsEvent`, as the server
-   * writes on `/api/events`, outside the numbering (`seq` 0, no id).
+   * writes on `/api/events`, outside the numbering (`seq: null`, no id).
    */
   pushEvent(type: string, payload: unknown): void {
-    const envelope = { seq: 0, at: '2026-11-27T00:00:00.000Z', type, payload };
+    const envelope = { seq: null, at: '2026-11-27T00:00:00.000Z', type, payload };
     this.onmessage?.({ data: JSON.stringify(envelope) } as MessageEvent<unknown>);
   }
 

@@ -169,8 +169,11 @@ describe('watchAgentActivity', () => {
   it('ignores heartbeats, connect frames and anything else on the stream', () => {
     const onChange = start();
 
-    source.emit('heartbeat', envelope('heartbeat', null, 0));
-    source.emit('connected', envelope('connected', { connectedAt: '2026-07-26T00:00:00.000Z' }, 0));
+    source.emit('heartbeat', envelope('heartbeat', null, null));
+    source.emit(
+      'connected',
+      envelope('connected', { connectedAt: '2026-07-26T00:00:00.000Z' }, null)
+    );
     source.emit('relay_message', envelope('relay_message', { foo: 1 }));
     source.emit('session_status', 'not json');
     source.emit('session_status', envelope('session_status', { sessionId: 'a' }));

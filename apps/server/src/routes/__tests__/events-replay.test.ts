@@ -121,10 +121,10 @@ function numbered(text: string): NumberedFrame[] {
   );
 }
 
-/** The opening `connected` frame: `seq` 0, no id, its payload as given. */
+/** The opening `connected` frame: `seq: null`, no id, its payload as given. */
 function connectedFrame(payload: string): RegExp {
   return new RegExp(
-    `^event: connected\\ndata: \\{"seq":0,"at":"[^"]+","type":"connected","payload":${payload}\\}\\n\\n`
+    `^event: connected\\ndata: \\{"seq":null,"at":"[^"]+","type":"connected","payload":${payload}\\}\\n\\n`
   );
 }
 

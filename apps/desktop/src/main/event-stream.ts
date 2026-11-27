@@ -484,6 +484,14 @@ function parseFrame(frame: string): ServerEventFrame {
 }
 
 /**
+ * Whether a frame that was JSON but not an envelope has been logged. Once per
+ * process: a server from before DOR-5474 sends bare payloads on every frame,
+ * and one line says why the tray and notifications went quiet without a line
+ * per event.
+ */
+let loggedNotEnvelope = false;
+
+/**
  * Read the payload out of a frame's `data:`, which is one whole `DorkOsEvent`,
  * `{ seq, at, type, payload }` (DOR-5474).
  *
@@ -498,7 +506,17 @@ export function parseEventPayload(data: string): Record<string, unknown> | null 
   } catch {
     return null;
   }
-  const payload = readDorkOsEvent(parsed)?.payload;
+  const event = readDorkOsEvent(parsed);
+  if (!event) {
+    if (!loggedNotEnvelope) {
+      loggedNotEnvelope = true;
+      log.warn(
+        '[event-stream] A frame is not a { seq, at, type, payload } event; the server may be older than this app. Skipping such frames.'
+      );
+    }
+    return null;
+  }
+  const payload = event.payload;
   return typeof payload === 'object' && payload !== null
     ? (payload as Record<string, unknown>)
     : null;

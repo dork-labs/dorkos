@@ -48,7 +48,7 @@ export class FakeEventStream {
       }
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       res.write(
-        `event: connected\ndata: ${envelope('connected', { connectedAt: '2026-07-26T00:00:00.000Z' }, 0)}\n\n`
+        `event: connected\ndata: ${envelope('connected', { connectedAt: '2026-07-26T00:00:00.000Z' }, null)}\n\n`
       );
       this.clients.push(res);
       for (const waiter of this.waiters.splice(0)) waiter();
@@ -139,9 +139,9 @@ export class FakeEventStream {
  *
  * @param type - The event type.
  * @param payload - The event's data.
- * @param seq - Its place in the stream; 0 for a frame outside the numbering.
+ * @param seq - Its place in the stream; `null` for a frame outside the numbering.
  */
-export function envelope(type: string, payload: unknown, seq = 1): string {
+export function envelope(type: string, payload: unknown, seq: number | null = 1): string {
   return JSON.stringify({ seq, at: '2026-07-26T00:00:00.000Z', type, payload });
 }
 

@@ -102,11 +102,11 @@ describe('GET /api/events (unified SSE stream)', () => {
     expect(body).toContain('event: connected');
     expect(body).toContain('"connectedAt"');
 
-    // The data is a whole envelope: outside the numbering, so seq 0 and no id.
+    // The data is a whole envelope: outside the numbering, so seq null and no id.
     const dataLine = body.split('\n').find((line: string) => line.startsWith('data: '));
     expect(dataLine).toBeDefined();
     const envelope = JSON.parse(dataLine!.replace('data: ', ''));
-    expect(envelope).toMatchObject({ seq: 0, type: 'connected' });
+    expect(envelope).toMatchObject({ seq: null, type: 'connected' });
     expect(new Date(envelope.at).toISOString()).toBe(envelope.at);
     expect(envelope.payload.connectedAt).toBeDefined();
     expect(() => new Date(envelope.payload.connectedAt)).not.toThrow();

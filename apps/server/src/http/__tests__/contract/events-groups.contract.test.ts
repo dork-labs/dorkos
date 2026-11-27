@@ -52,10 +52,10 @@ const MAX_CLIENTS = 500;
 const HEARTBEAT_WAIT_MS = 15_000 + 5_000;
 /**
  * The `connected` frame, byte for byte, and nothing before it: a whole
- * `DorkOsEvent` with `seq` 0 and no `id:` line.
+ * `DorkOsEvent` with `seq: null` and no `id:` line.
  */
 const CONNECTED_FRAME =
-  /^event: connected\ndata: \{"seq":0,"at":"[^"]+","type":"connected","payload":\{"connectedAt":"\d{4}-\d\d-\d\dT[\d:.]+Z"\}\}\n\n/;
+  /^event: connected\ndata: \{"seq":null,"at":"[^"]+","type":"connected","payload":\{"connectedAt":"\d{4}-\d\d-\d\dT[\d:.]+Z"\}\}\n\n/;
 /** The headers every stream answers with, whoever asks. */
 const STREAM_HEADERS = {
   'content-type': 'text/event-stream',
@@ -419,7 +419,7 @@ describe('contract: the global event stream, driven by hand (login off)', () => 
         HEARTBEAT_WAIT_MS
       );
       expect(text).toMatch(
-        /\n\nevent: heartbeat\ndata: \{"seq":0,"at":"[^"]+","type":"heartbeat","payload":null\}\n\n/
+        /\n\nevent: heartbeat\ndata: \{"seq":null,"at":"[^"]+","type":"heartbeat","payload":null\}\n\n/
       );
       expect(stream.ended()).toBe(false);
       stream.close();

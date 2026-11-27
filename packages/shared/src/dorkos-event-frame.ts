@@ -11,8 +11,11 @@
  *   line. Send it back whole as `?resume=`.
  *
  * A reader takes `seq` from the envelope and never parses the cursor. A frame
- * outside the numbering (the opening `connected` frame, the snapshot, the
- * keepalive) has `seq` {@link UNNUMBERED_SEQ} and no cursor.
+ * outside the numbering (the opening `connected` frame, the cold-connect
+ * snapshot, the keepalive) has `seq: null` and no cursor. Such a frame is never
+ * stored as a position and never used to order or drop a frame: a reader that
+ * drops frames at or below the last `seq` it saw must let a `null` one through,
+ * or it loses the snapshot after a reconnect.
  *
  * Kept free of zod and of the payload schemas so a small reader (the desktop
  * app's main process) can decode frames without loading them.
@@ -21,18 +24,11 @@
  */
 import type { DorkOsEvent } from './dorkos-events.js';
 
-/**
- * The `seq` of a frame that has no place in the stream's numbering: the
- * opening `connected` frame, the snapshot after it and the keepalive. Numbered
- * events start at 1, so 0 never names one.
- */
-export const UNNUMBERED_SEQ = 0;
-
 /** One message on the global stream's WebSocket: the envelope, plus its resume cursor. */
 export type DorkOsEventFrame = DorkOsEvent & {
   /**
    * The resume cursor, the same string SSE sends as `id:`. Opaque: echo it
-   * back whole as `?resume=`. Absent on a frame with {@link UNNUMBERED_SEQ}.
+   * back whole as `?resume=`. Absent on a frame whose `seq` is `null`.
    */
   readonly id?: string;
 };
@@ -40,7 +36,9 @@ export type DorkOsEventFrame = DorkOsEvent & {
 /**
  * Read an envelope from an already-parsed value (an SSE frame's `data:`, or a
  * socket message), or `null` when it is not one. Checks the four fields' kinds
- * only: the payload is the type's own business.
+ * only: the payload is the type's own business. A `type` this build does not
+ * know is passed through on purpose (fail-soft): a newer server may add a type,
+ * and a reader that has no handler for it simply drops it later, by name.
  *
  * @param value - The parsed JSON.
  */
@@ -48,9 +46,15 @@ export function readDorkOsEvent(value: unknown): DorkOsEvent | null {
   if (typeof value !== 'object' || value === null) return null;
   const candidate = value as Record<string, unknown>;
   const { seq, at, type } = candidate;
-  if (typeof seq !== 'number' || !Number.isInteger(seq) || seq < 0) return null;
+  const numbered = typeof seq === 'number' && Number.isInteger(seq) && seq > 0;
+  if (seq !== null && !numbered) return null;
   if (typeof at !== 'string' || typeof type !== 'string') return null;
-  return { seq, at, type: type as DorkOsEvent['type'], payload: candidate.payload };
+  return {
+    seq: seq as number | null,
+    at,
+    type: type as DorkOsEvent['type'],
+    payload: candidate.payload,
+  };
 }
 
 /**
