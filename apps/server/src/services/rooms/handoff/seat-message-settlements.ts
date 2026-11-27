@@ -1,7 +1,71 @@
-/** Bounded terminal-write ownership for one private-seat messaging component. */
+/**
+ * How a private seat message ends: how long it waits for a busy room chat, what its sender
+ * reads when that wait runs out, and bounded terminal-write ownership for the receipts.
+ */
 import { logger } from '../../../lib/logger.js';
 import type { ChatMessageStore } from '../../session/chat-messages/chat-message-store.js';
+import { seatName } from './seat-message-prompt.js';
 import type { SeatMessagePending } from './seat-message-types.js';
+import { SEAT_REPORT_WAIT_MAX_MS } from './seat-report.js';
+import { HANDOFF_SEAT_WAIT_MS } from './seat-stand-in.js';
+
+/*
+ * How long a note waits, and what its sender reads when the wait runs out (DOR-5301).
+ *
+ * A plain note gets {@link SEAT_MESSAGE_WAIT_MS}, the same two minutes a hand-off gets
+ * (DOR-4252). A private note needs the agent itself to read it, so no stand-in can post it for
+ * the chat; past the window the receipt fails and says why. An answer to the room chat's own
+ * question keeps the longer wait spin-off reports have: that chat asked, and is waiting for it.
+ *
+ * The rechecks every {@link SEAT_MESSAGE_RECHECK_MS} land so the last one comes just before
+ * the deadline, never on it, since the inbox's expiry timer fails the note at the deadline. A
+ * chat whose runtime refused it as busy gives no release signal, so without that last try a
+ * chat that frees late in the window would never be tried again.
+ */
+/** How long a plain private note waits for a busy room chat, from when it was accepted. */
+export const SEAT_MESSAGE_WAIT_MS = HANDOFF_SEAT_WAIT_MS;
+/** How long an answer to the room chat's own question waits for it. */
+const SEAT_ANSWER_WAIT_MS = SEAT_REPORT_WAIT_MAX_MS;
+/** How often a waiting note is tried again when no turn ended. */
+export const SEAT_MESSAGE_RECHECK_MS = 30_000;
+/** How long before its deadline a waiting note gets its last try. */
+const FINAL_TRY_LEAD_MS = 1_000;
+
+/**
+ * When a note stops waiting.
+ *
+ * @param answer - Whether it answers a question the room chat asked.
+ * @param acceptedAt - When it was accepted (epoch ms).
+ */
+export function seatMessageDeadline(answer: boolean, acceptedAt: number): number {
+  return acceptedAt + (answer ? SEAT_ANSWER_WAIT_MS : SEAT_MESSAGE_WAIT_MS);
+}
+
+/**
+ * How long to sleep before the next try: a full recheck, or less so the last try lands just
+ * before the deadline. At or inside the lead it sleeps to the deadline, so it never spins.
+ *
+ * @param deadline - The earliest deadline among the waiting notes (epoch ms).
+ * @param now - The current time (epoch ms).
+ */
+export function seatRecheckDelay(deadline: number, now: number): number {
+  const left = deadline - now;
+  if (left > SEAT_MESSAGE_RECHECK_MS + FINAL_TRY_LEAD_MS) return SEAT_MESSAGE_RECHECK_MS;
+  if (left > FINAL_TRY_LEAD_MS) return left - FINAL_TRY_LEAD_MS;
+  return Math.max(0, left);
+}
+
+/**
+ * Why a note to a busy agent failed, as the sending chat reads it. It names the agent, not its
+ * room chat, because the agent may be busy in another room.
+ *
+ * @param agentName - The receiving agent's display name, if known.
+ * @param answer - Whether the note answered the room chat's own question.
+ */
+export function seatBusyReason(agentName: string | null | undefined, answer: boolean): string {
+  const waited = answer ? 'an hour' : 'two minutes';
+  return `${seatName(agentName, 'An agent')} stayed busy for ${waited}. Send it again later.`;
+}
 
 interface Intent {
   item: SeatMessagePending;

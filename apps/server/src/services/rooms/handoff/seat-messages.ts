@@ -1,5 +1,4 @@
 /** Bounded, receipt-backed peer messages into private room-seat asides (DOR-4472). */
-import { SeatMessageSettlements } from './seat-message-settlements.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { ulid } from 'ulidx';
 import type { AsideResult } from '../room-trigger/aside.js';
@@ -10,7 +9,13 @@ import type { RoomCore } from '../service/room-core.js';
 import type { RoomPublisher } from '../service/room-publisher.js';
 import { agentKey } from '../room-claims.js';
 import { carryFrom, withRoomMarks } from './seat-carry.js';
-import { SEAT_REPORT_WAIT_MAX_MS } from './seat-report.js';
+import {
+  SeatMessageSettlements,
+  SEAT_MESSAGE_RECHECK_MS as RECHECK_MS,
+  seatBusyReason,
+  seatMessageDeadline,
+  seatRecheckDelay,
+} from './seat-message-settlements.js';
 import {
   currentSeatMessageTarget,
   resolveSeatMessageTarget,
@@ -42,7 +47,6 @@ const DEFAULT_LIMITS: SeatMessageLimits = {
   pendingMax: SEAT_MESSAGE_PENDING_MAX,
   globalMax: SEAT_MESSAGE_GLOBAL_MAX,
 };
-const RECHECK_MS = 30_000;
 /** One queued note as its private turn shows it. */
 const entryOf = (item: Pending): string => seatBatchEntry(item.rendered, !item.unsolicited);
 interface Inbox {
@@ -169,7 +173,8 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
       ...input,
       row,
       unsolicited: row.replyToId === null,
-      deadline: Date.now() + SEAT_REPORT_WAIT_MAX_MS,
+      // An answer to the seat's own question keeps the long wait: the seat is waiting for it.
+      deadline: seatMessageDeadline(row.replyToId !== null, Date.now()),
     };
     this.count++;
     if (queue) {
@@ -300,6 +305,14 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
     this.settlements.add(items, status, reason);
   }
 
+  /** Fail notes whose wait ran out, each with the reason its own wait makes true. */
+  private expire(items: Pending[]): void {
+    for (const item of items) {
+      const name = this.core.authors.getById(item.target.authorId)?.displayName;
+      this.settle([item], 'failed', seatBusyReason(name, !item.unsolicited));
+    }
+  }
+
   /** A post-claim busy result keeps its original FIFO place, deadline and capacity. */
   private requeueBusy(queue: Inbox): void {
     while (queue.active.length) {
@@ -361,7 +374,7 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
         queue.expiry = undefined;
         const expired = queue.items.filter((item) => item.deadline <= Date.now());
         queue.items = queue.items.filter((item) => item.deadline > Date.now());
-        this.settle(expired, 'failed', 'The seat stayed busy for an hour.');
+        this.expire(expired);
         this.scheduleExpiry(queue);
         if (!queue.items.length) queue.wake?.();
       },
@@ -371,7 +384,7 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
   }
 
   private async wait(queue: Inbox, deadline: number): Promise<void> {
-    const ms = Math.max(0, Math.min(RECHECK_MS, deadline - Date.now()));
+    const ms = seatRecheckDelay(deadline, Date.now());
     const controller = new AbortController();
     queue.wake = () => controller.abort();
     await this.core.triggers.nextRelease(ms, undefined, controller.signal).finally(() => {
@@ -439,7 +452,7 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
       while (!this.stopped && !this.faulted && queue.items.length) {
         const first = queue.items[0]!;
         if (first.deadline <= Date.now()) {
-          this.settle(queue.items.splice(0, 1), 'failed', 'The seat stayed busy for an hour.');
+          this.expire(queue.items.splice(0, 1));
           continue;
         }
         if (!currentSeatMessageTarget(this.core, first.target)) {
@@ -454,7 +467,7 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
           if (this.stopped || this.faulted) break;
           this.requeueBusy(queue);
           if (this.stopped || this.faulted || !queue.items.length) break;
-          await this.wait(queue, first.deadline);
+          await this.wait(queue, Math.min(...queue.items.map((item) => item.deadline)));
           continue;
         }
         const launched = queue.active.length

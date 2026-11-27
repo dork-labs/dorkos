@@ -8,6 +8,7 @@ import { agentKey } from '../../room-claims.js';
 import type { RoomTriggerDispatcher } from '../../room-trigger.js';
 import type { SeatMessagePending } from '../../handoff/seat-message-types.js';
 import { SEAT_MESSAGE_GLOBAL_MAX } from '../../handoff/seat-messages.js';
+import { SEAT_MESSAGE_WAIT_MS } from '../../handoff/seat-message-settlements.js';
 import {
   currentSeatMessageTarget,
   seatBatchStillCurrent,
@@ -65,7 +66,7 @@ it.each(['expiry', 'later-items', 'stop', 'requeue-error'] as const)(
     };
     if (scenario === 'requeue-error') block();
     if (scenario === 'expiry') {
-      // A full hour of 30-second rechecks over a small bound proves the same rule as 25 (DOR-4722).
+      // The whole busy window of 30-second rechecks over a small bound proves the rule (DOR-4722).
       seatInbox!.stop();
       setSeatInbox(
         harness.service.createSeatMessages(receipts, () => undefined, {
@@ -115,7 +116,7 @@ it.each(['expiry', 'later-items', 'stop', 'requeue-error'] as const)(
           await expect(
             chats.send(caller, { to: 'seat-chat', message: 'OVERFLOW' })
           ).rejects.toMatchObject({ code: 'UNAVAILABLE' });
-          await vi.advanceTimersByTimeAsync(60 * 60_000 + 1);
+          await vi.advanceTimersByTimeAsync(SEAT_MESSAGE_WAIT_MS + 1);
           await seatInbox!.idle();
           expect(receipts.listSentFrom(caller.sessionId)).toHaveLength(3);
           expect(

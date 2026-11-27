@@ -133,6 +133,8 @@ export const chatDomain: CapabilityDomain = {
         'person. It waits until that chat’s current turn ends (delivery `queue`, the default); ' +
         '`steer` joins its running turn now, `interrupt` stops its turn and runs this next. ' +
         'Eligible room-seat chat ids receive private queued turns, never public posts. ' +
+        'A busy room chat gets two minutes (an hour for an answer to its question); ' +
+        'then the message fails and says why. ' +
         'Unsolicited messages require an unbridged room and leave one pending notice per sending agent. ' +
         'Bridged seats accept answers only to active unanswered messages they sent you. ' +
         'One answer may wait per ask; later writes are new messages. ' +
