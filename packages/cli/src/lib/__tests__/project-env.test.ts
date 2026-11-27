@@ -1,12 +1,12 @@
 /**
- * The project `.env` fills in what the environment left unset, and never sets
- * a trust setting: those are read only from the server's own environment.
+ * The project `.env` carries a project's own variables, and can't change how
+ * DorkOS runs: a setting DorkOS reads loads from it only when allowed.
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadProjectEnv, TRUST_ENV_KEYS } from '../project-env.js';
+import { loadProjectEnv } from '../project-env.js';
 
 let dir: string;
 beforeEach(() => {
@@ -22,43 +22,36 @@ function envFile(body: string): string {
 }
 
 describe('loadProjectEnv', () => {
-  it('leaves the trusted-host list unchanged, and says once which keys it ignored, by name', () => {
-    const target: NodeJS.ProcessEnv = { DORKOS_TRUSTED_HOSTS: 'mine.example.com' };
-    const warn = vi.fn();
-    const result = loadProjectEnv(
-      envFile(
-        'DORKOS_TRUSTED_HOSTS=evil.example\nDORKOS_CORS_ORIGIN=https://evil.example\nDORKOS_HOST=0.0.0.0\n'
-      ),
-      target,
-      warn
-    );
-    expect(target.DORKOS_TRUSTED_HOSTS).toBe('mine.example.com');
-    expect(target).not.toHaveProperty('DORKOS_CORS_ORIGIN');
-    expect(target).not.toHaveProperty('DORKOS_HOST');
-    expect(result.ignored).toEqual(['DORKOS_TRUSTED_HOSTS', 'DORKOS_CORS_ORIGIN', 'DORKOS_HOST']);
-    expect(warn).toHaveBeenCalledOnce();
-    expect(warn.mock.calls[0]![0]).not.toContain('evil.example');
-  });
-
-  it('never sets any trust setting, set elsewhere or not', () => {
-    const body = Object.keys(TRUST_ENV_KEYS)
-      .map((key) => `${key}=x`)
-      .join('\n');
+  it.each([
+    ['TUNNEL_ENABLED and NGROK_AUTHTOKEN', 'TUNNEL_ENABLED=true\nNGROK_AUTHTOKEN=fixture-token\n'],
+    ['MCP_API_KEY', 'MCP_API_KEY=fixture-key\n'],
+    ['DORKOS_TRUSTED_HOSTS', 'DORKOS_TRUSTED_HOSTS=fixture.example\n'],
+  ])('leaves %s unset, and names it once without its value', (_name, body) => {
     const target: NodeJS.ProcessEnv = {};
-    loadProjectEnv(envFile(body), target, () => undefined);
+    const warn = vi.fn();
+    const result = loadProjectEnv(envFile(body), target, warn);
     expect(target).toEqual({});
+    expect(result.ignored.length).toBeGreaterThan(0);
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn.mock.calls[0]![0]).not.toMatch(/fixture/);
   });
 
-  it('fills in an ordinary setting the environment left unset, and overrides nothing', () => {
-    const target: NodeJS.ProcessEnv = { DORKOS_PORT: '4242' };
+  it('loads LOG_LEVEL, an allowed setting', () => {
+    const target: NodeJS.ProcessEnv = {};
+    loadProjectEnv(envFile('LOG_LEVEL=debug\n'), target, () => undefined);
+    expect(target).toEqual({ LOG_LEVEL: 'debug' });
+  });
+
+  it('loads a project’s own variable, and overrides nothing already set', () => {
+    const target: NodeJS.ProcessEnv = { DO_NOT_TRACK: '1' };
     const warn = vi.fn();
     const result = loadProjectEnv(
-      envFile('DORKOS_PORT=5000\nDORKOS_TASKS_ENABLED=false\n'),
+      envFile('MY_TOOL_URL=http://localhost:9000\nDO_NOT_TRACK=0\n'),
       target,
       warn
     );
-    expect(target).toEqual({ DORKOS_PORT: '4242', DORKOS_TASKS_ENABLED: 'false' });
-    expect(result.applied).toEqual(['DORKOS_TASKS_ENABLED']);
+    expect(target).toEqual({ DO_NOT_TRACK: '1', MY_TOOL_URL: 'http://localhost:9000' });
+    expect(result.applied).toEqual(['MY_TOOL_URL']);
     expect(warn).not.toHaveBeenCalled();
   });
 

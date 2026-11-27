@@ -8,13 +8,14 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PersonBarCopy } from '@dorkos/shared/capabilities';
 import { env } from '../../../env.js';
 import type { RequestFacts } from '../../../http/request-facts.js';
 import type { RequestUser } from '../../../services/core/auth/session-gate.js';
 import { configManager, initConfigManager } from '../../../services/core/config-manager.js';
-import { assessPerson, isTrustedHostOrigin } from '../person-bar.js';
+import { logger } from '../../logger.js';
+import { assessPerson, isTrustedHostOrigin, logPersonBarTrustedHosts } from '../person-bar.js';
 
 const COPY: PersonBarCopy = {
   code: 'person_only',
@@ -112,5 +113,19 @@ describe('isTrustedHostOrigin', () => {
     expect(isTrustedHostOrigin('ftp://dorkos.example.com', hosts)).toBe(false);
     expect(isTrustedHostOrigin('http://[fd00::1]:4242', ['fd00::1'])).toBe(true);
     expect(isTrustedHostOrigin('http://8.8.8.8', ['8.8.8.8'])).toBe(false);
+  });
+});
+
+describe('the boot line', () => {
+  it('names a listed host written with a port, which never matches, once', () => {
+    env.DORKOS_TRUSTED_HOSTS = 'dorkos.example.com, nas.example.org:4242, [fd00::1]:4242';
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    logPersonBarTrustedHosts();
+    logPersonBarTrustedHosts();
+    const lines = warn.mock.calls.map(([line]) => String(line));
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain('"nas.example.org:4242": host:4242 never matches');
+    expect(lines[1]).toContain('"[fd00::1]:4242"');
+    warn.mockRestore();
   });
 });

@@ -129,6 +129,12 @@ export function logPersonBarTrustedHosts(): void {
   if (hosts.length > 0) {
     logger.info('[person-bar] also accepts pages from DORKOS_TRUSTED_HOSTS', { hosts });
   }
+  // A name with a port (`host:4242`, `[::1]:4242`) never equals an Origin's host.
+  for (const host of hosts.filter((entry) => /^(\[[^\]]*\]|[^:]+):\d+$/.test(entry))) {
+    logger.warn(
+      `[person-bar] DORKOS_TRUSTED_HOSTS lists "${host}": host:4242 never matches; list the name only`
+    );
+  }
 }
 
 /**

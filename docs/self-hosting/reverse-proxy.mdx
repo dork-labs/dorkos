@@ -105,9 +105,7 @@ other way: DorkOS trusts your sign-in instead of the address for ordinary reques
 streams. **Set this anyway.** The embedded terminal is authorized by holding a hard-to-guess id
 rather than by your sign-in, so it always checks the address. With login on and this unset, the app
 works and the terminal will not open. The app's live updates, and the settings only a person may
-change, also accept a page served at a name on this list, over `https` (plain `http` only at a
-private address). DorkOS reads this list only from its own
-environment.
+change, also accept a page served at a name on this list, over `https` (plain `http` only at 127.0.0.1, ::1 or a private network address (10.x, 172.16 to 172.31, 192.168.x, or an IPv6 address starting fc or fd), not a Tailscale or link-local one). List the name only, with no port. The project `.env` file can't change how DorkOS runs.
 See [Securing Your Instance](/docs/self-hosting/securing-your-instance).
 
 </Callout>
