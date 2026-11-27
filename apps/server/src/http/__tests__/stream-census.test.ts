@@ -36,8 +36,24 @@ const SERVER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
 const REPO_ROOT = path.resolve(SERVER_SRC, '../../..');
 const CENSUS = path.join(SERVER_SRC, 'http/__tests__/route-census.baseline.json');
 
-/** What opens or names an event stream in production code. */
-const MARKER = /text\/event-stream|new SseStreamSink\(|streamSseAction\(|initSSEStream\(/g;
+/**
+ * What opens or names a stream in production code: the SSE content type, the
+ * server's own SSE writers, Hono's SSE helper, any import from `hono/streaming`,
+ * and `streamToNodeResponse`, through which every raw Node response is written.
+ */
+const MARKER =
+  /text\/event-stream|new SseStreamSink\(|streamSseAction\(|initSSEStream\(|streamSSE\(|streamToNodeResponse\(|from 'hono\/streaming'/g;
+
+/** Hono's other streaming helpers, counted in a file that imports `hono/streaming`. */
+const HONO_HELPER = /\b(?:stream|streamText)\(/g;
+
+/** How many markers a file's source holds. */
+function markerCount(source: string): number {
+  const helpers = source.includes("from 'hono/streaming'")
+    ? (source.match(HONO_HELPER)?.length ?? 0)
+    : 0;
+  return (source.match(MARKER)?.length ?? 0) + helpers;
+}
 
 /** One file with markers: how many, and what it serves or why it serves nothing. */
 type Source =
@@ -46,17 +62,18 @@ type Source =
 
 const API_DOCUMENT = 'the API document';
 const CLIENT = "a client reading another server's stream";
+const BYTES = "writes a file's bytes, not an event stream";
 
 /** Every production file under `apps/server/src` with a marker, by path. */
 const SOURCES: Readonly<Record<string, Source>> = {
-  'routes/discovery.ts': { markers: 1, serves: ['POST /api/discovery/scan'] },
-  'routes/events.ts': { markers: 1, serves: ['GET /api/events'] },
+  'routes/discovery.ts': { markers: 2, serves: ['POST /api/discovery/scan'] },
+  'routes/events.ts': { markers: 2, serves: ['GET /api/events'] },
   'routes/extensions-rooms.ts': {
-    markers: 1,
+    markers: 2,
     serves: ['GET /api/extensions/:id/rooms/:roomId/threads/:entryId/events'],
   },
   'routes/hub-computer-stream.ts': {
-    markers: 1,
+    markers: 2,
     serves: ['GET /api/hub/computers/:computerId/sessions/:sessionId/stream'],
   },
   'routes/hub-computers.ts': {
@@ -64,11 +81,18 @@ const SOURCES: Readonly<Record<string, Source>> = {
     why: 'refuses a request to the hub stream that does not accept one',
   },
   'routes/remote-community-events.ts': {
-    markers: 1,
+    markers: 2,
     serves: ['GET /api/communities/:ref/rooms/:roomId/events'],
   },
-  'routes/room-events-handler.ts': { markers: 1, serves: ['GET /api/rooms/:id/events'] },
-  'routes/runtimes-http.ts': { markers: 1, why: 'defines streamSseAction' },
+  'routes/room-events-handler.ts': { markers: 2, serves: ['GET /api/rooms/:id/events'] },
+  'routes/mock-mcp-oauth-server.ts': {
+    markers: 1,
+    why: 'a test MCP server under /api/test that only a test server mounts',
+  },
+  'routes/remote-communities.ts': { markers: 1, why: BYTES },
+  'routes/room-attachments.ts': { markers: 1, why: BYTES },
+  'routes/rooms.ts': { markers: 1, why: 'writes a room export as a file download' },
+  'routes/runtimes-http.ts': { markers: 2, why: 'defines streamSseAction' },
   'routes/runtimes.ts': {
     markers: 3,
     serves: [
@@ -79,7 +103,8 @@ const SOURCES: Readonly<Record<string, Source>> = {
       'POST /api/runtimes/opencode/ollama/pull',
     ],
   },
-  'routes/session-events-handler.ts': { markers: 1, serves: ['GET /api/sessions/:id/events'] },
+  'routes/session-attachments-handler.ts': { markers: 1, why: BYTES },
+  'routes/session-events-handler.ts': { markers: 2, serves: ['GET /api/sessions/:id/events'] },
   'services/communities/remote/pinned-origin.ts': { markers: 1, why: CLIENT },
   'services/core/cloud/v1-client.ts': { markers: 1, why: CLIENT },
   'services/core/hub-relay/hub-computers-openapi.ts': { markers: 2, why: API_DOCUMENT },
@@ -95,11 +120,15 @@ const SOURCES: Readonly<Record<string, Source>> = {
     markers: 2,
     why: 'keeps a managed computer awake while a stream is open',
   },
+  'services/extensions/http/oversized-body-response.ts': {
+    markers: 1,
+    why: 'answers an oversized upload with a problem document',
+  },
   'services/core/streams/durable-stream-sink.ts': { markers: 1, why: 'defines SseStreamSink' },
   'services/core/streams/stream-adapter.ts': { markers: 2, why: 'defines initSSEStream' },
   'services/runtimes/opencode/computer/provider.ts': { markers: 1, why: CLIENT },
   'services/runtimes/test-mode/fake-inference.ts': {
-    markers: 1,
+    markers: 2,
     why: 'a fake model under /api/test that only a test server mounts',
   },
   'services/spaces/routes/community/events.ts': {
@@ -187,7 +216,7 @@ describe('stream census', () => {
   it('lists every production file that opens or names an event stream', () => {
     const found: Record<string, number> = {};
     for (const file of productionSources(SERVER_SRC)) {
-      const count = readFileSync(path.join(SERVER_SRC, file), 'utf8').match(MARKER)?.length ?? 0;
+      const count = markerCount(readFileSync(path.join(SERVER_SRC, file), 'utf8'));
       if (count > 0) found[file] = count;
     }
     const listed = Object.fromEntries(
@@ -248,8 +277,11 @@ describe('stream census', () => {
     expect(misfiled).toEqual([]);
   });
 
-  it('keeps waiting only served /api streams', () => {
-    for (const route of Object.keys(NOT_DOCUMENTED_YET)) expect(API_STREAMS).toContain(route);
+  it('keeps waiting only served /api streams, each with its ticket', () => {
+    for (const [route, reason] of Object.entries(NOT_DOCUMENTED_YET)) {
+      expect(API_STREAMS).toContain(route);
+      expect(reason, route).toMatch(/DOR-\d+/);
+    }
   });
 
   it('serves every stream outside /api that it names', () => {
@@ -257,6 +289,13 @@ describe('stream census', () => {
     for (const route of Object.keys(OTHER_PROTOCOL_STREAMS)) {
       expect(census.routes, route).toContain(route);
     }
+  });
+
+  it('counts every way to open a stream, and Hono helpers only where Hono streaming is imported', () => {
+    const hono = "import { stream, streamSSE, streamText } from 'hono/streaming';";
+    expect(markerCount(`${hono}\nstreamSSE(c, f); stream(c, f); streamText(c, f);`)).toBe(4);
+    expect(markerCount('return streamToNodeResponse(c, write);')).toBe(1);
+    expect(markerCount('export async function* streamText(body: string) {}')).toBe(0);
   });
 
   it('finds a path in prose by its shape, whatever its parameters are called', () => {

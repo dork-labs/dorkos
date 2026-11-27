@@ -1,6 +1,8 @@
 /**
  * The table of every named type in the one event union (ADR 261123-170833):
- * for each type, the area that decides who may read it, a one-line meaning,
+ * for each type, the permission area it belongs to (for a later filter by
+ * member; who receives an event today is the audience its sender passes to
+ * `eventFanOut.broadcast`), a one-line meaning,
  * and the shape of its payload in words.
  *
  * One table per producing domain, merged into {@link DORKOS_EVENT_TYPES}, so a
