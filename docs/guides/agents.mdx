@@ -143,7 +143,7 @@ dorkos agent pause <agent-id> --reason "Posting the same thing over and over"
 dorkos agent resume <agent-id>
 ```
 
-`dorkos agent list` shows each agent's id. Agents use the `pause_agent`, `resume_agent` and `list_paused_agents` tools.
+`dorkos agent list` shows each agent's id. Agents use the `pause_agent`, `resume_agent` and `list_paused_agents` tools. `list_paused_agents` answers a page at a time: an agent passes `nextCursor` back as `cursor` until it is null.
 
 ## Removing an Agent
 
@@ -184,7 +184,7 @@ Agent identity is available via REST endpoints at `/api/agents/`:
 | POST   | `/api/agents`                  | Create a new agent                      |
 | PATCH  | `/api/agents/current?path=...` | Update agent fields                     |
 | POST   | `/api/agents/resolve`          | Batch resolve agents for multiple paths |
-| GET    | `/api/agents/pauses`           | List the agents paused right now        |
+| GET    | `/api/agents/pauses`           | List paused agents, a page at a time    |
 | POST   | `/api/agents/:id/pause`        | Pause an agent everywhere               |
 | POST   | `/api/agents/:id/resume`       | Lift an agent's pause                   |
 

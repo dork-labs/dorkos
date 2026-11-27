@@ -22,6 +22,7 @@
  */
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
+import { nextCursorOutput } from './paging.js';
 
 extendZodWithOpenApiOnce();
 
@@ -786,10 +787,11 @@ export const PushSubscriptionDTOSchema = z
 /** One subscribed browser, as Settings lists it. */
 export type PushSubscriptionDTO = z.infer<typeof PushSubscriptionDTOSchema>;
 
-/** Response body of `GET /api/push/subscriptions`. */
+/** Response body of `GET /api/push/subscriptions`: one page, newest first. */
 export const ListPushSubscriptionsResponseSchema = z
   .object({
     subscriptions: z.array(PushSubscriptionDTOSchema),
+    nextCursor: nextCursorOutput,
   })
   .openapi('ListPushSubscriptionsResponse');
 

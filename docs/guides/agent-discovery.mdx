@@ -304,7 +304,7 @@ Denied paths are stored in the SQLite database and checked during every scan. Th
 View the denial list and remove entries if you change your mind:
 
 ```bash
-# List denied paths
+# List denied paths (a page at a time: pass nextCursor back as ?cursor=)
 curl http://localhost:4242/api/mesh/denied
 
 # Remove a denial (re-enables discovery for that path, path is URL-encoded)

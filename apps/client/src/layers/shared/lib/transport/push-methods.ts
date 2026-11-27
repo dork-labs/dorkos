@@ -14,7 +14,7 @@ import type {
   RegisterPushSubscriptionResponse,
   VapidPublicKeyResponse,
 } from '@dorkos/shared/notification-schemas';
-import { fetchJSON } from './http-client';
+import { fetchAllPages, fetchJSON } from './http-client';
 
 /**
  * Create the web push methods bound to a base URL.
@@ -36,8 +36,15 @@ export function createPushMethods(baseUrl: string) {
       });
     },
 
-    listPushSubscriptions(): Promise<ListPushSubscriptionsResponse> {
-      return fetchJSON<ListPushSubscriptionsResponse>(baseUrl, '/push/subscriptions');
+    // The list comes in pages, newest first; Settings shows it whole, in that order.
+    async listPushSubscriptions(): Promise<Pick<ListPushSubscriptionsResponse, 'subscriptions'>> {
+      const { rows } = await fetchAllPages(
+        baseUrl,
+        '/push/subscriptions',
+        {},
+        (page: ListPushSubscriptionsResponse) => page.subscriptions
+      );
+      return { subscriptions: rows };
     },
 
     deletePushSubscription(id: string): Promise<DeletePushSubscriptionResponse> {

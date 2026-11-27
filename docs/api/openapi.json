@@ -18684,20 +18684,6 @@
           "pausedAt"
         ]
       },
-      "AgentPauseList": {
-        "type": "object",
-        "properties": {
-          "pauses": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AgentPause"
-            }
-          }
-        },
-        "required": [
-          "pauses"
-        ]
-      },
       "ResolvedDorkLink": {
         "oneOf": [
           {
@@ -94939,7 +94925,34 @@
           "Mesh"
         ],
         "summary": "List the folders hidden from discovery",
-        "description": "**Preview.** This operation may change in any release.\n\nThe folders a person hid from agent discovery, with why and when.",
+        "description": "**Preview.** This operation may change in any release.\n\nThe folders a person hid from agent discovery, with why and when. Newest first, the folder breaking a tie, a page at a time: pass `nextCursor` back as `cursor` for the next. A folder hidden, hidden again or shown while paging can repeat or be missed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "List the folders hidden from discovery result",
@@ -94953,10 +94966,18 @@
                       "items": {
                         "$ref": "#/components/schemas/DenialRecord"
                       }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass as `cursor` for the next page; null on the last one."
                     }
                   },
                   "required": [
-                    "denied"
+                    "denied",
+                    "nextCursor"
                   ]
                 }
               }
@@ -98537,14 +98558,60 @@
           "Agent"
         ],
         "summary": "List paused agents",
-        "description": "**Preview.** This operation may change in any release.\n\nList every agent that is paused right now, with who paused it, when, and why.",
+        "description": "**Preview.** This operation may change in any release.\n\nList every agent that is paused right now, with who paused it, when, and why. Oldest pause first, a page at a time: pass `nextCursor` back as `cursor` for the next page until it is null. A pause made or lifted while paging can repeat or be missed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "List paused agents result",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AgentPauseList"
+                  "type": "object",
+                  "properties": {
+                    "pauses": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AgentPause"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass as `cursor` for the next page; null on the last one."
+                    }
+                  },
+                  "required": [
+                    "pauses",
+                    "nextCursor"
+                  ]
                 }
               }
             }

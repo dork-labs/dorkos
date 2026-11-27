@@ -206,17 +206,13 @@ import {
   ApproveExtensionRequestSchema,
   ExtensionTrustOfferSchema,
   TrustedSourceRequestSchema,
+  TrustedSourceSchema,
   TrustedSourcesResponseSchema,
 } from '@dorkos/shared/extension-approval-schemas';
 import {
-  DeletePushSubscriptionResponseSchema,
   ListNotificationsQuerySchema,
   ListNotificationsResponseSchema,
-  ListPushSubscriptionsResponseSchema,
   MarkNotificationsReadResponseSchema,
-  RegisterPushSubscriptionRequestSchema,
-  RegisterPushSubscriptionResponseSchema,
-  VapidPublicKeyResponseSchema,
 } from '@dorkos/shared/notification-schemas';
 import { registerCapabilitiesInOpenApi } from './capabilities/index.js';
 import { composeCapabilityRegistryForDocs } from './self-description/dorkos-registry.js';
@@ -264,7 +260,7 @@ import {
   SetPermissionPresetBodySchema,
 } from '@dorkos/shared/permissions';
 import { z } from 'zod';
-import { PageQuerySchema } from '@dorkos/shared/paging';
+import { PageQuerySchema, nextCursorOutput } from '@dorkos/shared/paging';
 import { AccountUsageSchema, DismissFoundFolderRequestSchema } from '@dorkos/shared/account-usage';
 import { PackageTypeSchema } from '@dorkos/marketplace';
 import { DisclosedEffectsSchema } from '../marketplace/preview/disclosed-effects.js';
@@ -4213,13 +4209,22 @@ registry.registerPath({
   description:
     'Every source a person chose to trust outright, in the order they trusted it. An extension ' +
     'whose copy provably came from one of these (DorkOS’s own installer recorded fetching it ' +
-    'from there) runs without asking first. A copy that only claims a source never counts.',
+    'from there) runs without asking first. A copy that only claims a source never counts. ' +
+    'A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did ' +
+    'not give is refused with `400 invalid_request`. A source trusted or dropped while paging ' +
+    'can repeat or be missed.',
+  request: { query: PageQuerySchema },
   responses: {
     500: INTERNAL_ERROR_RESPONSE,
     200: {
-      description: 'The trusted sources',
-      content: { 'application/json': { schema: TrustedSourcesResponseSchema } },
+      description: 'One page of the trusted sources',
+      content: {
+        'application/json': {
+          schema: z.object({ sources: z.array(TrustedSourceSchema), nextCursor: nextCursorOutput }),
+        },
+      },
     },
+    400: problemResponse('`invalid_request`: a bad `limit`, or a cursor this list did not give'),
   },
 });
 
@@ -6574,78 +6579,6 @@ registry.registerPath({
       content: { 'application/json': { schema: MarkNotificationsReadResponseSchema } },
     },
     403: problemResponse('Only the operator may move read state'),
-  },
-});
-
-// --- Web push (spec `notification-system` task 4.3, ADR 260819-234829) ---
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/push/vapid-public-key',
-  tags: ['Notifications'],
-  summary: 'Read the VAPID public key a browser needs to subscribe',
-  description:
-    'Generates this install’s keypair on the first call. Answers `key: null` when web push ' +
-    'is unavailable here, so a client can say so instead of offering a button that fails.',
-  responses: {
-    200: {
-      description: 'The public key, or null',
-      content: { 'application/json': { schema: VapidPublicKeyResponseSchema } },
-    },
-    403: problemResponse('`operator_only`: only the operator may see this install’s push setup'),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/push/subscriptions',
-  tags: ['Notifications'],
-  summary: 'List the browsers DorkOS may push to',
-  description: 'Never returns an endpoint — only the push service’s hostname and the dates.',
-  responses: {
-    200: {
-      description: 'Every subscribed browser, newest first',
-      content: { 'application/json': { schema: ListPushSubscriptionsResponseSchema } },
-    },
-    403: problemResponse('`operator_only`: only the operator may list push devices'),
-  },
-});
-
-registry.registerPath({
-  method: 'post',
-  path: '/api/push/subscriptions',
-  tags: ['Notifications'],
-  summary: 'Let DorkOS push to this browser',
-  description:
-    'Idempotent by endpoint, so a client may call it on every load to refresh keys the ' +
-    'browser rotated without accumulating dead rows.',
-  request: {
-    body: {
-      content: { 'application/json': { schema: RegisterPushSubscriptionRequestSchema } },
-    },
-  },
-  responses: {
-    200: {
-      description: 'The subscription as it now stands',
-      content: { 'application/json': { schema: RegisterPushSubscriptionResponseSchema } },
-    },
-    400: problemResponse('Validation error'),
-    403: problemResponse('`operator_only`: only the operator may subscribe a device'),
-  },
-});
-
-registry.registerPath({
-  method: 'delete',
-  path: '/api/push/subscriptions/{id}',
-  tags: ['Notifications'],
-  summary: 'Stop pushing to one browser',
-  request: { params: z.object({ id: z.string() }) },
-  responses: {
-    200: {
-      description: 'How many rows went away — 0 when it was already gone',
-      content: { 'application/json': { schema: DeletePushSubscriptionResponseSchema } },
-    },
-    403: problemResponse('`operator_only`: only the operator may remove a push device'),
   },
 });
 

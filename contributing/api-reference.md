@@ -779,7 +779,7 @@ Always mounted, no feature flag: `/api/notifications` and `/api/push` (spec `not
 | PATCH  | `/api/notifications/:id/read` | Mark one notification read                              |
 | POST   | `/api/notifications/read-all` | Mark every notification read                            |
 | GET    | `/api/push/vapid-public-key`  | The server's VAPID public key, for subscribing          |
-| GET    | `/api/push/subscriptions`     | List this browser's push subscriptions                  |
+| GET    | `/api/push/subscriptions`     | List the push subscriptions, a page at a time           |
 | POST   | `/api/push/subscriptions`     | Register a push subscription                            |
 | DELETE | `/api/push/subscriptions/:id` | Remove a push subscription                              |
 
@@ -1576,11 +1576,11 @@ Add an agent to the deny list. Denied agents cannot communicate with any mesh me
 
 ### GET /api/mesh/denied
 
-List all denied agents.
+List the denied folders, newest first, a page at a time (`cursor`, `limit`). A folder hidden or shown while paging can repeat or be missed.
 
 **Responses:**
 
-- `200` - `{ denied: DenialRecord[] }`
+- `200` - `{ denied: DenialRecord[], nextCursor: string | null }`
 
 ### DELETE /api/mesh/denied?path=
 

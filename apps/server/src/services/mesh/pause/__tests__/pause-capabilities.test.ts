@@ -156,6 +156,30 @@ describe('agent.pause and agent.resume (spec audit-trail PR5)', () => {
     expect(resumed).toMatchObject({ paused: false, changed: true });
   });
 
+  it('lists the pauses a page at a time, in the service’s order, oldest first', async () => {
+    const owner = { accountId: 'install:inst-1', kind: 'person', name: 'Owner' } as const;
+    await pauses.pause(SCOUT.id, owner);
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    await pauses.pause(ANA.id, owner);
+    const context = { identity: AS_SCOUT, retryChannel: 'mcp-argument' } as const;
+    const first = (await registry.invoke('agent.list_paused', { limit: 1 }, context)) as {
+      pauses: { agentId: string }[];
+      nextCursor: string | null;
+    };
+    const cursor = first.nextCursor ?? '';
+    const second = (await registry.invoke('agent.list_paused', { limit: 1, cursor }, context)) as {
+      pauses: { agentId: string }[];
+      nextCursor: string | null;
+    };
+    const paged = [...first.pauses, ...second.pauses].map((pause) => pause.agentId);
+    expect(paged).toEqual(pauses.list().map((pause) => pause.agentId));
+    expect(paged).toEqual([SCOUT.id, ANA.id]);
+    expect(second.nextCursor).toBeNull();
+    await expect(
+      registry.invoke('agent.list_paused', { limit: 1, cursor: 'not-ours' }, context)
+    ).rejects.toMatchObject({ payload: { code: 'INVALID_CURSOR' } });
+  });
+
   it('refuses a resume from a caller that presented a token nobody could resolve', async () => {
     await pauses.pause(SCOUT.id, { accountId: 'install:inst-1', kind: 'person', name: 'Owner' });
     await expect(

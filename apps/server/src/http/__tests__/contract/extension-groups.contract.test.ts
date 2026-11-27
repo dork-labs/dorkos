@@ -125,7 +125,7 @@ const CASES: ContractCase[] = [
   {
     name: 'no source is trusted yet',
     path: '/api/extensions/trusted-sources',
-    expect: { status: 200, body: { sources: [] } },
+    expect: { status: 200, body: { sources: [], nextCursor: null } },
   },
   {
     name: 'reload answers the list as it stands',
