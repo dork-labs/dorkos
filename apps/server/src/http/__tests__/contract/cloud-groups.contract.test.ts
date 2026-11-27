@@ -674,14 +674,9 @@ function frameOn(
       res.setEncoding('utf8');
       res.on('data', (chunk: string) => {
         text += chunk;
-        const start = text.indexOf(`event: ${event}\n`);
-        const end = start === -1 ? -1 : text.indexOf('\n\n', start);
-        if (end === -1) return;
-        resolve({
-          status: res.statusCode ?? 0,
-          headers: res.headers,
-          frame: text.slice(start, end),
-        });
+        const frame = new RegExp(`event: ${event}\n.*(?=\n\n)`).exec(text)?.[0];
+        if (frame === undefined) return;
+        resolve({ status: res.statusCode ?? 0, headers: res.headers, frame });
         req.destroy();
       });
       res.on('error', () => undefined);
@@ -712,8 +707,7 @@ describe('contract: the cloud and tunnel groups, driven by hand (login off)', ()
   }, 30_000);
 
   it('opens /api/events with the tunnel’s status, then lets the client go', async () => {
-    // `GET /api/tunnel/stream` is gone; a new reader of the global stream learns
-    // the status from the connect snapshot, with no second call.
+    // `GET /api/tunnel/stream` is gone: the connect snapshot carries the status.
     const { status, frame } = await frameOn(server, 'tunnel_status');
     expect(status).toBe(200);
     const [event, data] = frame.split('\n');

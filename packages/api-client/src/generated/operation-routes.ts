@@ -341,7 +341,6 @@ export const OPERATION_ROUTES = {
   "relay.listEndpointsInbox": { method: "GET", path: "/relay/endpoints/{subject}/inbox" },
   "relay.listMessages": { method: "GET", path: "/relay/messages" },
   "relay.moveBindings": { method: "POST", path: "/relay/bindings/{id}/move" },
-  "relay.stream": { method: "GET", path: "/relay/stream" },
   "relay.testAdapters": { method: "POST", path: "/relay/adapters/test" },
   "relay.updateAdaptersConfig": { method: "PATCH", path: "/relay/adapters/{id}/config" },
   "relay.updateBindings": { method: "PATCH", path: "/relay/bindings/{id}" },

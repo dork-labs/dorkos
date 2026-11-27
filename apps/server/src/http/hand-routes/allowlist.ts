@@ -79,12 +79,6 @@ export const HAND_ROUTE_ALLOWLIST: readonly HandRouteAllowlistEntry[] = [
   },
   {
     method: 'GET',
-    path: '/api/relay/stream',
-    category: 'stream',
-    reason: "Relay's live message stream (SSE).",
-  },
-  {
-    method: 'GET',
     path: '/api/extensions/:id/rooms/:roomId/threads/:entryId/events',
     category: 'stream',
     reason: "An app's thread event stream (SSE).",

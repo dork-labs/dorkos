@@ -474,8 +474,8 @@ stream with one from another stream.
 
 <Callout type="info">
   The DorkOS client uses a single `GET /api/events` connection for all background state. The older
-  per-resource streams `/api/tunnel/stream` and `/api/extensions/events` are gone;
-  `/api/relay/stream` is internal and goes next. Build integrations against `GET /api/events` only.
+  per-resource streams (`/api/tunnel/stream`, `/api/extensions/events`, `/api/relay/stream`) are
+  gone. Build integrations against `GET /api/events` only.
 </Callout>
 
 ## Chat Write Coordination

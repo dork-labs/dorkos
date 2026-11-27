@@ -1200,19 +1200,17 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
   });
 
   it('tells a reader of /api/events when an extension reloads', async () => {
-    // The lifecycle stream `/api/extensions/events` is gone; its one event
-    // rides the global stream, where the app's extension host reads it.
+    // `/api/extensions/events` is gone; its one event rides the global stream.
     const req = http.get(new URL('/api/events', server!.baseUrl), { agent: false });
     let text = '';
     try {
       const res = (await once(req, 'response'))[0] as http.IncomingMessage;
       res.setEncoding('utf8');
-      let enabled = false;
       for await (const chunk of res) {
+        const connecting = !text.includes('event: connected');
         text += chunk as string;
         if (/event: extension_reloaded\ndata: [^\n]*"contract-routed"/.test(text)) break;
-        if (!enabled && text.includes('event: connected')) {
-          enabled = true;
+        if (connecting && text.includes('event: connected')) {
           const answer = await call(server, 'POST', `/api/extensions/${ROUTED}/enable`, {});
           expect(answer.status, answer.text).toBe(200);
         }
@@ -1220,8 +1218,7 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
     } finally {
       req.destroy();
     }
-    const data = /event: extension_reloaded\ndata: (.*)\n/.exec(text)![1]!;
-    expect(JSON.parse(data)).toEqual({
+    expect(JSON.parse(/event: extension_reloaded\ndata: (.*)\n/.exec(text)![1]!)).toEqual({
       type: 'extension_reloaded',
       extensionIds: [ROUTED],
       timestamp: expect.any(Number),

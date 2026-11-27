@@ -10923,45 +10923,6 @@
         "x-stability": "internal"
       }
     },
-    "/api/relay/stream": {
-      "get": {
-        "tags": [
-          "Relay"
-        ],
-        "summary": "SSE event stream for relay activity",
-        "description": "Server-Sent Events stream for real-time relay activity. Supports server-side subject filtering via query param. Event types: relay_connected, relay_message, relay_delivery, relay_dead_letter, relay_metrics.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "description": "Subject pattern filter"
-            },
-            "required": false,
-            "description": "Subject pattern filter",
-            "name": "subject",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "SSE event stream",
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "type": "string",
-                  "description": "Server-Sent Events stream"
-                }
-              }
-            }
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalErrorProblem"
-          }
-        },
-        "operationId": "relay.stream",
-        "x-stability": "internal"
-      }
-    },
     "/api/approvals/pending": {
       "get": {
         "tags": [

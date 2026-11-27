@@ -8325,26 +8325,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/relay/stream": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * SSE event stream for relay activity
-         * @description Server-Sent Events stream for real-time relay activity. Supports server-side subject filtering via query param. Event types: relay_connected, relay_message, relay_delivery, relay_dead_letter, relay_metrics.
-         */
-        get: operations["relay.stream"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/approvals/pending": {
         parameters: {
             query?: never;
@@ -58540,30 +58520,6 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-        };
-    };
-    "relay.stream": {
-        parameters: {
-            query?: {
-                /** @description Subject pattern filter */
-                subject?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description SSE event stream */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": string;
-                };
-            };
-            500: components["responses"]["InternalErrorProblem"];
         };
     };
     "approvals.getPending": {

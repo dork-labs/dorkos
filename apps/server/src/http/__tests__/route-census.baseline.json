@@ -309,7 +309,6 @@
     "GET /api/relay/messages/:id/trace",
     "GET /api/relay/messages/:messageId/status",
     "GET /api/relay/metrics",
-    "GET /api/relay/stream",
     "GET /api/relay/trace/metrics",
     "GET /api/relay/unclaimed-chats",
     "GET /api/remote-access/report",
