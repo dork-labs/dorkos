@@ -340,6 +340,15 @@ for (const [match, miss] of [
   ],
   ['apps/server/src/lib/http/own-origin-write.ts', 'apps/server/src/lib/http/own-origin-writes.ts'],
   ['apps/server/src/lib/http/person-bar.ts', 'apps/server/src/lib/http/person-bars.ts'],
+  // Owner-scoped session locations and person draft settings, moved out of routes/ (DOR-4923).
+  [
+    'apps/server/src/services/core/runtime-seam/session-location-store.ts',
+    'apps/server/src/services/core/runtime-seam/session-location-stores.ts',
+  ],
+  [
+    'apps/server/src/services/core/runtime-seam/person-draft-settings.ts',
+    'apps/server/src/services/core/runtime-seam/person-draft-setting.ts',
+  ],
 ]) {
   test(`${match} is on the main list only`, () => {
     assert.ok(existsSync(resolve(root, match)), `${match} no longer exists`);
