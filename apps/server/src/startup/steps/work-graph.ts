@@ -2,7 +2,8 @@
  * The work graph's composition (DOR-5264): what `work-graph.record-pr` reads
  * from the rest of the server, the process token port that tells it which
  * chat a token's process runs, the worktrees the workspace service makes for a
- * chat (DOR-5265), and the to-dos agents make in a chat (DOR-5266). All are
+ * chat (DOR-5265), the to-dos agents make in a chat (DOR-5266), and each
+ * claim and end of one (DOR-4972). All are
  * composed here, at the root, so the work graph, the workspace service, the
  * to-dos and the runtimes import none of the domains they read (the services
  * import boundary, DOR-4924, and the computer wall, spec
@@ -20,9 +21,11 @@ import { sessionAgentById } from '../../services/core/agent-identity/session-age
 import { marksOf } from '../../services/core/turn-power/turn-levels.js';
 import { getRunRecord } from '../../services/runs/index.js';
 import { setProcessTokenPort } from '../../services/runtimes/shared/references/process-token-port.js';
+import { setWorkClaimRecorder } from '../../services/session/claims/work-claim-links.js';
 import { peekProjector } from '../../services/session/session-state-projector.js';
 import {
   getWorkLinkStore,
+  recordChatClaim,
   recordChatTodo,
   recordChatWorktree,
 } from '../../services/work-graph/index.js';
@@ -58,6 +61,16 @@ export function wireWorktreeLinks(): () => void {
  */
 export function wireTodoLinks(): () => void {
   return onTodoMadeInChat(recordChatTodo);
+}
+
+/**
+ * Record each claim, and each end of one, as the chat `claims` or `released`
+ * the ticket or pull request (DOR-4972), inside the claim's own transaction.
+ *
+ * @returns A function that stops recording them.
+ */
+export function wireClaimLinks(): () => void {
+  return setWorkClaimRecorder(recordChatClaim);
 }
 
 /**

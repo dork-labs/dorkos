@@ -509,6 +509,7 @@ export const OPERATION_ROUTES = {
   "work-graph.agent_work": { method: "GET", path: "/agents/{agentId}/work" },
   "work-graph.chat_tree": { method: "GET", path: "/sessions/{id}/tree" },
   "work-graph.chat_work": { method: "GET", path: "/sessions/{id}/work" },
+  "work-graph.work_item_chats": { method: "GET", path: "/work-items/chats" },
   "work-queue.add_item": { method: "POST", path: "/agents/{agentId}/work-queue/items" },
   "work-queue.change_settings": { method: "PATCH", path: "/agents/{agentId}/work-queue" },
   "work-queue.remove_item": { method: "DELETE", path: "/agents/{agentId}/work-queue/items/{itemId}" },

@@ -49,6 +49,14 @@
  *   {@link recordChatTodo} records the chat `produced` it (`dork:todo:<id>`;
  *   a promise is a to-do). The chat is server-held state only, and a person's
  *   to-do or promise names none, so records nothing.
+ * - **A claim and its end** (DOR-4972): the claim service hands each change
+ *   to who holds a claim to {@link recordChatClaim} inside its own
+ *   transaction (the recorder is set at the composition root in
+ *   `startup/steps/work-graph.ts`), which records the chat `claims` the ticket
+ *   or pull request at the claim's time, or `released` it when the claim
+ *   ended. A key that is neither `DOR-1234` nor `PR #42` (`CHECKOUT-FF`,
+ *   `FIX/BUG#12`, a free-text name) records nothing: an edge holds no free
+ *   text (`parseClaimKey`). `work_claims` stays the lock.
  *
  * Two read sites:
  *
@@ -76,8 +84,8 @@
  *
  * @module services/work-graph
  */
-import type { Db } from '@dorkos/db';
-import { entityRef } from '@dorkos/shared/entity-ref';
+import type { Db, DbTransaction } from '@dorkos/db';
+import { entityRef, parseClaimKey } from '@dorkos/shared/entity-ref';
 import { logger } from '../../lib/logger.js';
 import {
   getSessionStartedByStore,
@@ -88,7 +96,7 @@ import { registerDurableRekeyResolver } from '../session/turn-identity/follow-ch
 import { getRunRecord } from '../runs/index.js';
 import { ChatLineageReader, type ChatLineage, type ChatLineageOptions } from './chat-lineage.js';
 import { LineageReads, type LineageReadsDeps } from './lineage-reads.js';
-import { WorkLinkStore, type WorkLinkInput } from './work-link-store.js';
+import { WorkLinkStore, type ClaimLinkSource, type WorkLinkInput } from './work-link-store.js';
 
 export {
   ChatLineageReader,
@@ -105,8 +113,12 @@ export {
 } from './chat-lineage.js';
 
 export {
+  CLAIM_LINK_SOURCES,
   REKEY_MAX_DEPTH,
   WORK_LINK_RELATIONS,
+  WORK_LINK_SPAN_RELATIONS,
+  isSpanRelation,
+  type ClaimLinkSource,
   WorkLinkStore,
   type WorkLink,
   type WorkLinkInput,
@@ -256,11 +268,11 @@ function recordChatLink(
 }
 
 /** Record one edge, never throwing: a refusal or a database failure is logged with `ids` and dropped. */
-function recordLink(input: WorkLinkInput, ids: Record<string, string>): void {
+function recordLink(input: WorkLinkInput, ids: Record<string, string>, tx?: DbTransaction): void {
   if (store === null) return;
   const { relation } = input;
   try {
-    const result = store.record(input);
+    const result = store.record(input, tx);
     if (!result.ok)
       logger.warn('[work-graph] edge refused', { relation, ...ids, reason: result.reason });
   } catch (err) {
@@ -388,4 +400,64 @@ export function recordChatTodo(made: { chatIds: readonly string[]; todoId: strin
     return;
   }
   recordLink({ from: from.value, relation: 'produced', to: to.value, source: 'server' }, ids);
+}
+
+/** One change to who holds a claim, as the claim service hands it over (DOR-4972). */
+export interface ClaimLinkChange {
+  /** A chat took the claim, or a chat's claim ended. */
+  transition: 'claimed' | 'released';
+  /** The chat whose claim began or ended. */
+  sessionId: string;
+  /** The claim's normalised key. */
+  key: string;
+  /** When it happened (ISO 8601), from the lock. */
+  at: string;
+  /** What wrote it. */
+  writer: ClaimLinkSource;
+  /** The chat whose action it was, or `null` for the server's own bookkeeping. */
+  recordingChatId: string | null;
+}
+
+/**
+ * Record a claim or its end as the chat `claims` or `released` the ticket or
+ * pull request the key names, in the claim's own transaction, at the
+ * transition's own time, so a repeat of one transition lands nothing. A key
+ * that names neither records nothing. The chat is resolved through recorded
+ * re-keys. Never throws: a refusal or a failure is logged and the claim stands.
+ *
+ * @param tx - The claim's transaction.
+ * @param change - The change.
+ */
+export function recordChatClaim(tx: DbTransaction, change: ClaimLinkChange): void {
+  if (store === null) return;
+  // A claim key names a ticket or PR only as `DOR-1234` or `PR #42`: `FIX/BUG#12` is a free key.
+  const parsed = parseClaimKey(change.key);
+  if (!parsed.ok) return;
+  const relation = change.transition === 'claimed' ? 'claims' : 'released';
+  let chatId = change.sessionId;
+  try {
+    chatId = store.resolveRekey(change.sessionId);
+  } catch {
+    // Unresolved, the chat's id as the lock holds it still names it.
+  }
+  const chat = entityRef('chat', chatId);
+  if (!chat.ok) {
+    logger.warn('[work-graph] a chat id has no reference form; edge not recorded', {
+      relation,
+      chatId,
+    });
+    return;
+  }
+  recordLink(
+    {
+      from: chat.value,
+      relation,
+      to: { kind: parsed.value.kind, id: parsed.value.id },
+      source: change.writer,
+      recordingChatId: change.recordingChatId,
+      recordedAt: change.at,
+    },
+    { chatId },
+    tx
+  );
 }

@@ -59,4 +59,13 @@ export interface CapabilityRequestFacts {
    * login on or off. A chat canvas's file save asks it.
    */
   readonly ownerOrNoAccount: boolean;
+  /**
+   * Whether this call is a person's read on the capability's own REST path:
+   * that path minted its person proof for an `observe` call (`personCaller`)
+   * and the request carried no program credential at all, no `x-api-key` and
+   * no bearer (`presentsProgramCredential`), login on or off. Never set for
+   * `/invoke` (`dorkos call`) or MCP. A read that must not answer a caller
+   * nobody named as the owner asks it (DOR-4972).
+   */
+  readonly personOnRestPath: boolean;
 }

@@ -139,8 +139,13 @@ describe('WorkLinkStore', () => {
 
   it('filters by relation', () => {
     store.record({ from: chat('chat-a'), relation: 'opened', to: ref('pr'), source: 'server' });
-    store.record({ from: chat('chat-a'), relation: 'claims', to: ref('ticket'), source: 'server' });
-    expect(store.from(chat('chat-a'), 'claims').map((link) => link.to)).toEqual([
+    store.record({
+      from: chat('chat-a'),
+      relation: 'works_on',
+      to: ref('ticket'),
+      source: 'server',
+    });
+    expect(store.from(chat('chat-a'), 'works_on').map((link) => link.to)).toEqual([
       { kind: 'ticket', id: 'DOR-4968' },
     ]);
   });
@@ -161,6 +166,53 @@ describe('WorkLinkStore', () => {
     });
     expect(again).toEqual({ ok: true, created: false, link: first.ok && first.link });
     expect(db.select().from(workLinks).all()).toHaveLength(1);
+  });
+
+  describe('a span relation (DOR-4972)', () => {
+    const claim = (at: string, source: 'claim-tool' | 'lapse-sweep' = 'claim-tool') =>
+      store.record({
+        from: chat('chat-a'),
+        relation: source === 'claim-tool' ? 'claims' : 'released',
+        to: ref('ticket'),
+        source,
+        recordingChatId: source === 'claim-tool' ? 'chat-a' : null,
+        recordedAt: at,
+      });
+
+    it('records at the transition’s own time, not the store’s clock', () => {
+      const result = claim('2026-11-20T08:00:00.000Z');
+      expect(result.ok && result.link.recordedAt).toBe('2026-11-20T08:00:00.000Z');
+    });
+
+    it('records a repeat of one transition once, and a later one as its own row', () => {
+      const first = claim('2026-11-20T08:00:00.000Z');
+      expect(claim('2026-11-20T08:00:00.000Z')).toEqual({
+        ok: true,
+        created: false,
+        link: first.ok && first.link,
+      });
+      expect(claim('2026-11-20T09:00:00.000Z')).toMatchObject({ ok: true, created: true });
+      expect(store.from(chat('chat-a'), 'claims')).toHaveLength(2);
+    });
+
+    it('lands in the caller’s transaction, and is undone with it', () => {
+      expect(() =>
+        db.transaction((tx) => {
+          store.record(
+            {
+              from: chat('chat-a'),
+              relation: 'claims',
+              to: ref('ticket'),
+              source: 'claim-tool',
+              recordedAt: '2026-11-20T08:00:00.000Z',
+            },
+            tx
+          );
+          throw new Error('the claim failed');
+        })
+      ).toThrow('the claim failed');
+      expect(db.select().from(workLinks).all()).toEqual([]);
+    });
   });
 
   it('has no way to change or remove an edge', () => {
@@ -204,6 +256,29 @@ describe('WorkLinkStore', () => {
     [{ to: { kind: 'chat', id: 'chat-a' } }, 'self-link'],
     [{ source: 'Open PR' }, 'bad-source'],
     [{ recordingChatId: 'not an id' }, 'bad-recording-chat'],
+    [{ recordedAt: '2026-11-24T12:00:00.000Z' }, 'bad-time'],
+    [{ relation: 'claims', to: { kind: 'ticket', id: 'DOR-4' }, source: 'claim-tool' }, 'bad-time'],
+    [
+      {
+        relation: 'claims',
+        to: { kind: 'ticket', id: 'DOR-4' },
+        source: 'claim-tool',
+        recordedAt: '2026-11-24 12:00',
+      },
+      'bad-time',
+    ],
+    [
+      {
+        relation: 'released',
+        to: { kind: 'ticket', id: 'DOR-4' },
+        recordedAt: '2026-11-24T12:00:00.000Z',
+      },
+      'bad-source',
+    ],
+    [
+      { relation: 'claims', source: 'claim-tool', recordedAt: '2026-11-24T12:00:00.000Z' },
+      'bad-kinds',
+    ],
   ] as const)('refuses %o as %s', (overrides, reason) => {
     const input = {
       from: chat('chat-a'),

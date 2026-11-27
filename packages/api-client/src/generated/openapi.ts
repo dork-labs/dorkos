@@ -5633,6 +5633,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/work-items/chats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * See who worked on a ticket or pull request
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     The chats that claimed one ticket or pull request, and when, oldest first: each span with the chat, when it was claimed, when it ended and how (released, lapsed, handed over), or still held. Every agent’s chats are listed. A span of a chat you may not read carries only the days it began and ended. A hand-over’s time is visible to the space, and the chat that gave it never is. ref is a ticket (DOR-1234) or a pull request (owner/repo#42 or PR #42). Page with `limit` and the returned `nextCursor`; spans start and end between pages, so one can repeat or be missed while paging.
+         */
+        get: operations["work-graph.work_item_chats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agents/{agentId}/pause": {
         parameters: {
             query?: never;
@@ -47761,6 +47783,146 @@ export interface operations {
                                 recordedOn: string;
                             })[];
                         }[];
+                        nextCursor: string | null;
+                    };
+                };
+            };
+            /** @description A person must allow the call first; nothing ran */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilityApprovalRequired"];
+                };
+            };
+            /** @description `invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `unknown_capability`: not available on this computer; `not_found`: the thing it names */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The capability refused because of the state it met, such as `conflict` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `precondition_failed`: something changed since the caller looked */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `internal_error`: something went wrong running it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `signin_unreachable`: the remote server did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "work-graph.work_item_chats": {
+        parameters: {
+            query: {
+                /** @description The ticket (DOR-1234) or pull request (owner/repo#42 or PR #42). */
+                ref: string;
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description See who worked on a ticket or pull request result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ref: {
+                            /** @enum {string} */
+                            kind: "pr" | "ticket";
+                            id: string;
+                        };
+                        spans: ({
+                            /** @enum {string} */
+                            relation: "claims";
+                            chatId: string;
+                            claimedAt: string;
+                            startDay: string;
+                            endedAt: string | null;
+                            endDay: string | null;
+                            /** @enum {string|null} */
+                            endedBy: "released" | "lapsed" | "handed-over" | "unknown" | null;
+                        } | {
+                            /** @enum {string} */
+                            relation: "claims";
+                            startDay: string;
+                            endDay: string | null;
+                        })[];
                         nextCursor: string | null;
                     };
                 };
