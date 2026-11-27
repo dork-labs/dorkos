@@ -763,12 +763,12 @@ export class OpenCodeRuntime implements AgentRuntime {
       // Trigger only once the stream is observably live (or the bounded wait
       // elapses) — a fast turn must not complete before we can see its idle.
       await Promise.race([subscription.live, delay(STREAM_LIVE_TIMEOUT_MS)]);
-      // Never sent on a sidecar a restart is stopping; arms the first-event check.
-      pluginTurn.beforeSend();
-      await trigger(client, ocSessionId, mcpResult, plan, () => {
+      // Never sent on a sidecar a restart is stopping; the send arms the first-event check.
+      const onSend = pluginTurn.beforeSend(() => {
         if (mcpResult.connectorApplied && turn.connectorBinding)
           toolTurn.attach((event) => queue.push(event));
       });
+      await trigger(client, ocSessionId, mcpResult, plan, onSend);
 
       const routing: ApprovalRouting = {
         ...opts,

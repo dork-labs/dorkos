@@ -283,7 +283,11 @@ describe('after an OpenCode turn, a folder that gained its own plugins', () => {
  * A sidecar client whose turn events arrive only once the prompt is sent, as
  * a real sidecar's do. `onEvent` runs before each event goes out.
  */
-function sendingClient(dir: string, onEvent: (index: number) => void = () => {}) {
+function sendingClient(
+  dir: string,
+  onEvent: (index: number) => void = () => {},
+  setupEvent?: OpenCodeWireEvent
+) {
   const client = makeConformanceClient([], dir);
   let stream = new TurnEventQueue<GlobalEvent>();
   client.global.event.mockImplementation(async (options?: { signal?: AbortSignal }) => {
@@ -292,6 +296,15 @@ function sendingClient(dir: string, onEvent: (index: number) => void = () => {})
     stream.push(globalEvent(dir, serverConnected()));
     return { stream };
   });
+  // A setup call before the prompt (the asks check) that the sidecar answers
+  // with an event of the turn's own session.
+  const agents = client.app.agents.getMockImplementation();
+  if (setupEvent)
+    client.app.agents.mockImplementation(async () => {
+      stream.push(globalEvent(dir, setupEvent));
+      await settle();
+      return agents ? agents() : { data: [] };
+    });
   client.session.promptAsync.mockImplementation(async () => {
     const turn: OpenCodeWireEvent[] = opencodeSimpleTurn(OC_SESSION_A, 'pong');
     // One at a time, each delivered before the next is made.
@@ -386,6 +399,27 @@ describe("when an OpenCode turn's first event arrives", () => {
     expect(seen(events)).toEqual({ text: '', errors: [PLUGIN_RESTART_MESSAGE], done: true });
     expect(recycle).toHaveBeenCalledTimes(1);
     expect(lines.map((line) => line.folder)).toEqual([dir]);
+  });
+
+  it('an event during setup does not use up the check; the first one after the send makes it', async () => {
+    const dir = repo('northwind-widgets');
+    const turn = opencodeSimpleTurn(OC_SESSION_A, 'pong');
+    // The plugin lands as the prompt goes out, after a setup call's event.
+    const client = sendingClient(
+      dir,
+      (index) => {
+        if (index === 0) dropPlugin(dir);
+      },
+      turn[0]
+    );
+    const { provider, recycle } = harness({ [dir]: client });
+    const runtime = new OpenCodeRuntime({ provider });
+    runtime.ensureSession('a', { permissionMode: 'default', cwd: dir });
+
+    const events = await drain(runtime.sendMessage('a', 'clone it', { cwd: dir }));
+    expect(client.app.agents).toHaveBeenCalled();
+    expect(seen(events)).toEqual({ text: '', errors: [PLUGIN_RESTART_MESSAGE], done: true });
+    expect(recycle).toHaveBeenCalledTimes(1);
   });
 
   it('checks only the first event; plugins that land later wait for the turn to end', async () => {

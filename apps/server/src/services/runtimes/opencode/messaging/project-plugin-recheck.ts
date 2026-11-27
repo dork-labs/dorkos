@@ -96,15 +96,20 @@ export interface PluginTurnPass {
    */
   assertNoPlugins(directory: string): void;
   /**
-   * Call right before the prompt is sent. Throws when the sidecar was restarted
-   * after this turn started, so a turn holding the old process's client never
-   * sends on it. From here on, the turn's first event is checked
-   * ({@link PluginTurnPass.atEvent}).
+   * Call right before the turn is triggered. Throws when the sidecar was
+   * restarted after this turn started, so a turn holding the old process's
+   * client never sends on it. The callback it returns arms the first-event
+   * check ({@link PluginTurnPass.atEvent}) as the prompt's request goes out:
+   * arming at the send, not before it, keeps an event from the turn's own
+   * setup calls from using up the one check before the folder is opened.
+   *
+   * @param onSend - What the prompt already does as its request goes out.
+   * @returns `onSend`, preceded by arming the first-event check.
    */
-  beforeSend(): void;
+  beforeSend(onSend: () => void): () => void;
   /**
    * Call on each of the turn's events. The first one after
-   * {@link PluginTurnPass.beforeSend} checks the turn's folders again; when one
+   * {@link PluginTurnPass.beforeSend}'s callback checks the turn's folders again; when one
    * has plugins, the restart begins and `stop` ends the turn with
    * {@link PLUGIN_RESTART_MESSAGE}. Every later event is passed through.
    *
@@ -173,9 +178,12 @@ export class ProjectPluginRecheck {
     return {
       refusal: projectPluginRefusal(cwd),
       assertNoPlugins: (directory) => assertNoProjectPlugins(cwd, directory),
-      beforeSend: () => {
+      beforeSend: (onSend) => {
         if (this.generation !== generation) throw new Error(PLUGIN_RESTART_MESSAGE);
-        armed = true;
+        return () => {
+          armed = true;
+          onSend();
+        };
       },
       atEvent: (directory, stop) => {
         if (!armed || checked) return false;

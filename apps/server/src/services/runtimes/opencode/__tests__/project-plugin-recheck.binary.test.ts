@@ -254,17 +254,13 @@ describe.skipIf(BINARY === null)(
       const race = project(root, 'northwind-race');
       const marker = path.join(root, 'race-marker');
       const beat = path.join(root, 'race-beat');
-      // The plugin lands as the prompt is sent. Once, on this sidecar's client.
-      const client = await manager.getClient(race);
-      const send = client.session.promptAsync.bind(client.session);
-      let armed = true;
-      client.session.promptAsync = ((options: Parameters<typeof send>[0]) => {
-        if (armed) dropPlugin(race, marker, beat);
-        armed = false;
-        return send(options);
-      }) as typeof send;
-      // The reply waits until the plugin has loaded.
+      // The plugin lands once the model is asked, after the turn's first event
+      // (which finds none), and the reply waits until it has loaded: the path
+      // only the after-turn check covers.
+      let dropped = false;
       beforeReply = async () => {
+        if (!dropped) dropPlugin(race, marker, beat);
+        dropped = true;
         await until(() => fs.existsSync(marker), 75_000);
       };
       runtime.ensureSession('race', { permissionMode: 'default', cwd: race });
