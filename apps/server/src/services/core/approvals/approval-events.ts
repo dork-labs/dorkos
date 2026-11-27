@@ -4,8 +4,8 @@
  * Pending approvals ride the global `/api/events` fan-out so an approval card
  * appears in every open cockpit the moment an agent asks, and disappears from all
  * of them the moment anyone decides. The stream replays only a short window to
- * a reader that reconnects, so the cockpit also lists pending approvals on mount — the events are what keep an
- * already-open window in step.
+ * a reader that reconnects, so the cockpit also lists pending approvals on
+ * mount — the events are what keep an already-open window in step.
  *
  * Payloads never carry token material: `approval_pending` sends the same record
  * `GET /api/approvals/pending` returns, and nothing more.

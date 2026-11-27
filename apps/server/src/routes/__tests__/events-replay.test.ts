@@ -131,6 +131,28 @@ describe('GET /api/events replay', () => {
     expect(numbered(agent)[0]!.id).toBe(numbered(person)[1]!.id);
   });
 
+  it('filters a replay with the rights the reader has when it resumes, not when sent', async () => {
+    // Pinned on purpose: whether a replay should use the rights at send time
+    // is Security's call. Changing it must change this test.
+    let admitted = false;
+    const cursor = await marker();
+    eventFanOut.broadcast('room_updated', { roomId: 'r1' }, () => admitted);
+    admitted = true;
+    eventFanOut.broadcast('agents_changed', { kind: 'updated', agentId: 'a2' });
+    const text = await read({ 'last-event-id': cursor }, (t) => t.includes('"agentId":"a2"'));
+    expect(numbered(text).map((f) => f.event)).toEqual(['room_updated', 'agents_changed']);
+  });
+
+  it('sends a live event right after the replay, in order', async () => {
+    const cursor = await marker();
+    eventFanOut.broadcast('tasks_changed', { missed: true });
+    const resumed = stream({ 'last-event-id': cursor });
+    await resumed((t) => t.includes('"missed":true'));
+    eventFanOut.broadcast('tasks_changed', { live: true });
+    const frames = numbered(await resumed((t) => t.includes('"live":true')));
+    expect(frames.map((f) => f.data)).toEqual(['{"missed":true}', '{"live":true}']);
+  });
+
   it('resumes from ?resume= too, the cursor a socket sends', async () => {
     const cursor = await marker();
     eventFanOut.broadcast('tasks_changed', { after: true });

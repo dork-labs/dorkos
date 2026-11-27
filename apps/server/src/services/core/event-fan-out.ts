@@ -13,9 +13,9 @@
  * once and lands on every reader whatever it speaks.
  *
  * Every broadcast a client could receive is numbered and kept in a bounded
- * window (`lib/event-stream/event-replay-buffer.ts`), so a reader that reconnects with
- * its last frame id is sent what it missed, filtered for it exactly as the
- * live write was (ADR 261123-170833).
+ * window (`lib/event-stream/event-replay-buffer.ts`), so a reader that
+ * reconnects with its last frame id is sent what it missed, filtered with the
+ * rights it has when it resumes (ADR 261123-170833).
  *
  * @module services/event-fan-out
  */
@@ -26,6 +26,7 @@ import type { CallerPrincipal } from '../../lib/caller-principal.js';
 import type { ResumeCursor } from '../../lib/stream-cursor.js';
 import { EventReplayBuffer, type ReplayEntry } from '../../lib/event-stream/event-replay-buffer.js';
 import {
+  deliveryBytes,
   encodeBroadcast,
   frameFor,
   type BroadcastAudience,
@@ -264,7 +265,7 @@ class EventFanOut {
   broadcast(eventName: DorkOsEventType, data: unknown, audience?: BroadcastAudience): void {
     this.notifyListeners(eventName, data);
     if (requiresAudience(eventName) && !audience) return;
-    this.publish(eventName, data, (id) => ({
+    this.publish(eventName, (id) => ({
       full: encodeBroadcast(eventName, data, id),
       ...(audience && { audience }),
     }));
@@ -332,7 +333,7 @@ class EventFanOut {
     this.notifyListeners(eventName, full);
     if (requiresAudience(eventName) && !audience) return;
     // Both renderings share one seq and one frame id: they are one event.
-    this.publish(eventName, full, (id) => ({
+    this.publish(eventName, (id) => ({
       full: encodeBroadcast(eventName, full, id),
       redacted: encodeBroadcast(eventName, redacted, id),
       entitled,
@@ -351,8 +352,9 @@ class EventFanOut {
   }
 
   /**
-   * Send a reconnecting reader the events it missed, each filtered for it by the
-   * same rule as the live write. Call in the same tick as {@link addClient}, so
+   * Send a reconnecting reader the events it missed, each filtered with the
+   * rights the reader has now, when it resumes (an audience such as a room's
+   * membership is asked again). Call in the same tick as {@link addClient}, so
    * no live broadcast lands between the two.
    *
    * @param client - The reader.
@@ -375,20 +377,10 @@ class EventFanOut {
    * for. Encoded once per rendering, whatever the number of readers.
    *
    * @param eventName - The event type.
-   * @param data - The payload kept on the event.
    * @param deliver - The delivery record, from the event's frame id.
    */
-  private publish(
-    eventName: DorkOsEventType,
-    data: unknown,
-    deliver: (frameId: string) => Delivery
-  ): void {
-    const entry = this.replay.append(
-      eventName,
-      data,
-      deliver,
-      (d) => d.full.sse.length + (d.redacted?.sse.length ?? 0)
-    );
+  private publish(eventName: DorkOsEventType, deliver: (frameId: string) => Delivery): void {
+    const entry = this.replay.append(eventName, deliver, deliveryBytes);
     this.writeToClients(entry.delivery);
   }
 

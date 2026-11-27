@@ -453,17 +453,17 @@ connect until it moves again. Reconnecting is not what clears it.
 
 ### Picking up where you left off
 
-Every event after the opening frames has an `id:` line, `events-<epoch>-<generation>-<seq>`. If
+Every event after the opening frames has an `id:` line. Treat it as opaque. If
 the connection drops, reconnect with the last one as `Last-Event-ID` (browsers' `EventSource`
 does this for you). The server sends the events you missed, then live ones, and the `connected`
-frame says `resumed: true`. You only get the missed events you could have received live.
+frame says `resumed: true`. You get the missed events you may read now, when you reconnect.
 
 The server keeps the last 500 events (up to 512 KiB) for this. If you were gone longer, or the
 server restarted, you get an ordinary fresh connect instead: `connected` without `resumed`, then
 the current chat statuses. Read back anything else you show, the same as on a first connect.
 
-`seq`, the last part of the id, only grows within this stream. It can skip numbers, because you
-are not sent events that are not yours. Never compare it with a `seq` from another stream.
+Ids can skip, because you are not sent events that are not yours. Never compare an id from this
+stream with one from another stream.
 
 <Callout type="info">
   The DorkOS client uses a single `GET /api/events` connection for all background state. The older

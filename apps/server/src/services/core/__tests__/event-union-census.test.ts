@@ -128,6 +128,14 @@ describe('every broadcast on the global stream names a member of the event union
     expect(unsent, 'remove the member, or say in NOT_SENT_BY_LITERAL who sends it').toEqual([]);
   });
 
+  it('every NOT_SENT_BY_LITERAL entry is a member nothing sends by a literal name', () => {
+    const sent = new Set(SITES.map((site) => literalName(site.firstArgument)));
+    const stale = Object.keys(NOT_SENT_BY_LITERAL).filter(
+      (name) => !isDorkOsEventType(name) || sent.has(name)
+    );
+    expect(stale, 'remove each from NOT_SENT_BY_LITERAL').toEqual([]);
+  });
+
   it('every member names its area, and a null area says why', () => {
     for (const name of DORKOS_EVENT_NAMES) {
       const { area, areaNote } = dorkOsEventArea(name);

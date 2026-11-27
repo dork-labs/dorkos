@@ -68,7 +68,8 @@ export function encodeBroadcast(eventName: string, data: unknown, id?: string): 
 
 /**
  * One numbered broadcast: its encoded frames and who may read which. The same
- * record serves the live write and a replay, so the two cannot filter apart.
+ * record serves the live write and a replay, so both use one filter, asked with
+ * the reader's rights at the moment each is written.
  */
 export interface Delivery {
   /** The frame for a reader entitled to the whole payload. */
@@ -94,4 +95,15 @@ export function frameFor(
   if (delivery.audience && !delivery.audience(principal)) return undefined;
   if (!delivery.entitled || delivery.entitled(principal)) return delivery.full;
   return delivery.redacted;
+}
+
+/**
+ * The bytes one delivery holds: every rendering, on both wires.
+ *
+ * @param delivery - The broadcast.
+ */
+export function deliveryBytes(delivery: Delivery): number {
+  const of = (frame: EncodedBroadcast | undefined): number =>
+    frame ? Buffer.byteLength(frame.sse) + Buffer.byteLength(frame.json) : 0;
+  return of(delivery.full) + of(delivery.redacted);
 }

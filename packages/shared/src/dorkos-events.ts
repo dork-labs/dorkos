@@ -11,12 +11,12 @@
  * from another. That is what lets a narrow stream be a filtered view of the
  * same contract, and lets a stream fed from another computer number its own.
  *
- * `GET /api/events` carries the envelope on its existing wire, so no reader's
- * payloads change: `type` is the frame's event name (`event:` over SSE,
- * `event` in a socket frame), `payload` is its data, and `seq` is the last part
- * of the frame id (`id:` over SSE, `id` in a socket frame), which reads
- * `events-<epoch>-<generation>-<seq>`. That id is the resume cursor
- * (`Last-Event-ID`, or `?resume=` on a socket); echo it back whole.
+ * `GET /api/events` does not send the envelope yet (that is DOR-5474), so no
+ * reader's payloads change: `type` is the frame's event name (`event:` over
+ * SSE, `event` in a socket frame), `data` is the bare payload, and the frame id
+ * (`id:` over SSE, `id` in a socket frame) is an opaque resume cursor that
+ * happens to end in `seq`; `at` is not sent. Echo the id back whole as
+ * `Last-Event-ID`, or `?resume=` on a socket.
  *
  * ## The union
  *
@@ -253,11 +253,20 @@ const memberSchemas = [
 ] as unknown as readonly [z.ZodObject, z.ZodObject, ...z.ZodObject[]];
 
 /**
- * The union of every event the global stream carries, as envelopes. Over the
- * wire `type` is the frame's event name, `payload` its data and `seq` the last
- * part of its id.
+ * The union of every event the global stream carries, as envelopes. Code only:
+ * `GET /api/events` does not send the envelope yet (DOR-5474), so the API
+ * document describes {@link DorkOsEventPayloadSchema} instead.
  */
-export const DorkOsEventSchema = z.union(memberSchemas).openapi('DorkOsEvent', {
-  description:
-    'One event on the global stream: `{ seq, at, type, payload }`. `seq` only grows within one stream, may skip numbers, and is never compared across streams.',
-});
+export const DorkOsEventSchema = z.union(memberSchemas);
+
+/**
+ * What one `GET /api/events` frame's `data:` holds today: the bare payload of
+ * its type. A type with a shared schema is described by it; every other type's
+ * payload is an object this schema does not describe yet.
+ */
+export const DorkOsEventPayloadSchema = z.union([
+  ...Object.values(PAYLOAD_SCHEMAS),
+  z
+    .record(z.string(), z.unknown())
+    .describe('The payload of a type that has no described schema yet.'),
+] as unknown as readonly [z.ZodType, z.ZodType, ...z.ZodType[]]);

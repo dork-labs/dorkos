@@ -107,7 +107,8 @@ function pruneExpired(queryClient: QueryClient): boolean {
  * `approval_pending` adds a card the moment an agent asks, and
  * `approval_resolved` retires one as soon as anybody decides — including from
  * another window. The `/api/events` stream replays only to a window that was
- * already connected, so the fetch is what makes a freshly opened app correct and the events are what keep it that way.
+ * already connected, so the fetch is what makes a freshly opened app
+ * correct and the events are what keep it that way.
  *
  * Expiry is the one ending the server never announces by itself: it is enforced
  * when a token is presented, so an approval nobody answered and no agent retried

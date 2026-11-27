@@ -1,5 +1,5 @@
 /**
- * Numbering and replay for a stream of {@link DorkOsEvent}s (ADR 261123-170833).
+ * Numbering and replay for a stream of `DorkOsEvent`s (ADR 261123-170833).
  *
  * Written for `GET /api/events`, and kept free of that stream's delivery so the
  * next one (a run's events, spec `send-to-an-agent` D9) numbers and replays the
@@ -19,13 +19,18 @@
  *   back when its replay floor has moved past a cursor.
  *
  * Each entry carries a `delivery` the owning stream defines (for the global
- * stream: the encoded frames and who may read them), so replay can filter per
- * reader exactly as the live write did.
+ * stream: the encoded frames and who may read them), and nothing else: no
+ * second copy of the payload. Replay filters with the rights the reader has
+ * when it resumes, which can differ from its rights when the event was sent.
+ *
+ * An event bigger than the whole byte budget is delivered live and not kept,
+ * and it empties the window: keeping the older events would leave a gap where
+ * it was, so any cursor before it gets a snapshot.
  *
  * @module lib/event-stream/event-replay-buffer
  */
 import { mintStreamGeneration } from '@dorkos/shared/session-stream';
-import type { DorkOsEvent, DorkOsEventType } from '@dorkos/shared/dorkos-events';
+import type { DorkOsEventType } from '@dorkos/shared/dorkos-events';
 import { cursorMatchesGeneration, streamFrameId, type ResumeCursor } from '../stream-cursor.js';
 
 /**
@@ -44,13 +49,15 @@ export const EVENT_REPLAY_LIMITS = {
 
 /** One numbered event and what its stream needs to deliver it again. */
 export interface ReplayEntry<D> {
-  /** The event, numbered. */
-  readonly event: DorkOsEvent;
+  /** The event's place in this stream. */
+  readonly seq: number;
+  /** The event type. */
+  readonly type: DorkOsEventType;
   /** Its frame id, the resume cursor a reader echoes back. */
   readonly frameId: string;
   /** The stream's own delivery record. */
   readonly delivery: D;
-  /** What the entry counts against {@link EVENT_REPLAY_LIMITS.maxBytes}. */
+  /** Bytes the delivery holds, counted against {@link EVENT_REPLAY_LIMITS.maxBytes}. */
   readonly bytes: number;
 }
 
@@ -85,39 +92,40 @@ export class EventReplayBuffer<D> {
   }
 
   /**
-   * Number one event and keep it, evicting the oldest past either cap.
+   * Number one event and keep it, evicting the oldest past either cap. An
+   * event over the whole byte budget is not kept and empties the window (see
+   * the module doc).
    *
    * @param type - The event type.
-   * @param payload - The event's data.
    * @param deliver - Builds the delivery record from the event's frame id.
-   * @param measure - The delivery's size in bytes.
+   * @param measure - The bytes the delivery holds.
+   * @returns The numbered entry, for the live write.
    */
   append(
     type: DorkOsEventType,
-    payload: unknown,
     deliver: (frameId: string) => D,
     measure: (delivery: D) => number
   ): ReplayEntry<D> {
     const seq = ++this.counter;
     const frameId = streamFrameId(this.resourceId, this.generation, seq);
     const delivery = deliver(frameId);
-    const entry: ReplayEntry<D> = {
-      event: { seq, at: new Date().toISOString(), type, payload },
-      frameId,
-      delivery,
-      bytes: measure(delivery),
-    };
+    const entry: ReplayEntry<D> = { seq, type, frameId, delivery, bytes: measure(delivery) };
+    if (entry.bytes > this.limits.maxBytes) {
+      this.entries = [];
+      this.bytes = 0;
+      return entry;
+    }
     this.entries.push(entry);
     this.bytes += entry.bytes;
-    // Never evicts the entry just added: one event past the whole budget is
-    // still delivered live, and simply is not replayable.
-    while (
-      this.entries.length > 1 &&
-      (this.entries.length > this.limits.maxEvents || this.bytes > this.limits.maxBytes)
-    ) {
+    while (this.entries.length > this.limits.maxEvents || this.bytes > this.limits.maxBytes) {
       this.bytes -= this.entries.shift()!.bytes;
     }
     return entry;
+  }
+
+  /** Bytes the window holds now. */
+  get heldBytes(): number {
+    return this.bytes;
   }
 
   /**
@@ -135,9 +143,9 @@ export class EventReplayBuffer<D> {
     // Ahead of the counter: not a place this numbering has been.
     if (cursor.seq > this.counter) return { kind: 'snapshot' };
     if (cursor.seq === this.counter) return { kind: 'replay', entries: [] };
-    const earliest = this.entries[0]?.event.seq;
+    const earliest = this.entries[0]?.seq;
     // Part of the gap was evicted: replaying the rest would silently skip it.
     if (earliest === undefined || cursor.seq < earliest - 1) return { kind: 'snapshot' };
-    return { kind: 'replay', entries: this.entries.filter((e) => e.event.seq > cursor.seq) };
+    return { kind: 'replay', entries: this.entries.filter((e) => e.seq > cursor.seq) };
   }
 }
