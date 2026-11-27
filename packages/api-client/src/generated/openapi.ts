@@ -264,6 +264,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runtimes/claude-code/project-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Choose which Claude accounts a project may use
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     Sets the project’s allow list, or removes it with `allow: null` (every account again). Answers with the project's new eligibility. Only a person may call it: a request from another site, a caller that names itself an agent (`X-DorkOS-Agent`), and, with Require login on, a caller without a signed-in session are refused with `403`. With Require login off, a local caller that sends no agent header is trusted, and an approved extension's own browser code shares the app's page, so it passes in either posture. Each change is recorded in Activity.
+         */
+        put: operations["runtimes.updateClaudeCodeProjectAccounts"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/computers": {
         parameters: {
             query?: never;
@@ -1547,6 +1569,26 @@ export interface paths {
          * @description Returns capabilities for all registered runtimes, keyed by type string, along with the default runtime type.
          */
         get: operations["capabilities.get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List all slash commands
+         * @description **Preview.** This operation may change in any release.
+         */
+        get: operations["commands.get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4041,6 +4083,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/read-cursors/{kind}/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the caller's own position in one thread
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     Where this person left off in one thread — the read half of the PUT, and the way a screen that has just opened knows where to draw the unread rule before any event arrives. A thread the caller has never read answers `{ "cursor": null }` with a 200, because never-read is the state every thread starts in rather than a missing resource; `null` is also distinct from a stored `0`, which is a thread read up to its own beginning. As with the write, the cursor is always the caller's own — there is no way to name a user — and an agent caller is refused with 403 `person_only`, or with 401 when its token does not verify.
+         */
+        get: operations["readCursors.get"];
+        /**
+         * Advance the caller's read cursor in one thread
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     The one write path onto read state, for every kind of thread there is: a room, an agent session, or the inbox. Monotonic — a value at or below the stored one is ignored, so a stale client on a second device cannot un-read a thread for the first one. The response is always the cursor as it now stands, which is the higher of the stored value and the requested one, so a refused write answers with what still holds rather than with an error. **Every write that actually moves the cursor broadcasts `read_cursor` on `GET /api/events`**, carrying the user, the kind, the thread and the new position, to the caller's own streams only and never to an agent; a write that changes nothing broadcasts nothing. The cursor written is always the caller's own — there is no way to name a user in this request, and therefore no way to read or move anybody else's read state. **Only people have read state here** — a caller the server resolves as an agent (one presenting a valid `X-DorkOS-Agent`) is refused with 403 `person_only`, and one whose token does not verify is refused with 401, because what an agent has been shown is the room-MEMBERSHIP cursor and not this one — advanced by the ambient participation loop as entries are delivered to it, and reachable through no route at all. **A `room` cursor is written through the rooms domain**, so the caller must be able to see the room (404 `room_not_found` / `not_found` otherwise), and the broadcast carries the unread count the room list redraws from. A `session` or `inbox` cursor names a thread this server cannot check and is stored as given.
+         */
+        put: operations["readCursors.update"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/search": {
         parameters: {
             query?: never;
@@ -4055,6 +4125,68 @@ export interface paths {
         get: operations["search.list"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List notification history
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     Newest first, cursor-paged. Filters are lenses, not a search. A caller that is not entitled to the operator view reads an empty list rather than a refusal, so a response never says that notifications exist.
+         */
+        get: operations["notifications.list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Mark one notification read
+         * @description **Preview.** This operation may change in any release.
+         */
+        patch: operations["notifications.read"];
+        trace?: never;
+    };
+    "/api/notifications/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark every unread notification read
+         * @description **Preview.** This operation may change in any release.
+         */
+        post: operations["notifications.readAll"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6131,6 +6263,182 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/extensions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List installed extensions
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     Every extension DorkOS found, with where it stands, in the order DorkOS found them: each copy that runs, then each older copy a newer one from the same trusted source shadows, with `shadowedBy` set. Every page in turn is the whole list in that order. An extension installed, removed or rescanned while paging can repeat or be missed. A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did not give is refused with `400 invalid_request`.
+         */
+        get: operations["extensions.list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/config/backups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the database backup copies on this computer
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     Every copy a DorkOS writer made in `<data dir>/backups`: daily and before-update copies, both the `dork-auto-` ones DorkOS prunes and older `dork-` ones it never touches. Only regular files with a writer’s name are listed; symbolic links never are. Person-only: a caller naming itself an agent, an approval token, a program credential, another site, or a request from another computer (except the owner over an encrypted connection) is refused before anything is read. There is no MCP tool for this.
+         */
+        get: operations["config.listBackups"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/config/backups/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove an older backup copy
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     Deletes one older `dork-` copy. The file is re-checked right before it is deleted: a regular file in the real backup folder, unchanged, with no write in progress. Person-only: a caller naming itself an agent, an approval token, a program credential, another site, or a request from another computer (except the owner over an encrypted connection) is refused before anything is read. There is no MCP tool for this.
+         */
+        delete: operations["config.deleteBackups"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/config/backups/{name}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move an older backup copy to another folder
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     Copies one older `dork-` copy into an existing folder inside the directory boundary or on an external drive (`/Volumes/<drive>/…`), never the data folder. The destination is resolved once to its real path, so a link is followed and every check reads the folder written to. Nothing there is overwritten. The copy must match in size and pass SQLite’s `integrity_check`; only then is the original removed, and only if unchanged. A failed check deletes the new file and keeps the original. Person-only: a caller naming itself an agent, an approval token, a program credential, another site, or a request from another computer (except the owner over an encrypted connection) is refused before anything is read. There is no MCP tool for this.
+         */
+        post: operations["config.moveBackups"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tunnel/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm a lasting access or account change
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.
+         */
+        post: operations["tunnel.start"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Confirm a lasting access or account change
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.
+         */
+        patch: operations["config.update"];
+        trace?: never;
+    };
+    "/api/config/mcp/reveal-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm a lasting access or account change
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.
+         */
+        post: operations["config.createMcpRevealToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/config/mcp/rotate-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm a lasting access or account change
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.
+         */
+        post: operations["config.createMcpRotateToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/cloud/seats/{seatId}/assign": {
         parameters: {
             query?: never;
@@ -6435,6 +6743,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/extensions/{id}/secrets/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Confirm a lasting access or account change
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.
+         */
+        put: operations["extensions.updateSecrets"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/relay/bindings/{id}": {
         parameters: {
             query?: never;
@@ -6614,26 +6944,6 @@ export interface paths {
          */
         get: operations["projects.resolve"];
         put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/runtimes/claude-code/project-accounts": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Choose which Claude accounts a project may use
-         * @description Sets the project’s allow list, or removes it with `allow: null` (every account again). Answers with the project's new eligibility. Only a person may call it: a request from another site, a caller that names itself an agent (`X-DorkOS-Agent`), and, with Require login on, a caller without a signed-in session are refused with `403`. With Require login off, a local caller that sends no agent header is trusted, and an approved extension's own browser code shares the app's page, so it passes in either posture. Each change is recorded in Activity.
-         */
-        put: operations["runtimes.updateClaudeCodeProjectAccounts"];
         post?: never;
         delete?: never;
         options?: never;
@@ -7993,15 +8303,18 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/commands": {
+    "/api/relay/stream": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List all slash commands */
-        get: operations["commands.get"];
+        /**
+         * SSE event stream for relay activity
+         * @description Server-Sent Events stream for real-time relay activity. Supports server-side subject filtering via query param. Event types: relay_connected, relay_message, relay_delivery, relay_dead_letter, relay_metrics.
+         */
+        get: operations["relay.stream"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8300,30 +8613,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/read-cursors/{kind}/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Read the caller's own position in one thread
-         * @description Where this person left off in one thread — the read half of the PUT, and the way a screen that has just opened knows where to draw the unread rule before any event arrives. A thread the caller has never read answers `{ "cursor": null }` with a 200, because never-read is the state every thread starts in rather than a missing resource; `null` is also distinct from a stored `0`, which is a thread read up to its own beginning. As with the write, the cursor is always the caller's own — there is no way to name a user — and an agent caller is refused with 403 `person_only`, or with 401 when its token does not verify.
-         */
-        get: operations["readCursors.get"];
-        /**
-         * Advance the caller's read cursor in one thread
-         * @description The one write path onto read state, for every kind of thread there is: a room, an agent session, or the inbox. Monotonic — a value at or below the stored one is ignored, so a stale client on a second device cannot un-read a thread for the first one. The response is always the cursor as it now stands, which is the higher of the stored value and the requested one, so a refused write answers with what still holds rather than with an error. **Every write that actually moves the cursor broadcasts `read_cursor` on `GET /api/events`**, carrying the user, the kind, the thread and the new position, to the caller's own streams only and never to an agent; a write that changes nothing broadcasts nothing. The cursor written is always the caller's own — there is no way to name a user in this request, and therefore no way to read or move anybody else's read state. **Only people have read state here** — a caller the server resolves as an agent (one presenting a valid `X-DorkOS-Agent`) is refused with 403 `person_only`, and one whose token does not verify is refused with 401, because what an agent has been shown is the room-MEMBERSHIP cursor and not this one — advanced by the ambient participation loop as entries are delivered to it, and reachable through no route at all. **A `room` cursor is written through the rooms domain**, so the caller must be able to see the room (404 `room_not_found` / `not_found` otherwise), and the broadcast carries the unread count the room list redraws from. A `session` or `inbox` cursor names a thread this server cannot check and is stored as given.
-         */
-        put: operations["readCursors.update"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/team": {
         parameters: {
             query?: never;
@@ -8506,60 +8795,6 @@ export interface paths {
          * @description Moves one skill, by name, out of the folder only some agent tools look in and into `.agents/skills` — one `rename(2)`, plus the link Claude Code reads it through when this project has Claude Code turned on. It answers with the status recomputed after the move, inside the same lock the move ran in, so the caller renders the tree this call left. **A refusal is a `200`.** A skill that is not there, one that is already canonical, one whose settings only Claude Code understands, a target that already has something in it: each comes back in `refusals` with one plain sentence saying what to do about it, because a refusal is an answer rather than a failure. **A person, not an agent.** A caller naming itself an agent, or holding an approval token, is refused: this moves a file a person wrote. With `claudeOnly: true` nothing moves — the skill is recorded in the manifest as belonging to Claude Code, with the reason written out in words, and the other tools are told why they do not get it. `projectPath` must be absolute, and inside the configured directory boundary or under `{dorkHome}/agents`.
          */
         post: operations["harness.createAdopt"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/notifications": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List notification history
-         * @description Newest first, cursor-paged. Filters are lenses, not a search. A caller that is not entitled to the operator view reads an empty list rather than a refusal, so a response never says that notifications exist.
-         */
-        get: operations["notifications.list"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/notifications/{id}/read": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Mark one notification read */
-        patch: operations["notifications.read"];
-        trace?: never;
-    };
-    "/api/notifications/read-all": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Mark every unread notification read */
-        post: operations["notifications.readAll"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9155,26 +9390,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/extensions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List installed extensions
-         * @description Every extension DorkOS found, with where it stands, in the order DorkOS found them: each copy that runs, then each older copy a newer one from the same trusted source shadows, with `shadowedBy` set. Every page in turn is the whole list in that order. An extension installed, removed or rescanned while paging can repeat or be missed. A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did not give is refused with `400 invalid_request`.
-         */
-        get: operations["extensions.list"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/extensions/pending-approvals": {
         parameters: {
             query?: never;
@@ -9249,66 +9464,6 @@ export interface paths {
         get: operations["extensions.getMedia"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/config/backups": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List the database backup copies on this computer
-         * @description Every copy a DorkOS writer made in `<data dir>/backups`: daily and before-update copies, both the `dork-auto-` ones DorkOS prunes and older `dork-` ones it never touches. Only regular files with a writer’s name are listed; symbolic links never are. Person-only: a caller naming itself an agent, an approval token, a program credential, another site, or a request from another computer (except the owner over an encrypted connection) is refused before anything is read. There is no MCP tool for this.
-         */
-        get: operations["config.listBackups"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/config/backups/{name}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Remove an older backup copy
-         * @description Deletes one older `dork-` copy. The file is re-checked right before it is deleted: a regular file in the real backup folder, unchanged, with no write in progress. Person-only: a caller naming itself an agent, an approval token, a program credential, another site, or a request from another computer (except the owner over an encrypted connection) is refused before anything is read. There is no MCP tool for this.
-         */
-        delete: operations["config.deleteBackups"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/config/backups/{name}/move": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Move an older backup copy to another folder
-         * @description Copies one older `dork-` copy into an existing folder inside the directory boundary or on an external drive (`/Volumes/<drive>/…`), never the data folder. The destination is resolved once to its real path, so a link is followed and every check reads the folder written to. Nothing there is overwritten. The copy must match in size and pass SQLite’s `integrity_check`; only then is the original removed, and only if unchanged. A failed check deletes the new file and keeps the original. Person-only: a caller naming itself an agent, an approval token, a program credential, another site, or a request from another computer (except the owner over an encrypted connection) is refused before anything is read. There is no MCP tool for this.
-         */
-        post: operations["config.moveBackups"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9513,26 +9668,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/tunnel/start": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Confirm a lasting access or account change
-         * @description The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.
-         */
-        post: operations["tunnel.start"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/lan-access": {
         parameters: {
             query?: never;
@@ -9547,66 +9682,6 @@ export interface paths {
          * @description The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.
          */
         post: operations["lanAccess.create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/config": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Confirm a lasting access or account change
-         * @description The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.
-         */
-        patch: operations["config.update"];
-        trace?: never;
-    };
-    "/api/config/mcp/reveal-token": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Confirm a lasting access or account change
-         * @description The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.
-         */
-        post: operations["config.createMcpRevealToken"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/config/mcp/rotate-token": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Confirm a lasting access or account change
-         * @description The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.
-         */
-        post: operations["config.createMcpRotateToken"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9687,26 +9762,6 @@ export interface paths {
          * @description The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.
          */
         post: operations["runtimes.createOpencodeProviderCredential"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/extensions/{id}/secrets/{key}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Confirm a lasting access or account change
-         * @description The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.
-         */
-        put: operations["extensions.updateSecrets"];
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -9920,6 +9975,35 @@ export interface components {
         ProjectRef: {
             root: string;
             name: string;
+        };
+        AccountEligibilityResponse: {
+            project: components["schemas"]["ProjectRef"] & (Record<string, never> | null);
+            allow: string[] | null;
+            accounts: components["schemas"]["AccountEligibilityRow"][];
+            launch?: {
+                /** @enum {boolean} */
+                ok: true;
+                accountId: string;
+                root: string;
+            } | {
+                /** @enum {boolean} */
+                ok: false;
+                message: string;
+            };
+        };
+        AccountEligibilityRow: {
+            id: string;
+            label: string | null;
+            color: string;
+            implicit: boolean;
+            onlyProjects: components["schemas"]["ProjectRef"][] | null;
+            allowedByAccount: boolean;
+            allowedByProject: boolean;
+            eligible: boolean;
+        };
+        ProjectAccountsRequest: {
+            project: string;
+            allow: string[] | null;
         };
         FileDocumentSaveReceipt: {
             documentId: string;
@@ -12142,6 +12226,20 @@ export interface components {
             /** @description True when this row comes from the models DorkOS credits serve on the runtime's protocol, so the menu is the credits menu rather than the runtime's own. */
             paidFromCredits?: boolean;
         };
+        CommandRegistry: {
+            commands: components["schemas"]["CommandEntry"][];
+            lastScanned: string;
+        };
+        CommandEntry: {
+            namespace?: string;
+            command?: string;
+            fullCommand: string;
+            description: string;
+            argumentHint?: string;
+            aliases?: string[];
+            allowedTools?: string[];
+            filePath?: string;
+        };
         Task: {
             id: string;
             name: string;
@@ -13782,6 +13880,21 @@ export interface components {
             type: "revision";
             entry: components["schemas"]["RoomEntry"] & unknown;
         };
+        ReadCursor: {
+            userId: string;
+            threadKind: components["schemas"]["ReadCursorThreadKind"];
+            threadId: string;
+            lastReadSeq: number;
+            updatedAt: string;
+        };
+        /** @enum {string} */
+        ReadCursorThreadKind: "room" | "session" | "inbox" | "room-thread";
+        SetReadCursorPositionRequest: {
+            lastReadSeq: number;
+        };
+        ReadCursorResponse: {
+            cursor: components["schemas"]["ReadCursor"] & (Record<string, never> | null);
+        };
         /** @enum {string} */
         AgentHealthStatus: "active" | "inactive" | "stale" | "unreachable";
         SearchResponse: {
@@ -13804,6 +13917,68 @@ export interface components {
         SearchSourceWarning: {
             source: string;
             message: string;
+        };
+        ListNotificationsResponse: {
+            notifications: components["schemas"]["Notification"][];
+            nextCursor: string | null;
+            unreadCount: number;
+        };
+        Notification: {
+            id: string;
+            kind: components["schemas"]["NotificationKind"];
+            tier: components["schemas"]["NotificationTier"];
+            subject: components["schemas"]["NotificationSubject"];
+            agentId?: string;
+            sessionId?: string;
+            roomId?: string;
+            title: string;
+            body?: string;
+            actions?: components["schemas"]["NotificationAction"][];
+            createdAt: string;
+            readAt?: string;
+            resolvedAt?: string;
+            outcome?: components["schemas"]["NotificationOutcome"];
+            decision?: components["schemas"]["NotificationDecision"];
+            /** @enum {string} */
+            mark?: "refused" | "failed";
+            meta?: string;
+        };
+        /** @enum {string} */
+        NotificationKind: "step-up.remote-refused" | "ask.pending" | "schedule.parked" | "schedule.armed_by_agent" | "approval.pending" | "session.error" | "turn.completed" | "run.completed" | "dm.received" | "mention.received" | "agent.note" | "dead-letter.created" | "agent.unreachable" | "signin.required" | "update.installed" | "report.daily" | "account.limited" | "account.reset" | "credits.refused" | "extension.approval" | "extension.decision" | "extension.stopped" | "extension.work_not_started" | "community.owner-replacement" | "community.teammate-limit" | "community.teammate-limits-reset" | "spending.near-limit" | "spending.limit-reached" | "spending.meter-reset" | "browser.handoff" | "heartbeat.credits-offer" | "connector.destructive_pending" | "connector.destructive_executed" | "connector.access_narrowed" | "connector.write_available" | "mcp-server.tool_added" | "mcp-server.reserved_name" | "web.new_device" | "signin.check_added" | "signin.check_removed" | "agent.secret_files" | "agent.folder_rules_too_long" | "account.signin_review" | "shell.check_down" | "report.undelivered" | "todo.changed";
+        /** @enum {string} */
+        NotificationTier: "blocking" | "notable" | "quiet";
+        NotificationSubject: {
+            type: components["schemas"]["NotificationSubjectType"];
+            id: string;
+        };
+        /** @enum {string} */
+        NotificationSubjectType: "session" | "task" | "run" | "room" | "agent" | "system";
+        NotificationAction: {
+            id: string;
+            label: string;
+            style: components["schemas"]["NotificationActionStyle"];
+        };
+        /** @enum {string} */
+        NotificationActionStyle: "primary" | "danger" | "neutral";
+        /** @enum {string} */
+        NotificationOutcome: "answered" | "expired" | "cancelled" | "approved" | "rejected" | "cleared" | "dismissed";
+        NotificationDecision: {
+            extensionId: string;
+            resolvedBy: components["schemas"]["DecisionResolvedBy"];
+            resolvedByLabel: string | null;
+            recorded: boolean;
+            watch: {
+                sessionId: string;
+                label: string;
+            } | null;
+        };
+        /** @enum {string} */
+        DecisionResolvedBy: "person" | "deadline" | "agent" | "rule" | "extension";
+        MarkNotificationsReadResponse: {
+            /** @enum {boolean} */
+            ok: true;
+            marked: number;
+            unreadCount: number;
         };
         CapabilityApprovalRequired: {
             /** @enum {string} */
@@ -14642,6 +14817,65 @@ export interface components {
             cwd: string;
             path: string;
         };
+        ExtensionListPage: {
+            extensions: components["schemas"]["ExtensionListItem"][];
+            /** @description Pass as `cursor` for the next page; null on the last one. */
+            nextCursor: string | null;
+        };
+        ExtensionListItem: {
+            /** @description The mini app’s id. */
+            id: string;
+            /** @description Its `extension.json`, as read. */
+            manifest: {
+                id: string;
+                name: string;
+                version: string;
+            } & {
+                [key: string]: unknown;
+            };
+            /**
+             * @description Where it stands, from found to running.
+             * @enum {string}
+             */
+            status: "discovered" | "incompatible" | "invalid" | "disabled" | "enabled" | "compiled" | "compile_error" | "active" | "activate_error";
+            /** @enum {string} */
+            scope: "global" | "local";
+            /**
+             * @description Whether it ships with DorkOS or was installed.
+             * @enum {string}
+             */
+            origin: "core" | "user";
+            /** @description Whether a person allowed it to run code in DorkOS. */
+            approvedToRun: boolean;
+            bundleReady: boolean;
+            /** @description The path of the newer copy that runs instead of this one; null for one that runs. */
+            shadowedBy: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        BackupList: {
+            /** @description The backup folder, `<data dir>/backups`. */
+            folder: string;
+            /** @description Newest first. */
+            copies: components["schemas"]["BackupCopy"][];
+            totalBytes: number;
+        };
+        BackupCopy: {
+            /** @description The file name inside the backup folder; the id every action takes. */
+            name: string;
+            /**
+             * @description What the copy was taken for.
+             * @enum {string}
+             */
+            kind: "daily" | "pre-upgrade";
+            /** @description True for `dork-auto-` copies, which DorkOS prunes on its own. */
+            managed: boolean;
+            sizeBytes: number;
+            /** @description When the copy was taken, from its name (ISO 8601, UTC). */
+            createdAt: string;
+            /** @description A write is in progress next to it, so it cannot be acted on now. */
+            busy: boolean;
+        };
         HarnessStatusResponse: {
             projectPath: string;
             /** @enum {string} */
@@ -14778,35 +15012,6 @@ export interface components {
         ProjectResolveResponse: {
             project: components["schemas"]["ProjectRef"] & (Record<string, never> | null);
         };
-        AccountEligibilityResponse: {
-            project: components["schemas"]["ProjectRef"] & (Record<string, never> | null);
-            allow: string[] | null;
-            accounts: components["schemas"]["AccountEligibilityRow"][];
-            launch?: {
-                /** @enum {boolean} */
-                ok: true;
-                accountId: string;
-                root: string;
-            } | {
-                /** @enum {boolean} */
-                ok: false;
-                message: string;
-            };
-        };
-        AccountEligibilityRow: {
-            id: string;
-            label: string | null;
-            color: string;
-            implicit: boolean;
-            onlyProjects: components["schemas"]["ProjectRef"][] | null;
-            allowedByAccount: boolean;
-            allowedByProject: boolean;
-            eligible: boolean;
-        };
-        ProjectAccountsRequest: {
-            project: string;
-            allow: string[] | null;
-        };
         ProjectWithoutCreditsRequest: {
             sessionId: string;
         };
@@ -14940,20 +15145,6 @@ export interface components {
             kind: "proxy";
             port: number;
             path: string;
-        };
-        CommandRegistry: {
-            commands: components["schemas"]["CommandEntry"][];
-            lastScanned: string;
-        };
-        CommandEntry: {
-            namespace?: string;
-            command?: string;
-            fullCommand: string;
-            description: string;
-            argumentHint?: string;
-            aliases?: string[];
-            allowedTools?: string[];
-            filePath?: string;
         };
         PendingApprovalsResponse: {
             approvals: components["schemas"]["PendingApproval"][];
@@ -15243,21 +15434,6 @@ export interface components {
         UndoPermissionChangeBody: {
             force?: boolean;
         };
-        ReadCursor: {
-            userId: string;
-            threadKind: components["schemas"]["ReadCursorThreadKind"];
-            threadId: string;
-            lastReadSeq: number;
-            updatedAt: string;
-        };
-        /** @enum {string} */
-        ReadCursorThreadKind: "room" | "session" | "inbox" | "room-thread";
-        SetReadCursorPositionRequest: {
-            lastReadSeq: number;
-        };
-        ReadCursorResponse: {
-            cursor: components["schemas"]["ReadCursor"] & (Record<string, never> | null);
-        };
         TeamRosterResponse: {
             members: components["schemas"]["TeamMember"][];
             warnings?: components["schemas"]["TeamSourceWarning"][];
@@ -15330,68 +15506,6 @@ export interface components {
         };
         ProfileAvatarResponse: {
             imageUrl: string;
-        };
-        ListNotificationsResponse: {
-            notifications: components["schemas"]["Notification"][];
-            nextCursor: string | null;
-            unreadCount: number;
-        };
-        Notification: {
-            id: string;
-            kind: components["schemas"]["NotificationKind"];
-            tier: components["schemas"]["NotificationTier"];
-            subject: components["schemas"]["NotificationSubject"];
-            agentId?: string;
-            sessionId?: string;
-            roomId?: string;
-            title: string;
-            body?: string;
-            actions?: components["schemas"]["NotificationAction"][];
-            createdAt: string;
-            readAt?: string;
-            resolvedAt?: string;
-            outcome?: components["schemas"]["NotificationOutcome"];
-            decision?: components["schemas"]["NotificationDecision"];
-            /** @enum {string} */
-            mark?: "refused" | "failed";
-            meta?: string;
-        };
-        /** @enum {string} */
-        NotificationKind: "step-up.remote-refused" | "ask.pending" | "schedule.parked" | "schedule.armed_by_agent" | "approval.pending" | "session.error" | "turn.completed" | "run.completed" | "dm.received" | "mention.received" | "agent.note" | "dead-letter.created" | "agent.unreachable" | "signin.required" | "update.installed" | "report.daily" | "account.limited" | "account.reset" | "credits.refused" | "extension.approval" | "extension.decision" | "extension.stopped" | "extension.work_not_started" | "community.owner-replacement" | "community.teammate-limit" | "community.teammate-limits-reset" | "spending.near-limit" | "spending.limit-reached" | "spending.meter-reset" | "browser.handoff" | "heartbeat.credits-offer" | "connector.destructive_pending" | "connector.destructive_executed" | "connector.access_narrowed" | "connector.write_available" | "mcp-server.tool_added" | "mcp-server.reserved_name" | "web.new_device" | "signin.check_added" | "signin.check_removed" | "agent.secret_files" | "agent.folder_rules_too_long" | "account.signin_review" | "shell.check_down" | "report.undelivered" | "todo.changed";
-        /** @enum {string} */
-        NotificationTier: "blocking" | "notable" | "quiet";
-        NotificationSubject: {
-            type: components["schemas"]["NotificationSubjectType"];
-            id: string;
-        };
-        /** @enum {string} */
-        NotificationSubjectType: "session" | "task" | "run" | "room" | "agent" | "system";
-        NotificationAction: {
-            id: string;
-            label: string;
-            style: components["schemas"]["NotificationActionStyle"];
-        };
-        /** @enum {string} */
-        NotificationActionStyle: "primary" | "danger" | "neutral";
-        /** @enum {string} */
-        NotificationOutcome: "answered" | "expired" | "cancelled" | "approved" | "rejected" | "cleared" | "dismissed";
-        NotificationDecision: {
-            extensionId: string;
-            resolvedBy: components["schemas"]["DecisionResolvedBy"];
-            resolvedByLabel: string | null;
-            recorded: boolean;
-            watch: {
-                sessionId: string;
-                label: string;
-            } | null;
-        };
-        /** @enum {string} */
-        DecisionResolvedBy: "person" | "deadline" | "agent" | "rule" | "extension";
-        MarkNotificationsReadResponse: {
-            /** @enum {boolean} */
-            ok: true;
-            marked: number;
-            unreadCount: number;
         };
         VapidPublicKeyResponse: {
             key: string | null;
@@ -15675,42 +15789,6 @@ export interface components {
             }[];
             setHash: string;
         };
-        ExtensionListPage: {
-            extensions: components["schemas"]["ExtensionListItem"][];
-            /** @description Pass as `cursor` for the next page; null on the last one. */
-            nextCursor: string | null;
-        };
-        ExtensionListItem: {
-            /** @description The mini app’s id. */
-            id: string;
-            /** @description Its `extension.json`, as read. */
-            manifest: {
-                id: string;
-                name: string;
-                version: string;
-            } & {
-                [key: string]: unknown;
-            };
-            /**
-             * @description Where it stands, from found to running.
-             * @enum {string}
-             */
-            status: "discovered" | "incompatible" | "invalid" | "disabled" | "enabled" | "compiled" | "compile_error" | "active" | "activate_error";
-            /** @enum {string} */
-            scope: "global" | "local";
-            /**
-             * @description Whether it ships with DorkOS or was installed.
-             * @enum {string}
-             */
-            origin: "core" | "user";
-            /** @description Whether a person allowed it to run code in DorkOS. */
-            approvedToRun: boolean;
-            bundleReady: boolean;
-            /** @description The path of the newer copy that runs instead of this one; null for one that runs. */
-            shadowedBy: string | null;
-        } & {
-            [key: string]: unknown;
-        };
         PendingExtensionApprovalsPage: {
             approvals: components["schemas"]["PendingExtensionApproval"][];
             /** @description Pass as `cursor` for the next page; null on the last one. */
@@ -15783,29 +15861,6 @@ export interface components {
         ExtensionMediaTicketRequest: {
             /** @description The path below the app, e.g. `/videos/intro.mp4`. No query, no empty, `.` or `..` part, and no `%`, `\`, `#` or control character. */
             path: string;
-        };
-        BackupList: {
-            /** @description The backup folder, `<data dir>/backups`. */
-            folder: string;
-            /** @description Newest first. */
-            copies: components["schemas"]["BackupCopy"][];
-            totalBytes: number;
-        };
-        BackupCopy: {
-            /** @description The file name inside the backup folder; the id every action takes. */
-            name: string;
-            /**
-             * @description What the copy was taken for.
-             * @enum {string}
-             */
-            kind: "daily" | "pre-upgrade";
-            /** @description True for `dork-auto-` copies, which DorkOS prunes on its own. */
-            managed: boolean;
-            sizeBytes: number;
-            /** @description When the copy was taken, from its name (ISO 8601, UTC). */
-            createdAt: string;
-            /** @description A write is in progress next to it, so it cannot be acted on now. */
-            busy: boolean;
         };
     };
     responses: {
@@ -16908,6 +16963,77 @@ export interface operations {
             };
             /** @description No session with this id is known here. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "runtimes.updateClaudeCodeProjectAccounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ProjectAccountsRequest"];
+            };
+        };
+        responses: {
+            /** @description The project and every account, after the change */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountEligibilityResponse"];
+                };
+            };
+            /** @description The body is not valid, or it names an account that does not exist */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not a person, or the folder is outside the directory boundary */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The folder is not in a project (a git repository) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it. */
+            428: {
+                headers: {
+                    /** @description Always `no-store`: the held action is for this request only. */
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepUpRequired"];
+                };
+            };
+            /** @description The change could not be saved */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -21901,6 +22027,58 @@ export interface operations {
                 };
             };
             500: components["responses"]["InternalErrorProblem"];
+        };
+    };
+    "commands.get": {
+        parameters: {
+            query?: {
+                refresh?: "true" | "false";
+                cwd?: string;
+                sessionId?: string;
+                runtime?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Command registry */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommandRegistry"];
+                };
+            };
+            /** @description `invalid_request`: the query failed its checks, or names no known runtime */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `outside_boundary`: `cwd` is outside the folders DorkOS may use */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `internal_error`: the commands could not be listed */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     "tasks.view_list": {
@@ -36573,6 +36751,119 @@ export interface operations {
             };
         };
     };
+    "readCursors.get": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: components["schemas"]["ReadCursorThreadKind"];
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's cursor, or null when they have never read this thread */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadCursorResponse"];
+                };
+            };
+            /** @description Unknown `kind` or empty `id` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`agent_identity_unverified`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The caller resolved to an agent, which has no read state here (`person_only`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "readCursors.update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: components["schemas"]["ReadCursorThreadKind"];
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SetReadCursorPositionRequest"];
+            };
+        };
+        responses: {
+            /** @description The cursor as it now stands */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadCursor"];
+                };
+            };
+            /** @description Unknown `kind`, empty `id`, missing body, or a `lastReadSeq` that is not a non-negative integer */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`agent_identity_unverified`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The caller resolved to an agent, which has no read state here (`person_only`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Only for `kind: room` — no such room, or the caller is not a member of it. A `session` or `inbox` thread is never checked for existence, so those kinds cannot answer 404 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     "search.list": {
         parameters: {
             query: {
@@ -36606,6 +36897,102 @@ export interface operations {
             };
             /** @description The caller presented an agent token this machine could not verify (`agent_identity_unverified`) */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "notifications.list": {
+        parameters: {
+            query?: {
+                limit?: number;
+                before?: string;
+                agentId?: string;
+                sessionId?: string;
+                kind?: string;
+                unread?: "true" | "false";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of history, with the unfiltered unread count */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListNotificationsResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "notifications.read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description How many rows moved, and the unread count after */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarkNotificationsReadResponse"];
+                };
+            };
+            /** @description Only the operator may move read state */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "notifications.readAll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description How many rows moved, and the unread count after */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarkNotificationsReadResponse"];
+                };
+            };
+            /** @description Only the operator may move read state */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -51211,6 +51598,422 @@ export interface operations {
             };
         };
     };
+    "extensions.list": {
+        parameters: {
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of installed extensions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtensionListPage"];
+                };
+            };
+            /** @description `invalid_request`: `limit` is out of range, the query has another field, or the cursor was not given by this list */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `internal_error`: the list could not be read */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "config.listBackups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The copies and their total size */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupList"];
+                };
+            };
+            /** @description Login is enabled and the caller is not signed in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Refused: only a person can see this (`person_only`), or only at this computer (`operator_only`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "config.deleteBackups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A listed copy’s file name. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        success: true;
+                    };
+                };
+            };
+            /** @description Login is enabled and the caller is not signed in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Refused: only a person can remove a backup (`person_only`), or only at this computer (`operator_only`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No such older copy (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `conflict`: DorkOS manages it, or a write is in progress */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `precondition_failed`: it changed since the list was read */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "config.moveBackups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A listed copy’s file name. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description An existing absolute folder. */
+                    destination: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Moved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        destinationPath: string;
+                    };
+                };
+            };
+            /** @description `invalid_request`: the destination does not exist, is neither inside the directory boundary nor on an external drive, is the data folder or inside it, or is the backup folder */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Login is enabled and the caller is not signed in */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Refused: only a person can move a backup (`person_only`), or only at this computer (`operator_only`); or DorkOS cannot write to the destination (`forbidden`). The original stays. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No such older copy (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `conflict`: DorkOS manages it, it is busy or changed, a file of that name is already there, the copy could not be written, or it failed its check. The original stays. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The destination’s disk is full (`internal_error`). The original stays. */
+            507: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "tunnel.start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description The action completed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description This caller cannot change access here */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it. */
+            428: {
+                headers: {
+                    /** @description Always `no-store`: the held action is for this request only. */
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepUpRequired"];
+                };
+            };
+        };
+    };
+    "config.update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description The action completed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description This caller cannot change access here */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it. */
+            428: {
+                headers: {
+                    /** @description Always `no-store`: the held action is for this request only. */
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepUpRequired"];
+                };
+            };
+        };
+    };
+    "config.createMcpRevealToken": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description The action completed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description This caller cannot change access here */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it. */
+            428: {
+                headers: {
+                    /** @description Always `no-store`: the held action is for this request only. */
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepUpRequired"];
+                };
+            };
+        };
+    };
+    "config.createMcpRotateToken": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description The action completed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description This caller cannot change access here */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it. */
+            428: {
+                headers: {
+                    /** @description Always `no-store`: the held action is for this request only. */
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepUpRequired"];
+                };
+            };
+        };
+    };
     "cloud.createSeatsAssign": {
         parameters: {
             query?: never;
@@ -51958,6 +52761,53 @@ export interface operations {
             };
         };
     };
+    "extensions.updateSecrets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description The action completed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description This caller cannot change access here */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it. */
+            428: {
+                headers: {
+                    /** @description Always `no-store`: the held action is for this request only. */
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepUpRequired"];
+                };
+            };
+        };
+    };
     "relay.updateBindings": {
         parameters: {
             query?: never;
@@ -52407,77 +53257,6 @@ export interface operations {
                 };
             };
             /** @description `internal_error`: the project could not be resolved */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    "runtimes.updateClaudeCodeProjectAccounts": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["ProjectAccountsRequest"];
-            };
-        };
-        responses: {
-            /** @description The project and every account, after the change */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AccountEligibilityResponse"];
-                };
-            };
-            /** @description The body is not valid, or it names an account that does not exist */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Not a person, or the folder is outside the directory boundary */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The folder is not in a project (a git repository) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it. */
-            428: {
-                headers: {
-                    /** @description Always `no-store`: the held action is for this request only. */
-                    "Cache-Control"?: "no-store";
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StepUpRequired"];
-                };
-            };
-            /** @description The change could not be saved */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -57681,13 +58460,11 @@ export interface operations {
             };
         };
     };
-    "commands.get": {
+    "relay.stream": {
         parameters: {
             query?: {
-                refresh?: "true" | "false";
-                cwd?: string;
-                sessionId?: string;
-                runtime?: string;
+                /** @description Subject pattern filter */
+                subject?: string;
             };
             header?: never;
             path?: never;
@@ -57695,42 +58472,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Command registry */
+            /** @description SSE event stream */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CommandRegistry"];
+                    "text/event-stream": string;
                 };
             };
-            /** @description `invalid_request`: the query failed its checks, or names no known runtime */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description `outside_boundary`: `cwd` is outside the folders DorkOS may use */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description `internal_error`: the commands could not be listed */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
+            500: components["responses"]["InternalErrorProblem"];
         };
     };
     "approvals.getPending": {
@@ -58660,119 +59411,6 @@ export interface operations {
             };
         };
     };
-    "readCursors.get": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                kind: components["schemas"]["ReadCursorThreadKind"];
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The caller's cursor, or null when they have never read this thread */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ReadCursorResponse"];
-                };
-            };
-            /** @description Unknown `kind` or empty `id` */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`agent_identity_unverified`) */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The caller resolved to an agent, which has no read state here (`person_only`) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    "readCursors.update": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                kind: components["schemas"]["ReadCursorThreadKind"];
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["SetReadCursorPositionRequest"];
-            };
-        };
-        responses: {
-            /** @description The cursor as it now stands */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ReadCursor"];
-                };
-            };
-            /** @description Unknown `kind`, empty `id`, missing body, or a `lastReadSeq` that is not a non-negative integer */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`agent_identity_unverified`) */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The caller resolved to an agent, which has no read state here (`person_only`) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Only for `kind: room` — no such room, or the caller is not a member of it. A `session` or `inbox` thread is never checked for existence, so those kinds cannot answer 404 */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
     "team.get": {
         parameters: {
             query?: never;
@@ -59638,102 +60276,6 @@ export interface operations {
             };
             /** @description `internal_error`: the adopt failed. The reason is logged, never echoed */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    "notifications.list": {
-        parameters: {
-            query?: {
-                limit?: number;
-                before?: string;
-                agentId?: string;
-                sessionId?: string;
-                kind?: string;
-                unread?: "true" | "false";
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description One page of history, with the unfiltered unread count */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ListNotificationsResponse"];
-                };
-            };
-            /** @description Validation error */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    "notifications.read": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description How many rows moved, and the unread count after */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MarkNotificationsReadResponse"];
-                };
-            };
-            /** @description Only the operator may move read state */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    "notifications.readAll": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description How many rows moved, and the unread count after */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MarkNotificationsReadResponse"];
-                };
-            };
-            /** @description Only the operator may move read state */
-            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -62559,49 +63101,6 @@ export interface operations {
             };
         };
     };
-    "extensions.list": {
-        parameters: {
-            query?: {
-                /** @description The `nextCursor` of the page before; leave it out for the first page. */
-                cursor?: string;
-                /** @description How many this page holds, 1 to 200. */
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description One page of installed extensions */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ExtensionListPage"];
-                };
-            };
-            /** @description `invalid_request`: `limit` is out of range, the query has another field, or the cursor was not given by this list */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description `internal_error`: the list could not be read */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
     "extensions.listPendingApprovals": {
         parameters: {
             query?: {
@@ -62819,201 +63318,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    "config.listBackups": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The copies and their total size */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BackupList"];
-                };
-            };
-            /** @description Login is enabled and the caller is not signed in */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Refused: only a person can see this (`person_only`), or only at this computer (`operator_only`) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    "config.deleteBackups": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A listed copy’s file name. */
-                name: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Removed */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @enum {boolean} */
-                        success: true;
-                    };
-                };
-            };
-            /** @description Login is enabled and the caller is not signed in */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Refused: only a person can remove a backup (`person_only`), or only at this computer (`operator_only`) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description No such older copy (`not_found`) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description `conflict`: DorkOS manages it, or a write is in progress */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description `precondition_failed`: it changed since the list was read */
-            412: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    "config.moveBackups": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A listed copy’s file name. */
-                name: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": {
-                    /** @description An existing absolute folder. */
-                    destination: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Moved */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        destinationPath: string;
-                    };
-                };
-            };
-            /** @description `invalid_request`: the destination does not exist, is neither inside the directory boundary nor on an external drive, is the data folder or inside it, or is the backup folder */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Login is enabled and the caller is not signed in */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Refused: only a person can move a backup (`person_only`), or only at this computer (`operator_only`); or DorkOS cannot write to the destination (`forbidden`). The original stays. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description No such older copy (`not_found`) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description `conflict`: DorkOS manages it, it is busy or changed, a file of that name is already there, the copy could not be written, or it failed its check. The original stays. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The destination’s disk is full (`internal_error`). The original stays. */
-            507: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
             };
         };
     };
@@ -63645,50 +63949,6 @@ export interface operations {
             };
         };
     };
-    "tunnel.start": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
-        responses: {
-            /** @description The action completed */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description This caller cannot change access here */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it. */
-            428: {
-                headers: {
-                    /** @description Always `no-store`: the held action is for this request only. */
-                    "Cache-Control"?: "no-store";
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StepUpRequired"];
-                };
-            };
-        };
-    };
     "lanAccess.create": {
         parameters: {
             query?: never;
@@ -63701,140 +63961,6 @@ export interface operations {
                 "application/json": {
                     enabled: boolean;
                 };
-            };
-        };
-        responses: {
-            /** @description The action completed */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description This caller cannot change access here */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it. */
-            428: {
-                headers: {
-                    /** @description Always `no-store`: the held action is for this request only. */
-                    "Cache-Control"?: "no-store";
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StepUpRequired"];
-                };
-            };
-        };
-    };
-    "config.update": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description The action completed */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description This caller cannot change access here */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it. */
-            428: {
-                headers: {
-                    /** @description Always `no-store`: the held action is for this request only. */
-                    "Cache-Control"?: "no-store";
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StepUpRequired"];
-                };
-            };
-        };
-    };
-    "config.createMcpRevealToken": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
-        responses: {
-            /** @description The action completed */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description This caller cannot change access here */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it. */
-            428: {
-                headers: {
-                    /** @description Always `no-store`: the held action is for this request only. */
-                    "Cache-Control"?: "no-store";
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StepUpRequired"];
-                };
-            };
-        };
-    };
-    "config.createMcpRotateToken": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
             };
         };
         responses: {
@@ -64008,53 +64134,6 @@ export interface operations {
             query?: never;
             header?: never;
             path?: never;
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
-        responses: {
-            /** @description The action completed */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description This caller cannot change access here */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it. */
-            428: {
-                headers: {
-                    /** @description Always `no-store`: the held action is for this request only. */
-                    "Cache-Control"?: "no-store";
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StepUpRequired"];
-                };
-            };
-        };
-    };
-    "extensions.updateSecrets": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-                key: string;
-            };
             cookie?: never;
         };
         requestBody?: {

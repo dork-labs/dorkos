@@ -452,8 +452,10 @@ left waiting on a person (or one whose turn never finished) keeps being announce
 connect until it moves again. Reconnecting is not what clears it.
 
 <Callout type="info">
-  The DorkOS client uses a single `GET /api/events` connection for all background state, Relay
-  activity and the tunnel's status included. Build integrations against `GET /api/events`.
+  The DorkOS client uses a single `GET /api/events` connection for all background state. The older
+  per-resource streams (`/api/relay/stream`, `/api/tunnel/stream`) are internal: they stay only
+  until `GET /api/events` carries everything they do, and then they are removed. Build integrations
+  against `GET /api/events` only.
 </Callout>
 
 ## Chat Write Coordination

@@ -71,7 +71,7 @@ describe('stability census', () => {
     }
   });
 
-  it('matches the committed files, and the published version is the product version', () => {
+  it('keeps internal operations out of the committed published file and only them in the internal part, and the published version is VERSION', () => {
     const published = JSON.parse(readRepoFile('docs/api/openapi.json')) as {
       info: { version: string };
       paths: Paths;
@@ -99,7 +99,7 @@ describe('assignStability', () => {
         '/api/sessions/{id}/opened': { post: { 'x-stability': 'internal' } },
       },
     };
-    assignStability(doc);
+    assignStability(doc, new Set(), false);
     expect(doc.paths['/api/health'].get).toEqual({ 'x-stability': 'stable' });
     expect(doc.paths['/api/rooms'].get).toEqual({
       'x-stability': 'preview',
@@ -120,18 +120,28 @@ describe('assignStability', () => {
       'GET /api/sessions/running',
       'POST /api/extensions/{id}/restart',
     ]);
-    assignStability(doc, capabilityRoutes);
+    assignStability(doc, capabilityRoutes, false);
     expect(doc.paths['/api/sessions/running'].get).toMatchObject({ 'x-stability': 'preview' });
     expect(doc.paths['/api/extensions/{id}/restart'].post).toEqual({ 'x-stability': 'internal' });
     expect(doc.paths['/api/sessions/{id}'].get).toEqual({ 'x-stability': 'stable' });
   });
 
+  it('takes an operation table entry over the group, and refuses a stale entry', () => {
+    const doc = { paths: { '/api/sessions/daily-counts': { get: {} } } };
+    expect(() => assignStability(doc)).toThrow(/OPERATION_STABILITY names operations/);
+    expect(doc.paths['/api/sessions/daily-counts'].get).toEqual({ 'x-stability': 'internal' });
+  });
+
   it('refuses a group with no stability and a value that is not one', () => {
-    expect(() => assignStability({ paths: { '/api/made-up-group': { get: {} } } })).toThrow(
-      /made-up-group.*has no stability/
-    );
     expect(() =>
-      assignStability({ paths: { '/api/health': { get: { 'x-stability': 'deprecated' } } } })
+      assignStability({ paths: { '/api/made-up-group': { get: {} } } }, new Set(), false)
+    ).toThrow(/made-up-group.*has no stability/);
+    expect(() =>
+      assignStability(
+        { paths: { '/api/health': { get: { 'x-stability': 'deprecated' } } } },
+        new Set(),
+        false
+      )
     ).toThrow(/declares x-stability "deprecated"/);
   });
 });

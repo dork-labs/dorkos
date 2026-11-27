@@ -10,7 +10,7 @@
  *   document on its own: it has no `info`, so a release that bumps `VERSION`
  *   never touches it. The generated client (`packages/api-client`) and the API
  *   lint gate (`scripts/api-lint`) read the two merged
- *   (`scripts/lib/openapi-internal.ts`), because DorkOS's own app calls
+ *   (`packages/api-client/scripts/api-document.ts`), because DorkOS's own app calls
  *   internal operations and every operation is held to the same lint rules.
  *
  * Merging the two gives back the full document's paths and components, so

@@ -458,99 +458,6 @@
         "x-stability": "internal"
       }
     },
-    "/api/runtimes/claude-code/project-accounts": {
-      "put": {
-        "tags": [
-          "Runtimes"
-        ],
-        "summary": "Choose which Claude accounts a project may use",
-        "description": "Sets the project’s allow list, or removes it with `allow: null` (every account again). Answers with the project's new eligibility. Only a person may call it: a request from another site, a caller that names itself an agent (`X-DorkOS-Agent`), and, with Require login on, a caller without a signed-in session are refused with `403`. With Require login off, a local caller that sends no agent header is trusted, and an approved extension's own browser code shares the app's page, so it passes in either posture. Each change is recorded in Activity.",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProjectAccountsRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The project and every account, after the change",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccountEligibilityResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The body is not valid, or it names an account that does not exist",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Not a person, or the folder is outside the directory boundary",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "The folder is not in a project (a git repository)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
-            "headers": {
-              "Cache-Control": {
-                "description": "Always `no-store`: the held action is for this request only.",
-                "schema": {
-                  "type": "string",
-                  "enum": [
-                    "no-store"
-                  ]
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StepUpRequired"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "The change could not be saved",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "runtimes.updateClaudeCodeProjectAccounts",
-        "x-stability": "internal"
-      }
-    },
     "/api/runtimes/claude-code/project-accounts/without-credits": {
       "post": {
         "tags": [
@@ -10289,7 +10196,6 @@
     },
     "/api/sessions/daily-counts": {
       "get": {
-        "x-stability": "internal",
         "tags": [
           "Sessions"
         ],
@@ -10330,12 +10236,12 @@
             }
           }
         },
-        "operationId": "sessions.getDailyCounts"
+        "operationId": "sessions.getDailyCounts",
+        "x-stability": "internal"
       }
     },
     "/api/sessions/{id}/opened": {
       "post": {
-        "x-stability": "internal",
         "tags": [
           "Sessions"
         ],
@@ -10367,12 +10273,12 @@
             }
           }
         },
-        "operationId": "sessions.createOpened"
+        "operationId": "sessions.createOpened",
+        "x-stability": "internal"
       }
     },
     "/api/sessions/{id}/stream-health": {
       "post": {
-        "x-stability": "internal",
         "tags": [
           "Sessions"
         ],
@@ -10413,12 +10319,12 @@
             }
           }
         },
-        "operationId": "sessions.createStreamHealth"
+        "operationId": "sessions.createStreamHealth",
+        "x-stability": "internal"
       }
     },
     "/api/sessions/{id}/command-intents/{intent}": {
       "post": {
-        "x-stability": "internal",
         "tags": [
           "Sessions"
         ],
@@ -10514,12 +10420,12 @@
             }
           }
         },
-        "operationId": "sessions.createCommandIntents"
+        "operationId": "sessions.createCommandIntents",
+        "x-stability": "internal"
       }
     },
     "/api/sessions/{id}/ui-action": {
       "post": {
-        "x-stability": "internal",
         "tags": [
           "Sessions"
         ],
@@ -10587,12 +10493,12 @@
             }
           }
         },
-        "operationId": "sessions.createUiAction"
+        "operationId": "sessions.createUiAction",
+        "x-stability": "internal"
       }
     },
     "/api/sessions/{id}/mcp-app/resource": {
       "post": {
-        "x-stability": "internal",
         "tags": [
           "Sessions"
         ],
@@ -10670,7 +10576,8 @@
             }
           }
         },
-        "operationId": "sessions.createMcpAppResource"
+        "operationId": "sessions.createMcpAppResource",
+        "x-stability": "internal"
       }
     },
     "/api/runtimes/claude-code/accounts/{id}/probe": {
@@ -11016,93 +10923,42 @@
         "x-stability": "internal"
       }
     },
-    "/api/commands": {
+    "/api/relay/stream": {
       "get": {
         "tags": [
-          "Commands"
+          "Relay"
         ],
-        "summary": "List all slash commands",
+        "summary": "SSE event stream for relay activity",
+        "description": "Server-Sent Events stream for real-time relay activity. Supports server-side subject filtering via query param. Event types: relay_connected, relay_message, relay_delivery, relay_dead_letter, relay_metrics.",
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "enum": [
-                "true",
-                "false"
-              ]
+              "description": "Subject pattern filter"
             },
             "required": false,
-            "name": "refresh",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "cwd",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "sessionId",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "runtime",
+            "description": "Subject pattern filter",
+            "name": "subject",
             "in": "query"
           }
         ],
         "responses": {
           "200": {
-            "description": "Command registry",
+            "description": "SSE event stream",
             "content": {
-              "application/json": {
+              "text/event-stream": {
                 "schema": {
-                  "$ref": "#/components/schemas/CommandRegistry"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "`invalid_request`: the query failed its checks, or names no known runtime",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "`outside_boundary`: `cwd` is outside the folders DorkOS may use",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "type": "string",
+                  "description": "Server-Sent Events stream"
                 }
               }
             }
           },
           "500": {
-            "description": "`internal_error`: the commands could not be listed",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
-        "operationId": "commands.get",
+        "operationId": "relay.stream",
         "x-stability": "internal"
       }
     },
@@ -12380,167 +12236,6 @@
           }
         },
         "operationId": "permissions.undoHistory",
-        "x-stability": "internal"
-      }
-    },
-    "/api/read-cursors/{kind}/{id}": {
-      "put": {
-        "tags": [
-          "Read state"
-        ],
-        "summary": "Advance the caller's read cursor in one thread",
-        "description": "The one write path onto read state, for every kind of thread there is: a room, an agent session, or the inbox. Monotonic — a value at or below the stored one is ignored, so a stale client on a second device cannot un-read a thread for the first one. The response is always the cursor as it now stands, which is the higher of the stored value and the requested one, so a refused write answers with what still holds rather than with an error. **Every write that actually moves the cursor broadcasts `read_cursor` on `GET /api/events`**, carrying the user, the kind, the thread and the new position, to the caller's own streams only and never to an agent; a write that changes nothing broadcasts nothing. The cursor written is always the caller's own — there is no way to name a user in this request, and therefore no way to read or move anybody else's read state. **Only people have read state here** — a caller the server resolves as an agent (one presenting a valid `X-DorkOS-Agent`) is refused with 403 `person_only`, and one whose token does not verify is refused with 401, because what an agent has been shown is the room-MEMBERSHIP cursor and not this one — advanced by the ambient participation loop as entries are delivered to it, and reachable through no route at all. **A `room` cursor is written through the rooms domain**, so the caller must be able to see the room (404 `room_not_found` / `not_found` otherwise), and the broadcast carries the unread count the room list redraws from. A `session` or `inbox` cursor names a thread this server cannot check and is stored as given.",
-        "parameters": [
-          {
-            "schema": {
-              "$ref": "#/components/schemas/ReadCursorThreadKind"
-            },
-            "required": true,
-            "name": "kind",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetReadCursorPositionRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The cursor as it now stands",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReadCursor"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Unknown `kind`, empty `id`, missing body, or a `lastReadSeq` that is not a non-negative integer",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`agent_identity_unverified`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller resolved to an agent, which has no read state here (`person_only`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Only for `kind: room` — no such room, or the caller is not a member of it. A `session` or `inbox` thread is never checked for existence, so those kinds cannot answer 404",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "readCursors.update",
-        "x-stability": "internal"
-      },
-      "get": {
-        "tags": [
-          "Read state"
-        ],
-        "summary": "Read the caller's own position in one thread",
-        "description": "Where this person left off in one thread — the read half of the PUT, and the way a screen that has just opened knows where to draw the unread rule before any event arrives. A thread the caller has never read answers `{ \"cursor\": null }` with a 200, because never-read is the state every thread starts in rather than a missing resource; `null` is also distinct from a stored `0`, which is a thread read up to its own beginning. As with the write, the cursor is always the caller's own — there is no way to name a user — and an agent caller is refused with 403 `person_only`, or with 401 when its token does not verify.",
-        "parameters": [
-          {
-            "schema": {
-              "$ref": "#/components/schemas/ReadCursorThreadKind"
-            },
-            "required": true,
-            "name": "kind",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The caller's cursor, or null when they have never read this thread",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReadCursorResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Unknown `kind` or empty `id`",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`agent_identity_unverified`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller resolved to an agent, which has no read state here (`person_only`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "readCursors.get",
         "x-stability": "internal"
       }
     },
@@ -14582,171 +14277,6 @@
           }
         },
         "operationId": "harness.createAdopt",
-        "x-stability": "internal"
-      }
-    },
-    "/api/notifications": {
-      "get": {
-        "tags": [
-          "Notifications"
-        ],
-        "summary": "List notification history",
-        "description": "Newest first, cursor-paged. Filters are lenses, not a search. A caller that is not entitled to the operator view reads an empty list rather than a refusal, so a response never says that notifications exist.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 25
-            },
-            "required": false,
-            "name": "limit",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": false,
-            "name": "before",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "agentId",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "sessionId",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "kind",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "enum": [
-                "true",
-                "false"
-              ]
-            },
-            "required": false,
-            "name": "unread",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "One page of history, with the unfiltered unread count",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ListNotificationsResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation error",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "notifications.list",
-        "x-stability": "internal"
-      }
-    },
-    "/api/notifications/{id}/read": {
-      "patch": {
-        "tags": [
-          "Notifications"
-        ],
-        "summary": "Mark one notification read",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "How many rows moved, and the unread count after",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MarkNotificationsReadResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Only the operator may move read state",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "notifications.read",
-        "x-stability": "internal"
-      }
-    },
-    "/api/notifications/read-all": {
-      "post": {
-        "tags": [
-          "Notifications"
-        ],
-        "summary": "Mark every unread notification read",
-        "responses": {
-          "200": {
-            "description": "How many rows moved, and the unread count after",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MarkNotificationsReadResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Only the operator may move read state",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "notifications.readAll",
         "x-stability": "internal"
       }
     },
@@ -18379,76 +17909,6 @@
         "x-stability": "internal"
       }
     },
-    "/api/extensions": {
-      "get": {
-        "tags": [
-          "Extensions"
-        ],
-        "summary": "List installed extensions",
-        "description": "Every extension DorkOS found, with where it stands, in the order DorkOS found them: each copy that runs, then each older copy a newer one from the same trusted source shadows, with `shadowedBy` set. Every page in turn is the whole list in that order. An extension installed, removed or rescanned while paging can repeat or be missed. A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did not give is refused with `400 invalid_request`.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 4096,
-              "description": "The `nextCursor` of the page before; leave it out for the first page."
-            },
-            "required": false,
-            "description": "The `nextCursor` of the page before; leave it out for the first page.",
-            "name": "cursor",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 200,
-              "default": 50,
-              "description": "How many this page holds, 1 to 200."
-            },
-            "required": false,
-            "description": "How many this page holds, 1 to 200.",
-            "name": "limit",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "One page of installed extensions",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ExtensionListPage"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "`invalid_request`: `limit` is out of range, the query has another field, or the cursor was not given by this list",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "`internal_error`: the list could not be read",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "extensions.list",
-        "x-stability": "internal"
-      }
-    },
     "/api/extensions/pending-approvals": {
       "get": {
         "tags": [
@@ -18757,267 +18217,6 @@
         },
         "operationId": "extensions.getMedia",
         "security": [],
-        "x-stability": "internal"
-      }
-    },
-    "/api/config/backups": {
-      "get": {
-        "tags": [
-          "Config"
-        ],
-        "summary": "List the database backup copies on this computer",
-        "description": "Every copy a DorkOS writer made in `<data dir>/backups`: daily and before-update copies, both the `dork-auto-` ones DorkOS prunes and older `dork-` ones it never touches. Only regular files with a writer’s name are listed; symbolic links never are. Person-only: a caller naming itself an agent, an approval token, a program credential, another site, or a request from another computer (except the owner over an encrypted connection) is refused before anything is read. There is no MCP tool for this.",
-        "responses": {
-          "200": {
-            "description": "The copies and their total size",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BackupList"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Login is enabled and the caller is not signed in",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Refused: only a person can see this (`person_only`), or only at this computer (`operator_only`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "config.listBackups",
-        "x-stability": "internal"
-      }
-    },
-    "/api/config/backups/{name}": {
-      "delete": {
-        "tags": [
-          "Config"
-        ],
-        "summary": "Remove an older backup copy",
-        "description": "Deletes one older `dork-` copy. The file is re-checked right before it is deleted: a regular file in the real backup folder, unchanged, with no write in progress. Person-only: a caller naming itself an agent, an approval token, a program credential, another site, or a request from another computer (except the owner over an encrypted connection) is refused before anything is read. There is no MCP tool for this.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "description": "A listed copy’s file name."
-            },
-            "required": true,
-            "description": "A listed copy’s file name.",
-            "name": "name",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Removed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        true
-                      ]
-                    }
-                  },
-                  "required": [
-                    "success"
-                  ]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Login is enabled and the caller is not signed in",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Refused: only a person can remove a backup (`person_only`), or only at this computer (`operator_only`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No such older copy (`not_found`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "`conflict`: DorkOS manages it, or a write is in progress",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "412": {
-            "description": "`precondition_failed`: it changed since the list was read",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "config.deleteBackups",
-        "x-stability": "internal"
-      }
-    },
-    "/api/config/backups/{name}/move": {
-      "post": {
-        "tags": [
-          "Config"
-        ],
-        "summary": "Move an older backup copy to another folder",
-        "description": "Copies one older `dork-` copy into an existing folder inside the directory boundary or on an external drive (`/Volumes/<drive>/…`), never the data folder. The destination is resolved once to its real path, so a link is followed and every check reads the folder written to. Nothing there is overwritten. The copy must match in size and pass SQLite’s `integrity_check`; only then is the original removed, and only if unchanged. A failed check deletes the new file and keeps the original. Person-only: a caller naming itself an agent, an approval token, a program credential, another site, or a request from another computer (except the owner over an encrypted connection) is refused before anything is read. There is no MCP tool for this.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "description": "A listed copy’s file name."
-            },
-            "required": true,
-            "description": "A listed copy’s file name.",
-            "name": "name",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "destination": {
-                    "type": "string",
-                    "description": "An existing absolute folder."
-                  }
-                },
-                "required": [
-                  "destination"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Moved",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "destinationPath": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "destinationPath"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "`invalid_request`: the destination does not exist, is neither inside the directory boundary nor on an external drive, is the data folder or inside it, or is the backup folder",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Login is enabled and the caller is not signed in",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Refused: only a person can move a backup (`person_only`), or only at this computer (`operator_only`); or DorkOS cannot write to the destination (`forbidden`). The original stays.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No such older copy (`not_found`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "`conflict`: DorkOS manages it, it is busy or changed, a file of that name is already there, the copy could not be written, or it failed its check. The original stays.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "507": {
-            "description": "The destination’s disk is full (`internal_error`). The original stays.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "config.moveBackups",
         "x-stability": "internal"
       }
     },
@@ -20088,68 +19287,6 @@
         "x-stability": "internal"
       }
     },
-    "/api/tunnel/start": {
-      "post": {
-        "tags": [
-          "Access"
-        ],
-        "summary": "Confirm a lasting access or account change",
-        "description": "The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {}
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The action completed",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "403": {
-            "description": "This caller cannot change access here",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
-            "headers": {
-              "Cache-Control": {
-                "description": "Always `no-store`: the held action is for this request only.",
-                "schema": {
-                  "type": "string",
-                  "enum": [
-                    "no-store"
-                  ]
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StepUpRequired"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "tunnel.start",
-        "x-stability": "internal"
-      }
-    },
     "/api/lan-access": {
       "post": {
         "tags": [
@@ -20216,192 +19353,6 @@
           }
         },
         "operationId": "lanAccess.create",
-        "x-stability": "internal"
-      }
-    },
-    "/api/config": {
-      "patch": {
-        "tags": [
-          "Access"
-        ],
-        "summary": "Confirm a lasting access or account change",
-        "description": "The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": {}
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The action completed",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "403": {
-            "description": "This caller cannot change access here",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
-            "headers": {
-              "Cache-Control": {
-                "description": "Always `no-store`: the held action is for this request only.",
-                "schema": {
-                  "type": "string",
-                  "enum": [
-                    "no-store"
-                  ]
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StepUpRequired"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "config.update",
-        "x-stability": "internal"
-      }
-    },
-    "/api/config/mcp/reveal-token": {
-      "post": {
-        "tags": [
-          "Access"
-        ],
-        "summary": "Confirm a lasting access or account change",
-        "description": "The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {}
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The action completed",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "403": {
-            "description": "This caller cannot change access here",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
-            "headers": {
-              "Cache-Control": {
-                "description": "Always `no-store`: the held action is for this request only.",
-                "schema": {
-                  "type": "string",
-                  "enum": [
-                    "no-store"
-                  ]
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StepUpRequired"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "config.createMcpRevealToken",
-        "x-stability": "internal"
-      }
-    },
-    "/api/config/mcp/rotate-token": {
-      "post": {
-        "tags": [
-          "Access"
-        ],
-        "summary": "Confirm a lasting access or account change",
-        "description": "The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {}
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The action completed",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "403": {
-            "description": "This caller cannot change access here",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
-            "headers": {
-              "Cache-Control": {
-                "description": "Always `no-store`: the held action is for this request only.",
-                "schema": {
-                  "type": "string",
-                  "enum": [
-                    "no-store"
-                  ]
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StepUpRequired"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "config.createMcpRotateToken",
         "x-stability": "internal"
       }
     },
@@ -20660,86 +19611,6 @@
           }
         },
         "operationId": "runtimes.createOpencodeProviderCredential",
-        "x-stability": "internal"
-      }
-    },
-    "/api/extensions/{id}/secrets/{key}": {
-      "put": {
-        "tags": [
-          "Access"
-        ],
-        "summary": "Confirm a lasting access or account change",
-        "description": "The owner confirms this action in the app before it changes access or account data. Narrowing and signing out your own device stay immediate. Hubs keep their existing owner flow.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "key",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {}
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The action completed",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "403": {
-            "description": "This caller cannot change access here",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate. This answer is the step-up body below as `application/json`, not an `application/problem+json` document; read `heldActionId` and `requestCode` from it.",
-            "headers": {
-              "Cache-Control": {
-                "description": "Always `no-store`: the held action is for this request only.",
-                "schema": {
-                  "type": "string",
-                  "enum": [
-                    "no-store"
-                  ]
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StepUpRequired"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "extensions.updateSecrets",
         "x-stability": "internal"
       }
     }
@@ -21397,159 +20268,6 @@
           "project"
         ]
       },
-      "AccountEligibilityResponse": {
-        "type": "object",
-        "properties": {
-          "project": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ProjectRef"
-              },
-              {
-                "type": [
-                  "object",
-                  "null"
-                ]
-              }
-            ]
-          },
-          "allow": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "string"
-            }
-          },
-          "accounts": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AccountEligibilityRow"
-            }
-          },
-          "launch": {
-            "oneOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "ok": {
-                    "type": "boolean",
-                    "enum": [
-                      true
-                    ]
-                  },
-                  "accountId": {
-                    "type": "string"
-                  },
-                  "root": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "ok",
-                  "accountId",
-                  "root"
-                ]
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "ok": {
-                    "type": "boolean",
-                    "enum": [
-                      false
-                    ]
-                  },
-                  "message": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "ok",
-                  "message"
-                ]
-              }
-            ]
-          }
-        },
-        "required": [
-          "project",
-          "allow",
-          "accounts"
-        ]
-      },
-      "AccountEligibilityRow": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "label": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "color": {
-            "type": "string"
-          },
-          "implicit": {
-            "type": "boolean"
-          },
-          "onlyProjects": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "$ref": "#/components/schemas/ProjectRef"
-            }
-          },
-          "allowedByAccount": {
-            "type": "boolean"
-          },
-          "allowedByProject": {
-            "type": "boolean"
-          },
-          "eligible": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "id",
-          "label",
-          "color",
-          "implicit",
-          "onlyProjects",
-          "allowedByAccount",
-          "allowedByProject",
-          "eligible"
-        ]
-      },
-      "ProjectAccountsRequest": {
-        "type": "object",
-        "properties": {
-          "project": {
-            "type": "string",
-            "minLength": 1
-          },
-          "allow": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        },
-        "required": [
-          "project",
-          "allow"
-        ]
-      },
       "ProjectWithoutCreditsRequest": {
         "type": "object",
         "properties": {
@@ -22077,63 +20795,6 @@
               "path"
             ]
           }
-        ]
-      },
-      "CommandRegistry": {
-        "type": "object",
-        "properties": {
-          "commands": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/CommandEntry"
-            }
-          },
-          "lastScanned": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "commands",
-          "lastScanned"
-        ]
-      },
-      "CommandEntry": {
-        "type": "object",
-        "properties": {
-          "namespace": {
-            "type": "string"
-          },
-          "command": {
-            "type": "string"
-          },
-          "fullCommand": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "argumentHint": {
-            "type": "string"
-          },
-          "aliases": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "allowedTools": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "filePath": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "fullCommand",
-          "description"
         ]
       },
       "PendingApprovalsResponse": {
@@ -23394,76 +22055,6 @@
           }
         }
       },
-      "ReadCursor": {
-        "type": "object",
-        "properties": {
-          "userId": {
-            "type": "string"
-          },
-          "threadKind": {
-            "$ref": "#/components/schemas/ReadCursorThreadKind"
-          },
-          "threadId": {
-            "type": "string"
-          },
-          "lastReadSeq": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "updatedAt": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "userId",
-          "threadKind",
-          "threadId",
-          "lastReadSeq",
-          "updatedAt"
-        ]
-      },
-      "ReadCursorThreadKind": {
-        "type": "string",
-        "enum": [
-          "room",
-          "session",
-          "inbox",
-          "room-thread"
-        ]
-      },
-      "SetReadCursorPositionRequest": {
-        "type": "object",
-        "properties": {
-          "lastReadSeq": {
-            "type": "integer",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "lastReadSeq"
-        ]
-      },
-      "ReadCursorResponse": {
-        "type": "object",
-        "properties": {
-          "cursor": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/ReadCursor"
-              },
-              {
-                "type": [
-                  "object",
-                  "null"
-                ]
-              }
-            ]
-          }
-        },
-        "required": [
-          "cursor"
-        ]
-      },
       "TeamRosterResponse": {
         "type": "object",
         "properties": {
@@ -23781,314 +22372,6 @@
         },
         "required": [
           "imageUrl"
-        ]
-      },
-      "ListNotificationsResponse": {
-        "type": "object",
-        "properties": {
-          "notifications": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Notification"
-            }
-          },
-          "nextCursor": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "unreadCount": {
-            "type": "integer",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "notifications",
-          "nextCursor",
-          "unreadCount"
-        ]
-      },
-      "Notification": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "kind": {
-            "$ref": "#/components/schemas/NotificationKind"
-          },
-          "tier": {
-            "$ref": "#/components/schemas/NotificationTier"
-          },
-          "subject": {
-            "$ref": "#/components/schemas/NotificationSubject"
-          },
-          "agentId": {
-            "type": "string"
-          },
-          "sessionId": {
-            "type": "string"
-          },
-          "roomId": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string",
-            "minLength": 1
-          },
-          "body": {
-            "type": "string"
-          },
-          "actions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/NotificationAction"
-            }
-          },
-          "createdAt": {
-            "type": "string"
-          },
-          "readAt": {
-            "type": "string"
-          },
-          "resolvedAt": {
-            "type": "string"
-          },
-          "outcome": {
-            "$ref": "#/components/schemas/NotificationOutcome"
-          },
-          "decision": {
-            "$ref": "#/components/schemas/NotificationDecision"
-          },
-          "mark": {
-            "type": "string",
-            "enum": [
-              "refused",
-              "failed"
-            ]
-          },
-          "meta": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "tier",
-          "subject",
-          "title",
-          "createdAt"
-        ]
-      },
-      "NotificationKind": {
-        "type": "string",
-        "enum": [
-          "step-up.remote-refused",
-          "ask.pending",
-          "schedule.parked",
-          "schedule.armed_by_agent",
-          "approval.pending",
-          "session.error",
-          "turn.completed",
-          "run.completed",
-          "dm.received",
-          "mention.received",
-          "agent.note",
-          "dead-letter.created",
-          "agent.unreachable",
-          "signin.required",
-          "update.installed",
-          "report.daily",
-          "account.limited",
-          "account.reset",
-          "credits.refused",
-          "extension.approval",
-          "extension.decision",
-          "extension.stopped",
-          "extension.work_not_started",
-          "community.owner-replacement",
-          "community.teammate-limit",
-          "community.teammate-limits-reset",
-          "spending.near-limit",
-          "spending.limit-reached",
-          "spending.meter-reset",
-          "browser.handoff",
-          "heartbeat.credits-offer",
-          "connector.destructive_pending",
-          "connector.destructive_executed",
-          "connector.access_narrowed",
-          "connector.write_available",
-          "mcp-server.tool_added",
-          "mcp-server.reserved_name",
-          "web.new_device",
-          "signin.check_added",
-          "signin.check_removed",
-          "agent.secret_files",
-          "agent.folder_rules_too_long",
-          "account.signin_review",
-          "shell.check_down",
-          "report.undelivered",
-          "todo.changed"
-        ]
-      },
-      "NotificationTier": {
-        "type": "string",
-        "enum": [
-          "blocking",
-          "notable",
-          "quiet"
-        ]
-      },
-      "NotificationSubject": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "$ref": "#/components/schemas/NotificationSubjectType"
-          },
-          "id": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "type",
-          "id"
-        ]
-      },
-      "NotificationSubjectType": {
-        "type": "string",
-        "enum": [
-          "session",
-          "task",
-          "run",
-          "room",
-          "agent",
-          "system"
-        ]
-      },
-      "NotificationAction": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "label": {
-            "type": "string",
-            "minLength": 1
-          },
-          "style": {
-            "$ref": "#/components/schemas/NotificationActionStyle"
-          }
-        },
-        "required": [
-          "id",
-          "label",
-          "style"
-        ]
-      },
-      "NotificationActionStyle": {
-        "type": "string",
-        "enum": [
-          "primary",
-          "danger",
-          "neutral"
-        ]
-      },
-      "NotificationOutcome": {
-        "type": "string",
-        "enum": [
-          "answered",
-          "expired",
-          "cancelled",
-          "approved",
-          "rejected",
-          "cleared",
-          "dismissed"
-        ]
-      },
-      "NotificationDecision": {
-        "type": "object",
-        "properties": {
-          "extensionId": {
-            "type": "string",
-            "minLength": 1
-          },
-          "resolvedBy": {
-            "$ref": "#/components/schemas/DecisionResolvedBy"
-          },
-          "resolvedByLabel": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "recorded": {
-            "type": "boolean"
-          },
-          "watch": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "properties": {
-              "sessionId": {
-                "type": "string",
-                "minLength": 1
-              },
-              "label": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "required": [
-              "sessionId",
-              "label"
-            ]
-          }
-        },
-        "required": [
-          "extensionId",
-          "resolvedBy",
-          "resolvedByLabel",
-          "recorded",
-          "watch"
-        ]
-      },
-      "DecisionResolvedBy": {
-        "type": "string",
-        "enum": [
-          "person",
-          "deadline",
-          "agent",
-          "rule",
-          "extension"
-        ]
-      },
-      "MarkNotificationsReadResponse": {
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
-          },
-          "marked": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "unreadCount": {
-            "type": "integer",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "ok",
-          "marked",
-          "unreadCount"
         ]
       },
       "VapidPublicKeyResponse": {
@@ -25407,113 +23690,6 @@
           "setHash"
         ]
       },
-      "ExtensionListPage": {
-        "type": "object",
-        "properties": {
-          "extensions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ExtensionListItem"
-            }
-          },
-          "nextCursor": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Pass as `cursor` for the next page; null on the last one."
-          }
-        },
-        "required": [
-          "extensions",
-          "nextCursor"
-        ]
-      },
-      "ExtensionListItem": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "The mini app’s id."
-          },
-          "manifest": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "type": "string"
-              },
-              "version": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id",
-              "name",
-              "version"
-            ],
-            "additionalProperties": {},
-            "description": "Its `extension.json`, as read."
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "discovered",
-              "incompatible",
-              "invalid",
-              "disabled",
-              "enabled",
-              "compiled",
-              "compile_error",
-              "active",
-              "activate_error"
-            ],
-            "description": "Where it stands, from found to running."
-          },
-          "scope": {
-            "type": "string",
-            "enum": [
-              "global",
-              "local"
-            ]
-          },
-          "origin": {
-            "type": "string",
-            "enum": [
-              "core",
-              "user"
-            ],
-            "description": "Whether it ships with DorkOS or was installed."
-          },
-          "approvedToRun": {
-            "type": "boolean",
-            "description": "Whether a person allowed it to run code in DorkOS."
-          },
-          "bundleReady": {
-            "type": "boolean"
-          },
-          "shadowedBy": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The path of the newer copy that runs instead of this one; null for one that runs."
-          }
-        },
-        "required": [
-          "id",
-          "manifest",
-          "status",
-          "scope",
-          "origin",
-          "approvedToRun",
-          "bundleReady",
-          "shadowedBy"
-        ],
-        "additionalProperties": {}
-      },
       "PendingExtensionApprovalsPage": {
         "type": "object",
         "properties": {
@@ -25816,72 +23992,6 @@
         },
         "required": [
           "path"
-        ]
-      },
-      "BackupList": {
-        "type": "object",
-        "properties": {
-          "folder": {
-            "type": "string",
-            "description": "The backup folder, `<data dir>/backups`."
-          },
-          "copies": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/BackupCopy"
-            },
-            "description": "Newest first."
-          },
-          "totalBytes": {
-            "type": "integer",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "folder",
-          "copies",
-          "totalBytes"
-        ]
-      },
-      "BackupCopy": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "The file name inside the backup folder; the id every action takes."
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "daily",
-              "pre-upgrade"
-            ],
-            "description": "What the copy was taken for."
-          },
-          "managed": {
-            "type": "boolean",
-            "description": "True for `dork-auto-` copies, which DorkOS prunes on its own."
-          },
-          "sizeBytes": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "createdAt": {
-            "type": "string",
-            "description": "When the copy was taken, from its name (ISO 8601, UTC)."
-          },
-          "busy": {
-            "type": "boolean",
-            "description": "A write is in progress next to it, so it cannot be acted on now."
-          }
-        },
-        "required": [
-          "name",
-          "kind",
-          "managed",
-          "sizeBytes",
-          "createdAt",
-          "busy"
         ]
       }
     }

@@ -318,7 +318,7 @@ It carries the messages and signals sent to the DorkOS app's own console address
 | `relay_backpressure` | A backpressure signal from an endpoint approaching or exceeding mailbox capacity |
 | `relay_signal`       | Other signals (typing indicators, delivery receipts)                             |
 
-To read messages sent anywhere else, use the REST API (`GET /api/relay/messages`) or the Connections page in DorkOS. The older `GET /api/relay/stream`, which took a `subject` filter, is gone.
+To read messages sent anywhere else, use the REST API (`GET /api/relay/messages`) or the Connections page in DorkOS. The older `GET /api/relay/stream` is for DorkOS's own use and will be removed.
 
 <Callout type="warn">
   Long-lived event-stream connections use server resources, so close them when you no longer need

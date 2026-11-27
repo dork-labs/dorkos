@@ -109,21 +109,23 @@ Every operation carries `x-stability`: `stable`, `preview` or `internal` (ADR `2
 | `preview`  | New or still being reshaped: an area the roadmap is rebuilding, a list that just started paging, any capability route not yet promised.                             | Yes, its description opens with "**Preview.**"                  |
 | `internal` | Only DorkOS's own app, command line or desktop app calls it: sign-in steps, settings pages, the app's plumbing, debug and test hooks. It can change without notice. | No: served, but left out of the published document and the site |
 
+**The rule for a group:** one that public docs tell outside callers to use is never `internal`.
+
 **No deprecation period.** Until the API is a stable v1.0, a breaking change lands at once with every caller in the repo fixed in the same change, and a changelog fragment that names what broke and what replaces it. There are no `deprecated` flags on operations, no `Deprecation` or `Sunset` headers and no aliases. `stable` means an operation changes only that way, never quietly.
 
 **Where the value comes from**, first match wins (`services/core/openapi/stability.ts`):
 
-1. The operation's own declaration: `stability` on a capability's `http` surface, or `'x-stability'` on a hand `registerPath` call (the session list's paging, the session routes only the app calls).
+1. The operation's own declaration: `stability` on a capability's `http` surface, or `'x-stability'` on a hand `registerPath` call. For hand routes the place is `OPERATION_STABILITY`, one table beside the groups: the session list's paging, the session routes only the app calls, the two old streams kept until `/api/events` replaces them, and the operations public docs send people to in otherwise internal groups (a project's Claude accounts, an extension's secrets and the extension list). A key the document lacks fails the export.
 2. A capability with none is `internal` in a group marked internal, and `preview` everywhere else. A capability route is promised `stable` only by its own `stability: 'stable'`.
 3. A hand route with none takes its route group's value in `GROUP_STABILITY`. A group missing from that table fails `pnpm docs:export-api`, so a new group is classified the day it is documented.
 
 **The groups**, from `GROUP_STABILITY`:
 
-| Value      | Route groups                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `stable`   | `activity`, `agents`, `audit`, `capabilities`, `connectors`, `events`, `files`, `health`, `heartbeats`, `marketplace`, `mcp-servers`, `mesh`, `models`, `openapi.json`, `search`, `sessions`, `tasks`, `templates`, `todo-promises`, `todos`, `work-queues`, `workspaces`                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `preview`  | `canvas`, `cloud`, `community-connections`, `computers`, `diff`, `direct-chats`, `documents`, `hub`, `links`, `relay`, `rooms`, `shapes` (the DorkOS account, hubs and agent computers, team spaces, one message system and published docs are all being rebuilt)                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `internal` | `admin`, `agent-instructions`, `approvals`, `auth`, `browser-viewers`, `commands`, `communities`, `config`, `debug`, `desktop`, `devices`, `directory`, `discovery`, `errors`, `extension-decisions`, `extension-frame`, `extensions`, `feedback`, `git`, `harness`, `keep-awake`, `lan-access`, `local-browser`, `mcp-config`, `notifications`, `onboarding`, `owner-factors`, `owner-sign-in`, `permissions`, `person-session`, `profile`, `projects`, `push`, `read-cursors`, `remote-access`, `runtimes`, `session-locations`, `session-relay`, `sign-in-landings`, `step-up`, `subagents`, `system`, `team`, `terminal`, `tunnel`, `uploads`, `wifi-sign-in`, `workbench`, `your-browser` |
+| Value      | Route groups                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stable`   | `activity`, `agents`, `audit`, `capabilities`, `connectors`, `events`, `files`, `health`, `heartbeats`, `marketplace`, `mcp-servers`, `mesh`, `models`, `openapi.json`, `search`, `sessions`, `tasks`, `templates`, `todo-promises`, `todos`, `work-queues`, `workspaces`                                                                                                                                                                                                                                                                                                                                                     |
+| `preview`  | `canvas`, `cloud`, `commands`, `community-connections`, `computers`, `config`, `diff`, `direct-chats`, `documents`, `hub`, `links`, `notifications`, `read-cursors`, `relay`, `rooms`, `shapes`, `tunnel` (being rebuilt, or app settings that public guides point people to)                                                                                                                                                                                                                                                                                                                                                 |
+| `internal` | `admin`, `agent-instructions`, `approvals`, `auth`, `browser-viewers`, `communities`, `debug`, `desktop`, `devices`, `directory`, `discovery`, `errors`, `extension-decisions`, `extension-frame`, `extensions`, `feedback`, `git`, `harness`, `keep-awake`, `lan-access`, `local-browser`, `mcp-config`, `onboarding`, `owner-factors`, `owner-sign-in`, `permissions`, `person-session`, `profile`, `projects`, `push`, `remote-access`, `runtimes`, `session-locations`, `session-relay`, `sign-in-landings`, `step-up`, `subagents`, `system`, `team`, `terminal`, `uploads`, `wifi-sign-in`, `workbench`, `your-browser` |
 
 `events`, `openapi.json` and most `internal` groups above are served but not documented yet (the lint gate's `undocumented-route`); they are classified already, so each takes its value the day its routes are documented.
 
@@ -449,7 +451,7 @@ Schemas live in `packages/shared/src/session-stream.ts`; the handler in `apps/se
 
 ### GET /api/events
 
-Unified SSE stream for all real-time system events, on one connection. Clients filter by the SSE `event:` field. One older stream still overlaps it: `GET /api/extensions/events`. Under ADR `261123-170833` it is removed in the change that moves every caller onto `/api/events`, as `GET /api/tunnel/stream` and `GET /api/relay/stream` were (DOR-4983). New code reads `/api/events` only.
+Unified SSE stream for all real-time system events, on one connection. Clients filter by the SSE `event:` field. Three older streams overlap it: `GET /api/tunnel/stream`, `GET /api/extensions/events` and `GET /api/relay/stream`. They are `internal` (see [Stability](#stability); `/api/tunnel/stream` is not documented at all) until `/api/events` carries everything they do, and then each is removed in the change that moves every caller onto `/api/events` (ADR `261123-170833`, A7, DOR-4986). New code reads `/api/events` only.
 
 **Events:**
 
@@ -1112,6 +1114,28 @@ Relay system metrics.
 **Responses:**
 
 - `200` - `{ totalMessages: number, totalEndpoints: number, totalDeadLetters: number }`
+
+### GET /api/relay/stream
+
+> **Internal until A7.** New code uses `GET /api/events` (event names: `relay_connected`, `relay_message`, `relay_backpressure`, `relay_signal`). This stream is not a strict duplicate yet: it accepts `relay.system.*` and `relay.signal.*` subjects, which `/api/events` does not carry. It is marked `internal`, left out of the published document, until `/api/events` carries those subjects; then it is removed with every caller moved (ADR `261123-170833`, A7, DOR-4986).
+
+SSE event stream for real-time relay activity. Supports server-side subject filtering.
+
+**Query params:**
+
+- `subject` (optional) - Subject pattern filter (e.g., `relay.agent.*`)
+
+**Events:**
+
+- `relay_connected` - Connection established
+- `relay_message` - New message published
+- `relay_delivery` - Message delivered to endpoint
+- `relay_dead_letter` - Message became dead letter
+- `relay_metrics` - Periodic metrics update
+
+**Keepalive:** `: keepalive\n\n` comment every 15 seconds.
+
+**Usage:** Clients should close the EventSource when the relay panel is not visible.
 
 ### GET /api/relay/messages/:id/trace
 

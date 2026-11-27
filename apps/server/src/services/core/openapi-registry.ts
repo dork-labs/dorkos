@@ -684,8 +684,6 @@ registry.registerPath({
 registry.registerPath({
   method: 'get',
   path: '/api/sessions',
-  // Paged a page at a time since DOR-4982, so still settling.
-  'x-stability': 'preview',
   tags: ['Sessions'],
   summary: 'List all sessions',
   description:
@@ -723,8 +721,6 @@ registry.registerPath({
 registry.registerPath({
   method: 'get',
   path: '/api/sessions/recent',
-  // Paged a page at a time since DOR-4982, so still settling.
-  'x-stability': 'preview',
   tags: ['Sessions'],
   summary: 'List recent sessions across all agents',
   description:
@@ -746,8 +742,6 @@ registry.registerPath({
 registry.registerPath({
   method: 'get',
   path: '/api/sessions/daily-counts',
-  // The app's own plumbing.
-  'x-stability': 'internal',
   tags: ['Sessions'],
   summary: 'Count sessions started per day across all agents',
   description:
@@ -1065,8 +1059,6 @@ registry.registerPath({
 registry.registerPath({
   method: 'post',
   path: '/api/sessions/{id}/opened',
-  // The app's own plumbing.
-  'x-stability': 'internal',
   tags: ['Sessions'],
   summary: 'Mark a session opened by you',
   description:
@@ -1088,8 +1080,6 @@ registry.registerPath({
 registry.registerPath({
   method: 'post',
   path: '/api/sessions/{id}/stream-health',
-  // The app's own plumbing.
-  'x-stability': 'internal',
   tags: ['Sessions'],
   summary: 'Report a turn a window missed',
   description:
@@ -1225,8 +1215,6 @@ registry.registerPath({
 registry.registerPath({
   method: 'post',
   path: '/api/sessions/{id}/command-intents/{intent}',
-  // The app's own plumbing.
-  'x-stability': 'internal',
   tags: ['Sessions'],
   summary: 'Trigger a runtime-fulfilled command intent (trigger-only)',
   description:
@@ -1323,8 +1311,6 @@ registry.registerPath({
 registry.registerPath({
   method: 'post',
   path: '/api/sessions/{id}/ui-action',
-  // The app's own plumbing.
-  'x-stability': 'internal',
   tags: ['Sessions'],
   summary: 'Dispatch a generative-UI widget agent action',
   description:
@@ -1351,8 +1337,6 @@ registry.registerPath({
 registry.registerPath({
   method: 'post',
   path: '/api/sessions/{id}/mcp-app/resource',
-  // The app's own plumbing.
-  'x-stability': 'internal',
   tags: ['Sessions'],
   summary: 'Read a ui:// MCP App resource',
   description:
@@ -2229,6 +2213,33 @@ registry.registerPath({
             totalEndpoints: z.number(),
             totalDeadLetters: z.number(),
           }),
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/relay/stream',
+  tags: ['Relay'],
+  summary: 'SSE event stream for relay activity',
+  description:
+    'Server-Sent Events stream for real-time relay activity. ' +
+    'Supports server-side subject filtering via query param. ' +
+    'Event types: relay_connected, relay_message, relay_delivery, relay_dead_letter, relay_metrics.',
+  request: {
+    query: z.object({
+      subject: z.string().optional().openapi({ description: 'Subject pattern filter' }),
+    }),
+  },
+  responses: {
+    500: INTERNAL_ERROR_RESPONSE,
+    200: {
+      description: 'SSE event stream',
+      content: {
+        'text/event-stream': {
+          schema: z.string().openapi({ description: 'Server-Sent Events stream' }),
         },
       },
     },
