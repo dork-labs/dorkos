@@ -174,6 +174,8 @@ describe('trusted sources', () => {
     const paged = [...first.body.sources, ...second.body.sources];
     expect(paged.map((row: { source: string }) => row.source)).toEqual(sources);
     expect(second.body.nextCursor).toBeNull();
+    const refused = await request(fixtureServer).get('/api/extensions/trusted-sources?cursor=x');
+    expect(refused.status).toBe(400);
   });
 
   it('refuses a source nothing installed provably comes from, and one that is not a repo', async () => {

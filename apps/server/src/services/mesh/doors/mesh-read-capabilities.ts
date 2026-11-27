@@ -167,7 +167,8 @@ export const meshListDeniedCapability = defineCapability({
   title: 'List the folders hidden from discovery',
   description:
     'The folders a person hid from agent discovery, with why and when. Newest first, the folder ' +
-    'breaking a tie, a page at a time: pass `nextCursor` back as `cursor` for the next.',
+    'breaking a tie, a page at a time: pass `nextCursor` back as `cursor` for the next. A ' +
+    'folder hidden, hidden again or shown while paging can repeat or be missed.',
   tier: 'observe',
   area: null,
   areaNote: PERSON_READ_NOTE,

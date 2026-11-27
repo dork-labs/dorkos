@@ -1576,7 +1576,7 @@ Add an agent to the deny list. Denied agents cannot communicate with any mesh me
 
 ### GET /api/mesh/denied
 
-List the denied folders, newest first, a page at a time (`cursor`, `limit`).
+List the denied folders, newest first, a page at a time (`cursor`, `limit`). A folder hidden or shown while paging can repeat or be missed.
 
 **Responses:**
 

@@ -175,6 +175,9 @@ describe('agent.pause and agent.resume (spec audit-trail PR5)', () => {
     expect(paged).toEqual(pauses.list().map((pause) => pause.agentId));
     expect(paged).toEqual([SCOUT.id, ANA.id]);
     expect(second.nextCursor).toBeNull();
+    await expect(
+      registry.invoke('agent.list_paused', { limit: 1, cursor: 'not-ours' }, context)
+    ).rejects.toMatchObject({ payload: { code: 'INVALID_CURSOR' } });
   });
 
   it('refuses a resume from a caller that presented a token nobody could resolve', async () => {

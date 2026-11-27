@@ -817,10 +817,11 @@ export const AgentPauseSchema = z
 /** One paused agent. */
 export type AgentPause = z.infer<typeof AgentPauseSchema>;
 
-/** Every agent paused right now. */
-export const AgentPauseListSchema = z
-  .object({ pauses: z.array(AgentPauseSchema) })
-  .openapi('AgentPauseList');
+/**
+ * Every agent paused right now, every page read (what the transport hands the
+ * app). The API answers it a page at a time, with `nextCursor`.
+ */
+export const AgentPauseListSchema = z.object({ pauses: z.array(AgentPauseSchema) });
 
 /** Every agent paused right now. */
 export type AgentPauseList = z.infer<typeof AgentPauseListSchema>;

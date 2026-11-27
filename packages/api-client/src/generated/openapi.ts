@@ -5330,7 +5330,7 @@ export interface paths {
          * List the folders hidden from discovery
          * @description **Preview.** This operation may change in any release.
          *
-         *     The folders a person hid from agent discovery, with why and when. Newest first, the folder breaking a tie, a page at a time: pass `nextCursor` back as `cursor` for the next.
+         *     The folders a person hid from agent discovery, with why and when. Newest first, the folder breaking a tie, a page at a time: pass `nextCursor` back as `cursor` for the next. A folder hidden, hidden again or shown while paging can repeat or be missed.
          */
         get: operations["mesh.list_denied"];
         put?: never;
