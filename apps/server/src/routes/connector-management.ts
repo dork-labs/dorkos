@@ -10,14 +10,12 @@ import {
   type ConnectorAgentApproval,
   type ConnectorAgentRequestItem,
 } from '@dorkos/shared/connector-schemas';
-import { ConnectorGrantExclusionListSchema } from '@dorkos/shared/connector-exclusion-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
-import {
-  ConnectorGrantExclusionError,
-  type ConnectorGrantExclusionService,
-} from '../services/connectors/access/grant-exclusions.js';
+import { ConnectorGrantExclusionError } from '../services/connectors/access/grant-exclusions.js';
 import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
+import { PageQuerySchema } from '@dorkos/shared/paging';
+import { INVALID_CURSOR_DETAIL, isInvalidCursor, keysetPage } from '../lib/paging/keyset-page.js';
 import { verifyRequestAuth, type RequestUser } from '../services/core/auth/session-gate.js';
 import {
   ConnectorManagementReviewError,
@@ -61,17 +59,11 @@ import {
   type ConnectorOwnerBoundaryDeps,
 } from './connector-owner-boundary.js';
 
-const ReviewListQuerySchema = z
-  .object({ state: z.enum(['pending', 'resolved']).optional() })
-  .strict();
-
 /** Agent requests list by lifecycle group and, for one conversation's cards, by session. */
-const AgentRequestListQuerySchema = z
-  .object({
-    state: z.enum(['pending', 'resolved']).optional(),
-    sessionId: z.string().min(1).optional(),
-  })
-  .strict();
+const AgentRequestListQuerySchema = PageQuerySchema.extend({
+  state: z.enum(['pending', 'resolved']).optional(),
+  sessionId: z.string().min(1).optional(),
+}).strict();
 
 /** Dependencies for the connector owner-management HTTP boundary. */
 export interface ConnectorManagementRouterDeps extends ConnectorOwnerBoundaryDeps {
@@ -80,12 +72,11 @@ export interface ConnectorManagementRouterDeps extends ConnectorOwnerBoundaryDep
   /** Durable management review lifecycle. */
   readonly reviews: Pick<
     ConnectorManagementReviewService,
-    'create' | 'getProgramStatus' | 'list' | 'resolve'
+    'create' | 'getProgramStatus' | 'resolve'
   >;
   /** Complete-catalog exact grant reconciliation. */
   readonly reconciliation: Pick<ConnectorReconciliationService, 'preview' | 'apply'>;
   /** Agents left out of a connection's every-agent share (DOR-3961). */
-  readonly exclusions: Pick<ConnectorGrantExclusionService, 'list'>;
   /** Owner-only review and resolution for requests raised by runtime agents. */
   readonly agentRequests?: Pick<ConnectorAgentRequestService, 'listForOwner' | 'getForOwner'>;
   /**
@@ -228,18 +219,6 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     }
   });
 
-  router.get('/reviews', (c) => {
-    const owner = resolveConnectorOperator(c, deps);
-    if (owner instanceof Response) return owner;
-    const query = ReviewListQuerySchema.safeParse(readQuery(c));
-    if (!query.success) return validationProblem(c, query.error);
-    try {
-      return c.json({ reviews: deps.reviews.list(owner, query.data.state) });
-    } catch (error) {
-      return managementErrorResponse(c, error);
-    }
-  });
-
   router.post('/reviews/:reviewRequestId/decision', async (c) => {
     const owner = resolveConnectorOperator(c, deps);
     if (owner instanceof Response) return owner;
@@ -274,13 +253,21 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     if (requests instanceof Response) return requests;
     const query = AgentRequestListQuerySchema.safeParse(readQuery(c));
     if (!query.success) return validationProblem(c, query.error);
+    const { state, sessionId, ...page } = query.data;
     try {
-      return c.json({
-        requests: requests
-          .listForOwner(owner, query.data.state, query.data.sessionId)
-          .map(withApproval),
-      });
+      // Newest first, a page at a time (DOR-4982). One answered while paging
+      // can repeat or be missed when the list is narrowed to a state.
+      const found = keysetPage(
+        `agent-requests:${state ?? 'all'}:${sessionId ?? ''}`,
+        requests.listForOwner(owner, state, sessionId),
+        (row) => [row.createdAt, row.requestId],
+        page
+      );
+      return c.json({ requests: found.items.map(withApproval), nextCursor: found.nextCursor });
     } catch (error) {
+      if (isInvalidCursor(error)) {
+        return problem(c, 'invalid_request', { detail: INVALID_CURSOR_DETAIL });
+      }
       return managementErrorResponse(c, error);
     }
   });
@@ -308,26 +295,6 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     c.env.outgoing.once('close', () => controller.abort());
     try {
       return c.json(await deps.reconciliation.preview(owner, input.data, controller.signal), 201);
-    } catch (error) {
-      return managementErrorResponse(c, error);
-    }
-  });
-
-  // The agents left out of a connection's every-agent share (DOR-3961). Leaving
-  // one out, like reading one review, polling an agent request's sign-in and
-  // stopping the share, is on the capability mount behind the same bar
-  // (`services/connectors/resources/owner-management-capabilities.ts`, DOR-4978).
-  router.get('/connections/:connectionId/exclusions', (c) => {
-    const owner = resolveConnectorOperator(c, deps);
-    if (owner instanceof Response) return owner;
-    const connectionId = c.req.param('connectionId');
-    try {
-      return c.json(
-        ConnectorGrantExclusionListSchema.parse({
-          connectionId,
-          exclusions: deps.exclusions.list(owner, connectionId),
-        })
-      );
     } catch (error) {
       return managementErrorResponse(c, error);
     }

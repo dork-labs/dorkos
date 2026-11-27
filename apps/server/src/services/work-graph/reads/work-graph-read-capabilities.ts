@@ -36,6 +36,7 @@
  * @module services/work-graph/reads/work-graph-read-capabilities
  */
 import { z } from 'zod';
+import { pageCursorInput, pageLimitInput } from '@dorkos/shared/paging';
 import {
   AGENT_CHATS_PAGE_LIMIT,
   AgentChatsPageSchema,
@@ -109,25 +110,6 @@ const READ_TOOL = {
   servers: ['in-session', 'external'] as ('in-session' | 'external')[],
   annotations: { idempotentHint: true },
 };
-
-/** The page cursor field. */
-const cursorInput = z
-  .string()
-  .min(1)
-  .max(4096)
-  .optional()
-  .describe('The `nextCursor` of the page before; leave it out for the first page.');
-
-/** A page size field, 1 to `max`, 50 when left out. */
-function limitInput(max: number) {
-  return z.coerce
-    .number()
-    .int()
-    .min(1)
-    .max(max)
-    .default(50)
-    .describe(`How many this page holds, 1 to ${max}.`);
-}
 
 /** The kind field of the work reads. */
 const kindInput = WorkKindSchema.optional().describe(
@@ -223,8 +205,8 @@ export function createWorkGraphReadDomain(ports: WorkGraphReadPorts): Capability
         areaNote: 'reading',
         input: z.object({
           agentId: idInput('agent'),
-          cursor: cursorInput,
-          limit: limitInput(AGENT_CHATS_PAGE_LIMIT),
+          cursor: pageCursorInput,
+          limit: pageLimitInput(AGENT_CHATS_PAGE_LIMIT),
         }),
         output: AgentChatsPageSchema,
         surfaces: {
@@ -281,7 +263,7 @@ export function createWorkGraphReadDomain(ports: WorkGraphReadPorts): Capability
             .describe(
               `How many levels below the chat, 1 to ${LINEAGE_MAX_DEPTH}; all when left out.`
             ),
-          cursor: cursorInput,
+          cursor: pageCursorInput,
           limit: z.coerce
             .number()
             .int()
@@ -325,8 +307,8 @@ export function createWorkGraphReadDomain(ports: WorkGraphReadPorts): Capability
         input: z.object({
           agentId: idInput('agent'),
           kind: kindInput,
-          cursor: cursorInput,
-          limit: limitInput(WORK_PAGE_LIMIT),
+          cursor: pageCursorInput,
+          limit: pageLimitInput(WORK_PAGE_LIMIT),
         }),
         output: WorkPageSchema,
         surfaces: {
@@ -367,8 +349,8 @@ export function createWorkGraphReadDomain(ports: WorkGraphReadPorts): Capability
             .optional()
             .describe('Include the chats below it (`true`, the default) or not (`false`).'),
           kind: kindInput,
-          cursor: cursorInput,
-          limit: limitInput(WORK_PAGE_LIMIT),
+          cursor: pageCursorInput,
+          limit: pageLimitInput(WORK_PAGE_LIMIT),
         }),
         output: WorkPageSchema,
         surfaces: {

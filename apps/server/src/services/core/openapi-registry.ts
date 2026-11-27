@@ -239,8 +239,6 @@ import {
   ConnectorUsagePageSchema,
 } from '@dorkos/shared/connector-schemas';
 import {
-  ConnectorAgentConnectionsSchema,
-  ConnectorEveryAgentGrantsSchema,
   ConnectorAuthenticationFlowCreateRequestSchema,
   ConnectorAuthenticationFlowStateSchema,
   ConnectorProvidersResourceSchema,
@@ -268,6 +266,7 @@ import {
   SetPermissionPresetBodySchema,
 } from '@dorkos/shared/permissions';
 import { z } from 'zod';
+import { PageQuerySchema } from '@dorkos/shared/paging';
 import { AccountUsageSchema, DismissFoundFolderRequestSchema } from '@dorkos/shared/account-usage';
 import { PackageTypeSchema } from '@dorkos/marketplace';
 import { DisclosedEffectsSchema } from '../marketplace/preview/disclosed-effects.js';
@@ -3738,9 +3737,12 @@ registry.registerPath({
   path: '/api/connectors/connections',
   tags: ['Connectors'],
   summary: 'List the operator’s stable connections',
+  description:
+    'Newest connected first, a page at a time: pass `nextCursor` back as `cursor` for the next. An account connected or removed while paging can repeat or be missed.',
+  request: { query: PageQuerySchema },
   responses: {
     200: {
-      description: 'Owner-scoped stable connection inventory',
+      description: 'One page of the owner’s connected accounts',
       content: { 'application/json': { schema: ConnectorConnectionListResourceSchema } },
     },
     403: problemResponse('Verified operator authority is required'),
@@ -3864,52 +3866,6 @@ for (const action of ['pause', 'resume'] as const) {
 }
 
 registry.registerPath({
-  method: 'get',
-  path: '/api/connectors/agents/{agentId}/connections',
-  tags: ['Connectors'],
-  summary: 'Read exact connection grants for one owned agent',
-  request: { params: z.object({ agentId: z.string().min(1) }) },
-  responses: {
-    200: {
-      description: 'Canonical agent connection grants',
-      content: { 'application/json': { schema: ConnectorAgentConnectionsSchema } },
-    },
-    404: problemResponse('Agent absent or owned by someone else'),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/connectors/every-agent-grants',
-  tags: ['Connectors'],
-  summary: 'Read what every agent, including a new one, inherits',
-  description:
-    'Lists each connection whose owner gave every agent access, with the exact reviewed actions. There is no per-agent exclusion, so this is what any new agent gets the moment it is created.',
-  responses: {
-    500: INTERNAL_ERROR_RESPONSE,
-    200: {
-      description: 'Connections every agent can use, and at which level',
-      content: { 'application/json': { schema: ConnectorEveryAgentGrantsSchema } },
-    },
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/connectors/sessions/{sessionId}/connections',
-  tags: ['Connectors'],
-  summary: 'Read effective connector access for one session',
-  request: { params: z.object({ sessionId: z.string().min(1) }) },
-  responses: {
-    200: {
-      description: 'Canonical session connector access',
-      content: { 'application/json': { schema: ConnectorSessionConnectionsSchema } },
-    },
-    404: problemResponse('Session absent or owned by someone else'),
-  },
-});
-
-registry.registerPath({
   method: 'put',
   path: '/api/connectors/sessions/{sessionId}/connections/{connectionId}',
   tags: ['Connectors'],
@@ -3973,25 +3929,6 @@ registry.registerPath({
       content: { 'application/json': { schema: ConnectorProgramReviewStatusSchema } },
     },
     404: problemResponse('Review absent or belongs to another requester'),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/connectors/reviews',
-  tags: ['Connectors'],
-  summary: 'List owner-visible connector reviews',
-  request: { query: z.object({ state: z.enum(['pending', 'resolved']).optional() }) },
-  responses: {
-    500: INTERNAL_ERROR_RESPONSE,
-    200: {
-      description: 'Owner-visible reviews',
-      content: {
-        'application/json': {
-          schema: z.object({ reviews: z.array(ConnectorManagementReviewItemSchema) }).strict(),
-        },
-      },
-    },
   },
 });
 

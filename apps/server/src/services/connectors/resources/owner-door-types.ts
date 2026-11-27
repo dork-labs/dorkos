@@ -15,7 +15,7 @@ import type { ConnectorReconciliationService } from '../reconciliation-service.j
 /** What the owner's management doors read, beside the connection doors' deps. */
 export interface ConnectionManagementDeps {
   /** Programs' requests for an account change, as the owner reviews them. */
-  readonly reviews: Pick<ConnectorManagementReviewService, 'get'>;
+  readonly reviews: Pick<ConnectorManagementReviewService, 'get' | 'list'>;
   /** Agents' requests for an app; absent while agent identity is off. */
   readonly agentRequests?: Pick<
     ConnectorAgentRequestService,
@@ -24,7 +24,7 @@ export interface ConnectionManagementDeps {
   /** Which agents may use what. */
   readonly reconciliation: Pick<ConnectorReconciliationService, 'revokeEveryAgent'>;
   /** Agents left out of a connection's every-agent share. */
-  readonly exclusions: Pick<ConnectorGrantExclusionService, 'leaveOut' | 'letBackIn'>;
+  readonly exclusions: Pick<ConnectorGrantExclusionService, 'leaveOut' | 'letBackIn' | 'list'>;
   /** The owner's usage of connected apps. */
   readonly usage: Pick<ConnectorAccessQueryService, 'listOperatorUsage'>;
 }

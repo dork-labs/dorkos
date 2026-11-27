@@ -2217,52 +2217,6 @@
           "config"
         ]
       },
-      "ConnectorGrantExclusionList": {
-        "type": "object",
-        "properties": {
-          "connectionId": {
-            "type": "string",
-            "minLength": 1
-          },
-          "exclusions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ConnectorGrantExclusion"
-            }
-          }
-        },
-        "required": [
-          "connectionId",
-          "exclusions"
-        ],
-        "additionalProperties": false
-      },
-      "ConnectorGrantExclusion": {
-        "type": "object",
-        "properties": {
-          "agentId": {
-            "type": "string",
-            "minLength": 1
-          },
-          "displayName": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "minLength": 1
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "agentId",
-          "displayName",
-          "createdAt"
-        ],
-        "additionalProperties": false
-      },
       "ConnectorAccessChangeList": {
         "type": "object",
         "properties": {
@@ -19441,6 +19395,75 @@
         ],
         "additionalProperties": false
       },
+      "ConnectorGrantExclusionPage": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ConnectorGrantExclusionList"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "nextCursor": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Pass as `cursor` for the next page; null on the last one."
+              }
+            },
+            "required": [
+              "nextCursor"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "ConnectorGrantExclusion": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "agentId",
+          "displayName",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "ConnectorGrantExclusionList": {
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "exclusions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectorGrantExclusion"
+            }
+          }
+        },
+        "required": [
+          "connectionId",
+          "exclusions"
+        ],
+        "additionalProperties": false
+      },
       "ListTodoPromisesResponse": {
         "type": "object",
         "properties": {
@@ -31564,49 +31587,6 @@
           }
         },
         "operationId": "relay.updateAdaptersConfig"
-      }
-    },
-    "/api/connectors/connections/{connectionId}/exclusions": {
-      "get": {
-        "tags": [
-          "Connectors"
-        ],
-        "summary": "Agents left out of a connection's every-agent share",
-        "description": "Owner only. Lists the agents the every-agent share does not reach.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": true,
-            "name": "connectionId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The agents left out, oldest first",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConnectorGrantExclusionList"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "`not_found`: no such app account here, it belongs to someone else, or no such agent",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "connectors.listConnectionsExclusions"
       }
     },
     "/api/connectors/access-changes": {
@@ -59073,9 +59053,37 @@
           "Connectors"
         ],
         "summary": "List the operator’s stable connections",
+        "description": "Newest connected first, a page at a time: pass `nextCursor` back as `cursor` for the next. An account connected or removed while paging can repeat or be missed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Owner-scoped stable connection inventory",
+            "description": "One page of the owner’s connected accounts",
             "content": {
               "application/json": {
                 "schema": {
@@ -59481,10 +59489,18 @@
                         "additionalProperties": false
                       },
                       "maxItems": 10000
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass as `cursor` for the next page; null on the last one."
                     }
                   },
                   "required": [
-                    "connections"
+                    "connections",
+                    "nextCursor"
                   ],
                   "additionalProperties": false
                 }
@@ -62135,655 +62151,6 @@
           }
         },
         "operationId": "connectors.resumeConnections"
-      }
-    },
-    "/api/connectors/agents/{agentId}/connections": {
-      "get": {
-        "tags": [
-          "Connectors"
-        ],
-        "summary": "Read exact connection grants for one owned agent",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": true,
-            "name": "agentId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Canonical agent connection grants",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "agentId": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 200
-                    },
-                    "connections": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "connectionId": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "toolkit": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "label": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "lifecycle": {
-                            "type": "string",
-                            "enum": [
-                              "connected",
-                              "paused",
-                              "disconnected"
-                            ]
-                          },
-                          "authenticationStatus": {
-                            "type": "string",
-                            "enum": [
-                              "active",
-                              "expired",
-                              "revoked",
-                              "pending"
-                            ]
-                          },
-                          "reconciliationStatus": {
-                            "type": "string",
-                            "enum": [
-                              "ready",
-                              "migration_needs_reconcile"
-                            ]
-                          },
-                          "operationRevisionIds": {
-                            "type": "array",
-                            "items": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 200
-                            },
-                            "maxItems": 100000
-                          },
-                          "everyAgent": {
-                            "type": "boolean"
-                          },
-                          "authoritySync": {
-                            "oneOf": [
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "status": {
-                                    "type": "string",
-                                    "enum": [
-                                      "ready"
-                                    ]
-                                  }
-                                },
-                                "required": [
-                                  "status"
-                                ],
-                                "additionalProperties": false
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "status": {
-                                    "type": "string",
-                                    "enum": [
-                                      "pending"
-                                    ]
-                                  },
-                                  "reason": {
-                                    "type": "string",
-                                    "minLength": 1,
-                                    "maxLength": 1000
-                                  },
-                                  "retryAt": {
-                                    "type": "string",
-                                    "format": "date-time"
-                                  }
-                                },
-                                "required": [
-                                  "status"
-                                ],
-                                "additionalProperties": false
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "status": {
-                                    "type": "string",
-                                    "enum": [
-                                      "failed"
-                                    ]
-                                  },
-                                  "reason": {
-                                    "type": "string",
-                                    "minLength": 1,
-                                    "maxLength": 1000
-                                  }
-                                },
-                                "required": [
-                                  "status",
-                                  "reason"
-                                ],
-                                "additionalProperties": false
-                              }
-                            ]
-                          },
-                          "readiness": {
-                            "type": "object",
-                            "properties": {
-                              "state": {
-                                "type": "string",
-                                "enum": [
-                                  "ready",
-                                  "paused",
-                                  "needs_you",
-                                  "finishing",
-                                  "unavailable",
-                                  "gone"
-                                ]
-                              },
-                              "reason": {
-                                "type": "string",
-                                "enum": [
-                                  "usable",
-                                  "off_for_this_chat",
-                                  "dorkos_account_unlinked",
-                                  "dorkos_account_unavailable",
-                                  "own_key_unavailable",
-                                  "way_unreachable",
-                                  "own_key_cannot_run_actions",
-                                  "cannot_run_actions",
-                                  "paused",
-                                  "signing_in",
-                                  "signed_out",
-                                  "sign_in_unfinished",
-                                  "needs_review",
-                                  "access_update_failed",
-                                  "access_updating",
-                                  "disconnected",
-                                  "disconnect_finishing",
-                                  "disconnect_stuck",
-                                  "gone_at_service"
-                                ]
-                              },
-                              "fix": {
-                                "type": "object",
-                                "properties": {
-                                  "action": {
-                                    "type": "string",
-                                    "enum": [
-                                      "sign_in_again",
-                                      "connect_again",
-                                      "connect_new",
-                                      "resume",
-                                      "review_access",
-                                      "fix_key",
-                                      "retry",
-                                      "remove",
-                                      "wait",
-                                      "turn_on_for_this_chat"
-                                    ]
-                                  },
-                                  "fixableBy": {
-                                    "type": "string",
-                                    "enum": [
-                                      "person",
-                                      "dorkos"
-                                    ]
-                                  },
-                                  "retryAt": {
-                                    "type": "string",
-                                    "format": "date-time"
-                                  }
-                                },
-                                "required": [
-                                  "action",
-                                  "fixableBy"
-                                ],
-                                "additionalProperties": false
-                              },
-                              "serviceAccessPage": {
-                                "type": "object",
-                                "properties": {
-                                  "service": {
-                                    "type": "string",
-                                    "minLength": 1,
-                                    "maxLength": 100
-                                  },
-                                  "url": {
-                                    "type": "string",
-                                    "format": "uri"
-                                  }
-                                },
-                                "required": [
-                                  "service",
-                                  "url"
-                                ],
-                                "additionalProperties": false
-                              },
-                              "copy": {
-                                "type": "object",
-                                "properties": {
-                                  "owner": {
-                                    "type": "string",
-                                    "minLength": 1,
-                                    "maxLength": 500
-                                  },
-                                  "agent": {
-                                    "type": "string",
-                                    "minLength": 1,
-                                    "maxLength": 1000
-                                  }
-                                },
-                                "required": [
-                                  "owner",
-                                  "agent"
-                                ],
-                                "additionalProperties": false
-                              }
-                            },
-                            "required": [
-                              "state",
-                              "reason",
-                              "copy"
-                            ],
-                            "additionalProperties": false
-                          }
-                        },
-                        "required": [
-                          "connectionId",
-                          "toolkit",
-                          "label",
-                          "lifecycle",
-                          "authenticationStatus",
-                          "reconciliationStatus",
-                          "operationRevisionIds",
-                          "everyAgent",
-                          "authoritySync",
-                          "readiness"
-                        ],
-                        "additionalProperties": false
-                      },
-                      "maxItems": 500
-                    }
-                  },
-                  "required": [
-                    "agentId",
-                    "connections"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Agent absent or owned by someone else",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "connectors.getAgentsConnections"
-      }
-    },
-    "/api/connectors/every-agent-grants": {
-      "get": {
-        "tags": [
-          "Connectors"
-        ],
-        "summary": "Read what every agent, including a new one, inherits",
-        "description": "Lists each connection whose owner gave every agent access, with the exact reviewed actions. There is no per-agent exclusion, so this is what any new agent gets the moment it is created.",
-        "responses": {
-          "200": {
-            "description": "Connections every agent can use, and at which level",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "connections": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "connectionId": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "toolkit": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "label": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "lifecycle": {
-                            "type": "string",
-                            "enum": [
-                              "connected",
-                              "paused"
-                            ]
-                          },
-                          "access": {
-                            "type": "object",
-                            "properties": {
-                              "operationRevisionIds": {
-                                "type": "array",
-                                "items": {
-                                  "type": "string",
-                                  "minLength": 1,
-                                  "maxLength": 200
-                                },
-                                "minItems": 1,
-                                "maxItems": 100000
-                              },
-                              "classifications": {
-                                "type": "array",
-                                "items": {
-                                  "type": "string",
-                                  "enum": [
-                                    "read",
-                                    "write",
-                                    "destructive"
-                                  ]
-                                },
-                                "minItems": 1,
-                                "maxItems": 3
-                              }
-                            },
-                            "required": [
-                              "operationRevisionIds",
-                              "classifications"
-                            ],
-                            "additionalProperties": false
-                          }
-                        },
-                        "required": [
-                          "connectionId",
-                          "toolkit",
-                          "label",
-                          "lifecycle",
-                          "access"
-                        ],
-                        "additionalProperties": false
-                      },
-                      "maxItems": 500
-                    }
-                  },
-                  "required": [
-                    "connections"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalErrorProblem"
-          }
-        },
-        "operationId": "connectors.getEveryAgentGrants"
-      }
-    },
-    "/api/connectors/sessions/{sessionId}/connections": {
-      "get": {
-        "tags": [
-          "Connectors"
-        ],
-        "summary": "Read effective connector access for one session",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": true,
-            "name": "sessionId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Canonical session connector access",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "sessionId": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 200
-                    },
-                    "agentId": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 200
-                    },
-                    "connections": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "connectionId": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "toolkit": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "label": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "source": {
-                            "type": "string",
-                            "enum": [
-                              "agent",
-                              "this_chat"
-                            ]
-                          },
-                          "operationRevisionIds": {
-                            "type": "array",
-                            "items": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 200
-                            },
-                            "maxItems": 100000
-                          },
-                          "readiness": {
-                            "type": "object",
-                            "properties": {
-                              "state": {
-                                "type": "string",
-                                "enum": [
-                                  "ready",
-                                  "paused",
-                                  "needs_you",
-                                  "finishing",
-                                  "unavailable",
-                                  "gone"
-                                ]
-                              },
-                              "reason": {
-                                "type": "string",
-                                "enum": [
-                                  "usable",
-                                  "off_for_this_chat",
-                                  "dorkos_account_unlinked",
-                                  "dorkos_account_unavailable",
-                                  "own_key_unavailable",
-                                  "way_unreachable",
-                                  "own_key_cannot_run_actions",
-                                  "cannot_run_actions",
-                                  "paused",
-                                  "signing_in",
-                                  "signed_out",
-                                  "sign_in_unfinished",
-                                  "needs_review",
-                                  "access_update_failed",
-                                  "access_updating",
-                                  "disconnected",
-                                  "disconnect_finishing",
-                                  "disconnect_stuck",
-                                  "gone_at_service"
-                                ]
-                              },
-                              "fix": {
-                                "type": "object",
-                                "properties": {
-                                  "action": {
-                                    "type": "string",
-                                    "enum": [
-                                      "sign_in_again",
-                                      "connect_again",
-                                      "connect_new",
-                                      "resume",
-                                      "review_access",
-                                      "fix_key",
-                                      "retry",
-                                      "remove",
-                                      "wait",
-                                      "turn_on_for_this_chat"
-                                    ]
-                                  },
-                                  "fixableBy": {
-                                    "type": "string",
-                                    "enum": [
-                                      "person",
-                                      "dorkos"
-                                    ]
-                                  },
-                                  "retryAt": {
-                                    "type": "string",
-                                    "format": "date-time"
-                                  }
-                                },
-                                "required": [
-                                  "action",
-                                  "fixableBy"
-                                ],
-                                "additionalProperties": false
-                              },
-                              "serviceAccessPage": {
-                                "type": "object",
-                                "properties": {
-                                  "service": {
-                                    "type": "string",
-                                    "minLength": 1,
-                                    "maxLength": 100
-                                  },
-                                  "url": {
-                                    "type": "string",
-                                    "format": "uri"
-                                  }
-                                },
-                                "required": [
-                                  "service",
-                                  "url"
-                                ],
-                                "additionalProperties": false
-                              },
-                              "copy": {
-                                "type": "object",
-                                "properties": {
-                                  "owner": {
-                                    "type": "string",
-                                    "minLength": 1,
-                                    "maxLength": 500
-                                  },
-                                  "agent": {
-                                    "type": "string",
-                                    "minLength": 1,
-                                    "maxLength": 1000
-                                  }
-                                },
-                                "required": [
-                                  "owner",
-                                  "agent"
-                                ],
-                                "additionalProperties": false
-                              }
-                            },
-                            "required": [
-                              "state",
-                              "reason",
-                              "copy"
-                            ],
-                            "additionalProperties": false
-                          },
-                          "thisChat": {
-                            "type": "string",
-                            "enum": [
-                              "on",
-                              "off"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "connectionId",
-                          "toolkit",
-                          "label",
-                          "source",
-                          "operationRevisionIds",
-                          "readiness"
-                        ],
-                        "additionalProperties": false
-                      },
-                      "maxItems": 500
-                    }
-                  },
-                  "required": [
-                    "sessionId",
-                    "agentId",
-                    "connections"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Session absent or owned by someone else",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "connectors.listSessionsConnections"
       }
     },
     "/api/connectors/sessions/{sessionId}/connections/{connectionId}": {
@@ -69541,27 +68908,56 @@
         "operationId": "connectors.createReviews"
       },
       "get": {
+        "operationId": "connectors.list_reviews",
         "tags": [
           "Connectors"
         ],
-        "summary": "List owner-visible connector reviews",
+        "summary": "See requested account changes",
+        "description": "Changes programs asked to make to connected accounts, waiting or answered, newest first, a page at a time: pass `nextCursor` back as `cursor` for the next. One answered while paging can repeat or be missed. Only the owner of this DorkOS.",
         "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          },
           {
             "schema": {
               "type": "string",
               "enum": [
                 "pending",
                 "resolved"
-              ]
+              ],
+              "description": "Only waiting (`pending`) or only answered (`resolved`) ones; both when left out."
             },
             "required": false,
+            "description": "Only waiting (`pending`) or only answered (`resolved`) ones; both when left out.",
             "name": "state",
             "in": "query"
           }
         ],
         "responses": {
           "200": {
-            "description": "Owner-visible reviews",
+            "description": "See requested account changes result",
             "content": {
               "application/json": {
                 "schema": {
@@ -75428,21 +74824,125 @@
                           }
                         ]
                       }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass as `cursor` for the next page; null on the last one."
                     }
                   },
                   "required": [
-                    "reviews"
+                    "reviews",
+                    "nextCursor"
                   ],
                   "additionalProperties": false
                 }
               }
             }
           },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "500": {
-            "$ref": "#/components/responses/InternalErrorProblem"
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
-        },
-        "operationId": "connectors.listReviews"
+        }
       }
     },
     "/api/connectors/program/reviews/{reviewRequestId}": {
@@ -107806,6 +107306,1199 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/StepUpRequired"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/every-agent-grants": {
+      "get": {
+        "operationId": "connectors.list_every_agent_grants",
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "See what every agent inherits",
+        "description": "Each connected account the owner shared with every agent, at which level. A new agent gets these the moment it is created. Only the owner of this DorkOS. A page at a time, newest account first: pass `nextCursor` back as `cursor` for the next. An account given or taken away while paging can repeat or be missed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See what every agent inherits result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connections": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "connectionId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "toolkit": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "lifecycle": {
+                            "type": "string",
+                            "enum": [
+                              "connected",
+                              "paused"
+                            ]
+                          },
+                          "access": {
+                            "type": "object",
+                            "properties": {
+                              "operationRevisionIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "minItems": 1,
+                                "maxItems": 100000
+                              },
+                              "classifications": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "read",
+                                    "write",
+                                    "destructive"
+                                  ]
+                                },
+                                "minItems": 1,
+                                "maxItems": 3
+                              }
+                            },
+                            "required": [
+                              "operationRevisionIds",
+                              "classifications"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "connectionId",
+                          "toolkit",
+                          "label",
+                          "lifecycle",
+                          "access"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 500
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass as `cursor` for the next page; null on the last one."
+                    }
+                  },
+                  "required": [
+                    "connections",
+                    "nextCursor"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/agents/{agentId}/connections": {
+      "get": {
+        "operationId": "connectors.list_agent_connections",
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "See an agent’s connected accounts",
+        "description": "The connected accounts one agent was given, by name or as every agent, with the exact actions and whether each is ready. Only the owner of this DorkOS. A page at a time, newest account first: pass `nextCursor` back as `cursor` for the next. An account given or taken away while paging can repeat or be missed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The agent."
+            },
+            "required": true,
+            "description": "The agent.",
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See an agent’s connected accounts result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agentId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "connections": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "connectionId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "toolkit": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "lifecycle": {
+                            "type": "string",
+                            "enum": [
+                              "connected",
+                              "paused",
+                              "disconnected"
+                            ]
+                          },
+                          "authenticationStatus": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "expired",
+                              "revoked",
+                              "pending"
+                            ]
+                          },
+                          "reconciliationStatus": {
+                            "type": "string",
+                            "enum": [
+                              "ready",
+                              "migration_needs_reconcile"
+                            ]
+                          },
+                          "operationRevisionIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "maxItems": 100000
+                          },
+                          "everyAgent": {
+                            "type": "boolean"
+                          },
+                          "authoritySync": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "ready"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "status"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "pending"
+                                    ]
+                                  },
+                                  "reason": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 1000
+                                  },
+                                  "retryAt": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                  }
+                                },
+                                "required": [
+                                  "status"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "failed"
+                                    ]
+                                  },
+                                  "reason": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 1000
+                                  }
+                                },
+                                "required": [
+                                  "status",
+                                  "reason"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          },
+                          "readiness": {
+                            "type": "object",
+                            "properties": {
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "ready",
+                                  "paused",
+                                  "needs_you",
+                                  "finishing",
+                                  "unavailable",
+                                  "gone"
+                                ]
+                              },
+                              "reason": {
+                                "type": "string",
+                                "enum": [
+                                  "usable",
+                                  "off_for_this_chat",
+                                  "dorkos_account_unlinked",
+                                  "dorkos_account_unavailable",
+                                  "own_key_unavailable",
+                                  "way_unreachable",
+                                  "own_key_cannot_run_actions",
+                                  "cannot_run_actions",
+                                  "paused",
+                                  "signing_in",
+                                  "signed_out",
+                                  "sign_in_unfinished",
+                                  "needs_review",
+                                  "access_update_failed",
+                                  "access_updating",
+                                  "disconnected",
+                                  "disconnect_finishing",
+                                  "disconnect_stuck",
+                                  "gone_at_service"
+                                ]
+                              },
+                              "fix": {
+                                "type": "object",
+                                "properties": {
+                                  "action": {
+                                    "type": "string",
+                                    "enum": [
+                                      "sign_in_again",
+                                      "connect_again",
+                                      "connect_new",
+                                      "resume",
+                                      "review_access",
+                                      "fix_key",
+                                      "retry",
+                                      "remove",
+                                      "wait",
+                                      "turn_on_for_this_chat"
+                                    ]
+                                  },
+                                  "fixableBy": {
+                                    "type": "string",
+                                    "enum": [
+                                      "person",
+                                      "dorkos"
+                                    ]
+                                  },
+                                  "retryAt": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                  }
+                                },
+                                "required": [
+                                  "action",
+                                  "fixableBy"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "serviceAccessPage": {
+                                "type": "object",
+                                "properties": {
+                                  "service": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100
+                                  },
+                                  "url": {
+                                    "type": "string",
+                                    "format": "uri"
+                                  }
+                                },
+                                "required": [
+                                  "service",
+                                  "url"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "copy": {
+                                "type": "object",
+                                "properties": {
+                                  "owner": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 500
+                                  },
+                                  "agent": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 1000
+                                  }
+                                },
+                                "required": [
+                                  "owner",
+                                  "agent"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "state",
+                              "reason",
+                              "copy"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "connectionId",
+                          "toolkit",
+                          "label",
+                          "lifecycle",
+                          "authenticationStatus",
+                          "reconciliationStatus",
+                          "operationRevisionIds",
+                          "everyAgent",
+                          "authoritySync",
+                          "readiness"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 500
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass as `cursor` for the next page; null on the last one."
+                    }
+                  },
+                  "required": [
+                    "agentId",
+                    "connections",
+                    "nextCursor"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/sessions/{sessionId}/connections": {
+      "get": {
+        "operationId": "connectors.list_session_connections",
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "See a chat’s connected accounts",
+        "description": "The connected accounts one chat’s agent can use, where each comes from, and whether the owner turned it off for this chat. Only the owner of this DorkOS. A page at a time, newest account first: pass `nextCursor` back as `cursor` for the next. An account given or taken away while paging can repeat or be missed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The chat."
+            },
+            "required": true,
+            "description": "The chat.",
+            "name": "sessionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See a chat’s connected accounts result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sessionId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "agentId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "connections": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "connectionId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "toolkit": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "agent",
+                              "this_chat"
+                            ]
+                          },
+                          "operationRevisionIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "maxItems": 100000
+                          },
+                          "readiness": {
+                            "type": "object",
+                            "properties": {
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "ready",
+                                  "paused",
+                                  "needs_you",
+                                  "finishing",
+                                  "unavailable",
+                                  "gone"
+                                ]
+                              },
+                              "reason": {
+                                "type": "string",
+                                "enum": [
+                                  "usable",
+                                  "off_for_this_chat",
+                                  "dorkos_account_unlinked",
+                                  "dorkos_account_unavailable",
+                                  "own_key_unavailable",
+                                  "way_unreachable",
+                                  "own_key_cannot_run_actions",
+                                  "cannot_run_actions",
+                                  "paused",
+                                  "signing_in",
+                                  "signed_out",
+                                  "sign_in_unfinished",
+                                  "needs_review",
+                                  "access_update_failed",
+                                  "access_updating",
+                                  "disconnected",
+                                  "disconnect_finishing",
+                                  "disconnect_stuck",
+                                  "gone_at_service"
+                                ]
+                              },
+                              "fix": {
+                                "type": "object",
+                                "properties": {
+                                  "action": {
+                                    "type": "string",
+                                    "enum": [
+                                      "sign_in_again",
+                                      "connect_again",
+                                      "connect_new",
+                                      "resume",
+                                      "review_access",
+                                      "fix_key",
+                                      "retry",
+                                      "remove",
+                                      "wait",
+                                      "turn_on_for_this_chat"
+                                    ]
+                                  },
+                                  "fixableBy": {
+                                    "type": "string",
+                                    "enum": [
+                                      "person",
+                                      "dorkos"
+                                    ]
+                                  },
+                                  "retryAt": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                  }
+                                },
+                                "required": [
+                                  "action",
+                                  "fixableBy"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "serviceAccessPage": {
+                                "type": "object",
+                                "properties": {
+                                  "service": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100
+                                  },
+                                  "url": {
+                                    "type": "string",
+                                    "format": "uri"
+                                  }
+                                },
+                                "required": [
+                                  "service",
+                                  "url"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "copy": {
+                                "type": "object",
+                                "properties": {
+                                  "owner": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 500
+                                  },
+                                  "agent": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 1000
+                                  }
+                                },
+                                "required": [
+                                  "owner",
+                                  "agent"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "state",
+                              "reason",
+                              "copy"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "thisChat": {
+                            "type": "string",
+                            "enum": [
+                              "on",
+                              "off"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "connectionId",
+                          "toolkit",
+                          "label",
+                          "source",
+                          "operationRevisionIds",
+                          "readiness"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 500
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass as `cursor` for the next page; null on the last one."
+                    }
+                  },
+                  "required": [
+                    "sessionId",
+                    "agentId",
+                    "connections",
+                    "nextCursor"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/connections/{connectionId}/exclusions": {
+      "get": {
+        "operationId": "connectors.list_exclusions",
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "See agents left out of a shared account",
+        "description": "The agents left out of one connected account shared with every agent, newest first, a page at a time: pass `nextCursor` back as `cursor` for the next. Only the owner of this DorkOS.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The connected account’s id."
+            },
+            "required": true,
+            "description": "The connected account’s id.",
+            "name": "connectionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "See agents left out of a shared account result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorGrantExclusionPage"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }

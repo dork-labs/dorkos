@@ -175,6 +175,11 @@ export function conformanceSampleInputs(
       requestId: 'conformance-request',
       providerInstanceId: 'conformance-provider',
     },
+    'connectors.list_every_agent_grants': {},
+    'connectors.list_agent_connections': { agentId: 'agent-a' },
+    'connectors.list_session_connections': { sessionId: 'conformance-session' },
+    'connectors.list_reviews': {},
+    'connectors.list_exclusions': { connectionId: 'conformance-connection' },
     // Behind the person bar: refused before the handler without the mount's pass.
     'extensions.dismiss_approval': {
       id: 'conformance-ext',

@@ -56,18 +56,43 @@ describe('connector resource transport methods', () => {
   });
 
   it('uses exact encoded owner, agent, and session resource paths', async () => {
-    stubFetch({ connections: [] });
+    stubFetch({ connections: [], nextCursor: null });
     await setup().getConnectorConnection('connection/a');
     expect(lastCall()[0].endsWith('/connectors/connections/connection%2Fa')).toBe(true);
 
     await setup().getAgentConnectorConnections('agent/a');
-    expect(lastCall()[0].endsWith('/connectors/agents/agent%2Fa/connections')).toBe(true);
+    expect(lastCall()[0].endsWith('/connectors/agents/agent%2Fa/connections?limit=200')).toBe(true);
 
     await setup().getSessionConnectorConnections('session/a');
-    expect(lastCall()[0].endsWith('/connectors/sessions/session%2Fa/connections')).toBe(true);
+    expect(lastCall()[0].endsWith('/connectors/sessions/session%2Fa/connections?limit=200')).toBe(
+      true
+    );
 
     await setup().getEveryAgentConnectorGrants();
-    expect(lastCall()[0]).toBe('http://localhost:4242/api/connectors/every-agent-grants');
+    expect(lastCall()[0]).toBe('http://localhost:4242/api/connectors/every-agent-grants?limit=200');
+  });
+
+  it('reads a paged account list to its last page and shows it in name order', async () => {
+    const row = (label: string) => ({ connectionId: `c-${label}`, label });
+    const pages = [
+      { connections: [row('Work')], nextCursor: 'after/work' },
+      { connections: [row('Home')], nextCursor: null },
+    ];
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(pages.shift()) })
+        )
+    );
+
+    const { connections } = await setup().getConnectorConnections();
+
+    expect(connections.map((connection) => connection.label)).toEqual(['Home', 'Work']);
+    expect(lastCall()[0]).toBe(
+      'http://localhost:4242/api/connectors/connections?cursor=after%2Fwork&limit=200'
+    );
   });
 
   it('turns one app on or off for one chat with a PUT on its exact encoded path', async () => {
@@ -83,14 +108,16 @@ describe('connector resource transport methods', () => {
   });
 
   it('uses owner-only agent request routes and forwards the exact decision body', async () => {
-    stubFetch({ requests: [] });
+    stubFetch({ requests: [], nextCursor: null });
     await setup().getConnectorAgentRequests('pending');
-    expect(lastCall()[0]).toBe('http://localhost:4242/api/connectors/agent-requests?state=pending');
+    expect(lastCall()[0]).toBe(
+      'http://localhost:4242/api/connectors/agent-requests?state=pending&limit=200'
+    );
 
-    stubFetch({ requests: [] });
+    stubFetch({ requests: [], nextCursor: null });
     await setup().getConnectorAgentRequests(undefined, 'session/a');
     expect(lastCall()[0]).toBe(
-      'http://localhost:4242/api/connectors/agent-requests?sessionId=session%2Fa'
+      'http://localhost:4242/api/connectors/agent-requests?sessionId=session%2Fa&limit=200'
     );
 
     stubFetch({ requestId: 'request/a', status: 'denied' });

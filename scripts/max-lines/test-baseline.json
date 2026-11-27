@@ -56,7 +56,7 @@
     "apps/client/src/layers/features/mesh/ui/__tests__/TopologyGraph.test.tsx": 660,
     "apps/client/src/layers/features/permissions/__tests__/permission-surfaces.test.tsx": 548,
     "apps/client/src/layers/features/profile/__tests__/ProfileAgentPages.test.tsx": 519,
-    "apps/client/src/layers/features/profile/__tests__/ProfileView.test.tsx": 563,
+    "apps/client/src/layers/features/profile/__tests__/ProfileView.test.tsx": 562,
     "apps/client/src/layers/features/relay/ui/__tests__/AdapterSetupWizard.test.tsx": 783,
     "apps/client/src/layers/features/right-panel/__tests__/RightPanelContainer.test.tsx": 524,
     "apps/client/src/layers/features/right-panel/__tests__/use-panel-views.test.tsx": 608,
@@ -110,7 +110,7 @@
     "apps/server/src/routes/__tests__/cloud-communities.test.ts": 993,
     "apps/server/src/routes/__tests__/cloud-owner-bar.test.ts": 690,
     "apps/server/src/routes/__tests__/community-connections.test.ts": 1091,
-    "apps/server/src/routes/__tests__/connector-management.test.ts": 894,
+    "apps/server/src/routes/__tests__/connector-management.test.ts": 893,
     "apps/server/src/routes/__tests__/debug.test.ts": 599,
     "apps/server/src/routes/__tests__/doc-channel-metrics-http.test.ts": 501,
     "apps/server/src/routes/__tests__/extension-decisions.test.ts": 668,
@@ -369,6 +369,6 @@
     "scripts/__tests__/check-vocab-gate.test.ts": 879,
     "scripts/__tests__/pr-test-plan.test.ts": 518,
     "scripts/__tests__/text-only-scope.test.ts": 570,
-    "scripts/__tests__/verify-proof.test.ts": 1052
+    "scripts/__tests__/verify-proof.test.ts": 1050
   }
 }

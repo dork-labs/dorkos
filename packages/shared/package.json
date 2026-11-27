@@ -165,6 +165,10 @@
       "types": "./src/running-chats.ts",
       "default": "./dist/running-chats.js"
     },
+    "./paging": {
+      "types": "./src/paging.ts",
+      "default": "./dist/paging.js"
+    },
     "./work-graph-reads": {
       "types": "./src/work-graph-reads.ts",
       "default": "./dist/work-graph-reads.js"

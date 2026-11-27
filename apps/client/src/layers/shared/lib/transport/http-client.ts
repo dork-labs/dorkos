@@ -172,3 +172,37 @@ export function buildQueryString(
   const qs = searchParams.toString();
   return qs ? `?${qs}` : '';
 }
+
+/** The most one page of a list holds; the full-list reads below ask for this many at a time. */
+const LIST_PAGE_LIMIT = 200;
+
+/**
+ * Every row of a paged list (`cursor` and `limit` in, `nextCursor` back), read
+ * page by page, for a surface that shows the whole list.
+ *
+ * @param baseUrl - The API's base URL.
+ * @param path - The list's path, without a query string.
+ * @param params - The list's own query fields.
+ * @param rowsOf - The rows one page holds.
+ * @returns The first page, as the server sent it, and every row in server order.
+ */
+export async function fetchAllPages<P extends { nextCursor: string | null }, T>(
+  baseUrl: string,
+  path: string,
+  params: Record<string, string | number | boolean | undefined>,
+  rowsOf: (page: P) => readonly T[]
+): Promise<{ first: P; rows: T[] }> {
+  const read = (cursor?: string) =>
+    fetchJSON<P>(
+      baseUrl,
+      `${path}${buildQueryString({ ...params, cursor, limit: LIST_PAGE_LIMIT })}`
+    );
+  const first = await read();
+  const rows: T[] = [...rowsOf(first)];
+  for (let cursor = first.nextCursor; cursor;) {
+    const page = await read(cursor);
+    rows.push(...rowsOf(page));
+    cursor = page.nextCursor;
+  }
+  return { first, rows };
+}

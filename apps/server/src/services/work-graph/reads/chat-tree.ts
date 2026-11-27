@@ -48,7 +48,8 @@ import type {
 import type { AuditReader } from '../../audit/visibility.js';
 import type { ChatLineage, LineageDescendant, LineageState } from '../chat-lineage.js';
 import type { LineageReads } from '../lineage-reads.js';
-import { decodePageCursor, encodePageCursor, invalidCursor } from './page-cursor.js';
+import { invalidCursor } from '../../../lib/paging/keyset-page.js';
+import { decodePageCursor, encodePageCursor } from './page-cursor.js';
 
 /** The fixed length a tree cursor's contents are padded to: room for about 20 levels. */
 const TREE_CURSOR_BYTES = 2048;
