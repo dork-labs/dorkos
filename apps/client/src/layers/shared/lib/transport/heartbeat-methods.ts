@@ -19,7 +19,7 @@ export function createHeartbeatMethods(baseUrl: string) {
     // The document also lists each capability's 202 approval answer, which a
     // person's own call never gets; the casts keep today's types.
     async getAgentHeartbeat(agentId: string): Promise<HeartbeatStatus> {
-      return (await api.call('heartbeat.view_page', { path: { id: agentId } })) as HeartbeatStatus;
+      return (await api.call('heartbeat.view_page', { path: { agentId } })) as HeartbeatStatus;
     },
     async chooseTriageCredits(useCredits: boolean): Promise<TriageCreditsChoice> {
       return (await api.call('heartbeat.choose_triage_credits', {

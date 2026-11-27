@@ -40,13 +40,13 @@ export function createPermissionMethods(baseUrl: string) {
     // a person's own read never gets; the casts keep today's types.
     async getAgentPermissions(agentId: string): Promise<AgentPermissionsResponse> {
       return (await api.call('permissions.view_agent', {
-        path: { id: agentId },
+        path: { agentId },
       })) as AgentPermissionsResponse;
     },
 
     async getAgentLevel(agentId: string): Promise<AgentLevelResponse> {
       return (await api.call('permissions.view_agent_level', {
-        path: { id: agentId },
+        path: { agentId },
       })) as AgentLevelResponse;
     },
 
