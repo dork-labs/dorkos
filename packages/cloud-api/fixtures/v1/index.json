@@ -95,6 +95,7 @@
     "billing/entitlements-communities.json": "EntitlementsSchema",
     "communities/list.json": "HostedCommunityListResponseSchema",
     "communities/start-request.json": "CommunityStartRequestSchema",
+    "communities/start-request-team.json": "CommunityStartRequestSchema",
     "communities/start.json": "CommunityStartResponseSchema",
     "communities/start-replay.json": "CommunityStartResponseSchema",
     "communities/name-check-free.json": "CommunityNameCheckResponseSchema",
