@@ -210,11 +210,13 @@ describe('agent_chats', () => {
 
   it(`scans at most ${AGENT_CHATS_SCAN_LIMIT} chats a page, and gives a cursor to go on`, async () => {
     bind('old-open', 'space');
-    for (let i = 0; i <= AGENT_CHATS_SCAN_LIMIT; i += 1) bind(`p-${i}`, 'private');
+    for (let i = 0; i <= AGENT_CHATS_SCAN_LIMIT; i += 1) bind(`private-chat-${i}`, 'private');
     const first = await get(`/api/agents/${SCOUT.id}/chats`, 'ranger');
     expect(first.body.chats).toEqual([]);
     expect(first.body.nextCursor).toEqual(expect.any(String));
-    expect(cursorText(first.body.nextCursor)).not.toContain('p-');
+    // The cursor is random ciphertext, so a short id turns up in it by chance
+    // ("p-" did, about one run in 128); a 13-byte prefix never does.
+    expect(cursorText(first.body.nextCursor)).not.toContain('private-chat-');
     const rest = await get(
       `/api/agents/${SCOUT.id}/chats?cursor=${first.body.nextCursor}`,
       'ranger'
