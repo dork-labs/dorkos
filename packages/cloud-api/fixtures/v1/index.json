@@ -168,6 +168,9 @@
     "hubs/assignment-org-computer-only.json": "HubAssignmentSchema",
     "hubs/page-report-request.json": "PageReportRequestSchema",
     "hubs/page-report.json": "PageReportResponseSchema",
-    "remote/command-page-take-down.json": "RemoteCommandSchema"
+    "remote/command-page-take-down.json": "RemoteCommandSchema",
+    "hubs/wake-pass-mint-request.json": "WakePassMintRequestSchema",
+    "hubs/wake-pass-mint.json": "WakePassMintResponseSchema",
+    "hubs/front-door-wake-request.json": "FrontDoorWakeRequestSchema"
   }
 }
