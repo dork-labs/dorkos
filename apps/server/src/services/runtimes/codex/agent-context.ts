@@ -8,7 +8,7 @@
  *
  * @module services/runtimes/codex/agent-context
  */
-import type { AgentHome } from '../../core/agent-identity/index.js';
+import type { AgentHome } from '@dorkos/shared/agent-facts';
 import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
 import {
   renderBlockedAreaLines,

@@ -15,7 +15,7 @@
  * @module services/runtimes/opencode/turn-context
  */
 import { buildAgentContextAppend } from '../../shared/agent-context.js';
-import type { AgentHome } from '../../../core/agent-identity/index.js';
+import type { AgentHome } from '@dorkos/shared/agent-facts';
 import type { AgentContextSource } from '../../shared/source/agent-context-source.js';
 import { buildRoomToolsBlock } from '../../shared/room-tools-context.js';
 import {

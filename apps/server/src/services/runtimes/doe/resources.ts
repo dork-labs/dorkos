@@ -21,7 +21,7 @@ import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import { assertValidDirectoryGrants } from '@dorkos/shared/directory-grants';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
 import { agentsUserSkillsDir } from '../../harness/agents-user-home.js';
-import type { AgentHome } from '../../core/agent-identity/index.js';
+import type { AgentHome } from '@dorkos/shared/agent-facts';
 /** Canonical home and turn grants are distinct from the current working folder. */
 export interface DoeResourceOptions {
   cwd: string;

@@ -3,6 +3,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+// A launch reads the rooms folder through the agent facts port, wired as boot does.
+import '../../../core/agent-identity/__tests__/wire-test-facts.js';
 import type { LocalBrowserHandoff } from '@dorkos/shared/local-browser';
 import { logger } from '../../../../lib/logger.js';
 import { HAND_BACK_CLIENT_ID, HANDED_BACK_MESSAGE, handBackWake } from '../hand-back-wake/index.js';

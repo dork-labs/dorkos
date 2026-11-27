@@ -25,7 +25,7 @@
  *
  * @module services/runtimes/shared/agent-context
  */
-import type { AgentHome } from '../../core/agent-identity/index.js';
+import type { AgentHome } from '@dorkos/shared/agent-facts';
 import { buildHomeSkillsBlock } from './home-skills-block.js';
 import { agentBrowserStateFileOf } from '@dorkos/shared/agent-browser';
 import type { ManagedMcpServer } from '@dorkos/shared/mesh-schemas';
@@ -44,12 +44,11 @@ import {
   MEMORY_STALENESS_LINE,
   MEMORY_TRUST_FRAMING,
 } from '@dorkos/shared/convention-files';
-import { memoryProviderStatus } from '../../memory/registry.js';
 import { logger } from '../../../lib/logger.js';
 import { fenceUntrustedBlock } from '../../core/untrusted-text/untrusted-fence.js';
 import { env } from '../../../env.js';
 import { currentCliInvocation } from './cli-invocation.js';
-import { agentBrowserGap, agentBrowserNotice } from '../../mesh/agent-browser-preset.js';
+import { runtimeFacts } from '../agent-facts.js';
 import { buildDorkosAreasBlock } from './awareness/dorkos-areas.js';
 import type { ContextPart } from '../../session/context-window/context-fit.js';
 import { diskContextSource, type AgentContextSource } from './source/agent-context-source.js';
@@ -369,7 +368,7 @@ async function buildMemoryBlock(
   // unfixed here.
   const notes = [
     ...(snapshot.warning ? [snapshot.warning] : []),
-    ...(memoryProviderStatus().benched ? [MEMORY_PROVIDER_BENCHED_NOTICE] : []),
+    ...(runtimeFacts().promptFacts().memoryBenched ? [MEMORY_PROVIDER_BENCHED_NOTICE] : []),
   ];
 
   const fence = fenceUntrustedBlock(snapshot.content, {
@@ -536,6 +535,7 @@ function buildAgentBrowserBlock(servers: readonly ManagedMcpServer[]): string {
       .map((server) => agentBrowserStateFileOf(server.connection))
       .filter((file): file is string => file !== undefined)
   );
+  const { agentBrowserGap, agentBrowserNotice } = runtimeFacts();
   const gaps = [...files].map((file) => agentBrowserGap(file));
   if (gaps.includes('missing')) return agentBrowserNotice('missing');
   return gaps.length > 0 && gaps.every((gap) => gap === 'empty') ? agentBrowserNotice('empty') : '';

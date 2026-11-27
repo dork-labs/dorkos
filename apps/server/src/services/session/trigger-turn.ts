@@ -114,7 +114,7 @@ import { takeContextWarningForTurn } from './agent-compaction/context-warning-fo
 import { takeTurnCutoff } from './turn-cutoff/turn-cutoff.js';
 import { takeTimersStoppedForTurn } from './turn-cutoff/timers-stopped.js';
 import { agentPathOfTurn } from './agent-compaction/compaction-permission.js';
-import { turnAgentOf } from '../core/agent-identity/index.js';
+import { turnAgentOf } from '@dorkos/shared/agent-facts';
 import { uiTurnFacts } from './browser-seat/ui-turn-facts.js';
 import { withStallGuard } from './stall-guard.js';
 import { awaitDispatchDecision } from './launch/dispatch-decision.js';

@@ -29,9 +29,8 @@ import path from 'node:path';
 import { z } from 'zod';
 import type { HarnessClaudeOnly, HarnessClaudeOnlyPlugin } from '@dorkos/shared/harness-schemas';
 import { inheritedClaudeRoot } from '../runtimes/claude-code/claude-config-dir.js';
-import { MarketplaceCache } from '../marketplace/cache/marketplace-cache.js';
-import { MarketplaceSourceManager } from '../marketplace/sources/marketplace-source-manager.js';
-import { marketplaceRepoKey } from '../marketplace/lib/marketplace-repo-key.js';
+import { harnessPackageFacts } from './agent-facts.js';
+import { marketplaceRepoKey } from './marketplace-repo-key.js';
 
 /**
  * The slice of a Claude Code settings file DorkOS reads.
@@ -373,7 +372,7 @@ async function readDorkosSources(
   let sources: { name: string; source: string }[];
   const sourcesPath = path.join(dorkHome, 'marketplaces.json');
   try {
-    sources = await new MarketplaceSourceManager(dorkHome).list();
+    sources = await harnessPackageFacts().packageSources(dorkHome);
   } catch {
     // DorkOS's OWN list is unreadable, which is a different answer from "Claude
     // Code did not say where this came from" and has to read differently. The
@@ -383,17 +382,14 @@ async function readDorkosSources(
     return { unreadable: sourcesPath };
   }
 
-  const cache = new MarketplaceCache(dorkHome);
   const byRepo = new Map<string, string>();
   const packages = new Map<string, Set<string>>();
   for (const source of sources) {
     const key = marketplaceRepoKey({ kind: 'url', url: source.source });
     if (key !== null && !byRepo.has(key)) byRepo.set(key, source.name);
     try {
-      const cached = await cache.readMarketplace(source.name);
-      if (cached) {
-        packages.set(source.name, new Set(cached.json.plugins.map((plugin) => plugin.name)));
-      }
+      const names = await harnessPackageFacts().cachedPackageNames(dorkHome, source.name);
+      if (names) packages.set(source.name, new Set(names));
     } catch {
       // A cache entry that cannot be read is a cache entry nobody looked in.
     }

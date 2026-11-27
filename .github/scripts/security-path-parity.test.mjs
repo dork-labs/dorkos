@@ -287,6 +287,44 @@ for (const [match, miss] of [
   ['packages/cli/src/harness-global-command.ts', 'packages/cli/src/lib/harness-global-command.ts'],
   ['packages/cli/src/harness-adopt-command.ts', 'packages/cli/src/harness_adopt-command.ts'],
   ['packages/cli/src/harness-hooks-command.ts', 'packages/cli/src/harness-hooks-command.tsx'],
+  // C18 (DOR-5462): the agent facts port. Whose home a folder is, where an agent may
+  // work and git may run, and the token a launch hands the agent, through the slots
+  // the computer side reads and the startup step that fills them.
+  ['packages/shared/src/agent-facts.ts', 'packages/shared/src/agent-facts-old.ts'],
+  ['apps/server/src/startup/agent-facts.ts', 'apps/server/src/startup/agent-facts-old.ts'],
+  [
+    'apps/server/src/services/runtimes/agent-facts.ts',
+    'apps/server/src/services/runtimesx/agent-facts.ts',
+  ],
+  [
+    'apps/server/src/services/session/turn-port/agent-facts.ts',
+    'apps/server/src/services/session/turn-portx/agent-facts.ts',
+  ],
+  ['apps/server/src/services/diff/agent-facts.ts', 'apps/server/src/services/diffx/agent-facts.ts'],
+  [
+    'apps/server/src/services/harness/agent-facts.ts',
+    'apps/server/src/services/harness/agent-facts-old.ts',
+  ],
+  // C18 (DOR-5462): moved out of services/marketplace/, which the list holds.
+  [
+    'apps/server/src/services/harness/marketplace-repo-key.ts',
+    'apps/server/src/services/harness/marketplace-repo-keys.ts',
+  ],
+  // C18 (DOR-5462), at Security's ask: the step that hands the turn-context record the
+  // local /mcp token to sweep for, and the record's install that takes it.
+  [
+    'apps/server/src/startup/steps/core-stores.ts',
+    'apps/server/src/startup/steps/core-stores-old.ts',
+  ],
+  [
+    'apps/server/src/services/session/turn-context/index.ts',
+    'apps/server/src/services/session/turn-context/record-turn-context.ts',
+  ],
+  // C18 (DOR-5462): git status holds git's kill switch for the files directly in core/.
+  [
+    'apps/server/src/services/core/git-status.ts',
+    'apps/server/src/services/core/git-status-old.ts',
+  ],
   // The bars in lib/ every door asks (DOR-4978, Security t1j): who the caller is, and who may
   // make an account decision. Each file by name; a look-alike stays off.
   ['apps/server/src/lib/caller-authority.ts', 'apps/server/src/lib/caller-authority-extra.ts'],

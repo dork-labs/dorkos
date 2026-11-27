@@ -41,12 +41,8 @@ import type { CapabilityHandlerContext } from '../core/capabilities/registry.js'
 import { getMemoryProvider } from './index.js';
 import { marksOf } from '../core/turn-power/turn-levels.js';
 import { chatReadOutsideWords } from '../core/turn-power/chat-outside-words.js';
-import { MEMORY_READ_TOOL_NAME, MEMORY_WRITE_TOOL_NAME } from './tool-names.js';
+import { MEMORY_READ_TOOL_NAME, MEMORY_WRITE_TOOL_NAME } from '@dorkos/shared/memory-provider';
 import { markCallerTurnOutsider } from '../core/capabilities/mark-caller-turn.js';
-
-// The tool names live in a leaf module so the tool lists can import them
-// without this file's dependencies; re-exported for prose that names one.
-export { MEMORY_WRITE_TOOL_NAME } from './tool-names.js';
 
 declare module '../core/capabilities/capability-definition.js' {
   interface CapabilityDeps {

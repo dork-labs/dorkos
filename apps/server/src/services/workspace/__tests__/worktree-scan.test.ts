@@ -8,6 +8,8 @@
  * working in, and one broken checkout must not take the page down.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+// Computer-side code reads agent facts through the port, wired as boot does.
+import '../../core/agent-identity/__tests__/wire-test-facts.js';
 import { mkdtemp, rm, writeFile, mkdir, realpath, stat, utimes, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';

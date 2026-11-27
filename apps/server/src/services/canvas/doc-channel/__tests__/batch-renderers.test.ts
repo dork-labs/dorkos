@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+// Computer-side code reads agent facts through the port, wired as boot does.
+import '../../../core/agent-identity/__tests__/wire-test-facts.js';
 import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import { AdditionalContextEntrySchema } from '@dorkos/shared/additional-context';
 import { renderContextEntry } from '../../../runtimes/claude-code/messaging/context-builder.js';

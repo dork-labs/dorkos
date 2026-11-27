@@ -41,7 +41,8 @@ import {
   savePreparedSettings,
 } from '../../core/runtime-seam/prepared-settings-write.js';
 import { DoeInferenceConfigSchema } from '@dorkos/shared/config-schema';
-import { homeOf, resolveAgentHome, readHomeManifest } from '../../core/agent-identity/index.js';
+import { homeOf, readHomeManifest } from '@dorkos/shared/agent-facts';
+import { runtimeFacts } from '../agent-facts.js';
 import { peekProjector } from '../../session/session-state-projector.js';
 import { dorkosToolsPosture } from '../shared/dorkos-mcp-injection.js';
 import { CREDITS_PROVIDER_ID } from '../shared/credits/environment.js';
@@ -421,7 +422,7 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
     sessionId: string;
     agentPath?: string;
   }): Promise<boolean> {
-    const home = homeOf(resolveAgentHome(session.cwd, session.agentPath));
+    const home = homeOf(runtimeFacts().home(session.cwd, session.agentPath));
     return (
       home !== undefined &&
       this.mesh?.getByPath(home) !== undefined &&
@@ -444,7 +445,7 @@ export class DoeRuntime extends DoeSessionRuntime implements AgentRuntime {
     if (this.inference()?.source === CREDITS_PROVIDER_ID) return true;
     const bound = await runtimeRegistry.getSessionAgentPath(id).catch(() => null);
     const home = homeOf(
-      resolveAgentHome(
+      runtimeFacts().home(
         record?.session.cwd ?? this.options.defaultCwd ?? DEFAULT_CWD,
         bound ?? undefined
       )

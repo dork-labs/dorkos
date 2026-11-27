@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+// Computer-side code reads agent facts through the port, wired as boot does.
+import '../../core/agent-identity/__tests__/wire-test-facts.js';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';

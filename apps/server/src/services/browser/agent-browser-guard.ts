@@ -43,10 +43,7 @@ import type { Logger } from '@dorkos/shared/logger';
 import { resolveDorkHome } from '../../lib/dork-home.js';
 import { cloudOriginsForThisServer } from '../core/cloud/cloud-api-origin.js';
 import { localBrowserAppHosts } from '../session/local-browser/app-origins.js';
-import {
-  agentBrowserStateFile,
-  ensureAgentBrowserStateFile,
-} from '../mesh/agent-browser-preset.js';
+import { browserFacts } from './agent-facts.js';
 
 /** Path segments, under the DorkOS data directory, of the guarded Playwright MCP config. */
 export const AGENT_BROWSER_CONFIG_SEGMENTS = ['browser', 'agent-browser-guard.json'] as const;
@@ -197,7 +194,7 @@ export function guardAgentBrowsers<
   const dorkHome = options.dorkHome ?? resolveDorkHome();
   const entries = options.entries ?? cloudOriginsForThisServer();
   const appHosts = options.appHosts ?? localBrowserAppHosts();
-  const ownStateFile = path.resolve(agentBrowserStateFile(dorkHome));
+  const ownStateFile = path.resolve(browserFacts().agentBrowserStateFile(dorkHome));
   const guarded: Record<string, T> = {};
   for (const [name, connection] of Object.entries(servers)) {
     if (!isPlaywrightBrowser(connection)) {
@@ -211,7 +208,7 @@ export function guardAgentBrowsers<
       );
       continue;
     }
-    ensureAgentBrowserStateFile(connection, dorkHome);
+    browserFacts().ensureAgentBrowserStateFile(connection, dorkHome);
     const stateFile = agentBrowserStateFileOf(connection);
     if (stateFile) {
       const owned = path.resolve(stateFile) === ownStateFile;
@@ -250,7 +247,7 @@ export function scrubAgentBrowserStateAtStartup(
   dorkHome: string = resolveDorkHome()
 ): ScrubOutcome {
   try {
-    return scrubAgentBrowserState(agentBrowserStateFile(dorkHome), { owned: true });
+    return scrubAgentBrowserState(browserFacts().agentBrowserStateFile(dorkHome), { owned: true });
   } catch {
     return 'refused';
   }

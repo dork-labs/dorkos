@@ -20,14 +20,12 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { UserProfile } from '@dorkos/shared/config-schema';
 import type { MemorySnapshot } from '@dorkos/shared/memory-provider';
 import { readConventionFile } from '@dorkos/shared/convention-files-io';
-import { readHomeManifest, type AgentHome } from '../../../core/agent-identity/index.js';
+import { readHomeManifest, type AgentHome } from '@dorkos/shared/agent-facts';
 import { configManager } from '../../../core/config-manager.js';
-import { getMemoryProvider } from '../../../memory/index.js';
 import { env } from '../../../../env.js';
 import { SERVER_VERSION } from '../../../../lib/version.js';
 import { currentDistribution } from '../../../../lib/distribution/index.js';
-import { logger } from '../../../../lib/logger.js';
-import { renderMemoryNotesLine } from '../../../memory/notes-line.js';
+import { runtimeFacts } from '../../agent-facts.js';
 
 /** The manifest fields the append reads, and nothing else. */
 export type ContextManifest = Pick<
@@ -89,14 +87,8 @@ export interface AgentContextSource {
 export const diskContextSource: AgentContextSource = {
   manifest: (home) => readHomeManifest(home),
   conventionFile: (home, name) => readConventionFile(home, name),
-  memorySnapshot: (agentId, home) => getMemoryProvider().getSnapshot({ agentId, agentPath: home }),
-  notesLine: async (agentId, home) => {
-    const list = await getMemoryProvider().listNotes({ agentId, agentPath: home }, { limit: 3 });
-    if (list.status === 'error') {
-      logger.warn('[Memory] Could not list notes for agent %s: %s', agentId, list.error);
-    }
-    return renderMemoryNotesLine(list);
-  },
+  memorySnapshot: (agentId, home) => runtimeFacts().memorySnapshot(agentId, home),
+  notesLine: (agentId, home) => runtimeFacts().memoryNotesLine(agentId, home),
   profile: () => configManager.getAll().profile,
   envFacts: (cwd) => ({
     cwd,

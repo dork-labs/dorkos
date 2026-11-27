@@ -24,8 +24,7 @@
  */
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
-import { readProjectInstalls } from '../marketplace/lib/project-install-index.js';
-import { installFolderDigest } from '../marketplace/lib/install-digest.js';
+import { harnessPackageFacts } from './agent-facts.js';
 
 /**
  * One package DorkOS installed into a project, unchanged since: its install
@@ -63,14 +62,14 @@ export async function provenDorkosInstalls(
   const proven = new Map<string, ProvenInstall>();
   let installs;
   try {
-    installs = await readProjectInstalls(dorkHome);
+    installs = await harnessPackageFacts().projectInstalls(dorkHome);
   } catch {
     return proven;
   }
   const project = canonical(projectPath);
   for (const record of installs) {
     if (!record.installDigest || canonical(record.projectPath) !== project) continue;
-    const folder = await installFolderDigest(record.installRoot);
+    const folder = await harnessPackageFacts().installDigest(record.installRoot);
     if (folder.kind !== 'digest' || folder.digest !== record.installDigest) continue;
     const installRoot = canonical(record.installRoot);
     proven.set(installRoot, { installRoot, name: record.name });

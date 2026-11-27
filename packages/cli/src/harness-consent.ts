@@ -24,6 +24,7 @@
  * @module harness-consent
  */
 import { join } from 'node:path';
+import { resolveDorkHome } from './lib/dork-home.js';
 import type { HarnessId } from '@dorkos/shared/harness-schemas';
 import type { WithheldHooks } from '../server/services/harness/project-with-consent.js';
 
@@ -191,4 +192,20 @@ export function withheldSummaryLine(withheld: readonly WithheldHooks[]): string 
   const hooks = withheld.reduce((total, w) => total + w.request.hooks.length, 0);
   const packages = withheld.length;
   return `  ${hooks} hook${hooks === 1 ? '' : 's'} withheld from ${packages} package${packages === 1 ? '' : 's'}`;
+}
+
+/**
+ * Wire the server's harness code to the marketplace's package reads (the
+ * sources DorkOS knows, their cached catalogs, the install index and an install
+ * folder's digest; spec `computer-side-starts-alone` §5.3), and answer the
+ * DorkOS data directory they read. The harness reads packages only through
+ * what it is handed, and refuses every read without it.
+ *
+ * @returns The resolved DorkOS data directory.
+ */
+export async function harnessDorkHome(): Promise<string> {
+  const { packageFacts } = await import('../server/services/marketplace/package-facts.js');
+  const { setHarnessPackageFacts } = await import('../server/services/harness/agent-facts.js');
+  setHarnessPackageFacts(packageFacts);
+  return resolveDorkHome();
 }

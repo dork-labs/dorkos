@@ -17,7 +17,7 @@ import {
   runSafeGit,
 } from '@dorkos/shared/safe-git';
 import type { WorkspaceCreateRequest } from '@dorkos/shared/workspace';
-import { mayRunGitHere } from '../../core/agent-identity/index.js';
+import { workspaceFacts } from '../agent-facts.js';
 import { recordFullAction } from '../../core/turn-power/full-autonomy.js';
 import {
   gitConfigArgs,
@@ -262,7 +262,8 @@ export async function isBareRepository(
 export async function computeDirtyState(cwd: string): Promise<DirtyState> {
   // An agent's checkout: DorkOS runs no git there yet (DOR-3343), so it can't
   // tell, and counts it as dirty. Removing it then needs `force`.
-  if (!mayRunGitHere(cwd)) return { dirty: true, uncommitted: [], untracked: [], unpushed: 0 };
+  if (!workspaceFacts().mayRunGit(cwd))
+    return { dirty: true, uncommitted: [], untracked: [], unpushed: 0 };
   // Anywhere else, the audited runner.
   const porcelain = await runSafeGit(['status', '--porcelain=v1'], cwd, {
     timeoutMs: GIT_TIMEOUT_MS,

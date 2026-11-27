@@ -17,8 +17,7 @@ import { createSignalShutdown } from './lib/shutdown-signal.js';
 import { stopCloudLinkManager } from './services/core/auth/cloud-link.js';
 import { stopCreditsLifecycle } from './services/core/cloud/credits-inference.js';
 import { configManager } from './services/core/config-manager.js';
-import { setGitGuardRoots } from './services/core/agent-identity/index.js';
-import { resolveAgentsDirectory } from './lib/agents-home.js';
+import { agentHomes, registeredAgents, wireGitGuardRoots } from './startup/agent-facts.js';
 import { logger, logError } from './lib/logger.js';
 import {
   captureLiveStandingGrants,
@@ -218,12 +217,7 @@ async function start() {
   // not the managed layer is enabled: which checkouts exist on disk is true
   // either way, and that honesty is the whole point of the /workspaces page.
   setWorkspaceRoot(resolveWorkspaceRoot({ dorkHome, config: workspaceConfig }));
-  // DorkOS never runs git in an agent folder (DOR-3343). Config can move the
-  // agents and workspace directories out of the data dir, so read them per call.
-  setGitGuardRoots(() => [
-    resolveWorkspaceRoot({ dorkHome, config: configManager.get('workspace') }),
-    resolveAgentsDirectory(configManager.get('agents').defaultDirectory),
-  ]);
+  wireGitGuardRoots(dorkHome);
   if (workspaceConfig.enabled) {
     const {
       service: workspaceService,
@@ -292,12 +286,12 @@ async function start() {
   repairAgentHomes();
   // Pin the agents DorkOS already had, once ever, before any turn launches:
   // only agents seen after this first start wait for a person (DOR-3068).
-  await pinRegisteredFolderConfigsOnce(async () => refs.meshCore?.listWithPaths() ?? []);
+  await pinRegisteredFolderConfigsOnce(registeredAgents);
   // Pin the repos DorkOS already knew, once ever, before any turn launches in
   // one: only repos seen after this first start wait for a person (DOR-3298).
   await pinKnownRepoBaselinesOnce(async () => [
     DEFAULT_CWD,
-    ...(refs.meshCore?.listWithPaths().map((agent) => agent.projectPath) ?? []),
+    ...(await agentHomes()),
     ...(await projectRegistry.list()).map((project) => project.root),
     ...(refs.managedWorkspaces?.list().map((workspace) => workspace.path) ?? []),
   ]);

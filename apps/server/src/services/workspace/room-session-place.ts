@@ -24,7 +24,7 @@ import path from 'node:path';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import { isSameOrInside } from '@dorkos/shared/directory-grants';
 import { logger } from '../../lib/logger.js';
-import { assertOwnDesk, DeskNotOwnError } from '../core/agent-identity/index.js';
+import { workspaceFacts } from './agent-facts.js';
 import { resolveSessionCwd, type ResolveSessionCwdRequest } from './resolve-session-cwd.js';
 import { logResolvedCwd, type ResolvedCwd } from './session-cwd-rung.js';
 
@@ -187,10 +187,7 @@ export async function resolveSessionCwdWithRoom(
   if (resolved.rung === 'explicit') {
     // **The desk guard** (spec `agent-home-desk` §3.4, I3): a named folder is
     // the room's agent's own, or the turn does not start.
-    try {
-      assertOwnDesk(agentPath, resolved.cwd, 'home');
-    } catch (err) {
-      if (!(err instanceof DeskNotOwnError)) throw err;
+    if (workspaceFacts().deskRefusal(agentPath, resolved.cwd, 'home') !== null) {
       return {
         ...resolved,
         refusal: {

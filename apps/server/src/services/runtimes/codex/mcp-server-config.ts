@@ -41,7 +41,7 @@ import type {
   ManagedMcpServerResolver,
   AgentRegistryPort,
 } from '@dorkos/shared/agent-runtime';
-import { resolveAgentTokenEnv } from '../../core/agent-identity/index.js';
+import { runtimeFacts } from '../agent-facts.js';
 import type { CodexTurnTools } from './transport/codex-transport.js';
 import { resolveDorkosMcpInjection } from '../shared/dorkos-mcp-injection.js';
 import type { ConnectorRuntimeMcpInjection } from '../connector-tools.js';
@@ -391,7 +391,7 @@ export async function resolveCodexLaunchTools(
   // App-server mints only when a thread loads. Tokens use the display name,
   // never the slug that is only an address.
   const mintAgentToken = () =>
-    resolveAgentTokenEnv(agent ? home : undefined, agent?.displayName ?? agent?.name);
+    runtimeFacts().launchTokenEnv(agent ? home : undefined, agent?.displayName ?? agent?.name);
   const mintsOnLoad = transport === 'app-server' && agent !== undefined;
   const agentTokenEnv = mintsOnLoad ? {} : await mintAgentToken();
   const dorkosTools = await resolveDorkosMcpInjection(
