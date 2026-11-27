@@ -7,7 +7,9 @@
  * than a leaf of `extensions` in `~/.dork/config.json`, and they are not covered
  * here. What this bar governs is the seven routes that move a leaf of that
  * section — a section whose every leaf is `operator-only` in
- * `config-write-policy.ts`:
+ * `config-write-policy.ts`. The rows marked (mount) are capabilities the
+ * capability mount serves, running this same bar (`http.callerBar: 'person'`,
+ * DOR-4978):
  *
  * | Route                                       | Writes                             |
  * | ------------------------------------------- | ---------------------------------- |
@@ -15,7 +17,7 @@
  * | `POST /api/extensions/:id/disable`          | `extensions.enabled` / `.disabled` |
  * | `POST /api/extensions/:id/approve`          | `extensions.approvedToRun`         |
  * | `POST /api/extensions/:id/revoke`           | `extensions.approvedToRun`         |
- * | `POST /api/extensions/:id/dismiss-approval` | `extensions.dismissedApprovals`    |
+ * | `…/:id/dismiss-approval` (mount)            | `extensions.dismissedApprovals`    |
  * | `POST /api/extensions/trusted-sources`      | `extensions.trustedSources`        |
  * | `DELETE /api/extensions/trusted-sources`    | `extensions.trustedSources`        |
  *
@@ -105,87 +107,16 @@
  * not switch a person's extensions off on their behalf either. Silently
  * disabling the extension somebody's workflow depends on is not a favour.
  *
+ * The bars themselves now live in `lib/http/person-bar.ts` (`assessPerson`), one
+ * definition the capability mount runs too (`http.callerBar: 'person'`,
+ * DOR-4978). This file keeps the thin wrapper a hand route calls.
+ *
  * @module routes/extensions-person-bar
  */
 import type { Context } from 'hono';
-import { problemBody, sendProblem } from '@dorkos/http-kit';
-import type { Problem, ProblemCode } from '@dorkos/shared/problem';
-import { trustedCaller } from '../services/core/capabilities/index.js';
-import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
-import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
-import {
-  honoRequestFacts,
-  type RequestFacts,
-  type RequestFactsEnv,
-} from '../http/request-facts.js';
-
-/**
- * What one surface calls itself when it refuses, so the reader is told what
- * DorkOS did not do and what to do instead — never a bare code.
- *
- * Passed in rather than derived, because surfaces answer with different codes
- * on purpose: a change to which code this copy of DorkOS runs answers
- * `operator_only`, the same code `PATCH /api/config` gives for the same paths,
- * while most others answer `person_only`.
- */
-export interface PersonBarCopy {
-  /** Machine-readable code for the origin and agent bars. */
-  code: ProblemCode;
-  /**
-   * What the cookie bar names as the thing being changed, as a noun phrase that
-   * completes "only a person signed in to DorkOS can change …".
-   */
-  subject: string;
-  /**
-   * The `detail` for a request that arrived from another site, given that
-   * site's origin. Say what the page tried to do, in the person's words.
-   */
-  crossSite: (origin: string) => string;
-  /** The `detail` for a caller that named itself an agent. */
-  agent: string;
-}
-
-/** A refusal {@link assessPerson} decided on, not yet written. */
-export interface PersonRefusal {
-  /** The HTTP status to answer with: the problem's own `status`. */
-  status: number;
-  /** The problem document to answer with (`application/problem+json`). */
-  body: Problem;
-}
-
-/** A refusal with a code and a sentence, its status taken from the code. */
-function refusal(code: ProblemCode, detail: string): PersonRefusal {
-  const body = problemBody(code, { detail });
-  return { status: body.status, body };
-}
-
-/**
- * Run the three bars without answering: the verdict, for a caller that
- * writes it itself or carries it elsewhere. An isolated extension's router
- * gets this verdict in a header, because the request it sees has the
- * person's cookie and tokens stripped (DOR-2686, spec §7).
- *
- * @param facts - The request's facts (`http/request-facts.ts`): read for
- *   `Origin`, the agent-identity and approval-token headers, and a resolved
- *   session user.
- * @param copy - What this surface says when it refuses.
- * @returns The refusal, or `null` when a person is asking.
- */
-export function assessPerson(facts: RequestFacts, copy: PersonBarCopy): PersonRefusal | null {
-  const origin = facts.headers.origin;
-  if (origin && !resolveTrustedOrigins().includes(origin)) {
-    return refusal(copy.code, copy.crossSite(origin));
-  }
-
-  // A caller that is not a signed-in person while login is on: `person_only`,
-  // whichever code the surface gives its other bars.
-  const cookieRefusal = requireOperatorCookieUnderLogin(facts, copy.subject);
-  if (cookieRefusal) return refusal('person_only', `${cookieRefusal.error}.`);
-
-  if (!trustedCaller(readCallerAuthority(facts))) return refusal(copy.code, copy.agent);
-
-  return null;
-}
+import { sendProblem } from '@dorkos/http-kit';
+import { assessPerson, type PersonBarCopy } from '../lib/http/person-bar.js';
+import { honoRequestFacts, type RequestFactsEnv } from '../http/request-facts.js';
 
 /**
  * Run the three bars for a route on the Hono chain.

@@ -12,7 +12,7 @@ import type { SessionVisibility } from '../session-visibility.js';
 import type { AuditQueryResult, TranscriptPage } from '@dorkos/shared/audit-schemas';
 import type { RunningChatsResponse } from '@dorkos/shared/running-chats';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
-import type { RunningChatSources } from '../../session/running-chats/running-chats.js';
+import type { RunningChatSources } from '../../session/chat-messages/screen/running-chats.js';
 
 const LOGGER = { debug() {}, info() {}, warn() {}, error() {} };
 

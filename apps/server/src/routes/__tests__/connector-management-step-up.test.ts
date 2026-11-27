@@ -8,14 +8,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 import { env } from '../../env.js';
 import { createConnectorManagementRoutes } from '../connector-management.js';
+import { withOwnerDoors } from './connector-owner-doors.js';
 import { ReconciliationNeedsConfirmationError } from '../../services/connectors/reconciliation/reconciliation-error.js';
 import { frontDoorStepUpHarness } from './front-door-step-up-harness.js';
+import {
+  resetHeldStepUpsForTests,
+  stepUpActionHash,
+} from '../../services/core/auth/step-up/step-up-holds.js';
+import { requestCodeForHash } from '../../services/core/auth/step-up/request-code.js';
 
 const OWNER = { kind: 'local_install', installationId: 'northwind-install' } as const;
 const ORIGIN = `http://localhost:${env.DORKOS_PORT}`;
 const EXCLUSIONS = '/api/connectors/connections/connection-a/exclusions/agent-a';
 
 describe('connected-app decision confirmation', () => {
+  const resolveOwner = vi.fn((): unknown => OWNER);
   const reviews = {
     create: vi.fn(),
     get: vi.fn(),
@@ -46,23 +53,21 @@ describe('connected-app decision confirmation', () => {
     startAuthentication: vi.fn(async () => ({ flowId: 'flow-a', state: 'starting' })),
     pollAuthentication: vi.fn(),
   };
-  const owner = frontDoorStepUpHarness(() => [
-    {
-      path: '/api/connectors',
-      routes: createConnectorManagementRoutes({
-        registry: { migrationHealth: () => ({ status: 'ready', migrated: false }) },
-        reviews,
-        reconciliation,
-        exclusions,
-        agentRequests,
-        resolveOwner: () => OWNER,
-        loginEnabled: () => true,
-        trustedOrigins: () => [ORIGIN],
-      } as unknown as Parameters<typeof createConnectorManagementRoutes>[0]),
-    },
-  ]);
+  const owner = frontDoorStepUpHarness(() =>
+    withOwnerDoors(createConnectorManagementRoutes, {
+      registry: { migrationHealth: () => ({ status: 'ready', migrated: false }) },
+      reviews,
+      reconciliation,
+      exclusions,
+      agentRequests,
+      resolveOwner,
+      loginEnabled: () => true,
+      trustedOrigins: () => [ORIGIN],
+    } as unknown as Parameters<typeof createConnectorManagementRoutes>[0])
+  );
   beforeEach(() => {
     vi.clearAllMocks();
+    resetHeldStepUpsForTests();
   });
 
   const raises: [string, 'post' | 'delete', string, object | undefined, Mock, number][] = [
@@ -130,6 +135,70 @@ describe('connected-app decision confirmation', () => {
       expect(write).toHaveBeenCalledOnce();
     }
   );
+
+  // DOR-4978: these three moved onto the mount behind the account-decision bar
+  // and the front-door hold. Their holds bind what the hand routes bound.
+  it.each([
+    [
+      'post',
+      '/api/connectors/agent-requests/request-a/decision',
+      { decision: 'current_access', connectionId: 'connection-a' },
+      'request-a',
+      {
+        op: 'answer-agent-request',
+        requestId: 'request-a',
+        decision: { decision: 'current_access', connectionId: 'connection-a', eventScopes: [] },
+      },
+    ],
+    [
+      'post',
+      '/api/connectors/agent-requests/request-a/authentication-flows',
+      { providerInstanceId: 'provider-a', label: 'Northwind mail' },
+      'request-a',
+      {
+        op: 'connect-for-agent-request',
+        requestId: 'request-a',
+        providerInstanceId: 'provider-a',
+        label: 'Northwind mail',
+      },
+    ],
+    [
+      'delete',
+      EXCLUSIONS,
+      undefined,
+      'connection-a',
+      { op: 'let-agent-back-in', connectionId: 'connection-a', agentId: 'agent-a' },
+    ],
+  ] as const)(
+    '%s %s holds with the request code its hand route showed',
+    async (method, url, body, target, input) => {
+      const ask = owner.call(method, url, 'own-tunnel');
+      const held = await (body === undefined ? ask : ask.send(body));
+      expect(held.status).toBe(428);
+      const hash = stepUpActionHash({ kind: 'connection.grant', target, input });
+      expect(held.body.requestCode).toBe(requestCodeForHash(hash));
+    }
+  );
+
+  it('runs the owner bar afresh on the confirm, and a confirm by another owner is refused while the hold stays', async () => {
+    const held = await owner
+      .call('post', '/api/connectors/agent-requests/request-a/decision', 'own-tunnel')
+      .send({ decision: 'current_access', connectionId: 'connection-a' });
+    expect(held.status).toBe(428);
+    const other = { kind: 'local_install', installationId: 'someone-else' };
+    resolveOwner.mockReturnValueOnce(other);
+    const refused = await owner.confirm(held.body.heldActionId, 'own-tunnel');
+    expect(refused.status).toBe(404);
+    expect(agentRequests.resolve).not.toHaveBeenCalled();
+    const done = await owner.confirm(held.body.heldActionId, 'own-tunnel');
+    expect(done.body).toMatchObject({ ok: true, status: 200 });
+    expect(agentRequests.resolve).toHaveBeenCalledWith(
+      OWNER,
+      'request-a',
+      { decision: 'current_access', connectionId: 'connection-a', eventScopes: [] },
+      expect.any(AbortSignal)
+    );
+  });
 
   it('holds approving a review at this computer too', async () => {
     const held = await owner

@@ -21,7 +21,7 @@ import {
 } from '@dorkos/shared/community-space-settings';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { assessPerson, type PersonBarCopy, type PersonRefusal } from './extensions-person-bar.js';
+import { assessPerson, type PersonBarCopy, type PersonRefusal } from '../lib/http/person-bar.js';
 import {
   RemoteConnectionAuthorizationError,
   RemoteConnectionNotFoundError,
@@ -49,7 +49,6 @@ const CODE_BY_SPACE_STATUS: Readonly<Record<SpaceReadRefusedError['status'], Pro
 const PERSON_BAR: PersonBarCopy = {
   code: 'person_only',
   subject: 'a space’s settings',
-  crossSite: (origin) => `A page on ${origin} tried to read a space’s settings.`,
   agent: 'Only a person can read a space’s settings, not an agent.',
 };
 

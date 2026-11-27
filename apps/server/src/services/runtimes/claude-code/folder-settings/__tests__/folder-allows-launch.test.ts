@@ -9,7 +9,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, beforeAll } from 'vitest';
 import { createDb, runMigrations } from '@dorkos/db';
 
 vi.mock('../../../../../lib/logger.js', () => ({
@@ -57,26 +57,28 @@ import {
   mergeFolderAllows,
   resolveFolderAllows,
 } from '../apply-folder-allows.js';
-import {
-  isFolderAllowListApproved,
-  lastApprovedRules,
-  recordFolderAllowApproval,
-  recordFolderAllowRefusal,
-} from '../folder-allow-consent.js';
+import { isFolderAllowListApproved, lastApprovedRules } from '../folder-allow-consent.js';
 import { rememberPersonAlwaysAllow } from '../person-always-allow.js';
 import { watchFolderAllows } from '../../tool-gate/folder-file-allows.js';
-import { recordRepoConfigApproval } from '../../repo-settings/repo-config-consent.js';
 import { isRepoConfigApproved } from '../../repo-settings/repo-config-consent.js';
 import { readLocalSettings } from '../../repo-settings/repo-local-settings.js';
 import {
   _internal,
   askForFolderAllows,
   mayAskAboutFolderAllows,
-  summariseFolderAllows,
-  cardShowsWholeList,
-  setFolderAllowApprovalGateway,
-  type FolderAllowApprovalGateway,
 } from '../folder-allow-approval.js';
+import { summariseFolderAllows, cardShowsWholeList } from '@dorkos/shared/folder-allows-card';
+import {
+  type FolderAllowApprovalGateway,
+  recordFolderAllowApproval,
+  recordFolderAllowRefusal,
+  recordRepoConfigApproval,
+  createComputerAsks,
+} from '../../../../core/approvals/computer-asks/index.js';
+import { wireTestAsks } from '../../../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The computer side records consent through the space side, as at startup.
+beforeAll(() => wireTestAsks());
 
 const AGENT = { id: '01AGENT', name: 'Marketing' };
 let home: string;
@@ -407,20 +409,20 @@ describe('askForFolderAllows', () => {
 
   it('records a yes, and asks no more', async () => {
     const g = gateway('granted');
-    expect(await askForFolderAllows(g, request())).toBe(true);
+    expect(await askForFolderAllows(createComputerAsks(g), request())).toBe(true);
     expect(isFolderAllowListApproved(request())).toBe(true);
     expect(mayAskAboutFolderAllows(request())).toBe(false);
     expect(g.requests[0]).toMatchObject({ capabilityId: 'runtime.apply_folder_allows' });
   });
 
   it('records a no', async () => {
-    expect(await askForFolderAllows(gateway('denied'), request())).toBe(false);
+    expect(await askForFolderAllows(createComputerAsks(gateway('denied')), request())).toBe(false);
     expect(store.permissions.refusedFolderAllows as string[]).toHaveLength(1);
     expect(mayAskAboutFolderAllows(request())).toBe(false);
   });
 
   it('records nothing when nobody answered, so a later turn asks again', async () => {
-    expect(await askForFolderAllows(gateway('expired'), request())).toBe(false);
+    expect(await askForFolderAllows(createComputerAsks(gateway('expired')), request())).toBe(false);
     expect(store.permissions.approvedFolderAllows).toEqual([]);
     expect(store.permissions.refusedFolderAllows).toEqual([]);
     expect(mayAskAboutFolderAllows(request())).toBe(true);
@@ -480,7 +482,7 @@ describe('a list too long for its card (DOR-4455)', () => {
     startService();
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => undefined);
     asked = [];
-    setFolderAllowApprovalGateway({
+    wireTestAsks({
       request: (input) => {
         asked.push(input);
         return { approvalId: 'a1', token: 't1', expiresAt: new Date().toISOString() };
@@ -490,7 +492,7 @@ describe('a list too long for its card (DOR-4455)', () => {
   });
 
   afterEach(() => {
-    setFolderAllowApprovalGateway(null);
+    wireTestAsks(null);
     setNotificationService(null);
     vi.restoreAllMocks();
   });

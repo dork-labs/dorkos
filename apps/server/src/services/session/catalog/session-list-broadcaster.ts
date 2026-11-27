@@ -49,9 +49,8 @@ import {
 } from '../origin/session-origin-overlays.js';
 import { askEntitlement, type AskSubject } from '../asks/ask-entitlement.js';
 import type { CallerPrincipal } from '../../../lib/caller-principal.js';
-import { sessionAudience } from '../../audit/session-visibility.js';
+import { sessionListAudience, sessionListProjectOf } from './session-list-space-view.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
-import { projectRegistry } from '../../projects/project-registry.js';
 import { logger } from '../../../lib/logger.js';
 import { noteAgentSessionListEvent } from '../agent-session-fanout.js';
 
@@ -213,7 +212,7 @@ function carriesBlockedDetail(event: SessionListEvent): boolean {
 export function sendSessionStatusSnapshot(client: FanOutClient, principal: CallerPrincipal): void {
   for (const update of listProjectorStatuses()) {
     if (!SNAPSHOT_LIFECYCLES.has(update.status.lifecycle)) continue;
-    if (!sessionAudience(update.sessionId)(principal)) continue;
+    if (!sessionListAudience(update.sessionId)(principal)) continue;
     if (client.bufferedBytes > SSE.MAX_BUFFERED_BYTES) {
       logger.warn(
         '[SessionListBroadcaster] connect snapshot truncated (client buffer over limit)',
@@ -620,7 +619,7 @@ export class SessionListBroadcaster {
       // on this frame. A session's folder is resolved when its turn starts, so
       // it is known by the time the session asks anything; when it is not,
       // the field is left out and the pending list's read fills it in.
-      const project = projectRegistry.peek(change.cwd);
+      const project = sessionListProjectOf(change.cwd);
       eventFanOut.broadcast(
         'interaction_pending',
         InteractionPendingEventSchema.parse({
@@ -643,7 +642,7 @@ export class SessionListBroadcaster {
         resolvedAt: new Date().toISOString(),
         ...(change.resolvedBy ? { resolvedBy: change.resolvedBy } : {}),
       }),
-      sessionAudience(change.sessionId)
+      sessionListAudience(change.sessionId)
     );
   }
 
@@ -726,7 +725,7 @@ export class SessionListBroadcaster {
   private send(outgoing: SessionListEvent): void {
     if (outgoing.type === 'session_removed') notifySessionRemoved(outgoing.sessionId);
     const sessionId = sessionIdOf(outgoing);
-    const audience = sessionAudience(sessionId);
+    const audience = sessionListAudience(sessionId);
     if (carriesBlockedDetail(outgoing)) {
       eventFanOut.broadcastRedacted(
         outgoing.type,

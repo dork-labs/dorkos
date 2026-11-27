@@ -76,6 +76,14 @@ export interface StepUpActionInput {
   /** The notes to look at twice. Each one is in `notes` too. */
   warnings?: readonly string[];
   /**
+   * The confirming request's own bars, run before anything about the hold is
+   * looked at (its time, its browser, the password, its one use): why they
+   * refused, or `undefined` to go on. A refusal leaves the hold as it was and
+   * is answered as a missing hold, so it tells the caller nothing about it
+   * (DOR-4978, Security t1j). Never stores what a bar let through.
+   */
+  admit?: (confirming: RequestFacts) => string | undefined;
+  /**
    * Run the action. Called once, only after a step-up passed, never with the
    * request that held it in scope: it must re-check anything that may have
    * changed in the meantime, its own person bar included, and answer the way
@@ -99,6 +107,7 @@ export interface HeldStepUp {
   /** The browser session that held it, or `null` when the caller had none. */
   sessionId: string | null;
   commit: StepUpActionInput['commit'];
+  admit?: StepUpActionInput['admit'];
   binding?: StepUpActionInput['binding'];
   /** Wrong passwords it will still take. */
   triesLeft: number;
@@ -206,6 +215,7 @@ export function holdStepUp(
     warnings: action.warnings ?? [],
     sessionId,
     commit: action.commit,
+    ...(action.admit ? { admit: action.admit } : {}),
     onDiscard: action.onDiscard,
     ...(action.binding ? { binding: { ...action.binding } } : {}),
     triesLeft: STEP_UP_MAX_PASSWORD_TRIES,
@@ -214,6 +224,20 @@ export function holdStepUp(
   expiry.unref?.();
   expiries.set(statement.heldActionId, expiry);
   return statement;
+}
+
+/**
+ * Whether the confirming request passes a held action's own bars
+ * ({@link StepUpActionInput.admit}), checked before anything about the hold:
+ * not its time, its browser or its use. An id with no hold, or a hold with no
+ * bars of its own, admits, and the hold's own checks answer as they did.
+ *
+ * @param heldActionId - The id the caller named.
+ * @param confirming - The confirming request.
+ */
+export function admitsConfirm(heldActionId: string, confirming: RequestFacts): boolean {
+  const admit = held.get(heldActionId)?.admit;
+  return admit === undefined || admit(confirming) === undefined;
 }
 
 /**

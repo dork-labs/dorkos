@@ -7,21 +7,38 @@
  */
 import type { Db, DbTransaction } from '@dorkos/db';
 import { logger } from '../../../lib/logger.js';
-import { moveBeatChats } from '../../heartbeats/heartbeat-store.js';
-import { moveRunSessions } from '../../tasks/session/active-run-sessions.js';
+
+/** Moves a scheduled chat's rows (a task run's, a beat's) to its canonical id. */
+export type ScheduledChatMoves = (db: Db | DbTransaction, fromId: string, toId: string) => void;
+
+/**
+ * The space side's moves, handed over at startup: the task run and beat rows
+ * live in tables the computer side does not name (spec
+ * `computer-side-starts-alone` §5.12). Unset, a rekey moves none of them.
+ */
+let scheduledChatMoves: ScheduledChatMoves | undefined;
+
+/**
+ * Register (or clear) how a scheduled chat's rows move with its rekey.
+ *
+ * @param moves - The moves, or `undefined` to clear them.
+ */
+export function setScheduledChatMoves(moves: ScheduledChatMoves | undefined): void {
+  scheduledChatMoves = moves;
+}
 
 /**
  * A task run's row and a beat's row name their chat by the same id its spin-offs'
  * started-by rows do, so a scheduled chat's lineage reads the same after a restart
- * (DOR-3703, MB1, MD).
+ * (DOR-3703, MB1, MD). The rows are moved by what {@link setScheduledChatMoves}
+ * registered, inside the caller's transaction when it passes one.
  *
  * @param db - The database the rows are kept in.
  * @param fromId - The id the chat was known by.
  * @param toId - Its canonical id.
  */
 export function moveScheduledChats(db: Db | DbTransaction, fromId: string, toId: string): void {
-  moveRunSessions(db, fromId, toId);
-  moveBeatChats(db, fromId, toId);
+  scheduledChatMoves?.(db, fromId, toId);
 }
 
 /**

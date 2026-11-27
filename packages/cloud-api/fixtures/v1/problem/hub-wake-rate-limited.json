@@ -1,0 +1,8 @@
+{
+  "code": "rate_limited",
+  "status": 429,
+  "title": "This computer asked to wake your DorkOS in the cloud a moment ago.",
+  "detail": "This computer can ask again in a little while. Its notice waits until then.",
+  "instance": "req_0a1b2c40",
+  "retryAfterMs": 45000
+}

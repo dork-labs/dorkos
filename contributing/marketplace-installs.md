@@ -440,7 +440,7 @@ The builder (`services/marketplace/preview/permission-preview.ts`) walks the sta
   **Declared is not the same as projected, and the UI copy says so.** A package's hooks only reach a harness settings file when three things hold:
   1. the install is **project-scoped** — `installed.ts` records global installs as identity-only and never reads their hooks;
   2. the package is a **`plugin` or `skill-pack`** — `projector.ts` filters to `PROJECTABLE_PLUGIN_TYPES`, and an `agent` or `shape` lands outside `plugins/` so it is never scanned at all;
-  3. a person has **approved that exact command set** for that project — `services/harness/hook-approval.ts` (DOR-522) gates projection on the hook CONTENT rather than on the install, keyed by `<packageName>@<digest>`.
+  3. a person has **approved that exact command set** for that project — `services/core/approvals/computer-asks/hook-card-ask.ts` (DOR-522) gates projection on the hook CONTENT rather than on the install, keyed by `<packageName>@<digest>`.
 
   The app's default install scope is global, so "will run" would over-claim in the common case; both preview surfaces therefore say the package **"declares"** these commands. The preview still reports them for every type and scope, because the file does land on disk, a later project-scoped install would surface them for approval, and under-reporting a shell command is the dangerous direction. The two surfaces answer different questions: the preview is what a person reads _before installing_, and the DOR-522 card is what they answer _before those commands can run_. Note that `packages/marketplace/src/package-validator.ts` has no `hooks` check, so nothing rejects a decorative `hooks/hooks.json` on a Shape or agent.
 

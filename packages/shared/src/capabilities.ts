@@ -160,6 +160,70 @@ export const PERSON_ONLY_AGENT_HINTS = [
 export type PersonOnlyAgentHint = (typeof PERSON_ONLY_AGENT_HINTS)[number];
 
 /**
+ * The caller bars a person-only capability may declare on its HTTP surface
+ * ({@link HttpSurface.callerBar}). A closed list: each value is one existing
+ * check, run by the mount before the handler and before the input is read.
+ *
+ * - `account-decision`: who may make an account decision about this install's
+ *   connections (`lib/http/account-decision-bar.ts`): a page on a trusted origin,
+ *   never an agent, an approval token or any program credential header, and with
+ *   login on, the owner's own browser session.
+ * - `person`: the person bar the extension and system routes share
+ *   (`lib/http/person-bar.ts`): no page on an origin outside the server's static
+ *   set, never an agent identity or an approval token, and with login on, a
+ *   browser session (so an API key alone is refused). With login off, a caller
+ *   presenting a key and no agent identity passes, as those routes always let it.
+ */
+export type HttpCallerBar = 'account-decision' | 'person';
+
+/** The codes the person bar's origin and agent refusals answer with. */
+export type PersonBarCode = 'person_only' | 'operator_only';
+
+/**
+ * What one surface says when the person bar refuses, so the reader is told what
+ * DorkOS did not do and what to do instead. Fixed strings, never chosen at
+ * runtime. A page on another site always reads {@link PERSON_BAR_CROSS_SITE}.
+ */
+export interface PersonBarCopy {
+  /** The code for the origin and agent refusals. */
+  readonly code: PersonBarCode;
+  /**
+   * What the cookie refusal names as the thing being changed, as a noun phrase
+   * that completes "only a person signed in to DorkOS can change …".
+   */
+  readonly subject: string;
+  /** The `detail` for a caller that named itself an agent. */
+  readonly agent: string;
+}
+
+/**
+ * What the person bar tells a page on another site, on every surface. Fixed:
+ * it never repeats the request's `Origin`.
+ */
+export const PERSON_BAR_CROSS_SITE = 'Open this from the DorkOS app.';
+
+/**
+ * The fixed sentences an `account-decision` bar may refuse a signed-in
+ * non-owner with ({@link HttpSurface.ownerOnly}), one per area. Only these are
+ * ever sent, so a new one is an edit here.
+ */
+export const ACCOUNT_DECISION_OWNER_ONLY = [
+  'Only the owner of this DorkOS can manage the connections on its DorkOS account.',
+] as const;
+
+/** One of {@link ACCOUNT_DECISION_OWNER_ONLY}. */
+export type AccountDecisionOwnerOnly = (typeof ACCOUNT_DECISION_OWNER_ONLY)[number];
+
+/**
+ * A check the mount runs before anything else on a path, answering `503` when
+ * the part of DorkOS it names did not start ({@link HttpSurface.precheck}).
+ *
+ * - `connector-store`: the connected-apps store's migration failed, as every
+ *   `/api/connectors` route answered before it moved onto the mount.
+ */
+export type HttpPrecheck = 'connector-store';
+
+/**
  * The HTTP projection of a capability: a route the server serves (the generic
  * capability mount, `routes/capability-http.ts`) and the OpenAPI document
  * describes, both from this one declaration (ADR 261123-170830).
@@ -207,6 +271,30 @@ export interface HttpSurface {
    * a fixed list ({@link PERSON_ONLY_AGENT_HINTS}).
    */
   agentsUse?: PersonOnlyAgentHint;
+  /**
+   * The caller bar the mount runs before the handler, on this path and on
+   * `POST /api/capabilities/{id}/invoke` alike. Declared here, never chosen
+   * from the input or the request. Only with `audience: 'person'` and no MCP
+   * surface. See {@link HttpCallerBar}.
+   *
+   * - `account-decision`: the handler reads the server-owned owner as
+   *   `context.ownerAuthority`.
+   * - `person`: the bar stands in for the audience's own check, so with login
+   *   off a caller with an API key and no agent identity is let through (the
+   *   person bar always allowed it; with login on only a browser session
+   *   passes). Such a caller is never given a person's authority: the handler
+   *   reads only the bar's own pass, `context.personBar`.
+   */
+  callerBar?: HttpCallerBar;
+  /**
+   * With `callerBar: 'account-decision'`, the sentence its `owner_only` refusal
+   * says: one of a fixed list ({@link ACCOUNT_DECISION_OWNER_ONLY}).
+   */
+  ownerOnly?: AccountDecisionOwnerOnly;
+  /** With `callerBar: 'person'`, what its refusals say. See {@link PersonBarCopy}. */
+  personCopy?: PersonBarCopy;
+  /** A check that answers first, before any bar. See {@link HttpPrecheck}. */
+  precheck?: HttpPrecheck;
   /**
    * Every answer on this path, refusals included, carries `Cache-Control:
    * no-store`: for an answer about a person's own devices or sign-ins, which

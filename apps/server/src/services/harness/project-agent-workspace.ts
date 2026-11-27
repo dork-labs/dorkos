@@ -61,7 +61,7 @@
  *   `allowPluginHooks` is denied as well, which covers the case where somebody
  *   hand-authors a manifest enabling another harness: their choice of harness is
  *   respected (same as `dorkos harness sync`), but a marketplace package still
- *   cannot slip shell commands in without the approval `hook-approval.ts`
+ *   cannot slip shell commands in without the approval `core/approvals/computer-asks/hook-card-ask.ts`
  *   requires (DOR-522). Note `<agentDir>/.dork/plugins` is scanned regardless of
  *   `dorkHome`, so omitting the home is NOT what keeps package hooks out.
  * - **Narrow.** No `dorkHome` is passed to `project()`, so globally installed

@@ -2,7 +2,6 @@
   "$comment": "The turn port's ratchet (apps/server/eslint-rules/turn-port-boundary.js, spec turns-survive-restarts §3.4, DOR-5157). Each number is how many imports of turn code that space-side file still holds. It may only fall. Run `pnpm check:turn-port -- --update` after removing some; never raise a number by hand.",
   "files": {
     "src/services/activity/plugin-reload-activity.ts": 1,
-    "src/services/audit/audit-capabilities.ts": 1,
     "src/services/audit/outside-text-stream.ts": 2,
     "src/services/audit/read-transcript.ts": 1,
     "src/services/audit/record-tool-use.ts": 1,
@@ -27,7 +26,6 @@
     "src/services/extensions/start-work-eligibility.ts": 1,
     "src/services/extensions/start-work.ts": 2,
     "src/services/heartbeats/accounts/beat-seat.ts": 1,
-    "src/services/heartbeats/beat-chat.ts": 1,
     "src/services/heartbeats/beat-launch.ts": 2,
     "src/services/heartbeats/beat-turns.ts": 1,
     "src/services/heartbeats/gatherers/open-work-reader.ts": 1,

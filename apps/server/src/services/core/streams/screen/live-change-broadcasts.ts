@@ -1,0 +1,364 @@
+/**
+ * The subscriptions that make an agent list, a settings panel and the
+ * Community connection list live.
+ *
+ * ## Why this is a module and not two lines in `index.ts`
+ *
+ * Both are one-line wirings, and a one-line wiring in `index.ts` is exactly the
+ * kind of code that cannot be tested: `start()` boots a whole server, so a test
+ * that wanted to prove the audience gate was really passed had no way to reach
+ * the call site and ended up carrying a VERBATIM COPY of the line instead.
+ * A copy proves the copy. Deleting `operatorAudience` from the real wiring left
+ * that suite entirely green — measured, in adversarial review, and the reason
+ * this file exists.
+ *
+ * So the decisions live here, `index.ts` calls {@link wireLiveChangeBroadcasts}
+ * once, and the tests drive this function with a recording fan-out. A mutation
+ * to either broadcast — the audience dropped, the payload widened, the
+ * subscription removed — now fails a test.
+ *
+ * @module services/core/streams/screen/live-change-broadcasts
+ */
+import type { AgentIdentityChange } from '@dorkos/mesh';
+import { operatorAudience } from '../../../notifications/notification-entitlement.js';
+import type { BroadcastAudience } from '../../event-fan-out.js';
+
+/** What a settings write reports — the shape `ConfigManager.onChange` hands out. */
+export interface ConfigChange {
+  /** Top-level sections this write touched. */
+  sections: readonly string[];
+  /** The exact key paths this write stored, e.g. `ui.communityNavigation`. */
+  paths: readonly string[];
+}
+
+/**
+ * Where the server keeps remembered Community navigation: each owner's
+ * Community order, the last room in each Community, and the last route inside
+ * this DorkOS. It lives in `config.json` for durability, but it is a record of
+ * where the person has been, not a setting they chose.
+ */
+const COMMUNITY_NAVIGATION_PATH = 'ui.communityNavigation';
+
+/**
+ * Whether every path a write stored lies inside remembered Community
+ * navigation, so the write is ordinary movement and not a settings change.
+ *
+ * A write that also stored anything else — including a whole `ui` section,
+ * which is what `PATCH /api/config` does — is not, and still broadcasts.
+ */
+function isNavigationOnlyWrite(paths: readonly string[]): boolean {
+  return (
+    paths.length > 0 &&
+    paths.every(
+      (path) =>
+        path === COMMUNITY_NAVIGATION_PATH || path.startsWith(`${COMMUNITY_NAVIGATION_PATH}.`)
+    )
+  );
+}
+
+/** The narrow slice of `MeshCore` this wiring needs. */
+export interface AgentsChangedSource {
+  /** Subscribe to committed agent identity writes. */
+  onAgentsChanged(callback: (change: AgentIdentityChange) => void): void;
+}
+
+/** The narrow slice of `ConfigManager` this wiring needs. */
+export interface ConfigChangeSource {
+  /** Subscribe to settings writes. Returns an unsubscribe. */
+  onChange(listener: (change: ConfigChange) => void): () => void;
+}
+
+/** The narrow slice of `RemoteConnectionStore` this wiring needs. */
+export interface CommunityConnectionsSource {
+  /**
+   * Subscribe to committed connection-list writes, one call per write with
+   * every change it made. The changes name owners and refs, and this wiring
+   * passes neither on. Returns an unsubscribe.
+   */
+  onChange(listener: (changes: readonly CommunityConnectionChangeView[]) => void): () => void;
+}
+
+/** What one connection change says about where it points: enough to tell the official space. */
+export interface CommunityConnectionChangeView {
+  /** The local owner whose list changed. */
+  ownerKey: string;
+  /** The origin the connection is pinned to. */
+  pinnedOrigin: string;
+  /** The community id discovery returned at pairing. */
+  remoteCommunityId: string;
+}
+
+/** The narrow slice of the global fan-out this wiring needs. */
+export interface BroadcastSink {
+  /** Write one event to every connection the audience admits. */
+  broadcast(eventName: string, data: unknown, audience?: BroadcastAudience): void;
+}
+
+/** Collaborators for {@link wireLiveChangeBroadcasts}. */
+export interface LiveChangeBroadcastDeps {
+  /**
+   * The mesh core whose identity writes become `agents_changed`.
+   *
+   * Optional because mesh init is allowed to fail without taking the server
+   * down (`index.ts` keeps running with no mesh routes). With no registry there
+   * are no agents to announce — but settings still change, so `config_changed`
+   * is wired either way rather than both being lost together.
+   */
+  meshCore: AgentsChangedSource | undefined;
+  /** The settings store whose writes become `config_changed`. */
+  configManager: ConfigChangeSource;
+  /** The Community connection store whose changes become `community_connections_changed`. */
+  communityConnections: CommunityConnectionsSource;
+  /**
+   * Whether a window may hear about this connection's change right now: every one while the
+   * spaces experiment is on, and only the official space's while it is off (spec
+   * `official-community-space` D5), so the stream carries no other space. Every change is
+   * announced when it is not given.
+   */
+  connectionVisible?: (change: CommunityConnectionChangeView) => boolean;
+  /** Where every event is written. */
+  eventFanOut: BroadcastSink;
+  /** The clock, for the `changedAt` stamp. Overridden only by tests. */
+  now?: () => string;
+}
+
+/**
+ * What `agents_changed` puts on the wire.
+ *
+ * **Strictly narrower than the in-process `AgentIdentityChange` it is built
+ * from**, and the missing field is the point: `projectPath` is dropped. This
+ * frame is GLOBAL — it reaches every connection on `/api/events`, an agent's
+ * included — nothing on the client reads the payload at all (`useAgentsSync`
+ * invalidates caches and ignores what arrived), and a field nobody reads that
+ * happens to be an absolute path on somebody's disk is a field with no argument
+ * for being there. A server-side subscriber that wants the path takes it from
+ * `MeshCore.onAgentsChanged` directly, where it still is.
+ */
+export interface AgentsChangedEvent {
+  /** What happened to the agent. */
+  kind: AgentIdentityChange['kind'];
+  /** The agent's ULID. */
+  agentId: string;
+  /** The agent's slug, when known. */
+  name?: string;
+  /** The agent's display name, when it has one. */
+  displayName?: string;
+  /** When the write committed. */
+  changedAt: string;
+}
+
+/** What `config_changed` puts on the wire: section names and a stamp, never a value. */
+export interface ConfigChangedEvent {
+  /** Top-level sections the write touched. */
+  sections: readonly string[];
+  /** When the write committed. */
+  changedAt: string;
+}
+
+/**
+ * What `community_connections_changed` puts on the wire: a stamp and nothing
+ * else.
+ *
+ * The global stream knows a connection only as a principal kind — operator,
+ * program, agent — never as the local owner a Community connection belongs
+ * to, so it cannot address one owner. The frame therefore says only that SOME
+ * owner's list moved: no ref, no status, no Community name, no owner. Each
+ * window then re-reads `GET /api/community-connections`, which is scoped to
+ * the owner it is signed in as, and learns only its own state. A window whose
+ * owner nothing happened to re-reads an unchanged list.
+ */
+export interface CommunityConnectionsChangedEvent {
+  /** When the change committed. */
+  changedAt: string;
+}
+
+/**
+ * Subscribe the live-change broadcasts (DOR-2052).
+ *
+ * **`agents_changed` is global.** An agent was registered, renamed or removed,
+ * by any path that reaches the mesh registry, and every open window redraws its
+ * agent list from this instead of waiting out a 30-second stale time. An
+ * agent's own roster changing is legitimate news for agents too, so there is no
+ * audience on it — which is safe precisely because the payload is names and ids
+ * (see {@link AgentsChangedEvent}).
+ *
+ * **`config_changed` is ADDRESSED.** Settings are a person's surface. It goes
+ * out under `operatorAudience`, the same gate `notification` uses, so an agent
+ * holding an `/api/events` connection never learns that somebody rearranged
+ * their sidebar. The payload is section NAMES only — config holds credentials,
+ * and a subscriber that wants a value reads it back off `GET /api/config`,
+ * which also keeps the event from going stale between the write and the read.
+ *
+ * **Remembered Community navigation is not a settings change** (DOR-2227).
+ * Every distinct move between Communities saves the destination under
+ * `ui.communityNavigation`, and broadcasting that made every open window
+ * refetch the whole config on ordinary movement — which is also what let the
+ * one-time "full power" dialog open mid-flow. A write that stored nothing but
+ * that path is skipped. No window reads navigation state from `GET
+ * /api/config`: each asks the owner-scoped navigation routes when it needs a
+ * remembered destination, so nothing waits on this frame for it.
+ *
+ * One asymmetry worth knowing: `agents_changed` is suppressed when a write
+ * changed nothing (the mesh registry compares the row before and after), while
+ * `config_changed` has no such suppression — `ConfigManager` reports every
+ * write, including one that stored an identical value.
+ *
+ * **`community_connections_changed` is ADDRESSED and content-free.** A
+ * Community connection was added, connected, told to reconnect, or removed —
+ * most urgently because the person left the Community or was removed from it,
+ * which the server learns in milliseconds. Without this the open window found
+ * out on its next 30-second poll of the list, and kept showing the Community
+ * until then. It goes out under `operatorAudience` (connections are a
+ * person's, and an agent can never manage them), and it carries only a stamp
+ * — see {@link CommunityConnectionsChangedEvent} for why nothing about the
+ * owner or the Community may ride on it.
+ *
+ * **It is not free, so it is sent sparingly.** Every frame costs one
+ * owner-scoped list read per open operator window, and that read re-verifies
+ * each of the owner's connections with its Community over the network. So
+ * the store announces only a change to the list's SHAPE — a row added,
+ * connected, told to reconnect, or removed — and one frame per committed
+ * write however many rows it touched. It never announces an access
+ * re-check: the list read itself performs one per row, so announcing it would
+ * have every window's read trigger another read in every window, forever.
+ *
+ * @param deps - The mesh core, the config manager, the Community connection
+ *   store, and the fan-out.
+ */
+export function wireLiveChangeBroadcasts(deps: LiveChangeBroadcastDeps): void {
+  const { meshCore, configManager, communityConnections, eventFanOut } = deps;
+  const now = deps.now ?? (() => new Date().toISOString());
+
+  meshCore?.onAgentsChanged((change) => {
+    // Field by field rather than a spread of `change`, so widening the
+    // in-process event can never widen the wire by accident.
+    const event: AgentsChangedEvent = {
+      kind: change.kind,
+      agentId: change.agentId,
+      name: change.name,
+      displayName: change.displayName,
+      changedAt: now(),
+    };
+    eventFanOut.broadcast('agents_changed', event);
+  });
+
+  configManager.onChange((change) => {
+    if (isNavigationOnlyWrite(change.paths)) return;
+    const event: ConfigChangedEvent = { sections: change.sections, changedAt: now() };
+    eventFanOut.broadcast('config_changed', event, operatorAudience);
+  });
+
+  communityConnections.onChange((changes) => {
+    // A write that touched only spaces the windows cannot see right now says nothing.
+    if (deps.connectionVisible && !changes.some(deps.connectionVisible)) return;
+    // The change is not otherwise read: the owner and ref it names must not reach a
+    // stream that cannot tell one owner's windows from another's.
+    const event: CommunityConnectionsChangedEvent = { changedAt: now() };
+    eventFanOut.broadcast('community_connections_changed', event, operatorAudience);
+  });
+}
+
+/**
+ * What `connector_agent_requests_changed` puts on the wire: a stamp and nothing
+ * else.
+ *
+ * An agent asked for an app, or a request it made was answered, expired or
+ * failed. The request names an agent, a service and the agent's own reason,
+ * and none of that belongs on a stream every connection shares, so each window
+ * re-reads its owner-scoped `GET /api/connectors/agent-requests` instead. That
+ * is what keeps the chat card, the room card and the Connections page's Needs you strip in
+ * step across windows: answering in one retires the card in the others.
+ */
+export interface ConnectorAgentRequestsChangedEvent {
+  /** When the change committed. */
+  changedAt: string;
+}
+
+/**
+ * The announcer the agent request service calls on every change.
+ *
+ * ADDRESSED under `operatorAudience`, like `community_connections_changed`: a
+ * request is the owner's to answer, and an agent must not learn from the global
+ * stream that another agent asked for something.
+ *
+ * @param eventFanOut - Where the event is written.
+ * @param now - The clock, for the `changedAt` stamp. Overridden only by tests.
+ * @returns A function to call once per committed change.
+ */
+export function connectorAgentRequestsChangedAnnouncer(
+  eventFanOut: BroadcastSink,
+  now: () => string = () => new Date().toISOString()
+): () => void {
+  return () => {
+    const event: ConnectorAgentRequestsChangedEvent = { changedAt: now() };
+    eventFanOut.broadcast('connector_agent_requests_changed', event, operatorAudience);
+  };
+}
+
+/**
+ * What `local_browser_changed` puts on the wire: a stamp, never the site, the
+ * agent or the folder. Each window re-reads the state, which only a person gets.
+ */
+export interface LocalBrowserChangedEvent {
+  /** When the change happened. */
+  changedAt: string;
+}
+
+/**
+ * The announcer the Agent browser's handoff calls when a handoff starts or ends
+ * or a sign-in moves.
+ *
+ * ADDRESSED under `operatorAudience`: a handoff is a person's to answer, and an
+ * agent must not learn from the global stream that another agent handed over.
+ *
+ * @param eventFanOut - Where the event is written.
+ * @param now - The clock, for the `changedAt` stamp. Overridden only by tests.
+ * @returns A function to call once per change.
+ */
+export function localBrowserChangedAnnouncer(
+  eventFanOut: BroadcastSink,
+  now: () => string = () => new Date().toISOString()
+): () => void {
+  return () => {
+    const event: LocalBrowserChangedEvent = { changedAt: now() };
+    eventFanOut.broadcast('local_browser_changed', event, operatorAudience);
+  };
+}
+
+/** The narrow slice of `CapabilityRegistry` the capabilities broadcast needs. */
+export interface CapabilitiesChangeSource {
+  /** Subscribe to every extension contribute and remove. Returns an unsubscribe. */
+  onChange(listener: (version: number) => void): () => void;
+}
+
+/**
+ * What `capabilities_changed` puts on the wire: the registry's new surface
+ * version and nothing else. Each reader re-fetches what it shows (the
+ * permissions page, the catalog) rather than trusting a payload to describe it.
+ */
+export interface CapabilitiesChangedEvent {
+  /** The registry's surface version after the change; it only ever grows. */
+  version: number;
+}
+
+/**
+ * Broadcast `capabilities_changed` whenever a running extension's tools join or
+ * leave the registry (DOR-2685), so an open permissions page or catalog
+ * re-fetches instead of showing a list that is no longer true.
+ *
+ * GLOBAL, with no audience: which tools exist is legitimate news for agents too
+ * (`list_capabilities` reads the same catalog), and the payload is a counter.
+ *
+ * @param registry - The capability registry whose changes are announced.
+ * @param eventFanOut - Where the event is written.
+ * @returns A function that stops the broadcast.
+ */
+export function wireCapabilitiesChangedBroadcast(
+  registry: CapabilitiesChangeSource,
+  eventFanOut: BroadcastSink
+): () => void {
+  return registry.onChange((version) => {
+    const event: CapabilitiesChangedEvent = { version };
+    eventFanOut.broadcast('capabilities_changed', event);
+  });
+}

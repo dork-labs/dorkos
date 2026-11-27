@@ -32,7 +32,8 @@ import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { logger } from '../lib/logger.js';
 import { broadcastExtensionReloaded } from './extensions.js';
-import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { refusedNotAPerson } from './extensions-person-bar.js';
+import type { PersonBarCopy } from '../lib/http/person-bar.js';
 
 /**
  * A set refused before anything ran: `412 precondition_failed` when its

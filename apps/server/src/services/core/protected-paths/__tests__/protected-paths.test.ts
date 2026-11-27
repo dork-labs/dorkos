@@ -201,6 +201,7 @@ describe('protected paths', () => {
       '.dork/browser-profiles/.binding-key',
       // DOR-3105: the Terminal command the person runs as themselves, at every level.
       '.local/bin/dorkos',
+      '.gnupg/**',
       '.dork/browser-profiles/**',
       '.dork/local-browser/saved-logins/**',
     ]);

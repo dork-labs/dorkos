@@ -16,16 +16,14 @@
  */
 import type { PermissionUpdate } from '@anthropic-ai/claude-agent-sdk';
 import { logger } from '../../../../lib/logger.js';
-import {
-  isRepoConfigApproved,
-  recordRepoConfigApproval,
-} from '../repo-settings/repo-config-consent.js';
+import { runtimeAsks } from '../../computer-asks.js';
+import { isRepoConfigApproved } from '../repo-settings/repo-config-consent.js';
 import {
   readLocalSettings,
   readLocalSettingsWithAllows,
 } from '../repo-settings/repo-local-settings.js';
 import { judgeAllowRule } from './agent-folder-allows.js';
-import { lastApprovedRules, recordFolderAllowApproval } from './folder-allow-consent.js';
+import { lastApprovedRules } from './folder-allow-consent.js';
 
 /** Where an answer was given. */
 export interface PersonAnswerTurn {
@@ -73,10 +71,13 @@ function rememberAtHome(turn: PersonAnswerTurn, updates: readonly PermissionUpda
   if (added.length === 0) return;
   const rules = [...(lastApprovedRules(turn.agentId, turn.home) ?? [])];
   for (const rule of added) if (!rules.includes(rule)) rules.push(rule);
-  recordFolderAllowApproval(
-    { agentId: turn.agentId, home: turn.home, rules },
-    'a person chose Always allow in the agent folder'
-  );
+  runtimeAsks().record({
+    kind: 'folder_allows_approved',
+    agentId: turn.agentId,
+    home: turn.home,
+    rules,
+    reason: 'a person chose Always allow in the agent folder',
+  });
 }
 
 /** Approve the worktree's local file as it will read with the person's rules added. */
@@ -91,7 +92,7 @@ function rememberInWorkspace(turn: PersonAnswerTurn, updates: readonly Permissio
   if (before && !(before.approvable && isRepoConfigApproved('local', before.digest))) return;
   const after = readLocalSettingsWithAllows(turn.cwd, turn.dorkHome, added, runsIn);
   if (!after?.approvable) return;
-  recordRepoConfigApproval('local', after.digest);
+  runtimeAsks().record({ kind: 'repo_config_approved', setting: 'local', digest: after.digest });
 }
 
 /**

@@ -4,7 +4,7 @@
  * --help
  * Purpose: hold the client and the shared UI package to the design tokens: hard
  *          rules fail on any match, ratchet rules on any count that grows.
- * Runs in: the required `typecheck` job; by hand.
+ * Runs in: `pnpm ratchet` (the required `typecheck` job); by hand.
  * To fix:  use the token the message names. After removing literals, run
  *          `pnpm check:design-tokens -- --update` (it only lowers). Never raise an
  *          entry; a changed rule needs a fresh `guard-rule-change` label.

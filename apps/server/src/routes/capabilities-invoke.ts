@@ -51,7 +51,7 @@ import { Hono } from 'hono';
 
 import type { CapabilityRegistry } from '../services/core/capabilities/index.js';
 import type { ApiEnv } from '../http/api-chain.js';
-import { dispatchCapability } from './capability-dispatch.js';
+import { dispatchCapability, type CapabilityDoorPorts } from './capability-dispatch.js';
 import { readJsonBody } from '@dorkos/http-kit';
 
 /**
@@ -65,9 +65,14 @@ import { readJsonBody } from '@dorkos/http-kit';
  * capability's own REST path.
  *
  * @param registry - The boot-composed capability registry to dispatch through.
+ * @param ports - The bars and prechecks a declared capability runs first, the
+ *   same ones its REST path runs (the account-decision bar, DOR-4978).
  * @returns The routes serving `POST /:id/invoke`, for `app.route('/api/capabilities', …)`.
  */
-export function createCapabilitiesInvokeRoutes(registry: CapabilityRegistry): Hono<ApiEnv> {
+export function createCapabilitiesInvokeRoutes(
+  registry: CapabilityRegistry,
+  ports?: CapabilityDoorPorts
+): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
   // A request with no body reads as none at all, as Express 5's `req.body`
   // did; capabilities with an empty input schema (`config.get`) accept `{}`.
@@ -76,6 +81,7 @@ export function createCapabilitiesInvokeRoutes(registry: CapabilityRegistry): Ho
       registry,
       id: c.req.param('id'),
       input: readJsonBody(c, { emptyAs: {} }),
+      ...(ports ? { ports } : {}),
     })
   );
   return router;

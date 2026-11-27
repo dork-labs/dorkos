@@ -1,4 +1,12 @@
-/** Provider-neutral Connections catalog, owner resources, and durable authentication routes. */
+/**
+ * Provider-neutral Connections catalog, owner resources, and durable authentication routes.
+ *
+ * Seeing what disconnecting an account touches, renaming one and removing one
+ * are capabilities the mount serves behind the account-decision bar
+ * (`services/connectors/resources/owner-capabilities.ts`, DOR-4978); so are the
+ * paged lists of one agent's, one chat's and every agent's accounts
+ * (`services/connectors/owner-lists/`, DOR-4982).
+ */
 import { Hono, type Context } from 'hono';
 import { z, ZodError } from 'zod';
 import {
@@ -9,13 +17,18 @@ import { ConnectionIdSchema } from '@dorkos/shared/connector-schemas';
 import {
   ConnectorAppActionsQuerySchema,
   ConnectorAuthenticationFlowCreateRequestSchema,
-  ConnectorConnectionPatchSchema,
   ConnectorReconnectRequestSchema,
   ConnectorSessionAccessUpdateSchema,
 } from '@dorkos/shared/connector-resource-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { readQuery } from '../http/request-query.js';
+import { INVALID_CURSOR_DETAIL, PageQuerySchema } from '@dorkos/shared/paging';
+import { assertPageCursor, keysetPage } from '../lib/paging/keyset-page.js';
+import {
+  invalidCursor,
+  isInvalidCursor,
+} from '../services/core/capabilities/capability-definition.js';
 import {
   requestAbortSignal,
   resolveConnectorOperator,
@@ -73,23 +86,14 @@ export interface ConnectorResourcesRouterDeps extends ConnectorOwnerBoundaryDeps
   /** Account-free catalog and owner-scoped resource reads. */
   readonly query: Pick<
     ConnectorOperatorQueryService,
-    | 'catalog'
-    | 'listConnections'
-    | 'getConnection'
-    | 'disconnectImpact'
-    | 'agentConnections'
-    | 'everyAgentGrants'
-    | 'sessionConnections'
+    'catalog' | 'listConnections' | 'getConnection' | 'createdAtOf'
   >;
   /** App logos, fetched once from the service's logo host and served from this server. */
   readonly logos: Pick<CatalogLogoService, 'get'>;
   /** Restart-safe provider authentication flows. */
-  readonly authentication: Pick<ConnectorAuthenticationFlowService, 'start' | 'reconnect' | 'poll'>;
+  readonly authentication: Pick<ConnectorAuthenticationFlowService, 'start' | 'reconnect'>;
   /** Canonical local lifecycle mutations. */
-  readonly lifecycle: Pick<
-    ConnectorLifecycleService,
-    'rename' | 'pause' | 'resume' | 'disconnect' | 'remove'
-  >;
+  readonly lifecycle: Pick<ConnectorLifecycleService, 'pause' | 'resume' | 'disconnect'>;
   /** What an app lets agents do, read on demand and kept. */
   readonly actions: Pick<ConnectorAppActionsService, 'list'>;
   /** Asks each service whether its sign-ins still hold when the owner looks (debounced). */
@@ -233,15 +237,31 @@ export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDep
     }
   });
 
+  // Newest connected first, a page at a time (DOR-4982). A hand route: it
+  // follows the client going away, which the mount does not.
   router.get('/connections', async (c) => {
     const operator = owner(c);
     if (operator instanceof Response) return operator;
+    const query = PageQuerySchema.safeParse(readQuery(c));
+    if (!query.success) return validationProblem(c, query.error);
     try {
+      // A bad cursor is refused before the sign-in check and the list are paid for.
+      assertPageCursor('connections', query.data.cursor, invalidCursor);
       await deps.signIns.refreshOnDemand();
-      return c.json({
-        connections: await withSignal(c, (signal) => deps.query.listConnections(operator, signal)),
-      });
+      const all = await withSignal(c, (signal) => deps.query.listConnections(operator, signal));
+      const ages = deps.query.createdAtOf(all.map((row) => row.connectionId));
+      const page = keysetPage(
+        'connections',
+        all,
+        (row) => [ages.get(row.connectionId) ?? '', row.connectionId],
+        query.data,
+        invalidCursor
+      );
+      return c.json({ connections: page.items, nextCursor: page.nextCursor });
     } catch (error) {
+      if (isInvalidCursor(error)) {
+        return problem(c, 'invalid_request', { detail: INVALID_CURSOR_DETAIL });
+      }
       return resourceErrorResponse(c, error);
     }
   });
@@ -271,26 +291,6 @@ export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDep
         }
       },
     });
-  });
-
-  router.get('/authentication-flows/:flowId', async (c) => {
-    const operator = owner(c);
-    if (operator instanceof Response) return operator;
-    try {
-      return c.json(await deps.authentication.poll(operator, c.req.param('flowId')));
-    } catch (error) {
-      return resourceErrorResponse(c, error);
-    }
-  });
-
-  router.get('/connections/:connectionId/disconnect-impact', (c) => {
-    const operator = owner(c);
-    if (operator instanceof Response) return operator;
-    try {
-      return c.json(deps.query.disconnectImpact(operator, c.req.param('connectionId')));
-    } catch (error) {
-      return resourceErrorResponse(c, error);
-    }
   });
 
   router.post('/connections/:connectionId/reconnect', async (c) => {
@@ -352,34 +352,6 @@ export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDep
     });
   }
 
-  router.patch('/connections/:connectionId', (c) => {
-    const operator = owner(c);
-    if (operator instanceof Response) return operator;
-    const body = ConnectorConnectionPatchSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return validationProblem(c, body.error);
-    try {
-      return c.json(deps.lifecycle.rename(operator, c.req.param('connectionId'), body.data.label));
-    } catch (error) {
-      return resourceErrorResponse(c, error);
-    }
-  });
-
-  router.post('/connections/:connectionId/remove', (c) => {
-    const operator = owner(c);
-    if (operator instanceof Response) return operator;
-    const body = z
-      .object({})
-      .strict()
-      .safeParse(readJsonBody(c, { emptyAs: {} }));
-    if (!body.success) return validationProblem(c, body.error);
-    try {
-      deps.lifecycle.remove(operator, c.req.param('connectionId'));
-      return c.body(null, 204);
-    } catch (error) {
-      return resourceErrorResponse(c, error);
-    }
-  });
-
   router.delete('/connections/:connectionId', async (c) => {
     const operator = owner(c);
     if (operator instanceof Response) return operator;
@@ -404,36 +376,6 @@ export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDep
           deps.query.getConnection(operator, c.req.param('connectionId'), signal)
         )
       );
-    } catch (error) {
-      return resourceErrorResponse(c, error);
-    }
-  });
-
-  router.get('/every-agent-grants', (c) => {
-    const operator = owner(c);
-    if (operator instanceof Response) return operator;
-    try {
-      return c.json(deps.query.everyAgentGrants(operator));
-    } catch (error) {
-      return resourceErrorResponse(c, error);
-    }
-  });
-
-  router.get('/agents/:agentId/connections', async (c) => {
-    const operator = owner(c);
-    if (operator instanceof Response) return operator;
-    try {
-      return c.json(await deps.query.agentConnections(operator, c.req.param('agentId')));
-    } catch (error) {
-      return resourceErrorResponse(c, error);
-    }
-  });
-
-  router.get('/sessions/:sessionId/connections', async (c) => {
-    const operator = owner(c);
-    if (operator instanceof Response) return operator;
-    try {
-      return c.json(await deps.query.sessionConnections(operator, c.req.param('sessionId')));
     } catch (error) {
       return resourceErrorResponse(c, error);
     }

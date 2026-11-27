@@ -6,15 +6,14 @@
  * opens the new day's. A new chat each day keeps a beat from reloading a long
  * history (canon §7, "Beats run light"). The (agent, date) → chat mapping is
  * `heartbeat_state.beat_chat_id` / `beat_chat_date`. The chat list labels it
- * "Heartbeat" ({@link applyHeartbeatOriginOverlay}).
+ * "Heartbeat" (`session/origin/heartbeat-origin-overlay.ts`, beside the other
+ * origin overlays; the beat lookup it reads is handed in from here).
  *
  * @module services/heartbeats/beat-chat
  */
 import { randomUUID } from 'node:crypto';
-import type { Session } from '@dorkos/shared/types';
 import { HEARTBEAT_ORIGIN_LABEL } from '@dorkos/shared/heartbeat-schemas';
 import { zonedDay } from '@dorkos/shared/working-hours';
-import { dropUserLastMessageAtWithoutOperator } from '../session/origin/user-last-message-origin.js';
 
 /** Today's beat chat for an agent. */
 export interface BeatChat {
@@ -66,30 +65,4 @@ export function resolveBeatChat(
     return { sessionId: stored.beatChatId, date, isNew: false, title };
   }
   return { sessionId: mintId(), date, isNew: true, title };
-}
-
-/** Which of these chats are beat chats. */
-export type ResolveBeatChats = (sessionIds: string[]) => Set<string>;
-
-/**
- * Label beat chats "Heartbeat" in the chat list. An agent started them, nobody
- * typed: like a scheduled run, a beat bumps no "last message from you".
- *
- * @param sessions - The listed chats, changed in place.
- * @param resolve - Which ids are beat chats; absent when heartbeats are off.
- */
-export function applyHeartbeatOriginOverlay(
-  sessions: Session[],
-  resolve: ResolveBeatChats | undefined
-): void {
-  if (!resolve || sessions.length === 0) return;
-  const beats = resolve(sessions.map((s) => s.id));
-  if (beats.size === 0) return;
-  for (const session of sessions) {
-    if (!beats.has(session.id)) continue;
-    session.origin = 'agent';
-    session.originLabel = HEARTBEAT_ORIGIN_LABEL;
-    delete session.originRoomId;
-    dropUserLastMessageAtWithoutOperator(session);
-  }
 }

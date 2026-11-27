@@ -270,7 +270,7 @@ export const HarnessConfigSchema = z
      *
      * Each entry is `<packageName>@<digest>`, where the digest covers the
      * project and the exact commands that were shown on the approval card
-     * (`services/harness/hook-approval.ts`). Binding the digest rather than the
+     * (`services/core/approvals/computer-asks/hook-card-ask.ts`). Binding the digest rather than the
      * name alone is what makes an update that changes a package's commands ask
      * again instead of riding an old yes. Empty by default: nothing writes a
      * hook until somebody says so.

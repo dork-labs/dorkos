@@ -1,6 +1,5 @@
 import { env } from '../env.js';
 import { scanHookRequests } from '../services/harness/project-with-consent.js';
-import { hookProjectionBinding } from '../services/harness/hook-approval.js';
 import {
   describeHookProjection,
   summariseHookProjection,
@@ -17,7 +16,10 @@ import type { Hono } from 'hono';
 import { z } from 'zod';
 import { PERMISSION_AREA_IDS } from '@dorkos/shared/permissions';
 import { hashApprovalInput } from '../services/core/approvals/index.js';
-import { isRepoPinCapabilityId } from '../services/runtimes/claude-code/repo-settings/repo-config-approval.js';
+import {
+  hookProjectionBinding,
+  isRepoPinCapabilityId,
+} from '../services/core/approvals/computer-asks/index.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import type { TestControlDeps } from './test-control.js';

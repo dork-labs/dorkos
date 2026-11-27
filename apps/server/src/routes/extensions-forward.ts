@@ -78,7 +78,8 @@ import { logger } from '../lib/logger.js';
 import { resolveCaller } from './room-caller.js';
 import { isOwnerCaller } from './room-error-response.js';
 import { refuseRoomWrite, type RoomWriteRefusal } from './extensions-rooms-bar.js';
-import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { refusedNotAPerson } from './extensions-person-bar.js';
+import type { PersonBarCopy } from '../lib/http/person-bar.js';
 import { sdkErrorRefusal, sdkRefusal } from './extensions-sdk-refusal.js';
 
 /** What an id that cannot name a mini app is told. */
@@ -130,8 +131,6 @@ const EmptyBodySchema = z.object({}).strict();
 const FORWARD_AGENTS_BAR: PersonBarCopy = {
   code: 'person_only',
   subject: 'which agents a mini app forwards to',
-  crossSite: (origin) =>
-    `Nothing changed. ${origin} isn’t DorkOS. Choose forward agents in DorkOS itself.`,
   agent: 'Nothing changed. Only a person can choose the agents a mini app forwards to.',
 };
 

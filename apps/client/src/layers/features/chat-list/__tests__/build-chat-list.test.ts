@@ -183,20 +183,22 @@ describe('buildChatList — other sorts', () => {
 });
 
 describe('buildChatList — folding (spec your-activity-first D14)', () => {
-  it('rule 1: an untouched spin-off folds under its parent, with its status', () => {
+  it('rule 1: an untouched spin-off folds under its parent, oldest first, with its status', () => {
     const model = build(
       [
         yours('parent', 5),
-        spinOff('child-a', 'parent'),
-        spinOff('child-b', 'parent', { updatedAt: at(9) }),
+        spinOff('child-b', 'parent', { createdAt: at(2), updatedAt: at(9) }),
+        spinOff('child-a', 'parent', { updatedAt: at(3) }),
       ],
       { lifecycles: { 'child-b': 'streaming' } }
     );
     expect(layout(model)).toEqual({ chats: ['parent'] });
     const parent = row(model, 'parent');
+    // Oldest first by when each started, as the chat tree lists siblings, so
+    // the fold does not reorder itself when the tree arrives.
     expect(parent.spinOffs.map((s) => [s.session.id, s.status])).toEqual([
-      ['child-b', 'running'],
       ['child-a', 'idle'],
+      ['child-b', 'running'],
     ]);
   });
 

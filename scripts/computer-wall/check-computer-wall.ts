@@ -8,7 +8,7 @@
  * --help
  * Purpose: hold the computer wall's baseline to its rules: what computer-side
  *          files import from the space side may only go, and entries only fall.
- * Runs in: pre-push (`computer-wall`); the required `typecheck` job.
+ * Runs in: `pnpm ratchet` (pre-push; the required `typecheck` job).
  * To fix:  remove the import it names. After removing some, run
  *          `pnpm check:computer-wall -- --update`. Never raise or add an entry.
  * Usage:   pnpm check:computer-wall [-- --base <ref> | --update | --init | --root <dir>]

@@ -335,7 +335,7 @@ describe('ChatList', () => {
       const toggle = screen.getByRole('button', { name: '2 spin-offs from Plan launch' });
       expect(toggle).toHaveAttribute('aria-expanded', 'false');
       await userEvent.click(toggle);
-      expect(rowTitles()).toEqual(['Plan launch', 'Check links', 'Draft copy']);
+      expect(rowTitles()).toEqual(['Plan launch', 'Draft copy', 'Check links']);
       expect(await findRow('Check links')).toHaveTextContent('Running');
       expect(await findRow('Draft copy')).toHaveTextContent('Done');
     });

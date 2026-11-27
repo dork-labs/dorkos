@@ -4,7 +4,7 @@ title: A per-package test budget, and pass-count floors that never charge for a 
 kind: experiment
 status: proposed
 actor: agent
-gates: [wf.typecheck.typecheck, lefthook.pre-push.test-ratio]
+gates: [wf.typecheck.typecheck, lefthook.pre-push.ratchets]
 prs: []
 hypothesis:
   metric: 'gate.wf.typecheck.typecheck.duration_p90@merge_group'

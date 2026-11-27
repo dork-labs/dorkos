@@ -6,7 +6,7 @@
  * devices, an account's automatic moves, a framed page's script decision, an
  * agent's level, undoing an agent's task mode, global MCP servers, the shell
  * check, sending another chat's queued message now, the load gate's waiting line, the database
- * backups, what a `dork:` link opens), joined here so `transport.ts` extends one name. Nothing consuming
+ * backups, what a `dork:` link opens, the work graph's reads), joined here so `transport.ts` extends one name. Nothing consuming
  * the port sees a difference.
  *
  * @module shared/transport-slices
@@ -52,6 +52,7 @@ import type { ConnectorWritesBackTransport } from './transport-connector-writes-
 import type { BackupsTransport } from './transport-backups.js';
 import type { SessionLocationTransport } from './transport-session-locations.js';
 import type { DorkLinkTransport } from './transport-dork-links.js';
+import type { WorkGraphTransport } from './transport-work-graph.js';
 
 /** Every Transport slice declared outside `transport.ts`. */
 export interface TransportSlices
@@ -97,4 +98,5 @@ export interface TransportSlices
     ConnectorWritesBackTransport,
     BackupsTransport,
     SessionLocationTransport,
-    DorkLinkTransport {}
+    DorkLinkTransport,
+    WorkGraphTransport {}

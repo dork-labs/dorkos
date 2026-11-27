@@ -8,7 +8,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, beforeAll } from 'vitest';
 
 vi.mock('../../../../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -30,6 +30,10 @@ import { readLocalSettings } from '../repo-local-settings.js';
 import { RepoLocationError } from '../repo-git.js';
 import { recordedBaseline } from '../repo-config-consent.js';
 import { git, isolateGitEnv, makeRepo, writeFile, type RepoFixture } from './git-fixture.js';
+import { wireTestAsks } from '../../../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The computer side records consent through the space side, as at startup.
+beforeAll(() => wireTestAsks());
 
 /** A committed hook that runs a script in the repo, like `git-guard`. */
 const GUARD_SETTINGS = {

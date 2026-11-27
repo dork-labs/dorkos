@@ -109,20 +109,15 @@ const priorities = commandPriorities(prePush);
 /** Every command the pre-push hook runs, sorted by name. */
 const PRE_PUSH_COMMANDS = [
   'ci-midrun',
-  'computer-wall',
   'copy-spec-drift',
   'formatting',
   'fragments',
-  'import-boundary',
   'ledger-coverage',
-  'max-lines',
-  'own-mocks',
-  'test-ratio',
-  'turn-port',
+  'ratchets',
 ];
 
 describe('the pre-push formatting check is wired beside its sibling checks', () => {
-  it('finds the pre-push hook and its eleven commands at all', () => {
+  it('finds the pre-push hook and its six commands at all', () => {
     // Without this, every assertion below passes vacuously the day the hook is
     // renamed or the scanner stops matching — the exact way a guard dies
     // quietly. `fragments` joined on 2026-10-30
@@ -134,14 +129,16 @@ describe('the pre-push formatting check is wired beside its sibling checks', () 
     // 2026-11-25 (ci/ledger/261125-065516-turn-port-ratchet.md); `computer-wall`
     // the same day (ci/ledger/261125-191359-computer-wall.md); `import-boundary`
     // after it (ci/ledger/261125-233242-import-boundary.md); `copy-spec-drift`
-    // for DOR-4937, the ledger entry that moved it into `typecheck`.
+    // for DOR-4937, the ledger entry that moved it into `typecheck`. DOR-4948
+    // folded the six ratchets (max-lines, own-mocks, test-ratio, turn-port,
+    // computer-wall, import-boundary) into one `ratchets` command, `pnpm ratchet`.
     expect(prePush).not.toBe('');
     expect([...priorities.keys()].sort()).toEqual(PRE_PUSH_COMMANDS);
   });
 
-  it('declares no ordering, because the eleven checks are independent', () => {
+  it('declares no ordering, because the six checks are independent', () => {
     // `piped` and `priority` earned their lines when a two-second check had to
-    // preempt a six-minute sweep. These eleven are all quick and answer
+    // preempt a six-minute sweep. These six are all quick and answer
     // different questions, so each should report on the same push rather than
     // one hiding the other. Adding a slow command means deciding ordering
     // deliberately and putting them back — this is the line that makes you.
@@ -151,16 +148,17 @@ describe('the pre-push formatting check is wired beside its sibling checks', () 
     }
   });
 
-  it('compares max-lines with the branch point, not with whatever main is today (DOR-3643)', () => {
+  it('compares the ratchets with the branch point, not with whatever main is today (DOR-3643)', () => {
     // A baseline main lowered after the branch was cut read as this branch
     // RAISING it, so a push touching none of those files was refused (twice on
     // 2026-11-02). The branch point is what the ledger check beside it uses.
-    const start = prePush.indexOf('\n    max-lines:');
+    const start = prePush.indexOf('\n    ratchets:');
     const rest = prePush.slice(start + 1);
     const next = rest.slice(1).search(/\n {4}[A-Za-z0-9_-]+:\s*\n/);
     const command = next === -1 ? rest : rest.slice(0, next + 1);
-    expect(start, 'pre-push has no max-lines command').toBeGreaterThan(-1);
+    expect(start, 'pre-push has no ratchets command').toBeGreaterThan(-1);
     expect(command).toMatch(/\$\(git merge-base origin\/main HEAD\) \|\| exit 1/);
+    expect(command).toMatch(/pnpm ratchet --pre-push --base "\$ratchet_base"/);
     expect(command).not.toMatch(/--base origin\/main\b/);
   });
 

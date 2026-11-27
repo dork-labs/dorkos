@@ -279,6 +279,10 @@ describe('the session canvas routes', () => {
       const listed = await request(testServer).get(`/api/sessions/${SESSION}/canvas`);
       expect(listed.status).toBe(503);
       expect(listed.body.code).toBe('temporarily_unavailable');
+      // The one-document read is a hand route too, and refuses the same way.
+      const one = await request(testServer).get(`/api/sessions/${SESSION}/canvas/any-document`);
+      expect(one.status).toBe(503);
+      expect(one.body.code).toBe('temporarily_unavailable');
     });
   });
 });

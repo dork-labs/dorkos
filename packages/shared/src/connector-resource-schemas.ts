@@ -8,6 +8,7 @@
  * @module shared/connector-resource-schemas
  */
 import { z } from 'zod';
+import { nextCursorOutput } from './paging.js';
 import { ConnectorAuthenticationSetupSchema } from '@dork-labs/connector-providers/connector-authentication-setup';
 import {
   ConnectStartRefusalSchema,
@@ -20,6 +21,7 @@ import {
   ConnectionReadinessSchema,
   ConnectorCapabilityAvailabilitySchema,
   ConnectorGrantReconciliationStatusSchema,
+  ConnectorManagementReviewItemSchema,
   ConnectorOperationClassificationSchema,
   ConnectorProviderCapabilitySetSchema,
   ConnectorProviderInstanceIdSchema,
@@ -360,9 +362,12 @@ export type ConnectorConnectionSummary = z.infer<typeof ConnectorConnectionSumma
 
 /** Owner-visible list of stable connector connections. */
 export const ConnectorConnectionListResourceSchema = z
-  .object({ connections: z.array(ConnectorConnectionSummarySchema).max(10_000) })
+  .object({
+    connections: z.array(ConnectorConnectionSummarySchema).max(10_000),
+    nextCursor: nextCursorOutput,
+  })
   .strict();
-/** Owner-visible list of stable connector connections. */
+/** One page of the owner's connected accounts, newest first. */
 export type ConnectorConnectionListResource = z.infer<typeof ConnectorConnectionListResourceSchema>;
 
 /** Owner-visible exact operation grants for one named agent. */
@@ -701,3 +706,31 @@ export type ConnectorSessionConnections = z.infer<typeof ConnectorSessionConnect
 export const ConnectorSessionAccessUpdateSchema = z.object({ on: z.boolean() }).strict();
 /** Owner request to turn one app on or off for one chat's agent. */
 export type ConnectorSessionAccessUpdate = z.infer<typeof ConnectorSessionAccessUpdateSchema>;
+
+/** One page of {@link ConnectorAgentConnectionsSchema}, newest account first. */
+export const ConnectorAgentConnectionsPageSchema = ConnectorAgentConnectionsSchema.extend({
+  nextCursor: nextCursorOutput,
+});
+/** One page of one agent's connected accounts. */
+export type ConnectorAgentConnectionsPage = z.infer<typeof ConnectorAgentConnectionsPageSchema>;
+
+/** One page of {@link ConnectorEveryAgentGrantsSchema}, newest account first. */
+export const ConnectorEveryAgentGrantsPageSchema = ConnectorEveryAgentGrantsSchema.extend({
+  nextCursor: nextCursorOutput,
+});
+/** One page of what every agent inherits. */
+export type ConnectorEveryAgentGrantsPage = z.infer<typeof ConnectorEveryAgentGrantsPageSchema>;
+
+/** One page of {@link ConnectorSessionConnectionsSchema}, newest account first. */
+export const ConnectorSessionConnectionsPageSchema = ConnectorSessionConnectionsSchema.extend({
+  nextCursor: nextCursorOutput,
+});
+/** One page of what one chat's agent can use. */
+export type ConnectorSessionConnectionsPage = z.infer<typeof ConnectorSessionConnectionsPageSchema>;
+
+/** One page of the owner's reviews of programs' requested changes, newest first. */
+export const ConnectorManagementReviewPageSchema = z
+  .object({ reviews: z.array(ConnectorManagementReviewItemSchema), nextCursor: nextCursorOutput })
+  .strict();
+/** One page of the owner's reviews. */
+export type ConnectorManagementReviewPage = z.infer<typeof ConnectorManagementReviewPageSchema>;

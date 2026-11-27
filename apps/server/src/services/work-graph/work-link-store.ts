@@ -60,8 +60,9 @@ const SOURCE_PATTERN = new RegExp(`^[a-z][a-z0-9-]{0,${WORK_LINK_SOURCE_MAX_LENG
  * relations from the address design (ADR 261122-124821) join a chat to a chat,
  * and so does a start (DOR-5263). A chat opens a pull request, a branch or a
  * worktree, and works on a ticket, a pull request or a branch (DOR-5264, as
- * the table's own doc reads them). The rest are left open until their write
- * sites land.
+ * the table's own doc reads them). A chat produces a to-do (DOR-5266; a
+ * promise is a to-do); a room entry joins `produced` when its write site lands.
+ * The rest are left open until their write sites land.
  */
 const RELATION_KINDS: Partial<
   Record<WorkLinkRelation, { from: readonly EntityKind[]; to: readonly EntityKind[] }>
@@ -70,6 +71,7 @@ const RELATION_KINDS: Partial<
   opened: { from: ['chat'], to: ['pr', 'branch', 'worktree'] },
   works_on: { from: ['chat'], to: ['ticket', 'pr', 'branch'] },
   started: { from: ['chat'], to: ['chat'] },
+  produced: { from: ['chat'], to: ['todo'] },
   rekeyed_from: { from: ['chat'], to: ['chat'] },
 };
 

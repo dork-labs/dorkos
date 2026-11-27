@@ -21,7 +21,7 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -58,6 +58,11 @@ vi.mock('../../../core/config-manager.js', () => ({
 }));
 
 import { runAutoProjection } from '../../auto-project.js';
+import { createComputerAsks } from '../../../core/approvals/computer-asks/index.js';
+import { wireTestConsent } from '../../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The space side's consent writes reach a config store, as at startup.
+beforeAll(() => wireTestConsent());
 
 /** The command the package wants a harness to run at the end of every turn. */
 const FLOW_HOOK = 'node "${CLAUDE_PLUGIN_ROOT}/hooks/flow-loop.mjs"';
@@ -106,12 +111,12 @@ async function trigger(repo: StagedRepo, action: 'install' | 'uninstall'): Promi
     { projectPath: repo.root, packageName: 'flow', action },
     {
       dorkHome: repo.dorkHome,
-      approvals: {
+      asks: createComputerAsks({
         request: vi.fn().mockReturnValue(ticket()),
         consume: vi
           .fn()
           .mockReturnValue({ outcome: 'granted', approvalId: 'a1', capabilityId: 'x' }),
-      },
+      }),
     }
   );
 }

@@ -28,6 +28,7 @@ import {
 import { AgentSendStore } from '../../services/extensions/agent-send/agent-send-store.js';
 import { wireChatMessaging } from '../../services/session/chat-messages/chat-message-wiring.js';
 import { ChatMessageStore } from '../../services/session/chat-messages/chat-message-store.js';
+import { wireChatRowsPort } from '../space-views.js';
 import { wireTodos } from '../../services/todos/todo-wiring.js';
 import { wireWorkQueue } from '../../services/work-queue/work-queue-wiring.js';
 import { wireWorkClaims } from '../../services/session/claims/work-claim-wiring.js';
@@ -151,12 +152,15 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
   // and `chat_stop`, the sender stamp, and the ceiling a chat-sent queue row
   // launches under. Wired before any runtime turn can run, so a row adopted
   // after a restart already finds its ceiling.
+  const chatMessageStore = new ChatMessageStore(db);
   const chatMessaging = wireChatMessaging({
     db,
-    store: new ChatMessageStore(db),
+    store: chatMessageStore,
     meshCore: () => refs.meshCore,
     roomSessionPlace: () => refs.roomSessionPlacePort,
   });
+  // The computer side's view of those rows: a rekey carries them, a history reads stops.
+  wireChatRowsPort(chatMessageStore);
   // What agents promised (spec `heartbeats` §12). The due timers are rebuilt
   // from the table here, so a restart loses no wake and no missed mark.
   const todoPromises = (refs.todoWiring = wireTodos({

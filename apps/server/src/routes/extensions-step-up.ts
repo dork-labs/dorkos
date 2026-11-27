@@ -32,13 +32,13 @@ import {
 } from '../services/extensions/step-up/move-extension-out.js';
 import { currentStepUpExtensionRisks } from '../services/extensions/step-up/step-up-extension-risk.js';
 import { broadcastExtensionReloaded } from './extensions.js';
-import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { refusedNotAPerson } from './extensions-person-bar.js';
+import type { PersonBarCopy } from '../lib/http/person-bar.js';
 
 /** What the move route says when its bar refuses it. */
 const MOVE_BAR: PersonBarCopy = {
   code: 'person_only',
   subject: 'where a mini app’s code lives',
-  crossSite: (origin) => `Nothing moved. ${origin} isn’t DorkOS. Move mini apps in the app.`,
   agent: 'Nothing moved. Only a person moves a mini app, in Settings.',
 };
 

@@ -45,7 +45,8 @@ import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { logger } from '../lib/logger.js';
 import { refuseStandingYesFromWifi } from '../services/core/auth/sessions/wifi-level.js';
-import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { refusedNotAPerson } from './extensions-person-bar.js';
+import type { PersonBarCopy } from '../lib/http/person-bar.js';
 import { answerOutcome, decisionRefusal } from './extension-decision-problems.js';
 
 /** Core's id for a decision: a ULID. */
@@ -55,8 +56,6 @@ const DECISION_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 export const DECISION_BAR: PersonBarCopy = {
   code: 'person_only',
   subject: 'answers to extension decisions',
-  crossSite: (origin) =>
-    `DorkOS changed nothing. ${origin} isn’t DorkOS. Answer this in DorkOS itself.`,
   agent: 'DorkOS changed nothing. Only a person can answer this, in DorkOS.',
 };
 

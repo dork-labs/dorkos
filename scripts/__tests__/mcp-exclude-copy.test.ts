@@ -29,7 +29,7 @@ const OVER_CLAIMS = [/can[’']t see/i, /never sees?\b/i, /\bonly you\b/i] as co
  * this guard read it again.
  */
 const ALLOWED_LINES = new Set([
-  "One kind of write does not have that protection: changing who can use an app — sharing it, narrowing it, disconnecting it. With login off, DorkOS cannot tell that write apart from one the app itself made, so anything with a shell on this machine can make it, the same as the app could. **Every agent** is just the widest version of that change, not a special case. Turning login on closes the gap for all of them, because from then on only you, signed in, can make those writes. Until then, changing an app's access is a choice for a machine you trust.",
+  "One kind of write does not have that protection: changing who can use an app (sharing it, narrowing it, disconnecting it). With login off, DorkOS cannot tell that write apart from one the app itself made, so anything with a shell on this machine can make it, the same as the app could. **Every agent** is just the widest version of that change, not a special case. Turning login on closes the gap for all of them, because from then on only you, signed in, can make those writes. Until then, changing an app's access is a choice for a machine you trust.",
 ]);
 
 /** Every source file under `dir`, tests left out. */

@@ -130,6 +130,11 @@ router.post('/', async (c) => {
         name,
         carriesToken: true,
         ...(identity && { requestedBy: identity.displayName || identity.agentPath }),
+        // The chat comes only from the caller's own agent token, never a body
+        // field: a worktree made for the chat that token is bound to, whoever
+        // carries it (a trusted caller too), is recorded as that chat's work
+        // (DOR-5265). No token, or one no running chat holds, records none.
+        ...(identity?.chatId && { chatId: identity.chatId }),
         ...(decision.data.approvedReviewHash && {
           approvedReviewHash: decision.data.approvedReviewHash,
         }),

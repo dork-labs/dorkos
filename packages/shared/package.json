@@ -73,6 +73,10 @@
       "types": "./src/transport-heartbeats.ts",
       "default": "./dist/transport-heartbeats.js"
     },
+    "./transport-work-graph": {
+      "types": "./src/transport-work-graph.ts",
+      "default": "./dist/transport-work-graph.js"
+    },
     "./sign-in-landing": {
       "types": "./src/sign-in-landing.ts",
       "default": "./dist/sign-in-landing.js"
@@ -148,6 +152,10 @@
     "./running-chats": {
       "types": "./src/running-chats.ts",
       "default": "./dist/running-chats.js"
+    },
+    "./paging": {
+      "types": "./src/paging.ts",
+      "default": "./dist/paging.js"
     },
     "./work-graph-reads": {
       "types": "./src/work-graph-reads.ts",
@@ -660,6 +668,22 @@
     "./connections-lease": {
       "types": "./src/connections-lease.ts",
       "default": "./dist/connections-lease.js"
+    },
+    "./approval-text": {
+      "types": "./src/approval-text.ts",
+      "default": "./dist/approval-text.js"
+    },
+    "./computer-asks": {
+      "types": "./src/computer-asks.ts",
+      "default": "./dist/computer-asks.js"
+    },
+    "./consent-entries": {
+      "types": "./src/consent-entries.ts",
+      "default": "./dist/consent-entries.js"
+    },
+    "./folder-allows-card": {
+      "types": "./src/folder-allows-card.ts",
+      "default": "./dist/folder-allows-card.js"
     },
     "./room-attachment-paths": {
       "types": "./src/room-attachment-paths.ts",

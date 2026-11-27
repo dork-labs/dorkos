@@ -38,6 +38,8 @@ export const REPO_WIDE_SUITES = [
   // OpenAPI registry (DOR-4996).
   '__tests__/check-api-lint.test.ts',
   '__tests__/check-boundary.test.ts',
+  // Reads package.json, lefthook.yml and ci/required-checks.json (DOR-4947).
+  '__tests__/check-cli.test.ts',
   // Reads apps/server/src/services, the side map and the computer wall's baseline (DOR-5158).
   '__tests__/check-computer-wall.test.ts',
   '__tests__/check-design-tokens.test.ts',
@@ -48,6 +50,7 @@ export const REPO_WIDE_SUITES = [
   '__tests__/check-test-ratio.test.ts',
   // Reads apps/server/src/services and the turn port's baseline (DOR-5232).
   '__tests__/check-turn-port-boundary.test.ts',
+  '__tests__/check-vocab-gate-voice.test.ts',
   '__tests__/check-vocab-gate.test.ts',
   '__tests__/ci-apt-resilience.test.ts',
   '__tests__/code-only.test.ts',
@@ -89,6 +92,8 @@ export const REPO_WIDE_SUITES = [
   // Reads test.yml, browser-test.yml, docs-openapi-check.yml,
   // release-branch-contents.yml and changelog-fragment-check.yml (DOR-4639).
   '__tests__/pr-related-step.test.ts',
+  // Walks scripts/ and apps/server/eslint-rules/ for baselines and reads package.json (DOR-4948).
+  '__tests__/ratchets.test.ts',
   '__tests__/release-branch-ci.test.ts',
   // Reads release-publish.yml: publish needs the npm gate job (DOR-5123).
   '__tests__/release-publish-gate.test.ts',

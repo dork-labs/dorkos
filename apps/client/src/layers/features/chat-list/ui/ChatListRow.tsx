@@ -9,17 +9,9 @@
  * @module features/chat-list/ui/ChatListRow
  */
 import type { Ref } from 'react';
-import { ChevronRight, GitFork, Link, Pencil } from 'lucide-react';
+import { GitFork, Link, Pencil } from 'lucide-react';
 import { cn, dorkShareUrl, formatCompactAge } from '@/layers/shared/lib';
-import { SIDEBAR_SECTION_ACTION_ATTRIBUTE } from '@/layers/shared/model';
-import {
-  SidebarMenu,
-  SidebarRow,
-  STATUS_DOT_LABEL,
-  STATUS_TONE_TEXT,
-  statusDotClass,
-  type SidebarMenuNode,
-} from '@/layers/shared/ui';
+import { SidebarRow, STATUS_TONE_TEXT, type SidebarMenuNode } from '@/layers/shared/ui';
 import { RuntimeMark } from '@/layers/entities/runtime';
 import {
   SessionOriginMark,
@@ -28,24 +20,9 @@ import {
   useInlineRename,
 } from '@/layers/entities/session';
 import type { ChatRow, ChatStatus, FoldedSpinOff } from '../model/build-chat-list';
-import { revealKeyFor, useReveal } from '../model/use-reveal';
-
-/**
- * The `data-slot` every chat row answers to, folded spin-offs included.
- *
- * One name for every row, so a test or page object finds them without knowing
- * which section they landed in, which is exactly what the list decides.
- */
-export const CHAT_LIST_ROW_SLOT = 'chat-list-row';
-
-/**
- * A row's left inset: the same 8px the section headings and toggles use, so
- * row titles line up with them instead of the sidebar's glyph column.
- */
-const ROW_INSET = 'pl-2';
-
-/** The `data-slot` on the "N spin-offs" toggle under a chat. */
-const CHAT_LIST_SPIN_OFF_TOGGLE_SLOT = 'chat-list-spin-off-toggle';
+import { ChatTreeFold } from './ChatTreeFold';
+import { CHAT_LIST_ROW_SLOT, ROW_INSET } from './chat-row-parts';
+import { StatusDot } from './StatusDot';
 
 /** Props for {@link ChatListRow}. */
 export interface ChatListRowProps {
@@ -67,6 +44,13 @@ export interface ChatListRowProps {
   registerRow: (sessionId: string) => Ref<HTMLButtonElement>;
   /** The current search text: a fold holding a match opens for it. */
   search: string;
+  /** Every chat in the list, with what it is doing: the chat tree names chats by it. */
+  byId: ReadonlyMap<string, FoldedSpinOff>;
+  /**
+   * Open a chat this list does not hold, such as another agent's, found in a
+   * chat tree. Without it those chats are named but do not open.
+   */
+  onOpenOther?: (sessionId: string) => void;
 }
 
 /**
@@ -84,6 +68,8 @@ export function ChatListRow({
   onCopyLink,
   registerRow,
   search,
+  byId,
+  onOpenOther,
 }: ChatListRowProps) {
   const { session } = row;
   const title = sessionDisplayTitle(session.title);
@@ -164,12 +150,15 @@ export function ChatListRow({
       {...(row.spinOffs.length > 0
         ? {
             expansion: (
-              <SpinOffFold
+              <ChatTreeFold
+                hostId={session.id}
                 parentTitle={title}
                 spinOffs={row.spinOffs}
+                byId={byId}
                 activeSessionId={activeSessionId}
                 search={search}
                 onOpen={onOpen}
+                {...(onOpenOther === undefined ? {} : { onOpenOther })}
                 registerRow={registerRow}
               />
             ),
@@ -234,125 +223,6 @@ function SecondLine({ row }: { row: ChatRow }) {
         </span>
       ))}
     </>
-  );
-}
-
-/** The status word a folded spin-off shows. */
-const SPIN_OFF_STATUS: Record<ChatStatus, string> = {
-  running: 'Running',
-  idle: 'Done',
-  'needs-you': 'Needs you',
-  'out-of-usage': 'Out of usage',
-  failed: 'Error',
-};
-
-/**
- * The "N spin-offs" toggle under a chat, closed until asked, and the
- * spin-offs it holds, indented (D14 rule 1).
- */
-function SpinOffFold({
-  parentTitle,
-  spinOffs,
-  activeSessionId,
-  search,
-  onOpen,
-  registerRow,
-}: {
-  parentTitle: string;
-  spinOffs: FoldedSpinOff[];
-  activeSessionId: string | null;
-  search: string;
-  onOpen: (sessionId: string) => void;
-  registerRow: (sessionId: string) => Ref<HTMLButtonElement>;
-}) {
-  // The open chat or a search match is never hidden behind a closed toggle.
-  const [open, setOpen] = useReveal(
-    revealKeyFor(
-      spinOffs.map((spinOff) => spinOff.session.id),
-      activeSessionId,
-      search
-    )
-  );
-  const count = spinOffs.length;
-  const label = count === 1 ? '1 spin-off' : `${count} spin-offs`;
-  return (
-    <div>
-      <button
-        type="button"
-        data-slot={CHAT_LIST_SPIN_OFF_TOGGLE_SLOT}
-        {...{ [SIDEBAR_SECTION_ACTION_ATTRIBUTE]: '' }}
-        aria-expanded={open}
-        aria-label={`${label} from ${parentTitle}`}
-        onClick={() => setOpen((previous) => !previous)}
-        // The chevron starts where the parent's title starts.
-        className="text-sidebar-foreground/60 hover:text-sidebar-foreground focus-visible:ring-sidebar-ring text-2xs ml-2 flex min-h-6 items-center gap-1 rounded-md pr-2 outline-hidden focus-visible:ring-2 max-md:min-h-11"
-      >
-        <ChevronRight
-          aria-hidden
-          className={cn('size-3 transition-transform duration-150', open && 'rotate-90')}
-        />
-        {label}
-      </button>
-      {open && (
-        <SidebarMenu aria-label={`Spin-offs from ${parentTitle}`} className="gap-0.5 pb-1 pl-3">
-          {spinOffs.map((spinOff) => (
-            <SidebarRow
-              key={spinOff.session.id}
-              dataSlot={CHAT_LIST_ROW_SLOT}
-              buttonRef={registerRow(spinOff.session.id)}
-              title={sessionDisplayTitle(spinOff.session.title)}
-              className={ROW_INSET}
-              isActive={spinOff.session.id === activeSessionId}
-              onSelect={() => onOpen(spinOff.session.id)}
-              trailing={
-                <span
-                  data-slot="chat-list-spin-off-status"
-                  className="text-sidebar-foreground/50 text-2xs"
-                >
-                  <StatusDot status={spinOff.status} decorative />
-                  {SPIN_OFF_STATUS[spinOff.status]}
-                </span>
-              }
-            />
-          ))}
-        </SidebarMenu>
-      )}
-    </div>
-  );
-}
-
-/** Which dot each status draws, if any. Idle draws none. */
-const STATUS_DOT: Partial<Record<ChatStatus, 'working' | 'needs-you' | 'error'>> = {
-  running: 'working',
-  'needs-you': 'needs-you',
-  'out-of-usage': 'error',
-  failed: 'error',
-};
-
-/**
- * A dot beside the words that say what a chat is doing: running, needs you,
- * out of usage or stopped with an error. Idle draws none.
- *
- * Inline with the words rather than in a column of its own, so a settled row
- * spends no width on an empty slot and every title starts at the same edge
- * as the controls above the list.
- */
-function StatusDot({ status, decorative = false }: { status: ChatStatus; decorative?: boolean }) {
-  const signal = STATUS_DOT[status];
-  if (signal === undefined) return null;
-  return (
-    <span
-      // Hidden from assistive tech where words beside it already say the same
-      // thing; a running chat's verb can be empty, so its dot keeps a name.
-      {...(decorative
-        ? { 'aria-hidden': true }
-        : { role: 'img', 'aria-label': STATUS_DOT_LABEL[signal] })}
-      data-status={status}
-      className={cn(
-        'mr-1.5 inline-block size-1.5 rounded-full align-middle',
-        statusDotClass(signal)
-      )}
-    />
   );
 }
 

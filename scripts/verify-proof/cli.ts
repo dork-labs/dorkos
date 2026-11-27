@@ -17,19 +17,19 @@ import { fileURLToPath } from 'node:url';
 import type { PreopenStep } from './preopen.ts';
 
 /**
- * How much a proof stands for. `full` is `pnpm verify`, every step, and is the only
- * level arming accepts. `preopen` is `pnpm verify:preopen`, the lighter checks before
+ * How much a proof stands for. `full` is `pnpm check verify`, every step, and is the only
+ * level arming accepts. `preopen` is `pnpm check preopen`, the lighter checks before
  * a PR opens (DOR-4728); it lives in its own file and never satisfies a full check.
  */
 export type ProofLevel = 'full' | 'preopen';
 
 /**
- * How many turbo runs each gate makes, every one with `--summarize`: `verify:checks`
+ * How many turbo runs each gate makes, every one with `--summarize`: `check:verify:turbo`
  * has the typecheck-and-lint step and the test step, and preopen has only the first
- * (`verify:preopen:turbo`). A proof records the number its completion check judged,
+ * (`check:preopen:turbo`). A proof records the number its completion check judged,
  * and a check accepts only this one, so changing a value voids every proof recorded
  * with the old one: change it only when the gate's turbo steps change, and expect
- * every open branch to need `pnpm verify` again. scripts/__tests__/verify-proof.test.ts
+ * every open branch to need `pnpm check verify` again. scripts/__tests__/verify-proof.test.ts
  * holds these to package.json.
  */
 export const TURBO_RUNS: Readonly<Record<ProofLevel, number>> = { full: 2, preopen: 1 };
@@ -39,7 +39,7 @@ const proofFile = (dir: string, sha: string, level: ProofLevel): string =>
   path.join(dir, level === 'full' ? sha : `${sha}.preopen`);
 
 const gateName = (level: ProofLevel): string =>
-  level === 'full' ? 'pnpm verify' : 'pnpm verify:preopen';
+  level === 'full' ? 'pnpm check verify' : 'pnpm check preopen';
 
 const git = (cwd: string, ...args: string[]): string =>
   execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -60,7 +60,7 @@ const clean = (cwd: string): boolean =>
   git(cwd, 'status', '--porcelain', '--untracked-files=normal') === '';
 
 /**
- * The real-CLI suite globs `pnpm verify` leaves to CI, one per line in
+ * The real-CLI suite globs `pnpm check verify` leaves to CI, one per line in
  * `scripts/ci/binary-test-glob.txt` (DOR-4501). Those suites spawn whichever Codex,
  * Claude or OpenCode binary the host has installed, so a local result says nothing
  * about the branch. `scripts/__tests__/binary-test-glob.test.ts` holds the file to
@@ -162,7 +162,7 @@ export async function runVerification(
  * older copy of this file. Both are refused, even where they were real passes. That
  * ends the earlier rule that older proofs stay valid, and on purpose: a run that a
  * signal stopped wrote exactly the same file, so an unmarked proof cannot be told
- * from a false one, and running `pnpm verify` again costs far less than arming a head
+ * from a false one, and running `pnpm check verify` again costs far less than arming a head
  * whose checks never finished.
  */
 function isPass(proof: unknown, sha: string, tree: string, level: ProofLevel): boolean {
@@ -246,18 +246,18 @@ function check(cwd: string, ref: string, escape: boolean, level: ProofLevel): nu
   if (unmarked) {
     console.error(
       level === 'full'
-        ? `the pnpm verify proof for ${shortSha} was recorded before DOR-4616 and cannot arm; ` +
-            'green CI at this head still arms, or run pnpm verify from a branch that has the fix'
+        ? `the pnpm check verify proof for ${shortSha} was recorded before DOR-4616 and cannot arm; ` +
+            'green CI at this head still arms, or run pnpm check verify from a branch that has the fix'
         : `the proof for ${shortSha} was recorded before DOR-4616 and does not count; ` +
-            'run pnpm verify:preopen from a branch that has the fix'
+            'run pnpm check preopen from a branch that has the fix'
     );
     return 1;
   }
   console.error(
     level === 'full'
-      ? `no pnpm verify pass recorded for ${shortSha}; run pnpm verify, or pass --no-verify-proof`
-      : `no pnpm verify:preopen or pnpm verify pass recorded for ${shortSha}; ` +
-          'run pnpm verify:preopen, or pass --no-verify-proof'
+      ? `no pnpm check verify pass recorded for ${shortSha}; run pnpm check verify, or pass --no-verify-proof`
+      : `no pnpm check preopen or pnpm check verify pass recorded for ${shortSha}; ` +
+          'run pnpm check preopen, or pass --no-verify-proof'
   );
   return 1;
 }
@@ -408,7 +408,7 @@ if (isMain()) {
   // Read from this script's own repository, so the lists match the checks it ships with.
   const root = path.resolve(import.meta.dirname, '../..');
   // A forced or filtered run is not the gate a proof stands for, so it is refused
-  // outright. Each gate has its own command, so `pnpm verify --preopen` is refused too,
+  // outright. Each gate has its own command, so `pnpm check verify --preopen` is refused too,
   // and the message shows only what the person typed after the script name.
   const refuseArguments = (gate: string) => {
     console.error(
@@ -417,21 +417,21 @@ if (isMain()) {
     );
     process.exitCode = 2;
   };
-  if (command === 'run' && args.length > 0) refuseArguments('pnpm verify');
-  else if (command === 'run-preopen' && args.length > 0) refuseArguments('pnpm verify:preopen');
+  if (command === 'run' && args.length > 0) refuseArguments('pnpm check verify');
+  else if (command === 'run-preopen' && args.length > 0) refuseArguments('pnpm check preopen');
   else if (command === 'run') {
     const excluded = readBinaryTestGlobs(root);
     if (excluded.length > 0) {
       console.log(
-        `pnpm verify leaves the host-binary tests to CI (scripts/ci/binary-test-glob.txt): ${excluded.join(', ')}`
+        `pnpm check verify leaves the host-binary tests to CI (scripts/ci/binary-test-glob.txt): ${excluded.join(', ')}`
       );
     }
-    // pnpm appends these to the end of verify:checks, which is the turbo test step,
+    // pnpm appends these to the end of check:verify:turbo, which is the turbo test step,
     // and quotes each one so the shell never expands the glob.
     process.exitCode = await runGate(
       'full',
       (runner, globs) =>
-        runner.pnpm(['run', 'verify:checks', ...globs.map((glob) => `--exclude=${glob}`)]),
+        runner.pnpm(['run', 'check:verify:turbo', ...globs.map((glob) => `--exclude=${glob}`)]),
       excluded
     );
   } else if (command === 'run-preopen') {
@@ -445,7 +445,7 @@ if (isMain()) {
         return 2;
       }
       console.log(
-        `pnpm verify:preopen runs ${steps.map((step) => step.name).join(', ')}; ` +
+        `pnpm check preopen runs ${steps.map((step) => step.name).join(', ')}; ` +
           'the package tests are left to CI, and arming never reads this proof'
       );
       return runPreopen(steps, (step) => runner.pnpm(step.args));

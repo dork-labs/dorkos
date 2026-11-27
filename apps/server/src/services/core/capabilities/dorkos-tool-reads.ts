@@ -205,6 +205,32 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'connectors.undo_access_change': 'local',
   'connectors.list_access_changes': 'local',
   'connectors.cancel_held_action': 'local',
+  // The owner's connection doors (DOR-4978): agents are refused; counts and lifecycle states only.
+  'connectors.disconnect_impact': 'local',
+  'connectors.rename_connection': 'local',
+  'connectors.remove_connection': 'local',
+  'connectors.get_sign_in': 'local',
+  // A program's requested change carries the program's words and the app's own action text.
+  'connectors.get_review': 'outside',
+  'connectors.get_agent_request_sign_in': 'local',
+  'connectors.stop_every_agent_share': 'local',
+  'connectors.leave_agent_out': 'local',
+  'connectors.list_usage': 'local',
+  'connectors.let_agent_back_in': 'local',
+  // An agent's request carries its own words and the app's own action text.
+  'connectors.answer_agent_request': 'outside',
+  'connectors.start_agent_request_sign_in': 'local',
+  'connectors.list_every_agent_grants': 'local',
+  'connectors.list_agent_connections': 'local',
+  'connectors.list_session_connections': 'local',
+  // A program's requested changes carry the program's words and the app's own action text.
+  'connectors.list_reviews': 'outside',
+  'connectors.list_exclusions': 'local',
+  // The person's extension doors (DOR-4978): agents are refused; extension records only.
+  'extensions.dismiss_approval': 'local',
+  'extensions.remove': 'local',
+  'extensions.forget_approval': 'local',
+  'extensions.restart': 'local',
   'mcp.list': 'local',
   'mcp.add': 'local',
   'mcp.import': 'local',
@@ -219,6 +245,8 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   // A person's MCP servers for every agent: agents are refused, and all but the tool check
   // return what the person typed or the team's own settings.
   'mcp.check_global_args': 'local',
+  'mcp.add_global_server': 'local',
+  'mcp.replace_global_server': 'local',
   'mcp.remove_global_server': 'local',
   'mcp.undo_global_allow': 'local',
   'rooms.post': 'local',
@@ -309,6 +337,9 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'work-graph.chat_tree': 'local',
   'work-graph.agent_work': 'local',
   'work-graph.chat_work': 'local',
+  // A chat's runtime id and its stored settings: DorkOS's own values, never a chat's words (DOR-4978).
+  'sessions.get_runtime_type': 'local',
+  'sessions.get_settings': 'local',
   // The rest of the registry's doors: ids, health, counts, folders and a person's changes.
   'mesh.status': 'local',
   'mesh.topology': 'local',

@@ -3,7 +3,9 @@
  *
  * The two WRITE routes here (`/:id/enable`, `/:id/disable`) run the same person
  * bar as the approval routes mounted alongside them, because they move the same
- * `operator-only` config section — see
+ * `operator-only` config section; restarting and removing one are capabilities
+ * the mount serves behind that bar (`services/extensions/http-capabilities/`,
+ * DOR-4978) — see
  * {@link module:routes/extensions-person-bar} for the three bars, the residual
  * they leave in the login-off posture, and why the narrowing direction is barred
  * too (DOR-1507).
@@ -52,10 +54,13 @@ import { registerExtensionInboxRoutes } from './extensions-inbox.js';
 import { registerExtensionStartWorkRoute } from './extensions-start-work.js';
 import { registerExtensionRoomRoutes } from './extensions-rooms.js';
 import { registerExtensionPrefsRoutes } from './extensions-prefs.js';
-import { registerExtensionRestartRoute } from './extensions-restart.js';
 import { liveForwardDeps, registerExtensionForwardRoutes } from './extensions-forward.js';
 import type { PersonForwardDeps } from '../services/extensions/forward/person-forward.js';
-import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { refusedNotAPerson } from './extensions-person-bar.js';
+import {
+  EXTENSION_TOGGLE_BAR,
+  SAFE_EXT_ID,
+} from '../services/extensions/http-capabilities/extension-door-words.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 import { markedExtensionSecretRefusal } from './extension-secret-agent-gate.js';
 
@@ -104,30 +109,6 @@ const SetSecretBodySchema = z.object({
 const SetSettingBodySchema = z.object({
   value: z.union([z.string(), z.number(), z.boolean()]),
 });
-
-/** Validates extension IDs match the manifest schema pattern (kebab-case alphanumeric). */
-export const SAFE_EXT_ID = /^[a-z0-9][a-z0-9-]*$/;
-
-/**
- * What `/enable` and `/disable` say when a bar refuses them (DOR-1507).
- *
- * They write `extensions.enabled` / `extensions.disabled`, both `operator-only`
- * in `config-write-policy.ts`, straight through `configManager` — around the
- * door that enforces that classification. They answer `person_only`: a refusal
- * of an agent is not about where the caller is, so never `operator_only`.
- *
- * The messages talk about which code DorkOS runs rather than about a config
- * key, because that is what a person reading a refusal actually needs to know.
- * The three bars themselves live in
- * {@link module:routes/extensions-person-bar}, shared with the approval routes.
- */
-const EXTENSION_TOGGLE_BAR: PersonBarCopy = {
-  code: 'person_only',
-  subject: 'which extensions are turned on',
-  crossSite: (origin) =>
-    `Nothing changed. ${origin} isn’t DorkOS. Turn extensions on or off in the app.`,
-  agent: 'Nothing changed. Only a person turns extensions on or off, in Settings.',
-};
 
 /** What the `/api/extensions` routes read. */
 export interface ExtensionsRouterDeps {
@@ -709,7 +690,5 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
     safeId: SAFE_EXT_ID,
   });
   registerExtensionForwardRoutes(router, extensionManager, SAFE_EXT_ID, liveForwardDeps(deps.mesh));
-  registerExtensionRestartRoute(router, extensionManager, SAFE_EXT_ID, broadcastExtensionReloaded);
-
   return router;
 }

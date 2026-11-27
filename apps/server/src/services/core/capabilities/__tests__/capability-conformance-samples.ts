@@ -89,6 +89,10 @@ export function conformanceSampleInputs(
     'link.resolve': { uri: `dork:room:${fixture.roomId}` },
     // No such to-do, so the handler answers its own `TODO_NOT_FOUND`.
     'todos.view_card': { id: 'conformance-no-such-todo' },
+    // The chat reads (DOR-4978): an id that is not a chat id, so each answers its own
+    // `CHAT_ID_INVALID` without reading a store.
+    'sessions.get_runtime_type': { id: 'conformance-not-a-chat-id' },
+    'sessions.get_settings': { id: 'conformance-not-a-chat-id' },
     // No Tasks running in conformance, so the handler answers its own `TASKS_UNAVAILABLE`.
     'tasks.view_run': { id: 'conformance-no-such-run' },
     // A person's writes, valid input for each; the person-only door refuses the anonymous call.
@@ -142,7 +146,49 @@ export function conformanceSampleInputs(
     'permissions.view_agent_level': { id: 'conformance-agent' },
     // Valid input; each person-only door refuses the anonymous call before it runs.
     'mcp.check_global_args': { args: ['--verbose'] },
+    'mcp.add_global_server': {
+      name: 'conformance-srv',
+      connection: { transport: 'stdio', command: 'npx', args: ['-y', 'conformance-mcp@1.0.0'] },
+    },
+    'mcp.replace_global_server': {
+      server: 'conformance-srv',
+      name: 'conformance-srv',
+      connection: { transport: 'stdio', command: 'npx', args: ['-y', 'conformance-mcp@1.0.0'] },
+    },
     'mcp.remove_global_server': { name: 'conformance-srv' },
+    // Behind the account-decision bar: refused before the handler without the mount's proof.
+    'connectors.disconnect_impact': { connectionId: 'conformance-connection' },
+    'connectors.rename_connection': { connectionId: 'conformance-connection', label: 'Work' },
+    'connectors.remove_connection': { connectionId: 'conformance-connection' },
+    'connectors.get_sign_in': { flowId: 'conformance-flow' },
+    'connectors.get_review': { reviewRequestId: 'conformance-review' },
+    'connectors.get_agent_request_sign_in': {
+      requestId: 'conformance-request',
+      flowId: 'conformance-flow',
+    },
+    'connectors.stop_every_agent_share': { connectionId: 'conformance-connection' },
+    'connectors.leave_agent_out': { connectionId: 'conformance-connection', agentId: 'agent-a' },
+    'connectors.list_usage': {},
+    'connectors.let_agent_back_in': { connectionId: 'conformance-connection', agentId: 'agent-a' },
+    'connectors.answer_agent_request': { requestId: 'conformance-request', decision: 'denied' },
+    'connectors.start_agent_request_sign_in': {
+      requestId: 'conformance-request',
+      providerInstanceId: 'conformance-provider',
+    },
+    'connectors.list_every_agent_grants': {},
+    'connectors.list_agent_connections': { agentId: 'agent-a' },
+    'connectors.list_session_connections': { sessionId: 'conformance-session' },
+    'connectors.list_reviews': {},
+    'connectors.list_exclusions': { connectionId: 'conformance-connection' },
+    // Behind the person bar: refused before the handler without the mount's pass.
+    'extensions.dismiss_approval': {
+      id: 'conformance-ext',
+      path: '/x/conformance-ext',
+      version: '1.0.0',
+    },
+    'extensions.remove': { id: 'conformance-ext' },
+    'extensions.forget_approval': { id: 'conformance-ext' },
+    'extensions.restart': { id: 'conformance-ext' },
     'mcp.check_global_tools': { name: 'conformance-srv' },
     'mcp.undo_global_allow': {
       name: 'conformance-srv',

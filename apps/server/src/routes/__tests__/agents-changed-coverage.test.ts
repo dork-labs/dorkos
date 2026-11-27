@@ -93,7 +93,7 @@ vi.mock('../../services/core/config-manager.js', async (importOriginal) => ({
 }));
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
-import { wireLiveChangeBroadcasts } from '../../services/core/streams/live-change-broadcasts.js';
+import { wireLiveChangeBroadcasts } from '../../services/core/streams/screen/live-change-broadcasts.js';
 import { createMeshRegisterHandler } from '../../services/runtimes/claude-code/mcp-tools/mesh-tools.js';
 import { createMeshAgentRegistry } from '../../services/marketplace/flows/mesh-agent-registry.js';
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';

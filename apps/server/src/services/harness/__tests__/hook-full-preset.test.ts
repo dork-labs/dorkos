@@ -13,7 +13,7 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -53,15 +53,23 @@ import {
 } from '../ask-withheld-hooks.js';
 import {
   HOOK_PROJECTION_CAPABILITY_ID,
-  _internal as approvalInternal,
   type HookApprovalGateway,
-} from '../hook-approval.js';
-import { recordHookApproval, recordHookRefusal } from '../hook-consent.js';
+  createComputerAsks,
+} from '../../core/approvals/computer-asks/index.js';
+import {
+  recordHookApproval,
+  recordHookRefusal,
+} from '../../core/approvals/computer-asks/hook-decisions.js';
 import { provenDorkosInstallsIfFull } from '../dorkos-installed.js';
 import { setMarkedFullActivity } from '../../core/turn-power/full-autonomy.js';
 import { recordProjectInstall } from '../../marketplace/lib/project-install-index.js';
 import { installFolderDigest } from '../../marketplace/lib/install-digest.js';
 import { findOperatorOnlyPaths } from '../../core/operator/config-write-policy.js';
+import { _internal as askInternal } from '../ask-withheld-hooks.js';
+import { wireTestConsent } from '../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The space side's consent writes reach a config store, as at startup.
+beforeAll(() => wireTestConsent());
 
 const COMMAND = 'echo done';
 
@@ -178,7 +186,7 @@ beforeEach(() => {
 
 afterEach(() => {
   // A passive row's wait has no end, so its open-card memory must not carry over.
-  approvalInternal.forgetDecisions();
+  askInternal.forgetDecisions();
   setMarkedFullActivity(undefined);
   for (const dir of [repo, home]) rmSync(dir, { recursive: true, force: true });
 });
@@ -295,7 +303,7 @@ describe('on Full, a package DorkOS did not install is held back (DOR-3422)', ()
     // already returned, and nothing awaits the row (DOR-3427).
     const raised = raisePassiveHookRows(withheld, {
       projectPath: repo,
-      approvals: gateway,
+      asks: createComputerAsks(gateway),
       reproject: () => undefined,
     });
     expect(raised).toEqual(['acme']);
@@ -304,7 +312,7 @@ describe('on Full, a package DorkOS did not install is held back (DOR-3422)', ()
       (
         await askAboutWithheldHooks(withheld, {
           projectPath: repo,
-          approvals: gateway,
+          asks: createComputerAsks(gateway),
           reproject: () => undefined,
         })
       ).askedAbout
@@ -364,7 +372,7 @@ describe('on Full, a package DorkOS did not install is held back (DOR-3422)', ()
     expect(
       raisePassiveHookRows(withheld, {
         projectPath: repo,
-        approvals: gateway,
+        asks: createComputerAsks(gateway),
         reproject: () => undefined,
       })
     ).toEqual([]);

@@ -29,7 +29,11 @@ import { Readable } from 'stream';
 import type { ProjectableAttachment } from '../../room-context.js';
 import type { RoomAttachmentStore } from '../room-attachment-store.js';
 import { LocalRoomAttachmentStore } from '../local-room-attachment-store.js';
-import { PROJECTED_ATTACHMENTS_ROOT } from '@dorkos/shared/room-attachment-paths';
+import {
+  PROJECTED_ATTACHMENTS_IGNORE,
+  PROJECTED_ATTACHMENTS_IGNORE_LINE,
+  PROJECTED_ATTACHMENTS_ROOT,
+} from '@dorkos/shared/room-attachment-paths';
 import { projectRoomAttachments } from '../attachment-projection.js';
 
 /**
@@ -124,6 +128,16 @@ describe('projecting room attachments', () => {
     await project([file]);
 
     expect(await readFile(destinationOf(file))).toEqual(BYTES);
+  });
+
+  it('writes an ignore file beside the attachments, and leaves one already there', async () => {
+    await project([await staged()]);
+    const ignore = path.join(agentPath, PROJECTED_ATTACHMENTS_IGNORE);
+    expect(await readFile(ignore, 'utf8')).toBe(`${PROJECTED_ATTACHMENTS_IGNORE_LINE}\n`);
+
+    await writeFile(ignore, 'made-up/\n');
+    await project([await staged({ attachmentId: 'att2' })]);
+    expect(await readFile(ignore, 'utf8')).toBe('made-up/\n');
   });
 
   it('links rather than copies, so a large file costs no bytes', async () => {

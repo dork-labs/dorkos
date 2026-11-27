@@ -6,6 +6,7 @@ import {
   buildExtensionDefinitions,
   checkExtensionContribution,
 } from '../../extension-contribution.js';
+import { CONFIRM_FIRST_CAPABILITY_IDS } from '../../declarations/narrow-declarations.js';
 import { deps, extensionTool, contribution } from './registry.fixtures.js';
 
 describe('tier presence is enforced by the type system', () => {
@@ -252,6 +253,7 @@ describe('a confirm-first hold is a reviewed list’s alone (ADR 261125-114705, 
         invoke: async () => ({}),
       }),
       confirmFirst: {
+        bar: 'account-owner' as const,
         kind: 'cloud.credits' as const,
         target: 'everything',
         reason: 'Spend everything.',
@@ -273,10 +275,27 @@ describe('a confirm-first hold is a reviewed list’s alone (ADR 261125-114705, 
     ).toThrow(/only a person may call it/);
   });
 
-  it('is declared by heartbeat.choose_triage_credits and nothing else in the full registry', () => {
+  it('refuses a listed id that declares a bar other than its listed one', () => {
+    const capability = { ...smuggler('person'), id: 'mcp.add_global_server' as const };
+    expect(() => composeRegistry([{ name: 'mcp', capabilities: [capability] }], deps)).toThrow(
+      /must declare the front-door confirm-first bar/
+    );
+  });
+
+  // Each id with its bar, declared in the definition and never chosen per call (DOR-4978).
+  it('is declared by these ids, each with its listed bar, and nothing else in the full registry', () => {
     const declaring = composeCapabilityRegistryForDocs()
       .capabilities.filter((capability) => capability.confirmFirst !== undefined)
-      .map((capability) => [capability.id, capability.confirmFirst?.kind]);
-    expect(declaring).toEqual([['heartbeat.choose_triage_credits', 'cloud.credits']]);
+      .map((capability) => [capability.id, capability.confirmFirst?.bar])
+      .sort(([a], [b]) => String(a).localeCompare(String(b)));
+    expect(declaring).toEqual([
+      ['connectors.answer_agent_request', 'front-door'],
+      ['connectors.let_agent_back_in', 'front-door'],
+      ['connectors.start_agent_request_sign_in', 'front-door'],
+      ['heartbeat.choose_triage_credits', 'account-owner'],
+      ['mcp.add_global_server', 'front-door'],
+      ['mcp.replace_global_server', 'front-door'],
+    ]);
+    expect(Object.fromEntries(declaring)).toEqual(Object.fromEntries(CONFIRM_FIRST_CAPABILITY_IDS));
   });
 });

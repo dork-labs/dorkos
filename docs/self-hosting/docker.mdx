@@ -116,13 +116,13 @@ Pass environment variables with `-e` or an env file. DorkOS reads the same varia
     DORKOS_TRUSTED_HOSTS: {
       type: 'string',
       description:
-        'Extra names this container answers to, comma-separated and without ports (e.g. dorkos.lan). Needed when you reach DorkOS by NAME rather than by IP — see below.',
+        'Extra names this container answers to, comma-separated and without ports (e.g. dorkos.lan). Needed when you reach DorkOS by NAME rather than by IP (see below).',
       default: 'unset',
     },
     DORKOS_PREVIEW_PORT_RANGE: {
       type: 'string',
       description:
-        'Ports to use when showing one of your dev servers in the canvas, as a range like 4243-4252. Publish the same range so previews are reachable — see below.',
+        'Ports to use when showing one of your dev servers in the canvas, as a range like 4243-4252. Publish the same range so previews are reachable (see below).',
       default: 'unset (a free port is picked at random)',
     },
   }}
@@ -149,11 +149,11 @@ tell you it can see your dev server but can't reach the port it opened for it.
 
 ### Reaching the container by name
 
-If you browse to the container by **IP address** — `http://192.168.1.50:4242`, or
-`http://localhost:4242` on the same machine — everything works with no extra configuration.
+If you browse to the container by **IP address** (`http://192.168.1.50:4242`, or
+`http://localhost:4242` on the same machine), everything works with no extra configuration.
 
-If you browse to it by a **name** — `http://dorkos.lan:4242`, `http://nas:4242`, or a domain
-through a reverse proxy — add that name:
+If you browse to it by a **name** (`http://dorkos.lan:4242`, `http://nas:4242`, or a domain
+through a reverse proxy), add that name:
 
 ```bash
 docker run -d --name dorkos \
@@ -164,11 +164,11 @@ docker run -d --name dorkos \
 
 <Callout type="warn">
   Skip this and the failure is quiet rather than loud: the page loads, the sidebar fills in, your
-  agent really does run — and nothing it says ever appears on screen, because the live connections
+  agent really does run, and nothing it says ever appears on screen, because the live connections
   are refused while ordinary requests are not. If that is what you are seeing, this is why.
 
 DorkOS asks for the name because it cannot tell your browser apart from a hostile page that
-pointed its own domain at this container's address — naming yours is what separates them. An IP
+pointed its own domain at this container's address. Naming yours is what separates them. An IP
 address needs no such help, which is why it just works.
 
 </Callout>

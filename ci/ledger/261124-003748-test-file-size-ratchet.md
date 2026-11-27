@@ -4,7 +4,7 @@ title: The 500-line ratchet holds test files too, in their own baseline
 kind: experiment
 status: proposed
 actor: agent
-gates: [wf.typecheck.typecheck, lefthook.pre-push.max-lines]
+gates: [wf.typecheck.typecheck, lefthook.pre-push.ratchets]
 prs: []
 hypothesis:
   metric: gate.wf.typecheck.typecheck.duration_p90@merge_group

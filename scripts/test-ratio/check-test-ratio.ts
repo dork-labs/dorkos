@@ -5,7 +5,7 @@
  * --help
  * Purpose: hold each package's tests to a budget: no more lines of test than its
  *          ceiling, and the ceiling only tightens.
- * Runs in: pre-push (`test-ratio`); the required `typecheck` job (scripts-repo tests).
+ * Runs in: `pnpm ratchet` (pre-push; the required `typecheck` job).
  * To fix:  delete weaker tests in that package (.claude/rules/testing.md, "Is
  *          this test worth keeping?"), then
  *          `pnpm check:test-ratio -- --update --package <pkg>`. Never raise a budget.

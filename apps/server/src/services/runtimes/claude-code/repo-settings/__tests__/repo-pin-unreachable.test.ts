@@ -21,7 +21,7 @@ import {
   REPO_CONFIG_CAPABILITY_IDS,
   REPO_TOOLS_CAPABILITY_ID,
   isRepoPinCapabilityId,
-} from '../repo-config-approval.js';
+} from '../../../../core/approvals/computer-asks/repo-config-card-ask.js';
 
 const PIN_IDS = [REPO_CONFIG_CAPABILITY_IDS.hooks, REPO_TOOLS_CAPABILITY_ID];
 

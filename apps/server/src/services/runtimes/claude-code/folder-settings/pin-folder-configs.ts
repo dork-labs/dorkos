@@ -6,19 +6,19 @@
  * (`launch-folder-config.ts`).
  *
  * It runs once (`harness.folderConfigPinned`, operator-only, carried across a
- * config wipe), so an agent can't get a home pinned by registering it later
+ * config wipe, and written by the space side like every pin here: this reports
+ * each through the asks port), so an agent can't get a home pinned by registering it later
  * (`mesh_register`), or by wiping the config. **Residual:** anything planted in
  * a registered home before the upgrade was pinned with it.
  *
  * @module services/runtimes/claude-code/folder-settings/pin-folder-configs
  */
 import { logger } from '../../../../lib/logger.js';
+import { runtimeAsks } from '../../computer-asks.js';
 import {
   folderConfigsPinned,
   hasAnyFolderConfigRecord,
   hasFolderConfigRecord,
-  markFolderConfigsPinned,
-  recordFolderConfigApproval,
 } from './folder-config-consent.js';
 import { readFolderConfigParts } from './folder-config-pin.js';
 
@@ -47,7 +47,7 @@ export async function pinRegisteredFolderConfigsOnce(
   // without a record waits for a person, as on first sight.
   if (hasAnyFolderConfigRecord()) {
     logger.warn('[FolderConfig] Pins exist but the upgrade marker is missing; pinning nothing');
-    markFolderConfigsPinned();
+    runtimeAsks().record({ kind: 'folder_configs_pinned' });
     return 0;
   }
   let list: readonly RegisteredAgent[] = [];
@@ -64,16 +64,19 @@ export async function pinRegisteredFolderConfigsOnce(
       if (hasFolderConfigRecord(agent.id, agent.projectPath)) continue;
       const now = readFolderConfigParts(agent.projectPath);
       if (now.unverifiable.length > 0) continue;
-      recordFolderConfigApproval(
-        { agentId: agent.id, home: agent.projectPath, digests: now.digests },
-        'pinning the agents DorkOS already had'
-      );
+      runtimeAsks().record({
+        kind: 'folder_config_approved',
+        agentId: agent.id,
+        home: agent.projectPath,
+        digests: now.digests,
+        reason: 'pinning the agents DorkOS already had',
+      });
       pinned += 1;
     } catch {
       // Unreadable: it waits for a person like any new agent.
     }
   }
-  markFolderConfigsPinned();
+  runtimeAsks().record({ kind: 'folder_configs_pinned' });
   logger.info('[FolderConfig] Pinned the agents DorkOS already had', { pinned });
   return pinned;
 }

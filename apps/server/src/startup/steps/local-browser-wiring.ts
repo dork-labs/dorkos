@@ -15,7 +15,7 @@ import { agentWindowLabel } from '../../services/session/local-browser/agent-win
 import { handBackWake } from '../../services/session/local-browser/hand-back-wake/index.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { notify } from '../../services/notifications/notification-service.js';
-import { localBrowserChangedAnnouncer } from '../../services/core/streams/live-change-broadcasts.js';
+import { localBrowserChangedAnnouncer } from '../../services/core/streams/screen/live-change-broadcasts.js';
 import { logger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { chatFactsOf, sessionAgentById } from '../../services/core/agent-identity/session-agent.js';

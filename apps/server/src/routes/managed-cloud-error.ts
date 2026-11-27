@@ -10,44 +10,8 @@
  */
 import type { Context } from 'hono';
 import { problem } from '@dorkos/http-kit';
-import type { ProblemCode } from '@dorkos/shared/problem';
-import {
-  ManagedConnectorCloudError,
-  type ManagedConnectorCloudErrorCode,
-} from '../services/core/auth/cloud-link-client.js';
-
-/** The problem a refused managed-cloud call answers with: its code and fixed sentence. */
-interface ManagedCloudAnswer {
-  readonly code: ProblemCode;
-  readonly detail: string;
-}
-
-const UNAVAILABLE: ManagedCloudAnswer = {
-  code: 'cloud_unavailable',
-  detail: 'DorkOS’s servers aren’t answering. Nothing changed. Try again soon.',
-};
-
-const REFUSED: ManagedCloudAnswer = {
-  code: 'cloud_refused',
-  detail: 'DorkOS’s servers couldn’t finish this. Nothing changed here. Try again later.',
-};
-
-const ANSWERS: Record<ManagedConnectorCloudErrorCode, ManagedCloudAnswer> = {
-  unauthorized: {
-    code: 'cloud_link_required',
-    detail: 'This computer isn’t linked to your DorkOS account. Link it again in Settings.',
-  },
-  permission_upgrade_required: {
-    code: 'cloud_link_required',
-    detail: 'This computer’s link to your DorkOS account needs updating. Link it again.',
-  },
-  unavailable: UNAVAILABLE,
-  network_error: UNAVAILABLE,
-  request_failed: REFUSED,
-  invalid_response: REFUSED,
-  not_found: REFUSED,
-  conflict: REFUSED,
-};
+import { ManagedConnectorCloudError } from '../services/core/auth/cloud-link-client.js';
+import { MANAGED_CLOUD_PROBLEM } from '../services/connectors/resources/owner-refusals.js';
 
 /**
  * The answer for a refused managed-cloud call, honestly.
@@ -62,6 +26,17 @@ const ANSWERS: Record<ManagedConnectorCloudErrorCode, ManagedCloudAnswer> = {
  */
 export function managedCloudErrorResponse(c: Context, error: unknown): Response | undefined {
   if (!(error instanceof ManagedConnectorCloudError)) return undefined;
-  const answer = ANSWERS[error.code];
+  const answer = MANAGED_CLOUD_PROBLEM[error.code];
   return problem(c, answer.code, { detail: answer.detail });
+}
+
+/**
+ * A refused managed-cloud call's code, or `undefined` for any other error: what
+ * the capability mount's connection doors are given to answer it as the hand
+ * routes do (DOR-4978).
+ *
+ * @param error - Whatever the door caught.
+ */
+export function managedCloudRefusalCode(error: unknown): string | undefined {
+  return error instanceof ManagedConnectorCloudError ? error.code : undefined;
 }

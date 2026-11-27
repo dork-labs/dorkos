@@ -56,8 +56,10 @@ import capabilitiesRoutes from '../routes/capabilities.js';
 import cloudRoutes from '../routes/cloud.js';
 import { createCapabilitiesCatalogRoutes } from '../routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRoutes } from '../routes/capabilities-invoke.js';
+import type { CapabilityDoorPorts } from '../routes/capability-dispatch.js';
 import {
   assertNoCapabilityRouteCollisions,
+  assertCallerBarWired,
   createCapabilityHttpRoutes,
   mountedCapabilities,
 } from '../routes/capability-http.js';
@@ -231,6 +233,11 @@ export interface ComposedGroupDeps {
   /** Every `/api/connectors` group (`routes/connectors.ts`). */
   connectors?: ConnectorRoutesDeps;
   /**
+   * The bars and prechecks a capability that declares one runs on its REST
+   * path and on `/invoke` (the account-decision bar, DOR-4978).
+   */
+  capabilityPorts?: CapabilityDoorPorts;
+  /**
    * The signed webhook ingress (`POST /api/connectors/webhooks/:id`), which
    * answers to its signature before the body is parsed and before the session
    * gate.
@@ -355,6 +362,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     createCapabilityHttpRoutes({
       registry: () => deps.capabilities,
       capabilities: capabilityRoutes,
+      ...(deps.capabilityPorts ? { ports: deps.capabilityPorts } : {}),
     })
   );
   app.route('/api/health', createHealthRoutes(deps));
@@ -535,7 +543,12 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   }
   app.route('/api/capabilities', capabilitiesRoutes);
   if (deps.capabilities) {
-    app.route('/api/capabilities', createCapabilitiesInvokeRoutes(deps.capabilities));
+    // A capability behind an owner bar never runs without its policy (DOR-4978).
+    assertCallerBarWired(deps.capabilities, deps.capabilityPorts);
+    app.route(
+      '/api/capabilities',
+      createCapabilitiesInvokeRoutes(deps.capabilities, deps.capabilityPorts)
+    );
   }
   app.route('/api', createApiDocsRoutes());
   if (deps.relay) {

@@ -201,7 +201,7 @@ async function clearPendingSlackRequests(
   request: APIRequestContext,
   apiUrl: string
 ): Promise<void> {
-  const list = await request.get(`${apiUrl}/api/connectors/agent-requests?state=pending`);
+  const list = await request.get(`${apiUrl}/api/connectors/agent-requests?state=pending&limit=200`);
   expect(list.ok(), await list.text()).toBe(true);
   const { requests } = (await list.json()) as { requests: OwnerAgentRequest[] };
   for (const pending of requests) {
@@ -218,7 +218,7 @@ async function clearPendingSlackRequests(
 
 /** Disconnect every Slack account still connected, so a case starts with none. */
 async function disconnectSlackAccounts(request: APIRequestContext, apiUrl: string): Promise<void> {
-  const list = await request.get(`${apiUrl}/api/connectors/connections`);
+  const list = await request.get(`${apiUrl}/api/connectors/connections?limit=200`);
   expect(list.ok(), await list.text()).toBe(true);
   const { connections } = (await list.json()) as {
     connections: Array<{ connectionId: string; toolkit: string; lifecycle: string }>;

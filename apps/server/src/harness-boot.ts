@@ -31,6 +31,7 @@ import { MainRequestAdmission } from './services/core/lifecycle/main-request-adm
 import { initBoundary } from './lib/boundary.js';
 import { logger } from './lib/logger.js';
 import { registerClaudeCodeFacts } from './startup/register-claude-code-facts.js';
+import { wireComputerAsks } from './startup/computer-asks.js';
 import { initConfigManager } from './services/core/config-manager.js';
 import { initAgentIdentityService } from './services/core/agent-identity/index.js';
 import { wireProcessTokenPort } from './startup/steps/work-graph.js';
@@ -55,6 +56,7 @@ import {
   setRoomService,
 } from './services/rooms/index.js';
 import { LocalRoomAttachmentStore } from './services/rooms/attachments/local-room-attachment-store.js';
+import { wireScheduledChatMoves, wireSessionListSpaceView } from './startup/space-views.js';
 
 /** A booted in-process harness server: its routing plus a DB-closing teardown. */
 export interface InProcessTestServer {
@@ -90,6 +92,8 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   // First, as in `start()` (DOR-4928): until Claude Code's folder facts are registered the
   // protected-path policy refuses every path and turn code honours no agent file's runtime.
   registerClaudeCodeFacts();
+  // The computer side asks and records consent through the space side, as in `start()`.
+  wireComputerAsks();
 
   // Config store first — the session gate reads it on every request; without
   // it every request 500s (spec eval-harness Errata, in-process boot recipe).
@@ -112,6 +116,10 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   // for them is durable, so the hold behind it is (DOR-1324).
   setStagedContextStore(new StagedContextStore(db));
   runtimeRegistry.setDb(db);
+  // A scheduled chat's task run and beat rows move with its rekey, and the session-list
+  // stream reads who may hear about a session from the space side, as in `start()`.
+  wireScheduledChatMoves();
+  wireSessionListSpaceView();
   setContinuationHoldDb(db);
   // Whether each chat's latest turn read outside words, so a restart cannot clear it (DOR-4148).
   setOutsideWordsDb(db);

@@ -8,7 +8,7 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, statSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -44,17 +44,17 @@ import {
   withProvenInstalls,
 } from '../project-with-consent.js';
 import { hookPackagesToAskAbout, raisePassiveHookRows } from '../ask-withheld-hooks.js';
+import { _internal as approvalInternal } from '../../core/approvals/computer-asks/hook-card-ask.js';
 import {
-  _internal as approvalInternal,
+  createComputerAsks,
   describeHookProjectionCapability,
-} from '../hook-approval.js';
+} from '../../core/approvals/computer-asks/index.js';
 import { describeHookScriptPins } from '../hook-script-pins.js';
+import { hookApprovalEntry, storedHookDecisions } from '../hook-consent.js';
 import {
-  hookApprovalEntry,
   recordHookApproval,
   recordHookRefusal,
-  storedHookDecisions,
-} from '../hook-consent.js';
+} from '../../core/approvals/computer-asks/hook-decisions.js';
 import { ApprovalService } from '../../core/approvals/index.js';
 import { PASSIVE_APPROVAL_EXPIRES_AT } from '../../core/approvals/passive-approval.js';
 import {
@@ -63,6 +63,11 @@ import {
 } from '../../notifications/escalation-service.js';
 import { recordProjectInstall } from '../../marketplace/lib/project-install-index.js';
 import { installFolderDigest } from '../../marketplace/lib/install-digest.js';
+import { _internal as askInternal } from '../ask-withheld-hooks.js';
+import { wireTestAsks } from '../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The computer side records consent through the space side, as at startup.
+beforeAll(() => wireTestAsks());
 
 const COMMAND = 'node "${CLAUDE_PLUGIN_ROOT}/hooks/loop.mjs"';
 
@@ -295,7 +300,7 @@ describe('on Full, a yes covers exactly the files it names (DOR-3433)', () => {
     const { withheld } = await plan();
     raisePassiveHookRows(withheld, {
       projectPath: repo,
-      approvals,
+      asks: createComputerAsks(approvals),
       reproject: async () => (await plan()).withheld,
     });
     await new Promise((resolve) => setTimeout(resolve, 30));
@@ -324,7 +329,7 @@ describe('on Full, a yes covers exactly the files it names (DOR-3433)', () => {
     // test resets the config it would write that no into.
     for (const pending of approvals.listPending()) approvals.deny(pending.approvalId);
     await new Promise((resolve) => setTimeout(resolve, 30));
-    approvalInternal.forgetDecisions();
+    askInternal.forgetDecisions();
     approvalInternal.pollIntervalMs = SHIPPED_POLL_MS;
     approvalInternal.sleep = SHIPPED_SLEEP;
     setEscalationService(null);

@@ -23,7 +23,7 @@ import {
   type ResolveStartedBy,
 } from './started-by-origin-overlay.js';
 import { applyTouchedByYouOverlay, type ResolveTouches } from './touched-by-you-overlay.js';
-import { applyHeartbeatOriginOverlay, type ResolveBeatChats } from '../../heartbeats/beat-chat.js';
+import { applyHeartbeatOriginOverlay, type ResolveBeatChats } from './heartbeat-origin-overlay.js';
 
 /**
  * The batched origin lookups, as the composition root wires them.

@@ -44,7 +44,7 @@ import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 import { CommunityNavigationPreferenceService } from '../../communities/community-navigation-preferences.js';
 import { ConfigManager } from '../config-manager.js';
 import { eventFanOut, type EncodedBroadcast, type FanOutClient } from '../event-fan-out.js';
-import { wireLiveChangeBroadcasts } from '../streams/live-change-broadcasts.js';
+import { wireLiveChangeBroadcasts } from '../streams/screen/live-change-broadcasts.js';
 import type { CallerPrincipal } from '../../../lib/caller-principal.js';
 
 /** A connected reader that just keeps what it was sent. */

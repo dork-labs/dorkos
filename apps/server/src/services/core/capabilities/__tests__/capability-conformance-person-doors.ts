@@ -6,13 +6,27 @@
 import type { CapabilityDeps } from '../capability-definition.js';
 
 /**
- * A person's MCP servers for every agent, chat from the web switched off, and
- * agent folders where no agent lives.
+ * A person's MCP servers for every agent, chat from the web switched off,
+ * agent folders where no agent lives, the owner's connection doors and the
+ * person's extension doors.
  */
 export const conformancePersonDoorDeps: Pick<
   CapabilityDeps,
-  'globalMcpPersonDeps' | 'sessionRelayDeps' | 'agentHomeDeps'
+  | 'globalMcpPersonDeps'
+  | 'sessionRelayDeps'
+  | 'agentHomeDeps'
+  | 'connectionOwnerDeps'
+  | 'extensionPersonDeps'
 > = {
+  // `/api/extensions`: behind the person bar, so a call with no mount pass is refused
+  // before any of these run (DOR-4978).
+  extensionPersonDeps: {
+    manager: {} as NonNullable<CapabilityDeps['extensionPersonDeps']>['manager'],
+    broadcastReloaded: () => undefined,
+  },
+  // `/api/connectors`: behind the account-decision bar, so a call with no mount proof is
+  // refused before any of these run (DOR-4978).
+  connectionOwnerDeps: {} as NonNullable<CapabilityDeps['connectionOwnerDeps']>,
   // `GET /api/agents/current` and the persona move: no agent lives in any folder.
   agentHomeDeps: { agentAt: async () => null },
   // `/api/mcp-servers`: person-only, so the anonymous probe is refused before any of these run.

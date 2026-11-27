@@ -5,7 +5,7 @@
  * --help
  * Purpose: hold each package to a ratchet on `vi.mock` of our own modules: the
  *          count may only fall. Mock at the edges, use the real module elsewhere.
- * Runs in: pre-push (`own-mocks`); the required `typecheck` job (scripts-repo tests).
+ * Runs in: `pnpm ratchet` (pre-push; the required `typecheck` job).
  * To fix:  replace the new own-module mock with the real module. After removing
  *          some, run `pnpm check:own-mocks -- --update`. Never raise an entry.
  * Usage:   pnpm check:own-mocks [-- --base <ref> | --update | --init | --root <dir>]

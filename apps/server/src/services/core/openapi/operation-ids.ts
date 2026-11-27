@@ -54,7 +54,6 @@
  * | `GET`    | `/api/sessions/{id}`                                    | `sessions.get`                                    |
  * | `GET`    | `/api/health/deep` (no `/api/health/deep/{id}`)         | `health.getDeep`                                  |
  * | `GET`    | `/api/rooms/{id}/entries` (takes `cursor`)              | `rooms.listEntries`                               |
- * | `GET`    | `/api/sessions/{id}/settings`                           | `sessions.getSettings`                            |
  * | `POST`   | `/api/sessions`                                         | `sessions.create`                                 |
  * | `POST`   | `/api/sessions/{id}/messages`                           | `sessions.createMessages`                         |
  * | `POST`   | `/api/connectors/connections/{id}/events/subscriptions` | `connectors.createConnectionsEventsSubscriptions` |

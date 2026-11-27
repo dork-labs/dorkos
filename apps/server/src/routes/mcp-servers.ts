@@ -1,13 +1,14 @@
 /**
- * `/api/mcp-servers`: adding, replacing and widening the MCP servers a person
- * adds once for every agent, in Connections → MCP servers (DOR-3213).
+ * `/api/mcp-servers`: listing and widening the MCP servers a person adds once
+ * for every agent, in Connections → MCP servers (DOR-3213).
  *
- * The arguments check, removing a server, its tool check and an Undo of a
- * standing yes are person-only capabilities the mount serves
- * (`services/mesh/global-mcp/global-mcp-person-capabilities.ts`, DOR-4978).
- * The two lists here stay hand routes until they page by cursor; adding,
- * replacing and widening until the capability confirm-first hold can build its
- * sheet from the server's own state.
+ * The arguments check, adding, replacing and removing a server, its tool check
+ * and an Undo of a standing yes are person-only capabilities the mount serves
+ * (`services/mesh/global-mcp/global-mcp-person-capabilities.ts`, DOR-4978);
+ * adding and replacing are confirm-first behind the front-door bar. The two
+ * lists here stay hand routes until they page by cursor; widening because its
+ * store decides inside its write queue whether a change widens, so its hold is
+ * raised mid-write.
  *
  * **Person-only, every route.** These are not capabilities, so no agent tool,
  * capability call or approval token reaches them. Reading takes a person
@@ -20,12 +21,12 @@
  * back out: every answer is a {@link GlobalMcpServerView}, which carries a
  * secret's name and nothing else.
  *
- * **"Confirm it's you" (DOR-3234).** Once this install has an owner, anything
- * that sets what a server runs (POST, PUT) or lets more agents run it (a PATCH
- * that turns it on or takes an agent off its exclusions) is held until the owner
- * confirms with their password. Nothing is written before that, and what the
- * sheet says comes from `routes/mcp-server-step-up.ts`. Turning a server off
- * and keeping an agent from it only take power away, so they ask for nothing.
+ * **"Confirm it's you" (DOR-3234).** Once this install has an owner, a PATCH
+ * that lets more agents run a server (turns it on or takes an agent off its
+ * exclusions) is held until the owner confirms with their password. Nothing is
+ * written before that, and what the sheet says comes from
+ * `services/mesh/global-mcp/global-mcp-sheet.ts`. Turning a server off and
+ * keeping an agent from it only take power away, so they ask for nothing.
  * A held write keeps its secrets in memory only, in its commit, for at most
  * `STEP_UP_TTL_MS`.
  *
@@ -34,9 +35,7 @@
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
-  GlobalMcpServerInputSchema,
   GlobalMcpServerPatchSchema,
-  type GlobalMcpServerInput,
   type GlobalMcpServerPatch,
 } from '@dorkos/shared/global-mcp-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -71,7 +70,11 @@ import {
   whoGetsIt,
   type AgentNames,
   type ServerChange,
-} from './mcp-server-step-up.js';
+} from '../services/mesh/global-mcp/global-mcp-sheet.js';
+import {
+  GLOBAL_MCP_STORE,
+  NO_SUCH_SERVER,
+} from '../services/mesh/global-mcp/global-mcp-refusals.js';
 import { noOwnerRefusal } from './relay-adapter-http.js';
 import { holdForStepUp } from './step-up-guard.js';
 
@@ -95,25 +98,25 @@ const PROBLEM_BY_STORE_CODE = {
 
 /**
  * The fixed sentence each store refusal answers with. The store's own message
- * can name a file it read, so it goes to the server log, never to the caller.
+ * can name a command, a folder or a setting, so only its code is logged.
  */
 const DETAIL_BY_STORE_CODE: Record<GlobalMcpStoreError['code'], string> = {
-  not_found: 'There is no MCP server by that name.',
-  name_taken: 'A server with that name already exists. Pick another.',
-  reserved_name: "That name is one of DorkOS's own. Pick another.",
-  oauth_unsupported: "This server needs a sign-in DorkOS can't do yet.",
-  unsafe_command: "That command can't run here. Use the full path to the program.",
-  unsafe_env: "One of those environment variables isn't allowed.",
-  unreadable: "The saved servers couldn't be read. Nothing changed.",
-  changed: 'This server changed since you looked. Reload it and try again.',
-  secret_left: "The server is removed, but its saved key couldn't be deleted.",
-  masked_value: "Type the secret again. A masked value can't be saved.",
+  not_found: NO_SUCH_SERVER,
+  name_taken: GLOBAL_MCP_STORE.nameTaken,
+  reserved_name: GLOBAL_MCP_STORE.reservedName,
+  oauth_unsupported: GLOBAL_MCP_STORE.oauthUnsupported,
+  unsafe_command: GLOBAL_MCP_STORE.unsafeCommand,
+  unsafe_env: GLOBAL_MCP_STORE.unsafeEnv,
+  unreadable: GLOBAL_MCP_STORE.unreadable,
+  changed: GLOBAL_MCP_STORE.changed,
+  secret_left: GLOBAL_MCP_STORE.secretLeft,
+  masked_value: GLOBAL_MCP_STORE.maskedValue,
 };
 
 /** A store refusal as a problem document. */
 function storeProblem(err: GlobalMcpStoreError): Problem {
   const [code, status] = PROBLEM_BY_STORE_CODE[err.code];
-  logger.info('[mcp-servers] store refused', { code: err.code, error: err.message });
+  logger.info('[mcp-servers] store refused', { code: err.code });
   return problemBody(code, { detail: DETAIL_BY_STORE_CODE[err.code], status });
 }
 
@@ -213,32 +216,6 @@ export function createMcpServerRoutes(
     });
   };
 
-  /**
-   * Hold a POST or PUT, refusing first whatever a password could not change. A
-   * PUT's `expect` is bound too, so a resend after the server moved holds afresh.
-   */
-  const holdInput = (
-    c: Context<ApiEnv>,
-    change: Extract<ServerChange, 'add' | 'change'>,
-    input: GlobalMcpServerInput,
-    run: () => Promise<WriteResult>,
-    expect?: string
-  ): Promise<Response> =>
-    runOrHold(
-      c,
-      {
-        target: input.name,
-        input:
-          expect === undefined
-            ? boundServerInput(change, input)
-            : { ...(boundServerInput(change, input) as object), expect },
-        reason: serverReason(change, input),
-        notes: serverNotes(input, change === 'change'),
-        warnings: serverWarnings(input),
-      },
-      run
-    );
-
   /** Hold a PATCH that lets more agents run a server, as it stands right now. */
   const holdWidening = (
     c: Context<ApiEnv>,
@@ -281,60 +258,9 @@ export function createMcpServerRoutes(
     if (refusal) return refusal;
     const name = c.req.param('name');
     if (!store.has(name)) {
-      return problem(c, 'not_found', { detail: 'There is no MCP server by that name.' });
+      return problem(c, 'not_found', { detail: NO_SUCH_SERVER });
     }
     return c.json({ allows: await readServerStandingAllows(store, name, agents()) });
-  });
-
-  /** POST /api/mcp-servers — add a server for every agent. */
-  router.post('/', async (c) => {
-    const refusal = refuseWrite(c);
-    if (refusal) return refusal;
-    const parsed = GlobalMcpServerInputSchema.safeParse(readJsonBody(c));
-    if (!parsed.success)
-      return validationProblem(c, parsed.error, { detail: 'That server is not complete.' });
-    const input = parsed.data;
-    try {
-      store.refuseAdd(input);
-    } catch (err) {
-      return storeRefusal(c, err);
-    }
-    return holdInput(c, 'add', input, async () => {
-      const server = await store.add(input);
-      logger.info('[mcp-servers] added a server for every agent', { name: server.name });
-      return { status: 201, body: server };
-    });
-  });
-
-  /** PUT /api/mcp-servers/:name — replace a server; its secrets are typed again. */
-  router.put('/:name', async (c) => {
-    const refusal = refuseWrite(c);
-    if (refusal) return refusal;
-    const parsed = GlobalMcpServerInputSchema.safeParse(readJsonBody(c));
-    if (!parsed.success)
-      return validationProblem(c, parsed.error, { detail: 'That server is not complete.' });
-    const input = parsed.data;
-    const name = c.req.param('name');
-    let expect: string;
-    try {
-      store.refuseReplace(name, input);
-      // The server as the sheet is shown: a change made while it is up, such
-      // as keeping an agent from it, refuses the confirm rather than being undone.
-      expect = store.fingerprint(name);
-    } catch (err) {
-      return storeRefusal(c, err);
-    }
-    return holdInput(
-      c,
-      'change',
-      input,
-      async () => {
-        const server = await store.replace(name, input, { expect });
-        logger.info('[mcp-servers] replaced a server for every agent', { name: server.name });
-        return { status: 200, body: server };
-      },
-      expect
-    );
   });
 
   /** PATCH /api/mcp-servers/:name — `{ enabled?, excludedAgents? }`. */

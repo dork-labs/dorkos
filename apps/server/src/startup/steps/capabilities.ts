@@ -24,7 +24,7 @@ import {
   ensureInSessionAgentIdentity,
   getAgentIdentityService,
 } from '../../services/core/agent-identity/index.js';
-import { wireCapabilitiesChangedBroadcast } from '../../services/core/streams/live-change-broadcasts.js';
+import { wireCapabilitiesChangedBroadcast } from '../../services/core/streams/screen/live-change-broadcasts.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { initApprovalSubjectResolvers } from '../../services/core/approvals/index.js';
 import { initCapabilityTierGate } from '../../services/core/capabilities/index.js';
@@ -71,8 +71,14 @@ import type { WireSessionServicesResult } from './session-services.js';
 import type { WireMcpTasksAndSkillsResult } from './mcp-tasks-skills.js';
 import type { ServerRefs } from '../server-refs.js';
 import { globalMcpPersonDepsFor } from '../../services/mesh/global-mcp/global-mcp-person-capabilities.js';
+import {
+  connectionOwnerDepsFor,
+  type ConnectionOwnerServices,
+} from '../../services/connectors/resources/owner-capabilities.js';
 import { enrichTopology } from '../../routes/mesh-topology.js';
 import { sessionRelayDoorDeps } from '../../routes/session-relay.js';
+import { managedCloudRefusalCode } from '../../routes/managed-cloud-error.js';
+import { extensionPersonDoorDeps } from '../../routes/extensions-approval.js';
 import {
   projectComputerPlacement,
   projectComputerPlacementById,
@@ -81,7 +87,7 @@ import { agentPersonaDeps } from './agent-persona-deps.js';
 import { savePersonFile } from '../../services/canvas/doc-channel/writes/person-file-save.js';
 
 /** What {@link composeCapabilities} reads from the startup steps before it. */
-export interface ComposeCapabilitiesInput {
+export interface ComposeCapabilitiesInput extends ConnectionOwnerServices {
   localBrowserService: WireMcpTasksAndSkillsResult['localBrowserService'];
   docChannelHttp: WireConnectorEventsAndApprovalsResult['docChannelHttp'];
   permissionService: MountCoreRoutesResult['permissionService'];
@@ -256,6 +262,14 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       ...(mcpDeps && { mcpDeps }),
       // The MCP servers a person adds for every agent, on their REST paths (DOR-4978).
       ...globalMcpPersonDepsFor(deps, () => refs.meshCore),
+      // The owner's connection doors, behind the account-decision bar (DOR-4978): the
+      // same services the hand routes hold.
+      connectionOwnerDeps: connectionOwnerDepsFor(
+        built,
+        refs.connectorAgentRequests,
+        managedCloudRefusalCode
+      ),
+      ...extensionPersonDoorDeps(refs.extensionManager, activityService), // DOR-4978
       sessionRelayDeps: sessionRelayDoorDeps(), // chat from the web's doors (DOR-4978)
       // The rooms domain (room-participation spec §10.2, §10.3): the verbs an
       // agent has in the rooms it belongs to. The SAME service instances the

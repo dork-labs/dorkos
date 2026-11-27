@@ -35,18 +35,18 @@
  */
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
+import {
+  FOLDER_CONFIG_PARTS,
+  type FolderConfigDigests,
+  type FolderConfigPart,
+} from '@dorkos/shared/computer-asks';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
 import { agentFileHooks, hookScriptFiles } from './folder-config-scripts.js';
 import { sha256 } from '../repo-settings/repo-files.js';
 
-/** The three parts a pin is made of, in the order a card names them. */
-export const FOLDER_CONFIG_PARTS = ['hooks', 'mcpJson', 'manifest'] as const;
-
-/** One of {@link FOLDER_CONFIG_PARTS}. */
-export type FolderConfigPart = (typeof FOLDER_CONFIG_PARTS)[number];
-
-/** The per-part digests of one agent home's folder settings. */
-export type FolderConfigDigests = Record<FolderConfigPart, string>;
+// The three parts a pin is made of, and their digests, are part of the asks
+// port's contract: a card asks about them and the space side records them.
+export { FOLDER_CONFIG_PARTS, type FolderConfigDigests, type FolderConfigPart };
 
 /** The digests now, and which parts can't be vouched for. */
 export interface FolderConfigParts {

@@ -19,8 +19,8 @@ import { SESSION_RELAY_MAX_FRAME_LENGTH } from '@dorkos/shared/session-relay';
 import { logger } from '../../../lib/logger.js';
 import { recordAudit } from '../../audit/audit-trail.js';
 import { notify } from '../../notifications/notification-service.js';
-import { operatorAudience } from '../../notifications/notification-entitlement.js';
-import { eventFanOut } from '../event-fan-out.js';
+import { eventFanOut, type BroadcastAudience } from '../event-fan-out.js';
+import { ownerOnlyAudience } from '../../../lib/caller-principal.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
 import { canExpose } from '../auth/exposure-guard.js';
 import { configManager } from '../config-manager.js';
@@ -100,17 +100,29 @@ export function sessionRelayDevices(): RelayDeviceStore {
   return devices;
 }
 
+/**
+ * Who on the global stream hears the relay's presence: the audience the space
+ * side handed over in {@link wireSessionRelay}, read on each frame, or the
+ * operator alone before it has (fail-closed, spec `computer-side-starts-alone`
+ * §5.12).
+ *
+ * @param principal - What the connection registered itself as.
+ */
+export const sessionRelayPresenceAudience: BroadcastAudience = (principal) =>
+  (wiring?.ownerAudience ?? ownerOnlyAudience)(principal);
+
 let presence: RelayPresence | null = null;
 
 /**
  * Whether someone is using this computer from the web now, made on first use.
  * Each change goes out as `session_relay_presence` on the global stream, to
- * the owner's windows only.
+ * the owner's windows only ({@link sessionRelayPresenceAudience}).
  */
 export function sessionRelayPresence(): RelayPresence {
   presence ??= new RelayPresence({
     devices: sessionRelayDevices(),
-    onChange: (next) => eventFanOut.broadcast('session_relay_presence', next, operatorAudience),
+    onChange: (next) =>
+      eventFanOut.broadcast('session_relay_presence', next, sessionRelayPresenceAudience),
   });
   return presence;
 }

@@ -1,0 +1,311 @@
+/**
+ * Ask before an installed package writes shell commands into the files a coding
+ * agent runs on your behalf (DOR-522): the card, its wait, and the decision it
+ * records, on the space side (spec `computer-side-starts-alone` §5.7). The
+ * computer side raises it through the asks port
+ * (`harness/ask-withheld-hooks.ts`) and hears only the answer.
+ *
+ * ## What was wrong
+ *
+ * A marketplace `plugin` may ship `hooks/hooks.json`. Harness Sync projects those
+ * hooks into every enabled harness: they merge into the user-owned
+ * `.claude/settings.local.json` and fold into the generated `.codex/hooks.json`,
+ * `.cursor/hooks.json` and `.github/hooks/copilot-hooks.json`. A hook is a shell
+ * command the harness runs unattended, so installing a package was enough to make
+ * a stranger's `curl … | sh` run on the next tool call — and installing asks
+ * nobody: `marketplace.install` is tier `act`, which passes for every caller.
+ *
+ * ## Where the gate sits, and why here
+ *
+ * Not on the install. Promoting `marketplace.install` to `destructive` would put
+ * an approval card in front of every ordinary install, which is the routine-card
+ * harm this repo has refused twice (DOR-504, DOR-506) and which
+ * `routes/__tests__/marketplace.test.ts` pins outright. The gate is on the
+ * CONTENT: a package that declares no hooks is never asked about, and one that
+ * does is asked once, naming the exact commands.
+ *
+ * Not inside `@dorkos/harness` either. That package is a pure projection engine
+ * with no approval primitive and no config store, and dragging both into it for
+ * one call site would be an architectural regression. It exposes a per-package
+ * predicate (`project(root, { allowPluginHooks })`) and the list of commands each
+ * package wants to install (`projectedHookCommands`); this module decides.
+ *
+ * The predicate is applied at PLAN time rather than at apply time because a
+ * package's hooks reach every harness, not only the Claude Code settings merge.
+ * Filtering the merge alone would have left the same commands landing in
+ * `.codex/hooks.json`, which the reproduction confirmed.
+ *
+ * ## What a person is agreeing to
+ *
+ * One package's exact hooks, in one project: each command, the event that fires
+ * it, and the matcher that narrows it. Both the yes and the no are recorded here
+ * (`hook-decisions.ts`) before the computer hears the answer;
+ * `harness/hook-consent.ts` states what the digest binds and what it cannot.
+ *
+ * ## Every way in is gated now
+ *
+ * `dorkos harness sync --fix` used to pass no predicate and consult no record,
+ * so it installed every hook on disk including a package's somebody had refused
+ * — a refusal lived in this process's memory and the CLI had nothing to read. It
+ * now goes through the same seam every other trigger uses
+ * (`project-with-consent.ts`) and reads the same two lists: an unapproved
+ * package's hooks are WITHHELD, printed command by command with the exact
+ * re-run, and installed only by `--allow-hooks <package>`, which records the
+ * same entry this card writes (DOR-1849, contract D5).
+ *
+ * ## The two ways in still disagree, and this does not change that
+ *
+ * The MCP install path already raises a card for the install itself
+ * (`marketplace-mcp/confirmation-provider.ts`); the HTTP route does not. This gate
+ * sits AFTER both, on the projection, so it fires the same way whichever surface
+ * installed the package. Converging the two install surfaces is a separate change.
+ *
+ * @module services/core/approvals/computer-asks/hook-card-ask
+ */
+import { resolve } from 'node:path';
+import type { ProjectedHook } from '@dorkos/harness';
+import type { CapabilityTier } from '@dorkos/shared/capabilities';
+import type { AskAnswer, AskRequest, HookProjectionRequest } from '@dorkos/shared/computer-asks';
+import type {
+  ApprovalBinding,
+  ApprovalConsumeResult,
+  ApprovalRequestInput,
+  ApprovalTicket,
+} from '../approval-service.js';
+import { PASSIVE_APPROVAL_EXPIRES_AT } from '../passive-approval.js';
+import { familyInputHash } from '../approval-retirement.js';
+import {
+  HOOK_CARD_PRESENTATION,
+  describeHookProjection,
+  hookRequestFamily,
+  hookRequestInputHash,
+  summariseHookProjection,
+  type HookCardOptions,
+} from '../../../harness/hook-card.js';
+import { logger } from '../../../../lib/logger.js';
+import { isHookRefusedOnRecord, recordHookApproval, recordHookRefusal } from './hook-decisions.js';
+
+/** An ask about one package's hooks. */
+export type HookProjectionAsk = Extract<AskRequest, { kind: 'hook_projection' }>;
+
+/**
+ * What an approval card calls this, and how loudly.
+ *
+ * A third id space alongside registry capabilities and hand-registered MCP tools
+ * (the two `routes/approvals.ts` already resolves titles from), because this is
+ * not something an agent can invoke: nothing accepts `harness.project_hooks` as a
+ * call. It exists so the card, the stored row, and the audit trail name the action
+ * rather than an empty string. `index.ts` teaches `ApprovalService` this one
+ * descriptor; without it the card would fall back to showing the raw id.
+ */
+export const HOOK_PROJECTION_CAPABILITY_ID = 'harness.project_hooks';
+
+/** The card's title. Plain enough to decide from without reading the summary twice. */
+export const HOOK_PROJECTION_CAPABILITY_TITLE =
+  'Let an installed package run commands automatically';
+
+/**
+ * Describe {@link HOOK_PROJECTION_CAPABILITY_ID} for an approval card.
+ *
+ * `destructive` because that is what the tier means to a person reading the card:
+ * this one needs a decision, and a `curl … | sh` that runs on every tool call is
+ * not a routine action.
+ *
+ * @param capabilityId - The id `ApprovalService` is resolving.
+ * @returns The descriptor, or `undefined` for any other id (so the caller falls
+ *   through to the capability registry).
+ */
+export function describeHookProjectionCapability(
+  capabilityId: string
+): { title: string; tier: CapabilityTier } | undefined {
+  if (capabilityId !== HOOK_PROJECTION_CAPABILITY_ID) return undefined;
+  return { title: HOOK_PROJECTION_CAPABILITY_TITLE, tier: 'destructive' };
+}
+
+/**
+ * The slice of `ApprovalService` this gate uses.
+ *
+ * Narrow on purpose: the gate asks and waits, it never decides. Taking the
+ * interface rather than the class also lets the reproduction test drive the whole
+ * projection without a database.
+ */
+export interface HookApprovalGateway {
+  /** Record a pending approval and return the one-time token to retry with. */
+  request(input: ApprovalRequestInput): ApprovalTicket;
+  /** Present the token for the action it was granted for. */
+  consume(token: string, binding: ApprovalBinding): ApprovalConsumeResult;
+  /**
+   * A fresh token for the open approval of exactly this action, when there is
+   * one, so a passive card left open across a restart is reused, not raised again.
+   */
+  reissue?(binding: ApprovalBinding): { approvalId: string; token: string } | undefined;
+  /**
+   * Retire every other open approval of the family `binding` belongs to, so a
+   * package edited twice leaves one passive row, not two (DOR-3433).
+   */
+  retireSuperseded?(binding: ApprovalBinding, family: string): number;
+  /** A person explicitly requested another review of an existing refusal. */
+  isReaskedHook?(binding: ApprovalBinding): boolean;
+  /** Re-asks live in SQLite, so their follower survives a restart without another file. */
+  reaskedHookRequests?(): HookProjectionRequest[];
+}
+
+/**
+ * The family a passive row belongs to: one package in one project, whatever
+ * files it runs (DOR-3433). Short, because it only has to tell one project's
+ * packages apart, and stable, because a row raised before a restart must match.
+ */
+function passiveRowFamily(projectPath: string, packageName: string): string {
+  return hookRequestFamily({ projectPath, packageName });
+}
+
+/**
+ * The canonical form of a request, for the approval BINDING.
+ *
+ * `path.resolve` is the whole of it, and it is not cosmetic: `/x/proj` and
+ * `/x/proj/` are one directory, and the app is not the only caller. The stored
+ * entry canonicalizes the same way (`@dorkos/shared/consent-entries`), so the token a card is
+ * granted for and the record it writes describe one thing.
+ */
+function canonical(request: HookProjectionRequest): {
+  projectPath: string;
+  packageName: string;
+  hooks: ProjectedHook[];
+} {
+  return {
+    projectPath: resolve(request.projectPath),
+    packageName: request.packageName,
+    hooks: request.hooks,
+  };
+}
+
+/** Seams the wait loop uses, injectable so tests do not sleep in real time. */
+export const _internal = {
+  /** Pause between presentations of a pending token. */
+  sleep: (ms: number): Promise<void> =>
+    new Promise((resolve) => {
+      // Unref'd: a pending approval must never be the reason a CLI-embedded
+      // server refuses to exit.
+      setTimeout(resolve, ms).unref?.();
+    }),
+  /** How long to wait between presentations. */
+  pollIntervalMs: 5_000,
+};
+
+/**
+ * Ask a person whether this package may install these commands, wait for the
+ * answer, and record it.
+ *
+ * The token is presented on a slow loop rather than awaited on an event, because
+ * `ApprovalService` is a token-and-retry primitive with no server-side
+ * subscription: `consume` reports `pending` without spending, and reports
+ * `expired` on its own once the decision window closes, so the loop always ends.
+ *
+ * Fails CLOSED on every path that is not an explicit yes: denied, expired,
+ * mismatched, or nobody deciding before the window shuts. A store that throws
+ * propagates, and the caller's own catch withholds the hooks the same way. A
+ * yes is recorded before the answer goes back, so it is what stops the next
+ * projection asking again; only an explicit no is recorded the other way, and
+ * an expired card is asked about again. On a passive card, a no on record for
+ * these commands wins over a yes on an old ticket, unless a person asked to
+ * review it again.
+ *
+ * @param gateway - The approval primitive.
+ * @param ask - The package, project and hooks, and how the card is worded.
+ * @returns The answer; only `granted` allows anything.
+ */
+export async function raiseHookCard(
+  gateway: HookApprovalGateway,
+  ask: HookProjectionAsk
+): Promise<AskAnswer> {
+  const { request } = ask;
+  const options: HookCardOptions = {
+    ...(ask.notInstalledByDorkos !== undefined && {
+      notInstalledByDorkos: ask.notInstalledByDorkos,
+    }),
+    ...(ask.resumeOnly !== undefined && { resumeOnly: ask.resumeOnly }),
+  };
+  const { projectPath, packageName } = canonical(request);
+  const passive = options.notInstalledByDorkos === true;
+  const family = passive ? passiveRowFamily(projectPath, packageName) : undefined;
+  const binding = hookProjectionBinding(request, passive);
+  // Read before the wait, as the row it follows was raised: a person's request
+  // to review a refusal again is what lets a yes stand over the no on record.
+  const reasked = passive && gateway.isReaskedHook?.(binding) === true;
+
+  // The row for files the package has since moved on from is closed, with no
+  // refusal recorded; an open one for these very files, even from before a
+  // restart, is picked up again rather than raised twice.
+  const retired = family === undefined ? 0 : (gateway.retireSuperseded?.(binding, family) ?? 0);
+  const reused = passive ? gateway.reissue?.(binding) : undefined;
+  if (options.resumeOnly === true && reused === undefined && retired === 0) {
+    return { outcome: 'nothing_open' };
+  }
+  const ticket = reused
+    ? { ...reused, expiresAt: PASSIVE_APPROVAL_EXPIRES_AT }
+    : gateway.request({
+        ...binding,
+        summary: summariseHookProjection(request, options),
+        detail: describeHookProjection(request),
+        packageRequest: {
+          kind: 'hooks',
+          presentation: HOOK_CARD_PRESENTATION,
+          request,
+          options: { notInstalledByDorkos: options.notInstalledByDorkos },
+        },
+        ...(passive ? { passive: true, requestedBy: 'DorkOS' } : {}),
+      });
+  logger.info('[HarnessSync] Waiting on a person to allow a package to install hooks', {
+    packageName: request.packageName,
+    projectPath: request.projectPath,
+    approvalId: ticket.approvalId,
+    hooks: request.hooks.length,
+  });
+
+  const deadline = new Date(ticket.expiresAt).getTime();
+  for (;;) {
+    const result = gateway.consume(ticket.token, binding);
+    if (result.outcome === 'granted') {
+      // A no on record for these commands wins over a yes on an old ticket.
+      if (passive && !reasked && isHookRefusedOnRecord(request)) {
+        return { outcome: 'refused_on_record' };
+      }
+      recordHookApproval(request);
+      return { outcome: 'granted' };
+    }
+    if (result.outcome !== 'pending') {
+      // Only an explicit no is recorded. Expiry means nobody decided, and
+      // the person who missed the card is asked again.
+      if (result.outcome === 'denied') recordHookRefusal(request);
+      logger.info('[HarnessSync] Package hooks were not allowed', {
+        packageName: request.packageName,
+        projectPath: request.projectPath,
+        outcome: result.outcome,
+      });
+      return { outcome: result.outcome };
+    }
+    // A finite deadline as well as the primitive's own expiry check: a clock the
+    // store disagrees with must not turn this into a loop that never ends. A
+    // passive card has none: it waits as long as the person does, and its
+    // callers run it outside any project lock (`ask-withheld-hooks.ts`).
+    if (!passive && Number.isFinite(deadline) && Date.now() > deadline) {
+      return { outcome: 'timed_out' };
+    }
+    await _internal.sleep(_internal.pollIntervalMs);
+  }
+}
+
+/** Bind a review to its presentation and all exact execution/consent values. */
+export function hookProjectionBinding(
+  request: HookProjectionRequest,
+  passive = false
+): ApprovalBinding {
+  const { projectPath, packageName } = canonical(request);
+  const inputHash = hookRequestInputHash(request);
+  return {
+    capabilityId: HOOK_PROJECTION_CAPABILITY_ID,
+    inputHash: passive
+      ? familyInputHash(passiveRowFamily(projectPath, packageName), inputHash)
+      : inputHash,
+  };
+}

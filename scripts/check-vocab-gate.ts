@@ -145,7 +145,9 @@
  * the positioning lines the 2026-10 vision reset retired, "operating system
  * for AI agents", "one place for every agent", the equal-accounts claims and
  * Discord invite links; Wave 7: "session" and "conversation", which
- * "chat" replaced in everything people read, DOR-2789). Wave 4 is also the wave that
+ * "chat" replaced in everything people read, DOR-2789; Waves 9-12, DOR-4943:
+ * the app-copy voice words, the five banned button labels, and the em dash in
+ * docs prose). Wave 4 is also the wave that
  * shows what the allowlist is FOR: all four words keep legitimate technical
  * senses this repo uses daily — `RelayAdapter`, `ConnectorProvider`, the
  * marketplace package types an author writes, OpenCode's model providers — and
@@ -162,6 +164,16 @@
  * mechanism from rotting the way `assert-tests-executed.sh` is pinned by
  * `test-assert-tests-executed.sh`.
  *
+ * A WAVE MAY BE SCOPED (DOR-4943). Three optional wave fields narrow where and
+ * how its terms fire, all data in `banned-terms.json`: `roots` (repo-relative
+ * path prefixes; {@link termsForPath}), `caseSensitive` (so "I" is a pronoun
+ * and "i.e." is not), and `"match": "button-label"` (the term must be a
+ * button's whole label, `vocab-gate/button-label.mjs`). The app-copy voice
+ * rules (`.claude/rules/app-copy.md`) cover `apps/client/src` only: the
+ * marketing site and docs may say "we", and server text reaches the screen
+ * through positions this walk cannot see (a bare `throw`, see above). Their
+ * pins live in `scripts/__tests__/check-vocab-gate-voice.test.ts`.
+ *
  * Usage:
  *   pnpm exec tsx scripts/check-vocab-gate.ts [repoRoot]
  *
@@ -173,6 +185,7 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { readSpaceServer } from './lib/space-server.mjs';
 import { exitOnHelp } from './lib/gate-help.mjs';
+import { buttonLabel } from './vocab-gate/button-label.mjs';
 
 /** `relative()`'s output with OS separators normalized to `/`, for portable path matching. */
 function toPosixRelative(from: string, to: string): string {
@@ -192,6 +205,23 @@ export interface BannedTerm {
   wave: string;
   /** Tracker issue the wave shipped under. */
   issue: string;
+  /**
+   * Match case as written. Set by a wave's `"caseSensitive": true`, for a term
+   * like "I" that is a pronoun only in capitals ("i.e." is not one).
+   */
+  caseSensitive?: boolean;
+  /**
+   * Repo-relative path prefixes the term applies to. Absent means every file
+   * either scan reads. Set by a wave's `"roots"` (DOR-4943): the app-copy voice
+   * rules hold for `apps/client/src` only, and the em dash for `docs/` only.
+   */
+  roots?: string[];
+  /**
+   * `"button-label"`: the term fires only when it is a button's WHOLE label,
+   * compared without regard to case (see `vocab-gate/button-label.mjs`), never
+   * as a word inside a sentence. Absent means the usual word match.
+   */
+  match?: 'button-label';
 }
 
 /** A scoped exception: files at `path` may keep using some or all banned terms. */
@@ -387,10 +417,39 @@ export function loadBannedTerms(
   path: string = join(SCRIPT_DIR, 'vocab-gate/banned-terms.json')
 ): BannedTerm[] {
   const data = JSON.parse(readFileSync(path, 'utf8')) as {
-    waves: { id: string; issue: string; terms: string[] }[];
+    waves: {
+      id: string;
+      issue: string;
+      terms: string[];
+      caseSensitive?: boolean;
+      roots?: string[];
+      match?: 'button-label';
+    }[];
   };
   return data.waves.flatMap((wave) =>
-    wave.terms.map((term) => ({ term, wave: wave.id, issue: wave.issue }))
+    wave.terms.map((term) => ({
+      term,
+      wave: wave.id,
+      issue: wave.issue,
+      // Only set when the wave sets it, so a plain wave's terms keep their
+      // three-field shape.
+      ...(wave.caseSensitive ? { caseSensitive: true } : {}),
+      ...(wave.roots ? { roots: wave.roots } : {}),
+      ...(wave.match ? { match: wave.match } : {}),
+    }))
+  );
+}
+
+/**
+ * The terms that apply to one file: every term with no `roots`, and each term
+ * whose `roots` holds a prefix of the file's repo-relative path.
+ *
+ * @param relPath - Repo-relative path, with `/` separators.
+ * @param terms - Banned terms, as loaded by {@link loadBannedTerms}.
+ */
+export function termsForPath(relPath: string, terms: BannedTerm[]): BannedTerm[] {
+  return terms.filter(
+    (t) => t.roots === undefined || t.roots.some((root) => relPath.startsWith(root))
   );
 }
 
@@ -562,13 +621,14 @@ export function isCopySink(node: ts.Node): boolean {
  * hide it. Single-word terms are unaffected.
  *
  * @param term - The banned term, as written in `banned-terms.json`.
+ * @param caseSensitive - Match case as written ({@link BannedTerm.caseSensitive}).
  */
-export function termMatcher(term: string): RegExp {
+export function termMatcher(term: string, caseSensitive = false): RegExp {
   const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const spaced = escaped.replace(/ +/g, '\\s+');
   const lead = /^\w/.test(term) ? '\\b' : '';
   const tail = /\w$/.test(term) ? '\\b' : '';
-  return new RegExp(`${lead}${spaced}${tail}`, 'i');
+  return new RegExp(`${lead}${spaced}${tail}`, caseSensitive ? '' : 'i');
 }
 
 /** Scan one already-read source file for banned-term hits in copy-bearing positions. */
@@ -580,31 +640,49 @@ export function scanSource(filePath: string, text: string, terms: BannedTerm[]):
     true,
     filePath.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
   );
-  const matchers = terms.map((t) => ({ ...t, re: termMatcher(t.term) }));
+  const matchers = terms
+    .filter((t) => t.match !== 'button-label')
+    .map((t) => ({ ...t, re: termMatcher(t.term, t.caseSensitive) }));
+  const labelTerms = terms.filter((t) => t.match === 'button-label');
   const violations: Violation[] = [];
 
   function record(node: ts.Node, raw: string): void {
     for (const m of matchers) {
       if (!m.re.test(raw)) continue;
-      const { line, character } = sourceFile.getLineAndCharacterOfPosition(
-        node.getStart(sourceFile)
-      );
-      violations.push({
-        file: filePath,
-        line: line + 1,
-        column: character + 1,
-        term: m.term,
-        wave: m.wave,
-        issue: m.issue,
-        snippet: raw.trim().slice(0, 140),
-      });
+      push(node, raw, m);
     }
+  }
+
+  /** Report a button whose whole label is a banned one (DOR-4943). */
+  function recordLabel(node: ts.Node): void {
+    if (labelTerms.length === 0) return;
+    const label = buttonLabel(node);
+    if (label === undefined) return;
+    for (const t of labelTerms) {
+      if (t.term.toLowerCase() === label.toLowerCase()) push(node, label, t);
+    }
+  }
+
+  function push(node: ts.Node, raw: string, m: BannedTerm): void {
+    const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+    violations.push({
+      file: filePath,
+      line: line + 1,
+      column: character + 1,
+      term: m.term,
+      wave: m.wave,
+      issue: m.issue,
+      snippet: raw.trim().slice(0, 140),
+    });
   }
 
   function visit(node: ts.Node): void {
     if (ts.isJsxText(node)) {
       const text = node.getText(sourceFile);
-      if (text.trim().length > 0) record(node, text);
+      if (text.trim().length > 0) {
+        record(node, text);
+        recordLabel(node);
+      }
     } else if (ts.isTemplateExpression(node)) {
       if (isCopySink(node)) {
         const raw = [node.head.text, ...node.templateSpans.map((s) => s.literal.text)].join(' ');
@@ -612,6 +690,7 @@ export function scanSource(filePath: string, text: string, terms: BannedTerm[]):
       }
     } else if (ts.isStringLiteralLike(node)) {
       if (isCopySink(node)) record(node, node.text);
+      recordLabel(node);
     }
     ts.forEachChild(node, visit);
   }
@@ -808,7 +887,10 @@ const MDX_ALLOW_MARKER_BAN = 'vocab-allow';
 export function scanMdx(filePath: string, text: string, terms: BannedTerm[]): Violation[] {
   const stripped = stripNonProse(text).split('\n');
   const rawLines = text.split('\n');
-  const matchers = terms.map((t) => ({ ...t, re: new RegExp(termMatcher(t.term).source, 'gi') }));
+  const matchers = terms.map((t) => ({
+    ...t,
+    re: new RegExp(termMatcher(t.term, t.caseSensitive).source, t.caseSensitive ? 'g' : 'gi'),
+  }));
   const violations: Violation[] = [];
 
   rawLines.forEach((rawLine, index) => {
@@ -891,8 +973,14 @@ export function scanMdx(filePath: string, text: string, terms: BannedTerm[]): Vi
  * Wave 8 ("Wi-Fi"/"wifi", DOR-5135) is scanned in docs too: the access switch
  * reaches wired computers and VPNs such as Tailscale, so a docs page that
  * says "Wi-Fi" for it gives a reader the same wrong advice the app used to.
+ *
+ * Wave 12 (the em dash, DOR-4943) is docs-only: its `roots` keep it out of the
+ * source scan. Docs prose uses no em dashes (`.claude/rules/user-facing-writing.md`);
+ * one inside inline code or a fenced block is code, which {@link stripNonProse}
+ * blanks. Waves 9-11 (the app-copy voice words and button labels) are not
+ * here: they are rules for what the app renders, and docs may say "we".
  */
-const MDX_SCANNED_WAVES = new Set(['wave-4', 'wave-5', 'wave-7', 'wave-8']);
+const MDX_SCANNED_WAVES = new Set(['wave-4', 'wave-5', 'wave-7', 'wave-8', 'wave-12']);
 
 /**
  * Run the gate against a repo checkout: TypeScript/TSX source through
@@ -917,7 +1005,7 @@ export function runVocabGate(
   for (const file of collectFiles(scanRoots, repoRoot)) {
     const relPath = toPosixRelative(repoRoot, file);
     const text = readFileSync(file, 'utf8');
-    for (const v of scanSource(relPath, text, terms)) {
+    for (const v of scanSource(relPath, text, termsForPath(relPath, terms))) {
       if (isAllowlisted(v.file, v.term, allowlist, v.snippet)) continue;
       violations.push(v);
     }
@@ -926,7 +1014,7 @@ export function runVocabGate(
   for (const file of collectMdxFiles(docsRoots, repoRoot)) {
     const relPath = toPosixRelative(repoRoot, file);
     const text = readFileSync(file, 'utf8');
-    for (const v of scanMdx(relPath, text, docsTerms)) {
+    for (const v of scanMdx(relPath, text, termsForPath(relPath, docsTerms))) {
       // The marker ban is deliberately not allowlistable — an `allowlist.json`
       // entry that omitted `terms` would otherwise cover every term at its
       // path, this one included, quietly reopening the exact leak the ban
@@ -966,6 +1054,19 @@ if (isMain) {
           'for people and agents"; never an operating system for agents, never "one place ' +
           'for every agent", never equal accounts, and there is no DorkOS Discord. ' +
           'meta/VOICE.md is the single list of words to use and never use.'
+      );
+    }
+    if (violations.some((v) => ['wave-9', 'wave-10', 'wave-11'].includes(v.wave))) {
+      console.error(
+        '\nA wave-9, 10 or 11 hit is app-copy voice (DOR-4943): the app has no speaker, so ' +
+          'no "we", "I", "please", "sorry" or "oops", and a button names its action, never ' +
+          'OK, Yes, No, Submit or Confirm. See the writing-app-copy skill.'
+      );
+    }
+    if (violations.some((v) => v.wave === 'wave-12')) {
+      console.error(
+        '\nA wave-12 hit is an em dash in docs prose (DOR-4943). Use a colon, a comma, ' +
+          'parentheses or two sentences instead (.claude/rules/user-facing-writing.md).'
       );
     }
     if (violations.some((v) => v.wave === 'docs-marker-ban')) {

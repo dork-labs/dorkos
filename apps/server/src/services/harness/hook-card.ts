@@ -1,10 +1,31 @@
-/** Whole, reversible hook disclosures, shared by asking and granting. */
+/**
+ * Whole, reversible hook disclosures, shared by asking and granting: the words
+ * the space side's hook card shows (`core/approvals/computer-asks/hook-card-ask.ts`)
+ * and the binding it raises the card under.
+ *
+ * @module services/harness/hook-card
+ */
 import { createHash } from 'node:crypto';
-import { hashApprovalInput } from '../core/approvals/approval-input-hash.js';
 import { resolve } from 'node:path';
-import type { HookProjectionRequest } from './hook-consent.js';
-import type { HookCardOptions } from './hook-approval.js';
-import { quoteSummaryValue } from '../core/approvals/approval-summary.js';
+import { hashApprovalInput, quoteSummaryValue } from '@dorkos/shared/approval-text';
+import type { HookProjectionRequest } from '@dorkos/shared/computer-asks';
+
+/** How a hook card is worded. */
+export interface HookCardOptions {
+  /**
+   * The package is in the project but DorkOS did not install it (or its files
+   * changed since); on Full this is the only package hook that asks. Its card
+   * is passive (DOR-3427): it never expires and never escalates, an open one is
+   * reused rather than raised twice, and the wait for it has no deadline.
+   */
+  notInstalledByDorkos?: boolean;
+  /**
+   * Pick up an open passive ticket after a restart and never raise a new one
+   * (`resumePassiveHookRows`). With no open ticket for exactly this request,
+   * the answer is no at once and nothing is put in front of anybody.
+   */
+  resumeOnly?: boolean;
+}
 
 /** The saved request identifies the presentation it was actually shown with. */
 export const HOOK_CARD_PRESENTATION = 'detail-v1' as const;

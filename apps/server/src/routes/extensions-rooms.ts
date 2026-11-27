@@ -61,7 +61,8 @@ import { logger } from '../lib/logger.js';
 import { callerAccessOf } from './caller-access.js';
 import { resolveCaller } from './room-caller.js';
 import { ROOM_WRITE_REFUSAL_MESSAGE, refuseRoomWrite } from './extensions-rooms-bar.js';
-import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { refusedNotAPerson } from './extensions-person-bar.js';
+import type { PersonBarCopy } from '../lib/http/person-bar.js';
 import { sdkErrorRefusal, sdkRefusal } from './extensions-sdk-refusal.js';
 
 /** The statuses of a mini app that is turned on. */
@@ -90,8 +91,6 @@ const RoomAccessBodySchema = z
 const ROOM_ACCESS_BAR: PersonBarCopy = {
   code: 'person_only',
   subject: 'which rooms a mini app uses',
-  crossSite: (origin) =>
-    `Nothing changed. ${origin} isn’t DorkOS. Choose a mini app’s rooms in DorkOS itself.`,
   agent: 'Nothing changed. Only a person can choose which rooms a mini app uses.',
 };
 

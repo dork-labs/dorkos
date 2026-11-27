@@ -42,7 +42,7 @@ import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type { HeldBackPackage, HeldBackState } from '@dorkos/shared/marketplace-schemas';
 import type { ApprovalBinding } from '../../core/approvals/approval-service.js';
 import { hashApprovalInput, quoteSummaryValue } from '../../core/approvals/index.js';
-import type { HookApprovalGateway } from '../../harness/hook-approval.js';
+import type { HookApprovalGateway } from '../../core/approvals/computer-asks/index.js';
 import { logger } from '../../../lib/logger.js';
 import { describeEffectsInFull, type DisclosedEffects } from '../preview/disclosed-effects.js';
 import {

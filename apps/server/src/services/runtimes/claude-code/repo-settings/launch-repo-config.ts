@@ -52,7 +52,7 @@ import { expandTilde } from '../../../../lib/boundary.js';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
 import { logger } from '../../../../lib/logger.js';
 import { recordFullAction } from '../../../core/turn-power/full-autonomy.js';
-import { folderAllowApprovalGateway } from '../folder-settings/folder-allow-approval.js';
+import { runtimeAsks } from '../../computer-asks.js';
 import { leaveOutFolderSettings } from '../folder-settings/launch-folder-config.js';
 import { notePaused, noteRunning } from './repo-config-activity.js';
 import {
@@ -341,8 +341,7 @@ function raise(turn: RepoConfigTurn, pause: Pause, { ask }: { ask: boolean }): v
   notePaused(pause.kind, cwd, worktreeName(cwd), pause.what, pause.digest);
   // Content DorkOS can't read is never put to a person: a yes couldn't make it run.
   if (!ask || !pause.approvable) return;
-  const gateway = folderAllowApprovalGateway();
-  if (!gateway || !mayAskAboutRepoConfig(pause.kind, pause.digest)) return;
+  if (!mayAskAboutRepoConfig(pause.kind, pause.digest)) return;
   const request: RepoConfigRequest = {
     kind: pause.kind,
     digest: pause.digest,
@@ -351,7 +350,7 @@ function raise(turn: RepoConfigTurn, pause: Pause, { ask }: { ask: boolean }): v
     cwd,
     agentName: turn.agentName,
   };
-  void askForRepoConfig(gateway, request, rereadFor(turn, pause.kind, cwd), () => {
+  void askForRepoConfig(runtimeAsks(), request, rereadFor(turn, pause.kind, cwd), () => {
     void resolveRepoConfigForLaunch(turn);
   }).catch((err: unknown) => {
     logger.warn("[RepoConfig] Couldn't ask about repo settings", {
@@ -394,8 +393,7 @@ async function candidateFor(baseline: TrustableBaseline, dorkHome: string) {
 
 /** Ask a person to trust the repo's default branch, once per commit and content. */
 async function raiseTrust(turn: RepoConfigTurn, baseline: TrustableBaseline): Promise<void> {
-  const gateway = folderAllowApprovalGateway();
-  if (!gateway) return;
+  const asks = runtimeAsks();
   const shown = await candidateFor(baseline, turn.dorkHome);
   if (!mayAskAboutRepoConfig('hooks', shown.digest)) return;
   const request: RepoConfigRequest = {
@@ -423,7 +421,7 @@ async function raiseTrust(turn: RepoConfigTurn, baseline: TrustableBaseline): Pr
       return 'unknown';
     }
   };
-  await askForRepoConfig(gateway, request, reread, () => {
+  await askForRepoConfig(asks, request, reread, () => {
     void resolveRepoConfigForLaunch(turn);
   });
 }

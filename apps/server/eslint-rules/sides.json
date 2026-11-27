@@ -37,6 +37,7 @@
       "core-extensions",
       "decisions",
       "extensions",
+      "extensions/http-capabilities",
       "heartbeats",
       "identity",
       "marketplace",
@@ -59,6 +60,7 @@
       "session/chat-messages",
       "session/claims",
       "session/private-messages",
+      "session/reads",
       "core/agent-created-hook.ts",
       "core/agent-creator.ts",
       "core/agent-home",
@@ -66,6 +68,7 @@
       "core/agent-observation",
       "core/agent-templates",
       "core/approvals",
+      "core/browser-registry/owner",
       "core/capabilities",
       "core/directory",
       "core/external-mcp",
@@ -82,6 +85,7 @@
       "core/read-cursor-store.ts",
       "core/safe-defaults",
       "core/self-description",
+      "core/streams/screen",
       "core/turn-power"
     ],
     "kernel": [

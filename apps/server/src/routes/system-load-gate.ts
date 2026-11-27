@@ -37,12 +37,12 @@ import type { LoadGate } from '../services/core/load-gate/load-gate.js';
 import { machineLoadGate } from '../services/core/load-gate/machine-load-gate.js';
 import { waitingLineForPerson } from '../services/core/load-gate/person-view.js';
 import { isTicketId } from '../services/core/load-gate/ticket-queue.js';
-import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { refusedNotAPerson } from './extensions-person-bar.js';
+import type { PersonBarCopy } from '../lib/http/person-bar.js';
 
 const COPY: PersonBarCopy = {
   code: 'person_only',
   subject: 'the waiting jobs',
-  crossSite: (origin) => `A page from ${origin} tried to reach the waiting jobs. Nothing changed.`,
   agent: 'An agent can’t see or change the waiting jobs. Ask a person in the DorkOS app.',
 };
 

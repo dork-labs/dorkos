@@ -38,6 +38,7 @@ import { createConnectorEventsRoutes } from '../../../../../routes/connector-eve
 import { createConnectorResourcesRoutes } from '../../../../../routes/connector-resources.js';
 import { createConnectorProvidersRoutes } from '../../../../../routes/connector-providers.js';
 import { honoGroupListener } from '../../../../../http/__tests__/hono-group-listener.js';
+import { withOwnerDoors } from '../../../../../routes/__tests__/connector-owner-doors.js';
 
 const owner = { kind: 'local_install', installationId: 'offline-owner' } as const;
 const providerId = legacyDefaultProviderInstanceId('composio');
@@ -133,21 +134,18 @@ async function fixture() {
           credentialStore: secrets,
         }),
       },
-      {
-        path: '/api/connectors',
-        routes: createConnectorResourcesRoutes({
-          ...boundary,
-          authentication,
-          query,
-          lifecycle,
-          actions: new ConnectorAppActionsService({ db, registry, dorkHome: dir }),
-          logos: { get: () => Promise.resolve(undefined) },
-          signIns: { refreshOnDemand: () => Promise.resolve() },
-          sessionAccess: {
-            setAccess: () => Promise.reject(new Error('Not used by these routes.')),
-          },
-        }),
-      },
+      ...withOwnerDoors(createConnectorResourcesRoutes, {
+        ...boundary,
+        authentication,
+        query,
+        lifecycle,
+        actions: new ConnectorAppActionsService({ db, registry, dorkHome: dir }),
+        logos: { get: () => Promise.resolve(undefined) },
+        signIns: { refreshOnDemand: () => Promise.resolve() },
+        sessionAccess: {
+          setAccess: () => Promise.reject(new Error('Not used by these routes.')),
+        },
+      }),
       {
         path: '/api/connectors',
         routes: createConnectorEventsRoutes({

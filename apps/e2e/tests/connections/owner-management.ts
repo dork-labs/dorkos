@@ -220,7 +220,7 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
       expect(await replay.json()).toMatchObject({
         review: { resolution: { authentication: { flowId } } },
       });
-      const inventory = await request.get(`${harness.apiUrl}/api/connectors/connections`);
+      const inventory = await request.get(`${harness.apiUrl}/api/connectors/connections?limit=200`);
       expect(inventory.ok()).toBe(true);
       const { connections: accounts } = (await inventory.json()) as {
         connections: Array<{ connectionId: string; label: string }>;
@@ -348,7 +348,7 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
       await page.reload();
       await expect(connections.allApps).toBeVisible();
       await expect(row(completed.connectionId)).toHaveCount(0);
-      const inventory = await request.get(`${harness.apiUrl}/api/connectors/connections`);
+      const inventory = await request.get(`${harness.apiUrl}/api/connectors/connections?limit=200`);
       expect(inventory.ok()).toBe(true);
       const body = (await inventory.json()) as { connections: Array<{ connectionId: string }> };
       expect(body.connections.map((account) => account.connectionId)).not.toContain(
@@ -735,7 +735,7 @@ async function accountStatus(
   apiUrl: string,
   connectionId: string
 ): Promise<string | undefined> {
-  const response = await request.get(`${apiUrl}/api/connectors/connections`);
+  const response = await request.get(`${apiUrl}/api/connectors/connections?limit=200`);
   expect(response.ok()).toBe(true);
   const body = (await response.json()) as {
     connections: Array<{ connectionId: string; authenticationStatus: string }>;

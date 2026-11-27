@@ -3,7 +3,7 @@
  * session (DOR-2306): one card per package, listing everything it runs, and
  * the answer recorded so it is obeyed.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, beforeAll } from 'vitest';
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -44,11 +44,15 @@ import {
   recordGlobalActivationApproval,
 } from '../global-plugin-consent.js';
 import { packageContentHash } from '../../lib/content-hash.js';
-import type { HookApprovalGateway } from '../../../harness/hook-approval.js';
+import type { HookApprovalGateway } from '../../../core/approvals/computer-asks/index.js';
 import type {
   ApprovalConsumeResult,
   ApprovalRequestInput,
 } from '../../../core/approvals/approval-service.js';
+import { wireTestConsent } from '../../../core/approvals/computer-asks/__tests__/wire-test-asks.js';
+
+// The space side's consent writes reach a config store, as at startup.
+beforeAll(() => wireTestConsent());
 
 let dorkHome = '';
 

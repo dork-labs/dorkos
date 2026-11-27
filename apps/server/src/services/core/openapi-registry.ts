@@ -48,7 +48,6 @@ import { registerConfigBackupsOpenApi } from './config/backups-openapi.js';
 import {
   PermissionModeSchema,
   SessionSchema,
-  StoredSessionSettingsResponseSchema,
   SessionUpdateResponseSchema,
   SessionListResponseSchema,
   RecentSessionsQuerySchema,
@@ -206,7 +205,6 @@ import { SessionSnapshotSchema, SessionEventSchema } from '@dorkos/shared/sessio
 import { registerApprovalsOpenApi } from './approvals/approval-openapi.js';
 import {
   ApproveExtensionRequestSchema,
-  DismissExtensionApprovalRequestSchema,
   ExtensionTrustOfferSchema,
   PendingExtensionApprovalsResponseSchema,
   TrustedSourceRequestSchema,
@@ -238,12 +236,9 @@ import {
   ConnectorReconciliationApplyResponseSchema,
   ConnectorReconciliationPreviewRequestSchema,
   ConnectorReconciliationPreviewSchema,
-  ConnectorEveryAgentRevokeResponseSchema,
   ConnectorUsagePageSchema,
 } from '@dorkos/shared/connector-schemas';
 import {
-  ConnectorAgentConnectionsSchema,
-  ConnectorEveryAgentGrantsSchema,
   ConnectorAuthenticationFlowCreateRequestSchema,
   ConnectorAuthenticationFlowStateSchema,
   ConnectorProvidersResourceSchema,
@@ -251,10 +246,8 @@ import {
   CONNECTOR_LOGO_SERVICE_ID,
   ConnectorConnectionDetailSchema,
   ConnectorConnectionListResourceSchema,
-  ConnectorConnectionPatchSchema,
   ConnectorAppActionsQuerySchema,
   ConnectorAppActionsSchema,
-  ConnectorDisconnectImpactSchema,
   ConnectorLifecycleResultSchema,
   ConnectorReconnectRequestSchema,
   ConnectorSessionAccessUpdateSchema,
@@ -273,6 +266,7 @@ import {
   SetPermissionPresetBodySchema,
 } from '@dorkos/shared/permissions';
 import { z } from 'zod';
+import { PageQuerySchema } from '@dorkos/shared/paging';
 import { AccountUsageSchema, DismissFoundFolderRequestSchema } from '@dorkos/shared/account-usage';
 import { PackageTypeSchema } from '@dorkos/marketplace';
 import { DisclosedEffectsSchema } from '../marketplace/preview/disclosed-effects.js';
@@ -934,27 +928,6 @@ registry.registerPath({
     },
     400: problemResponse('Invalid session ID'),
     404: problemResponse('Session not found'),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/sessions/{id}/settings',
-  tags: ['Sessions'],
-  summary: 'Get the settings stored for a session id',
-  description:
-    'The row `session_metadata` holds for this id, or `null` when it holds none. This is the one read that can see a session which has NOT started: every other session endpoint resolves a session out of its runtime store (ADR-0310), so a settings change made before the first message — which creates a row with no runtime (DOR-812) — is a 404 on `GET /api/sessions/{id}` and absent from the list. Deliberately not a `Session`: there is no session yet, and one would have to invent a title and report the registry inference as its `runtime`. Never writes (DOR-2103).',
-  request: {
-    params: z.object({ id: z.string().uuid() }),
-  },
-  responses: {
-    200: {
-      description: 'The stored settings, or null',
-      content: {
-        'application/json': { schema: StoredSessionSettingsResponseSchema },
-      },
-    },
-    400: problemResponse('Invalid session ID'),
   },
 });
 
@@ -3764,9 +3737,12 @@ registry.registerPath({
   path: '/api/connectors/connections',
   tags: ['Connectors'],
   summary: 'List the operator’s stable connections',
+  description:
+    'Newest connected first, a page at a time: pass `nextCursor` back as `cursor` for the next. An account connected or removed while paging can repeat or be missed.',
+  request: { query: PageQuerySchema },
   responses: {
     200: {
-      description: 'Owner-scoped stable connection inventory',
+      description: 'One page of the owner’s connected accounts',
       content: { 'application/json': { schema: ConnectorConnectionListResourceSchema } },
     },
     403: problemResponse('Verified operator authority is required'),
@@ -3798,21 +3774,6 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'get',
-  path: '/api/connectors/authentication-flows/{flowId}',
-  tags: ['Connectors'],
-  summary: 'Poll one durable connector authentication flow',
-  request: { params: z.object({ flowId: z.string().min(1).max(200) }) },
-  responses: {
-    200: {
-      description: 'Current owner-only authentication state',
-      content: { 'application/json': { schema: ConnectorAuthenticationFlowStateSchema } },
-    },
-    404: problemResponse('Flow absent or owned by someone else'),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
   path: '/api/connectors/connections/{connectionId}',
   tags: ['Connectors'],
   summary: 'Read one stable connection and its exact grants',
@@ -3821,24 +3782,6 @@ registry.registerPath({
     200: {
       description: 'Owner-visible connection detail',
       content: { 'application/json': { schema: ConnectorConnectionDetailSchema } },
-    },
-    404: problemResponse('Connection absent or owned by someone else'),
-  },
-});
-
-registry.registerPath({
-  method: 'patch',
-  path: '/api/connectors/connections/{connectionId}',
-  tags: ['Connectors'],
-  summary: 'Rename one stable connection',
-  request: {
-    params: z.object({ connectionId: z.string().min(1) }),
-    body: { content: { 'application/json': { schema: ConnectorConnectionPatchSchema } } },
-  },
-  responses: {
-    200: {
-      description: 'Updated lifecycle projection',
-      content: { 'application/json': { schema: ConnectorLifecycleResultSchema } },
     },
     404: problemResponse('Connection absent or owned by someone else'),
   },
@@ -3887,34 +3830,6 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: 'get',
-  path: '/api/connectors/connections/{connectionId}/disconnect-impact',
-  tags: ['Connectors'],
-  summary: 'Preview authority affected by disconnecting a connection',
-  request: { params: z.object({ connectionId: z.string().min(1) }) },
-  responses: {
-    200: {
-      description: 'Current grant, session, and subscription impact',
-      content: { 'application/json': { schema: ConnectorDisconnectImpactSchema } },
-    },
-    404: problemResponse('Connection absent or owned by someone else'),
-  },
-});
-
-registry.registerPath({
-  method: 'post',
-  path: '/api/connectors/connections/{connectionId}/remove',
-  tags: ['Connectors'],
-  summary: 'Remove a disconnected account from Accounts while retaining its history',
-  request: { params: z.object({ connectionId: z.string().min(1) }) },
-  responses: {
-    204: { description: 'Account removed from the owner inventory' },
-    404: problemResponse('Account absent or owned by someone else'),
-    409: problemResponse('Account must finish disconnecting before removal'),
-  },
-});
-
-registry.registerPath({
   method: 'post',
   path: '/api/connectors/connections/{connectionId}/reconnect',
   tags: ['Connectors'],
@@ -3949,52 +3864,6 @@ for (const action of ['pause', 'resume'] as const) {
     },
   });
 }
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/connectors/agents/{agentId}/connections',
-  tags: ['Connectors'],
-  summary: 'Read exact connection grants for one owned agent',
-  request: { params: z.object({ agentId: z.string().min(1) }) },
-  responses: {
-    200: {
-      description: 'Canonical agent connection grants',
-      content: { 'application/json': { schema: ConnectorAgentConnectionsSchema } },
-    },
-    404: problemResponse('Agent absent or owned by someone else'),
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/connectors/every-agent-grants',
-  tags: ['Connectors'],
-  summary: 'Read what every agent, including a new one, inherits',
-  description:
-    'Lists each connection whose owner gave every agent access, with the exact reviewed actions. There is no per-agent exclusion, so this is what any new agent gets the moment it is created.',
-  responses: {
-    500: INTERNAL_ERROR_RESPONSE,
-    200: {
-      description: 'Connections every agent can use, and at which level',
-      content: { 'application/json': { schema: ConnectorEveryAgentGrantsSchema } },
-    },
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/connectors/sessions/{sessionId}/connections',
-  tags: ['Connectors'],
-  summary: 'Read effective connector access for one session',
-  request: { params: z.object({ sessionId: z.string().min(1) }) },
-  responses: {
-    200: {
-      description: 'Canonical session connector access',
-      content: { 'application/json': { schema: ConnectorSessionConnectionsSchema } },
-    },
-    404: problemResponse('Session absent or owned by someone else'),
-  },
-});
 
 registry.registerPath({
   method: 'put',
@@ -4064,40 +3933,6 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: 'get',
-  path: '/api/connectors/reviews',
-  tags: ['Connectors'],
-  summary: 'List owner-visible connector reviews',
-  request: { query: z.object({ state: z.enum(['pending', 'resolved']).optional() }) },
-  responses: {
-    500: INTERNAL_ERROR_RESPONSE,
-    200: {
-      description: 'Owner-visible reviews',
-      content: {
-        'application/json': {
-          schema: z.object({ reviews: z.array(ConnectorManagementReviewItemSchema) }).strict(),
-        },
-      },
-    },
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/connectors/reviews/{reviewRequestId}',
-  tags: ['Connectors'],
-  summary: 'Read one owner-visible connector review',
-  request: { params: z.object({ reviewRequestId: z.string().min(1) }) },
-  responses: {
-    200: {
-      description: 'Owner-visible review context and lifecycle',
-      content: { 'application/json': { schema: ConnectorManagementReviewItemSchema } },
-    },
-    404: problemResponse('Review absent or owned by someone else'),
-  },
-});
-
-registry.registerPath({
   method: 'post',
   path: '/api/connectors/reviews/{reviewRequestId}/decision',
   tags: ['Connectors'],
@@ -4131,23 +3966,6 @@ registry.registerPath({
       content: { 'application/json': { schema: ConnectorReconciliationPreviewSchema } },
     },
     409: problemResponse('The connection must be reconciled before it can be edited'),
-  },
-});
-
-registry.registerPath({
-  method: 'delete',
-  path: '/api/connectors/connections/{connectionId}/every-agent',
-  tags: ['Connectors'],
-  summary: 'Stop sharing one connection with every agent',
-  description:
-    'Owner only. Ends the every-agent grant at once, for every agent. Needs no permission review, so it works while the service is unavailable.',
-  request: { params: z.object({ connectionId: z.string().min(1) }) },
-  responses: {
-    200: {
-      description: 'How many shared actions ended',
-      content: { 'application/json': { schema: ConnectorEveryAgentRevokeResponseSchema } },
-    },
-    404: problemResponse('Connection absent or owned by someone else'),
   },
 });
 
@@ -4247,27 +4065,6 @@ registry.registerPath({
     500: INTERNAL_ERROR_RESPONSE,
     200: {
       description: 'Agent-scoped connector usage page',
-      content: { 'application/json': { schema: ConnectorUsagePageSchema } },
-    },
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/connectors/usage/operator',
-  tags: ['Connectors'],
-  summary: 'List operator-scoped connector usage',
-  request: {
-    query: z.object({
-      connectionId: z.string().min(1).optional(),
-      cursor: z.string().min(1).optional(),
-      limit: z.coerce.number().int().min(1).max(100).optional(),
-    }),
-  },
-  responses: {
-    500: INTERNAL_ERROR_RESPONSE,
-    200: {
-      description: 'Owner-scoped connector usage page',
       content: { 'application/json': { schema: ConnectorUsagePageSchema } },
     },
   },
@@ -4447,34 +4244,6 @@ registry.registerPath({
     409: problemResponse(
       '`conflict`: the extension ships with DorkOS, or its copy cannot be checked (`detail` says which)'
     ),
-    412: problemResponse('`precondition_failed`: the copy changed since the person saw it'),
-  },
-});
-
-registry.registerPath({
-  method: 'post',
-  path: '/api/extensions/{id}/dismiss-approval',
-  tags: ['Extensions'],
-  summary: 'Say "Not now" to an extension waiting to be turned on',
-  description:
-    'Records that a person declined this copy of the extension at this version, so the Activity ' +
-    'inbox stops asking until its path, plugin or version changes. Never destructive: nothing is ' +
-    'uninstalled, turned off or revoked, and Settings → Extensions can still turn it on. The body ' +
-    'names the copy the person was shown; if the copy on disk is no longer that one the answer is ' +
-    'refused with `412 precondition_failed`. The same person bar as approving applies: a caller naming ' +
-    'itself an agent is refused in every posture, and a signed-in person is required when login ' +
-    'is on. There is no MCP tool for this.',
-  request: {
-    params: z.object({ id: z.string() }),
-    body: { content: { 'application/json': { schema: DismissExtensionApprovalRequestSchema } } },
-  },
-  responses: {
-    204: { description: 'Declined for now' },
-    400: problemResponse('`invalid_request`: an invalid extension id or body'),
-    401: problemResponse('`unauthenticated`: login is on and the caller is not signed in'),
-    403: problemResponse('`person_only`: an agent or another site cannot answer this'),
-    404: problemResponse('`not_found`: no such extension'),
-    409: problemResponse('`conflict`: the extension ships with DorkOS'),
     412: problemResponse('`precondition_failed`: the copy changed since the person saw it'),
   },
 });

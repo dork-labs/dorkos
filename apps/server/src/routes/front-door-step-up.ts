@@ -27,7 +27,22 @@ export interface FrontDoorWrite extends Omit<StepUpActionInput, 'commit'> {
    * re-check that state inside its write, supplies one; every other route keeps the 403.
    */
   agentCard?: () => Pick<AgentRaiseWrite, 'effect' | 'run'>;
+  /**
+   * Told what a confirmation answered, once the person's password passed:
+   * the status of the write, or of the bar that refused it on the confirming request.
+   */
+  onConfirmed?: (status: number) => void;
+  /**
+   * Bind the confirmation to the asking request's ingress kind (this computer,
+   * the owner's own tunnel, managed remote access, Wi-Fi, as the gate marked
+   * it): a confirm that came another way is refused, even from the same
+   * session (DOR-4978, Security t1j).
+   */
+  bindIngress?: true;
 }
+
+/** What a confirm that came another way than its ask is told. */
+export const CONFIRM_ANOTHER_WAY = 'Confirm this the same way you asked for it.';
 
 /**
  * The front-door bar's refusal (`refuseFrontDoorChange`) as a problem document:
@@ -70,7 +85,7 @@ export async function runFrontDoorWrite(
   c: Context<ApiEnv>,
   action: FrontDoorWrite
 ): Promise<Response> {
-  const { subject, run, agentCard, ...held } = action;
+  const { subject, run, agentCard, onConfirmed, bindIngress, ...held } = action;
   const facts = honoRequestFacts(c);
   const refusal = refuseFrontDoorChange(facts, subject);
   if (refusal && agentCard && (facts.agentIdentity || presentsAgentIdentity(facts))) {
@@ -82,20 +97,32 @@ export async function runFrontDoorWrite(
   }
   if (refusal) return frontDoorProblem(c, refusal);
   if (readOwnerAccount() === null) return run(facts);
+  const askedVia = facts.ingress;
   return holdForStepUp(c, {
     ...held,
     commit: async (confirming) => {
       try {
+        if (bindIngress && confirming.ingress !== askedVia) {
+          held.onDiscard?.();
+          onConfirmed?.(403);
+          return {
+            status: 403,
+            body: problemBody('operator_only', { detail: CONFIRM_ANOTHER_WAY }),
+          };
+        }
         const stale = refuseFrontDoorChange(confirming, subject);
         if (stale) {
           held.onDiscard?.();
+          onConfirmed?.(403);
           return { status: 403, body: problemBody('operator_only', { detail: stale.error }) };
         }
         const result = await resultOf(await run(confirming));
         if (result.status >= 400) held.onDiscard?.();
+        onConfirmed?.(result.status);
         return result;
       } catch (error) {
         held.onDiscard?.();
+        onConfirmed?.(500);
         throw error;
       }
     },

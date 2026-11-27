@@ -43,11 +43,21 @@
  * card went to a person, and `capability.request_refused` when DorkOS turned the
  * request down itself, naming why. Only a real error is `capability.failed`.
  *
+ * ## A tool that kept its audit name
+ *
+ * A capability that declares an `auditAction` is a tool that moved here from
+ * the hand-registered tool gate (`mcp-tool-gate.ts`), whose rows people may
+ * already filter on. It is recorded the way that gate recorded it, and only
+ * that way: one audit row per `act` or `destructive` call under that name, as
+ * the calling agent, and no Activity row; a read records nothing
+ * ({@link recordUnderAuditAction}).
+ *
  * @module services/core/agent-identity/capability-attribution
  */
 import type { ActivityService } from '../../activity/activity-service.js';
+import { PROGRAM_ACTOR_LABEL } from '@dorkos/shared/activity-schemas';
 import { activityActorForIdentity } from '../../activity/activity-actor.js';
-import { auditTrail, recordAudit } from '../../audit/audit-trail.js';
+import { auditTrail, recordAudit, runAsAgent } from '../../audit/audit-trail.js';
 import {
   CapabilityGateRefusal,
   type CapabilityDefinition,
@@ -163,6 +173,50 @@ export function personReadRecorder(): (
 }
 
 /**
+ * Record one call of a capability with an `auditAction`, as the hand-registered
+ * tool gate records its tools (`invokeAudited` in `mcp-tool-gate.ts`): the
+ * action name, `remove` for a destructive call and `execute` otherwise, what it
+ * acted on, the approval a person spent, and the error when it threw. It runs as
+ * the calling agent, or as an unidentified one in session, exactly as the
+ * handler did.
+ *
+ * @param capability - The capability that ran.
+ * @param auditAction - The name it records under.
+ * @param context - The context the handler was invoked with.
+ * @param ok - Whether the handler completed without throwing.
+ * @param error - What the handler threw, when it did.
+ */
+function recordUnderAuditAction(
+  capability: CapabilityDefinition,
+  auditAction: string,
+  context: CapabilityHandlerContext,
+  ok: boolean,
+  error: unknown
+): void {
+  if (capability.tier === 'observe') return;
+  const { subject, approval } = context;
+  runAsAgent(
+    context.identity,
+    context.sessionId,
+    () =>
+      recordAudit({
+        action: auditAction,
+        operation: capability.tier === 'destructive' ? 'remove' : 'execute',
+        target: subject ? { type: subject.kind, id: subject.id, name: subject.label } : null,
+        outcome: ok ? 'ok' : 'failed',
+        ...(ok || error === undefined
+          ? {}
+          : { error: error instanceof Error ? error.message : String(error) }),
+        ...(approval?.via === 'approval' ? { links: { approvalId: approval.approvalId } } : {}),
+        summary: `${ok ? 'Ran' : 'Tried to run'} ${capability.title}${
+          subject ? ` on ${subject.label}` : ''
+        }`,
+      }),
+    { inSession: context.mcpServer === 'in-session' }
+  );
+}
+
+/**
  * Build the {@link CapabilityInvocationObserver} that records agent-attributed
  * capability invocations in the Activity feed.
  *
@@ -177,6 +231,11 @@ export function createCapabilityAttributionObserver(
 ): CapabilityInvocationObserver {
   const recordPersonRead = personReadRecorder();
   return ({ capability, context, ok, error, readGroup }) => {
+    // A tool that kept its hand-gate audit name is recorded only as that gate did.
+    const { auditAction } = capability;
+    if (auditAction !== undefined && !context.personRead) {
+      return recordUnderAuditAction(capability, auditAction, context, ok, error);
+    }
     const identity = context.identity;
     // An anonymous ordinary change is the audit log's alone; an anonymous
     // irreversible action is also the feed's (see the module TSDoc). The
@@ -189,12 +248,17 @@ export function createCapabilityAttributionObserver(
       // In session, the scope around this observer is the person whose message
       // started the turn, and an in-session call with no identity is still an
       // agent's: name it unidentified, the same as the call ran under.
-      const unidentifiedAgent =
+      // Behind the person bar, a program with a key is named as one, never as
+      // the person whose request scope it ran in (DOR-4978).
+      const accounts = auditTrail()?.accounts;
+      const actor =
         context.mcpServer === 'in-session'
-          ? auditTrail()?.accounts.unidentified('Unidentified caller')
-          : undefined;
+          ? accounts?.unidentified('Unidentified caller')
+          : context.personBar?.caller === 'program'
+            ? accounts?.system(PROGRAM_ACTOR_LABEL)
+            : undefined;
       recordAudit({
-        ...(unidentifiedAgent ? { actor: unidentifiedAgent } : {}),
+        ...(actor ? { actor } : {}),
         action: ok ? 'capability.invoked' : 'capability.failed',
         operation: 'execute',
         target: { type: 'capability', id: capability.id, name: capability.title },

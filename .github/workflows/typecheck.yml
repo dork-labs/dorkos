@@ -311,8 +311,8 @@ jobs:
       # rewrite that strands one is green on the PR and ejected in the queue.
       # This was an advisory job in browser-test.yml; it rides THIS job for the
       # vocab gate's reason above (required, unfiltered, reports on
-      # `merge_group`), so no new required check. Same base as the file-size
-      # ratchet below, for the same reasons: the merge commit's first parent on
+      # `merge_group`), so no new required check. Same base as the ratchets
+      # step below, for the same reasons: the merge commit's first parent on
       # `pull_request` and the canary, `merge_group.base_sha` in the queue, so
       # a queue build is judged against main, not the previous entry. Static
       # reads, a few seconds. Pin suites: scripts/__tests__/check-copy-spec-drift*.test.ts.
@@ -379,154 +379,6 @@ jobs:
           BOUNDARY_REQUIRE_TERMS: ${{ (vars.BOUNDARY_TERMS_REQUIRED != '' && github.event.pull_request.head.repo.fork != true && github.actor != 'dependabot[bot]' && github.triggering_actor != 'dependabot[bot]') && '1' || '' }}
         run: pnpm run check:boundary
 
-      # The 500-line ratchet (DOR-2822). `max-lines` is `warn`, and a warning
-      # fails nothing, so files over the limit kept growing. This holds them to
-      # scripts/max-lines/baseline.json: none may grow, no new file may pass 500,
-      # a shrink must lower its entry. TypeScript test files are held the same
-      # way in scripts/max-lines/test-baseline.json, except that a test shrink
-      # or deletion is printed as a note, not failed. Rides THIS job for the
-      # reason every gate above does: `typecheck` is required, unfiltered and
-      # reports on `merge_group`, so no new required check. `--base` refuses a baseline
-      # raised by hand. On `pull_request` and the canary the base is the merge
-      # commit's first parent, fetched one level deep. On `merge_group` it is
-      # `merge_group.base_sha` (main), NOT `HEAD^1`: there `HEAD^1` is the
-      # previous queue entry, so a raise in an earlier entry would be judged
-      # only in that entry's own build, which a HEADGREEN queue does not await
-      # (ci/proposals/2026-10-31-queue-batching.md, ledger 261031-091600).
-      - name: File-size ratchet (DOR-2822)
-        if: ${{ !cancelled() }}
-        env:
-          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
-        run: |
-          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
-          if [ -n "$QUEUE_BASE" ]; then
-            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
-            base="$QUEUE_BASE"
-          else
-            base="$(git rev-parse HEAD^1)"
-          fi
-          pnpm run check:max-lines -- --base "$base"
-
-      # The turn port's ratchet (DOR-5232, spec turns-survive-restarts §3.4).
-      # The server's lint holds each space-side file to its entry in
-      # apps/server/eslint-rules/turn-port-boundary.baseline.json; this refuses
-      # an entry raised or added by hand, against the same base the step above
-      # picks, for the same reasons. Static reads only, under a second.
-      - name: Turn port ratchet (DOR-5232)
-        if: ${{ !cancelled() }}
-        env:
-          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
-        run: |
-          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
-          if [ -n "$QUEUE_BASE" ]; then
-            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
-            base="$QUEUE_BASE"
-          else
-            base="$(git rev-parse HEAD^1)"
-          fi
-          pnpm run check:turn-port -- --base "$base"
-
-      # The computer wall (DOR-5158, spec computer-side-starts-alone §4). The
-      # server's lint holds each computer-side file to its entry in
-      # apps/server/eslint-rules/computer-wall.baseline.json; this refuses an
-      # entry raised or added by hand and a side map (sides.json) that places a
-      # path twice or names one that is gone, against the same base the steps
-      # above pick, for the same reasons. Static reads only, under a second.
-      - name: Computer wall (DOR-5158)
-        if: ${{ !cancelled() }}
-        env:
-          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
-        run: |
-          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
-          if [ -n "$QUEUE_BASE" ]; then
-            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
-            base="$QUEUE_BASE"
-          else
-            base="$(git rev-parse HEAD^1)"
-          fi
-          pnpm run check:computer-wall -- --base "$base"
-
-      # The services import boundary (DOR-4924). The server's lint refuses a
-      # domain-to-domain pair apps/server/eslint-rules/import-boundary.baseline.json
-      # does not hold; this refuses a pair's count grown and a pair added or
-      # raised by hand, against the same base the steps above pick, for the
-      # same reasons. Static reads only, under a second.
-      - name: Import boundary (DOR-4924)
-        if: ${{ !cancelled() }}
-        env:
-          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
-        run: |
-          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
-          if [ -n "$QUEUE_BASE" ]; then
-            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
-            base="$QUEUE_BASE"
-          else
-            base="$(git rev-parse HEAD^1)"
-          fi
-          pnpm run check:import-boundary -- --base "$base"
-
-      # The API lint gate (DOR-4996). Holds the committed OpenAPI document
-      # (docs/api/openapi.json, kept fresh by docs-openapi-check) and the route
-      # census (kept fresh by the booted census test) to
-      # scripts/api-lint/baseline.json: per rule and route group, no count may
-      # grow, no group may gain a first finding, a drop must lower its entry,
-      # and two operations may never share an operationId (hand-registered-path
-      # is advisory until the DOR-4978 mount merges and only prints). The rules are in
-      # scripts/api-lint/rules.ts and contributing/api-reference.md. Rides THIS
-      # job for the file-size ratchet's reason: `typecheck` is required,
-      # unfiltered and reports on `merge_group`, so no new required check.
-      # Static reads only (two JSON files and the hand registry's source), no
-      # build. `--base` refuses a baseline
-      # raised by hand, with the base chosen exactly as the step above does:
-      # the merge commit's first parent on `pull_request` and the canary, and
-      # `merge_group.base_sha` (main) in the queue, NOT `HEAD^1`, which there
-      # is the previous queue entry. In the queue it also passes `--queue`, so a
-      # stale entry (two queued PRs that each fixed a finding in one group) only
-      # prints instead of ejecting the second; on a PR a stale entry fails.
-      - name: API lint gate (DOR-4996)
-        if: ${{ !cancelled() }}
-        env:
-          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
-        run: |
-          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
-          if [ -n "$QUEUE_BASE" ]; then
-            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
-            base="$QUEUE_BASE"
-            pnpm run check:api-lint -- --base "$base" --queue
-          else
-            base="$(git rev-parse HEAD^1)"
-            pnpm run check:api-lint -- --base "$base"
-          fi
-
-      # The design-token gate (UI overhaul). The rules are `RULES` in
-      # scripts/check-design-tokens.ts: a `hard` rule may not match at all, and
-      # a `ratchet` is held to scripts/design-tokens/baseline.json, where a
-      # count may only fall. `--base` refuses a raised baseline, and a rule the
-      # base defined that is now removed or changed in any way, unless the PR
-      # has a `guard-rule-change` label a person added after its last push
-      # (DOR-3557; in `merge_group`, each queued PR that touches the script).
-      # The label says when, not who: that only Security adds it is a team rule
-      # GitHub does not enforce. The canary and a dispatch skip the rule check,
-      # since neither merges. Rides THIS job and takes `--base` for the
-      # file-size ratchet's reasons above: on `pull_request` and the canary the
-      # base is the merge commit's first parent, and on `merge_group` it is
-      # `merge_group.base_sha` (main), NOT `HEAD^1`, which there is the
-      # previous queue entry. A label added after this ran needs a re-run.
-      - name: Design-token gate
-        if: ${{ !cancelled() }}
-        env:
-          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
-          if [ -n "$QUEUE_BASE" ]; then
-            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
-            base="$QUEUE_BASE"
-          else
-            base="$(git rev-parse HEAD^1)"
-          fi
-          pnpm run check:design-tokens -- --base "$base"
-
       # The config migration gate (DOR-5123). The daily release has no person
       # to ask "does this schema change need a conf migration?", so the PR that
       # makes the change answers it.
@@ -536,7 +388,7 @@ jobs:
       # existing section, a removal or a narrowed type fails unless the PR
       # adds a CONFIG_MIGRATIONS key or adds a reason to
       # scripts/config-migration/no-migration.json. Rides THIS job for the
-      # file-size ratchet's reason: `typecheck` is required, unfiltered and
+      # ratchets step's reason: `typecheck` is required, unfiltered and
       # reports on `merge_group`, so no new required check. The base is chosen
       # as that step chooses it: the merge commit's first parent on
       # `pull_request` and the canary, `merge_group.base_sha` (main) in the
@@ -690,3 +542,401 @@ jobs:
           sampler=$!
           trap 'kill "$sampler" 2>/dev/null' EXIT
           pnpm exec turbo typecheck --continue --concurrency=3
+
+      # Every ratchet (DOR-4948): a count in a baseline file that may only fall.
+      # scripts/ratchets/registry.ts lists them, each with the role that keeps it and the
+      # ticket that lowers it; `pnpm ratchet` runs each one's own script with
+      # the arguments below and prints a line per ratchet. Six of them were
+      # separate steps here, with the base chosen exactly as below: the file-size
+      # ratchet (DOR-2822: a file over 500 lines may not grow, no new file may
+      # pass 500, test files in their own baseline), the turn port (DOR-5232),
+      # the computer wall (DOR-5158), the services import boundary (DOR-4924),
+      # the API lint gate (DOR-4996) and the design-token gate. own-mocks and
+      # test-ratio ran in CI only as their repo-wide tests, which compare the
+      # tree with the baseline but cannot see a baseline raised by hand; here
+      # they take `--base` too. knip is advisory (reported, never failing)
+      # until DOR-4629 decides, and the reason this step sits AFTER the
+      # typecheck step: knip loads every workspace config, and those import the
+      # package output that `turbo typecheck`'s `^build` leaves behind. A red
+      # here names its ratchet; `node <script> --help` says how to fix it.
+      #
+      # Rides THIS job for the reason every gate above does: `typecheck` is
+      # required, unfiltered and reports on `merge_group`, so no new required
+      # check. `--base` refuses a baseline raised by hand. On `pull_request`
+      # and the canary the base is the merge commit's first parent, fetched one
+      # level deep. On `merge_group` it is `merge_group.base_sha` (main), NOT
+      # `HEAD^1`: there `HEAD^1` is the previous queue entry, so a raise in an
+      # earlier entry would be judged only in that entry's own build, which a
+      # HEADGREEN queue does not await (ci/proposals/2026-10-31-queue-batching.md,
+      # ledger 261031-091600). In the queue it also passes `--queue`, which only
+      # api-lint takes: a stale entry (two queued PRs that each fixed a finding
+      # in one group) only prints instead of ejecting the second.
+      #
+      # GH_TOKEN is for the design-token gate's rule guard: `--base` refuses a
+      # rule the base defined that is now removed or changed, unless the PR has
+      # a `guard-rule-change` label a person added after its last push
+      # (DOR-3557; in `merge_group`, each queued PR that touches the script).
+      # The canary and a dispatch skip the rule check, since neither merges. A
+      # label added after this ran needs a re-run.
+      - name: Ratchets (DOR-4948)
+        if: ${{ !cancelled() }}
+        env:
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
+          if [ -n "$QUEUE_BASE" ]; then
+            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
+            pnpm ratchet --base "$QUEUE_BASE" --queue
+          else
+            pnpm ratchet --base "$(git rev-parse HEAD^1)"
+          fi
+
+  # The policy gates on their own, so a red `typecheck` means tsc (DOR-4949).
+  #
+  # STAGE 1 OF 2. Every step below also still runs in the `typecheck` job above,
+  # because `policy` is not a required check yet and a gate on a check that is
+  # not required is not a gate. Once `policy` has run green on pull_request and
+  # merge_group, a person adds it to the "main: merge queue" ruleset and to
+  # ci/required-checks.json (ledger 261126-231130 has the exact change); stage 2
+  # then removes these steps from `typecheck`, which keeps tsc and the ratchets.
+  #
+  # Same triggers as `typecheck` (pull_request, merge_group, the main canary),
+  # no path filter, so it can become required without a deadlock.
+  policy:
+    runs-on: ubuntu-latest
+    # These steps ran inside typecheck's 20-minute ceiling alongside tsc, which
+    # is most of that job's time; the repo-wide scripts suites are the longest
+    # step here. 15 leaves room for them and still stops a hung run.
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      # A canary run is against `main` or it is nothing.
+      #
+      # `workflow_dispatch` is ref-free, so `--ref <a PR's branch>` would run
+      # this workflow against that branch and post the check run — under the
+      # name of a REQUIRED context — on that pull request's head. This refuses
+      # that, and refuses it by FAILING: a skipped job posts a skipped check
+      # run and GitHub counts skipped as passing, so a skip is how you hand a
+      # pull request a green required check that tested a different tree.
+      #
+      # INLINE, AND FIRST. Inline because this runs BEFORE `actions/checkout`,
+      # where the workspace is still empty: a `bash scripts/…` here would exit
+      # 127 on every event, reddening this required check on every PR and every
+      # queue build (the same 127 that killed a required check on 2026-07-29,
+      # which is why "Prove the browser suite actually executed" carries a
+      # `[ -f ]` guard). First, so a misdirected dispatch costs seconds rather
+      # than 150 job minutes. Byte-identical in every canary job and
+      # pinned that way by packages/ci-steward/src/__tests__/canary-ref-guard.test.ts, which
+      # extracts this very block and runs it.
+      #
+      # No `if:`: the body is a no-op on the gating events, which keeps it out
+      # of the census allowlist while gating exactly the same thing.
+      - name: A canary run is against main
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ -z "$EVENT" ] || [ -z "$REF" ]; then
+            echo "::error title=The main canary runs against main only::EVENT or REF is empty, so this cannot be shown to be a safe run. Refusing rather than assuming it is not a canary."
+            exit 1
+          fi
+          if [ "$EVENT" != 'schedule' ] && [ "$EVENT" != 'workflow_dispatch' ]; then
+            echo "event '$EVENT' is not a canary event; nothing to check."
+            exit 0
+          fi
+          if [ "$REF" != 'refs/heads/main' ]; then
+            echo "::error title=The main canary runs against main only::this $EVENT run is on '$REF', not 'refs/heads/main'. Nothing was tested. Dispatch it with --ref main; a run on a branch would post this check on that branch's head, under the name of a required context."
+            exit 1
+          fi
+          echo "canary $EVENT run against $REF."
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      # THE PNPM STORE: every ref restores it, only `refs/heads/main` saves it
+      # (DOR-4537, ledger 261117-141554). setup-node's `cache: pnpm` saved a
+      # store under any ref whose restore missed, PR merge refs included, where
+      # no other ref can read it. Same key as test.yml's test-shard, which has
+      # the full reasoning, so on Linux this restores the store main saved.
+      - name: Find the pnpm store
+        id: pnpm-store
+        run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Restore the pnpm store built on this runner image
+        id: pnpm-store-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - run: pnpm install --frozen-lockfile
+      # Restore only: the typecheck job above saves the store on main.
+
+      # Retired vocabulary in user-facing prose (DOR-1517). It rides THIS job
+      # because `typecheck` is already a required status check and already
+      # reports on `merge_group`, so a new workflow would go red without
+      # blocking a merge until someone amended branch protection — and a gate
+      # on a non-required check is not a gate. Needs no node_modules; it is
+      # bash and grep over prose files.
+      #
+      # This is the second half of a deliberate split. Render-path strings in
+      # app source are judged by scripts/check-vocab-gate.ts, which parses
+      # TypeScript so it can tell copy from an identifier; it runs in
+      # scripts-test.yml via its own pin suite. This step covers the prose and
+      # data files that gate cannot read: READMEs, docs MDX, blog posts,
+      # context7.json, the PWA manifest, and the generated openapi.json.
+      - name: Retired-vocabulary gate — prose surfaces (DOR-1517)
+        if: ${{ !cancelled() }}
+        run: bash scripts/check-banned-words.sh
+
+      # The other half of that split: render-path strings in app source, judged
+      # by the TypeScript parser rather than grep (DOR-855 wave 1, DOR-1517
+      # wave 2, DOR-1756 wave 3, DOR-1814 wave 4 — the four words ADR
+      # 260804-021140 retired for "Connections"), plus docs/**/*.mdx prose for
+      # wave 4 only (DOR-2508 — see check-vocab-gate.ts's own header for why
+      # only that wave).
+      #
+      # It rides THIS job because until DOR-1814 it rode nothing that could
+      # stop a copy change. Its only CI home was the real-repo canary inside
+      # scripts/__tests__/check-vocab-gate.test.ts, run by scripts-test.yml —
+      # which is path-filtered to `scripts/**` and friends and carries no
+      # `merge_group:` trigger. A PR that touched only apps/client/src copy
+      # therefore never ran the gate at all, which is precisely the PR the gate
+      # exists for. `typecheck` is unfiltered, required, and reports on
+      # `merge_group`, so the guard now fails the merge rather than a workflow
+      # nobody was watching. The canary test stays where it is: it pins the
+      # mechanism, this step enforces the result — DOR-2508 extended that same
+      # canary rather than adding a second one, so a docs-only PR is checked
+      # here too, with no new required job.
+      - name: Retired-vocabulary gate — app render paths and docs prose (DOR-855)
+        if: ${{ !cancelled() }}
+        run: pnpm run check:vocab-gate
+
+      # In-app copy length (the writing-app-copy skill, 2026-10-02): every block
+      # of copy in apps/client/src at 15 words or fewer. Rides this job for the
+      # vocab gate's reason above, and reuses that gate's copy classifier. It
+      # landed report-only and became a gate once the app-wide copy sweep
+      # brought every block under the cap. Ledger 261002-185940.
+      - name: In-app copy length (writing-app-copy)
+        if: ${{ !cancelled() }}
+        run: pnpm run check:copy-length
+
+      # Playwright's `{ times: n }` route option in the browser suites
+      # (DOR-2228). After such a route had run, the page's retry against the
+      # same URL could hang without reaching the server (PR #1999); every site
+      # was replaced by interceptNext from @dorkos/test-utils/playwright-routes.
+      # This keeps new ones out. It rides THIS job for the reason the vocab gate
+      # above does: its only other home would be scripts-test.yml's `harness`
+      # job, which is scoped by scripts/scripts-test-scope.sh (no apps/e2e or
+      # browser-test paths) and never runs in the queue, so the PRs the guard
+      # exists for would never run it. `typecheck` is unfiltered, required and
+      # reports on `merge_group`. The pin suite is
+      # scripts/__tests__/one-shot-routes.test.ts.
+      - name: One-shot browser routes gate (DOR-2228)
+        if: ${{ !cancelled() }}
+        run: pnpm run check:one-shot-routes
+
+      # Copy a browser spec still quotes (DOR-4937, DOR-1647). The Playwright
+      # specs assert literal copy and run only in the merge queue, so a copy
+      # rewrite that strands one is green on the PR and ejected in the queue.
+      # This was an advisory job in browser-test.yml; it rides THIS job for the
+      # vocab gate's reason above (required, unfiltered, reports on
+      # `merge_group`), so no new required check. Same base as the ratchets
+      # step below, for the same reasons: the merge commit's first parent on
+      # `pull_request` and the canary, `merge_group.base_sha` in the queue, so
+      # a queue build is judged against main, not the previous entry. Static
+      # reads, a few seconds. Pin suites: scripts/__tests__/check-copy-spec-drift*.test.ts.
+      - name: Copy-spec drift (DOR-4937)
+        if: ${{ !cancelled() }}
+        env:
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
+        run: |
+          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
+          if [ -n "$QUEUE_BASE" ]; then
+            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
+            base="$QUEUE_BASE"
+          else
+            base="$(git rev-parse HEAD^1)"
+          fi
+          pnpm run check:copy-spec-drift "$base"
+
+      # The public/private boundary (DOR-2024): a control-plane hostname, a
+      # price or plan name, or anything else that belongs to the closed-source
+      # side of DorkOS Cloud, reaching this repository's source or prose.
+      # AGENTS.md ("## DorkOS Cloud") has stated that rule for months with
+      # nothing enforcing it; a 2026-09-13 audit found two live examples.
+      # Rides THIS job for the same reason the three gates above it do:
+      # `typecheck` is already required and already reports on `merge_group`,
+      # and a gate on a non-required check is not a gate.
+      #
+      # TWO TIERS, AND THE SECRET IS ONLY HALF OF IT. The committed shape
+      # patterns (scripts/boundary/shape-rules.tsv) describe forms and are safe
+      # to publish. The exact term list is private and arrives as the
+      # organisation secret BOUNDARY_TERMS. A fork PR gets no secrets, so the
+      # guard runs shape-only there and says so on stdout — one of
+      # `boundary: mode=shape-only …` or `boundary: mode=shape+terms …` is
+      # printed on every run, and neither line names a term.
+      #
+      # WHY `BOUNDARY_TERMS_REQUIRED` IS A SEPARATE, EXPLICIT SWITCH. GitHub
+      # sets a missing secret to the EMPTY STRING, so emptiness alone cannot
+      # distinguish "this is a fork" from "someone renamed the secret and the
+      # gate has quietly been checking nothing". The repository/organisation
+      # VARIABLE below is the operator's declaration that the secret exists;
+      # with it set, an absent or empty ruleset fails the job (exit 2) instead
+      # of silently downgrading. Until the operator sets it, this step enforces
+      # the shape patterns only — which is also what keeps this PR from
+      # deadlocking the merge queue on a secret that does not exist yet.
+      #
+      # WHO GETS NO SECRETS, and therefore must not be held to the full
+      # ruleset. `github.event.pull_request.head.repo.fork` is null on
+      # merge_group, so `!= true` is true there, which is correct: the queue is
+      # never a fork. Dependabot is the trap: its PRs come from an IN-REPO
+      # branch, so the fork test passes, but GitHub withholds repository
+      # secrets from `dependabot[bot]`-actored `pull_request` runs — without
+      # the actor test below, every dependency PR would exit 2 on a required
+      # check and could never enter the queue.
+      #
+      # The variable is tested for non-emptiness rather than against '1', so an
+      # operator who writes `true` or `yes` still gets enforcement instead of a
+      # silent downgrade to shape-only — which is the hazard the switch exists
+      # to prevent, not one it should introduce.
+      #
+      # Operator steps, in this order: contributing/boundary-guard.md.
+      - name: Public/private boundary gate (DOR-2024)
+        if: ${{ !cancelled() }}
+        env:
+          BOUNDARY_TERMS: ${{ secrets.BOUNDARY_TERMS }}
+          BOUNDARY_REQUIRE_TERMS: ${{ (vars.BOUNDARY_TERMS_REQUIRED != '' && github.event.pull_request.head.repo.fork != true && github.actor != 'dependabot[bot]' && github.triggering_actor != 'dependabot[bot]') && '1' || '' }}
+        run: pnpm run check:boundary
+
+      # The config migration gate (DOR-5123). The daily release has no person
+      # to ask "does this schema change need a conf migration?", so the PR that
+      # makes the change answers it.
+      # scripts/config-migration/check-config-migration.ts compares the user
+      # config's shape (scripts/config-migration/shape.json, which must match
+      # UserConfigSchema) at the base and at HEAD: a new member of an
+      # existing section, a removal or a narrowed type fails unless the PR
+      # adds a CONFIG_MIGRATIONS key or adds a reason to
+      # scripts/config-migration/no-migration.json. Rides THIS job for the
+      # ratchets step's reason: `typecheck` is required, unfiltered and
+      # reports on `merge_group`, so no new required check. The base is chosen
+      # as that step chooses it: the merge commit's first parent on
+      # `pull_request` and the canary, `merge_group.base_sha` (main) in the
+      # queue, NOT `HEAD^1`, which there is the previous queue entry.
+      - name: Config migration gate (DOR-5123)
+        if: ${{ !cancelled() }}
+        env:
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
+        run: |
+          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
+          if [ -n "$QUEUE_BASE" ]; then
+            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
+            base="$QUEUE_BASE"
+          else
+            base="$(git rev-parse HEAD^1)"
+          fi
+          pnpm run check:config-migration -- --base "$base"
+
+      # Raw NUL bytes pasted into text files (DOR-1561). Rides THIS job for
+      # the same reason the gate above it does: `typecheck` is already a
+      # required status check that reports on `merge_group`, and a gate on a
+      # non-required check is not a gate. Needs only `git` and `perl`, both on
+      # the runner already — no node_modules, and it runs in ~1-2s over the
+      # whole repo.
+      - name: Raw-NUL-byte gate — text files (DOR-1561)
+        if: ${{ !cancelled() }}
+        run: bash scripts/check-nul-bytes.sh
+
+      # A ground-truth doc naming a path that no longer exists (DOR-1762) —
+      # contributing/styling-theming.md once taught a dead `@/components/`
+      # import alias as the ✅ pattern. Rides THIS job for the same reason as
+      # the two gates above: needs no node_modules, and `typecheck` is already
+      # required and already reports on `merge_group`.
+      - name: Dead-path gate — ground-truth docs (DOR-1762)
+        if: ${{ !cancelled() }}
+        run: bash scripts/check-dead-doc-paths.sh
+
+      # The `scripts/` suites that read the whole repository: censuses,
+      # allowlists, baselines, workflow pins, `git ls-files` sweeps. The full
+      # `scripts` project runs only in scripts-test.yml's `harness` job, which
+      # is scoped to scripts/** and friends and does not run in the queue, so a
+      # PR outside that scope could break one of these, merge, and leave every
+      # later scripts/ PR red until a follow-up landed (three times in the week
+      # of Nov 5, 2026: #3528, #3568, #3564/#3569; ledger 261112-185148). Rides
+      # THIS job for the vocab gate's reason: `typecheck` is required,
+      # unfiltered and reports on `merge_group`, so a break now ejects the PR
+      # that caused it. The list and its hermetic complement live in
+      # scripts/repo-wide-suites.ts, run as the `scripts-repo` project of
+      # scripts/vitest.config.ts; scripts/__tests__/repo-wide-suites.test.ts
+      # makes every new suite pick a side. No build needed: none of these
+      # suites imports a workspace dist.
+      - name: Repo-wide scripts suites
+        if: ${{ !cancelled() }}
+        run: pnpm exec vitest run --config scripts/vitest.config.ts --project scripts-repo
+
+      # CI Steward census (plans/ci-steward-plan.md §4.2). Proves that ci/, the
+      # pipeline's stated intent, matches the workflows, lefthook commands and
+      # Claude hooks that actually run: every gate has a stated purpose in
+      # ci/gates.yaml, every job has a timeout, every required context in
+      # ci/required-checks.json can report on both pull_request and
+      # merge_group with no path filter and no pass-by-skip (the deadlock
+      # invariant), no required job hides a failure behind continue-on-error
+      # or an unexplained step `if:`, and the generated required-checks blocks
+      # in the docs match. Rides THIS job for the same reason the gates above
+      # do: `typecheck` is required and reports on `merge_group`, so this needs
+      # no new required context and adds no deadlock exposure. Plain Node over
+      # a few dozen small files, about a second, no build.
+      #
+      # Invoked by path, never through a package.json script, on purpose: the
+      # content ratchet `typecheck-runs-steward` in ci/ratchets.yaml matches
+      # these exact command strings, and the root package.json sits outside
+      # the steward's fence (ci/steward-owned-paths.json), so an alias there
+      # could be quietly rewritten to a no-op.
+      - name: CI Steward census
+        if: ${{ !cancelled() }}
+        run: node packages/ci-steward/src/cli.ts census
+
+      # Validity of every ci/ledger entry (plan §4.3): frontmatter schema, id
+      # equal to the file-name prefix, only hand states on main (verdicts live
+      # on the ci-steward-data branch), a hypothesis naming a metric the
+      # collector can compute, gates that exist. Runs on pull_request AND in
+      # the queue, so a malformed entry cannot land.
+      - name: CI Steward ledger check
+        if: ${{ !cancelled() }}
+        run: node packages/ci-steward/src/cli.ts ledger-check
+
+      # Ledger COVERAGE, pull_request only: a PR that touches a gate source, a
+      # script a gate invokes, turbo.json, lefthook.yml, .claude/settings.json,
+      # ci/** or the creating-pull-requests skill must add or edit a
+      # ci/ledger entry, and a `ci-improve/*` branch may not touch the
+      # steward's own files. Like fragment coverage, it needs the PR's diff and
+      # branch name, which cannot change between here and the queue.
+      #
+      # BLOCKING FROM DAY ONE (operator decision, 2026-09-19): a missing
+      # entry fails the PR, with no warn-only trial period.
+      #
+      # DEPENDABOT IS EXEMPT. Its monthly actions group edits workflow files
+      # and its npm group bumps package manifests, and it cannot write a
+      # ledger entry, so without this its PRs would stay red forever. A
+      # version bump is recorded by the Dependabot PR itself; a pipeline
+      # change a person or agent makes on top of one still needs an entry.
+      #
+      # The base, adapted from changelog-fragment-check.yml's "Determine the
+      # base" step: that job checks out the PR head with full history and asks
+      # for the merge-base. This job keeps its cheap depth-1 checkout of the
+      # PR's test-merge commit instead, fetches one more level, and diffs
+      # against the merge commit's first parent, which is the base-branch tip
+      # the PR was merged onto: the same diff, without the history.
+      - name: CI Steward ledger coverage
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]' }}
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
+          base="$(git rev-parse HEAD^1)"
+          echo "base: $base"
+          node packages/ci-steward/src/cli.ts ledger-check --coverage --base "$base" --branch "$HEAD_REF"

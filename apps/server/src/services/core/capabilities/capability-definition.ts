@@ -45,6 +45,7 @@ import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import type { ApprovalSubjectDeclaration } from '../approvals/approval-subject.js';
 import type { GrantedApproval } from './tier-enforcement.js';
 import type { CapabilityConfirmFirst } from './declarations/confirm-first.js';
+import type { ToolCallEscalation, ToolCallEscalatorCall } from './tool-call-escalation.js';
 
 /**
  * The service-dependency bag threaded into every capability's `invoke` at boot,
@@ -326,6 +327,36 @@ export interface CapabilityDefinition<
     context: CapabilityInvocationContext
   ) => Promise<string | undefined>;
   /**
+   * Decide a call whose ARGUMENTS reach a permission action of their own as
+   * that action (DOR-3703): the capability form of a hand-registered tool's
+   * escalator (`tool-call-escalation.ts`), asked with the same call and
+   * answering the same way. `registry.invoke` asks it after the permission is
+   * resolved and before the tier decides, and notes how an escalated call got
+   * through, for the handler to read back with `escalatedGrantFor(input)`.
+   *
+   * `null` leaves the call to the capability's own permission. An answer is
+   * held to "never looser": the tier never drops, and a call decided as
+   * another action keeps at least the capability's own permission. Only a call
+   * left as the capability's own action may be let through, to a handler that
+   * refuses it whole. A trusted caller (a person) is never asked about, and an
+   * escalator that throws decides the call as Blocked, with no card.
+   */
+  escalate?: (
+    deps: CapabilityDeps,
+    call: ToolCallEscalatorCall<z.infer<In>>
+  ) => Promise<ToolCallEscalation | null>;
+  /**
+   * The audit log's action name for this capability's calls, kept for a tool
+   * that moved onto the registry from the hand-registered gate, which records
+   * `mcp.<tool name>` (`mcp-tool-gate.ts`) and which people may filter on.
+   *
+   * With it, the registry's observer records each `act` or `destructive` call
+   * the way that gate did: one audit row under this name, as the calling
+   * agent, with the outcome, the subject and the approval spent, and no
+   * Activity row; reads are not recorded. Without it, nothing changes.
+   */
+  auditAction?: `mcp.${string}`;
+  /**
    * Draw an inline CARD in the conversation this capability was called from
    * (DOR-1004) — a surface the person acts on, in the chat, instead of a link
    * pasted into the agent's reply.
@@ -504,3 +535,31 @@ export class CapabilityToolError extends Error {
     this.name = 'CapabilityToolError';
   }
 }
+
+/**
+ * The refusal for a page cursor a list can't go on from (`INVALID_CURSOR`,
+ * answered `400` with `INVALID_CURSOR_DETAIL` from `@dorkos/shared/paging`):
+ * never read as the first page.
+ */
+export function invalidCursor(): CapabilityToolError {
+  return new CapabilityToolError({
+    code: 'INVALID_CURSOR',
+    error: 'That cursor was not given by this list. Leave it out to start again.',
+  });
+}
+
+/**
+ * Whether an error is the refusal {@link invalidCursor} makes, for a hand
+ * route to answer it as the mount does.
+ *
+ * @param error - What was thrown.
+ */
+export function isInvalidCursor(error: unknown): boolean {
+  return (
+    error instanceof CapabilityToolError &&
+    (error.payload as { code?: unknown } | null)?.code === 'INVALID_CURSOR'
+  );
+}
+
+/** Seal server state a confirm-first hold binds (`ConfirmFirstSheet.heldState`), for a handler to compare. */
+export { sealHeldState } from './declarations/held-state.js';

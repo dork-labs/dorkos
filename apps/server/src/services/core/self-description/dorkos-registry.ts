@@ -50,11 +50,18 @@ import { workQueueDomain } from '../../work-queue/work-queue-capabilities.js';
 import { workQueuePersonDomain } from '../../work-queue/work-queue-person-capabilities.js';
 import { meshDomain } from '../../mesh/doors/mesh-capabilities.js';
 import { globalMcpPersonDomain } from '../../mesh/global-mcp/global-mcp-person-capabilities.js';
+import { connectionOwnerDomain } from '../../connectors/resources/owner-capabilities.js';
+import { connectionManagementDomain } from '../../connectors/resources/owner-management-capabilities.js';
+import { connectionListDomain } from '../../connectors/owner-lists/owner-list-capabilities.js';
+import { extensionPersonDomain } from '../../extensions/http-capabilities/extension-person-capabilities.js';
 import { workClaimDomain } from '../../session/claims/work-claim-capabilities.js';
 import { workGraphDomain } from '../../work-graph/work-graph-capabilities.js';
 import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
 import { runsDomain } from '../../runs/run-capabilities.js';
 import { taskViewDomain } from '../../tasks/view/task-view-capabilities.js';
+import { createSessionReadsDomain } from '../../session/reads/session-read-capabilities.js';
+import { auditTrail } from '../../audit/audit-trail.js';
+import { runtimeRegistry } from '../runtime-registry.js';
 import { runtimeReadsDomain } from '../runtime-doors/runtime-read-capabilities.js';
 import { filesDomain } from '../directory/file-capabilities.js';
 import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
@@ -93,6 +100,20 @@ export const workGraphReadDomain = createWorkGraphReadDomain({
 });
 
 /**
+ * The app's chat reads (DOR-4978), handed the session read guard's rule and the
+ * runtime registry's two lookups here, at the composition root. Each is read
+ * when a call runs, never when this module loads.
+ */
+export const sessionReadsDomain = createSessionReadsDomain({
+  mayRead: (context, chatId) =>
+    readableSessionIds(readerFor({ accounts: auditTrail()?.accounts }, context), [chatId]).has(
+      chatId
+    ),
+  runtimeTypeOf: (chatId) => runtimeRegistry.getSessionRuntimeType(chatId),
+  settingsOf: (chatId) => runtimeRegistry.getSessionSettings(chatId),
+});
+
+/**
  * Compose the whole DorkOS capability registry from whichever domains `deps`
  * enables, then back-write it onto `deps` for the self-description capability.
  *
@@ -121,6 +142,12 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.mcpDeps) domains.push(mcpDomain);
   // The MCP servers a person adds for every agent, on `/api/mcp-servers` (DOR-4978).
   if (deps.globalMcpPersonDeps) domains.push(globalMcpPersonDomain);
+  // The owner's connection doors, on `/api/connectors` behind the account-decision bar (DOR-4978).
+  if (deps.connectionOwnerDeps) {
+    domains.push(connectionOwnerDomain, connectionManagementDomain, connectionListDomain);
+  }
+  // The person's extension doors, on `/api/extensions` behind the person bar (DOR-4978).
+  if (deps.extensionPersonDeps) domains.push(extensionPersonDomain);
   // Chat from the web, on `/api/session-relay` (DOR-4978).
   if (deps.sessionRelayDeps) domains.push(sessionRelayDomain);
   if (deps.roomDeps) domains.push(roomsDomain);
@@ -175,6 +202,8 @@ export function composeDorkOsCapabilityRegistry(
   domains.push(runsDomain);
   // The app's task reads (DOR-4978); they say so themselves when Tasks is not running.
   domains.push(taskViewDomain);
+  // The app's simplest chat reads (DOR-4978); each folds in the session read guard.
+  domains.push(sessionReadsDomain);
   // The app's runtime setup reads (DOR-4978); they say so themselves before the runtimes start.
   domains.push(runtimeReadsDomain);
   // Unconditional too: the folder picker, the diff review and the workspace
@@ -233,6 +262,10 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     connectorHoldDomain,
     mcpDomain,
     globalMcpPersonDomain,
+    connectionOwnerDomain,
+    connectionManagementDomain,
+    connectionListDomain,
+    extensionPersonDomain,
     sessionRelayDomain,
     roomsDomain,
     sessionDomain,
@@ -263,6 +296,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     heartbeatDomain,
     runsDomain,
     taskViewDomain,
+    sessionReadsDomain,
     runtimeReadsDomain,
     directoryDomain,
     diffDomain,
@@ -278,6 +312,8 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     connectorExecutionDeps: {} as CapabilityDeps['connectorExecutionDeps'],
     mcpDeps: {} as CapabilityDeps['mcpDeps'],
     globalMcpPersonDeps: {} as CapabilityDeps['globalMcpPersonDeps'],
+    connectionOwnerDeps: {} as CapabilityDeps['connectionOwnerDeps'],
+    extensionPersonDeps: {} as CapabilityDeps['extensionPersonDeps'],
     sessionRelayDeps: {} as CapabilityDeps['sessionRelayDeps'],
     roomDeps: {} as CapabilityDeps['roomDeps'],
     sessionCompactionDeps: {} as CapabilityDeps['sessionCompactionDeps'],
