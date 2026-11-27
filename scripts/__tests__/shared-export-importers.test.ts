@@ -70,6 +70,8 @@ const SERVER_ONLY_KEYS: Record<string, string> = {
     'A shared home between the space side and the computer side of the computer wall (step 6, DOR-5303/DOR-5403); both sides live in the server today.',
   'computer-asks':
     'The asks port between the space side and the computer side (C14, DOR-5459); both sides live in the server today.',
+  'agent-facts':
+    'The agent facts port between the space side and the computer side (C18, DOR-5462); both sides live in the server today.',
   'approval-text':
     'The asks port between the space side and the computer side (C14, DOR-5459); both sides live in the server today.',
   'consent-entries':
