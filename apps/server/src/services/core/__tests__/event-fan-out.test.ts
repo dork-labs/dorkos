@@ -28,7 +28,7 @@ vi.mock('../../../lib/event-stream/global-event-frames.js', async (importOrigina
 });
 
 import { eventFanOut, type EncodedBroadcast, type FanOutClient } from '../event-fan-out.js';
-import type { CallerPrincipal } from '../../../lib/caller-principal.js';
+import type { CallerPrincipal, PersonPrincipal } from '../../../lib/caller-principal.js';
 import { logger } from '../../../lib/logger.js';
 
 /** A recording {@link FanOutClient} — what a connected socket looks like here. */
@@ -71,7 +71,7 @@ describe('EventFanOut', () => {
    */
   function addTrackedClient(
     client: FanOutClient,
-    principal: CallerPrincipal = { kind: 'operator' }
+    principal: PersonPrincipal = { kind: 'operator' }
   ): () => void {
     const unsub = eventFanOut.addClient(client, principal);
     unsubs.push(unsub);
@@ -224,62 +224,78 @@ describe('EventFanOut', () => {
   });
 
   describe('addressed broadcasts', () => {
-    /** Only the cockpit's connection may hold an Ask's detail. */
+    /** An audience only the person at the app passes. */
     const operatorOnly = (principal: CallerPrincipal) => principal.kind === 'operator';
+    const program = (userId: string): PersonPrincipal => ({ kind: 'program', userId });
 
     it('sends an UNaddressed broadcast to every client, whatever their principal', () => {
       // All but one event on this bus mean "everyone", and that has to keep
       // meaning everyone once the audience parameter exists.
       const cockpit = createMockClient();
-      const agent = createMockClient();
+      const script = createMockClient();
       addTrackedClient(cockpit, { kind: 'operator' });
-      addTrackedClient(agent, { kind: 'agent' });
+      addTrackedClient(script, program('u1'));
 
       eventFanOut.broadcast('session_status', { id: 's1' });
 
       expect(cockpit.send).toHaveBeenCalledTimes(1);
-      expect(agent.send).toHaveBeenCalledTimes(1);
+      expect(script.send).toHaveBeenCalledTimes(1);
     });
 
     it('sends an addressed broadcast only to the clients the audience accepts', () => {
       const cockpit = createMockClient();
-      const agent = createMockClient();
-      const program = createMockClient();
+      const script = createMockClient();
       addTrackedClient(cockpit, { kind: 'operator' });
-      addTrackedClient(agent, { kind: 'agent' });
-      addTrackedClient(program, { kind: 'program', userId: 'user_owner' });
+      addTrackedClient(script, program('u1'));
 
-      eventFanOut.broadcast('interaction_pending', { sessionId: 's1' }, operatorOnly);
+      eventFanOut.broadcast('config_changed', { sections: ['ui'] }, operatorOnly);
 
       expect(cockpit.send).toHaveBeenCalledTimes(1);
-      expect(agent.send, 'an agent never receives an Ask detail').not.toHaveBeenCalled();
-      expect(program.send, 'this audience admits only the operator').not.toHaveBeenCalled();
-      expect(eventFanOut.clientCount, 'a skipped client is still connected').toBe(3);
+      expect(script.send, 'this audience admits only the operator').not.toHaveBeenCalled();
+      expect(eventFanOut.clientCount, 'a skipped client is still connected').toBe(2);
     });
 
-    it('asks the audience once per client and encodes the frame once regardless', () => {
-      const cockpit = createMockClient();
-      const agent = createMockClient();
-      addTrackedClient(cockpit, { kind: 'operator' });
-      addTrackedClient(agent, { kind: 'agent' });
+    it('asks the audience once per person per frame, and again on the next frame', () => {
+      // Several windows of one person cost one question; the answer lives for
+      // one frame only, so a right that changes is read on the next.
+      addTrackedClient(createMockClient(), { kind: 'operator' });
+      addTrackedClient(createMockClient(), { kind: 'operator' });
+      addTrackedClient(createMockClient(), program('u1'));
       const audience = vi.fn(operatorOnly);
       encodeSpy.mockClear();
 
-      eventFanOut.broadcast('interaction_pending', { sessionId: 's1' }, audience);
-
-      expect(audience).toHaveBeenCalledTimes(2);
-      expect(audience.mock.calls.map(([p]) => p.kind)).toEqual(['operator', 'agent']);
+      eventFanOut.broadcast('config_changed', { sections: ['ui'] }, audience);
+      expect(audience.mock.calls.map(([p]) => p.kind)).toEqual(['operator', 'program']);
       expect(encodeSpy, 'one encode per broadcast, not one per client').toHaveBeenCalledTimes(1);
+
+      eventFanOut.broadcast('config_changed', { sections: ['ui'] }, audience);
+      expect(audience).toHaveBeenCalledTimes(4);
+    });
+
+    it('asks again for each program user, never sharing one user’s answer with another', () => {
+      const first = createMockClient();
+      const second = createMockClient();
+      addTrackedClient(first, program('u1'));
+      addTrackedClient(second, program('u2'));
+
+      eventFanOut.broadcast(
+        'config_changed',
+        { sections: ['ui'] },
+        (p) => p.kind === 'program' && p.userId === 'u2'
+      );
+
+      expect(first.send).not.toHaveBeenCalled();
+      expect(second.send).toHaveBeenCalledTimes(1);
     });
 
     it('encodes once even when the audience admits nobody now, for a reader who resumes', () => {
       // A reader who reconnects with a cursor is owed this frame if the
       // audience admits it, so it is rendered once, at broadcast, and kept.
-      addTrackedClient(createMockClient(), { kind: 'agent' });
-      addTrackedClient(createMockClient(), { kind: 'agent' });
+      addTrackedClient(createMockClient(), program('u1'));
+      addTrackedClient(createMockClient(), program('u2'));
       encodeSpy.mockClear();
 
-      eventFanOut.broadcast('interaction_pending', { sessionId: 's1' }, operatorOnly);
+      eventFanOut.broadcast('config_changed', { sections: ['ui'] }, operatorOnly);
 
       expect(encodeSpy).toHaveBeenCalledTimes(1);
     });
@@ -289,7 +305,7 @@ describe('EventFanOut', () => {
       // this frame was never for has taken nothing, so reading its buffer — and
       // dropping it for being full — would evict a healthy reader.
       let bufferedReads = 0;
-      const stalledAgent: FanOutClient = {
+      const stalled: FanOutClient = {
         send: vi.fn(),
         get bufferedBytes(): number {
           bufferedReads += 1;
@@ -298,100 +314,14 @@ describe('EventFanOut', () => {
         gone: false,
         drop: vi.fn(),
       };
-      addTrackedClient(stalledAgent, { kind: 'agent' });
+      addTrackedClient(stalled, program('u1'));
 
-      eventFanOut.broadcast('interaction_pending', { sessionId: 's1' }, operatorOnly);
+      eventFanOut.broadcast('config_changed', { sections: ['ui'] }, operatorOnly);
 
-      expect(stalledAgent.send).not.toHaveBeenCalled();
+      expect(stalled.send).not.toHaveBeenCalled();
       expect(bufferedReads, 'a skipped client is not measured').toBe(0);
-      expect(stalledAgent.drop).not.toHaveBeenCalled();
+      expect(stalled.drop).not.toHaveBeenCalled();
       expect(eventFanOut.clientCount).toBe(1);
-    });
-  });
-
-  describe('broadcastRedacted — one event, two renderings', () => {
-    /** Only the cockpit's connection may hold a blocked session's detail. */
-    const operatorOnly = (principal: CallerPrincipal) => principal.kind === 'operator';
-
-    /** Every payload a client was written, decoded back off its JSON frame. */
-    function payloads(client: MockClient): unknown[] {
-      return client.send.mock.calls.map(
-        ([broadcast]) => (JSON.parse(broadcast.json) as { payload: unknown }).payload
-      );
-    }
-
-    it('writes the full payload to the entitled and the redacted one to everybody else', () => {
-      const cockpit = createMockClient();
-      const agent = createMockClient();
-      addTrackedClient(cockpit, { kind: 'operator' });
-      addTrackedClient(agent, { kind: 'agent' });
-
-      eventFanOut.broadcastRedacted(
-        'session_status',
-        { sessionId: 's1', activity: { toolName: 'Bash', target: 'rm -rf build' } },
-        { sessionId: 's1' },
-        operatorOnly
-      );
-
-      expect(payloads(cockpit)).toEqual([
-        { sessionId: 's1', activity: { toolName: 'Bash', target: 'rm -rf build' } },
-      ]);
-      expect(payloads(agent), 'an agent gets the frame without the detail').toEqual([
-        { sessionId: 's1' },
-      ]);
-    });
-
-    it('writes each connection exactly one of the two renderings, never both', () => {
-      const cockpit = createMockClient();
-      const agent = createMockClient();
-      addTrackedClient(cockpit, { kind: 'operator' });
-      addTrackedClient(agent, { kind: 'agent' });
-
-      eventFanOut.broadcastRedacted('session_status', { a: 1 }, { b: 2 }, operatorOnly);
-
-      expect(cockpit.send).toHaveBeenCalledTimes(1);
-      expect(agent.send).toHaveBeenCalledTimes(1);
-    });
-
-    it('notifies an in-process listener ONCE, with the full payload', () => {
-      // A listener is the server itself. Twice would be a new bug, and a
-      // redacted one would be a lie to code that is not a caller.
-      const seen: unknown[] = [];
-      const unsub = eventFanOut.subscribe((_name, data) => seen.push(data));
-      addTrackedClient(createMockClient(), { kind: 'agent' });
-      try {
-        eventFanOut.broadcastRedacted(
-          'session_status',
-          { full: true },
-          { full: false },
-          operatorOnly
-        );
-        expect(seen).toEqual([{ full: true }]);
-      } finally {
-        unsub();
-      }
-    });
-
-    it('renders each variant once, however many readers each has', () => {
-      for (const kind of ['operator', 'operator', 'agent'] as const) {
-        addTrackedClient(createMockClient(), { kind });
-      }
-      encodeSpy.mockClear();
-
-      eventFanOut.broadcastRedacted('session_status', { a: 1 }, { b: 2 }, operatorOnly);
-
-      expect(encodeSpy).toHaveBeenCalledTimes(2);
-    });
-
-    it('drops a slow client on the frame it actually received', () => {
-      const slowAgent = createMockClient({ bufferedBytes: 4096 });
-      addTrackedClient(slowAgent, { kind: 'agent' });
-
-      eventFanOut.broadcastRedacted('session_status', { a: 1 }, { b: 2 }, operatorOnly);
-
-      expect(slowAgent.send).toHaveBeenCalledTimes(1);
-      expect(slowAgent.drop).toHaveBeenCalled();
-      expect(eventFanOut.clientCount).toBe(0);
     });
   });
 
@@ -437,10 +367,10 @@ describe('EventFanOut', () => {
       // reach it.
       const seen: string[] = [];
       const unsub = eventFanOut.subscribe((name) => seen.push(name));
-      addTrackedClient(createMockClient(), { kind: 'agent' });
+      addTrackedClient(createMockClient(), { kind: 'program', userId: 'u1' });
       try {
-        eventFanOut.broadcast('interaction_pending', { sessionId: 's1' }, () => false);
-        expect(seen).toEqual(['interaction_pending']);
+        eventFanOut.broadcast('config_changed', { sections: ['ui'] }, () => false);
+        expect(seen).toEqual(['config_changed']);
       } finally {
         unsub();
       }

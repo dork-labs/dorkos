@@ -284,28 +284,3 @@ export function readableSessionIds(
   }
   return readable;
 }
-
-/**
- * Which live-stream connections may hear about a session (`GET /api/events`,
- * over SSE and WebSocket): every connection but an agent's, and an agent's only
- * when it may read the session. A person's own chat, its title included, never
- * reaches an agent's stream. Looked up at most once per frame, on the first
- * agent connection.
- *
- * A stream connection does not say WHICH agent it is, so it stands in as an
- * unnamed one: it hears about agent work open to every member, and never about
- * a person's own chat or a room session (only named members read those).
- *
- * @param sessionId - The session the frame is about.
- */
-export function sessionAudience(sessionId: string): (principal: { kind: string }) => boolean {
-  let agentMayRead: boolean | undefined;
-  return (principal) => {
-    if (principal.kind !== 'agent') return true;
-    agentMayRead ??= readableSessionIds(ANY_AGENT, [sessionId]).has(sessionId);
-    return agentMayRead;
-  };
-}
-
-/** An agent reader with no name, as a stream connection is; see {@link sessionAudience}. */
-const ANY_AGENT: AuditReader = { kind: 'agent', accountId: 'unidentified' };

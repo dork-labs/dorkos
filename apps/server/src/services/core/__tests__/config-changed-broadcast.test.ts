@@ -27,10 +27,9 @@
  *
  * ## And it is addressed, not broadcast
  *
- * Settings are a person's surface. An agent holding an `/api/events` connection
- * has no business learning that somebody rearranged their sidebar, so the
- * wiring passes `operatorAudience` — the same gate `notification` uses. Proven
- * here with connected clients of each kind.
+ * Settings are a person's surface, so the wiring passes `operatorAudience` —
+ * the same gate `notification` uses. Only people read `/api/events`
+ * (DOR-4986); proven here with a person and a program.
  *
  * @vitest-environment node
  */
@@ -45,7 +44,7 @@ import { CommunityNavigationPreferenceService } from '../../communities/communit
 import { ConfigManager } from '../config-manager.js';
 import { eventFanOut, type EncodedBroadcast, type FanOutClient } from '../event-fan-out.js';
 import { wireLiveChangeBroadcasts } from '../streams/screen/live-change-broadcasts.js';
-import type { CallerPrincipal } from '../../../lib/caller-principal.js';
+import type { PersonPrincipal } from '../../../lib/caller-principal.js';
 
 /** A connected reader that just keeps what it was sent. */
 class RecordingClient implements FanOutClient {
@@ -63,7 +62,7 @@ let manager: ConfigManager;
 let detach: Array<() => void>;
 
 /** Attach a client as `principal` and get back what it receives. */
-function connect(principal: CallerPrincipal): RecordingClient {
+function connect(principal: PersonPrincipal): RecordingClient {
   const client = new RecordingClient();
   detach.push(eventFanOut.addClient(client, principal));
   return client;
@@ -137,16 +136,14 @@ describe('config_changed', () => {
     expect(payloads(operator)).toEqual([expect.objectContaining({ sections: ['runtimes'] })]);
   });
 
-  it('reaches a person and a program, never an agent', () => {
+  it('reaches a person and a program', () => {
     const operator = connect({ kind: 'operator' });
     const program = connect({ kind: 'program', userId: 'user-1' });
-    const agent = connect({ kind: 'agent' });
 
     manager.setDot('runtimes.default', 'codex');
 
     expect(payloads(operator)).toHaveLength(1);
     expect(payloads(program)).toHaveLength(1);
-    expect(payloads(agent)).toHaveLength(0);
   });
 });
 

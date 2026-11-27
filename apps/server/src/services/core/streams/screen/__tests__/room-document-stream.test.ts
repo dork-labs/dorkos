@@ -230,6 +230,16 @@ describe('common room document notifications', () => {
           headers: requestHeaders,
           match: /^\/api\/rooms\/([^/]+)\/events$/.exec(path)!,
           locals: {},
+          facts: {
+            headers: requestHeaders,
+            peerAddress: '127.0.0.1',
+            forwardedAddress: '127.0.0.1',
+            connectionEncrypted: false,
+            method: 'GET',
+            ingress: 'direct',
+            user: undefined,
+            agentIdentity: undefined,
+          },
         });
         expect(decision.ok).toBe(true);
         if (!decision.ok) throw new Error('Room was refused');

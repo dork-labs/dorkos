@@ -370,7 +370,7 @@ For the chat list, relay activity, tunnel status, and extension events, subscrib
 GET /api/events
 ```
 
-This single persistent connection multiplexes all background events. Every frame carries one whole event:
+This single persistent connection multiplexes all background events. It is for people: the DorkOS app, the desktop app, and your own programs. An agent cannot open it (see [Who may open it](#who-may-open-it)). Every frame carries one whole event:
 
 ```
 id: events-1764201600000-g1-118
@@ -402,7 +402,7 @@ events.addEventListener('session_status', (message) => {
 });
 ```
 
-Every type, the permission area it belongs to, what its `payload` holds, and what it means. The area is for a later filter by space member; it is not who receives the event today, which the next section describes. The API reference's `GET /api/events` page gives the payloads it describes as schemas.
+Every type, the permission area it belongs to, what its `payload` holds, and what it means. The area is for a later filter by space member; it is not who receives the event today, which the sections after the table describe. The API reference's `GET /api/events` page gives the payloads it describes as schemas.
 
 {/* BEGIN generated: the global event types, from packages/shared/src/dorkos-event-types.ts. Edit the table there, then run pnpm docs:sse-events. */}
 
@@ -465,64 +465,44 @@ Every type, the permission area it belongs to, what its `payload` holds, and wha
 
 These chat-list events keep sidebars and dashboards live without polling `GET /api/sessions`.
 
+### Who may open it
+
+The stream answers `403 person_only` to:
+
+- a caller presenting an `X-DorkOS-Agent` header or an approval token, whatever the settings;
+- a page on another site, including an app's frame (`Origin: null`);
+- with login on, a caller with an API key who has not signed in through a browser.
+
+With login off, a program with no agent header connects. Over a WebSocket the same refusals
+arrive as a close frame, code `4403`. An agent reads what it needs through its own tools.
+
 ### Some events go only to whoever they are about
 
-Not every event is written to every connection. An event that carries something about what your
-agents are doing, what is waiting on you, or what you have set up goes only to a connection that
-could act on it. A connection presenting an `X-DorkOS-Agent` header never receives any of these
-21: `interaction_pending`, `approval_pending`, `standing_pending`, `standing_resolved`,
-`notification`, `notification_read`, `read_cursor`, `room_created`, `room_updated`,
-`room_member_added`, `room_member_removed`, `room_activity`, `room_presence`, `room_awaiting`,
-`config_changed`, `community_connections_changed`, `connector_agent_requests_changed`,
-`local_browser_changed`, `marketplace_dev_link_reloaded`, `session_relay_presence` and
-`tunnel_status`. The room events go only to people in that room, and `read_cursor` only to the
-person whose place moved. Some examples of why:
+Not every event is written to every connection. The room events go only to people in that room,
+and `read_cursor` only to the person whose place moved. Settings, the inbox and remote access
+(`config_changed`, `notification`, `notification_read`, `tunnel_status` and the like) go to you
+and to programs holding your API keys.
 
-`interaction_pending` carries what an agent is waiting for: the tool it wants to run, the
-command or path it would run it against, and the chat's working directory.
-`approval_pending` carries the capability being asked for and a sentence describing what would
-happen. The two `notification` events carry the titles and bodies of your inbox.
-`config_changed` says which sections of your settings were just written. It never carries a
-value, because settings hold credentials, but which settings you are editing is still yours.
-`community_connections_changed` says only that a space connection changed. It names no
-space, no connection and no person, because this stream cannot tell which of this machine's
-owners a window belongs to. A window that hears it reads its own list back.
-`tunnel_status` carries this computer's public address when remote access is on, so it goes to
-you and to your API keys, never to an agent, the same as `GET /api/tunnel/status`.
+Who may read an event is checked as each frame goes out, never once when you connect. Leave a
+room and its events stop at the next frame, on a live stream and on a replay alike.
 
-`agents_changed` is deliberately NOT filtered. An agent's own roster changing is legitimate news
-for agents as well as people, and that is only safe because the payload is names and ids. It does
-not carry the agent's directory, and it does not carry any of the manifest: whatever else you
-want, you go and ask for.
+`community_connections_changed` says only that a space connection changed. It names no space, no
+connection and no person, because this stream cannot tell which of this machine's owners a window
+belongs to. A window that hears it reads its own list back.
 
-A connection presenting an `X-DorkOS-Agent` header also stops receiving `activity` on a `session_status` frame
-whose `lifecycle` is `blocked`. That field names the tool and the command a chat is parked
-on, which is the same detail by another route. The `lifecycle` itself is still sent, so a
-reader still knows the chat is waiting; it just does not learn what for. And on a chat's
-own stream (`GET /api/sessions/:id/events`) the snapshot's `pendingInteractions` comes back
-empty and the `approval_required` / `question_prompt` / `elicitation_prompt` frames are not
-sent. An agent could never answer a prompt (`POST /api/sessions/:id/approve` refuses
-every one of them), so it no longer sees them either. A connection holding one of your per-user
-API keys still receives them, because it can already read the same detail on that chat's own
-stream. `GET /api/sessions/pending-interactions`, which is what a page reads on load, filters
-the same way, and answers `200` with an empty list rather than an error, so a caller cannot
-tell "you may not see this" from "there is nothing waiting".
+`agents_changed` carries names and ids only. It does not carry the agent's directory or any of its
+manifest: whatever else you want, you go and ask for.
 
-`interaction_resolved` is NOT filtered by who may answer. It goes to every connection that can
-see the chat, because it carries a chat ID, an interaction id and an outcome, and nothing about
-what was asked; a client that never received the `pending` has nothing to close.
-`approval_resolved` goes to every connection, for the same reason: it says only that a card is
-over, never what it asked.
+`interaction_resolved` and `approval_resolved` carry a chat or card id and an outcome, and nothing
+about what was asked; a client that never received the `pending` has nothing to close.
 
-`GET /api/notifications` filters the same way the events do, and answers `200` with an empty
-list rather than an error. Marking something read is refused outright instead, because "I have
-seen this" is a claim only a person looking at a screen can make.
+`GET /api/notifications` filters the same way the events do. Marking something read is refused
+for a program, because "I have seen this" is a claim only a person looking at a screen can make.
 
 ### What you get when you connect
 
 Right after `connected` (and any events you missed) you receive one `tunnel_status` with remote
-access as it is now, unless the connection presents an agent. You never need a second call to
-learn it.
+access as it is now. You never need a second call to learn it.
 
 Shortly after connecting you also receive one `session_status` event for every chat the server
 currently sees as working, waiting on a person, or stopped with an error. Chats that are idle
@@ -546,6 +526,8 @@ is in its `data:`, so you never need to take the id apart. If
 the connection drops, reconnect with the last one as `Last-Event-ID` (browsers' `EventSource`
 does this for you). The server sends the events you missed, then live ones, and the `connected`
 frame says `resumed: true`. You get the missed events you may read now, when you reconnect.
+The id is only a place in the stream: one copied from someone else's stream sends you only what
+you may read.
 
 The server keeps the last 500 events (up to 512 KiB, so fewer when events are large) for this. If you were gone longer, or the
 server restarted, you get an ordinary fresh connect instead: `connected` without `resumed`, then
