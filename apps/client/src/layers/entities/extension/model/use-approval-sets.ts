@@ -43,7 +43,8 @@ export function useApprovalSets() {
         (page) => page.sets,
         '/extensions/approval-sets'
       );
-      return rows.sort((a, b) => a.plugin.localeCompare(b.plugin));
+      // The order the server's own list kept: plain `<` on the plugin name.
+      return rows.sort((a, b) => (a.plugin < b.plugin ? -1 : a.plugin > b.plugin ? 1 : 0));
     },
   });
 }

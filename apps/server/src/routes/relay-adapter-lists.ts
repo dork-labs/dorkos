@@ -4,8 +4,8 @@
  * connected, and the chat routes. Each answers through `answerPage`
  * (`lib/paging/hand-route-page.ts`), `cursor` and `limit` in the query.
  *
- * - Connections: by id, Z to A. A connection has no time it was added, and
- *   its id never changes.
+ * - Connections: in the order the config file holds them, as the list has
+ *   always come. One added or removed while paging can repeat or be missed.
  * - Kinds: in the catalog's own order, the one the setup list shows. One
  *   added by a plugin while paging can repeat or be missed.
  * - Chat routes: newest first, by when each was made, the id breaking a tie.
@@ -22,9 +22,6 @@ import { listPosition } from '../lib/paging/keyset-page.js';
 import { logger } from '../lib/logger.js';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
 import { BINDINGS_STARTING } from './relay-problems.js';
-
-/** The empty first part of a key, for a list whose rows have no time. */
-const NO_TIME = '';
 
 /**
  * Mount the three lists. Register them before the `/:id` reads beside them.
@@ -52,8 +49,9 @@ export function registerAdapterListRoutes(router: Hono<ApiEnv>, adapterManager: 
     answerPage(c, {
       list: 'relay-adapters',
       noun: 'adapters',
-      read: () => adapterManager.listAdapters(),
-      keyOf: (row) => [NO_TIME, row.config.id],
+      read: () => adapterManager.listAdapters().map((row, index) => ({ row, index })),
+      keyOf: ({ row, index }) => [listPosition(index), row.config.id],
+      show: ({ row }) => row,
     })
   );
 

@@ -26,8 +26,9 @@ describe('HttpTransport — Relay Bindings', () => {
   });
 
   describe('getBindings()', () => {
-    it('reads every page of GET /relay/bindings and returns the bindings', async () => {
-      const second = { ...mockBinding, id: 'second' };
+    it('reads every page of GET /relay/bindings and lists them oldest first', async () => {
+      // The server pages newest first; the older route arrives on the second page.
+      const second = { ...mockBinding, id: 'second', createdAt: '2020-01-01T00:00:00.000Z' };
       vi.mocked(fetch)
         .mockResolvedValueOnce(
           new Response(JSON.stringify({ bindings: [mockBinding], nextCursor: 'c1' }))
@@ -43,7 +44,7 @@ describe('HttpTransport — Relay Bindings', () => {
         `${BASE_URL}/relay/bindings?limit=200`,
         `${BASE_URL}/relay/bindings?cursor=c1&limit=200`,
       ]);
-      expect(result).toEqual([mockBinding, second]);
+      expect(result).toEqual([second, mockBinding]);
     });
 
     it('throws when the server responds with an error', async () => {

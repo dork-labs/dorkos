@@ -117,7 +117,8 @@ export function registerRelayAdapterListOpenApi(registry: OpenAPIRegistry): void
       summary: 'List the chat connections',
       description:
         'Each chat app set up on this computer, with its settings (secrets hidden) and how ' +
-        'it is doing, by id Z to A. One added or removed while paging can repeat or be missed.',
+        'it is doing, in the order the settings file holds them. One added or removed while ' +
+        'paging can repeat or be missed.',
       noun: 'adapters',
       row: z.object({ config: AdapterConfigSchema, status: AdapterStatusSchema }),
     },

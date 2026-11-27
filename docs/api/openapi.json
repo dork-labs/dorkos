@@ -32307,7 +32307,7 @@
           "Relay"
         ],
         "summary": "List the chat connections",
-        "description": "Each chat app set up on this computer, with its settings (secrets hidden) and how it is doing, by id Z to A. One added or removed while paging can repeat or be missed. A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did not give is refused with `400 invalid_request`.",
+        "description": "Each chat app set up on this computer, with its settings (secrets hidden) and how it is doing, in the order the settings file holds them. One added or removed while paging can repeat or be missed. A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did not give is refused with `400 invalid_request`.",
         "parameters": [
           {
             "schema": {

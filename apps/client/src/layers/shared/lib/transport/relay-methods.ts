@@ -163,7 +163,7 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
     async listRelayAdapters(): Promise<AdapterListItem[]> {
       type Page = { adapters: AdapterListItem[]; nextCursor: string | null };
       const { rows } = await fetchAllPages(baseUrl, '/relay/adapters', {}, (p: Page) => p.adapters);
-      return rows.sort((a, b) => a.config.id.localeCompare(b.config.id));
+      return rows;
     },
 
     toggleRelayAdapter(id: string, enabled: boolean): Promise<{ ok: boolean }> {
@@ -248,7 +248,10 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
     async getBindings(): Promise<AdapterBinding[]> {
       type Page = { bindings: AdapterBinding[]; nextCursor: string | null };
       const { rows } = await fetchAllPages(baseUrl, '/relay/bindings', {}, (p: Page) => p.bindings);
-      return rows;
+      // The server pages newest first; the app has always listed chat routes oldest first.
+      return rows.sort(
+        (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)
+      );
     },
 
     createBinding(input: CreateBindingRequest): Promise<AdapterBinding> {
