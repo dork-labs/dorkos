@@ -27,7 +27,13 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { HAND_ROUTE_ALLOWLIST } from '../hand-routes/allowlist.js';
-import { honoPath, mountedCapabilities, routeKey } from '../../routes/capability-http.js';
+import {
+  HAND_SERVED_CAPABILITIES,
+  honoPath,
+  mountedCapabilities,
+  routeKey,
+} from '../../routes/capability-http.js';
+import { WORK_GRAPH_READ_ROWS } from '../../services/core/capabilities/__tests__/work-graph-read-rows.js';
 import type { RouteCensus } from '../route-census/census.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -165,5 +171,19 @@ describe('hand route census', () => {
     expect(entries).toEqual([...new Set(entries)]);
     expect(entries.filter(isCapability), 'now a capability').toEqual([]);
     for (const entry of HAND_ROUTE_ALLOWLIST) expect(entry.reason.trim()).not.toBe('');
+  });
+
+  // DOR-4973: the work graph's reads are served by the mount from their one
+  // declaration, never by a hand route kept beside it.
+  it.each(WORK_GRAPH_READ_ROWS)('serves $id from the mount, not by hand', (row) => {
+    const entry = `GET ${honoPath(row.path)}`;
+    expect(census).toContain(entry);
+    expect(isCapability(entry)).toBe(true);
+    expect(
+      mountedCapabilities().find((capability) => capability.id === row.id)?.surfaces.http
+    ).toMatchObject({ method: 'get', path: row.path });
+    expect(row.id in HAND_SERVED_CAPABILITIES).toBe(false);
+    expect(pending).not.toContain(entry);
+    expect(allowlisted.has(entry)).toBe(false);
   });
 });
