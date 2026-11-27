@@ -36,6 +36,7 @@ export * from './communities.js';
 export * from './hub-assignment.js';
 export * from './published-pages.js';
 export * from './agent-computers.js';
+export * from './community-seats.js';
 export * from './hub-wake.js';
 export * from './directory.js';
 export * from './step-up.js';

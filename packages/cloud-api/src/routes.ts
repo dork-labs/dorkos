@@ -422,6 +422,18 @@ export const v1Path = {
    */
   communityRestore: (communityId: string) => `/v1/communities/${communityEnc(communityId)}/restore`,
   /**
+   * The route that previews what one more invite does to the seats a hosted
+   * space counts, answered with `CommunitySeatPreviewSchema`. A `GET` that
+   * makes no invite, holds no seat and promises nothing. Only an owner or an
+   * admin of the space may ask, and another member is `forbidden`; a space the
+   * caller cannot see is `not_found`, the same as one that does not exist. When one more person would be refused, the answer is
+   * `person_seat_required` with the service's words and an `actionUrl`.
+   *
+   * @param communityId - The community's permanent identifier.
+   */
+  communitySeatPreview: (communityId: string) =>
+    `/v1/communities/${communityEnc(communityId)}/seat-preview`,
+  /**
    * The route for one move, answered with `CommunityMoveSchema`.
    *
    * @param moveId - The move's opaque identifier.
