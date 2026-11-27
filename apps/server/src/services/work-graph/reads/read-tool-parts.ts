@@ -39,9 +39,10 @@ export interface WorkGraphReadPorts {
   /** Mark the calling turn as one that read outside words, from a chat. */
   markOutside: (context: CapabilityInvocationContext) => void;
   /**
-   * Whether the call names a person or a trusted caller: a person's session
-   * on a REST read, a signed-in person's key, or a trusted caller. A read that
-   * must not read as the owner for a caller nobody named asks this (DOR-4972).
+   * Whether the call is the owner's own: only `request.personOnRestPath` (a
+   * person's read on the capability's REST path, with no program credential)
+   * or a trusted caller. A user id alone is not proof. A read that must not
+   * read as the owner for a caller nobody named asks this (DOR-4972).
    */
   namesPerson: (context?: CapabilityInvocationContext) => boolean;
 }

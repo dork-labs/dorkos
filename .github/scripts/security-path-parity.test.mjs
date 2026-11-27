@@ -109,6 +109,26 @@ const additions = [
   ['scripts/security-findings.sh', 'scripts/test-security-findings.sh'],
   // queue-reentry turns auto-merge back on with a write token (#4273), like queue-repeat-guard.
   ['scripts/queue-reentry.sh', 'scripts/test-queue-reentry.sh'],
+  // DOR-4972: the work graph's reads decide what a reader sees of a chat, the claim
+  // service writes their history, `namesPerson` in the registry is the owner rule, the
+  // composition root wires the claim recorder, and the shared shapes say what a reader gets.
+  [
+    'apps/server/src/services/work-graph/reads/work-item-chats.ts',
+    'apps/server/src/services/work-graphs/a.ts',
+  ],
+  [
+    'apps/server/src/services/session/claims/work-claim-service.ts',
+    'apps/server/src/services/session/claimsx/a.ts',
+  ],
+  [
+    'apps/server/src/services/core/self-description/dorkos-registry.ts',
+    'apps/server/src/services/core/self-description/dorkos-registry-docs.ts',
+  ],
+  [
+    'apps/server/src/startup/steps/work-graph.ts',
+    'apps/server/src/startup/steps/work-graph-links.ts',
+  ],
+  ['packages/shared/src/work-graph-reads.ts', 'packages/shared/src/work-graph-reads-old.ts'],
 ];
 for (const [match, miss] of additions) {
   test(`new trust path and rename: ${match}`, () => {

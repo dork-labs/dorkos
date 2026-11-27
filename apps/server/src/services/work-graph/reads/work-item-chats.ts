@@ -28,7 +28,8 @@
  * **What a reader may not read (Security, DOR-4972; W4's rule).** A span of a
  * chat the reader may not read keeps only its relation and the day it began
  * and ended: no chat, no time finer than the day, no end reason. Two such
- * spans on the same days read as one, with no count, so they need no order
+ * spans on the same days read as one, with no count (`./private-rows.ts`, the
+ * one scrub both reads use), so they need no order
  * between them; private spans are never ordered by a time. A span the reader
  * may read that was handed over to a chat it may not read ends on the day
  * only (`endedAt` null, `endDay` set), as handed over and to no one named.
@@ -51,6 +52,7 @@ import type { AuditReader } from '../../audit/visibility.js';
 import type { WorkLink, WorkLinkStore } from '../work-link-store.js';
 import { invalidCursor } from '../../core/capabilities/capability-definition.js';
 import { decodePageCursor, encodePageCursor } from './page-cursor.js';
+import { PrivateRows } from './private-rows.js';
 
 /** What {@link readWorkItemChats} reads. */
 export type WorkItemChatsSources = Pick<WorkLinkStore, 'to' | 'resolveRekeys'>;
@@ -197,7 +199,7 @@ export function readWorkItemChats(
   ]);
 
   const shown: Shown[] = [];
-  const privateSeen = new Set<string>();
+  const scrub = new PrivateRows();
   for (const span of spans) {
     const day = span.claimedAt.slice(0, 10);
     const endDay = span.endedAt?.slice(0, 10) ?? null;
@@ -219,12 +221,11 @@ export function readWorkItemChats(
       });
       continue;
     }
-    const seen = `${day}\n${endDay ?? ''}`;
-    if (privateSeen.has(seen)) continue;
-    privateSeen.add(seen);
+    const hidden = scrub.span(span.claimedAt, span.endedAt);
+    if (!hidden) continue;
     // A null end sorts after every day.
     shown.push({
-      span: { relation: 'claims', startDay: day, endDay },
+      span: hidden,
       key: [day, '1', endDay ?? '~', ''],
     });
   }

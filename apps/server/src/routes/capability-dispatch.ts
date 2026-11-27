@@ -494,7 +494,8 @@ export function capabilityRequestFacts(
   let frontDoor: ReturnType<typeof frontDoorRefusal> | null = null;
   const frontDoorAnswer = () =>
     frontDoor === null ? (frontDoor = frontDoorRefusal(facts)) : frontDoor;
-  return {
+  // Frozen, so no handler can rewrite what the mount worked out (the getters still work).
+  return Object.freeze({
     get clearsAgentBar() {
       return (agentBar ??= clearsTheAgentBar(facts));
     },
@@ -520,7 +521,7 @@ export function capabilityRequestFacts(
       return isDocOperatorAccount(facts.user);
     },
     personOnRestPath,
-  };
+  });
 }
 
 /**

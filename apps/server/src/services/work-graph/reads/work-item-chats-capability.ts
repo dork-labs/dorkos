@@ -5,10 +5,11 @@
  *
  * **Who reads as the owner.** The audit read side's `readerFor` reads a call
  * with no agent as the owner. This read is stricter (Security, DOR-4972): a
- * caller nobody named (the external MCP server, `dorkos call` with no key)
- * reads as an agent nobody could name, so it sees only what the space may.
- * Only a person (a session on a REST read, a signed-in person's key) or a
- * trusted caller reads as the owner.
+ * caller nobody named (the external MCP server, `dorkos call`, any program
+ * key) reads as an agent nobody could name, so it sees only what the space
+ * may. Only `request.personOnRestPath` (a person's own read on this REST path,
+ * with no program credential) or a trusted caller reads as the owner. A user
+ * id alone never does: a program key, `/mcp` and an agent's tool call carry one.
  *
  * **Refs.** `ref` is a ticket (`DOR-1234`) or a pull request (`owner/repo#42`,
  * `PR #42`), in any case. Anything else is refused as invalid input. A valid
