@@ -327,9 +327,10 @@ describe('the work graph reads in the document (DOR-4973)', () => {
   type Node = { $ref?: string; properties?: Record<string, Node>; [key: string]: unknown };
   type Param = { name: string; in: string; schema?: Node };
 
-  const docs = new OpenAPIRegistry();
-  registerCapabilitiesInOpenApi(composeCapabilityRegistryForDocs(), docs);
-  const spec = generate(docs);
+  const composed = composeCapabilityRegistryForDocs();
+  const workGraphDoc = new OpenAPIRegistry();
+  registerCapabilitiesInOpenApi(composed, workGraphDoc);
+  const spec = generate(workGraphDoc);
   /** Follow a `$ref` into the components, so inline and named schemas read alike. */
   const resolve = (node: Node | undefined): Node | undefined =>
     node?.$ref
@@ -367,13 +368,29 @@ describe('the work graph reads in the document (DOR-4973)', () => {
     expect(refNext?.type).toEqual(['string', 'null']);
   });
 
+  it('has one row for every work graph read', () => {
+    const reads = composed.capabilities
+      .filter(
+        (capability) =>
+          capability.id.startsWith('work-graph.') &&
+          capability.tier === 'observe' &&
+          capability.surfaces.http
+      )
+      .map((capability) => capability.id)
+      .sort();
+    expect(reads).toEqual(WORK_GRAPH_READ_ROWS.map((row) => row.id).sort());
+  });
+
   it.each(WORK_GRAPH_READ_ROWS)(
     '$id is GET $path under its own id, paged the shared way',
     (row) => {
       const get = spec.paths?.[row.path]?.get;
       expect(get?.operationId).toBe(row.id);
 
-      const params = (get?.parameters ?? []) as Param[];
+      const params = (get?.parameters ?? []) as Array<Param & { required?: boolean }>;
+      // The first page needs neither field.
+      expect(params.find((p) => p.name === 'cursor')?.required ?? false).toBe(false);
+      expect(params.find((p) => p.name === 'limit')?.required ?? false).toBe(false);
       expect(params.find((p) => p.name === 'cursor')).toMatchObject({
         in: 'query',
         schema: refCursor,

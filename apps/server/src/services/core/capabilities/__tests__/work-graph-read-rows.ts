@@ -4,7 +4,9 @@
  * (`http/__tests__/hand-route-census.test.ts`), and its one declaration shows
  * up in the OpenAPI document (`openapi-projection.test.ts`) and on both MCP
  * servers (`mcp-projection.test.ts`) under the same id, with the shared page
- * shape of `@dorkos/shared/paging`.
+ * shape of `@dorkos/shared/paging`. `openapi-projection.test.ts` also checks
+ * that these rows name every work graph read, so a new read fails there until
+ * its row is added here.
  *
  * @module services/core/capabilities/__tests__/work-graph-read-rows
  */
@@ -47,6 +49,4 @@ export const WORK_GRAPH_READ_ROWS: readonly WorkGraphReadRow[] = [
     path: '/api/sessions/{id}/work',
     list: 'items',
   },
-  // `work-graph.work_item_chats` (W6, #4582) joins as one more row once it merges:
-  // { id: 'work-graph.work_item_chats', tool: 'work_item_chats', path: '/api/work-items/chats', list: 'spans' },
 ];

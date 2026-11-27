@@ -27,12 +27,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { HAND_ROUTE_ALLOWLIST } from '../hand-routes/allowlist.js';
-import {
-  HAND_SERVED_CAPABILITIES,
-  honoPath,
-  mountedCapabilities,
-  routeKey,
-} from '../../routes/capability-http.js';
+import { honoPath, mountedCapabilities, routeKey } from '../../routes/capability-http.js';
 import { WORK_GRAPH_READ_ROWS } from '../../services/core/capabilities/__tests__/work-graph-read-rows.js';
 import type { RouteCensus } from '../route-census/census.js';
 
@@ -178,12 +173,10 @@ describe('hand route census', () => {
   it.each(WORK_GRAPH_READ_ROWS)('serves $id from the mount, not by hand', (row) => {
     const entry = `GET ${honoPath(row.path)}`;
     expect(census).toContain(entry);
-    expect(isCapability(entry)).toBe(true);
+    // `mountedCapabilities` leaves out the hand-served ones, and the tests above
+    // keep a mounted shape off the pending list and the allowlist.
     expect(
       mountedCapabilities().find((capability) => capability.id === row.id)?.surfaces.http
     ).toMatchObject({ method: 'get', path: row.path });
-    expect(row.id in HAND_SERVED_CAPABILITIES).toBe(false);
-    expect(pending).not.toContain(entry);
-    expect(allowlisted.has(entry)).toBe(false);
   });
 });

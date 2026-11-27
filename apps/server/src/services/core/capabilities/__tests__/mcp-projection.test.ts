@@ -344,7 +344,7 @@ describe('extension full-object projection boundary', () => {
 });
 
 describe('the work graph reads on MCP (DOR-4973)', () => {
-  const docs = composeCapabilityRegistryForDocs();
+  const composed = composeCapabilityRegistryForDocs();
   /** The shared page fields, as an MCP client sees them. */
   const reference = z.toJSONSchema(PageQuerySchema, { io: 'input' }) as {
     properties: Record<string, Record<string, unknown>>;
@@ -354,19 +354,22 @@ describe('the work graph reads on MCP (DOR-4973)', () => {
     '$id is the $tool tool on both servers, paged the shared way',
     (row) => {
       for (const server of ['in-session', 'external'] as const) {
-        const tool = capabilitiesForMcpServer(docs, server).find(
+        const tool = capabilitiesForMcpServer(composed, server).find(
           (capability) => capability.surfaces.mcp?.toolName === row.tool
         );
         expect(tool?.id, server).toBe(row.id);
       }
-      const capability = docs.get(row.id)!;
+      const capability = composed.get(row.id)!;
       // A tool answers with the capability's own output, so its page ends the shared way.
-      expect(Object.keys((capability.output as z.ZodObject).shape)).toEqual(
-        expect.arrayContaining([row.list, 'nextCursor'])
-      );
+      const output = (capability.output as z.ZodObject).shape;
+      expect(Object.keys(output)).toEqual(expect.arrayContaining([row.list, 'nextCursor']));
+      expect(output.nextCursor!.safeParse(null).success, 'nextCursor is nullable').toBe(true);
       const input = z.toJSONSchema(capabilityMcpInputObject(capability), {
         io: 'input',
-      }) as { properties: Record<string, Record<string, unknown>> };
+      }) as { properties: Record<string, Record<string, unknown>>; required?: string[] };
+      // The first page needs neither field.
+      expect(input.required ?? []).not.toContain('cursor');
+      expect(input.required ?? []).not.toContain('limit');
       expect(input.properties.cursor).toEqual(reference.properties.cursor);
       expect(input.properties.limit).toMatchObject({
         type: reference.properties.limit!.type,
