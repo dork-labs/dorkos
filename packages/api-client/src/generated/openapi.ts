@@ -945,26 +945,6 @@ export interface paths {
         patch: operations["relay.updateAdaptersConfig"];
         trace?: never;
     };
-    "/api/connectors/connections/{connectionId}/exclusions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Agents left out of a connection's every-agent share
-         * @description Owner only. Lists the agents the every-agent share does not reach.
-         */
-        get: operations["connectors.listConnectionsExclusions"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/connectors/access-changes": {
         parameters: {
             query?: never;
@@ -3981,7 +3961,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List the operator’s stable connections */
+        /**
+         * List the operator’s stable connections
+         * @description Newest connected first, a page at a time: pass `nextCursor` back as `cursor` for the next. An account connected or removed while paging can repeat or be missed.
+         */
         get: operations["connectors.listConnections"];
         put?: never;
         /** Start a restart-safe connector authentication flow */
@@ -4088,60 +4071,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/connectors/agents/{agentId}/connections": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read exact connection grants for one owned agent */
-        get: operations["connectors.getAgentsConnections"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/connectors/every-agent-grants": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Read what every agent, including a new one, inherits
-         * @description Lists each connection whose owner gave every agent access, with the exact reviewed actions. There is no per-agent exclusion, so this is what any new agent gets the moment it is created.
-         */
-        get: operations["connectors.getEveryAgentGrants"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/connectors/sessions/{sessionId}/connections": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read effective connector access for one session */
-        get: operations["connectors.listSessionsConnections"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/connectors/sessions/{sessionId}/connections/{connectionId}": {
         parameters: {
             query?: never;
@@ -4169,8 +4098,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List owner-visible connector reviews */
-        get: operations["connectors.listReviews"];
+        /**
+         * See requested account changes
+         * @description Changes programs asked to make to connected accounts, waiting or answered, newest first, a page at a time: pass `nextCursor` back as `cursor` for the next. One answered while paging can repeat or be missed. Only the owner of this DorkOS.
+         */
+        get: operations["connectors.list_reviews"];
         put?: never;
         /** Create an owner-reviewed connector management request */
         post: operations["connectors.createReviews"];
@@ -6533,6 +6465,86 @@ export interface paths {
          * @description Start signing in to an app for the agent that asked for it. Waits for the owner to confirm it’s them. Only the owner of this DorkOS.
          */
         post: operations["connectors.start_agent_request_sign_in"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/connectors/every-agent-grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * See what every agent inherits
+         * @description Each connected account the owner shared with every agent, at which level. A new agent gets these the moment it is created. Only the owner of this DorkOS. A page at a time, newest account first: pass `nextCursor` back as `cursor` for the next. An account given or taken away while paging can repeat or be missed.
+         */
+        get: operations["connectors.list_every_agent_grants"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/connectors/agents/{agentId}/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * See an agent’s connected accounts
+         * @description The connected accounts one agent was given, by name or as every agent, with the exact actions and whether each is ready. Only the owner of this DorkOS. A page at a time, newest account first: pass `nextCursor` back as `cursor` for the next. An account given or taken away while paging can repeat or be missed.
+         */
+        get: operations["connectors.list_agent_connections"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/connectors/sessions/{sessionId}/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * See a chat’s connected accounts
+         * @description The connected accounts one chat’s agent can use, where each comes from, and whether the owner turned it off for this chat. Only the owner of this DorkOS. A page at a time, newest account first: pass `nextCursor` back as `cursor` for the next. An account given or taken away while paging can repeat or be missed.
+         */
+        get: operations["connectors.list_session_connections"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/connectors/connections/{connectionId}/exclusions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * See agents left out of a shared account
+         * @description The agents left out of one connected account shared with every agent, newest first, a page at a time: pass `nextCursor` back as `cursor` for the next. Only the owner of this DorkOS.
+         */
+        get: operations["connectors.list_exclusions"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -9634,16 +9646,6 @@ export interface components {
             config: {
                 [key: string]: unknown;
             };
-        };
-        ConnectorGrantExclusionList: {
-            connectionId: string;
-            exclusions: components["schemas"]["ConnectorGrantExclusion"][];
-        };
-        ConnectorGrantExclusion: {
-            agentId: string;
-            displayName: string | null;
-            /** Format: date-time */
-            createdAt: string;
         };
         ConnectorAccessChangeList: {
             changes: components["schemas"]["ConnectorAccessChange"][];
@@ -13955,6 +13957,20 @@ export interface components {
             agentId: string;
             excluded: boolean;
             changed: boolean;
+        };
+        ConnectorGrantExclusionPage: components["schemas"]["ConnectorGrantExclusionList"] & {
+            /** @description Pass as `cursor` for the next page; null on the last one. */
+            nextCursor: string | null;
+        };
+        ConnectorGrantExclusion: {
+            agentId: string;
+            displayName: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ConnectorGrantExclusionList: {
+            connectionId: string;
+            exclusions: components["schemas"]["ConnectorGrantExclusion"][];
         };
         ListTodoPromisesResponse: {
             todoPromises: components["schemas"]["TodoPromise"][];
@@ -18869,37 +18885,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StepUpRequired"];
-                };
-            };
-        };
-    };
-    "connectors.listConnectionsExclusions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                connectionId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The agents left out, oldest first */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConnectorGrantExclusionList"];
-                };
-            };
-            /** @description `not_found`: no such app account here, it belongs to someone else, or no such agent */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
         };
@@ -31444,14 +31429,19 @@ export interface operations {
     };
     "connectors.listConnections": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Owner-scoped stable connection inventory */
+            /** @description One page of the owner’s connected accounts */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -31534,6 +31524,8 @@ export interface operations {
                                 };
                             };
                         }[];
+                        /** @description Pass as `cursor` for the next page; null on the last one. */
+                        nextCursor: string | null;
                     };
                 };
             };
@@ -32421,189 +32413,6 @@ export interface operations {
             };
         };
     };
-    "connectors.getAgentsConnections": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agentId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Canonical agent connection grants */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        agentId: string;
-                        connections: {
-                            connectionId: string;
-                            toolkit: string;
-                            label: string;
-                            /** @enum {string} */
-                            lifecycle: "connected" | "paused" | "disconnected";
-                            /** @enum {string} */
-                            authenticationStatus: "active" | "expired" | "revoked" | "pending";
-                            /** @enum {string} */
-                            reconciliationStatus: "ready" | "migration_needs_reconcile";
-                            operationRevisionIds: string[];
-                            everyAgent: boolean;
-                            authoritySync: {
-                                /** @enum {string} */
-                                status: "ready";
-                            } | {
-                                /** @enum {string} */
-                                status: "pending";
-                                reason?: string;
-                                /** Format: date-time */
-                                retryAt?: string;
-                            } | {
-                                /** @enum {string} */
-                                status: "failed";
-                                reason: string;
-                            };
-                            readiness: {
-                                /** @enum {string} */
-                                state: "ready" | "paused" | "needs_you" | "finishing" | "unavailable" | "gone";
-                                /** @enum {string} */
-                                reason: "usable" | "off_for_this_chat" | "dorkos_account_unlinked" | "dorkos_account_unavailable" | "own_key_unavailable" | "way_unreachable" | "own_key_cannot_run_actions" | "cannot_run_actions" | "paused" | "signing_in" | "signed_out" | "sign_in_unfinished" | "needs_review" | "access_update_failed" | "access_updating" | "disconnected" | "disconnect_finishing" | "disconnect_stuck" | "gone_at_service";
-                                fix?: {
-                                    /** @enum {string} */
-                                    action: "sign_in_again" | "connect_again" | "connect_new" | "resume" | "review_access" | "fix_key" | "retry" | "remove" | "wait" | "turn_on_for_this_chat";
-                                    /** @enum {string} */
-                                    fixableBy: "person" | "dorkos";
-                                    /** Format: date-time */
-                                    retryAt?: string;
-                                };
-                                serviceAccessPage?: {
-                                    service: string;
-                                    /** Format: uri */
-                                    url: string;
-                                };
-                                copy: {
-                                    owner: string;
-                                    agent: string;
-                                };
-                            };
-                        }[];
-                    };
-                };
-            };
-            /** @description Agent absent or owned by someone else */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    "connectors.getEveryAgentGrants": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Connections every agent can use, and at which level */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        connections: {
-                            connectionId: string;
-                            toolkit: string;
-                            label: string;
-                            /** @enum {string} */
-                            lifecycle: "connected" | "paused";
-                            access: {
-                                operationRevisionIds: string[];
-                                classifications: ("read" | "write" | "destructive")[];
-                            };
-                        }[];
-                    };
-                };
-            };
-            500: components["responses"]["InternalErrorProblem"];
-        };
-    };
-    "connectors.listSessionsConnections": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                sessionId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Canonical session connector access */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        sessionId: string;
-                        agentId: string;
-                        connections: {
-                            connectionId: string;
-                            toolkit: string;
-                            label: string;
-                            /** @enum {string} */
-                            source: "agent" | "this_chat";
-                            operationRevisionIds: string[];
-                            readiness: {
-                                /** @enum {string} */
-                                state: "ready" | "paused" | "needs_you" | "finishing" | "unavailable" | "gone";
-                                /** @enum {string} */
-                                reason: "usable" | "off_for_this_chat" | "dorkos_account_unlinked" | "dorkos_account_unavailable" | "own_key_unavailable" | "way_unreachable" | "own_key_cannot_run_actions" | "cannot_run_actions" | "paused" | "signing_in" | "signed_out" | "sign_in_unfinished" | "needs_review" | "access_update_failed" | "access_updating" | "disconnected" | "disconnect_finishing" | "disconnect_stuck" | "gone_at_service";
-                                fix?: {
-                                    /** @enum {string} */
-                                    action: "sign_in_again" | "connect_again" | "connect_new" | "resume" | "review_access" | "fix_key" | "retry" | "remove" | "wait" | "turn_on_for_this_chat";
-                                    /** @enum {string} */
-                                    fixableBy: "person" | "dorkos";
-                                    /** Format: date-time */
-                                    retryAt?: string;
-                                };
-                                serviceAccessPage?: {
-                                    service: string;
-                                    /** Format: uri */
-                                    url: string;
-                                };
-                                copy: {
-                                    owner: string;
-                                    agent: string;
-                                };
-                            };
-                            /** @enum {string} */
-                            thisChat?: "on" | "off";
-                        }[];
-                    };
-                };
-            };
-            /** @description Session absent or owned by someone else */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
     "connectors.updateSessionsConnections": {
         parameters: {
             query?: never;
@@ -32705,9 +32514,14 @@ export interface operations {
             };
         };
     };
-    "connectors.listReviews": {
+    "connectors.list_reviews": {
         parameters: {
             query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+                /** @description Only waiting (`pending`) or only answered (`resolved`) ones; both when left out. */
                 state?: "pending" | "resolved";
             };
             header?: never;
@@ -32716,7 +32530,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Owner-visible reviews */
+            /** @description See requested account changes result */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -33984,10 +33798,101 @@ export interface operations {
                                 kind: "outcome_unknown";
                             };
                         })[];
+                        /** @description Pass as `cursor` for the next page; null on the last one. */
+                        nextCursor: string | null;
                     };
                 };
             };
-            500: components["responses"]["InternalErrorProblem"];
+            /** @description A person must allow the call first; nothing ran */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilityApprovalRequired"];
+                };
+            };
+            /** @description `invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `unknown_capability`: not available on this computer; `not_found`: the thing it names */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The capability refused because of the state it met, such as `conflict` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `precondition_failed`: something changed since the caller looked */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `internal_error`: something went wrong running it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `signin_unreachable`: the remote server did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     "connectors.createReviews": {
@@ -49270,6 +49175,581 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StepUpRequired"];
+                };
+            };
+            /** @description `internal_error`: something went wrong running it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `signin_unreachable`: the remote server did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "connectors.list_every_agent_grants": {
+        parameters: {
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description See what every agent inherits result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connections: {
+                            connectionId: string;
+                            toolkit: string;
+                            label: string;
+                            /** @enum {string} */
+                            lifecycle: "connected" | "paused";
+                            access: {
+                                operationRevisionIds: string[];
+                                classifications: ("read" | "write" | "destructive")[];
+                            };
+                        }[];
+                        /** @description Pass as `cursor` for the next page; null on the last one. */
+                        nextCursor: string | null;
+                    };
+                };
+            };
+            /** @description A person must allow the call first; nothing ran */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilityApprovalRequired"];
+                };
+            };
+            /** @description `invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `unknown_capability`: not available on this computer; `not_found`: the thing it names */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The capability refused because of the state it met, such as `conflict` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `precondition_failed`: something changed since the caller looked */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `internal_error`: something went wrong running it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `signin_unreachable`: the remote server did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "connectors.list_agent_connections": {
+        parameters: {
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description The agent. */
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description See an agent’s connected accounts result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        agentId: string;
+                        connections: {
+                            connectionId: string;
+                            toolkit: string;
+                            label: string;
+                            /** @enum {string} */
+                            lifecycle: "connected" | "paused" | "disconnected";
+                            /** @enum {string} */
+                            authenticationStatus: "active" | "expired" | "revoked" | "pending";
+                            /** @enum {string} */
+                            reconciliationStatus: "ready" | "migration_needs_reconcile";
+                            operationRevisionIds: string[];
+                            everyAgent: boolean;
+                            authoritySync: {
+                                /** @enum {string} */
+                                status: "ready";
+                            } | {
+                                /** @enum {string} */
+                                status: "pending";
+                                reason?: string;
+                                /** Format: date-time */
+                                retryAt?: string;
+                            } | {
+                                /** @enum {string} */
+                                status: "failed";
+                                reason: string;
+                            };
+                            readiness: {
+                                /** @enum {string} */
+                                state: "ready" | "paused" | "needs_you" | "finishing" | "unavailable" | "gone";
+                                /** @enum {string} */
+                                reason: "usable" | "off_for_this_chat" | "dorkos_account_unlinked" | "dorkos_account_unavailable" | "own_key_unavailable" | "way_unreachable" | "own_key_cannot_run_actions" | "cannot_run_actions" | "paused" | "signing_in" | "signed_out" | "sign_in_unfinished" | "needs_review" | "access_update_failed" | "access_updating" | "disconnected" | "disconnect_finishing" | "disconnect_stuck" | "gone_at_service";
+                                fix?: {
+                                    /** @enum {string} */
+                                    action: "sign_in_again" | "connect_again" | "connect_new" | "resume" | "review_access" | "fix_key" | "retry" | "remove" | "wait" | "turn_on_for_this_chat";
+                                    /** @enum {string} */
+                                    fixableBy: "person" | "dorkos";
+                                    /** Format: date-time */
+                                    retryAt?: string;
+                                };
+                                serviceAccessPage?: {
+                                    service: string;
+                                    /** Format: uri */
+                                    url: string;
+                                };
+                                copy: {
+                                    owner: string;
+                                    agent: string;
+                                };
+                            };
+                        }[];
+                        /** @description Pass as `cursor` for the next page; null on the last one. */
+                        nextCursor: string | null;
+                    };
+                };
+            };
+            /** @description A person must allow the call first; nothing ran */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilityApprovalRequired"];
+                };
+            };
+            /** @description `invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `unknown_capability`: not available on this computer; `not_found`: the thing it names */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The capability refused because of the state it met, such as `conflict` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `precondition_failed`: something changed since the caller looked */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `internal_error`: something went wrong running it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `signin_unreachable`: the remote server did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "connectors.list_session_connections": {
+        parameters: {
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description The chat. */
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description See a chat’s connected accounts result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        sessionId: string;
+                        agentId: string;
+                        connections: {
+                            connectionId: string;
+                            toolkit: string;
+                            label: string;
+                            /** @enum {string} */
+                            source: "agent" | "this_chat";
+                            operationRevisionIds: string[];
+                            readiness: {
+                                /** @enum {string} */
+                                state: "ready" | "paused" | "needs_you" | "finishing" | "unavailable" | "gone";
+                                /** @enum {string} */
+                                reason: "usable" | "off_for_this_chat" | "dorkos_account_unlinked" | "dorkos_account_unavailable" | "own_key_unavailable" | "way_unreachable" | "own_key_cannot_run_actions" | "cannot_run_actions" | "paused" | "signing_in" | "signed_out" | "sign_in_unfinished" | "needs_review" | "access_update_failed" | "access_updating" | "disconnected" | "disconnect_finishing" | "disconnect_stuck" | "gone_at_service";
+                                fix?: {
+                                    /** @enum {string} */
+                                    action: "sign_in_again" | "connect_again" | "connect_new" | "resume" | "review_access" | "fix_key" | "retry" | "remove" | "wait" | "turn_on_for_this_chat";
+                                    /** @enum {string} */
+                                    fixableBy: "person" | "dorkos";
+                                    /** Format: date-time */
+                                    retryAt?: string;
+                                };
+                                serviceAccessPage?: {
+                                    service: string;
+                                    /** Format: uri */
+                                    url: string;
+                                };
+                                copy: {
+                                    owner: string;
+                                    agent: string;
+                                };
+                            };
+                            /** @enum {string} */
+                            thisChat?: "on" | "off";
+                        }[];
+                        /** @description Pass as `cursor` for the next page; null on the last one. */
+                        nextCursor: string | null;
+                    };
+                };
+            };
+            /** @description A person must allow the call first; nothing ran */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilityApprovalRequired"];
+                };
+            };
+            /** @description `invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `unknown_capability`: not available on this computer; `not_found`: the thing it names */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The capability refused because of the state it met, such as `conflict` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `precondition_failed`: something changed since the caller looked */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `internal_error`: something went wrong running it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `signin_unreachable`: the remote server did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "connectors.list_exclusions": {
+        parameters: {
+            query?: {
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description The connected account’s id. */
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description See agents left out of a shared account result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorGrantExclusionPage"];
+                };
+            };
+            /** @description A person must allow the call first; nothing ran */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilityApprovalRequired"];
+                };
+            };
+            /** @description `invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `unknown_capability`: not available on this computer; `not_found`: the thing it names */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The capability refused because of the state it met, such as `conflict` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `precondition_failed`: something changed since the caller looked */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description `internal_error`: something went wrong running it */
