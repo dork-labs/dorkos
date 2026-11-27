@@ -3,6 +3,7 @@ covers:
   - 'feat(api): GET /api/events is a person’s stream, with rights asked as each frame goes out (DOR-4986)'
   - 'feat(api): the person bar accepts a page at a DORKOS_TRUSTED_HOSTS name, read only from the server’s own environment (DOR-4986)'
   - 'fix(cli): the project .env file can’t change how DorkOS runs (DOR-4986)'
+  - 'fix(cli): the project .env file can’t change how DorkOS runs, Node’s own settings included (DOR-4986)'
 ---
 
 ### Changed

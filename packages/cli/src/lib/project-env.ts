@@ -52,6 +52,9 @@ export const DORKOS_READS_UNPREFIXED: ReadonlySet<string> = new Set([
   'LOCALAPPDATA',
   'PROGRAMFILES',
   'PROGRAMFILES(X86)',
+  // Node's own: they change what code every node process DorkOS starts loads.
+  'NODE_OPTIONS',
+  'NODE_PATH',
 ]);
 
 /**

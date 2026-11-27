@@ -26,6 +26,7 @@ describe('loadProjectEnv', () => {
     ['TUNNEL_ENABLED and NGROK_AUTHTOKEN', 'TUNNEL_ENABLED=true\nNGROK_AUTHTOKEN=fixture-token\n'],
     ['MCP_API_KEY', 'MCP_API_KEY=fixture-key\n'],
     ['DORKOS_TRUSTED_HOSTS', 'DORKOS_TRUSTED_HOSTS=fixture.example\n'],
+    ['NODE_OPTIONS and NODE_PATH', 'NODE_OPTIONS=--require=/fixture.js\nNODE_PATH=/fixture\n'],
   ])('leaves %s unset, and names it once without its value', (_name, body) => {
     const target: NodeJS.ProcessEnv = {};
     const warn = vi.fn();
