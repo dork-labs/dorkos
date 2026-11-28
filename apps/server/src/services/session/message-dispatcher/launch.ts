@@ -58,6 +58,7 @@ import { logger } from '../../../lib/logger.js';
 import type { PausedAgentRef } from '../../mesh/pause/agent-pause.js';
 import type { DispatchPlan, InFlightTurn } from './types.js';
 import { joinWaitingChatRows } from './join-chat-rows.js';
+import { withRunTurn } from './turn-deps.js';
 import { isOwnersCleanSend } from './owner-send.js';
 import { withKeptCeiling } from './carried-limits.js';
 import { feedRun, launchVerdictOf } from './run-feed.js';
@@ -376,7 +377,8 @@ export function launchDispatchInner(
         turn.onTurnStart?.(seq);
       },
       projector: plan.projector,
-      deps: buildTurnDeps(plan.runtime),
+      // A turn-port run's watchers hear its events; a task's turn carries its level.
+      deps: withRunTurn(buildTurnDeps(plan.runtime), plan.runId, turn.taskTurn),
       queueWaitMs: remainingMs,
       // A fresh id after a pause cut this row's turn; the row keeps its own (DOR-4353).
       messageId: runtimeMessageIdFor(messageId),

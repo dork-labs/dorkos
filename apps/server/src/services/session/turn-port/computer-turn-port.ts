@@ -43,6 +43,7 @@ import {
   type TurnOrigin,
 } from '@dorkos/shared/turn-port';
 import { EXTENSION_CLIENT_PREFIX } from '@dorkos/shared/extension-id';
+import type { PermissionModeId } from '@dorkos/shared/schemas';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import {
   dispatchSessionMessage,
@@ -56,6 +57,7 @@ import { cancelQueuedMessage } from '../queued-message-edits.js';
 import { launching, pending } from '../message-dispatcher/state.js';
 import { queueKeyOf } from '../resolution/session-key-registry.js';
 import { isRunHeld, turnFacts } from './facts.js';
+import { stopRunTurn } from './run-events.js';
 import type { ComputerTurnPort } from './computer-face.js';
 
 /** What the computer face needs at startup. */
@@ -126,6 +128,10 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
       return true;
     },
     removeQueued: (sessionId, runId) => cancelQueuedMessage(sessionId, runId) !== undefined,
+    async stop(runId) {
+      // Only this run's own turn: the queue and any other run are left alone (§3.6).
+      return stopRunTurn(runId);
+    },
     async start(input) {
       const request = TurnStartRequestSchema.parse(input);
       if (holds(request.runId)) return { refused: 'already_held' };
@@ -133,14 +139,12 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
       const live = turnFacts()?.dispatcher.liveRunOf(queueKeyOf(request.sessionId));
       const chatBusy = live !== undefined && live !== request.runId;
       if (!composer && chatBusy) return { refused: 'chat_busy' };
-      if (
-        request.prepare ||
-        request.systemPromptAppend !== undefined ||
-        request.additionalDirectories ||
-        request.settings
-      ) {
+      if (request.prepare || request.additionalDirectories) {
         // Each arrives with the caller that first sets it (rooms, T10).
         throw new Error('This computer face does not take launch options yet');
+      }
+      if (request.task && request.origin.kind !== 'schedule') {
+        throw new Error('Only a schedule’s run carries a task’s level');
       }
       let agentPath: string | undefined;
       if (request.agentId !== undefined) {
@@ -172,6 +176,24 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
         ...(request.permissionCeiling !== undefined
           ? { permissionCeiling: request.permissionCeiling }
           : {}),
+        ...(request.unattended ? { unattended: true } : {}),
+        ...(request.carriedMarks ? { carriedMarks: request.carriedMarks } : {}),
+        turnOptions: {
+          ...(request.systemPromptAppend !== undefined
+            ? { systemPromptAppend: request.systemPromptAppend }
+            : {}),
+          ...(request.settings ? { settings: request.settings } : {}),
+          ...(request.task
+            ? {
+                taskTurn: {
+                  permissionMode: request.task.permissionMode as PermissionModeId,
+                  ...(request.task.approvedAllow
+                    ? { approvedAllow: request.task.approvedAllow }
+                    : {}),
+                },
+              }
+            : {}),
+        },
       }).finally(() => inFlight.delete(request.runId));
       if (result === 'runtime_mismatch') return { refused: 'runtime_mismatch' };
       if (isSessionLaunchRefusal(result)) {

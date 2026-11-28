@@ -49,6 +49,7 @@ import { SessionLaunchWarningSchema } from './session-launch-schemas.js';
 import {
   BackgroundTaskTypeSchema,
   InterruptReceiptSchema,
+  PermissionModeIdSchema,
   SEED_CONTEXT_MAX_LENGTH,
   SessionSettingsSchema,
 } from './schemas.js';
@@ -438,6 +439,18 @@ const TurnSettingsSchema = z.strictObject({
 });
 
 /**
+ * What a scheduled task's turn carries of its own (T12): the level its schedule
+ * stores (`pulse_schedules.permission_mode`), which the turn runs at whatever
+ * its chat holds, as a task's run always has; and the rules a person approved
+ * for this task alone (`MessageOpts.taskApprovedAllow`). Only a schedule's run
+ * sets it; the computer face refuses it on any other origin.
+ */
+const TaskTurnSchema = z.strictObject({
+  permissionMode: PermissionModeIdSchema,
+  approvedAllow: z.array(z.string().min(1)).readonly().optional(),
+});
+
+/**
  * Compile-time proof that the option schemas above carry the runtime's own
  * types, in both directions: what a schema parses can be handed to a runtime,
  * and what a caller holds today can be parsed. Never evaluated.
@@ -539,6 +552,16 @@ const callerTurnFields = {
    * rides the neutral context bag, never `content`, and is never drawn.
    */
   seedContext: z.string().min(1).max(SEED_CONTEXT_MAX_LENGTH).optional(),
+  /**
+   * Nobody is watching this turn (a schedule's timer fire): an approval card
+   * does not hold it, and an ask raised in it is refused at once. Per turn,
+   * never stored on the chat.
+   */
+  unattended: z.literal(true).optional(),
+  /** A mark the turn carries from what started it (`MessageOpts.carriedMarks`). */
+  carriedMarks: z.strictObject({ outsider: z.literal(true) }).optional(),
+  /** A scheduled task's own level and approved rules. See {@link TaskTurnSchema}. */
+  task: TaskTurnSchema.optional(),
 };
 
 // === Space face ===
