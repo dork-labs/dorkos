@@ -497,6 +497,21 @@ export class MessageQueueStore {
   }
 
   /**
+   * Every row a turn kept ({@link markInTurn}), across every chat: what
+   * recovery looks over for a row a gone boot's turn left behind (spec
+   * `turns-survive-restarts` §7.3, step 4). Few at any time: a row is kept only
+   * between a turn's start and the runtime's first event.
+   */
+  keptRowIds(): string[] {
+    return this.db
+      .select({ id: sessionMessageQueue.id })
+      .from(sessionMessageQueue)
+      .where(eq(sessionMessageQueue.state, 'in_turn'))
+      .all()
+      .map((row) => row.id);
+  }
+
+  /**
    * DorkOS restarted before the runtime read this row's words: the row the
    * turn kept ({@link markInTurn}) becomes a restored draft
    * ({@link QueuedMessageRecord.restored}), out of line for good (spec

@@ -49,21 +49,23 @@ export function dropKeptRow(chatKey: string, queueMessageId: string): boolean {
   return removed;
 }
 
+/** Every row a turn kept (`in_turn`), across every chat, by id. */
+export function keptRowIds(): string[] {
+  return getMessageQueueStore()?.keptRowIds() ?? [];
+}
+
 /**
  * Tell a message's sender its turn ended without an answer, as the
  * dispatcher's own settle tells it: another chat's message reads as failed
  * in that chat's sends. Told after the write that decided it has committed.
+ * The report into the sending chat is the space side's (`reportLost`, §7.3).
  *
  * @param chatKey - The chat the message was sent to, by any id it answers to.
  * @param messageId - The message: its queue row's id.
  */
 export function tellSenderTurnLost(chatKey: string, messageId: string): void {
+  const sessionId = queueKeyOf(chatKey);
   queueMicrotask(() =>
-    emitLifecycle({
-      phase: 'settled',
-      messageId,
-      sessionId: queueKeyOf(chatKey),
-      outcome: 'failed',
-    })
+    emitLifecycle({ phase: 'settled', messageId, sessionId, outcome: 'failed' })
   );
 }

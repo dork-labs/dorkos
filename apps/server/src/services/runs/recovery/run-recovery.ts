@@ -80,6 +80,8 @@ export interface RecoveryChatSeams {
   tellSender: (chatKey: string, queueMessageId: string) => void;
   /** The launch gate no longer holds the chat: its queue may move. */
   wake: (chatKey: string) => void;
+  /** Every queue row a turn kept (`in_turn`), across every chat, by id. */
+  keptRowIds: () => string[];
 }
 
 /** What recovery needs. */
@@ -105,6 +107,12 @@ export interface RunRecoveryDeps {
   ceilingOf?: (sessionId: string) => TurnPermissionCeiling | undefined;
   /** The folder a chat runs in, where its continuation runs. */
   cwdOf?: (sessionId: string) => string | undefined;
+  /**
+   * Report into each chat that sent a lost message, through the report path
+   * (§7.3, step 4; `reportLostChatMessage`): the composition root hands it in,
+   * since that path is the space side's.
+   */
+  reportLost?: (chatKey: string, queueMessageId: string) => void;
 }
 
 /** What the boot found beside the record (§7.3, step 2). */
@@ -186,6 +194,31 @@ export class RunRecovery {
       this.decide(run.id);
     }
     if (this.waiting.length > 0) this.planLostWork();
+    this.handBackKeptRows();
+  }
+
+  /**
+   * A row a turn kept (`in_turn`) whose run ended from `started` without any
+   * decision of recovery's: a gone boot's turn whose `turn_end` was seen, then
+   * retired before recovery looked (§7.3, step 4, the recorded-ending case).
+   * Its settle would have let the words go; it never came, so the row is
+   * handed back here as any `started` run's is, each in its own transaction.
+   */
+  private handBackKeptRows(): void {
+    const { store } = this.deps;
+    for (const rowId of this.deps.chat.keptRowIds()) {
+      const run = store.findByQueueMessage(rowId);
+      const over = run?.status === 'ended' || run?.status === 'settled';
+      if (!run || !over || isUndecided(run) || run.endingDetail.delivery !== 'unknown') continue;
+      try {
+        store.transaction(() => this.handBackRow(run, pastAgeBound(run, this.deps.now())));
+      } catch (err) {
+        logger.error('[runs] recovery could not hand back a kept row', {
+          runId: run.id,
+          ...errorOf(err),
+        });
+      }
+    }
   }
 
   /**
@@ -261,10 +294,11 @@ export class RunRecovery {
       const sawEnd = run.ending !== null && run.ending !== 'shutdown';
       store.endTurn(run, 'process_died', {}, sawEnd ? null : run.leaseUntil);
       const ended = store.get(runId)!;
-      // Its turn ended before the kill (§4.7): as its settle would have.
+      // Its turn ended before the kill (§4.7), as its settle would have; a
+      // row it kept is handed back as any `started` run's is.
       if (sawEnd) {
-        if (ended.endingDetail.delivery === 'unknown' && ended.queueMessageId !== null) {
-          this.deps.chat.dropRow(ended.sessionId, ended.queueMessageId);
+        if (ended.endingDetail.delivery === 'unknown') {
+          this.handBackRow(ended, pastAgeBound(ended, this.deps.now()));
         }
         return;
       }
@@ -303,24 +337,35 @@ export class RunRecovery {
    * replayed (§6.2), handed back to whoever wrote them (§7.3, step 4).
    */
   private handBackWords(run: TurnRun, stale: boolean, now: number): void {
-    const { effects, port, chat } = this.deps;
-    const rowId = run.queueMessageId;
-    if (rowId !== null) {
-      // An earlier build's row has no origin: kept as a draft, never lost.
-      if (run.origin === null || personTyped(run.origin)) {
-        chat.restoreDraft(run.sessionId, rowId);
-      } else {
-        chat.dropRow(run.sessionId, rowId);
-        // A chat's message reads as failed in its sender's sends; a mini
-        // app's message hears its run end through its own watch.
-        if (run.origin.kind === 'chat-message' && !stale) chat.tellSender(run.sessionId, rowId);
-      }
-    }
+    const { effects, port } = this.deps;
+    this.handBackRow(run, stale);
     if (run.origin?.kind === 'extension-start') {
       const app = port.appOf(run);
       if (app) effects.insert(workNotStartedNotice(run, app, now, 'restarted'));
       port.forgetWords(run);
     }
+  }
+
+  /**
+   * The queue row a `started` run kept, if it still holds it: a person's
+   * words come back as a restored draft, however old; another sender's row
+   * goes. Another chat gets its report (within the age bound: a report into a
+   * chat is a wake); a mini app's message hears its run end through its own
+   * watch.
+   */
+  private handBackRow(run: TurnRun, stale: boolean): void {
+    const { chat } = this.deps;
+    const rowId = run.queueMessageId;
+    if (rowId === null) return;
+    // An earlier build's row has no origin: kept as a draft, never lost.
+    if (run.origin === null || personTyped(run.origin)) {
+      chat.restoreDraft(run.sessionId, rowId);
+      return;
+    }
+    chat.dropRow(run.sessionId, rowId);
+    if (run.origin.kind !== 'chat-message' || stale) return;
+    chat.tellSender(run.sessionId, rowId);
+    this.deps.reportLost?.(run.sessionId, rowId);
   }
 
   /** The background work that died with a run's chat, from the boot's records. */

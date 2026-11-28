@@ -37,7 +37,7 @@ export {
 export { queueKeyOf as chatKeyOf } from '../resolution/session-key-registry.js';
 export { isAgentLaunchCapFull } from '../launch/launch-cap.js';
 export { setLaunchGate, wakeChat, type LaunchGate } from './launch-gate.js';
-export { dropKeptRow, restoreDraftRow, tellSenderTurnLost } from './restart-rows.js';
+export { dropKeptRow, keptRowIds, restoreDraftRow, tellSenderTurnLost } from './restart-rows.js';
 export {
   wakeCutShortChat as wakeChatForLostWork,
   type WakeOutcome,

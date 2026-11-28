@@ -31,6 +31,7 @@ import {
   setQueuedChatCeilingResolver,
 } from '../../session/message-dispatcher.js';
 import { onDispatchLifecycle } from '../../session/message-dispatcher/state.js';
+import { reportLostChatMessage } from '../../session/chat-messages/chat-message-current.js';
 import {
   getMessageQueueStore,
   MessageQueueStore,
@@ -217,6 +218,7 @@ export function boot(
       capabilitiesOf: (type) =>
         runtimeRegistry.has(type) ? runtimeRegistry.get(type).getCapabilities() : undefined,
       cwdOf: () => AGENT.home,
+      reportLost: reportLostChatMessage,
       ...opts.recovery,
     },
   });

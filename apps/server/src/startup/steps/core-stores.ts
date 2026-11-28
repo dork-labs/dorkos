@@ -32,6 +32,7 @@ import {
 import { installTurnContextStore } from '../../services/session/turn-context/index.js';
 import { installWorkLinkStore } from '../../services/work-graph/index.js';
 import { installRunRecord } from '../../services/runs/index.js';
+import { reportLostChatMessage } from '../../services/session/chat-messages/chat-message-current.js';
 import { knownChatCwd } from '../../services/core/runtime-seam/live-runtime-cwd.js';
 import { resolveAgentIdForPath } from '../../services/mesh/agent-path-lookup.js';
 import { ulid } from 'ulidx';
@@ -201,6 +202,7 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
         runtimeRegistry.has(type) ? runtimeRegistry.get(type).getCapabilities() : undefined,
       ceilingOf: (sessionId) => ceilingForContinuation(sessionId).permissionCeiling,
       cwdOf: (sessionId) => knownChatCwd(db, sessionId),
+      reportLost: reportLostChatMessage,
     },
     handlers: {
       placeOf: (sessionId) => {

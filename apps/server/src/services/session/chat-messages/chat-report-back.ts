@@ -77,7 +77,7 @@ import type { HistoryMessage } from '@dorkos/shared/types';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import { logError, logger } from '../../../lib/logger.js';
 import { mergeMarks, NO_MARKS, type TurnMarks } from '../../core/turn-power/turn-marks.js';
-import type { ChatCaller, ChatMessageService } from './chat-message-service.js';
+import type { ChatMessageService } from './chat-message-service.js';
 import type { ChatMessageStore } from './chat-message-store.js';
 import type { HandoffOutboxStore } from '../../rooms/handoff/outbox/handoff-outbox-store.js';
 import { lastTurnText } from './report-back/report-text.js';
@@ -85,11 +85,13 @@ import { reasonOf } from './report-back/report-reason.js';
 import type { NotificationStoredWitness } from '../../notifications/notification-store.js';
 import { DurableReportBack } from './report-back/durable-report-back.js';
 import {
+  LOST_MESSAGE,
   SUMMARY,
   composeReport,
   type ReportNotice,
   type ReportReason,
 } from './report-back/report-words.js';
+import { deliverReport } from './report-back/deliver-report.js';
 
 export { lastTurnText } from './report-back/report-text.js';
 export { reasonOf } from './report-back/report-reason.js';
@@ -465,6 +467,42 @@ export class ChatReportBack {
       );
   }
 
+  /**
+   * A message another chat sent here was lost to a restart before this chat
+   * read it (spec `turns-survive-restarts` §7.3, step 4): its sender gets one
+   * report, through the same delivery and retry path. Saved to the outbox when
+   * the sender is this chat's parent, the one relation the outbox holds; sent
+   * live to any other sender.
+   *
+   * @param sessionId - The chat the message was sent to.
+   * @param senderSessionId - The chat that sent it.
+   * @param messageId - The message, by its queue row's id: the saved report's key.
+   */
+  async onMessageLost(
+    sessionId: string,
+    senderSessionId: string,
+    messageId: string
+  ): Promise<void> {
+    if (this.stopped) return;
+    const target = { parentSessionId: senderSessionId };
+    const marks = this.marksOfTurn(sessionId);
+    const parent = this.deps.reportTargetOf(sessionId)?.parentSessionId === senderSessionId;
+    const job = parent
+      ? this.durable.save(
+          sessionId,
+          target,
+          'failed',
+          marks,
+          {},
+          'startup',
+          LOST_MESSAGE,
+          `lost:${messageId}`
+        )
+      : undefined;
+    if (job && job.state !== 'collecting') return;
+    await this.report(sessionId, target, 'failed', marks, '', LOST_MESSAGE, job?.id, true);
+  }
+
   /** The marks the chat's latest turn carries. */
   private marksOfTurn(sessionId: string): TurnMarks {
     return this.deps.marksOfTurn?.(sessionId) ?? NO_MARKS;
@@ -621,6 +659,7 @@ export class ChatReportBack {
    * Send one report, from the spin-off to its parent, trying again when it
    * cannot be delivered. Never throws. Every try carries the marks read when the
    * turn ended: the chat's next turn may have none, and these words are still marked.
+   * `toTarget` keeps every try on `target` rather than reading the chat's parent afresh.
    */
   private async report(
     sessionId: string,
@@ -629,7 +668,8 @@ export class ChatReportBack {
     marks: TurnMarks,
     text: string,
     detail?: string,
-    jobId?: string
+    jobId?: string,
+    toTarget = false
   ): Promise<void> {
     if (this.stopped) return;
     const message = composeReport(reason, text, detail);
@@ -645,9 +685,17 @@ export class ChatReportBack {
     }
     for (let attempt = 0; !this.stopped; attempt += 1) {
       // Read afresh: a parent carried to another account while this waited gets it there.
-      const parent = (this.deps.reportTargetOf(sessionId) ?? target).parentSessionId;
+      const parent = (toTarget ? target : (this.deps.reportTargetOf(sessionId) ?? target))
+        .parentSessionId;
       try {
-        await this.deliver(sessionId, parent, reason, marks, message);
+        await deliverReport(this.deps, {
+          sessionId,
+          parent,
+          reason,
+          marks,
+          message,
+          outsideWords: this.durable.fallbackOutsideWords(),
+        });
         return;
       } catch (err) {
         const wait = DELIVERY_RETRY_MS[attempt];
@@ -673,43 +721,5 @@ export class ChatReportBack {
         await this.delay(wait);
       }
     }
-  }
-
-  /** One try at a report. Throws when it did not land. */
-  private async deliver(
-    sessionId: string,
-    parent: string,
-    reason: ReportNotice,
-    marks: TurnMarks,
-    message: string
-  ): Promise<void> {
-    const agentPath = await this.deps.agentPathOf(sessionId).catch(() => null);
-    if (!agentPath) throw new Error('The chat has no agent home to report as.');
-    // A room's seat gets the report as a turn of its own, never through chat_send's seat path,
-    // which leaves a note in the room and is refused in a bridged room (DOR-4472).
-    const toSeat = this.deps.toRoomSeat;
-    if (
-      toSeat &&
-      (await toSeat(parent, {
-        fromSessionId: sessionId,
-        fromAgentPath: agentPath,
-        text: message,
-        marks,
-        ...(this.durable.fallbackOutsideWords() ? { outsideWords: true } : {}),
-      }))
-    ) {
-      return;
-    }
-    const caller: ChatCaller = {
-      sessionId,
-      agentPath,
-      marksAtTurnEnd: marks,
-      ...(this.durable.fallbackOutsideWords() ? { outsideWordsAtTurnEnd: true } : {}),
-    };
-    await this.deps.service.send(
-      caller,
-      { to: parent, message, summary: SUMMARY[reason] },
-      'report'
-    );
   }
 }

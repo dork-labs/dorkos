@@ -19,6 +19,7 @@ import {
   isAgentLaunchCapFull,
   isRunHeld,
   dropKeptRow,
+  keptRowIds,
   queueRowExists,
   restoreDraftRow,
   setLaunchGate,
@@ -122,7 +123,7 @@ export interface RunRecordOptions {
   /** What recovery reads of runtimes and chats (§7.2, §7.3); startup passes the registry's answers. */
   recovery?: Pick<
     RunRecoveryDeps,
-    'capabilitiesOf' | 'runtimeOf' | 'settledElsewhere' | 'ceilingOf' | 'cwdOf'
+    'capabilitiesOf' | 'runtimeOf' | 'settledElsewhere' | 'ceilingOf' | 'cwdOf' | 'reportLost'
   >;
 }
 
@@ -198,6 +199,7 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
       dropRow: dropKeptRow,
       tellSender: tellSenderTurnLost,
       wake: wakeChat,
+      keptRowIds,
     },
     ...recoveryDeps,
   });

@@ -5,7 +5,8 @@
  * recovers before its worker's first pass, over the real dispatcher, launch
  * path, queue and notification pipeline (`restart-harness.ts`). The launch
  * gate, the pump change and F8 are `restart-matrix-gate.test.ts`; the
- * lost-work wake (K13) is `restart-matrix-lost-work.test.ts`.
+ * lost-work wake (K13) is `restart-matrix-lost-work.test.ts`; another chat's
+ * words and the report its sender gets (K3) are `restart-matrix-senders.test.ts`.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eq, notifications, turnEffects } from '@dorkos/db';
@@ -121,26 +122,6 @@ describe('K3: killed after turn_start, before the runtime read the words', () =>
     // The draft carries its own line; the run shows none and tells no inbox.
     expect(lineOf(h.sessionId)).toBeNull();
     expect(rows('turn.restarted')).toEqual([]);
-  });
-
-  it('another chat’s words are taken away and that chat hears its message failed', async () => {
-    const dying = deadBoot();
-    const run = startedRun(dying.store, {
-      row: 'a message from another chat',
-      origin: { kind: 'chat-message' },
-    });
-    kill();
-    boot();
-    await pass();
-    expect(getMessageQueueStore()!.get(run.queueMessageId!)).toBeUndefined();
-    expect(h.lifecycle).toContainEqual(
-      expect.objectContaining({
-        phase: 'settled',
-        messageId: run.queueMessageId,
-        outcome: 'failed',
-      })
-    );
-    expect(h.answered).toEqual([]);
   });
 
   it('a mini app’s start tells its owner once and lets its prompt go', async () => {

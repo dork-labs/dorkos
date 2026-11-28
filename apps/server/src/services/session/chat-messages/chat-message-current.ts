@@ -7,6 +7,7 @@
 import type { ChatReportBack } from './chat-report-back.js';
 import type { RoomSeatReports } from '../../rooms/handoff/seat-report.js';
 import type { ChatMessageService } from './chat-message-service.js';
+import { getChatMessageStore } from './chat-message-store.js';
 
 let current: ChatMessageService | undefined;
 
@@ -132,6 +133,26 @@ export function setChatReportBack(value: ChatReportBack | undefined): void {
 /** Resume waiting reports and pending notices owned by the current service. */
 export async function recoverChatReports(): Promise<void> {
   await reportBack?.recoverPending();
+}
+/**
+ * Report to every chat that sent the message in a queue row that it was lost
+ * to a restart before the chat it was sent to read it (spec
+ * `turns-survive-restarts` §7.3, step 4): one report each, through the report
+ * path, after the write that decided it has committed. Never rejects: a
+ * report that cannot go is the report path's to retry and tell.
+ *
+ * @param sessionId - The chat the message was sent to.
+ * @param messageId - The message, by its queue row's id.
+ */
+export function reportLostChatMessage(sessionId: string, messageId: string): void {
+  const senders = new Set(
+    (getChatMessageStore()?.listByQueueMessage(messageId) ?? []).map((row) => row.fromSessionId)
+  );
+  queueMicrotask(() => {
+    for (const sender of senders) {
+      void reportBack?.onMessageLost(sessionId, sender, messageId).catch(() => undefined);
+    }
+  });
 }
 /** Stop report workers before their database and runtime services close. */
 export function stopChatReports(): void {

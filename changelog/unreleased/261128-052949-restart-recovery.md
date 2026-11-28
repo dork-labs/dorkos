@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(runs): after a restart, each cut reply is decided once, and nothing jumps ahead of it (DOR-5234)'
+  - 'feat(runs): a chat whose message a restart lost hears it in a report, and no kept row stays hidden (DOR-5234)'
 ---
 
 ### Added
