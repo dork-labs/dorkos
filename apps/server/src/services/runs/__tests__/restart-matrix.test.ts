@@ -195,6 +195,41 @@ describe('K4, K5, K6: killed while running', () => {
     expect(continuationsOf(run.id)).toEqual([]);
   });
 
+  const startOfContinuation = (deadId: string) => {
+    const [continuation] = continuationsOf(deadId);
+    return h.record!.effects.byKey(`start:${continuation!.id}:${continuation!.attempt}`)?.payload;
+  };
+
+  it('a continuation carries its caller’s own start, never more trust', async () => {
+    const dying = deadBoot();
+    const run = runningRun(dying.store, { origin: { kind: 'chat-message' } });
+    dying.effects.insert({
+      kind: 'start_turn',
+      key: `start:${run.id}:${run.attempt}`,
+      runId: run.id,
+      payload: { tier: 'teammate', carriedMarks: { outsider: true }, unattended: true },
+      delivery: 'repeatable',
+      notAfter: null,
+    });
+    kill();
+    boot();
+    await pass();
+    expect(startOfContinuation(run.id)).toMatchObject({
+      tier: 'teammate',
+      carriedMarks: { outsider: true },
+      unattended: true,
+    });
+  });
+
+  it('a continuation of words the person did not type, whose start was never saved, is marked outsider', async () => {
+    const dying = deadBoot();
+    const run = runningRun(dying.store, { origin: { kind: 'chat-message' } });
+    kill();
+    boot();
+    await pass();
+    expect(startOfContinuation(run.id)).toMatchObject({ carriedMarks: { outsider: true } });
+  });
+
   it('K5: a runtime that cannot continue: nothing continues, and the line says so', async () => {
     h.declares.continuesInterruptedTurn = false;
     const run = runningRun(deadBoot().store);

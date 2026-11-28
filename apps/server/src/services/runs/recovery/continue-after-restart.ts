@@ -20,10 +20,11 @@
  */
 import { z } from 'zod';
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import { personTyped } from '@dorkos/shared/turn-port';
 import { RUNS } from '../../../config/constants.js';
 import type { EffectStore, NewEffect } from '../effects/effect-store.js';
 import type { EffectHandler } from '../effects/worker.js';
-import type { StartPayload } from '../effects/start-payload.js';
+import { StartPayloadSchema, type StartPayload } from '../effects/start-payload.js';
 import type { RunStore, TurnRun, LostBackgroundWork } from '../run-store.js';
 import type { WordSource } from '../turn-port.js';
 
@@ -94,6 +95,28 @@ export interface ContinueAfterRestartDeps {
 }
 
 /**
+ * The turn options a continuation carries: the dead run's own start, as its
+ * caller saved them, so a continuation never has more trust than the turn it
+ * continues (its tier, ceiling, outsider mark and unattended flag). A start
+ * that was never saved (a caller not yet on the port) gives the outsider mark
+ * to any turn the person did not type. Where its words wait and what prepares
+ * them are the continuation's own.
+ *
+ * @param dead - The run it continues.
+ * @param effects - The outbox, where the dead run's start was saved.
+ */
+export function carriedStartOf(dead: TurnRun, effects: EffectStore): StartPayload {
+  const saved = effects.byKey(`start:${dead.id}:${dead.attempt}`);
+  const parsed = saved ? StartPayloadSchema.safeParse(saved.payload) : undefined;
+  if (parsed?.success) {
+    const { prepare: _prepare, seedContext: _seedContext, ...carried } = parsed.data;
+    return carried;
+  }
+  if (dead.origin !== null && personTyped(dead.origin)) return { tier: 'owner' };
+  return { tier: 'owner', carriedMarks: { outsider: true } };
+}
+
+/**
  * The handler: make the continuation and its `start_turn`, and mark the
  * effect done, in one transaction.
  *
@@ -126,10 +149,13 @@ export function continueAfterRestartHandler(deps: ContinueAfterRestartDeps): Eff
           notAfter: ctx.now() + RUNS.RESTART_FOLLOW_UP_MS,
           ...(dead.agentId !== null ? { agentId: dead.agentId } : {}),
         });
+        const carried = carriedStartOf(dead, effects);
         const payload: StartPayload = {
-          tier: 'owner',
-          ...(cwd !== undefined ? { cwd } : {}),
-          ...(ceiling !== undefined ? { permissionCeiling: ceiling } : {}),
+          ...carried,
+          ...(carried.cwd === undefined && cwd !== undefined ? { cwd } : {}),
+          ...(carried.permissionCeiling === undefined && ceiling !== undefined
+            ? { permissionCeiling: ceiling }
+            : {}),
           ...(dead.runtime !== null ? { runtime: dead.runtime } : {}),
         };
         effects.insert({
