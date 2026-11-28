@@ -196,7 +196,9 @@ export function chatMessageWords(store: ChatMessageStore): {
 /**
  * Take back the chat messages still waiting for a slot in a chat that was
  * just stopped, as a stop drops the messages other chats queued there: their
- * runs are cancelled, and each receipt fails with the reason.
+ * runs are cancelled, and each receipt fails with the reason. Newest first, so
+ * in a new direct chat that waits to open, the messages that joined it are
+ * taken back as stopped before its first is (DOR-5512).
  *
  * @param turns - The port.
  * @param store - The chat-message store.
@@ -213,7 +215,7 @@ export function withdrawWaitingChatMessages(
   const port = turns?.port();
   if (!port) return [];
   const failed: ChatMessageRow[] = [];
-  for (const run of port.list(chatId)) {
+  for (const run of port.list(chatId).reverse()) {
     if (!waitsWithoutRow(run) || !port.withdraw(run.id, 'stopped')) continue;
     for (const row of store.listByQueueMessage(run.id)) {
       const updated = store.update(row.id, { status: 'failed', failureReason: reason });

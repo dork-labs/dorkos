@@ -178,8 +178,7 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
     ...storeOpts,
     // A run with nothing to follow it settles on the worker's next pass.
     onEnded: () => effects.announceWork(),
-    // Its `start_turn` settles, goes back to `pending`, or wakes the waiting.
-    // Read at call time: nothing moves a run before the record is built.
+    // Its `start_turn` settles, goes back to `pending`, or wakes the waiting (read at call time).
     onMoved: (run, from) => {
       scheduleCap.onRunMoved(run, from);
       webChatCap.onRunMoved(run, from);
@@ -197,6 +196,7 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
     }),
     scheduleFull: () => scheduleCap.full(),
     webChatsFull: () => webChatCap.full(),
+    opensChat: (runId: string) => starts.opensChat(runId),
   };
   const admitRun = admission?.admit ?? admit;
   const port: SpaceTurnPort = new SpaceTurnPort({

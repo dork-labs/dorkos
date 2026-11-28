@@ -40,6 +40,7 @@ import { requestOf } from './effects/handlers/start-turn.js';
 import { StartPayloadSchema } from './effects/start-payload.js';
 import type { StartTurns } from './effects/start-turns.js';
 import type { RunStore, TurnRun } from './run-store.js';
+import { chatRunsOf } from './run-view.js';
 import type { SpaceTurnPort } from './turn-port.js';
 
 /**
@@ -87,11 +88,14 @@ export async function handOverNow(
     if (reason !== undefined) deps.starts.waiting(runId, reason);
     toWorker(deps, runId);
     const view = deps.runs.get(runId);
+    // Its place as the chat's stream shows it (§4.6): behind the chat's keyed
+    // starts, and behind a new direct chat's messages sent before it (DOR-5512).
+    const shown = chatRunsOf(deps.runs, deps.effects, run.sessionId).find((r) => r.id === runId);
     return {
       kind: 'waiting',
       runId,
       ...(view?.waitReason ? { waitReason: view.waitReason } : {}),
-      queuePosition: saved.queuePosition,
+      queuePosition: shown?.queuePosition ?? saved.queuePosition,
     };
   };
   const start = StartPayloadSchema.parse(deps.effects.openStartOf(runId)?.payload);

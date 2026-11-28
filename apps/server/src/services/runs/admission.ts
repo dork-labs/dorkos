@@ -39,6 +39,13 @@
  *    `WEB_NEW_CHATS_MAX` such chats have a turn going, and is woken when one
  *    lets go (`web-chat-cap.ts`, T6); the relay no longer refuses it.
  *
+ * 7. **A new direct chat not open yet.** A chat message that joined a new
+ *    direct chat whose first message has not started waits behind that
+ *    message, with its reason (DOR-5512): the chat is born when the first
+ *    starts, so nothing may start in it before. It is woken when the first
+ *    starts, and goes with it when it never does (`start-turns.ts`). Checked
+ *    right after the pause, so a joined message never takes a slot of its own.
+ *
  * The rest have a slot and no rule yet: an agent busy in another room (T10,
  * rooms' own callers), the memory budget (DOR-5192), a playbook (DOR-5187,
  * absent rather than `null` on the port).
@@ -81,6 +88,37 @@ export interface AdmissionDeps {
   scheduleFull?: () => boolean;
   /** Whether every slot for a chat started from the web is taken (`web-chat-cap.ts`). */
   webChatsFull?: () => boolean;
+  /** Whether a run's start opens a new direct chat (its `start_turn` carries `newDirectChat`). */
+  opensChat?: (runId: string) => boolean;
+}
+
+/** A run that has not started yet: waiting, or its launch under way. */
+const NOT_STARTED: ReadonlySet<TurnRun['status']> = new Set(['queued', 'starting']);
+
+/**
+ * The first message of a chat message's new direct chat, while it has not
+ * started: what a message that joined that chat waits behind (DOR-5512). Read
+ * from the run record and its outbox, so a restart keeps the answer.
+ *
+ * @param run - The run asking.
+ * @param deps - The run record, and what says a run opens its chat.
+ * @returns The opening run, or `undefined` when nothing opens the chat ahead of it.
+ */
+function openingRunAhead(
+  run: TurnRun,
+  deps: Pick<AdmissionDeps, 'runs' | 'opensChat'>
+): TurnRun | undefined {
+  const opensChat = deps.opensChat;
+  if (run.origin?.kind !== 'chat-message' || !opensChat) return undefined;
+  return deps.runs
+    .shownRunsOf(run.sessionId)
+    .open.find(
+      (ahead) =>
+        ahead.chatSeq < run.chatSeq &&
+        NOT_STARTED.has(ahead.status) &&
+        ahead.queueMessageId === null &&
+        opensChat(ahead.id)
+    );
 }
 
 /**
@@ -108,6 +146,8 @@ export function admit(
 ): AdmissionVerdict {
   if (!personTyped(run.origin) && deps.pausedAgent(run.agentId, start.cwd, run.sessionId))
     return { wait: 'paused' };
+  const opening = openingRunAhead(run, deps);
+  if (opening) return { wait: opening.waitReason ?? 'chat_busy' };
   const live = deps.runs.liveRunOf(run.sessionId);
   const chatBusy = live !== undefined && live.id !== run.id;
   const composer = wordsWaitInComposer(run.origin);

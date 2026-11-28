@@ -76,16 +76,16 @@ import type { FreshDmBirth } from './sending/chat-message-birth.js';
 import type { ChatMessageStore } from './chat-message-store.js';
 import { adoptHeldChatMessages } from './chat-held-adoption.js';
 import {
-  chatMessageWords,
-  CHAT_MESSAGE_SOURCE,
   handOverChatMessage,
   MACHINE_FULL_NOTE,
   withdrawWaitingChatMessages,
   type ChatTurnPort,
 } from './sending/chat-turn-hand-over.js';
+import { attachChatRuns } from './sending/direct-chat-opening.js';
 import { ChatMessageError } from './chat-message-error.js';
 import * as standing from './chat-queue-standing.js';
 import { assertChatSendable, sameChat, type ChatTarget } from './chat-target.js';
+import { assertChatStoppable } from './stops/chat-stop-target.js';
 
 export { ChatMessageError } from './chat-message-error.js';
 export { CHAT_SENDABLE_ORIGINS, CHAT_UNATTENDED_ORIGINS } from './chat-target.js';
@@ -232,13 +232,12 @@ export class ChatMessageService {
     return adoptHeldChatMessages(this.deps);
   }
 
-  /** Register this service's receipts as the words of its waiting runs, once per space face. */
+  /** Register its receipts as its waiting runs' words, and watch those runs, once per space face. */
   private attach(): void {
     const port = this.deps.turns?.port();
     if (!port || port === this.attached?.port || this.stopped) return;
     this.attached?.detach();
-    const detach = port.registerSource(CHAT_MESSAGE_SOURCE, chatMessageWords(this.deps.store));
-    this.attached = { port, detach };
+    this.attached = { port, detach: attachChatRuns(port, this.deps) };
   }
 
   /**
@@ -528,7 +527,7 @@ export class ChatMessageService {
     ) {
       throw new ChatMessageError('SELF', 'That is your own chat. End your turn instead.');
     }
-    await assertChatSendable(this.deps, input.chat, this.deps.meshCore() !== undefined);
+    await assertChatStoppable(this.deps, input.chat);
     const reason = input.reason?.trim() ? input.reason.trim().slice(0, CHAT_STOP_REASON_MAX) : null;
     const sender = this.agentFacts(caller.agentPath);
     const fromChatTitle = await this.deps.chatTitle(caller.sessionId).catch(() => null);

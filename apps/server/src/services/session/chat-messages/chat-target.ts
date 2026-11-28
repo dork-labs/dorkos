@@ -20,6 +20,8 @@ import type { SessionFacts } from '../../extensions/agent-send/agent-send-defaul
 import { ChatMessageError } from './chat-message-error.js';
 import type { ChatCaller } from './chat-message-service.js';
 import type { ChatMessageStore } from './chat-message-store.js';
+import { openingChatAgent } from './sending/direct-chat-opening.js';
+import type { ChatTurnPort } from './sending/chat-turn-hand-over.js';
 
 /**
  * The launch origins of chats another chat may write into or stop: a person's
@@ -109,6 +111,8 @@ export interface ChatTargetDeps {
   describeSession: (sessionId: string) => Promise<SessionFacts>;
   /** The id a chat is known by now, whichever id it was named by. */
   canonicalId: (sessionId: string) => Promise<string>;
+  /** The turn port, which says whether a new direct chat still waits to open (DOR-5512). */
+  turns?: ChatTurnPort;
 }
 
 /**
@@ -171,6 +175,9 @@ export async function resolveChatTarget(
   try {
     await assertChatSendable(deps, to, mesh !== undefined, kind);
   } catch (err) {
+    // A new direct chat that waits to open takes the message too, behind its first (DOR-5512).
+    const opening = isNotFound(err) ? openingChatAgent(deps, to) : undefined;
+    if (opening) return { sessionId: to, agent: opening };
     const redirected = await unattendedReplyTarget(deps, caller, to, replyTo);
     if (redirected) return redirected;
     throw err;
@@ -178,7 +185,11 @@ export async function resolveChatTarget(
   return { sessionId: to };
 }
 
-/** The DM chat the calling agent keeps with an agent, or a new one. */
+/**
+ * The DM chat the calling agent keeps with an agent, or a new one. A kept chat
+ * that is not open yet, because its first message still waits to start it,
+ * takes the message too: one conversation stays one chat (DOR-5512).
+ */
 async function agentTarget(
   deps: ChatTargetDeps,
   caller: ChatCaller,
@@ -190,8 +201,16 @@ async function agentTarget(
     if (facts.bound && facts.agentPath === agent.path && !facts.roomBound) {
       return { sessionId: kept, agent };
     }
+    if (!facts.bound && openingChatAgent(deps, kept)?.id === agent.id) {
+      return { sessionId: kept, agent };
+    }
   }
   return { sessionId: null, agent };
+}
+
+/** Whether a refusal says the chat is not bound here (Mesh running). */
+function isNotFound(err: unknown): boolean {
+  return err instanceof ChatMessageError && err.code === 'NOT_FOUND';
 }
 
 /**

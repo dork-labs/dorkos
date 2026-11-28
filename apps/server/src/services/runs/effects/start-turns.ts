@@ -20,6 +20,10 @@
  *   else): every waiting `start_turn` is due now. That run may be what a run
  *   waited on as `chat_busy` (its chat) or `machine_full` (a launch slot), so
  *   the wait ends with the run's own end (§3.5), never at the next backoff.
+ * - **A new direct chat's first message leaves the line** (DOR-5512): the
+ *   chat messages that joined that chat while it waited are due now when it
+ *   started, and are cancelled with it (`chat_not_opened`) when it never will,
+ *   in the same write, so none is left waiting on a chat that is never born.
  *
  * @module services/runs/effects/start-turns
  */
@@ -34,6 +38,10 @@ import { restartNotice } from './restart-notices.js';
 import { RUNS } from '../../../config/constants.js';
 
 const LIVE: ReadonlySet<RunStatus> = new Set(['starting', 'started', 'running']);
+const NOT_STARTED: ReadonlySet<RunStatus> = new Set(['queued', 'starting']);
+
+/** Why a chat message that joined a new direct chat was cancelled: the chat never opened. */
+const CHAT_NOT_OPENED = 'chat_not_opened';
 
 /** How many times a run has waited for a busy chat, as its effect's last outcome counted. */
 export function busyRetriesOf(effect: Pick<TurnEffect, 'outcome'> | undefined): number {
@@ -93,6 +101,9 @@ export class StartTurns implements HandedStarts {
     }
     // The others first: the run that let go waits out its own backoff.
     if (LIVE.has(from) && !LIVE.has(to)) this.effects.wakeAllStarts();
+    if (NOT_STARTED.has(from) && !NOT_STARTED.has(to) && run.origin?.kind === 'chat-message') {
+      if (this.opensChat(run.id)) this.opened(run);
+    }
     if (from === 'starting' && to === 'queued' && run.queueMessageId === null) this.reopen(run);
     if (
       (from === 'started' || from === 'running') &&
@@ -101,6 +112,45 @@ export class StartTurns implements HandedStarts {
     )
       this.startAgain(run);
     this.port()?.moved(run);
+  }
+
+  /**
+   * Whether a run's start opens a new direct chat: its `start_turn` carries
+   * `newDirectChat` (T6b). What admission reads to hold the chat messages that
+   * joined that chat behind it (DOR-5512).
+   *
+   * @param runId - The run.
+   */
+  opensChat(runId: string): boolean {
+    return this.effects
+      .listForRun(runId)
+      .some(
+        (effect) =>
+          effect.kind === 'start_turn' &&
+          (effect.payload as { newDirectChat?: unknown } | null)?.newDirectChat !== undefined
+      );
+  }
+
+  /**
+   * A new direct chat's first message left the line: the chat messages waiting
+   * behind it in that chat are due now, or, when it was cancelled, cancelled
+   * too, since nothing can start in a chat that was never born.
+   */
+  private opened(run: TurnRun): void {
+    const joined = this.runs
+      .shownRunsOf(run.sessionId)
+      .open.filter(
+        (other) =>
+          other.chatSeq > run.chatSeq &&
+          other.origin?.kind === 'chat-message' &&
+          other.status === 'queued' &&
+          other.queueMessageId === null
+      );
+    for (const other of joined) {
+      if (run.status === 'cancelled') this.cancel(other.id, CHAT_NOT_OPENED);
+      else if (this.effects.openStartOf(other.id)?.state === 'pending')
+        this.effects.reopenStartOf(other.id, this.now());
+    }
   }
 
   /** Whether a run's last sign of life, its `created_at`, is within the age bound (§7.3). */
