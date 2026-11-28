@@ -5,8 +5,9 @@
  * report over: a `system/init` after a `result`, then a request to the model,
  * then the model's first frame. A timer the agent set and a person's later
  * turns open a segment the same way; the hold covers every one, which is why
- * its reason is `segment-starting` rather than `delivery-owed`. `TurnLiveness` clears the owed delivery at that
- * init, and the windower opens no window until the first model frame, so for
+ * its reason is `segment-starting` rather than `delivery-owed`.
+ *
+ * `TurnLiveness` clears the owed delivery at that init, and the windower opens no window until the first model frame, so for
  * the whole time to first token (seconds on a big context, longer through API
  * retries) the process read as quiet: no turn, no runtime turn, nothing owed.
  * In that gap a person's message launched into the segment, and a reap, a slot
@@ -21,9 +22,11 @@
  * that never says anything, the same two minutes a dispatched turn gets for its
  * first event ({@link SESSIONS.TURN_FIRST_EVENT_TIMEOUT_MS}). A frame of the
  * agent's own (an `api_retry`, a status line) restarts it, as proof the segment
- * is still on its way. A helper's frame does not: a helper talking says nothing
- * about the agent's segment, and counting it let a chatty helper hold the
- * queue for as long as it went on.
+ * is still on its way. A helper's frame does not, and neither does a task's
+ * lifecycle frame (`task_progress`, `task_updated`, `task_notification`, which
+ * carry no `parent_tool_use_id`): a helper at work says nothing about the
+ * agent's segment, and counting it let a chatty helper hold the queue for as
+ * long as it went on.
  *
  * A process that dies in the gap drops the hold at once
  * ({@link SegmentStartHold.dispose}, from the pump's crash path): a dead
@@ -69,7 +72,7 @@ export class SegmentStartHold {
     // A post-`result` init is the only init `TurnLiveness` reports as a
     // segment running; the one a process opens with is not.
     const opens = change.segmentRunning && message.type === 'system' && isInit(message);
-    if (opens || (this.holding && !isHelperFrame(message))) this.arm();
+    if (opens || (this.holding && !isHelperFrame(message) && !isTaskFrame(message))) this.arm();
   }
 
   /** Drop the hold without calling back: the process it belonged to is gone or going. */
@@ -88,6 +91,12 @@ export class SegmentStartHold {
     timer.unref?.();
     this.timer = timer;
   }
+}
+
+/** Whether a frame is a task's lifecycle frame (`system/task_*`), which a helper's work sends. */
+function isTaskFrame(message: SDKMessage): boolean {
+  if (message.type !== 'system' || !('subtype' in message)) return false;
+  return typeof message.subtype === 'string' && message.subtype.startsWith('task_');
 }
 
 /** Whether a `system` frame is a `system/init`. */

@@ -191,7 +191,7 @@ import {
 import { streamTurnWindow } from './pump-turn-stream.js';
 import { SessionCrashRecovery } from './session-crash-recovery.js';
 import { isWaitingOnPerson } from './session-store.js';
-import { isSegmentOnItsWay, PumpRefusedError, type Quietness } from './session-pump-contract.js';
+import { PumpRefusedError, type Quietness } from './session-pump-contract.js';
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionPumpRegistry } from './session-pump-registry.js';
 import { SessionTurnWindows, type TurnWindow } from './session-turn-windows.js';
@@ -377,10 +377,7 @@ export class PersistentDispatch {
    *   answers to
    */
   isSegmentPending(sessionId: string): boolean {
-    const key = this.sessionKeyOf(sessionId);
-    const pump = this.registry.peek(key);
-    if (pump === undefined) return false;
-    return isSegmentOnItsWay(pump.quietness());
+    return this.registry.peek(this.sessionKeyOf(sessionId))?.isSegmentOnItsWay() === true;
   }
 
   /**

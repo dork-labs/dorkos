@@ -299,6 +299,20 @@ export class ProcessQuiet {
   }
 
   /**
+   * Is a delivery on its way: a settled helper's report still owed, or a
+   * segment that has opened and not yet spoken (DOR-5490)?
+   *
+   * What the queue holds a person's message on (`isSegmentPending`). Asked
+   * directly rather than read off {@link quietness}'s top reason, because a
+   * second helper still running outranks both there, and a message launched
+   * then would still land in the first helper's report. Bounded by the
+   * owed-delivery clock and the segment-start clock.
+   */
+  isSegmentOnItsWay(): boolean {
+    return this.opts.liveness().owedCount() > 0 || this.segmentStart.holding;
+  }
+
+  /**
    * Is a helper or other background task still working on this process
    * (DOR-2681, DOR-2717)?
    *

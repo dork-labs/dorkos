@@ -87,18 +87,6 @@ export type Quietness =
       busySince: number;
     };
 
-/**
- * Whether a quietness answer says a segment is on its way: a delivery still
- * owed, or a segment that has opened and not yet spoken (DOR-5490). What
- * `PersistentDispatch.isSegmentPending` holds the queue on.
- *
- * @param quietness - The pump's answer
- */
-export function isSegmentOnItsWay(quietness: Quietness): boolean {
-  if (quietness.quiet) return false;
-  return quietness.because === 'delivery-owed' || quietness.because === 'segment-starting';
-}
-
 /** The reasons a warm process is not quiet, most specific first. */
 export type QuietnessBlocker =
   /** A dispatched turn is open: the pump is RUNNING. */

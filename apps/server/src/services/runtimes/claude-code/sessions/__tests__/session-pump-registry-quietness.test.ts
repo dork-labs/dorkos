@@ -21,6 +21,7 @@ import {
   type AcquirePumpOptions,
 } from '../session-pump-registry.js';
 import { PumpRefusedError } from '../session-pump.js';
+import { PersistentDispatch } from '../persistent-dispatch.js';
 import {
   assistantMessage,
   backgroundTasksMessage,
@@ -146,6 +147,56 @@ describe('the idle timer leaves a process with a background shell running', () =
     queries.get('s1')!.emit(backgroundTasksMessage([]));
     await vi.advanceTimersByTimeAsync(IDLE_MS * 2);
     expect(registry.warmth('s1')).toBe('cold');
+  });
+});
+
+// DOR-5490. What the queue asks before it launches a person's message: a
+// report's segment that has opened and not spoken yet is on its way.
+describe('isSegmentPending holds the queue for a report not yet spoken', () => {
+  /** Warm `sessionId` and hand its process `frames`. */
+  async function warmWith(
+    registry: SessionPumpRegistry,
+    queries: Map<string, FakeQuery>,
+    sessionId: string,
+    frames: ReturnType<typeof initMessage>[]
+  ): Promise<void> {
+    await registry.acquire(sessionId, launchOpts(queries, sessionId)).warm();
+    for (const frame of frames) queries.get(sessionId)!.emit(frame);
+    await vi.advanceTimersByTimeAsync(0);
+  }
+
+  it('is true from the segment opening until its first word', async () => {
+    const queries = new Map<string, FakeQuery>();
+    const registry = new SessionPumpRegistry(identity);
+    const dispatch = new PersistentDispatch(registry, identity);
+    await warmWith(registry, queries, 's1', [
+      resultMessage(),
+      taskNotificationMessage('t-1'),
+      initMessage(),
+    ]);
+    expect(dispatch.isSegmentPending('s1')).toBe(true);
+
+    queries.get('s1')!.emit(assistantMessage());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(dispatch.isSegmentPending('s1')).toBe(false);
+  });
+
+  it('is true while a second helper still runs, which outranks it as the reason', async () => {
+    const queries = new Map<string, FakeQuery>();
+    const registry = new SessionPumpRegistry(identity);
+    const dispatch = new PersistentDispatch(registry, identity);
+    await warmWith(registry, queries, 's1', [
+      backgroundTasksMessage([
+        { id: 'helper-a', type: 'local_agent' },
+        { id: 'helper-b', type: 'local_agent' },
+      ]),
+      resultMessage(),
+      backgroundTasksMessage([{ id: 'helper-b', type: 'local_agent' }]),
+      taskNotificationMessage('helper-a'),
+      initMessage(),
+    ]);
+    expect(registry.peek('s1')!.quietness()).toMatchObject({ because: 'background-work' });
+    expect(dispatch.isSegmentPending('s1')).toBe(true);
   });
 });
 

@@ -491,6 +491,19 @@ describe('a segment that has opened and not yet spoken', () => {
     expect(harness.pump.quietness()).toMatchObject({ quiet: true });
   });
 
+  it('keeps the owed-delivery clock when the process dies before the segment opens', async () => {
+    const harness = await warmPump();
+    await harness.emit(resultMessage());
+    await harness.emit(taskNotificationMessage('task-1'));
+    await harness.crash();
+    expect(harness.pump.quietness()).toMatchObject({ because: 'delivery-owed' });
+
+    // The clock is what clears the dead tracker's debt and lets the queue go.
+    vi.advanceTimersByTime(OWED_DELIVERY_TIMEOUT_MS);
+    expect(harness.pump.quietness()).toMatchObject({ quiet: true });
+    expect(harness.gateChanges).toHaveLength(1);
+  });
+
   it('is not kept past the wait by a helper that keeps talking', async () => {
     const harness = await warmPump();
     await reportSegmentOpened(harness);
@@ -498,6 +511,19 @@ describe('a segment that has opened and not yet spoken', () => {
     const helperFrame = { ...assistantMessage(), parent_tool_use_id: 'toolu-helper' } as never;
     vi.advanceTimersByTime(90_000);
     await harness.emit(helperFrame);
+    vi.advanceTimersByTime(SESSIONS.TURN_FIRST_EVENT_TIMEOUT_MS - 90_000);
+    expect(harness.gateChanges).toHaveLength(1);
+    expect(harness.pump.quietness()).toMatchObject({ quiet: true });
+  });
+
+  it('is not kept past the wait by task progress from a finished helper', async () => {
+    const harness = await warmPump();
+    await reportSegmentOpened(harness);
+
+    // A `task_progress` carries no `parent_tool_use_id`; no task is live.
+    const progress = { type: 'system', subtype: 'task_progress', task_id: 'task-1' } as never;
+    vi.advanceTimersByTime(90_000);
+    await harness.emit(progress);
     vi.advanceTimersByTime(SESSIONS.TURN_FIRST_EVENT_TIMEOUT_MS - 90_000);
     expect(harness.gateChanges).toHaveLength(1);
     expect(harness.pump.quietness()).toMatchObject({ quiet: true });
