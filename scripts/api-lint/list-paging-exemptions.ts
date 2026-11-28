@@ -9,6 +9,8 @@
  *   search relevance).
  * - `small-fixed`: a small, fixed or one-resource view, bounded by what the
  *   computer holds rather than by use (a few runtimes, one agent's settings).
+ * - `read-whole`: a view that only works whole (a graph needs every node and
+ *   edge to draw), bounded by what this computer holds.
  * - `waits-later-item`: a later item reshapes it first (the rooms and mini
  *   app inbox lists); it is judged again when that lands.
  *
@@ -16,7 +18,9 @@
  * (`contributing/api-reference.md`, "Lists that never page"). The tests in
  * `scripts/__tests__/check-api-lint-list-paging-exemptions.test.ts` fail when
  * an entry has no reason, or when it no longer matches an unpaged list in the
- * committed document (renamed, removed or paged): drop it in that PR.
+ * committed document (renamed, removed or paged): drop it in that PR. An
+ * entry keys on the path only: a change that lets an exempt list grow without
+ * bound must drop its entry too.
  *
  * @module scripts/api-lint/list-paging-exemptions
  */
@@ -24,13 +28,14 @@ import type { Items } from './rules.ts';
 
 /** Why a list never pages. */
 export type ListPagingExemptionCategory =
-  'avoid-list' | 'order-not-reproducible' | 'small-fixed' | 'waits-later-item';
+  'avoid-list' | 'order-not-reproducible' | 'small-fixed' | 'read-whole' | 'waits-later-item';
 
 /** Every category, for the tests. */
 export const LIST_PAGING_EXEMPTION_CATEGORIES: readonly ListPagingExemptionCategory[] = [
   'avoid-list',
   'order-not-reproducible',
   'small-fixed',
+  'read-whole',
   'waits-later-item',
 ];
 
@@ -87,18 +92,8 @@ export const LIST_PAGING_EXEMPTIONS: readonly ListPagingExemption[] = [
     "One agent's Heartbeat page: its last 50 beats."
   ),
   e('/api/agents/{agentId}/permissions', 'small-fixed', "One agent's state per area and action."),
-  e(
-    '/api/agents/{agentId}/work-queue',
-    'small-fixed',
-    "One agent's queue page: waiting, running, recently ended."
-  ),
   e('/api/canvas/docs/{id}/routes', 'small-fixed', "One document's declared event routes."),
   e('/api/config/backups', 'small-fixed', 'The few database backups kept on this computer.'),
-  e(
-    '/api/connectors/mini-app-access',
-    'small-fixed',
-    'What installed mini apps may read: one page, read whole.'
-  ),
   e('/api/connectors/providers', 'small-fixed', 'One setup state per provider: a fixed set.'),
   e('/api/connectors/spending', 'small-fixed', "This month's spend limit and spending: one view."),
   e('/api/devices/sign-in-requests', 'small-fixed', 'Open sign-in requests expire in minutes.'),
@@ -106,8 +101,6 @@ export const LIST_PAGING_EXEMPTIONS: readonly ListPagingExemption[] = [
   e('/api/health/deep', 'small-fixed', 'One row per setup check.'),
   e('/api/local-browser/handoff/state', 'small-fixed', "This computer's one browser hand-off."),
   e('/api/local-browser/state', 'small-fixed', 'One browser connection.'),
-  e('/api/marketplace/updates', 'small-fixed', 'One update check per installed package.'),
-  e('/api/mesh/topology', 'small-fixed', 'The agent network, read whole to draw it.'),
   e('/api/models', 'small-fixed', 'The models a runtime offers: a short fixed list.'),
   e('/api/owner-factors', 'small-fixed', "The owner's few sign-in factors."),
   e('/api/permissions', 'small-fixed', 'The default permissions: one view per area.'),
@@ -120,6 +113,12 @@ export const LIST_PAGING_EXEMPTIONS: readonly ListPagingExemption[] = [
   e('/api/session-relay/presence', 'small-fixed', 'Who uses this computer from the web now.'),
   e('/api/sessions/daily-counts', 'small-fixed', 'One count per day, 31 days at most.'),
   e('/api/sessions/running', 'small-fixed', 'Turns running now, capped by the run limit.'),
+  // Read whole by design.
+  e(
+    '/api/mesh/topology',
+    'read-whole',
+    'A graph needs every node and edge to draw; bounded by the agents on this computer.'
+  ),
   // Wait for a later item that reshapes them.
   e('/api/rooms', 'waits-later-item', ROOMS),
   e('/api/rooms/threads', 'waits-later-item', ROOMS),
