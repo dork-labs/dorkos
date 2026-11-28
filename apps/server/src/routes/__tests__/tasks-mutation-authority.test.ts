@@ -52,6 +52,8 @@ import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-s
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
+/** The body that stops a run. */
+const CANCEL = { status: 'cancelled' } as const;
 
 function createMockScheduler(): TaskSchedulerService {
   return {
@@ -128,11 +130,20 @@ describe('Task mutation authority — DELETE and cancel (DOR-1574)', () => {
     });
 
     it('lets a credential-free caller cancel a run', async () => {
-      const res = await request(fixtureServer).post(`/api/tasks/runs/${runId}/cancel`);
+      const res = await request(fixtureServer).patch(`/api/tasks/runs/${runId}`).send(CANCEL);
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(scheduler.cancelRun).toHaveBeenCalledWith(runId);
+    });
+
+    it('refuses any status but cancelled, and stops nothing', async () => {
+      const res = await request(fixtureServer)
+        .patch(`/api/tasks/runs/${runId}`)
+        .send({ status: 'x' });
+
+      expect(res.status).toBe(400);
+      expect(scheduler.cancelRun).not.toHaveBeenCalled();
     });
 
     it('answers a stop nobody confirmed in fixed words, never the bus’s own error text', async () => {
@@ -141,7 +152,7 @@ describe('Task mutation authority — DELETE and cancel (DOR-1574)', () => {
         why: 'send_failed',
         reason: 'The stop request could not be sent: EACCES /private/relay/socket',
       });
-      const res = await request(fixtureServer).post(`/api/tasks/runs/${runId}/cancel`);
+      const res = await request(fixtureServer).patch(`/api/tasks/runs/${runId}`).send(CANCEL);
 
       expect(res.status).toBe(502);
       expect(res.headers['content-type']).toContain('application/problem+json');
@@ -185,7 +196,7 @@ describe('Task mutation authority — DELETE and cancel (DOR-1574)', () => {
     it('refuses a cancel from a caller with no session cookie', async () => {
       signedInUser = { userId: 'user_key', credential: 'api-key' };
 
-      const res = await request(fixtureServer).post(`/api/tasks/runs/${runId}/cancel`);
+      const res = await request(fixtureServer).patch(`/api/tasks/runs/${runId}`).send(CANCEL);
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('person_only');
@@ -206,7 +217,7 @@ describe('Task mutation authority — DELETE and cancel (DOR-1574)', () => {
     it('lets a signed-in person cancel a run', async () => {
       signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
 
-      const res = await request(fixtureServer).post(`/api/tasks/runs/${runId}/cancel`);
+      const res = await request(fixtureServer).patch(`/api/tasks/runs/${runId}`).send(CANCEL);
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);

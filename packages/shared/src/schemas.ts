@@ -578,7 +578,7 @@ export const WaitForResetRequestSchema = z
 /** Inferred type for {@link WaitForResetRequestSchema}. */
 export type WaitForResetRequest = z.infer<typeof WaitForResetRequestSchema>;
 
-/** The answer to `POST /api/sessions/:id/wait` and `POST /api/sessions/:id/continue/cancel`. */
+/** The answer to `POST /api/sessions/:id/wait` and `DELETE /api/sessions/:id/continue`. */
 export const LimitPlanResponseSchema = z
   .object({ plan: LimitPlanSchema })
   .openapi('LimitPlanResponse');
@@ -4434,7 +4434,7 @@ export const WorkbenchSignResponseSchema = z
 export type WorkbenchSignResponse = z.infer<typeof WorkbenchSignResponseSchema>;
 
 /**
- * Request for `POST /api/workbench/probe` — ask whether a loopback port has a
+ * Request for `POST /api/workbench/port-checks` — ask whether a loopback port has a
  * server on it before the embedded browser frames it. A dead port would
  * otherwise render as a blank frame with nothing to explain it.
  *
@@ -4451,7 +4451,7 @@ export const WorkbenchProbeRequestSchema = z
 
 export type WorkbenchProbeRequest = z.infer<typeof WorkbenchProbeRequestSchema>;
 
-/** Response for `POST /api/workbench/probe`: whether the port accepted a connection. */
+/** Response for `POST /api/workbench/port-checks`: whether the port accepted a connection. */
 export const WorkbenchProbeResponseSchema = z
   .object({
     /** True when something on this machine accepted a connection on that port. */
@@ -6456,6 +6456,15 @@ export const CancelTaskRunResponseSchema = z
   .openapi('CancelTaskRunResponse');
 
 export type CancelTaskRunResponse = z.infer<typeof CancelTaskRunResponseSchema>;
+
+/** Body of `PATCH /api/tasks/runs/:id`: the one change a person can make to a run is to stop it. */
+export const CancelTaskRunRequestSchema = z
+  .object({ status: z.literal('cancelled') })
+  .strict()
+  .openapi('CancelTaskRunRequest');
+
+/** Body of `PATCH /api/tasks/runs/:id`. */
+export type CancelTaskRunRequest = z.infer<typeof CancelTaskRunRequestSchema>;
 
 export const TaskTemplateSchema = z
   .object({

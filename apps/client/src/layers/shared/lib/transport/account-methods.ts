@@ -67,9 +67,7 @@ export function createAccountMethods(baseUrl: string) {
     },
 
     cancelAutoContinue(sessionId: string): Promise<void> {
-      return fetchNoContent(baseUrl, `${sessionPath(sessionId)}/continue/cancel`, {
-        method: 'POST',
-      });
+      return fetchNoContent(baseUrl, `${sessionPath(sessionId)}/continue`, { method: 'DELETE' });
     },
 
     getLimitHistory(sessionId: string): Promise<{ entries: LimitHistoryEntry[] }> {

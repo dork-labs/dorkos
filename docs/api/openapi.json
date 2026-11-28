@@ -13156,6 +13156,21 @@
           "state"
         ]
       },
+      "CancelTaskRunRequest": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "cancelled"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      },
       "RelayDeliveryReceipt": {
         "type": "object",
         "properties": {
@@ -18516,6 +18531,21 @@
           "marked",
           "unreadCount"
         ]
+      },
+      "MarkNotificationsReadRequest": {
+        "type": "object",
+        "properties": {
+          "read": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "read"
+        ],
+        "additionalProperties": false
       },
       "CapabilityApprovalRequired": {
         "type": "object",
@@ -24025,6 +24055,68 @@
         },
         "operationId": "sessions.createContinue",
         "x-stability": "stable"
+      },
+      "delete": {
+        "operationId": "sessions.cancel_continue",
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Cancel a pending handoff to another account",
+        "description": "An `auto` plan goes back to asking the person. Too late once the automatic move has started (409).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new plan.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LimitPlanResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only a person can move or hold a session; an agent identity is refused.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The session has no limit, no handoff is pending, or the move already started.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The session is held by the account advisor (a Flow run), and it could not be reached, so nothing changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-stability": "stable"
       }
     },
     "/api/sessions/{id}/wait": {
@@ -24107,70 +24199,6 @@
           }
         },
         "operationId": "sessions.createWait",
-        "x-stability": "stable"
-      }
-    },
-    "/api/sessions/{id}/continue/cancel": {
-      "post": {
-        "tags": [
-          "Sessions"
-        ],
-        "summary": "Cancel a pending handoff to another account",
-        "description": "An `auto` plan goes back to asking the person. Too late once the automatic move has started (409).",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The new plan.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LimitPlanResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Only a person can move or hold a session; an agent identity is refused.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "The session has no limit, no handoff is pending, or the move already started.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "The session is held by the account advisor (a Flow run), and it could not be reached, so nothing changed.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "sessions.cancelContinue",
         "x-stability": "stable"
       }
     },
@@ -30726,7 +30754,7 @@
           "Docs"
         ],
         "summary": "List the docs in a space",
-        "description": "**Preview.** This operation may change in any release.\n\nEvery `.md` file under `cwd`, with its path (relative, forward slashes), title (frontmatter `title:`, else the first `# ` heading, else the file name) and slug (the file name without `.md`, lowercased, spaces as `-`), sorted by path. Wiki links and the `[[` menu resolve against it with the rules in `@dorkos/shared/doc-links`. Dot-folders, dependency and build folders and symlinks are skipped. The walk goes breadth first and stops at 2000 docs, 2000 folders, 8 levels deep or 1500 ms, and then answers `truncated: true`; a target the truncated list cannot place is asked about at `/api/documents/resolve`. `root` is the space folder with symlinks resolved. Part of the Docs experiment (`docs.enabled`).",
+        "description": "**Preview.** This operation may change in any release.\n\nEvery `.md` file under `cwd`, with its path (relative, forward slashes), title (frontmatter `title:`, else the first `# ` heading, else the file name) and slug (the file name without `.md`, lowercased, spaces as `-`), sorted by path. Wiki links and the `[[` menu resolve against it with the rules in `@dorkos/shared/doc-links`. Dot-folders, dependency and build folders and symlinks are skipped. The walk goes breadth first and stops at 2000 docs, 2000 folders, 8 levels deep or 1500 ms, and then answers `truncated: true`; a target the truncated list cannot place is asked about at `/api/documents/lookup`. `root` is the space folder with symlinks resolved. Part of the Docs experiment (`docs.enabled`).",
         "parameters": [
           {
             "schema": {
@@ -30830,8 +30858,9 @@
         "x-stability": "preview"
       }
     },
-    "/api/documents/resolve": {
+    "/api/documents/lookup": {
       "get": {
+        "operationId": "documents.find_doc",
         "tags": [
           "Docs"
         ],
@@ -30951,7 +30980,6 @@
             }
           }
         },
-        "operationId": "documents.resolve",
         "x-stability": "preview"
       }
     },
@@ -35541,8 +35569,9 @@
         "x-stability": "stable"
       }
     },
-    "/api/tasks/runs/{id}/cancel": {
-      "post": {
+    "/api/tasks/runs/{id}": {
+      "patch": {
+        "operationId": "tasks.cancel_run",
         "tags": [
           "Tasks"
         ],
@@ -35557,6 +35586,15 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelTaskRunRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "A runner has the stop request, or the run had already finished",
@@ -35564,6 +35602,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CancelTaskRunResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not `{ \"status\": \"cancelled\" }`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -35589,8 +35637,141 @@
             }
           }
         },
-        "operationId": "tasks.cancelRuns",
         "x-stability": "stable"
+      },
+      "get": {
+        "operationId": "tasks.view_run",
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Open a scheduled task run",
+        "description": "**Preview.** This operation may change in any release.\n\nOne run of a scheduled task. An agent reads only its own and global ones.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The run."
+            },
+            "required": true,
+            "description": "The run.",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Open a scheduled task run result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskRun"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-stability": "preview"
       }
     },
     "/api/relay/messages": {
@@ -77881,10 +78062,61 @@
         },
         "operationId": "notifications.list",
         "x-stability": "preview"
+      },
+      "patch": {
+        "operationId": "notifications.mark_all_read",
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Mark every unread notification read",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkNotificationsReadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "How many rows moved, and the unread count after",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkNotificationsReadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not `{ \"read\": true }`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the operator may move read state",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-stability": "preview",
+        "description": "**Preview.** This operation may change in any release."
       }
     },
-    "/api/notifications/{id}/read": {
+    "/api/notifications/{id}": {
       "patch": {
+        "operationId": "notifications.mark_read",
         "tags": [
           "Notifications"
         ],
@@ -77899,6 +78131,15 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkNotificationsReadRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "How many rows moved, and the unread count after",
@@ -77906,6 +78147,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MarkNotificationsReadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not `{ \"read\": true }`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -77921,40 +78172,6 @@
             }
           }
         },
-        "operationId": "notifications.read",
-        "x-stability": "preview",
-        "description": "**Preview.** This operation may change in any release."
-      }
-    },
-    "/api/notifications/read-all": {
-      "post": {
-        "tags": [
-          "Notifications"
-        ],
-        "summary": "Mark every unread notification read",
-        "responses": {
-          "200": {
-            "description": "How many rows moved, and the unread count after",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MarkNotificationsReadResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Only the operator may move read state",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "notifications.readAll",
         "x-stability": "preview",
         "description": "**Preview.** This operation may change in any release."
       }
@@ -93982,8 +94199,8 @@
         "x-stability": "preview"
       }
     },
-    "/api/todo-promises/{id}/confirm": {
-      "post": {
+    "/api/todo-promises/{id}/confirmation": {
+      "put": {
         "operationId": "todos.confirm_promise",
         "tags": [
           "Todos"
@@ -95089,7 +95306,7 @@
         "x-stability": "preview"
       }
     },
-    "/api/work-queues/stop": {
+    "/api/work-queues/stopped": {
       "put": {
         "operationId": "work-queue.stop_all",
         "tags": [
@@ -95683,16 +95900,14 @@
           }
         },
         "x-stability": "preview"
-      }
-    },
-    "/api/agents/{agentId}/work-queue/items/{itemId}/requeue": {
-      "post": {
+      },
+      "patch": {
         "operationId": "work-queue.requeue_item",
         "tags": [
           "Work-queue"
         ],
         "summary": "Queue ended work again",
-        "description": "**Preview.** This operation may change in any release.\n\nPut an ended item at the back of the queue. It starts a new chat.",
+        "description": "**Preview.** This operation may change in any release.\n\nPut an ended item at the back of the queue (`status: \"queued\"`). It starts a new chat.",
         "parameters": [
           {
             "schema": {
@@ -95717,6 +95932,27 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "queued"
+                    ],
+                    "description": "The only status a person can set: queue it again."
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Queue ended work again result",
@@ -97456,7 +97692,7 @@
         "x-stability": "preview"
       }
     },
-    "/api/audit/verify": {
+    "/api/audit/integrity": {
       "get": {
         "operationId": "audit.verify",
         "tags": [
@@ -102688,142 +102924,6 @@
         "x-stability": "preview"
       }
     },
-    "/api/tasks/runs/{id}": {
-      "get": {
-        "operationId": "tasks.view_run",
-        "tags": [
-          "Tasks"
-        ],
-        "summary": "Open a scheduled task run",
-        "description": "**Preview.** This operation may change in any release.\n\nOne run of a scheduled task. An agent reads only its own and global ones.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "description": "The run."
-            },
-            "required": true,
-            "description": "The run.",
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Open a scheduled task run result",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaskRun"
-                }
-              }
-            }
-          },
-          "202": {
-            "description": "A person must allow the call first; nothing ran",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "The capability refused because of the state it met, such as `conflict`",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "412": {
-            "description": "`precondition_failed`: something changed since the caller looked",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "`internal_error`: something went wrong running it",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "`signin_unreachable`: the remote server did not answer",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "x-stability": "preview"
-      }
-    },
     "/api/sessions/{id}/runtime-type": {
       "get": {
         "operationId": "sessions.get_runtime_type",
@@ -103885,7 +103985,7 @@
         "x-stability": "stable"
       }
     },
-    "/api/workspaces/scan": {
+    "/api/workspaces/disk-checkouts": {
       "get": {
         "operationId": "workspaces.scan",
         "tags": [
@@ -105494,10 +105594,9 @@
         },
         "operationId": "config.deleteBackups",
         "x-stability": "preview"
-      }
-    },
-    "/api/config/backups/{name}/move": {
-      "post": {
+      },
+      "patch": {
+        "operationId": "config.move_backup",
         "tags": [
           "Config"
         ],
@@ -105614,12 +105713,12 @@
             }
           }
         },
-        "operationId": "config.moveBackups",
         "x-stability": "preview"
       }
     },
-    "/api/hub/computers/{computerId}/sessions/{sessionId}/stream": {
+    "/api/hub/computers/{computerId}/sessions/{sessionId}/events": {
       "get": {
+        "operationId": "hub.stream_session_events",
         "tags": [
           "Hub"
         ],
@@ -107929,7 +108028,6 @@
             }
           }
         },
-        "operationId": "hub.streamComputersSessions",
         "x-stability": "preview"
       }
     },

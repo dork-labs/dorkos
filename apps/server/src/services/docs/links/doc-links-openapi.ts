@@ -17,7 +17,7 @@ import { DOC_INDEX_LIMITS } from './doc-index.js';
 import { DOC_RESOLVE_LIMITS } from './doc-resolve.js';
 
 /**
- * Register `GET /api/documents/index` and `GET /api/documents/resolve` on the OpenAPI registry.
+ * Register `GET /api/documents/index` and `GET /api/documents/lookup` on the OpenAPI registry.
  *
  * @param registry - The server's OpenAPI registry.
  */
@@ -36,7 +36,7 @@ export function registerDocLinksOpenApi(registry: OpenAPIRegistry): void {
       `stops at ${DOC_INDEX_LIMITS.maxDocs} docs, ${DOC_INDEX_LIMITS.maxFolders} folders, ` +
       `${DOC_INDEX_LIMITS.maxDepth} levels deep or ${DOC_INDEX_LIMITS.budgetMs} ms, and then ` +
       'answers `truncated: true`; a target the truncated list cannot place is asked about at ' +
-      '`/api/documents/resolve`. `root` is the space folder with symlinks resolved. Part of the ' +
+      '`/api/documents/lookup`. `root` is the space folder with symlinks resolved. Part of the ' +
       'Docs experiment (`docs.enabled`).',
     request: { query: DocIndexQuerySchema },
     responses: {
@@ -55,7 +55,8 @@ export function registerDocLinksOpenApi(registry: OpenAPIRegistry): void {
 
   registry.registerPath({
     method: 'get',
-    path: '/api/documents/resolve',
+    path: '/api/documents/lookup',
+    operationId: 'documents.find_doc',
     tags: ['Docs'],
     summary: 'Find the doc a wiki-link target names',
     description:

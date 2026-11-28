@@ -130,8 +130,8 @@ const REFUSED: readonly [WifiRefusedSurface, string, string][] = [
   ['work-queue', 'POST', '/api/agents/a_123/work-queue/items'],
   ['work-queue', 'PUT', '/api/agents/a_123/work-queue/order'],
   ['work-queue', 'DELETE', '/api/agents/a_123/work-queue/items/i_1'],
-  ['work-queue', 'POST', '/api/agents/a_123/work-queue/items/i_1/requeue'],
-  ['work-queue', 'PUT', '/api/work-queues/stop'],
+  ['work-queue', 'PATCH', '/api/agents/a_123/work-queue/items/i_1'],
+  ['work-queue', 'PUT', '/api/work-queues/stopped'],
 ];
 
 /** What a Wi-Fi sign-in keeps: chat, reading, and approvals. */

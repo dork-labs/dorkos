@@ -170,8 +170,8 @@ export function createConfigBackupsRoutes(options: ConfigBackupsRoutesOptions = 
     return c.json({ success: true });
   });
 
-  /** POST /:name/move — copy one older backup to a folder the person chose, check it, then remove the original. */
-  router.post('/:name/move', async (c) => {
+  /** PATCH /:name `{ destination }` — copy one older backup to a folder the person chose, check it, then remove the original. */
+  router.patch('/:name', async (c) => {
     const refused = personRefusal(c);
     if (refused) return sendProblem(c, REFUSALS[refused]);
     const name = BackupNameSchema.safeParse(c.req.param('name'));

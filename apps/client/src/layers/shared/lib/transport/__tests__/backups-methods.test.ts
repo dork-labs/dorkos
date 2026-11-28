@@ -38,8 +38,8 @@ describe('createBackupsMethods', () => {
     fetchMock = answer({ ok: true });
     await methods.moveBackup('a.db', '/Volumes/x');
     expect(sent(fetchMock)).toEqual({
-      url: '/api/config/backups/a.db/move',
-      method: 'POST',
+      url: '/api/config/backups/a.db',
+      method: 'PATCH',
       body: '{"destination":"/Volumes/x"}',
     });
     expect(fetchMock.mock.calls[0]![1]).toMatchObject({ credentials: 'include' });

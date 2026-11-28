@@ -6,7 +6,7 @@
  * - `GET  /api/sessions/:id/continue-options` → `{ plan, ranking, advised }`
  * - `POST /api/sessions/:id/continue` `{ account?, runtime?, model? }` → `202 { sessionId? }`
  * - `POST /api/sessions/:id/wait` `{ autoResume? }` → `{ plan }`
- * - `POST /api/sessions/:id/continue/cancel` → `{ plan }`
+ * - `DELETE /api/sessions/:id/continue` → `{ plan }`
  * - `GET  /api/sessions/:id/limit-history` → `{ entries }` (spec
  *   `claude-account-ui` §7.1): how past limits ended, for the transcript
  *
@@ -186,7 +186,7 @@ export async function waitForResetHandler(c: Context<ApiEnv>): Promise<Response>
 }
 
 /**
- * `POST /api/sessions/:id/continue/cancel` — cancel a pending handoff.
+ * `DELETE /api/sessions/:id/continue` — cancel a pending handoff.
  *
  * @param c - The request context.
  */
@@ -196,7 +196,7 @@ export async function cancelContinueHandler(c: Context<ApiEnv>): Promise<Respons
   try {
     return c.json({ plan: await cancelAutoContinue(sessionId) });
   } catch (err) {
-    return continueErrorReply(c, err, 'continue/cancel');
+    return continueErrorReply(c, err, 'continue (cancel)');
   }
 }
 

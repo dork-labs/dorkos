@@ -180,7 +180,7 @@ export const auditDomain: CapabilityDomain = {
       output: AuditVerifyResultSchema,
       surfaces: {
         mcp: { toolName: 'audit_verify', ...READ_TOOL, servers: [...READ_TOOL.servers] },
-        http: { method: 'get', path: '/api/audit/verify' },
+        http: { method: 'get', path: '/api/audit/integrity' },
       },
       invoke: async (deps, input) => requireAuditDeps(deps).log.verify(input),
     }),

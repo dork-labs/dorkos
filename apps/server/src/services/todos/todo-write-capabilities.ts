@@ -7,7 +7,7 @@
  *   move or reassign it.
  * - `todos.change_promise`: `PATCH /api/todo-promises/{id}`: close an agent's promise or move its
  *   date.
- * - `todos.confirm_promise`: `POST /api/todo-promises/{id}/confirm`: answer "was it kept?".
+ * - `todos.confirm_promise`: `PUT /api/todo-promises/{id}/confirmation`: answer "was it kept?".
  *
  * ## Who may call them
  *
@@ -301,8 +301,8 @@ export const todoPromiseWriteDomain: CapabilityDomain = {
       output: TodoPromiseSchema,
       surfaces: {
         http: {
-          method: 'post',
-          path: '/api/todo-promises/{id}/confirm',
+          method: 'put',
+          path: '/api/todo-promises/{id}/confirmation',
           audience: 'person',
           agentsUse: 'Agents change their own promises with todo_promise_update.',
         },

@@ -720,9 +720,9 @@ contractSuite('the session routes, login off, nothing started', [
     },
   },
   {
-    name: 'POST /api/sessions/:id/continue/cancel on a session that never ran out is a 409',
-    method: 'POST',
-    path: `${S}/${UNKNOWN}/continue/cancel`,
+    name: 'DELETE /api/sessions/:id/continue on a session that never ran out is a 409',
+    method: 'DELETE',
+    path: `${S}/${UNKNOWN}/continue`,
     expect: {
       status: 409,
       headers: PROBLEM_TYPE,

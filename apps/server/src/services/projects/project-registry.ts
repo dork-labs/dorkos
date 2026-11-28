@@ -286,7 +286,7 @@ export class ProjectRegistry {
 
   /**
    * The project of a folder a person or an extension named, never promoting
-   * it to seen (`GET /api/projects/resolve`, `ctx.projects.resolve`).
+   * it to seen (`GET /api/projects/lookup`, `ctx.projects.resolve`).
    *
    * Both the folder and the root git answers with must be inside the
    * directory boundary. A root core had not seen is recorded as `reported`;

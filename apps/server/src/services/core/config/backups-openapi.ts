@@ -90,8 +90,9 @@ export function registerConfigBackupsOpenApi(registry: OpenAPIRegistry): void {
   });
 
   registry.registerPath({
-    method: 'post',
-    path: '/api/config/backups/{name}/move',
+    method: 'patch',
+    path: '/api/config/backups/{name}',
+    operationId: 'config.move_backup',
     tags: ['Config'],
     summary: 'Move an older backup copy to another folder',
     description:

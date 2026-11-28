@@ -51,7 +51,7 @@ describe('the hub gate on /api/hub/computers', () => {
   it.each([
     ['get', '/api/hub/computers'],
     ['get', `${BASE}/agents/01ARZ3NDEKTSV4RRFFQ69G5FAV/chats`],
-    ['get', `${BASE}/sessions/${SESSION}/stream`],
+    ['get', `${BASE}/sessions/${SESSION}/events`],
     ['post', `${BASE}/sessions/${SESSION}/messages`],
     ['post', `${BASE}/sessions/${SESSION}/interrupt`],
     ['post', `${BASE}/sessions/${SESSION}/answers`],

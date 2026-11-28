@@ -56,8 +56,8 @@ describe('createTodoPromiseMethods', () => {
     fetchMock = answer({});
     await methods.confirmTodoPromise('p1', 'yes');
     expect(sent(fetchMock)).toEqual({
-      url: '/api/todo-promises/p1/confirm',
-      method: 'POST',
+      url: '/api/todo-promises/p1/confirmation',
+      method: 'PUT',
       body: '{"answer":"yes"}',
     });
   });

@@ -376,7 +376,7 @@ export function createHubComputerRoutes(
     )
   );
 
-  router.get('/:computerId/sessions/:sessionId/stream', (c) => {
+  router.get('/:computerId/sessions/:sessionId/events', (c) => {
     if (!(c.req.header('accept') ?? '').includes('text/event-stream')) {
       return problem(c, 'not_acceptable', { detail: 'This address is an event stream.' });
     }

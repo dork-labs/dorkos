@@ -198,7 +198,11 @@ export interface paths {
          * @description With `account`: the work carries over to a new session on that account, in the same folder, seeded with where the old one stopped; the answer names the new session, and a second call for the same limit answers with the same one. `runtime` (default: the session's own) moves it to another runtime, only when the account advisor offered that runtime's account; that session starts with the other runtime's own model and effort, and never with more permission than the old one had (full autonomy is not carried over). With only `model`: the same session switches to that model and continues. A session the account advisor claimed (a Flow run) is handed to the advisor, and the answer has no `sessionId` until the advisor reports the new session; the session's plan shows the handoff meanwhile. A session that did not start here (a room, a schedule, a chat binding) can only wait (409).
          */
         post: operations["sessions.createContinue"];
-        delete?: never;
+        /**
+         * Cancel a pending handoff to another account
+         * @description An `auto` plan goes back to asking the person. Too late once the automatic move has started (409).
+         */
+        delete: operations["sessions.cancel_continue"];
         options?: never;
         head?: never;
         patch?: never;
@@ -218,26 +222,6 @@ export interface paths {
          * @description The plan becomes `waiting` until the account's usage resets. `autoResume` (allowed only for a session that started here) continues it by itself once the reset is confirmed; it defaults to the advisor's own choice, else off.
          */
         post: operations["sessions.createWait"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/sessions/{id}/continue/cancel": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Cancel a pending handoff to another account
-         * @description An `auto` plan goes back to asking the person. Too late once the automatic move has started (409).
-         */
-        post: operations["sessions.cancelContinue"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1139,7 +1123,7 @@ export interface paths {
          * List the docs in a space
          * @description **Preview.** This operation may change in any release.
          *
-         *     Every `.md` file under `cwd`, with its path (relative, forward slashes), title (frontmatter `title:`, else the first `# ` heading, else the file name) and slug (the file name without `.md`, lowercased, spaces as `-`), sorted by path. Wiki links and the `[[` menu resolve against it with the rules in `@dorkos/shared/doc-links`. Dot-folders, dependency and build folders and symlinks are skipped. The walk goes breadth first and stops at 2000 docs, 2000 folders, 8 levels deep or 1500 ms, and then answers `truncated: true`; a target the truncated list cannot place is asked about at `/api/documents/resolve`. `root` is the space folder with symlinks resolved. Part of the Docs experiment (`docs.enabled`).
+         *     Every `.md` file under `cwd`, with its path (relative, forward slashes), title (frontmatter `title:`, else the first `# ` heading, else the file name) and slug (the file name without `.md`, lowercased, spaces as `-`), sorted by path. Wiki links and the `[[` menu resolve against it with the rules in `@dorkos/shared/doc-links`. Dot-folders, dependency and build folders and symlinks are skipped. The walk goes breadth first and stops at 2000 docs, 2000 folders, 8 levels deep or 1500 ms, and then answers `truncated: true`; a target the truncated list cannot place is asked about at `/api/documents/lookup`. `root` is the space folder with symlinks resolved. Part of the Docs experiment (`docs.enabled`).
          */
         get: operations["documents.getIndex"];
         put?: never;
@@ -1150,7 +1134,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/documents/resolve": {
+    "/api/documents/lookup": {
         parameters: {
             query?: never;
             header?: never;
@@ -1163,7 +1147,7 @@ export interface paths {
          *
          *     Looks for one target through the whole space, with the same rules as the index, for a link the truncated index could not place. The walk stops at 50000 docs, 20000 folders, 32 levels deep or 4000 ms; `complete: false` then says a `null` doc may not be missing. `from` is the linking doc's path, so the nearest of several matches wins. Part of the Docs experiment (`docs.enabled`).
          */
-        get: operations["documents.resolve"];
+        get: operations["documents.find_doc"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1695,21 +1679,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/tasks/runs/{id}/cancel": {
+    "/api/tasks/runs/{id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Open a scheduled task run
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     One run of a scheduled task. An agent reads only its own and global ones.
+         */
+        get: operations["tasks.view_run"];
         put?: never;
-        /** Stop a running job */
-        post: operations["tasks.cancelRuns"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Stop a running job */
+        patch: operations["tasks.cancel_run"];
         trace?: never;
     };
     "/api/relay/messages": {
@@ -4150,10 +4140,14 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Mark every unread notification read
+         * @description **Preview.** This operation may change in any release.
+         */
+        patch: operations["notifications.mark_all_read"];
         trace?: never;
     };
-    "/api/notifications/{id}/read": {
+    "/api/notifications/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -4170,27 +4164,7 @@ export interface paths {
          * Mark one notification read
          * @description **Preview.** This operation may change in any release.
          */
-        patch: operations["notifications.read"];
-        trace?: never;
-    };
-    "/api/notifications/read-all": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Mark every unread notification read
-         * @description **Preview.** This operation may change in any release.
-         */
-        post: operations["notifications.readAll"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
+        patch: operations["notifications.mark_read"];
         trace?: never;
     };
     "/api/activity": {
@@ -5009,7 +4983,7 @@ export interface paths {
         patch: operations["todos.change_promise"];
         trace?: never;
     };
-    "/api/todo-promises/{id}/confirm": {
+    "/api/todo-promises/{id}/confirmation": {
         parameters: {
             query?: never;
             header?: never;
@@ -5017,14 +4991,14 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
         /**
          * Answer whether a kept promise was kept
          * @description **Preview.** This operation may change in any release.
          *
          *     When an agent marks a promise to a person kept, that person is asked to confirm it (DOR-3034). `yes` confirms it; `not-yet` reopens it. The owner only.
          */
-        post: operations["todos.confirm_promise"];
+        put: operations["todos.confirm_promise"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5115,7 +5089,7 @@ export interface paths {
         patch: operations["work-queue.change_settings"];
         trace?: never;
     };
-    "/api/work-queues/stop": {
+    "/api/work-queues/stopped": {
         parameters: {
             query?: never;
             header?: never;
@@ -5200,29 +5174,13 @@ export interface paths {
         delete: operations["work-queue.remove_item"];
         options?: never;
         head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/agents/{agentId}/work-queue/items/{itemId}/requeue": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
         /**
          * Queue ended work again
          * @description **Preview.** This operation may change in any release.
          *
-         *     Put an ended item at the back of the queue. It starts a new chat.
+         *     Put an ended item at the back of the queue (`status: "queued"`). It starts a new chat.
          */
-        post: operations["work-queue.requeue_item"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
+        patch: operations["work-queue.requeue_item"];
         trace?: never;
     };
     "/api/mesh/agents": {
@@ -5413,7 +5371,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/audit/verify": {
+    "/api/audit/integrity": {
         parameters: {
             query?: never;
             header?: never;
@@ -5919,28 +5877,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/tasks/runs/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Open a scheduled task run
-         * @description **Preview.** This operation may change in any release.
-         *
-         *     One run of a scheduled task. An agent reads only its own and global ones.
-         */
-        get: operations["tasks.view_run"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/sessions/{id}/runtime-type": {
         parameters: {
             query?: never;
@@ -6099,7 +6035,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/workspaces/scan": {
+    "/api/workspaces/disk-checkouts": {
         parameters: {
             query?: never;
             header?: never;
@@ -6348,32 +6284,16 @@ export interface paths {
         delete: operations["config.deleteBackups"];
         options?: never;
         head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/config/backups/{name}/move": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
         /**
          * Move an older backup copy to another folder
          * @description **Preview.** This operation may change in any release.
          *
          *     Copies one older `dork-` copy into an existing folder inside the directory boundary or on an external drive (`/Volumes/<drive>/…`), never the data folder. The destination is resolved once to its real path, so a link is followed and every check reads the folder written to. Nothing there is overwritten. The copy must match in size and pass SQLite’s `integrity_check`; only then is the original removed, and only if unchanged. A failed check deletes the new file and keeps the original. Person-only: a caller naming itself an agent, an approval token, a program credential, another site, or a request from another computer (except the owner over an encrypted connection) is refused before anything is read. There is no MCP tool for this.
          */
-        post: operations["config.moveBackups"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
+        patch: operations["config.move_backup"];
         trace?: never;
     };
-    "/api/hub/computers/{computerId}/sessions/{sessionId}/stream": {
+    "/api/hub/computers/{computerId}/sessions/{sessionId}/events": {
         parameters: {
             query?: never;
             header?: never;
@@ -6386,7 +6306,7 @@ export interface paths {
          *
          *     Server-Sent Events relayed from the computer's own chat stream: each event keeps its name, JSON data and resume id. Send the last id back as `Last-Event-ID` (or `?resume=`) to continue after it. An `error` event carries the reason when the computer ends the stream with one.
          */
-        get: operations["hub.streamComputersSessions"];
+        get: operations["hub.stream_session_events"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6975,7 +6895,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/resolve": {
+    "/api/projects/lookup": {
         parameters: {
             query?: never;
             header?: never;
@@ -6986,7 +6906,7 @@ export interface paths {
          * Name the project a folder belongs to
          * @description The git main checkout `cwd` belongs to: a linked worktree and a subfolder both map to it, and a bare repository is its own project. A folder in no repository answers `{ "project": null }`, including one that only holds several repositories. A lookup never marks a project as seen, so it does not add it to `GET /api/projects`. Both the folder and the repository it belongs to must be inside the server's directory boundary (a worktree of an outside repository is refused). Only a person may ask: a caller that names itself an agent, a browser request from another site (a foreign `Origin`, or `Sec-Fetch-Site: cross-site`), or (with login on) a caller without a session cookie is refused. With login off, a local caller that is neither is trusted as the person. The server keeps at most 200 roots that only a lookup named, and forgets the least recently used one past that.
          */
-        get: operations["projects.resolve"];
+        get: operations["projects.find_project"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8348,7 +8268,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/workbench/probe": {
+    "/api/workbench/port-checks": {
         parameters: {
             query?: never;
             header?: never;
@@ -8361,7 +8281,7 @@ export interface paths {
          * Probe a loopback port before framing it
          * @description Reports whether a loopback port has a server on it, so the embedded browser can explain a dead port instead of framing a blank preview. Gated by the app-wide session auth and loopback-pinned: the body carries a port and nothing else.
          */
-        post: operations["workbench.probe"];
+        post: operations["workbench.check_port"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13122,6 +13042,10 @@ export interface components {
             /** @enum {string} */
             state: "stopping" | "already_finished";
         };
+        CancelTaskRunRequest: {
+            /** @enum {string} */
+            status: "cancelled";
+        };
         RelayDeliveryReceipt: {
             messageId: components["schemas"]["RelayMessageId"];
             /** @enum {string} */
@@ -14602,6 +14526,10 @@ export interface components {
             ok: true;
             marked: number;
             unreadCount: number;
+        };
+        MarkNotificationsReadRequest: {
+            /** @enum {boolean} */
+            read: true;
         };
         CapabilityApprovalRequired: {
             /** @enum {string} */
@@ -17401,6 +17329,55 @@ export interface operations {
             };
         };
     };
+    "sessions.cancel_continue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new plan. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LimitPlanResponse"];
+                };
+            };
+            /** @description Only a person can move or hold a session; an agent identity is refused. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The session has no limit, no handoff is pending, or the move already started. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The session is held by the account advisor (a Flow run), and it could not be reached, so nothing changed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     "sessions.createWait": {
         parameters: {
             query?: never;
@@ -17444,55 +17421,6 @@ export interface operations {
                 };
             };
             /** @description The session has no limit, or its work already moved or is moving. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The session is held by the account advisor (a Flow run), and it could not be reached, so nothing changed. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    "sessions.cancelContinue": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The new plan. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LimitPlanResponse"];
-                };
-            };
-            /** @description Only a person can move or hold a session; an agent identity is refused. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The session has no limit, no handoff is pending, or the move already started. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -20901,7 +20829,7 @@ export interface operations {
             };
         };
     };
-    "documents.resolve": {
+    "documents.find_doc": {
         parameters: {
             query: {
                 cwd: string;
@@ -23015,7 +22943,120 @@ export interface operations {
             };
         };
     };
-    "tasks.cancelRuns": {
+    "tasks.view_run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The run. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Open a scheduled task run result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRun"];
+                };
+            };
+            /** @description A person must allow the call first; nothing ran */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilityApprovalRequired"];
+                };
+            };
+            /** @description `invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `unknown_capability`: not available on this computer; `not_found`: the thing it names */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The capability refused because of the state it met, such as `conflict` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `precondition_failed`: something changed since the caller looked */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `internal_error`: something went wrong running it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `signin_unreachable`: the remote server did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "tasks.cancel_run": {
         parameters: {
             query?: never;
             header?: never;
@@ -23024,7 +23065,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CancelTaskRunRequest"];
+            };
+        };
         responses: {
             /** @description A runner has the stop request, or the run had already finished */
             200: {
@@ -23033,6 +23078,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CancelTaskRunResponse"];
+                };
+            };
+            /** @description The body is not `{ "status": "cancelled" }` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description Run not found */
@@ -37486,16 +37540,18 @@ export interface operations {
             };
         };
     };
-    "notifications.read": {
+    "notifications.mark_all_read": {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["MarkNotificationsReadRequest"];
+            };
+        };
         responses: {
             /** @description How many rows moved, and the unread count after */
             200: {
@@ -37504,6 +37560,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MarkNotificationsReadResponse"];
+                };
+            };
+            /** @description The body is not `{ "read": true }` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description Only the operator may move read state */
@@ -37517,14 +37582,20 @@ export interface operations {
             };
         };
     };
-    "notifications.readAll": {
+    "notifications.mark_read": {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                id: string;
+            };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["MarkNotificationsReadRequest"];
+            };
+        };
         responses: {
             /** @description How many rows moved, and the unread count after */
             200: {
@@ -37533,6 +37604,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MarkNotificationsReadResponse"];
+                };
+            };
+            /** @description The body is not `{ "read": true }` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description Only the operator may move read state */
@@ -45773,7 +45853,17 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description The only status a person can set: queue it again.
+                     * @enum {string}
+                     */
+                    status: "queued";
+                };
+            };
+        };
         responses: {
             /** @description Queue ended work again result */
             200: {
@@ -50218,119 +50308,6 @@ export interface operations {
             };
         };
     };
-    "tasks.view_run": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The run. */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Open a scheduled task run result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskRun"];
-                };
-            };
-            /** @description A person must allow the call first; nothing ran */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CapabilityApprovalRequired"];
-                };
-            };
-            /** @description `invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description `agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description `unknown_capability`: not available on this computer; `not_found`: the thing it names */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The capability refused because of the state it met, such as `conflict` */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description `precondition_failed`: something changed since the caller looked */
-            412: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description `internal_error`: something went wrong running it */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description `signin_unreachable`: the remote server did not answer */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description `temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
     "sessions.get_runtime_type": {
         parameters: {
             query?: never;
@@ -52493,7 +52470,7 @@ export interface operations {
             };
         };
     };
-    "config.moveBackups": {
+    "config.move_backup": {
         parameters: {
             query?: never;
             header?: never;
@@ -52579,7 +52556,7 @@ export interface operations {
             };
         };
     };
-    "hub.streamComputersSessions": {
+    "hub.stream_session_events": {
         parameters: {
             query?: {
                 resume?: string;
@@ -54587,7 +54564,7 @@ export interface operations {
             };
         };
     };
-    "projects.resolve": {
+    "projects.find_project": {
         parameters: {
             query: {
                 cwd: string;
@@ -59848,7 +59825,7 @@ export interface operations {
             };
         };
     };
-    "workbench.probe": {
+    "workbench.check_port": {
         parameters: {
             query?: never;
             header?: never;

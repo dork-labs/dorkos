@@ -1,6 +1,6 @@
 /**
  * Projects — the wire contract for `GET /api/projects` and
- * `GET /api/projects/resolve` (spec `flow-multiproject` §6.1).
+ * `GET /api/projects/lookup` (spec `flow-multiproject` §6.1).
  *
  * A project is a git main checkout. Worktrees and subfolders belong to their
  * main checkout, and a folder in no repository belongs to no project. The
@@ -60,7 +60,7 @@ export const ProjectListResponseSchema = z
 /** Response body of `GET /api/projects`. */
 export type ProjectListResponse = z.infer<typeof ProjectListResponseSchema>;
 
-/** Query of `GET /api/projects/resolve`. */
+/** Query of `GET /api/projects/lookup`. */
 export const ProjectResolveQuerySchema = z
   .object({
     /** Any folder; it must be inside the server's directory boundary. */
@@ -68,7 +68,7 @@ export const ProjectResolveQuerySchema = z
   })
   .openapi('ProjectResolveQuery');
 
-/** Response body of `GET /api/projects/resolve`. */
+/** Response body of `GET /api/projects/lookup`. */
 export const ProjectResolveResponseSchema = z
   .object({
     /** The project the folder belongs to, or null when it is in no repository. */
@@ -76,7 +76,7 @@ export const ProjectResolveResponseSchema = z
   })
   .openapi('ProjectResolveResponse');
 
-/** Response body of `GET /api/projects/resolve`. */
+/** Response body of `GET /api/projects/lookup`. */
 export type ProjectResolveResponse = z.infer<typeof ProjectResolveResponseSchema>;
 
 /**

@@ -67,9 +67,10 @@ const NOT_ACTIONS: readonly RegExp[] = [
   /\/check-files$/,
   /\/check$/,
   /\/probe$/,
+  /\/port-checks$/,
   /\/heartbeat$/,
   /\/read$/,
-  /\/read-all$/,
+  /^\/api\/notifications(?:\/[^/]+)?$/,
   /\/read-cursor$/,
 ];
 

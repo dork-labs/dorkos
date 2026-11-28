@@ -13,7 +13,10 @@
  * @module routes/notifications
  */
 import { Hono } from 'hono';
-import { ListNotificationsQuerySchema } from '@dorkos/shared/notification-schemas';
+import {
+  ListNotificationsQuerySchema,
+  MarkNotificationsReadRequestSchema,
+} from '@dorkos/shared/notification-schemas';
 import { INVALID_CURSOR_DETAIL } from '@dorkos/shared/paging';
 import { encodePageCursor, openPageCursor } from '../lib/paging/keyset-page.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
@@ -22,7 +25,7 @@ import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { notificationEntitlement } from '../services/notifications/notification-entitlement.js';
 import type { NotificationService } from '../services/notifications/notification-service.js';
-import { problem, validationProblem } from '@dorkos/http-kit';
+import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 
 /**
  * The list the Inbox's cursors are bound to. Plain, not sealed: every caller
@@ -71,18 +74,23 @@ export function createNotificationsRoutes(service: NotificationService): Hono<Ap
     return c.json({ ...page, nextCursor });
   });
 
-  router.patch('/:id/read', (c) => {
+  // `{ read: true }` on the collection marks every unread one; on one id, that one.
+  router.patch('/', (c) => {
     if (notificationEntitlement(readCallerPrincipal(honoRequestFacts(c))) !== 'manage') {
       return problem(c, 'operator_only', { detail: NOT_THE_OPERATOR });
     }
-    return c.json(service.markRead(c.req.param('id')));
+    const body = MarkNotificationsReadRequestSchema.safeParse(readJsonBody(c));
+    if (!body.success) return validationProblem(c, body.error);
+    return c.json(service.markAllRead());
   });
 
-  router.post('/read-all', (c) => {
+  router.patch('/:id', (c) => {
     if (notificationEntitlement(readCallerPrincipal(honoRequestFacts(c))) !== 'manage') {
       return problem(c, 'operator_only', { detail: NOT_THE_OPERATOR });
     }
-    return c.json(service.markAllRead());
+    const body = MarkNotificationsReadRequestSchema.safeParse(readJsonBody(c));
+    if (!body.success) return validationProblem(c, body.error);
+    return c.json(service.markRead(c.req.param('id')));
   });
 
   return router;

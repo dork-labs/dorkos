@@ -63,7 +63,7 @@ const ownHeader: Record<string, () => Promise<unknown>> = {
 
 const plain: Record<string, () => Promise<unknown>> = {
   'GET /api/projects': () => createProjectMethods(base).listProjects(),
-  'GET /api/projects/resolve?cwd=%2Fmy+repo%2B2': () =>
+  'GET /api/projects/lookup?cwd=%2Fmy+repo%2B2': () =>
     createProjectMethods(base).resolveProject('/my repo+2'),
   'GET /api/team': () => createTeamMethods(base).getTeamRoster(),
   'GET /api/team/a%2Fb%20c/rooms': () => createTeamMethods(base).listMemberRooms('a/b c'),
@@ -103,13 +103,13 @@ const plain: Record<string, () => Promise<unknown>> = {
   'GET /api/agents/a%20b/work-queue': () => queue.getWorkQueue('a b'),
   'PATCH /api/agents/a/work-queue {"enabled":true}': () =>
     queue.updateWorkQueue('a', { enabled: true }),
-  'PUT /api/work-queues/stop {"stopped":true}': () => queue.setWorkQueuesStopped(true),
+  'PUT /api/work-queues/stopped {"stopped":true}': () => queue.setWorkQueuesStopped(true),
   'PUT /api/agents/a/work-queue/order {"itemIds":["i1","i2"]}': () =>
     queue.reorderWorkQueue('a', ['i1', 'i2']),
   'POST /api/agents/a/work-queue/items {"title":"Ship","prompt":"Ship it"}': () =>
     queue.addWorkItem('a', { title: 'Ship', prompt: 'Ship it' }),
   'DELETE /api/agents/a/work-queue/items/i%2F1': () => queue.removeWorkItem('a', 'i/1'),
-  'POST /api/agents/a%201/work-queue/items/i%2F1/requeue': () =>
+  'PATCH /api/agents/a%201/work-queue/items/i%2F1 {"status":"queued"}': () =>
     queue.requeueWorkItem('a 1', 'i/1'),
   // Tasks. `null` clears a schedule's effort, so it must reach the server as `null`.
   'GET /api/tasks': () => tasks.listTasks(),
@@ -126,7 +126,7 @@ const plain: Record<string, () => Promise<unknown>> = {
   'POST /api/tasks/t1/trigger': () => tasks.triggerTask('t1', {}),
   'POST /api/tasks/t1/trigger {"permissionMode":"acceptEdits"}': () =>
     tasks.triggerTask('t1', { permissionMode: 'acceptEdits' }),
-  'POST /api/tasks/runs/r1/cancel': () => tasks.cancelTaskRun('r1'),
+  'PATCH /api/tasks/runs/r1 {"status":"cancelled"}': () => tasks.cancelTaskRun('r1'),
   // Permissions. `null` puts an area back to its default, so it must reach the server.
   'GET /api/permissions': () => perms.getPermissions(),
   'GET /api/agents/agent%201/permissions': () => perms.getAgentPermissions('agent 1'),

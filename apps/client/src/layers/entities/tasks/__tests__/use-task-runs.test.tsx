@@ -329,26 +329,6 @@ describe('useCancelTaskRun', () => {
     vi.clearAllMocks();
   });
 
-  it('calls transport.cancelTaskRun with the run ID', async () => {
-    const transport = createMockTransport({
-      cancelTaskRun: vi.fn().mockResolvedValue({ success: true, state: 'stopping' }),
-    });
-
-    const { result } = renderHook(() => useCancelTaskRun(), {
-      wrapper: createWrapper(transport),
-    });
-
-    await act(async () => {
-      result.current.mutate('run-to-cancel');
-    });
-
-    await waitFor(() => {
-      expect(result.current.isSuccess).toBe(true);
-    });
-
-    expect(transport.cancelTaskRun).toHaveBeenCalledWith('run-to-cancel');
-  });
-
   it('invalidates task run queries on success', async () => {
     const runs = [createMockRun({ id: 'run-1', status: 'running' })];
     const transport = createMockTransport({
@@ -377,6 +357,7 @@ describe('useCancelTaskRun', () => {
     await waitFor(() => {
       expect(cancelResult.current.isSuccess).toBe(true);
     });
+    expect(transport.cancelTaskRun).toHaveBeenCalledWith('run-1');
 
     // listTaskRuns should have been called again due to query invalidation
     await waitFor(() => {

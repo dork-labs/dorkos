@@ -283,7 +283,7 @@ describe('to-do routes', () => {
       expect(change.status).toBe(403);
       expect(change.body.code).toBe('person_only');
       const confirm = await request(fixtureServer)
-        .post(`/api/todo-promises/${kept.id}/confirm`)
+        .put(`/api/todo-promises/${kept.id}/confirmation`)
         .set('authorization', 'Bearer made-up-token')
         .send({ answer: 'yes' });
       expect(confirm.status).toBe(403);
@@ -447,7 +447,7 @@ describe('to-do routes', () => {
     expect(confirm.ask(yes.id)).toBe(true);
 
     const agent = await request(fixtureServer)
-      .post(`/api/todo-promises/${yes.id}/confirm`)
+      .put(`/api/todo-promises/${yes.id}/confirmation`)
       .set(AGENT_IDENTITY_HEADER, '/agents/ana')
       .send({ answer: 'yes' });
     expect(agent.status).toBe(403);
@@ -455,12 +455,12 @@ describe('to-do routes', () => {
     expect(agent.body.detail).toBe('Agents change their own promises with todo_promise_update.');
 
     const confirmed = await request(fixtureServer)
-      .post(`/api/todo-promises/${yes.id}/confirm`)
+      .put(`/api/todo-promises/${yes.id}/confirmation`)
       .send({ answer: 'yes' });
     expect(confirmed.status).toBe(200);
     expect(confirmed.body.confirmState).toBe('confirmed');
     const twice = await request(fixtureServer)
-      .post(`/api/todo-promises/${yes.id}/confirm`)
+      .put(`/api/todo-promises/${yes.id}/confirmation`)
       .send({ answer: 'not-yet' });
     expect(twice.body.code).toBe('invalid_request');
 
@@ -468,7 +468,7 @@ describe('to-do routes', () => {
     service.update({ kind: 'agent', agentId: 'agent-ana' }, notYet.id, { state: 'kept' });
     confirm.ask(notYet.id);
     const reopened = await request(fixtureServer)
-      .post(`/api/todo-promises/${notYet.id}/confirm`)
+      .put(`/api/todo-promises/${notYet.id}/confirmation`)
       .send({ answer: 'not-yet' });
     expect(reopened.status).toBe(200);
     expect(reopened.body).toMatchObject({ state: 'open', confirmState: 'not-yet' });

@@ -73,8 +73,8 @@ describe('createAccountMethods', () => {
     const fetchMock = answer(200, { ok: true });
     await expect(methods.cancelAutoContinue('s1')).resolves.toBeUndefined();
     expect(call(fetchMock)).toMatchObject({
-      url: '/api/sessions/s1/continue/cancel',
-      method: 'POST',
+      url: '/api/sessions/s1/continue',
+      method: 'DELETE',
     });
   });
 

@@ -760,16 +760,16 @@ The `warnings` field is only present when the patch includes keys listed in `SEN
 
 Mounted at `/api/tasks` when the scheduler is on (`scheduler.enabled`, default `true`, or the `DORKOS_TASKS_ENABLED` override; see [Feature Flags](#feature-flags)).
 
-| Method | Path                         | Description               |
-| ------ | ---------------------------- | ------------------------- |
-| GET    | `/api/tasks`                 | List all task definitions |
-| POST   | `/api/tasks`                 | Create a task definition  |
-| PATCH  | `/api/tasks/:id`             | Update a task definition  |
-| DELETE | `/api/tasks/:id`             | Delete a task definition  |
-| POST   | `/api/tasks/:id/trigger`     | Trigger a task run        |
-| GET    | `/api/tasks/runs`            | Get run history           |
-| GET    | `/api/tasks/runs/:id`        | Get a specific run        |
-| POST   | `/api/tasks/runs/:id/cancel` | Cancel an active run      |
+| Method | Path                     | Description                                        |
+| ------ | ------------------------ | -------------------------------------------------- |
+| GET    | `/api/tasks`             | List all task definitions                          |
+| POST   | `/api/tasks`             | Create a task definition                           |
+| PATCH  | `/api/tasks/:id`         | Update a task definition                           |
+| DELETE | `/api/tasks/:id`         | Delete a task definition                           |
+| POST   | `/api/tasks/:id/trigger` | Trigger a task run                                 |
+| GET    | `/api/tasks/runs`        | Get run history                                    |
+| GET    | `/api/tasks/runs/:id`    | Get a specific run                                 |
+| PATCH  | `/api/tasks/runs/:id`    | Cancel an active run (`{ "status": "cancelled" }`) |
 
 Schedules support an optional `agentId` field for agent-linked scheduling. When `agentId` is set, the schedule's CWD is resolved from the agent's registered project path via MeshCore.
 
@@ -782,8 +782,8 @@ Always mounted, no feature flag: `/api/notifications` and `/api/push` (spec `not
 | Method | Path                          | Description                                                    |
 | ------ | ----------------------------- | -------------------------------------------------------------- |
 | GET    | `/api/notifications`          | List notification history, a page at a time, with unread count |
-| PATCH  | `/api/notifications/:id/read` | Mark one notification read                                     |
-| POST   | `/api/notifications/read-all` | Mark every notification read                                   |
+| PATCH  | `/api/notifications/:id`      | Mark one notification read (`{ "read": true }`)                |
+| PATCH  | `/api/notifications`          | Mark every notification read (`{ "read": true }`)              |
 | GET    | `/api/push/vapid-public-key`  | The server's VAPID public key, for subscribing                 |
 | GET    | `/api/push/subscriptions`     | List the push subscriptions, a page at a time                  |
 | POST   | `/api/push/subscriptions`     | Register a push subscription                                   |

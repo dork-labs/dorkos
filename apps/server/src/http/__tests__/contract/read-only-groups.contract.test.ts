@@ -303,8 +303,8 @@ contractSuite('read-only and system groups', [
     },
   },
   {
-    name: 'GET /api/audit/verify checks the chain',
-    path: '/api/audit/verify',
+    name: 'GET /api/audit/integrity checks the chain',
+    path: '/api/audit/integrity',
     expect: { status: 200, headers: JSON_TYPE, schema: AuditVerifyResultSchema },
   },
   {

@@ -1,6 +1,6 @@
 /**
  * A person's work queue doors (DOR-3462) as capabilities the mount serves on
- * `/api/agents/{agentId}/work-queue/*` and `/api/work-queues/stop` (ADR 261123-170830).
+ * `/api/agents/{agentId}/work-queue/*` and `/api/work-queues/stopped` (ADR 261123-170830).
  *
  * Every one is person-only (`http.audience: 'person'`): an agent reads and
  * changes queues with its own tools (`work-queue-capabilities.ts`), which carry
@@ -185,7 +185,7 @@ export const workQueueStopAllCapability = defineCapability({
   areaNote: PERSON_ONLY_NOTE,
   input: SetWorkQueuesStoppedRequestSchema,
   output: SetWorkQueuesStoppedRequestSchema,
-  surfaces: { http: { method: 'put', path: '/api/work-queues/stop', audience: 'person' } },
+  surfaces: { http: { method: 'put', path: '/api/work-queues/stopped', audience: 'person' } },
   invoke: async (deps, input, context) => {
     assertOwner(deps, context);
     queueOf(deps).service.setAllStopped(input.stopped);
@@ -267,16 +267,21 @@ export const workQueueRemoveItemCapability = defineCapability({
 export const workQueueRequeueItemCapability = defineCapability({
   id: 'work-queue.requeue_item',
   title: 'Queue ended work again',
-  description: 'Put an ended item at the back of the queue. It starts a new chat.',
+  description:
+    'Put an ended item at the back of the queue (`status: "queued"`). It starts a new chat.',
   tier: 'act',
   area: null,
   areaNote: PERSON_ONLY_NOTE,
-  input: z.object({ agentId: AgentId, itemId: ItemId }),
+  input: z.object({
+    agentId: AgentId,
+    itemId: ItemId,
+    status: z.literal('queued').describe('The only status a person can set: queue it again.'),
+  }),
   output: WorkItemSchema,
   surfaces: {
     http: {
-      method: 'post',
-      path: '/api/agents/{agentId}/work-queue/items/{itemId}/requeue',
+      method: 'patch',
+      path: '/api/agents/{agentId}/work-queue/items/{itemId}',
       audience: 'person',
     },
   },

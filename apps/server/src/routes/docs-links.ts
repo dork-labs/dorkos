@@ -1,9 +1,9 @@
 /**
- * `/api/documents/index` and `/api/documents/resolve`: the docs in one space,
+ * `/api/documents/index` and `/api/documents/lookup`: the docs in one space,
  * so the editor can resolve wiki links and fill the `[[` menu (DOR-2982).
  *
  * - `GET /index?cwd=<dir>` answers `{ root, docs: [{ path, title, slug }], truncated }`.
- * - `GET /resolve?cwd=<dir>&target=<typed>&from=<path>` answers
+ * - `GET /lookup?cwd=<dir>&target=<typed>&from=<path>` answers
  *   `{ doc, complete }` for one target, looked for beyond the index's limits,
  *   for a link the truncated index could not place.
  *
@@ -88,7 +88,7 @@ export function createDocLinkRoutes(deps: DocLinkRouteDeps = liveDeps): Hono<Api
     }
   });
 
-  router.get('/resolve', whileEnabled, async (c) => {
+  router.get('/lookup', whileEnabled, async (c) => {
     const parsed = DocResolveQuerySchema.safeParse(readQuery(c));
     if (!parsed.success) {
       return validationProblem(c, parsed.error);
@@ -97,7 +97,7 @@ export function createDocLinkRoutes(deps: DocLinkRouteDeps = liveDeps): Hono<Api
     try {
       return c.json(await deps.resolve(cwd, target, from?.normalize('NFC') ?? null));
     } catch (err) {
-      return failure(c, err, '/resolve', cwd);
+      return failure(c, err, '/lookup', cwd);
     }
   });
 

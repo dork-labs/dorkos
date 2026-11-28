@@ -10,7 +10,7 @@
  *   for that dev-server port and returns its bootstrap URL — a whole origin of
  *   its own, because a dev server served under a path prefix cannot resolve its
  *   own root-absolute assets. See `services/workbench-serve/preview-listener.ts`.
- * - `POST /api/workbench/probe` — report whether a loopback port has a server on
+ * - `POST /api/workbench/port-checks` — report whether a loopback port has a server on
  *   it, so the browser can explain a dead port instead of framing it. Auth-gated
  *   like `/sign`, and loopback-pinned: the body carries a port and nothing else.
  * - `POST /api/workbench/bridge` — whether DorkOS added its frame scripts to a
@@ -216,7 +216,7 @@ async function signPreview(c: Context<ApiEnv>, port: number) {
 }
 
 /**
- * `POST /api/workbench/probe` — report whether a loopback port has a server on
+ * `POST /api/workbench/port-checks` — report whether a loopback port has a server on
  * it. Auth-gated like `/sign` (only an authenticated caller can ask this machine
  * what it is running), and loopback-pinned like the proxy: the body carries a
  * port and nothing else, so there is no host to point elsewhere.
@@ -224,7 +224,7 @@ async function signPreview(c: Context<ApiEnv>, port: number) {
  * The embedded browser calls this before framing a dev server, so a port with
  * nothing on it becomes a sentence the user can act on instead of a blank frame.
  */
-router.post('/probe', async (c) => {
+router.post('/port-checks', async (c) => {
   const parsed = WorkbenchProbeRequestSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
     return validationProblem(c, parsed.error);

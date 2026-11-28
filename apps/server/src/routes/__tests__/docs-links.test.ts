@@ -138,12 +138,12 @@ describe('GET /api/documents/index', () => {
   });
 });
 
-/** `GET /api/documents/resolve` for one target. */
+/** `GET /api/documents/lookup` for one target. */
 function getResolve(target: Hono<ApiEnv>, query: Record<string, string>): Promise<Response> {
-  return Promise.resolve(target.request(`/api/documents/resolve?${new URLSearchParams(query)}`));
+  return Promise.resolve(target.request(`/api/documents/lookup?${new URLSearchParams(query)}`));
 }
 
-describe('GET /api/documents/resolve', () => {
+describe('GET /api/documents/lookup', () => {
   it('finds one target through the whole space, nearest first', async () => {
     const res = await getResolve(app(), { cwd: space, target: 'launch plan', from: 'README.md' });
     expect(res.status).toBe(200);

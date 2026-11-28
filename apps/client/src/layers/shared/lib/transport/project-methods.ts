@@ -18,7 +18,7 @@ export function createProjectMethods(baseUrl: string) {
     },
 
     async resolveProject(cwd: string): Promise<ProjectRef | null> {
-      return (await api.call('projects.resolve', { query: { cwd } })).project;
+      return (await api.call('projects.find_project', { query: { cwd } })).project;
     },
   };
 }

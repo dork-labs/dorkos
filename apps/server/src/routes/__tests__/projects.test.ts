@@ -1,5 +1,5 @@
 /**
- * `GET /api/projects` and `GET /api/projects/resolve` (spec `flow-multiproject`
+ * `GET /api/projects` and `GET /api/projects/lookup` (spec `flow-multiproject`
  * §6.1), over the real boundary check and real git repositories.
  */
 import { execFileSync } from 'node:child_process';
@@ -107,9 +107,9 @@ afterAll(() => {
   rmSync(base, { recursive: true, force: true });
 });
 
-describe('GET /api/projects/resolve', () => {
+describe('GET /api/projects/lookup', () => {
   it('maps a worktree to its main checkout', async () => {
-    const res = await request(server).get('/api/projects/resolve').query({ cwd: worktree });
+    const res = await request(server).get('/api/projects/lookup').query({ cwd: worktree });
     expect(res.status).toBe(200);
     expect(ProjectResolveResponseSchema.parse(res.body)).toEqual({
       project: { root: inside, name: 'dorkos' },
@@ -119,20 +119,20 @@ describe('GET /api/projects/resolve', () => {
   it('answers null for a folder in no repository', async () => {
     const plain = path.join(base, 'home', 'plain');
     mkdirSync(plain, { recursive: true });
-    const res = await request(server).get('/api/projects/resolve').query({ cwd: plain });
+    const res = await request(server).get('/api/projects/lookup').query({ cwd: plain });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ project: null });
   });
 
   it('refuses a folder outside the directory boundary with 403', async () => {
-    const res = await request(server).get('/api/projects/resolve').query({ cwd: outside });
+    const res = await request(server).get('/api/projects/lookup').query({ cwd: outside });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('outside_boundary');
   });
 
   it('refuses a caller that names itself an agent with 403, and records nothing', async () => {
     const res = await request(server)
-      .get('/api/projects/resolve')
+      .get('/api/projects/lookup')
       .set('x-dorkos-agent', 'agent-token-abc')
       .query({ cwd: worktree });
     expect(res.status).toBe(403);
@@ -142,7 +142,7 @@ describe('GET /api/projects/resolve', () => {
 
   it('refuses a request from another site with 403', async () => {
     const res = await request(bareServer)
-      .get('/api/projects/resolve')
+      .get('/api/projects/lookup')
       .set('origin', 'https://evil.example')
       .query({ cwd: worktree });
     expect(res.status).toBe(403);
@@ -154,7 +154,7 @@ describe('GET /api/projects/resolve', () => {
 
   it('refuses a cross-site browser request that sends no Origin (an <img> or no-cors fetch)', async () => {
     const res = await request(server)
-      .get('/api/projects/resolve')
+      .get('/api/projects/lookup')
       .set('sec-fetch-site', 'cross-site')
       .query({ cwd: worktree });
     expect(res.status).toBe(403);
@@ -164,7 +164,7 @@ describe('GET /api/projects/resolve', () => {
 
   it('answers the app itself, which a browser marks same-origin', async () => {
     const res = await request(server)
-      .get('/api/projects/resolve')
+      .get('/api/projects/lookup')
       .set('sec-fetch-site', 'same-origin')
       .query({ cwd: worktree });
     expect(res.status).toBe(200);
@@ -173,7 +173,7 @@ describe('GET /api/projects/resolve', () => {
   it('refuses a caller without a session cookie while login is on', async () => {
     auth.enabled = true;
     try {
-      const res = await request(bareServer).get('/api/projects/resolve').query({ cwd: worktree });
+      const res = await request(bareServer).get('/api/projects/lookup').query({ cwd: worktree });
       expect(res.status).toBe(403);
       expect(res.body).not.toHaveProperty('project');
     } finally {
@@ -182,7 +182,7 @@ describe('GET /api/projects/resolve', () => {
   });
 
   it('refuses a missing cwd with 400', async () => {
-    const res = await request(server).get('/api/projects/resolve');
+    const res = await request(server).get('/api/projects/lookup');
     expect(res.status).toBe(400);
   });
 });
@@ -192,7 +192,7 @@ describe('a folder inside the boundary whose repository is outside it (real git)
     ['a linked worktree of an outside repository', () => worktreeOfOutside],
     ['a .git file pointing at an outside repository', () => fakeGitFile],
   ])('refuses %s with 403, and never names the outside folder', async (_what, dir) => {
-    const res = await request(server).get('/api/projects/resolve').query({ cwd: dir() });
+    const res = await request(server).get('/api/projects/lookup').query({ cwd: dir() });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('outside_boundary');
     expect(JSON.stringify(res.body)).not.toContain(outside);
@@ -213,7 +213,7 @@ describe('a folder inside the boundary whose repository is outside it (real git)
 
 describe('GET /api/projects', () => {
   it('does not list a folder that was only looked up: a lookup never makes it seen', async () => {
-    await request(server).get('/api/projects/resolve').query({ cwd: worktree });
+    await request(server).get('/api/projects/lookup').query({ cwd: worktree });
     const res = await request(server).get('/api/projects');
     expect(res.status).toBe(200);
     expect(ProjectListResponseSchema.parse(res.body).projects).toEqual([]);

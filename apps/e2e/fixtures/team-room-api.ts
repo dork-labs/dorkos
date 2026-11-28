@@ -479,11 +479,11 @@ export class TeamRoomApi {
    * composer next runs. That row is real activity, not a bug, and a later spec
    * asserting a genuinely quiet header has to start from an operator who has
    * already seen it, exactly as they would have on a real morning with more
-   * than one thing to glance at. `POST /api/notifications/read-all` is the
+   * than one thing to glance at. `PATCH /api/notifications` is the
    * same route the bell's "Mark all read" button calls.
    */
   async markAllNotificationsRead(): Promise<void> {
-    const res = await this.request.post('/api/notifications/read-all');
+    const res = await this.request.patch('/api/notifications', { data: { read: true } });
     if (!res.ok()) throw new Error(`Could not mark notifications read: ${await res.text()}`);
   }
 

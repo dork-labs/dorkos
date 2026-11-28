@@ -23,7 +23,7 @@ export function createBackupsMethods(
       await api.call('config.deleteBackups', { path: { name } });
     },
     moveBackup(name: string, destination: string): Promise<BackupMoveResponse> {
-      return moveApi.call('config.moveBackups', { path: { name }, body: { destination } });
+      return moveApi.call('config.move_backup', { path: { name }, body: { destination } });
     },
   };
 }

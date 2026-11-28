@@ -155,6 +155,9 @@ function createMockScheduler(): TaskSchedulerService {
  * `services/tasks/__tests__/task-scheduler-service.test.ts`; what these route
  * tests prove is that the answer is asked for and carried.
  */
+/** The body that stops a run. */
+const CANCEL = { status: 'cancelled' } as const;
+
 const PREVIEWED_RUNS = [
   '2026-04-01T02:00:00.000Z',
   '2026-04-02T02:00:00.000Z',
@@ -823,25 +826,24 @@ describe('Tasks routes', () => {
     });
   });
 
-  describe('POST /api/tasks/runs/:id/cancel', () => {
+  describe('PATCH /api/tasks/runs/:id', () => {
     it('returns 404 when there is no such run', async () => {
-      const res = await request(fixtureServer).post('/api/tasks/runs/nope/cancel');
+      const res = await request(fixtureServer).patch('/api/tasks/runs/nope').send(CANCEL);
       expect(res.status).toBe(404);
     });
 
     it('cancels an active run', async () => {
       vi.mocked(scheduler.cancelRun).mockResolvedValue({ state: 'stopping' });
 
-      const res = await request(fixtureServer).post('/api/tasks/runs/run-1/cancel');
+      const res = await request(fixtureServer).patch('/api/tasks/runs/run-1').send(CANCEL);
       expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.state).toBe('stopping');
+      expect(res.body).toEqual({ success: true, state: 'stopping' });
     });
 
     it('answers 200 for a run that had already finished', async () => {
       vi.mocked(scheduler.cancelRun).mockResolvedValue({ state: 'already_finished' });
 
-      const res = await request(fixtureServer).post('/api/tasks/runs/run-1/cancel');
+      const res = await request(fixtureServer).patch('/api/tasks/runs/run-1').send(CANCEL);
       expect(res.status).toBe(200);
       expect(res.body.state).toBe('already_finished');
     });
@@ -853,7 +855,7 @@ describe('Tasks routes', () => {
         reason: 'nothing picked it up',
       });
 
-      const res = await request(fixtureServer).post('/api/tasks/runs/run-1/cancel');
+      const res = await request(fixtureServer).patch('/api/tasks/runs/run-1').send(CANCEL);
       expect(res.status).toBe(502);
       expect(res.body).toMatchObject({
         code: 'upstream_unavailable',
@@ -873,7 +875,7 @@ describe('Tasks routes', () => {
  * "not active" and the route turned that into a 404 on a run that was very
  * much alive.
  */
-describe('POST /api/tasks/runs/:id/cancel — relay-dispatched run', () => {
+describe('PATCH /api/tasks/runs/:id — relay-dispatched run', () => {
   let store: TaskStore;
   let db: Db;
   let relay: { publish: ReturnType<typeof vi.fn> };
@@ -926,7 +928,7 @@ describe('POST /api/tasks/runs/:id/cancel — relay-dispatched run', () => {
     const task = store.createTask(taskInput({ name: 'Relay Run', prompt: 'p', cron: '0 * * * *' }));
     const run = store.createRun(task.id, 'scheduled');
 
-    const res = await request(fixtureServer).post(`/api/tasks/runs/${run.id}/cancel`);
+    const res = await request(fixtureServer).patch(`/api/tasks/runs/${run.id}`).send(CANCEL);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -941,7 +943,7 @@ describe('POST /api/tasks/runs/:id/cancel — relay-dispatched run', () => {
     const task = store.createTask(taskInput({ name: 'Orphan', prompt: 'p', cron: '0 * * * *' }));
     const run = store.createRun(task.id, 'scheduled');
 
-    const res = await request(fixtureServer).post(`/api/tasks/runs/${run.id}/cancel`);
+    const res = await request(fixtureServer).patch(`/api/tasks/runs/${run.id}`).send(CANCEL);
 
     expect(res.status).toBe(502);
     // The run is left alone: nobody confirmed it stopped, so claiming a
@@ -954,7 +956,7 @@ describe('POST /api/tasks/runs/:id/cancel — relay-dispatched run', () => {
     const run = store.createRun(task.id, 'scheduled');
     store.updateRun(run.id, { status: 'cancelled', finishedAt: new Date().toISOString() });
 
-    const res = await request(fixtureServer).post(`/api/tasks/runs/${run.id}/cancel`);
+    const res = await request(fixtureServer).patch(`/api/tasks/runs/${run.id}`).send(CANCEL);
 
     expect(res.status).toBe(200);
     expect(res.body.state).toBe('already_finished');

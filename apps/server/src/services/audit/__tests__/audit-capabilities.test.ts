@@ -17,7 +17,7 @@ import type { RunningChatSources } from '../../session/chat-messages/screen/runn
 const LOGGER = { debug() {}, info() {}, warn() {}, error() {} };
 
 describe('audit.verify', () => {
-  it('is an observe capability on both MCP servers and GET /api/audit/verify', () => {
+  it('is an observe capability on both MCP servers and GET /api/audit/integrity', () => {
     const [capability] = auditDomain.capabilities;
     expect(capability).toMatchObject({
       id: 'audit.verify',
@@ -25,7 +25,7 @@ describe('audit.verify', () => {
       area: null,
       surfaces: {
         mcp: { toolName: 'audit_verify', servers: ['in-session', 'external'] },
-        http: { method: 'get', path: '/api/audit/verify' },
+        http: { method: 'get', path: '/api/audit/integrity' },
       },
     });
   });

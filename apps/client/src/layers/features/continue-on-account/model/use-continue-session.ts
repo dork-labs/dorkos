@@ -34,8 +34,8 @@ export function useContinueSession(sessionId: string) {
 }
 
 /**
- * Stop an automatic move before the person chooses (`POST
- * /api/sessions/:id/continue/cancel`), so nothing moves the work to its own
+ * Stop an automatic move before the person chooses (`DELETE
+ * /api/sessions/:id/continue`), so nothing moves the work to its own
  * target while the picker is open.
  *
  * @param sessionId - The limited session.

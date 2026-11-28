@@ -394,8 +394,9 @@
         "x-stability": "internal"
       }
     },
-    "/api/projects/resolve": {
+    "/api/projects/lookup": {
       "get": {
+        "operationId": "projects.find_project",
         "tags": [
           "Projects"
         ],
@@ -454,7 +455,6 @@
             }
           }
         },
-        "operationId": "projects.resolve",
         "x-stability": "internal"
       }
     },
@@ -10951,8 +10951,9 @@
         "x-stability": "internal"
       }
     },
-    "/api/workbench/probe": {
+    "/api/workbench/port-checks": {
       "post": {
+        "operationId": "workbench.check_port",
         "tags": [
           "Workbench"
         ],
@@ -10992,7 +10993,6 @@
             }
           }
         },
-        "operationId": "workbench.probe",
         "x-stability": "internal"
       }
     },

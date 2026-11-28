@@ -39,22 +39,21 @@ describe('createNotificationMethods', () => {
     expect(sent(fetchMock)).toEqual({ url: '/api/notifications', method: 'GET', body: undefined });
   });
 
-  // Both marks send no body at all.
   it('marks one read and all read', async () => {
     let fetchMock = answer({ updated: 1 });
     await methods.markNotificationRead('n/1');
     expect(sent(fetchMock)).toEqual({
-      url: '/api/notifications/n%2F1/read',
+      url: '/api/notifications/n%2F1',
       method: 'PATCH',
-      body: undefined,
+      body: '{"read":true}',
     });
 
     fetchMock = answer({ updated: 3 });
     await methods.markAllNotificationsRead();
     expect(sent(fetchMock)).toEqual({
-      url: '/api/notifications/read-all',
-      method: 'POST',
-      body: undefined,
+      url: '/api/notifications',
+      method: 'PATCH',
+      body: '{"read":true}',
     });
   });
 });

@@ -61,7 +61,7 @@ describe('Audit routes', () => {
   });
 
   it('reports an intact chain', async () => {
-    const res = await request(fixtureServer).get('/api/audit/verify');
+    const res = await request(fixtureServer).get('/api/audit/integrity');
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ ok: true, checked: 3, lastSeq: 3 });
   });
@@ -69,14 +69,14 @@ describe('Audit routes', () => {
   it('reports where an edited chain breaks', async () => {
     db.$client.exec('DROP TRIGGER audit_events_append_only_update');
     db.update(auditEvents).set({ summary: 'edited' }).where(eq(auditEvents.seq, 3)).run();
-    const res = await request(fixtureServer).get('/api/audit/verify');
+    const res = await request(fixtureServer).get('/api/audit/integrity');
     expect(res.body).toMatchObject({ ok: false, firstBreak: { seq: 3 } });
   });
 
   it('checks a stretch named in the query string, and refuses a bad one', async () => {
-    const stretch = await request(fixtureServer).get('/api/audit/verify?fromSeq=2&limit=1');
+    const stretch = await request(fixtureServer).get('/api/audit/integrity?fromSeq=2&limit=1');
     expect(stretch.body).toMatchObject({ ok: true, checked: 1, lastSeq: 2 });
-    const bad = await request(fixtureServer).get('/api/audit/verify?fromSeq=0');
+    const bad = await request(fixtureServer).get('/api/audit/integrity?fromSeq=0');
     expect(bad.status).toBe(400);
     expect(bad.body.code).toBe('invalid_request');
   });

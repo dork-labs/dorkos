@@ -530,7 +530,7 @@ export function createSessionRoutes(
   // (spec claude-account-fleet D9). Handlers in `session-continue.ts`.
   router.get('/:id/continue-options', continueOptionsHandler);
   router.post('/:id/continue', continueSessionHandler(deps));
-  router.post('/:id/continue/cancel', cancelContinueHandler);
+  router.delete('/:id/continue', cancelContinueHandler);
   router.post('/:id/wait', waitForResetHandler);
   // How past limits ended, for the transcript (spec claude-account-ui §7.1).
   router.get('/:id/limit-history', limitHistoryHandler);
