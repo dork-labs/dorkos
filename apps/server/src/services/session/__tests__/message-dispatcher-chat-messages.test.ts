@@ -451,7 +451,7 @@ describe('the outside words a row another chat sent carries on (DOR-4029)', () =
     ['a heartbeat', 'heartbeat', { turnStarter: 'agent', unattended: true }],
     ['a mini app', 'extension:notes', { turnStarter: 'agent' }],
     ['the web relay, which starts as a person', 'relay:web-1', OWNER],
-    ['the hand-back wake, which starts as a person', 'local-browser-hand-back', OWNER],
+    ['a wake through the turn port, which starts as a person', 'turn-port:wake-1', OWNER],
     [
       'a person’s send held to the default',
       PERSON,
