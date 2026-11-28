@@ -71,10 +71,10 @@ const sent: Record<string, () => Promise<unknown>> = {
     rooms.readRoomFileContent('a/b', 'docs/plan.md'),
   'PUT /api/rooms/a%2Fb/files/content {"path":"p.md","baseCommit":"abc1234","text":"x"}': () =>
     rooms.saveRoomFile('a/b', { path: 'p.md', baseCommit: commit, text: 'x' }),
-  'POST /api/rooms/a%2Fb/files/move {"from":"a","to":"b","baseCommit":"abc1234"}': () =>
+  'PATCH /api/rooms/a%2Fb/files {"from":"a","to":"b","baseCommit":"abc1234"}': () =>
     rooms.moveRoomFile('a/b', { from: 'a', to: 'b', baseCommit: commit }),
-  'POST /api/rooms/a%2Fb/files/delete {"path":"a","baseCommit":"abc1234"}': () =>
-    rooms.deleteRoomFile('a/b', { path: 'a', baseCommit: commit }),
+  'DELETE /api/rooms/a%2Fb/files?path=docs%2Fa&baseCommit=abc1234': () =>
+    rooms.deleteRoomFile('a/b', { path: 'docs/a', baseCommit: commit }),
   'POST /api/rooms/a%2Fb/files/from-attachment {"attachmentId":"t1","dir":"","baseCommit":null}':
     () => rooms.saveAttachmentToRoomFiles('a/b', { attachmentId: 't1', dir: '', baseCommit: null }),
   // The room's shared canvas and following.
