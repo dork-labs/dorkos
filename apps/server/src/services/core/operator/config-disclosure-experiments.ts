@@ -14,6 +14,8 @@ export const EXPERIMENT_SWITCH_DISCLOSURE = {
   // Whether chatting from the web is on (DOR-2946): a plain boolean. The hub's
   // address and the relay secret live in the relay's own file, never in config.
   'sessionRelay.enabled': 'expose',
+  // Whether agent computers may run work here (DOR-5164): a plain boolean.
+  'remoteComputers.enabled': 'expose',
   // Whether the Docs experiment is on (DOR-2993): a plain boolean.
   'docs.enabled': 'expose',
   // Whether agents may set a scheduled task's mode or approve one (DOR-3703): a plain boolean.

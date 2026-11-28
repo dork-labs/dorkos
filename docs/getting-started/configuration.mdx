@@ -1557,6 +1557,21 @@ Settings → Advanced → Experiments lists **Spaces**, off by default. While it
 
 `spaces.official.url` names one official space by its link: the space's own `/c/...` link, or its short address. A link to a whole server does not count. That one space shows in the switcher and can be joined even while Spaces is off. Every other space stays hidden, and so do starting and hosting spaces. It is empty by default, which means there is no official space and nothing changes. The `DORKOS_OFFICIAL_SPACE_URL` environment variable overrides it. Agents can read this setting but cannot change it.
 
+### Agent computers experiment
+
+<TypeTable
+  type={{
+    'remoteComputers.enabled': {
+      description:
+        'Lets other computers run the agents of this DorkOS. Early groundwork. Off by default.',
+      type: 'boolean',
+      default: 'false',
+    },
+  }}
+/>
+
+This setting is groundwork for running your agents on other computers, and turning it on changes nothing you can see yet. It is not listed in Settings. Agents can read this setting but cannot change it.
+
 ### Chat from the web experiment
 
 <TypeTable
