@@ -553,7 +553,7 @@ const callerTurnFields = {
    */
   seedContext: z.string().min(1).max(SEED_CONTEXT_MAX_LENGTH).optional(),
   /**
-   * Nobody is watching this turn (a schedule's timer fire): an approval card
+   * Nobody is watching this turn (a schedule's timer fire or a heartbeat's beat): an approval card
    * does not hold it, and an ask raised in it is refused at once. Per turn,
    * never stored on the chat.
    */

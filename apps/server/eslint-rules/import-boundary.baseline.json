@@ -306,7 +306,7 @@
     "heartbeats -> notifications": 2,
     "heartbeats -> relay": 1,
     "heartbeats -> rooms": 4,
-    "heartbeats -> session": 7,
+    "heartbeats -> session": 6,
     "heartbeats -> tasks": 1,
     "heartbeats -> workspace": 2,
     "identity -> audit": 2,

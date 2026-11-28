@@ -27,6 +27,7 @@ import type { SessionOriginResolvers } from '../../services/session/index.js';
 import { getSessionStartedByStore } from '../../services/session/origin/session-started-by-store.js';
 import { getSessionTouchStore } from '../../services/session/origin/session-touch-store.js';
 import * as heartbeats from '../../services/heartbeats/index.js';
+import { turnPort } from '../../services/runs/index.js';
 import { sessionListBroadcaster } from '../../services/session/catalog/session-list-broadcaster.js';
 import { wireSessionVisibility } from '../../services/audit/index.js';
 import { applyTrackerItemsLive } from '../../services/session/fleet/flow-run-link.js';
@@ -281,6 +282,8 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     notifyDm,
     relay: () => refs.relayChannelDeps,
     todoPromises: todoPromises.service,
+    // A beat starts its turn through the turn port, and waits there for a free slot (T8).
+    turnPort,
   });
   sessionListBroadcaster.setOriginResolvers({ ...origins });
   // Who may read each session's transcript (spec `audit-trail` §3.4): an

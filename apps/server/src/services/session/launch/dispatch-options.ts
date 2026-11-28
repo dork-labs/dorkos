@@ -5,6 +5,13 @@ import type { AdditionalContext } from '@dorkos/shared/additional-context';
 import type { TriggerTurnOpts } from '../trigger-turn.js';
 import type { AsideCarry } from '../../rooms/room-trigger/aside.js';
 
+/**
+ * The prefix of a heartbeat's lock identity: the turn port names a beat's turn
+ * `heartbeat:<run id>` (`computer-turn-port.ts`), so its context record says
+ * the turn happened in a beat chat.
+ */
+export const HEARTBEAT_CLIENT_PREFIX = 'heartbeat:';
+
 /** Preserve ordinary turn options while adding the immutable handoff carry. */
 export function dispatchOptions(
   opts: TriggerTurnOpts,
@@ -67,7 +74,7 @@ export function dispatchOptions(
     ...(opts.unattended === true ? { unattended: true } : {}),
     // Where the turn happens, for its context record only: a beat's chat and
     // a to-do's run are named by the client id their launchers dispatch under.
-    ...(clientId === 'heartbeat' ? { contextPlace: 'heartbeat' as const } : {}),
+    ...(clientId.startsWith(HEARTBEAT_CLIENT_PREFIX) ? { contextPlace: 'heartbeat' as const } : {}),
     ...(clientId === 'todos' ? { contextPlace: 'task' as const } : {}),
     ...settings,
     // After `settings`, and it cannot collide with it: that type has no
