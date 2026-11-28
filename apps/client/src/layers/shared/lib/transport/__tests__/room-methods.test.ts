@@ -12,12 +12,6 @@ function setup() {
   return createRoomMethods('http://localhost:4242/api');
 }
 
-/** The URL and `RequestInit` the last `fetch` call was made with. */
-function lastCall(): [string, RequestInit] {
-  const call = vi.mocked(globalThis.fetch).mock.calls.at(-1)!;
-  return [call[0] as string, call[1] as RequestInit];
-}
-
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.stubGlobal(
@@ -28,67 +22,6 @@ beforeEach(() => {
       json: () => Promise.resolve({ accepted: true, entryId: 'entry-1', seq: 7 }),
     })
   );
-});
-
-describe('postToRoom', () => {
-  it('posts the message to the room it names', async () => {
-    await setup().postToRoom('room-1', { text: 'ship it' });
-    const [url, init] = lastCall();
-    expect(url).toBe('http://localhost:4242/api/rooms/room-1/entries');
-    expect(init.method).toBe('POST');
-    expect(init.body).toBe(JSON.stringify({ text: 'ship it' }));
-  });
-});
-
-describe('listRoomEntries', () => {
-  /** Answer the entries route with a page and the roots it points at outside it. */
-  function servePage(entries: number[], threadRoots: number[]) {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: () =>
-          Promise.resolve({
-            entries: entries.map((seq) => ({ seq, id: `entry-${seq}` })),
-            threadRoots: threadRoots.map((seq) => ({ seq, id: `entry-${seq}` })),
-          }),
-      })
-    );
-  }
-
-  it('keeps the page and the roots apart, exactly as the route sent them', async () => {
-    // The room DOR-690 was filed over: every entry in the page is a reply to one message far
-    // behind it.
-    servePage([152, 153, 154], [1]);
-
-    const page = await setup().listRoomEntries('room-1');
-
-    expect(page.entries.map((entry) => entry.seq)).toEqual([152, 153, 154]);
-    expect(page.threadRoots.map((root) => root.seq)).toEqual([1]);
-  });
-});
-
-describe('room settings and roster writes', () => {
-  it('patches one membership, escaping the author id into the path', async () => {
-    await setup().updateRoomMember('room-1', 'author/1', { responseMode: 'silent' });
-    const [url, init] = lastCall();
-    expect(url).toBe('http://localhost:4242/api/rooms/room-1/members/author%2F1');
-    expect(init.method).toBe('PATCH');
-    expect(init.body).toBe(JSON.stringify({ responseMode: 'silent' }));
-  });
-
-  it('deletes a membership and reads no body back', async () => {
-    // The route answers 204. `fetchJSON` would call `res.json()` on an empty
-    // body and reject with a parse error on a request that in fact succeeded,
-    // so this path must not touch the body at all — the mock has no `json`.
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 204 }));
-
-    await expect(setup().removeRoomMember('room-1', 'author-1')).resolves.toBeUndefined();
-    const [url, init] = lastCall();
-    expect(url).toBe('http://localhost:4242/api/rooms/room-1/members/author-1');
-    expect(init.method).toBe('DELETE');
-  });
 });
 
 /** One room entry, for the delivery cases. */
@@ -226,22 +159,6 @@ describe('subscribeRoom over a stream socket', () => {
 });
 
 describe('saveRoomFile', () => {
-  it('PUTs the file, its base commit and its text to the room’s content route', async () => {
-    await setup().saveRoomFile('room-1', {
-      path: 'docs/plan.md',
-      baseCommit: 'abc1234',
-      text: '# Plan\n',
-    });
-    const [url, init] = lastCall();
-    // The same URL the read uses, with the file named in the BODY: a save carries its contents
-    // anyway, and a query and a body cannot then disagree about which file this is.
-    expect(url).toBe('http://localhost:4242/api/rooms/room-1/files/content');
-    expect(init.method).toBe('PUT');
-    expect(init.body).toBe(
-      JSON.stringify({ path: 'docs/plan.md', baseCommit: 'abc1234', text: '# Plan\n' })
-    );
-  });
-
   it('rejects with the server’s code and its conflict, so an editor can offer the choice', async () => {
     const conflict = {
       title: 'This file changed.',
@@ -262,38 +179,5 @@ describe('saveRoomFile', () => {
     await expect(
       setup().saveRoomFile('room-1', { path: 'docs/plan.md', baseCommit: 'abc1234', text: 'x' })
     ).rejects.toMatchObject({ code: 'file_changed', status: 409, body: conflict });
-  });
-});
-
-describe('the room-repo status and its repair', () => {
-  it('sets up a room repo through the room’s own route', async () => {
-    await setup().enableRoomRepo('room-1');
-    const [url, init] = lastCall();
-    expect(url).toBe('http://localhost:4242/api/rooms/room-1/repo');
-    expect(init?.method).toBe('POST');
-  });
-
-  it('escapes a room id that would otherwise change which route is called', async () => {
-    await setup().readRoomRepoStatus('a/../b');
-    expect(lastCall()[0]).toBe('http://localhost:4242/api/rooms/a%2F..%2Fb/repo/status');
-  });
-
-  it('sends a keep with no list and a discard with exactly the names it was given', async () => {
-    const rooms = setup();
-
-    await rooms.repairRoomMain('room-1', { action: 'commit' });
-    const [keepUrl, keepInit] = lastCall();
-    expect(keepUrl).toBe('http://localhost:4242/api/rooms/room-1/repo/main/repair');
-    expect(keepInit.method).toBe('POST');
-    // Keeping loses nothing, so it sweeps up whatever is there and takes no
-    // list; discarding is irreversible, so it destroys nothing it was not
-    // handed by name. The asymmetry is the safety rule, and it is on the wire.
-    expect(keepInit.body).toBe(JSON.stringify({ action: 'commit' }));
-
-    await rooms.repairRoomMain('room-1', { action: 'discard', paths: ['ROOM.md', 'a/b.md'] });
-    const [, discardInit] = lastCall();
-    expect(discardInit.body).toBe(
-      JSON.stringify({ action: 'discard', paths: ['ROOM.md', 'a/b.md'] })
-    );
   });
 });

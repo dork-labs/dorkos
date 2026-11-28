@@ -1,6 +1,7 @@
 /**
  * Room Transport methods factory (HTTP adapter) — channels and DMs (spec
- * `rooms`). Talks to the Express `/api/rooms/*` routes.
+ * `rooms`). Talks to the `/api/rooms/*` routes through the generated API
+ * client (DOR-5473); the multipart upload and the event socket stay by hand.
  *
  * Only what the app performs today is here: reading a room, posting to it,
  * replying inside a thread, settling its title / topic / archived flag, editing
@@ -74,7 +75,8 @@ import type { UiCanvasContent, UploadProgress } from '@dorkos/shared/types';
 import type { UploadFile } from '@dorkos/shared/transport';
 import type { RoomFileUploadInput } from '@dorkos/shared/transport-rooms';
 import { SSE_RESILIENCE } from '../constants';
-import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
+import { createTransportApiClient } from './api-client';
+import { fetchJSON, buildQueryString } from './http-client';
 import { streamSocketFrames, type StreamSocketClosed } from './stream-socket-iterator';
 import { uploadRoomAttachmentsOverHttp } from './upload-methods';
 
@@ -149,44 +151,33 @@ export function isFatalStreamError(err: unknown): boolean {
 
 /** Create the room methods bound to a base URL. */
 export function createRoomMethods(baseUrl: string) {
+  const api = createTransportApiClient(baseUrl);
   return {
-    listRooms(query?: ListRoomsQuery): Promise<RoomSummary[]> {
-      const qs = buildQueryString({
-        kind: query?.kind,
-        includeArchived: query?.includeArchived,
-      });
-      return fetchJSON<{ rooms: RoomSummary[] }>(baseUrl, `/rooms${qs}`).then((r) => r.rooms);
+    async listRooms(query?: ListRoomsQuery): Promise<RoomSummary[]> {
+      const { kind, includeArchived } = query ?? {};
+      const list = await api.call('rooms.list', { query: { kind, includeArchived } });
+      return (list as { rooms: RoomSummary[] }).rooms;
     },
 
-    listThreads(query?: ListThreadsQuery): Promise<ThreadSummary[]> {
-      const qs = buildQueryString({ limit: query?.limit });
-      return fetchJSON<{ threads: ThreadSummary[] }>(baseUrl, `/rooms/threads${qs}`).then(
-        (r) => r.threads
-      );
+    async listThreads(query?: ListThreadsQuery): Promise<ThreadSummary[]> {
+      const list = await api.call('rooms.listThreads', { query: { limit: query?.limit } });
+      return (list as { threads: ThreadSummary[] }).threads;
     },
 
-    createRoom(req: CreateRoomRequest): Promise<RoomWithRoster> {
-      return fetchJSON<RoomWithRoster>(baseUrl, '/rooms', {
-        method: 'POST',
-        body: JSON.stringify(req),
-      });
+    async createRoom(req: CreateRoomRequest): Promise<RoomWithRoster> {
+      return (await api.call('rooms.create', { body: req })) as RoomWithRoster;
     },
 
-    getRoom(id: string): Promise<RoomWithRoster> {
-      return fetchJSON<RoomWithRoster>(baseUrl, `/rooms/${id}`);
+    async getRoom(id: string): Promise<RoomWithRoster> {
+      return (await api.call('rooms.get', { path: { id } })) as RoomWithRoster;
     },
 
-    enableRoomRepo(id: string): Promise<EnableRoomRepoResponse> {
-      return fetchJSON<EnableRoomRepoResponse>(baseUrl, `/rooms/${encodeURIComponent(id)}/repo`, {
-        method: 'POST',
-      });
+    async enableRoomRepo(id: string): Promise<EnableRoomRepoResponse> {
+      return (await api.call('rooms.createRepo', { path: { id } })) as EnableRoomRepoResponse;
     },
 
-    updateRoom(id: string, req: UpdateRoomRequest): Promise<RoomWithRoster> {
-      return fetchJSON<RoomWithRoster>(baseUrl, `/rooms/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(req),
-      });
+    async updateRoom(id: string, req: UpdateRoomRequest): Promise<RoomWithRoster> {
+      return (await api.call('rooms.update', { path: { id }, body: req })) as RoomWithRoster;
     },
 
     /**
@@ -205,9 +196,15 @@ export function createRoomMethods(baseUrl: string) {
      * Nothing asks for that yet; when something does, it reads the envelope
      * rather than un-mixing this array.
      */
-    listRoomEntries(id: string, query?: ListRoomEntriesQuery): Promise<RoomEntryListResponse> {
-      const qs = buildQueryString({ before: query?.before, limit: query?.limit });
-      return fetchJSON<RoomEntryListResponse>(baseUrl, `/rooms/${id}/entries${qs}`);
+    async listRoomEntries(
+      id: string,
+      query?: ListRoomEntriesQuery
+    ): Promise<RoomEntryListResponse> {
+      const { before, limit } = query ?? {};
+      return (await api.call('rooms.listEntries', {
+        path: { id },
+        query: { before, limit },
+      })) as RoomEntryListResponse;
     },
 
     /**
@@ -216,21 +213,19 @@ export function createRoomMethods(baseUrl: string) {
      * would mean encoding them out and decoding them back in — one more place
      * for the two ends to disagree about what a filename is.
      */
-    readRoomFiles(id: string, path?: string): Promise<RoomFileListResponse> {
-      const qs = buildQueryString({ path });
-      return fetchJSON<RoomFileListResponse>(
-        baseUrl,
-        `/rooms/${encodeURIComponent(id)}/files${qs}`
-      );
+    async readRoomFiles(id: string, path?: string): Promise<RoomFileListResponse> {
+      return (await api.call('rooms.getFiles', {
+        path: { id },
+        query: { path },
+      })) as RoomFileListResponse;
     },
 
     /** One file out of a room's `main`, for the same reason in the same shape. */
-    readRoomFileContent(id: string, path: string): Promise<RoomFileContentResponse> {
-      const qs = buildQueryString({ path });
-      return fetchJSON<RoomFileContentResponse>(
-        baseUrl,
-        `/rooms/${encodeURIComponent(id)}/files/content${qs}`
-      );
+    async readRoomFileContent(id: string, path: string): Promise<RoomFileContentResponse> {
+      return (await api.call('rooms.getFilesContent', {
+        path: { id },
+        query: { path },
+      })) as RoomFileContentResponse;
     },
 
     /** Where one of a room's pictures is served, named the way its content is. */
@@ -239,8 +234,8 @@ export function createRoomMethods(baseUrl: string) {
     },
 
     /** Where the room's files stand, and who is holding work it has not got. */
-    readRoomRepoStatus(id: string): Promise<RoomRepoStatus> {
-      return fetchJSON<RoomRepoStatus>(baseUrl, `/rooms/${encodeURIComponent(id)}/repo/status`);
+    async readRoomRepoStatus(id: string): Promise<RoomRepoStatus> {
+      return (await api.call('rooms.getRepoStatus', { path: { id } })) as RoomRepoStatus;
     },
 
     /**
@@ -255,12 +250,11 @@ export function createRoomMethods(baseUrl: string) {
      * `code` and its parsed `body`, which is where the `conflict` the reload /
      * keep-mine choice needs lives.
      */
-    saveRoomFile(id: string, req: RoomFileSaveRequest): Promise<RoomFileSaveResponse> {
-      return fetchJSON<RoomFileSaveResponse>(
-        baseUrl,
-        `/rooms/${encodeURIComponent(id)}/files/content`,
-        { method: 'PUT', body: JSON.stringify(req) }
-      );
+    async saveRoomFile(id: string, req: RoomFileSaveRequest): Promise<RoomFileSaveResponse> {
+      return (await api.call('rooms.updateFilesContent', {
+        path: { id },
+        body: req,
+      })) as RoomFileSaveResponse;
     },
 
     /**
@@ -291,36 +285,33 @@ export function createRoomMethods(baseUrl: string) {
     },
 
     /** Rename or move one file or folder, as one commit. */
-    moveRoomFile(id: string, req: RoomFileMoveRequest): Promise<RoomFileChangeResponse> {
-      return fetchJSON<RoomFileChangeResponse>(
-        baseUrl,
-        `/rooms/${encodeURIComponent(id)}/files/move`,
-        { method: 'POST', body: JSON.stringify(req) }
-      );
+    async moveRoomFile(id: string, req: RoomFileMoveRequest): Promise<RoomFileChangeResponse> {
+      return (await api.call('rooms.moveFiles', {
+        path: { id },
+        body: req,
+      })) as RoomFileChangeResponse;
     },
 
     /**
      * Delete one file or folder, as one commit. A POST, because the request
      * carries its lock in a body and a DELETE body is one proxies may drop.
      */
-    deleteRoomFile(id: string, req: RoomFileDeleteRequest): Promise<RoomFileChangeResponse> {
-      return fetchJSON<RoomFileChangeResponse>(
-        baseUrl,
-        `/rooms/${encodeURIComponent(id)}/files/delete`,
-        { method: 'POST', body: JSON.stringify(req) }
-      );
+    async deleteRoomFile(id: string, req: RoomFileDeleteRequest): Promise<RoomFileChangeResponse> {
+      return (await api.call('rooms.deleteFiles', {
+        path: { id },
+        body: req,
+      })) as RoomFileChangeResponse;
     },
 
     /** Keep a file from a message in this room as one of its files. */
-    saveAttachmentToRoomFiles(
+    async saveAttachmentToRoomFiles(
       id: string,
       req: RoomFileFromAttachmentRequest
     ): Promise<RoomFileChangeResponse> {
-      return fetchJSON<RoomFileChangeResponse>(
-        baseUrl,
-        `/rooms/${encodeURIComponent(id)}/files/from-attachment`,
-        { method: 'POST', body: JSON.stringify(req) }
-      );
+      return (await api.call('rooms.createFilesFromAttachment', {
+        path: { id },
+        body: req,
+      })) as RoomFileChangeResponse;
     },
 
     /**
@@ -329,12 +320,11 @@ export function createRoomMethods(baseUrl: string) {
      * The operator's door out of `MAIN_CHECKOUT_DIRTY`; a discard names its
      * files, and the server refuses any name it is not reporting right now.
      */
-    repairRoomMain(id: string, req: RoomMainRepairRequest): Promise<RoomMainRepairResult> {
-      return fetchJSON<RoomMainRepairResult>(
-        baseUrl,
-        `/rooms/${encodeURIComponent(id)}/repo/main/repair`,
-        { method: 'POST', body: JSON.stringify(req) }
-      );
+    async repairRoomMain(id: string, req: RoomMainRepairRequest): Promise<RoomMainRepairResult> {
+      return (await api.call('rooms.createRepoMainRepair', {
+        path: { id },
+        body: req,
+      })) as RoomMainRepairResult;
     },
 
     /**
@@ -344,14 +334,11 @@ export function createRoomMethods(baseUrl: string) {
      * through `merge_to_room_main` — same queue, same refusals, same single
      * line in the room's log.
      */
-    mergeRoomMain(
+    async mergeRoomMain(
       id: string,
       input: { summary: string; worktree: string }
     ): Promise<RoomMergeResult> {
-      return fetchJSON<RoomMergeResult>(baseUrl, `/rooms/${encodeURIComponent(id)}/repo/merge`, {
-        method: 'POST',
-        body: JSON.stringify(input),
-      });
+      return (await api.call('rooms.mergeRepo', { path: { id }, body: input })) as RoomMergeResult;
     },
 
     /**
@@ -359,11 +346,11 @@ export function createRoomMethods(baseUrl: string) {
      * entry itself arrives on `subscribeRoom`, so nothing here writes it into
      * the cache.
      */
-    postToRoom(id: string, req: PostToRoomRequest): Promise<PostToRoomResponse> {
-      return fetchJSON<PostToRoomResponse>(baseUrl, `/rooms/${id}/entries`, {
-        method: 'POST',
-        body: JSON.stringify(req),
-      });
+    async postToRoom(id: string, req: PostToRoomRequest): Promise<PostToRoomResponse> {
+      return (await api.call('rooms.createEntries', {
+        path: { id },
+        body: req,
+      })) as PostToRoomResponse;
     },
 
     /**
@@ -390,11 +377,11 @@ export function createRoomMethods(baseUrl: string) {
      * as `postToRoom` is — the reply reaches this reader on `subscribeRoom`,
      * where the timeline gathers it under its root.
      */
-    replyInThread(id: string, req: PostThreadReplyRequest): Promise<PostToRoomResponse> {
-      return fetchJSON<PostToRoomResponse>(baseUrl, `/rooms/${id}/threads`, {
-        method: 'POST',
-        body: JSON.stringify(req),
-      });
+    async replyInThread(id: string, req: PostThreadReplyRequest): Promise<PostToRoomResponse> {
+      return (await api.call('rooms.createThreads', {
+        path: { id },
+        body: req,
+      })) as PostToRoomResponse;
     },
 
     /**
@@ -402,8 +389,8 @@ export function createRoomMethods(baseUrl: string) {
      * runtimes, never the models, and the room's own `halted` notice arrives on
      * `subscribeRoom` like any other entry.
      */
-    haltRoom(id: string): Promise<HaltRoomResponse> {
-      return fetchJSON<HaltRoomResponse>(baseUrl, `/rooms/${id}/halt`, { method: 'POST' });
+    async haltRoom(id: string): Promise<HaltRoomResponse> {
+      return (await api.call('rooms.halt', { path: { id } })) as HaltRoomResponse;
     },
 
     /**
@@ -411,61 +398,47 @@ export function createRoomMethods(baseUrl: string) {
      * segment rather than a body field, because a target that can be omitted is
      * a stop that can quietly take the whole room with it.
      */
-    haltRoomAgent(id: string, authorId: string): Promise<HaltRoomResponse> {
-      return fetchJSON<HaltRoomResponse>(
-        baseUrl,
-        `/rooms/${id}/halt/${encodeURIComponent(authorId)}`,
-        { method: 'POST' }
-      );
+    async haltRoomAgent(id: string, authorId: string): Promise<HaltRoomResponse> {
+      return (await api.call('rooms.createHalt', { path: { id, authorId } })) as HaltRoomResponse;
     },
 
     /** Where an agent's seat here could move (re-seat). */
-    getRoomReseatOptions(id: string, authorId: string): Promise<ReseatOptions> {
-      return fetchJSON<ReseatOptions>(
-        baseUrl,
-        `/rooms/${id}/members/${encodeURIComponent(authorId)}/reseat-options`
-      );
+    async getRoomReseatOptions(id: string, authorId: string): Promise<ReseatOptions> {
+      return (await api.call('rooms.reseat_options', { path: { id, authorId } })) as ReseatOptions;
     },
 
     /** Move an agent's seat here to another account (re-seat). */
-    reseatRoomAgent(
+    async reseatRoomAgent(
       id: string,
       authorId: string,
       request: ReseatSeatRequest
     ): Promise<{ sessionId: string }> {
-      return fetchJSON<{ sessionId: string }>(
-        baseUrl,
-        `/rooms/${id}/members/${encodeURIComponent(authorId)}/reseat`,
-        { method: 'POST', body: JSON.stringify(request) }
-      );
+      return (await api.call('rooms.reseat', { path: { id, authorId }, body: request })) as {
+        sessionId: string;
+      };
     },
 
     /**
      * Ask for this room to be the next one that agent answers. Reorders; the
      * turn in the way is untouched.
      */
-    promoteHold(id: string, authorId: string): Promise<PromoteHoldResponse> {
-      return fetchJSON<PromoteHoldResponse>(
-        baseUrl,
-        `/rooms/${id}/holds/${encodeURIComponent(authorId)}/promote`,
-        { method: 'POST' }
-      );
+    async promoteHold(id: string, authorId: string): Promise<PromoteHoldResponse> {
+      return (await api.call('rooms.createHoldsPromote', {
+        path: { id, authorId },
+      })) as PromoteHoldResponse;
     },
 
     /**
      * Where each of this room's agents does its work. Ids only, people only —
      * see the port's own note.
      */
-    listRoomSessions(id: string): Promise<RoomSessionsResponse> {
-      return fetchJSON<RoomSessionsResponse>(baseUrl, `/rooms/${id}/sessions`);
+    async listRoomSessions(id: string): Promise<RoomSessionsResponse> {
+      return (await api.call('rooms.getSessions', { path: { id } })) as RoomSessionsResponse;
     },
 
     /** Open an agent's Direct chat (rule S12), made on first need. */
-    openDirectChat(req: OpenDirectChatRequest): Promise<DirectChat> {
-      return fetchJSON<DirectChat>(baseUrl, '/direct-chats', {
-        method: 'POST',
-        body: JSON.stringify(req),
-      });
+    async openDirectChat(req: OpenDirectChatRequest): Promise<DirectChat> {
+      return (await api.call('directChats.create', { body: req })) as DirectChat;
     },
 
     /**
@@ -474,10 +447,9 @@ export function createRoomMethods(baseUrl: string) {
      */
     async findDirectChat(sessionId: string): Promise<DirectChat | null> {
       try {
-        return await fetchJSON<DirectChat>(
-          baseUrl,
-          `/direct-chats/by-session/${encodeURIComponent(sessionId)}`
-        );
+        return (await api.call('directChats.getBySession', {
+          path: { sessionId },
+        })) as DirectChat;
       } catch (err) {
         const status = (err as { status?: number }).status;
         if (status === 404 || status === 403) return null;
@@ -490,50 +462,45 @@ export function createRoomMethods(baseUrl: string) {
      * click went; the entry's whole new set arrives on `subscribeRoom`, which
      * is what a pill must ultimately be drawn from.
      */
-    toggleReaction(
+    async toggleReaction(
       id: string,
       entryId: string,
       req: ToggleReactionRequest
     ): Promise<ToggleReactionResponse> {
-      return fetchJSON<ToggleReactionResponse>(
-        baseUrl,
-        `/rooms/${id}/entries/${encodeURIComponent(entryId)}/reactions`,
-        { method: 'POST', body: JSON.stringify(req) }
-      );
+      return (await api.call('rooms.createEntriesReactions', {
+        path: { id, entryId },
+        body: req,
+      })) as ToggleReactionResponse;
     },
 
-    addRoomMember(id: string, req: AddRoomMemberRequest): Promise<RoomRosterEntry> {
-      return fetchJSON<RoomRosterEntry>(baseUrl, `/rooms/${id}/members`, {
-        method: 'POST',
-        body: JSON.stringify(req),
-      });
+    async addRoomMember(id: string, req: AddRoomMemberRequest): Promise<RoomRosterEntry> {
+      return (await api.call('rooms.createMembers', {
+        path: { id },
+        body: req,
+      })) as RoomRosterEntry;
     },
 
-    updateRoomMember(
+    async updateRoomMember(
       id: string,
       authorId: string,
       req: UpdateMembershipRequest
     ): Promise<RoomRosterEntry> {
-      return fetchJSON<RoomRosterEntry>(
-        baseUrl,
-        `/rooms/${id}/members/${encodeURIComponent(authorId)}`,
-        { method: 'PATCH', body: JSON.stringify(req) }
-      );
+      return (await api.call('rooms.updateMembers', {
+        path: { id, authorId },
+        body: req,
+      })) as RoomRosterEntry;
     },
 
-    setAuthorHandle(authorId: string, handle: string): Promise<AuthorRef> {
-      return fetchJSON<AuthorRef>(
-        baseUrl,
-        `/rooms/authors/${encodeURIComponent(authorId)}/handle`,
-        { method: 'PATCH', body: JSON.stringify({ handle }) }
-      );
+    async setAuthorHandle(authorId: string, handle: string): Promise<AuthorRef> {
+      return (await api.call('rooms.updateAuthorsHandle', {
+        path: { authorId },
+        body: { handle },
+      })) as AuthorRef;
     },
 
     /** The route answers 204, so there is no body to read back. */
-    removeRoomMember(id: string, authorId: string): Promise<void> {
-      return fetchNoContent(baseUrl, `/rooms/${id}/members/${encodeURIComponent(authorId)}`, {
-        method: 'DELETE',
-      });
+    async removeRoomMember(id: string, authorId: string): Promise<void> {
+      await api.call('rooms.deleteMembers', { path: { id, authorId } });
     },
 
     // --- The room's shared canvas (spec `room-canvas` §4) ---
@@ -566,87 +533,69 @@ export function createRoomMethods(baseUrl: string) {
     },
 
     /** Take a document off the room's canvas, for everybody. */
-    closeRoomCanvasDocument(id: string, documentId: string): Promise<void> {
-      return fetchNoContent(
-        baseUrl,
-        `/rooms/${encodeURIComponent(id)}/canvas/${encodeURIComponent(documentId)}`,
-        { method: 'DELETE' }
-      );
+    async closeRoomCanvasDocument(id: string, documentId: string): Promise<void> {
+      await api.call('rooms.deleteCanvas', { path: { id, documentId } });
     },
 
     /** The two copies of the file behind a room's worktree diff. */
-    readRoomCanvasDiff(id: string, documentId: string): Promise<RoomCanvasDiffReview> {
-      return fetchJSON<RoomCanvasDiffReview>(
-        baseUrl,
-        `/rooms/${encodeURIComponent(id)}/canvas/${encodeURIComponent(documentId)}/diff`
-      );
+    async readRoomCanvasDiff(id: string, documentId: string): Promise<RoomCanvasDiffReview> {
+      return (await api.call('rooms.getCanvasDiff', {
+        path: { id, documentId },
+      })) as RoomCanvasDiffReview;
     },
 
     /** Put a reviewed file back in the member's working copy. */
-    writeRoomCanvasDiff(
+    async writeRoomCanvasDiff(
       id: string,
       documentId: string,
       req: RoomCanvasDiffWriteRequest
     ): Promise<RoomCanvasDiffWriteResult> {
-      return fetchJSON<RoomCanvasDiffWriteResult>(
-        baseUrl,
-        `/rooms/${encodeURIComponent(id)}/canvas/${encodeURIComponent(documentId)}/diff`,
-        { method: 'PUT', body: JSON.stringify(req) }
-      );
+      return (await api.call('rooms.updateCanvasDiff', {
+        path: { id, documentId },
+        body: req,
+      })) as RoomCanvasDiffWriteResult;
     },
 
     /** Say which canvas document you are looking at, or that you have looked away. */
-    setRoomCanvasViewing(id: string, documentId: string | null): Promise<void> {
-      return fetchNoContent(baseUrl, `/rooms/${encodeURIComponent(id)}/canvas/viewing`, {
-        method: 'POST',
-        body: JSON.stringify({ documentId }),
-      });
+    async setRoomCanvasViewing(id: string, documentId: string | null): Promise<void> {
+      await api.call('rooms.createCanvasViewing', { path: { id }, body: { documentId } });
     },
 
     /** Take, refresh or release the edit lock on one canvas document. */
-    setRoomCanvasEditing(
+    async setRoomCanvasEditing(
       id: string,
       documentId: string,
       editing: boolean
     ): Promise<CanvasEditingResponse> {
-      return fetchJSON<CanvasEditingResponse>(
-        baseUrl,
-        `/rooms/${encodeURIComponent(id)}/canvas/${encodeURIComponent(documentId)}/editing`,
-        { method: 'POST', body: JSON.stringify({ editing }) }
-      );
+      return (await api.call('rooms.createCanvasEditing', {
+        path: { id, documentId },
+        body: { editing },
+      })) as CanvasEditingResponse;
     },
 
     /** Open this document's discussion, or re-open the one already there. */
-    discussCanvasDocument(id: string, documentId: string): Promise<CanvasThreadResponse> {
-      return fetchJSON<CanvasThreadResponse>(
-        baseUrl,
-        `/rooms/${encodeURIComponent(id)}/canvas/${encodeURIComponent(documentId)}/thread`,
-        { method: 'POST' }
-      );
+    async discussCanvasDocument(id: string, documentId: string): Promise<CanvasThreadResponse> {
+      return (await api.call('rooms.createCanvasThread', {
+        path: { id, documentId },
+      })) as CanvasThreadResponse;
     },
 
     /** Follow somebody's browser here, or say you are still following them. */
-    followRoomMember(id: string, memberId: string): Promise<void> {
-      return fetchNoContent(baseUrl, `/rooms/${encodeURIComponent(id)}/follow`, {
-        method: 'PUT',
-        body: JSON.stringify({ memberId }),
-      });
+    async followRoomMember(id: string, memberId: string): Promise<void> {
+      await api.call('rooms.updateFollow', { path: { id }, body: { memberId } });
     },
 
     /** Stop following whoever you were following here. */
-    unfollowRoomMember(id: string): Promise<void> {
-      return fetchNoContent(baseUrl, `/rooms/${encodeURIComponent(id)}/follow`, {
-        method: 'DELETE',
-      });
+    async unfollowRoomMember(id: string): Promise<void> {
+      await api.call('rooms.deleteFollow', { path: { id } });
     },
 
     /** Say where you are looking, for whoever is following you. */
-    publishRoomView(id: string, view: RoomSignalView): Promise<PublishRoomViewResponse> {
-      return fetchJSON<PublishRoomViewResponse>(
-        baseUrl,
-        `/rooms/${encodeURIComponent(id)}/follow/view`,
-        { method: 'POST', body: JSON.stringify(view) }
-      );
+    async publishRoomView(id: string, view: RoomSignalView): Promise<PublishRoomViewResponse> {
+      return (await api.call('rooms.createFollowView', {
+        path: { id },
+        body: view,
+      })) as PublishRoomViewResponse;
     },
 
     /**
