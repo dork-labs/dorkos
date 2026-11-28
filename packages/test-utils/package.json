@@ -17,6 +17,7 @@
       "import": "./src/run-custody/posix/index.mjs"
     },
     "./react-helpers": "./src/react-helpers.tsx",
+    "./relay-socket-pair": "./src/relay-socket-pair.ts",
     "./sse-helpers": "./src/sse-helpers.ts",
     "./sse-test-helpers": "./src/sse-test-helpers.ts",
     "./fake-connector-provider": "./src/fake-connector-provider.ts",
@@ -27,7 +28,8 @@
     "./playwright-routes": "./src/playwright-routes.ts",
     "./runtime-capability-matrix": "./src/runtime-capability-matrix.ts",
     "./soft-authenticator": "./src/soft-authenticator.ts",
-    "./supertest": "./src/supertest.ts"
+    "./supertest": "./src/supertest.ts",
+    "./wire-conformance": "./src/wire-conformance.ts"
   },
   "scripts": {
     "build:run-custody:windows": "node src/run-custody/windows/build.mjs",

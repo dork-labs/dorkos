@@ -383,6 +383,33 @@ export function settledOrPending(work: Promise<unknown>): Promise<'settled' | 'p
   ]);
 }
 
+/**
+ * Report whether `work` settles within a short, bounded wait.
+ *
+ * For a dispatch that must not wait on a card or a helper: it may still take a
+ * few real steps (timers, I/O) on a loaded machine, so one macrotask is too
+ * tight a bound. A dispatch stuck behind a card waits minutes to hours, so a
+ * two-second bound still tells the two apart.
+ *
+ * @param work - The promise being probed.
+ * @param withinMs - How long to wait before answering `'pending'`.
+ */
+export function settlesWithin(
+  work: Promise<unknown>,
+  withinMs = 2_000
+): Promise<'settled' | 'pending'> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    work.then(
+      () => 'settled' as const,
+      () => 'settled' as const
+    ),
+    new Promise<'pending'>((resolve) => {
+      timer = setTimeout(() => resolve('pending'), withinMs);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 /** Cut the durable stream into windows at its `turn_start`/`turn_end` pairs. */
 export function groupWindows(events: SessionEvent[]): ProjectedWindow[] {
   const out: ProjectedWindow[] = [];

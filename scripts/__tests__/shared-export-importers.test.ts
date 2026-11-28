@@ -50,10 +50,6 @@ const SERVER_ONLY_KEYS: Record<string, string> = {
   'running-chats':
     "Shared's own agent-runtime (read by the client) imports its SessionCapacity type.",
   'browser-schemas': "Shared's own browser-frame-wire (read by the client) imports its schemas.",
-  'session-relay':
-    "A contract, so it stays in shared for good: the link between a person's cloud DorkOS and their Mac (the item 13 spec). Shared's own session-relay-link, which the client reads, imports it too.",
-  'session-relay-agent-computer':
-    'A contract, so it stays in shared for good: the wire between a home and its agent computers (spec space-computer-contract, DOR-5164). Both ends live in the server today; the contract is what lets them run on two machines.',
   'wire/features':
     'A contract, so it stays in shared for good: the feature ids both ends of the computer wire agree on (spec space-computer-contract §4.1, DOR-5164). Both ends live in the server today; the contract is what lets them run on two machines.',
   'turn-port':

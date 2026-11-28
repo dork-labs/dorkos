@@ -109,6 +109,30 @@ describe('community connection transport', () => {
     );
     await expect(methods.getCommunityDisconnectImpact('a/b')).rejects.toThrow();
   });
+  it('sets the teammate spend limit with the same request', async () => {
+    const spend = {
+      monthlyLimitUsd: 25,
+      spentUsd: 3.5,
+      approximate: false,
+      month: '2026-11',
+      hasAgentsHere: true,
+    };
+    const fetch = answer(spend);
+    fetch.mockImplementation(async () => new Response(JSON.stringify(spend)));
+    const methods = createCommunityMethods('/api');
+    await expect(methods.setCommunityTeammateSpendLimit('a/b', 25)).resolves.toEqual(spend);
+    await methods.setCommunityTeammateSpendLimit('a/b', null);
+    for (const [index, body] of ['{"monthlyLimitUsd":25}', '{"monthlyLimitUsd":null}'].entries()) {
+      const [url, init] = fetch.mock.calls[index]!;
+      expect([url, init?.method, init?.body, init?.credentials]).toEqual([
+        '/api/community-connections/a%2Fb/teammate-spend',
+        'PUT',
+        body,
+        'include',
+      ]);
+      expect(new Headers(init?.headers).get('Content-Type')).toBe('application/json');
+    }
+  });
   it('preserves a local authorization refusal rather than reporting success', async () => {
     answer({ error: 'Only this install’s owner can manage community connections.' }, 403);
     await expect(createCommunityMethods('/api').listCommunityConnections()).rejects.toMatchObject({

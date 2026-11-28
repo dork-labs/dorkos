@@ -20,11 +20,13 @@ import type {
   ClaimUnclaimedChatRequest,
   ClaimUnclaimedChatResponse,
 } from '@dorkos/shared/relay-schemas';
+import { createTransportApiClient } from './api-client';
 import { fetchAllPages, fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 import { responseError } from '../response-error';
 
 /** Create all Relay methods bound to a base URL. */
 export function createRelayMethods(baseUrl: string, getClientId: () => string) {
+  const api = createTransportApiClient(baseUrl);
   return {
     // --- Relay Message Bus ---
 
@@ -254,6 +256,7 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
       );
     },
 
+    // Stays hand-written: the API document leaves out its body (DOR-5473).
     createBinding(input: CreateBindingRequest): Promise<AdapterBinding> {
       return fetchJSON<{ binding: AdapterBinding }>(baseUrl, '/relay/bindings', {
         method: 'POST',
@@ -261,12 +264,14 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
       }).then((r) => r.binding);
     },
 
+    // Stays hand-written: `DELETE /api/relay/bindings/{id}` has no operationId (DOR-5473).
     async deleteBinding(id: string): Promise<void> {
       await fetchJSON<{ ok: boolean }>(baseUrl, `/relay/bindings/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
     },
 
+    // Stays hand-written: the API document leaves out its body (DOR-5473).
     updateBinding(id: string, updates: UpdateBindingRequest): Promise<AdapterBinding> {
       return fetchJSON<{ binding: AdapterBinding }>(
         baseUrl,
@@ -278,6 +283,7 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
       ).then((r) => r.binding);
     },
 
+    // Stays hand-written: `POST /api/relay/bindings/{id}/test` has no operationId (DOR-5473).
     testBinding(bindingId: string): Promise<BindingTestResult> {
       return fetchJSON<BindingTestResult>(
         baseUrl,
@@ -286,46 +292,47 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
       );
     },
 
-    moveBinding(id: string, agentId: string): Promise<AdapterBinding> {
-      return fetchJSON<{ binding: AdapterBinding }>(
-        baseUrl,
-        `/relay/bindings/${encodeURIComponent(id)}/move`,
-        { method: 'POST', body: JSON.stringify({ agentId }) }
-      ).then((r) => r.binding);
+    async moveBinding(id: string, agentId: string): Promise<AdapterBinding> {
+      const r = (await api.call('relay.moveBindings', { path: { id }, body: { agentId } })) as {
+        binding: AdapterBinding;
+      };
+      return r.binding;
     },
 
     // --- The claim feed (connection-scoping spec §Part 3) ---
 
-    listUnclaimedChats(status?: UnclaimedChatStatus): Promise<UnclaimedChat[]> {
-      const qs = buildQueryString({ status });
-      return fetchJSON<{ chats: UnclaimedChat[] }>(baseUrl, `/relay/unclaimed-chats${qs}`).then(
-        (r) => r.chats
-      );
+    async listUnclaimedChats(status?: UnclaimedChatStatus): Promise<UnclaimedChat[]> {
+      const r = (await api.call('relay.getUnclaimedChats', { query: { status } })) as {
+        chats: UnclaimedChat[];
+      };
+      return r.chats;
     },
 
-    claimUnclaimedChat(
+    async claimUnclaimedChat(
       id: string,
       input: ClaimUnclaimedChatRequest
     ): Promise<ClaimUnclaimedChatResponse> {
-      return fetchJSON<ClaimUnclaimedChatResponse>(
-        baseUrl,
-        `/relay/unclaimed-chats/${encodeURIComponent(id)}/claim`,
-        { method: 'POST', body: JSON.stringify(input) }
-      );
+      return (await api.call('relay.claimUnclaimedChats', {
+        path: { id },
+        body: input,
+      })) as ClaimUnclaimedChatResponse;
     },
 
+    // Stays hand-written: waits for batch 3's no-body client (DOR-5473).
     ignoreUnclaimedChat(id: string): Promise<void> {
       return fetchNoContent(baseUrl, `/relay/unclaimed-chats/${encodeURIComponent(id)}/ignore`, {
         method: 'POST',
       });
     },
 
+    // Stays hand-written: waits for batch 3's no-body client (DOR-5473).
     blockUnclaimedChat(id: string): Promise<void> {
       return fetchNoContent(baseUrl, `/relay/unclaimed-chats/${encodeURIComponent(id)}/block`, {
         method: 'POST',
       });
     },
 
+    // Stays hand-written: `POST /api/relay/unclaimed-chats/{id}/leave` has no operationId (DOR-5473).
     leaveUnclaimedChat(id: string): Promise<void> {
       return fetchNoContent(baseUrl, `/relay/unclaimed-chats/${encodeURIComponent(id)}/leave`, {
         method: 'POST',

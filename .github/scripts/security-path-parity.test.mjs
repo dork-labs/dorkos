@@ -309,32 +309,6 @@ for (const [match, miss] of [
     'apps/server/src/services/core/approvals/computer-asks/consent-config.ts',
     'apps/server/src/services/core/approvalsx/computer-asks/consent-config.ts',
   ],
-  // DOR-5258 (Security t1j): the OpenCode project-plugin guard and re-check, the asks check
-  // and prompt that arm it, and the sidecar's manager and custody that a restart kills.
-  [
-    'apps/server/src/services/runtimes/opencode/messaging/project-plugin-guard.ts',
-    'apps/server/src/services/runtimes/opencode/messaging/project-plugin-guards.ts',
-  ],
-  [
-    'apps/server/src/services/runtimes/opencode/messaging/project-plugin-recheck.ts',
-    'apps/server/src/services/runtimes/opencode/messaging/project-plugin-recheck.test.ts',
-  ],
-  [
-    'apps/server/src/services/runtimes/opencode/messaging/keep-asks.ts',
-    'apps/server/src/services/runtimes/opencode/keep-asks.ts',
-  ],
-  [
-    'apps/server/src/services/runtimes/opencode/server-manager.ts',
-    'apps/server/src/services/runtimes/opencode/sessions/server-manager.ts',
-  ],
-  [
-    'apps/server/src/services/runtimes/opencode/sidecar-custody.ts',
-    'apps/server/src/services/runtimes/opencode/sidecar-custody-old.ts',
-  ],
-  [
-    'apps/server/src/services/runtimes/opencode/tool-turn/prompt.ts',
-    'apps/server/src/services/runtimes/opencode/tool-turn/prompts.ts',
-  ],
   // C14 (DOR-5459): the CLI verbs that write or show consent, and the store they write through.
   ['packages/cli/src/consent-config-store.ts', 'packages/cli/src/consent-config-stores.ts'],
   ['packages/cli/src/harness-consent.ts', 'packages/cli/src/harness-consent.test.ts'],
@@ -397,6 +371,53 @@ for (const [match, miss] of [
   ['apps/server/src/lib/http/person-bar.ts', 'apps/server/src/lib/http/person-bars.ts'],
   // C9a (DOR-5482): what the tasks tools reach, wired at boot.
   ['apps/server/src/startup/task-tool-reach.ts', 'apps/server/src/startup/task-tool-reaches.ts'],
+  // Owner-scoped session locations and person draft settings, moved out of routes/ (DOR-4923).
+  [
+    'apps/server/src/services/core/runtime-seam/session-location-store.ts',
+    'apps/server/src/services/core/runtime-seam/session-location-stores.ts',
+  ],
+  [
+    'apps/server/src/services/core/runtime-seam/person-draft-settings.ts',
+    'apps/server/src/services/core/runtime-seam/person-draft-setting.ts',
+  ],
+  // Which chat a report reaches, and the turn windows, frames and ceiling around helper turns (DOR-3753, DOR-2698, DOR-2829).
+  [
+    'apps/server/src/services/rooms/handoff/outbox/report-outbox-store.ts',
+    'apps/server/src/services/rooms/handoff/outboxes/report-outbox-store.ts',
+  ],
+  [
+    'apps/server/src/services/runtimes/claude-code/warm-ceiling.ts',
+    'apps/server/src/services/runtimes/claude-code/warm-ceilings.ts',
+  ],
+  [
+    'apps/server/src/services/runtimes/claude-code/sessions/persistent-dispatch.ts',
+    'apps/server/src/services/runtimes/claude-code/sessions/persistent-dispatches.ts',
+  ],
+  [
+    'apps/server/src/services/runtimes/claude-code/sessions/dispatch/asks-between-turns.ts',
+    'apps/server/src/services/runtimes/claude-code/sessions/dispatch/ask-between-turns.ts',
+  ],
+  [
+    'apps/server/src/services/runtimes/claude-code/sessions/session-turn-windows.ts',
+    'apps/server/src/services/runtimes/claude-code/sessions/session-turn-window.ts',
+  ],
+  [
+    'apps/server/src/services/runtimes/claude-code/sessions/frames/frame-kinds.ts',
+    'apps/server/src/services/runtimes/claude-code/sessions/frame/frame-kinds.ts',
+  ],
+  [
+    'apps/server/src/services/session/runtime-turns/runtime-turn.ts',
+    'apps/server/src/services/session/runtime-turn/runtime-turn.ts',
+  ],
+  [
+    'apps/server/src/services/core/mcp-tool-tiers.ts',
+    'apps/server/src/services/core/mcp-tool-tier.ts',
+  ],
+  ['apps/server/src/services/core/mcp-server.ts', 'apps/server/src/services/core/mcp-servers.ts'],
+  [
+    'apps/server/src/services/runtimes/opencode/messaging/compaction-model.ts',
+    'apps/server/src/services/runtimes/opencode/messaging/compaction-models.ts',
+  ],
 ]) {
   test(`${match} is on the main list only`, () => {
     assert.ok(existsSync(resolve(root, match)), `${match} no longer exists`);

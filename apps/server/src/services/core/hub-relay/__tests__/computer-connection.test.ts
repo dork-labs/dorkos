@@ -34,7 +34,7 @@ import {
   RELAY_TIMED_OUT,
   type RelayStreamFrame,
 } from '../computer-connection.js';
-import { Wire } from './relay-socket-pair.js';
+import { Wire } from '@dorkos/test-utils/relay-socket-pair';
 import {
   computerConnection,
   forgetConnection,
