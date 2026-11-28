@@ -189,7 +189,8 @@ describe('connector management routes', () => {
   // Security M1 on #3575: the owner's request items carry who approved them, read by request.
   it('adds who approved each request to the owner’s list and to one request', async () => {
     const approvedBy = { agentId: 'pm', displayName: 'PM', approvedAt: '2026-11-09T01:00:00.000Z' };
-    agentRequests.listForOwner.mockReturnValue([{ requestId: 'request-a' }, { requestId: 'b' }]);
+    const rows = ['request-a', 'b'].map((requestId, i) => ({ requestId, createdAt: `${9 - i}` }));
+    agentRequests.listForOwner.mockReturnValue(rows);
     const app = fixtureTarget.mount(
       buildApp({
         agentApprovals: (requestId) =>
@@ -198,10 +199,7 @@ describe('connector management routes', () => {
     );
     await request(app)
       .get('/api/connectors/agent-requests')
-      .expect(200, {
-        requests: [{ requestId: 'request-a', approvedBy }, { requestId: 'b' }],
-        nextCursor: null,
-      });
+      .expect(200, { requests: [{ ...rows[0], approvedBy }, rows[1]], nextCursor: null });
     await request(app)
       .get('/api/connectors/agent-requests/request-a')
       .expect(200, { requestId: 'request-a', approvedBy });

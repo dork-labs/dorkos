@@ -124,7 +124,9 @@ describe('runMarketplaceDispatcher', () => {
 
     expect(await runMarketplaceDispatcher('installed', [])).toBe(0);
 
-    expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(/\/api\/marketplace\/installed$/);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(
+      /\/api\/marketplace\/installed\?limit=200$/
+    );
   });
 
   it('routes `outdated` to GET /updates and passes its exit code through', async () => {
