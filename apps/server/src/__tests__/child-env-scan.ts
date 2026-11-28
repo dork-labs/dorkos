@@ -16,10 +16,17 @@
 import ts from 'typescript';
 import { lexWithoutComments } from '../../../../scripts/lib/code-only.mjs';
 
-/** Source text without its comments, so a comment naming `process.env` is not a read. */
-function withoutComments(text: string): string {
-  return lexWithoutComments(text).code;
-}
+/** Text that can't hold a start or a `process.env` read: no parse needed. */
+const MAY_MATTER = /child_process|node-pty|StdioClientTransport|\bprocess\.env\b/;
+
+/** What a file with nothing to find scans to. */
+const EMPTY_SCAN: FileScan = {
+  unlisted: [],
+  helperBuilt: 0,
+  processEnvLeaks: [],
+  wholeEnvArguments: [],
+  gitFetchStarts: [],
+};
 
 const CHILD_PROCESS_STARTS = new Set([
   'spawn',
@@ -72,7 +79,13 @@ export function scanChildStarts(
   source: string,
   helpers: readonly string[]
 ): FileScan {
+  // Every start needs one of these imports, and every leak names process.env.
+  if (!MAY_MATTER.test(source)) return EMPTY_SCAN;
   const file = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
+  // The file lexed once, comments blanked to spaces with positions kept, so a
+  // node's comment-free text is a slice (a comment naming `process.env` is not a read).
+  const code = lexWithoutComments(source, fileName).code;
+  const withoutComments = (node: ts.Node): string => code.slice(node.getStart(file), node.end);
   const direct = new Set<string>();
   const namespaces = new Set<string>();
   let stdioTransport: string | null = null;
@@ -144,8 +157,7 @@ export function scanChildStarts(
 
   const helperCall = new RegExp(`\\b(${helpers.join('|')})\\(`);
   const unlisted: UnlistedStart[] = [];
-  const flat = (node: ts.Node): string =>
-    withoutComments(node.getText(file)).replace(/\s+/g, ' ').trim();
+  const flat = (node: ts.Node): string => withoutComments(node).replace(/\s+/g, ' ').trim();
   const lineOf = (node: ts.Node): number =>
     file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1;
   const processEnvLeaks: string[] = [];
@@ -196,7 +208,7 @@ export function scanChildStarts(
     if (
       ts.isPropertyAssignment(node) &&
       node.name.getText(file) === 'env' &&
-      /\bprocess\.env\b/.test(withoutComments(node.initializer.getText(file)))
+      /\bprocess\.env\b/.test(withoutComments(node.initializer))
     )
       processEnvLeaks.push(where(node));
     const start =

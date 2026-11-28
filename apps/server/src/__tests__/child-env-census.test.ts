@@ -35,21 +35,31 @@ const ROOTS = [
 
 const HELPERS = ['childEnvironment', ...Object.keys(census.wrappers)];
 
+let files: string[] | undefined;
+/** The census's files, listed once per run. */
 function sourceFiles(): string[] {
   // Untracked files count too: a new file is a new start before it is committed.
-  return execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', ...ROOTS], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-  })
+  return (files ??= execFileSync(
+    'git',
+    ['ls-files', '--cached', '--others', '--exclude-standard', ...ROOTS],
+    {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    }
+  )
     .split('\n')
     .filter(
       (file) =>
         /\.(ts|tsx|mts)$/.test(file) && !/(__tests__|__fixtures__)\/|\.test\.|\.d\.ts$/.test(file)
-    );
+    ));
 }
 
+const texts = new Map<string, string>();
+/** Each file read once per run. */
 function read(file: string): string {
-  return readFileSync(`${repoRoot}${file}`, 'utf8');
+  let text = texts.get(file);
+  if (text === undefined) texts.set(file, (text = readFileSync(`${repoRoot}${file}`, 'utf8')));
+  return text;
 }
 
 const scans = new Map<string, ReturnType<typeof scanChildStarts>>();
