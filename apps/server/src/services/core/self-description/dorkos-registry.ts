@@ -87,7 +87,12 @@ import { workspacesDomain } from '../../workspace/workspace-capabilities.js';
 import { templatesDomain } from '../agent-templates/template-catalog.js';
 import { sessionRelayDomain } from '../session-relay-doors/session-relay-capabilities.js';
 
-/** Two of the domains this root registers, for the tokenless read list (`tool-security.ts`). */
+/**
+ * Two of the domains this root registers, for the tokenless read list (`tool-security.ts`).
+ * A stopgap, not a pattern: a composition root re-exports no domain. C9b (DOR-5483) moves the
+ * tokenless mark onto each capability's own declaration, `tool-security.ts` reads it from the
+ * registry it is handed at boot, and this export goes.
+ */
 export { capabilitiesDomain, tasksAgentToolsDomain };
 /**
  * The work graph's reads (DOR-4970), handed what they take from other domains
