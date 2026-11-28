@@ -1218,11 +1218,9 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
     } finally {
       req.destroy();
     }
-    expect(JSON.parse(/event: extension_reloaded\ndata: (.*)\n/.exec(text)![1]!)).toEqual({
-      type: 'extension_reloaded',
-      extensionIds: [ROUTED],
-      timestamp: expect.any(Number),
-    });
+    const frame = JSON.parse(/event: extension_reloaded\ndata: (.*)\n/.exec(text)![1]!);
+    expect(frame).toMatchObject({ seq: expect.any(Number), type: 'extension_reloaded' });
+    expect(frame.payload).toMatchObject({ extensionIds: [ROUTED], timestamp: expect.any(Number) });
   });
 });
 

@@ -19,9 +19,25 @@ export class FakeConnection implements DurableStreamConnection {
     readonly opts: StreamConnectionOptions
   ) {}
 
-  /** Push a frame as the server would deliver it (event name + parsed JSON data). */
+  private seq = 0;
+
+  /**
+   * Push a frame as the server would deliver it (event name + parsed JSON data).
+   * A connection with its own decoder (the global stream, whose messages are
+   * whole `DorkOsEvent`s) is handed the message as the server writes it and
+   * reads it through that decoder, as the real socket does.
+   */
   push(eventName: string, data: unknown): void {
-    this.opts.eventHandlers[eventName]?.(data);
+    const decode = this.opts.decodeFrame;
+    if (!decode) {
+      this.opts.eventHandlers[eventName]?.(data);
+      return;
+    }
+    this.seq += 1;
+    const at = new Date().toISOString();
+    const raw = JSON.stringify({ seq: this.seq, at, type: eventName, payload: data });
+    const frame = decode(raw);
+    if (frame) this.opts.eventHandlers[frame.event]?.(frame.data);
   }
 
   /** Drive a connection-state change through onStateChange. */

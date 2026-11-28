@@ -11,12 +11,13 @@
  * from another. That is what lets a narrow stream be a filtered view of the
  * same contract, and lets a stream fed from another computer number its own.
  *
- * `GET /api/events` does not send the envelope yet (that is DOR-5474), so no
- * reader's payloads change: `type` is the frame's event name (`event:` over
- * SSE, `event` in a socket frame), `data` is the bare payload, and the frame id
- * (`id:` over SSE, `id` in a socket frame) is an opaque resume cursor that
- * happens to end in `seq`; `at` is not sent. Echo the id back whole as
- * `Last-Event-ID`, or `?resume=` on a socket.
+ * `GET /api/events` sends the whole envelope in every frame (DOR-5474): over
+ * SSE it is the `data:` line, and on the socket it is the message itself. The
+ * frame id (`id:` over SSE, `id` beside the envelope on the socket) is an opaque
+ * resume cursor: echo it back whole as `Last-Event-ID`, or `?resume=` on a
+ * socket, and read `seq` from the envelope, never from the id. `at` is when the
+ * server emitted the event; a replayed event keeps its first `at`. The wire
+ * helpers are in `./dorkos-event-frame.ts`.
  *
  * ## The union
  *
@@ -196,13 +197,18 @@ export function dorkOsEventArea(type: DorkOsEventType): DorkOsEventTypeInfo {
 
 /**
  * One event: its place in its stream, when it happened, what it is, and its
- * data. See the module doc for what `seq` promises and how `GET /api/events`
- * carries the four fields.
+ * data. See the module doc for what `seq` promises; this is what every frame
+ * of `GET /api/events` carries.
  */
 export interface DorkOsEvent<T extends DorkOsEventType = DorkOsEventType, P = unknown> {
-  /** Position in this stream: only grows, may skip, never compared across streams. */
-  readonly seq: number;
-  /** When the server recorded the event, ISO 8601. */
+  /**
+   * Position in this stream: only grows, may skip, never compared across
+   * streams. `null` on a frame outside the numbering (the opening frames, the
+   * cold-connect snapshot, the keepalive), which is never stored as a position
+   * and never used to order or drop a frame.
+   */
+  readonly seq: number | null;
+  /** When the server emitted the event, ISO 8601. A replay keeps the first one. */
   readonly at: string;
   /** The event type, a member of the union. */
   readonly type: T;
@@ -226,11 +232,14 @@ const envelopeShape = {
   seq: z
     .number()
     .int()
-    .nonnegative()
+    .positive()
+    .nullable()
     .describe(
-      "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. The last part of the frame id."
+      "Position in this stream: it only grows, may skip numbers, and is never compared with another stream's. `null` on a frame outside the numbering (`connected`, the cold-connect snapshot after it, `heartbeat`), which also has no id: never store it as a position, and never use it to order or drop a frame."
     ),
-  at: z.string().describe('When the server recorded the event, ISO 8601.'),
+  at: z
+    .string()
+    .describe('When the server emitted the event, ISO 8601. A replayed event keeps its first one.'),
 };
 
 /** One envelope per named type, plus the extension family. */
@@ -253,20 +262,7 @@ const memberSchemas = [
 ] as unknown as readonly [z.ZodObject, z.ZodObject, ...z.ZodObject[]];
 
 /**
- * The union of every event the global stream carries, as envelopes. Code only:
- * `GET /api/events` does not send the envelope yet (DOR-5474), so the API
- * document describes {@link DorkOsEventPayloadSchema} instead.
+ * The union of every event the global stream carries, as envelopes: what one
+ * `GET /api/events` frame holds, over SSE (`data:`) and on the socket.
  */
-export const DorkOsEventSchema = z.union(memberSchemas);
-
-/**
- * What one `GET /api/events` frame's `data:` holds today: the bare payload of
- * its type. A type with a shared schema is described by it; every other type's
- * payload is an object this schema does not describe yet.
- */
-export const DorkOsEventPayloadSchema = z.union([
-  ...Object.values(PAYLOAD_SCHEMAS),
-  z
-    .record(z.string(), z.unknown())
-    .describe('The payload of a type that has no described schema yet.'),
-] as unknown as readonly [z.ZodType, z.ZodType, ...z.ZodType[]]);
+export const DorkOsEventSchema = z.union(memberSchemas).openapi('DorkOsEvent');

@@ -32,6 +32,7 @@ import {
   type BroadcastAudience,
   type Delivery,
   type EncodedBroadcast,
+  type FramePlace,
 } from '../../lib/event-stream/global-event-frames.js';
 
 export { encodeBroadcast, type BroadcastAudience, type EncodedBroadcast };
@@ -267,8 +268,8 @@ class EventFanOut {
   broadcast(eventName: DorkOsEventType, data: unknown, audience?: BroadcastAudience): void {
     this.notifyListeners(eventName, data);
     if (requiresAudience(eventName) && !audience) return;
-    this.publish(eventName, (id) => ({
-      full: encodeBroadcast(eventName, data, id),
+    this.publish(eventName, (place) => ({
+      full: encodeBroadcast(eventName, data, place),
       ...(audience && { audience }),
     }));
   }
@@ -334,10 +335,10 @@ class EventFanOut {
   ): void {
     this.notifyListeners(eventName, full);
     if (requiresAudience(eventName) && !audience) return;
-    // Both renderings share one seq and one frame id: they are one event.
-    this.publish(eventName, (id) => ({
-      full: encodeBroadcast(eventName, full, id),
-      redacted: encodeBroadcast(eventName, redacted, id),
+    // Both renderings share one seq, one `at` and one frame id: they are one event.
+    this.publish(eventName, (place) => ({
+      full: encodeBroadcast(eventName, full, place),
+      redacted: encodeBroadcast(eventName, redacted, place),
       entitled,
       ...(audience && { audience }),
     }));
@@ -375,14 +376,21 @@ class EventFanOut {
   }
 
   /**
-   * Number one broadcast, keep it for replay, and write it to every reader it is
-   * for. Encoded once per rendering, whatever the number of readers.
+   * Number one broadcast, stamp when it was emitted, keep it for replay, and
+   * write it to every reader it is for. Encoded once per rendering, whatever the
+   * number of readers; a replay sends the same bytes, so the event keeps its
+   * first `at`.
    *
    * @param eventName - The event type.
-   * @param deliver - The delivery record, from the event's frame id.
+   * @param deliver - The delivery record, from the event's place in the stream.
    */
-  private publish(eventName: DorkOsEventType, deliver: (frameId: string) => Delivery): void {
-    const entry = this.replay.append(eventName, deliver, deliveryBytes);
+  private publish(eventName: DorkOsEventType, deliver: (place: FramePlace) => Delivery): void {
+    const at = new Date().toISOString();
+    const entry = this.replay.append(
+      eventName,
+      (id, seq) => deliver({ id, seq, at }),
+      deliveryBytes
+    );
     this.writeToClients(entry.delivery);
   }
 

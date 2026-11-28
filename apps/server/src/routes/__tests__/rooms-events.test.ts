@@ -13,6 +13,7 @@ import type { AddressInfo } from 'node:net';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { openSseStream, type OpenSseStream, type SseFrame } from '@dorkos/test-utils';
+import { envelopePayload } from '@dorkos/test-utils/sse-test-helpers';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 
@@ -440,7 +441,7 @@ describe('PUT /api/read-cursors/room/:id on the global stream', () => {
     // One read-state system with one write path (team-room-home §D4): a room is
     // `threadKind: 'room'` and not an endpoint of its own. The unread count
     // rides along because the sidebar cannot work it out from a cursor.
-    expect(cursors[0].data).toEqual({
+    expect(envelopePayload(cursors[0])).toEqual({
       userId: getRoomService().authorRegistry.localHuman().id,
       threadKind: 'room',
       threadId: roomId,
@@ -484,7 +485,7 @@ describe('PUT /api/read-cursors/room/:id on the global stream', () => {
     // countless variant would be exactly the bug: an event the room list has
     // nothing to patch with, leaving the badge lit on the reader's other device.
     const cursors = frames.filter((f) => f.event === 'read_cursor');
-    expect(cursors.map((f) => f.data)).toEqual([
+    expect(cursors.map(envelopePayload)).toEqual([
       { userId: me, threadKind: 'room', threadId: roomId, lastReadSeq: 2, unreadCount: 1 },
     ]);
 

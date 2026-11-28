@@ -241,7 +241,7 @@ describe('who the Ask actually reaches on the wire', () => {
   interface Reader {
     client: FanOutClient;
     events: string[];
-    frames: { event: string; data: Record<string, unknown> }[];
+    frames: { type: string; payload: Record<string, unknown> }[];
   }
 
   /** Everything registered here, so the singleton is left as it was found. */
@@ -259,11 +259,13 @@ describe('who the Ask actually reaches on the wire', () => {
    */
   function reader(principal: CallerPrincipal): Reader {
     const events: string[] = [];
-    const frames: { event: string; data: Record<string, unknown> }[] = [];
+    const frames: { type: string; payload: Record<string, unknown> }[] = [];
     const client: FanOutClient = {
       send: (broadcast) => {
         events.push(broadcast.event);
-        frames.push(JSON.parse(broadcast.json) as { event: string; data: Record<string, unknown> });
+        frames.push(
+          JSON.parse(broadcast.json) as { type: string; payload: Record<string, unknown> }
+        );
       },
       bufferedBytes: 0,
       gone: false,
@@ -279,8 +281,8 @@ describe('who the Ask actually reaches on the wire', () => {
    * @param who - The recording connection.
    */
   function lastStatus(who: Reader): Record<string, unknown> | undefined {
-    const last = who.frames.filter((f) => f.event === 'session_status').at(-1);
-    return last?.data.status as Record<string, unknown> | undefined;
+    const last = who.frames.filter((f) => f.type === 'session_status').at(-1);
+    return last?.payload.status as Record<string, unknown> | undefined;
   }
 
   beforeEach(() => {

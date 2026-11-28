@@ -1,14 +1,14 @@
 /**
  * The global event stream, `GET /api/events` (`routes/events.ts`), in the API
- * document as it is sent today: `event:` is the type, `data:` the bare payload
- * (described by the payload schemas that exist), `id:` an opaque cursor. The
- * `DorkOsEvent` envelope stays in code until it is on the wire (DOR-5474).
+ * document: every frame's `data:` is one `DorkOsEvent` envelope, with the
+ * per-type payload union inside it; `event:` repeats the type and `id:` is an
+ * opaque cursor (DOR-5474).
  *
  * @module services/core/openapi/events-openapi
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
-import { DorkOsEventPayloadSchema } from '@dorkos/shared/dorkos-events';
+import { DorkOsEventSchema } from '@dorkos/shared/dorkos-events';
 import { EVENT_REPLAY_LIMITS } from '../../../lib/event-stream/event-replay-buffer.js';
 import { problemResponse } from './problem-openapi.js';
 
@@ -31,18 +31,24 @@ export function registerEventsOpenApi(registry: OpenAPIRegistry): void {
     summary: 'The global event stream (SSE, or WebSocket at the same path)',
     description: [
       'One stream for the chat list and everything else that changes: rooms, tasks, agents,',
-      'settings, approvals, Relay, extensions. Each SSE frame is `event:` (the event type),',
-      "`data:` (that type's payload, described below) and, on every event after the opening",
-      'frames, `id:` (an opaque resume cursor; send it back whole). Every connect opens with',
+      "settings, approvals, Relay, extensions. Each SSE frame's `data:` is one event,",
+      '`{ seq, at, type, payload }` (described below): `seq` is its place in this stream (it',
+      'only grows and may skip). `seq` is `null` on a frame outside the numbering (the opening',
+      'frames, the cold-connect snapshot, the heartbeat): never store it as a position, and never',
+      'use it to order or drop a frame. `at` is when the server',
+      'emitted it, `type` the event type and `payload` its data. `event:` repeats the type and,',
+      'on every event after the opening frames, `id:` is an opaque resume cursor (send it back',
+      'whole; read `seq` from `data:`, never from the id). Every connect opens with',
       '`connected` (with `resumed: true` when it picked up from your cursor), then any missed',
       'events, then `tunnel_status` with remote access as it is now (never to an agent), then one',
       '`session_status` for each chat that is working, waiting on a person or stopped with an',
       'error; those opening frames have no `id:`. The server keeps the last',
-      `${EVENT_REPLAY_LIMITS.maxEvents} events (at most ${EVENT_REPLAY_LIMITS.maxBytes / 1024} KiB)`,
-      'for replay, filtered with the rights you have when you reconnect. Over SSE a `heartbeat`',
-      'frame with empty data arrives every 15 seconds. The same path answers a WebSocket upgrade,',
-      'which is what the DorkOS app uses: each message a JSON frame `{ event, data, id }`,',
-      'resuming from `?resume=`. An event addressed to a person (settings, the inbox, an',
+      `${EVENT_REPLAY_LIMITS.maxEvents} events (at most ${EVENT_REPLAY_LIMITS.maxBytes / 1024} KiB,`,
+      'so fewer when events are large) for replay, filtered with the rights you have when you reconnect; a replayed event keeps',
+      'its first `at`. A `heartbeat` event arrives every 15 seconds. The same path answers a',
+      'WebSocket upgrade, which is what the DorkOS app uses: each message is the same event,',
+      '`{ seq, at, type, payload }`, with the cursor beside it as `id`, resuming from `?resume=`.',
+      'An event addressed to a person (settings, the inbox, an',
       "ask's detail, remote access) never reaches a reader that presents an agent token.",
     ].join(' '),
     request: {
@@ -60,8 +66,8 @@ export function registerEventsOpenApi(registry: OpenAPIRegistry): void {
     },
     responses: {
       200: {
-        description: "An SSE stream; each frame's `data:` is the payload of its `event:` type.",
-        content: { 'text/event-stream': { schema: DorkOsEventPayloadSchema } },
+        description: "An SSE stream; each frame's `data:` is one `DorkOsEvent`.",
+        content: { 'text/event-stream': { schema: DorkOsEventSchema } },
       },
       503: problemResponse(
         '`temporarily_unavailable`: too many live connections are open. Try again soon.'

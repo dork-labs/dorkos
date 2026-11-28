@@ -1,6 +1,7 @@
 import http from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import log from 'electron-log';
+import { readDorkOsEvent } from '@dorkos/shared/dorkos-event-frame';
 import { serverDialHost } from '../shared/server-address';
 import { onServerCookiesChanged, serverCookieHeader } from './sign-in/server-cookies';
 
@@ -32,7 +33,10 @@ import { onServerCookiesChanged, serverCookieHeader } from './sign-in/server-coo
 export interface ServerEventFrame {
   /** The event name — the SSE `event:` line, or `'message'` if the frame omitted one. */
   name: string;
-  /** The raw `data:` payload, still JSON text. */
+  /**
+   * The raw `data:` line, still JSON text: one whole `DorkOsEvent`. Read its
+   * payload with {@link parseEventPayload}.
+   */
   data: string;
 }
 
@@ -479,14 +483,41 @@ function parseFrame(frame: string): ServerEventFrame {
   return { name, data: data.join('\n') };
 }
 
-/** Parse a JSON payload, or `null` if it isn't an object. */
+/**
+ * Whether a frame that was JSON but not an envelope has been logged. Once per
+ * process: a server from before DOR-5474 sends bare payloads on every frame,
+ * and one line says why the tray and notifications went quiet without a line
+ * per event.
+ */
+let loggedNotEnvelope = false;
+
+/**
+ * Read the payload out of a frame's `data:`, which is one whole `DorkOsEvent`,
+ * `{ seq, at, type, payload }` (DOR-5474).
+ *
+ * @param data - The frame's `data:` text.
+ * @returns The payload, or `null` when the data is not an envelope or its
+ *   payload is not an object.
+ */
 export function parseEventPayload(data: string): Record<string, unknown> | null {
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(data);
-    return typeof parsed === 'object' && parsed !== null
-      ? (parsed as Record<string, unknown>)
-      : null;
+    parsed = JSON.parse(data);
   } catch {
     return null;
   }
+  const event = readDorkOsEvent(parsed);
+  if (!event) {
+    if (!loggedNotEnvelope) {
+      loggedNotEnvelope = true;
+      log.warn(
+        '[event-stream] A frame is not a { seq, at, type, payload } event; the server may be older than this app. Skipping such frames.'
+      );
+    }
+    return null;
+  }
+  const payload = event.payload;
+  return typeof payload === 'object' && payload !== null
+    ? (payload as Record<string, unknown>)
+    : null;
 }

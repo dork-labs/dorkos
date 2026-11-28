@@ -57,10 +57,17 @@ type Frame = [event: string, data?: unknown];
  * @param frames - What the server sends before closing.
  * @param consume - The iteration under test.
  */
-async function script<T>(frames: Frame[], consume: () => Promise<T>): Promise<T> {
+async function script<T>(
+  frames: Frame[],
+  consume: () => Promise<T>,
+  wire: 'stream' | 'envelope' = 'stream'
+): Promise<T> {
   const running = consume();
   const socket = await nthSocket();
-  for (const [event, data] of frames) socket.push(event, data);
+  for (const [event, data] of frames) {
+    if (wire === 'envelope') socket.pushEvent(event, data);
+    else socket.push(event, data);
+  }
   socket.finish();
   return running;
 }
@@ -334,7 +341,8 @@ describe('createSessionStreamMethods', () => {
         ],
         async () => {
           for await (const event of methods.subscribeSessionList()) events.push(event);
-        }
+        },
+        'envelope'
       );
 
       expect(events).toEqual([LIST_EVENT]);
@@ -356,7 +364,8 @@ describe('createSessionStreamMethods', () => {
         discriminants.map((type): Frame => [type, samples[type]]),
         async () => {
           for await (const event of methods.subscribeSessionList()) events.push(event);
-        }
+        },
+        'envelope'
       );
 
       // Forward, part two: every discriminant survived the allowlist check.
@@ -402,7 +411,8 @@ describe('createSessionStreamMethods', () => {
         ],
         async () => {
           for await (const event of methods.subscribeSessionList()) events.push(event);
-        }
+        },
+        'envelope'
       );
 
       expect(events).toEqual([samples['session_removed']]);

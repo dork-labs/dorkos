@@ -16,6 +16,7 @@ import { isDocChannelNotificationType } from './doc-channel-notifications';
 import type { Transport } from '@dorkos/shared/transport';
 import { ownDocChannelConnection } from './doc-channel-ownership';
 import { streamSocketFrames } from './stream-socket-iterator';
+import { decodeGlobalEventFrame, globalEventPayload } from './generic-events';
 import {
   createUnreadablePromptReporter,
   createUnreadableSnapshotReporter,
@@ -155,12 +156,15 @@ export function createSessionStreamMethods(baseUrl: string, owner: Transport) {
      *
      * The unified `/events` fan-out carries other event families too — only the
      * {@link SESSION_LIST_EVENT_TYPES} discriminants are forwarded; everything
-     * else is ignored.
+     * else is ignored. Each message is a whole `DorkOsEvent`; the list event is
+     * its payload.
      */
     async *subscribeSessionList(): AsyncIterable<SessionListEvent> {
-      for await (const frame of streamSocketFrames(`${baseUrl}/events`)) {
+      for await (const frame of streamSocketFrames(`${baseUrl}/events`, {
+        decodeFrame: decodeGlobalEventFrame,
+      })) {
         if (!SESSION_LIST_EVENT_TYPES.has(frame.event)) continue;
-        const parsed = SessionListEventSchema.safeParse(frame.data);
+        const parsed = SessionListEventSchema.safeParse(globalEventPayload(frame.data));
         if (!parsed.success) {
           console.warn('[Transport] dropping malformed session-list frame', {
             issues: parsed.error.issues,

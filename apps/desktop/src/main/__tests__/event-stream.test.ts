@@ -19,7 +19,7 @@ import type {
   NativeNotificationSpec,
   NotificationHost,
 } from '../notifications/wrapper';
-import { deferred, FakeEventStream } from './fake-event-stream';
+import { deferred, envelope, FakeEventStream } from './fake-event-stream';
 import { canStageIpv6OnlyLocalhost } from './ipv6-loopback';
 
 /**
@@ -236,7 +236,7 @@ describe('event-stream reconnection (DOR-1727)', () => {
     subscribe(() => stream.port, { onFrame: log.record });
 
     await log.arrives('connected');
-    const payload = JSON.stringify({
+    const payload = envelope('session_status', {
       type: 'session_status',
       sessionId: 'session-a',
       status: { lifecycle: 'streaming' },
