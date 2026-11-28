@@ -103,7 +103,7 @@ export function admit(
     return { wait: 'paused' };
   const live = deps.runs.liveRunOf(run.sessionId);
   const chatBusy = live !== undefined && live.id !== run.id;
-  const composer = wordsWaitInComposer(run.origin);
+  const composer = wordsWaitInComposer(run.origin, run.notAfter);
   if (!composer && chatBusy) return { wait: 'chat_busy' };
   if (countsTowardCap(run.origin) && !(composer && chatBusy) && deps.machineFull()) {
     return { wait: 'machine_full' };

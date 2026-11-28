@@ -23,6 +23,7 @@ import {
   startApprovalExpirySweep,
 } from '../../services/core/approvals/index.js';
 import { env } from '../../env.js';
+import { wakeChat } from '../../services/runs/index.js';
 import { createAlwaysSuggestion } from '../../services/core/permissions/index.js';
 import { setMarkedFullActivity } from '../../services/core/turn-power/full-autonomy.js';
 import { setShouldAskActivity } from '../../services/core/prompts/should-ask.js';
@@ -250,9 +251,9 @@ export async function wireConnectorEventsAndApprovals(
   // An answer given after the in-session hold gave up has to reach the agent that
   // asked, or a person ends up relaying it by hand — which is the bug DOR-1931
   // reports. The subscription lives for the life of the process; its listener does
-  // nothing but hand off, because `eventFanOut` runs listeners synchronously on
-  // the broadcast write path (spec `approval-verdict-delivery`).
-  startApprovalVerdictDelivery(approvalService);
+  // one write, the claim with its wake, because `eventFanOut` runs listeners
+  // synchronously on the broadcast write path (spec `approval-verdict-delivery`).
+  startApprovalVerdictDelivery(approvalService, wakeChat);
   // The one line a marked turn in a chat set to Full writes when it runs a send or a standing
   // change with no card (DOR-3394).
   setMarkedFullActivity(activityService);

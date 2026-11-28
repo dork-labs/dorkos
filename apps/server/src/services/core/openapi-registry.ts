@@ -1256,7 +1256,7 @@ registry.registerPath({
   tags: ['Sessions'],
   summary: 'Dispatch a generative-UI widget agent action',
   description:
-    "A click on an `agent`-kind widget action. Injects a structured `<ui_action>` block as the next user turn (trigger-only, 202; the turn streams over /events). Unlike the message trigger (which queues instead), this route answers 409 `session_locked` while the agent is still PRODUCING a turn: a widget click is not a person's words waiting to be said, so it is refused rather than queued. A click that lands after the turn ended is accepted, even if the runtime is still closing that turn's stream behind it.",
+    'A click on an `agent`-kind widget action. Injects a structured `<ui_action>` block as the next user turn (trigger-only, 202; the turn streams over /events). The click is saved once per `eventId` (minted by the app per click, else by the server per request), so a retried request starts one turn. While the agent is still working, the click waits for its turn to end, for a few minutes at most; past that it is dropped rather than run against a later turn. It never waits in the composer as a queued message.',
   request: {
     params: z.object({ id: z.string().uuid() }),
     body: {
@@ -1272,7 +1272,6 @@ registry.registerPath({
     },
     400: problemResponse('Validation error'),
     404: problemResponse('Session not found'),
-    409: problemResponse('Session is running a turn (locked)'),
   },
 });
 

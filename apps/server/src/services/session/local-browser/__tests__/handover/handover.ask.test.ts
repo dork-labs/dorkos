@@ -4,8 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 // A launch reads the rooms folder through the agent facts port, wired as boot does.
 import '../../../../core/agent-identity/__tests__/wire-test-facts.js';
 import { BrowserHandover, assertSignInUrl } from '../../handover.js';
+import type { WakeRequest } from '@dorkos/shared/turn-port';
 import { HANDED_BACK_MESSAGE, handBackWake } from '../../hand-back-wake/index.js';
-import { handBackWakeHarness } from '../hand-back-wake-harness.js';
 import type { SignInWindow } from '../../sign-in-window.js';
 import { dataDirectory, connected, fakeBrowser, fakeSignIns, setup } from './handover.fixtures.js';
 
@@ -250,24 +250,24 @@ describe('BrowserHandover end listener (DOR-3112)', () => {
         },
       ],
     });
-    const harness = await handBackWakeHarness(dataDirectory, 'chat-1');
-    try {
-      s.handover.useEndListener(
-        handBackWake({ meshCore: () => undefined, roomSessionPlace: () => undefined })
-      );
-      const { handoffId } = await s.handover.ask('chat-1', 'wall');
-      await s.handover.handBack(handoffId);
-      await vi.waitFor(() => expect(harness.runtime.sendMessage).toHaveBeenCalledOnce());
-      const [sessionId, content, opts] = harness.runtime.sendMessage.mock.calls[0]!;
-      expect(sessionId).toBe('chat-1');
-      expect(content).toBe(HANDED_BACK_MESSAGE);
-      expect(opts?.turnStarter).toBe('person');
-      const sent = JSON.stringify({ content, opts });
-      for (const fromPage of ['accounts.example.com', '/login', 'made-up', 'verify you are human'])
-        expect(sent).not.toContain(fromPage);
-    } finally {
-      await harness.dispose();
-    }
+    const wakes: WakeRequest[] = [];
+    s.handover.useEndListener(handBackWake({ wake: (request) => wakes.push(request) > 0 }));
+    const { handoffId } = await s.handover.ask('chat-1', 'wall');
+    await s.handover.handBack(handoffId);
+    expect(wakes).toEqual([
+      expect.objectContaining({
+        sourceKind: 'hand-back',
+        eventId: handoffId,
+        start: expect.objectContaining({
+          sessionId: 'chat-1',
+          content: HANDED_BACK_MESSAGE,
+          origin: { kind: 'interactive' },
+        }),
+      }),
+    ]);
+    const sent = JSON.stringify(wakes);
+    for (const fromPage of ['accounts.example.com', '/login', 'made-up', 'verify you are human'])
+      expect(sent).not.toContain(fromPage);
   });
 });
 

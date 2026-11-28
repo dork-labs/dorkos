@@ -102,6 +102,10 @@ import { createSessionRoutes } from '../sessions.js';
 import { createRelayRoutes } from '../relay.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { dispatchMessage } from '../../services/session/message-dispatcher.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { eq, turnEffects, type Db } from '@dorkos/db';
+import { WakeRequestSchema } from '@dorkos/shared/turn-port';
+import { installRunRecord, uninstallRunRecord } from '../../services/runs/index.js';
 import type { AgentIdentity } from '../../services/core/agent-identity/agent-identity-service.js';
 import type { RequestUser } from '../../services/core/auth/session-gate.js';
 import {
@@ -588,14 +592,23 @@ describe('a message waiting in its own chat, while the agent is under limits (DO
 });
 
 describe('UI-action person stamp', () => {
+  let clicks: Db;
+  beforeEach(() => {
+    clicks = createTestDb();
+    installRunRecord(clicks, { epoch: '01BOOTEPOCHSTAMP0000000000' });
+  });
+  afterEach(() => uninstallRunRecord());
+
   it.each([
-    ['owner app', PERSON, 'person'],
-    ['agent tool', AS_A, 'agent'],
-  ] as const)('names the %s caller on the dispatched turn', async (_label, caller, turnStarter) => {
+    ['owner app', PERSON, 'interactive'],
+    ['agent tool', AS_A, 'agent-launch'],
+  ] as const)('names the %s caller on the click’s wake', async (_label, caller, kind) => {
     fakeRuntime.hasSession.mockReturnValue(true);
     const res = await post('/ui-action', { actionId: 'sample-action' }, caller);
     expect(res.status).toBe(202);
-    expect(dispatchMessage).toHaveBeenCalledWith(expect.objectContaining({ turnStarter }));
+    // A click is a wake (spec `turns-survive-restarts` §6.3); its origin decides who started it.
+    const [row] = clicks.select().from(turnEffects).where(eq(turnEffects.kind, 'wake_chat')).all();
+    expect(WakeRequestSchema.parse(JSON.parse(row!.payloadJson)).start.origin.kind).toBe(kind);
   });
 });
 

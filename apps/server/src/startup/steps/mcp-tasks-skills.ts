@@ -203,11 +203,8 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
       // nothing. Detached deliberately: the caller is the loopback callback the
       // operator's browser is waiting on, and their "you can close this tab" page
       // must not wait on a model — or turn into an error because a turn could not
-      // start. `resumeAfterMcpSignin` never rejects; the `.catch` is belt to that
-      // brace so a future throw cannot become an unhandled rejection.
-      onSigninConnected: (event) => {
-        void resumeAfterMcpSignin(event).catch(() => {});
-      },
+      // start. `resumeAfterMcpSignin` only saves a wake, and never throws.
+      onSigninConnected: (event) => resumeAfterMcpSignin(event),
     });
     // A saved browser session from before DOR-3196 or DOR-3957 loses any Cloud
     // or DorkOS sign-in now, not only when an agent browser next loads it.

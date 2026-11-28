@@ -95,6 +95,7 @@ export function toRun(row: TurnRunRow): TurnRun {
     deliveredAt: row.deliveredAt,
     endedAt: row.endedAt,
     recoveryDecidedAt: row.recoveryDecidedAt,
+    startKey: row.startKey,
     settledAt: row.settledAt,
   };
 }

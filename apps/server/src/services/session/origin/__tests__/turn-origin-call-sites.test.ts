@@ -56,8 +56,13 @@ const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   // An extension sent one of the person's agents a message (`ctx.agent.send`).
   'services/extensions/agent-send/agent-send.ts': ['extension-message'],
   // A person handed the Agent browser back, so the agent that waited on them carries
-  // on: both hand-back routes are person-only (DOR-3112).
+  // on: both hand-back routes are person-only (DOR-3112). A wake (T7).
   'services/session/local-browser/hand-back-wake/index.ts': ['interactive'],
+  // An approval's verdict, a finished sign-in: DorkOS carries the bound chat on (wakes, T7).
+  'services/core/approvals/approval-verdict-delivery.ts': ['resume'],
+  'services/mesh/mcp-signin-resume.ts': ['resume'],
+  // A widget click, by a person or an agent caller (a wake, T7).
+  'routes/session-ui-action-handler.ts': ['agent-launch', 'interactive'],
   // A limited session's work carried over to a new session on another account.
   'services/session/fleet/carry-over.ts': ['account-handoff'],
   // A person chose another model for their limited session and continued it:
@@ -70,7 +75,7 @@ const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   'services/heartbeats/beat-launch.ts': ['heartbeat'],
   // A to-do assigned to an agent starts its turn in a new chat, held by the ceiling the to-do
   // stored, read at launch exactly as a chat message's sender's level is (DOR-3088).
-  'services/todos/todo-turn-wiring.ts': ['chat-message'],
+  'services/todos/todo-turns.ts': ['chat-message'],
   // The owner sent a message from their own DorkOS on the web, through the
   // session relay this computer dialed out to.
   'services/core/session-relay/relay-request-server.ts': ['session-relay'],
@@ -114,7 +119,15 @@ const ORIGIN_HELPERS: Readonly<Record<string, readonly string[]>> = {
  * from every other `start`; the computer face is a doorway like the launch
  * service, pinned at the bottom.
  */
-const BINDING_CALL = /(?:persistSessionRuntime|dispatchSessionMessage|door\.start)\(/g;
+const BINDING_CALL =
+  /(?:persistSessionRuntime|dispatchSessionMessage|door\.start)\(|(?:wakeChat|\bwake)\(\s*\{/g;
+
+/**
+ * A wake (spec `turns-survive-restarts` §6.3) names its run's origin where its
+ * source saves it, with the request written out at the call: `wakeChat({` or
+ * an injected door's `wake({`. A call that only forwards a request is not a site.
+ */
+const WAKE_CALL = /(?:wakeChat|\bwake)\(\s*\{/;
 
 /** The turn port's computer face: it forwards the request's origin to the launch service. */
 const COMPUTER_FACE = 'services/session/turn-port/computer-turn-port.ts';
@@ -160,7 +173,8 @@ describe('every session-binding call site declares what it is', () => {
     if (
       !source.includes('persistSessionRuntime(') &&
       !source.includes('dispatchSessionMessage(') &&
-      !source.includes('door.start(')
+      !source.includes('door.start(') &&
+      !WAKE_CALL.test(source)
     )
       continue;
     const rel = relative(SRC, file);

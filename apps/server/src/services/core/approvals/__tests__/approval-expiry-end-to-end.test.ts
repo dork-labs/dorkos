@@ -22,23 +22,16 @@
  * @vitest-environment node
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { randomUUID } from 'node:crypto';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { FakeAgentRuntime } from '@dorkos/test-utils';
+import type { FakeAgentRuntime } from '@dorkos/test-utils';
 import { approvals as approvalsTable, eq, type Db } from '@dorkos/db';
 import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 
-import {
-  SessionEventStore,
-  setSessionEventStore,
-  MessageQueueStore,
-  setMessageQueueStore,
-  disposeProjector,
-} from '../../../session/index.js';
-import { resetMessageDispatcher } from '../../../session/message-dispatcher.js';
+import { SessionEventStore, setSessionEventStore } from '../../../session/index.js';
 import { resetStagedContextStore } from '../../../session/staged-context-store.js';
-import { runtimeRegistry } from '../../runtime-registry.js';
+import { wakeHarness, type WakeHarness } from '../../../runs/__tests__/wake-harness.js';
+import { wakeChat } from '../../../runs/index.js';
 import { renderContextEntry } from '../../../runtimes/claude-code/messaging/context-builder.js';
 import { buildCodexPrompt } from '../../../runtimes/codex/turn-input.js';
 import { buildOpenCodeParts } from '../../../runtimes/opencode/messaging/turn-input.js';
@@ -47,7 +40,6 @@ import { ApprovalService } from '../approval-service.js';
 import { startApprovalVerdictDelivery } from '../approval-verdict-delivery.js';
 import { hashApprovalInput } from '../approval-input-hash.js';
 
-const CWD = '/projects/scout';
 const BINDING = {
   capabilityId: 'mesh.unregister',
   inputHash: hashApprovalInput({ agentId: '01KXQ3P7ADJY9DSXMZW1XGWCV4' }),
@@ -59,27 +51,25 @@ describe('nobody answers, and the agent is told', () => {
   let runtime: FakeAgentRuntime;
   let stop: () => void;
   let sessionId: string;
+  let h: WakeHarness;
 
   beforeEach(() => {
     db = createTestDb();
+    // The run record, its outbox's worker and the real launch path, over the approvals' own
+    // database: the claim and the wake are one write (spec `turns-survive-restarts` §6.3).
+    h = wakeHarness({ db, epoch: '01BOOTEPOCHEXPIRYE2E000000' });
     approvals = new ApprovalService(db);
     setSessionEventStore(new SessionEventStore(db));
-    setMessageQueueStore(new MessageQueueStore(db));
-    runtime = new FakeAgentRuntime();
-    sessionId = randomUUID();
-    runtime.ensureSession(sessionId, { cwd: CWD, permissionMode: 'default' });
-    runtime.hasSession.mockReturnValue(true);
-    vi.spyOn(runtimeRegistry, 'resolveForSession').mockResolvedValue(runtime);
-    stop = startApprovalVerdictDelivery(approvals);
+    runtime = h.runtime;
+    sessionId = h.sessionId;
+    stop = startApprovalVerdictDelivery(approvals, wakeChat);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     stop();
-    disposeProjector(sessionId);
-    resetMessageDispatcher();
     resetStagedContextStore();
     setSessionEventStore(undefined);
-    setMessageQueueStore(undefined);
+    await h.dispose();
     vi.restoreAllMocks();
   });
 
@@ -92,9 +82,14 @@ describe('nobody answers, and the agent is told', () => {
   }
 
   async function capturedContext(): Promise<AdditionalContextEntry[]> {
-    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(1), {
-      timeout: 5_000,
-    });
+    // The worker's passes, as its wake-ups would run them.
+    await vi.waitFor(
+      async () => {
+        await h.pass();
+        expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+      },
+      { timeout: 5_000 }
+    );
     const opts = runtime.sendMessage.mock.calls[0]![2] as MessageOpts | undefined;
     return (opts?.additionalContext ?? []) as AdditionalContextEntry[];
   }
@@ -103,7 +98,7 @@ describe('nobody answers, and the agent is told', () => {
     const { approvalId } = approvals.request({
       ...BINDING,
       summary: 'Unregister "scout"',
-      requestingSession: { sessionId, cwd: CWD },
+      requestingSession: { sessionId, cwd: h.home },
     });
     expire(approvalId);
 
@@ -141,7 +136,7 @@ describe('nobody answers, and the agent is told', () => {
     const ticket = approvals.request({
       ...BINDING,
       summary: 'Unregister "scout"',
-      requestingSession: { sessionId, cwd: CWD },
+      requestingSession: { sessionId, cwd: h.home },
     });
     expire(ticket.approvalId);
     approvals.sweepExpired();
@@ -150,7 +145,8 @@ describe('nobody answers, and the agent is told', () => {
     // The agent retries its dead token afterwards.
     approvals.consume(ticket.token, BINDING);
     approvals.sweepExpired();
-    await new Promise((r) => setTimeout(r, 50));
+    await h.pass();
+    await h.pass();
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
   });
 
@@ -158,7 +154,7 @@ describe('nobody answers, and the agent is told', () => {
     const { approvalId } = approvals.request({
       ...BINDING,
       summary: 'Unregister "scout"',
-      requestingSession: { sessionId, cwd: CWD },
+      requestingSession: { sessionId, cwd: h.home },
     });
     const session = { eventQueue: [] as never[] };
 
@@ -171,7 +167,8 @@ describe('nobody answers, and the agent is told', () => {
     approvals.sweepExpired();
 
     expect(await held).toBe('expired');
-    await new Promise((r) => setTimeout(r, 100));
+    await h.pass();
+    await h.pass();
     expect(
       runtime.sendMessage,
       'the hold already reported the expiry in-turn; an out-of-band turn tells the agent twice'

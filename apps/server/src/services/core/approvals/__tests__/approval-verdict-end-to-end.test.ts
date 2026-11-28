@@ -4,12 +4,13 @@
  *
  * Every other test in this feature holds one seam still. This one holds none: a
  * REAL `ApprovalService` writes a REAL row, a REAL `grant` broadcasts on the REAL
- * `eventFanOut`, the REAL subscription hands off, the REAL dispatcher opens a
- * REAL turn through `triggerTurn`, and the REAL context assembler builds the bag
- * the runtime receives. Two stand-ins remain, and both are named rather than
- * glossed: the runtime is a `FakeAgentRuntime`, and `resolveForSession` is spied
- * to return it. Both exist so the prompt can be READ rather than believed — the
- * assertion is on the `additionalContext` a runtime actually got.
+ * `eventFanOut`, the REAL subscription saves its wake with the claim, the REAL
+ * run record's worker makes the run and hands it to the REAL launch path, the
+ * REAL dispatcher opens a REAL turn through `triggerTurn`, and the REAL context
+ * assembler builds the bag the runtime receives. One stand-in remains, named
+ * rather than glossed: the runtime is a `FakeAgentRuntime`, so the prompt can be
+ * READ rather than believed — the assertion is on the `additionalContext` a
+ * runtime actually got. The worker's passes are driven by the test.
  *
  * That matters because the defect this feature exists to fix was not a wrong
  * value anywhere. It was a chain with a link missing, and every link had a
@@ -22,22 +23,15 @@
  * @vitest-environment node
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { randomUUID } from 'node:crypto';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { FakeAgentRuntime } from '@dorkos/test-utils';
+import type { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 
-import {
-  SessionEventStore,
-  setSessionEventStore,
-  MessageQueueStore,
-  setMessageQueueStore,
-  disposeProjector,
-} from '../../../session/index.js';
-import { resetMessageDispatcher } from '../../../session/message-dispatcher.js';
+import { SessionEventStore, setSessionEventStore } from '../../../session/index.js';
 import { resetStagedContextStore } from '../../../session/staged-context-store.js';
-import { runtimeRegistry } from '../../runtime-registry.js';
+import { wakeHarness, type WakeHarness } from '../../../runs/__tests__/wake-harness.js';
+import { wakeChat } from '../../../runs/index.js';
 import { renderContextEntry } from '../../../runtimes/claude-code/messaging/context-builder.js';
 import { buildCodexPrompt } from '../../../runtimes/codex/turn-input.js';
 import { buildOpenCodeParts } from '../../../runtimes/opencode/messaging/turn-input.js';
@@ -46,45 +40,43 @@ import { ApprovalService } from '../approval-service.js';
 import { startApprovalVerdictDelivery } from '../approval-verdict-delivery.js';
 import { hashApprovalInput } from '../approval-input-hash.js';
 
-const CWD = '/projects/scout';
-
 describe('an operator answers late, and the agent is told', () => {
   let approvals: ApprovalService;
   let runtime: FakeAgentRuntime;
   let stop: () => void;
   let sessionId: string;
+  let h: WakeHarness;
 
   beforeEach(() => {
     const db = createTestDb();
+    // The run record, its outbox's worker and the real launch path, over the approvals' own
+    // database: the claim and the wake are one write (spec `turns-survive-restarts` §6.3).
+    h = wakeHarness({ db, epoch: '01BOOTEPOCHVERDICTE2E00000' });
     approvals = new ApprovalService(db);
     setSessionEventStore(new SessionEventStore(db));
-    setMessageQueueStore(new MessageQueueStore(db));
-    runtime = new FakeAgentRuntime();
-    sessionId = randomUUID();
-    runtime.ensureSession(sessionId, { cwd: CWD, permissionMode: 'default' });
-    // The fake's `hasSession` answers `false` for every id by default, which
-    // would send the deliverer down the cold-start path and then the
-    // session-is-gone path. This session is live, so say so.
-    runtime.hasSession.mockReturnValue(true);
-    vi.spyOn(runtimeRegistry, 'resolveForSession').mockResolvedValue(runtime);
-    stop = startApprovalVerdictDelivery(approvals);
+    runtime = h.runtime;
+    sessionId = h.sessionId;
+    stop = startApprovalVerdictDelivery(approvals, wakeChat);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     stop();
-    disposeProjector(sessionId);
-    resetMessageDispatcher();
     resetStagedContextStore();
     setSessionEventStore(undefined);
-    setMessageQueueStore(undefined);
+    await h.dispose();
     vi.restoreAllMocks();
   });
 
   /** The `additionalContext` bag the runtime was handed for its one turn. */
   async function capturedContext(): Promise<AdditionalContextEntry[]> {
-    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(1), {
-      timeout: 5_000,
-    });
+    // The worker's passes, as its wake-ups would run them.
+    await vi.waitFor(
+      async () => {
+        await h.pass();
+        expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+      },
+      { timeout: 5_000 }
+    );
     const opts = runtime.sendMessage.mock.calls[0]![2] as MessageOpts | undefined;
     return (opts?.additionalContext ?? []) as AdditionalContextEntry[];
   }
@@ -96,7 +88,7 @@ describe('an operator answers late, and the agent is told', () => {
       capabilityId: 'mesh.unregister',
       inputHash: hashApprovalInput({ agentId: '01KXQ3P7ADJY9DSXMZW1XGWCV4' }),
       summary: 'Unregister "scout"',
-      requestingSession: { sessionId, cwd: CWD },
+      requestingSession: { sessionId, cwd: h.home },
     });
 
     // The click. Nothing after this line is triggered by the test.
@@ -141,7 +133,7 @@ describe('an operator answers late, and the agent is told', () => {
       capabilityId: 'mesh.unregister',
       inputHash: hashApprovalInput({ agentId: '01KXQ3P7ADJY9DSXMZW1XGWCV4' }),
       summary: 'Unregister "scout"',
-      requestingSession: { sessionId, cwd: CWD },
+      requestingSession: { sessionId, cwd: h.home },
     });
 
     approvals.deny(approvalId, 'it is still running the nightly job');
@@ -173,7 +165,7 @@ describe('an operator answers late, and the agent is told', () => {
     const ticket = approvals.request({
       ...binding,
       summary: 'Unregister "scout"',
-      requestingSession: { sessionId, cwd: CWD },
+      requestingSession: { sessionId, cwd: h.home },
     });
 
     approvals.grant(ticket.approvalId);
@@ -185,7 +177,8 @@ describe('an operator answers late, and the agent is told', () => {
       'granted'
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await h.pass();
+    await h.pass();
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
   });
 
@@ -198,7 +191,7 @@ describe('an operator answers late, and the agent is told', () => {
       capabilityId: 'mesh.unregister',
       inputHash: hashApprovalInput({ agentId: '01KXQ3P7ADJY9DSXMZW1XGWCV4' }),
       summary: 'Unregister "scout"',
-      requestingSession: { sessionId, cwd: CWD },
+      requestingSession: { sessionId, cwd: h.home },
     });
 
     const held = awaitCapabilityApproval(
@@ -222,7 +215,8 @@ describe('an operator answers late, and the agent is told', () => {
 
     // The hold reported the answer as its own return value. A turn here would be
     // a second telling of something the agent already has.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await h.pass();
+    await h.pass();
     expect(runtime.sendMessage).not.toHaveBeenCalled();
   });
 });

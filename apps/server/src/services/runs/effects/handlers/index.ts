@@ -7,9 +7,13 @@
  */
 import type { EffectHandlers } from '../worker.js';
 import { notifyPersonHandler, type NotifyPersonDeps } from './notify-person.js';
+import type { WakeChatDeps } from './wake-chat.js';
 
-/** What the handlers need from the rest of the server, handed in at startup. */
-export type EffectHandlerDeps = NotifyPersonDeps;
+/**
+ * What the handlers need from the rest of the server, handed in at startup.
+ * `wake_chat` and `start_turn` are built beside the record, which they also need.
+ */
+export type EffectHandlerDeps = NotifyPersonDeps & Pick<WakeChatDeps, 'chatExists'>;
 
 /**
  * Every handler the worker runs.

@@ -82,5 +82,7 @@ export interface TurnRun {
   endedAt: string | null;
   /** When recovery decided what follows this run; empty until it has. */
   recoveryDecidedAt: string | null;
+  /** The key its source made it under (§6.4), when it has one. */
+  startKey: string | null;
   settledAt: string | null;
 }

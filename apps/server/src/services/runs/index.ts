@@ -13,6 +13,7 @@
  */
 import type { Db } from '@dorkos/db';
 import type { ChatRun } from '@dorkos/shared/run-schemas';
+import type { WakeRequest } from '@dorkos/shared/turn-port';
 import {
   chatKeyOf,
   getComputerTurnPort,
@@ -34,6 +35,8 @@ import { effectHandlers, type EffectHandlerDeps } from './effects/handlers/index
 import { EffectWorker } from './effects/worker.js';
 import { StartTurns } from './effects/start-turns.js';
 import { startTurnHandler, type StartTurnDeps } from './effects/handlers/start-turn.js';
+import { wakeChatHandler } from './effects/handlers/wake-chat.js';
+import { saveWake, WAKE_SOURCE, wakeWords } from './effects/wakes.js';
 import { admit } from './admission.js';
 import { SpaceTurnPort } from './turn-port.js';
 import { chatRunsOf, RunAnnouncer } from './run-view.js';
@@ -49,6 +52,7 @@ export {
   type TurnRun,
 } from './run-store.js';
 export { createRunFactsSink } from './run-facts-sink.js';
+export { WAKE_NOT_LATE_MS } from './effects/wakes.js';
 export type { ScheduleCapSource } from './schedule-cap.js';
 export type { StopRequestRef } from './run-stops.js';
 export {
@@ -75,6 +79,14 @@ export interface RunRecord {
   view: (chatId: string) => ChatRun[];
   /** The scheduler's cap on task turns at once, as admission reads it (§3.5). */
   scheduleCap: ScheduleCap;
+  /**
+   * Save one event's wake (§6.2 `wake_chat`, §6.3), and with it the source's
+   * own claim on the event when it has one: both commit together, and a claim
+   * that answers false saves nothing.
+   *
+   * @returns Whether this call saved the wake.
+   */
+  wake: (request: WakeRequest, claim?: () => boolean) => boolean;
 }
 
 let installed:
@@ -178,11 +190,18 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
     },
   });
   const starts: StartTurns = new StartTurns(store, effects, () => port, now);
+  // A wake's run reads its words back from the wake (§6.3).
+  port.registerSource(WAKE_SOURCE, wakeWords(effects));
   const worker = new EffectWorker({
     effects,
     runs: store,
     handlers: {
       ...effectHandlers(handlerDeps),
+      wake_chat: wakeChatHandler({
+        runs: store,
+        port,
+        ...(handlerDeps?.chatExists ? { chatExists: handlerDeps.chatExists } : {}),
+      }),
       start_turn: startTurnHandler({
         runs: store,
         starts,
@@ -206,6 +225,8 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
     starts,
     view,
     scheduleCap,
+    wake: (request, claim) =>
+      effects.transaction(() => (claim?.() ?? true) && saveWake(effects, request, now())),
   };
 }
 
@@ -248,6 +269,28 @@ export function startRunEffects(): void {
   installed.worker.start();
   // A lifted pause lets the runs it held go now, not at their next backoff (§3.5).
   installed.stopResumes ??= installed.onResumed?.(() => installed?.effects.wakeAllStarts());
+}
+
+/**
+ * Save one event's wake through the run record (§6.2 `wake_chat`, §6.3): the
+ * door every wake source uses. A source with a claim of its own on the event
+ * (an approval's delivery claim) passes it, so the claim and the wake commit
+ * together. Before startup built the record, nothing is saved and it says so.
+ *
+ * @param request - The wake.
+ * @param claim - The source's own write deciding the event is this wake's.
+ * @returns Whether this call saved the wake: false for a key already saved,
+ *   a claim another holder won, or no record yet.
+ */
+export function wakeChat(request: WakeRequest, claim?: () => boolean): boolean {
+  if (!installed) {
+    logger.warn('[runs] a wake came before the run record was built', {
+      sourceKind: request.sourceKind,
+      eventId: request.eventId,
+    });
+    return false;
+  }
+  return installed.wake(request, claim);
 }
 
 /** The space face of the turn port, or `undefined` before startup wired the run record. */

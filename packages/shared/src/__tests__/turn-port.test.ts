@@ -121,9 +121,36 @@ const SAMPLES: Record<string, readonly unknown[]> = {
       notAfter: 1_764_000_000_000,
       accountHint: 'account-1',
       sourceRef: 'extension-send:3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c',
+      startKey: 'wake:signin:flow-1',
     },
   ],
   RunStatusSchema: enumValues(port.RunStatusSchema),
+  WakeSourceKindSchema: enumValues(port.WakeSourceKindSchema),
+  WakeRequestSchema: [
+    {
+      sourceKind: 'approval',
+      eventId: '01KXQ3P7ADJY9DSXMZW1XGWCV4',
+      start: {
+        ...MINIMAL_INPUT,
+        origin: { kind: 'resume' },
+        continuationHold: true,
+        permissionCeiling: 'runtime-default',
+        approvalVerdict: {
+          approvalId: '01KXQ3P7ADJY9DSXMZW1XGWCV4',
+          capabilityTitle: 'Unregister an agent',
+          outcome: 'denied',
+          endedAt: '2026-11-28T09:00:00.000Z',
+          denyReason: 'not now',
+        },
+      },
+      onlyIfChatExists: { cwd: '/agents/scout' },
+    },
+    {
+      sourceKind: 'ui-action',
+      eventId: 'click-7f3a',
+      start: { ...MINIMAL_INPUT, notAfter: 1_764_000_300_000 },
+    },
+  ],
   StartTurnResultSchema: [{ runId: RUN, status: 'queued', queuePosition: 1 }],
   TurnStartRequestSchema: [
     { ...MINIMAL_INPUT, runId: RUN, attempt: 1, wireOrigin: 'chat' },

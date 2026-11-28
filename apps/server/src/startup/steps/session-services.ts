@@ -30,6 +30,7 @@ import { wireChatMessaging } from '../../services/session/chat-messages/chat-mes
 import { ChatMessageStore } from '../../services/session/chat-messages/chat-message-store.js';
 import { wireChatRowsPort } from '../space-views.js';
 import { wireTodos } from '../../services/todos/todo-wiring.js';
+import { wakeChat } from '../../services/runs/index.js';
 import { wireWorkQueue } from '../../services/work-queue/work-queue-wiring.js';
 import { wireWorkClaims } from '../../services/session/claims/work-claim-wiring.js';
 import {
@@ -166,7 +167,7 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
   const todoPromises = (refs.todoWiring = wireTodos({
     db,
     meshCore: () => refs.meshCore,
-    roomSessionPlace: () => refs.roomSessionPlacePort,
+    wake: (request) => wakeChat(request),
   }));
   // An agent's next queued item starts on its own when a slot frees (DOR-3462).
   const workQueue = (refs.workQueueWiring = wireWorkQueue({

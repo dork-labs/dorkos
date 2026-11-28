@@ -17,6 +17,11 @@
  * A paused agent's to-do is held, and resuming the agent wakes nothing: the person reassigns or
  * reopens it (Security's Should).
  *
+ * **A started turn is a wake** (spec `turns-survive-restarts` §6.3, T7). Its chat, card and level
+ * are settled first; then the `todo_turns` row that counts it and the wake that starts it are
+ * written in one transaction, keyed by the row's id. A restart after that write loses nothing, and
+ * one row never starts two turns.
+ *
  * @module services/todos/todo-turns
  */
 import { ulid } from 'ulidx';
@@ -32,6 +37,7 @@ import {
   type TodoTurnRow,
 } from '@dorkos/db';
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import type { WakeRequest } from '@dorkos/shared/turn-port';
 import { logger } from '../../lib/logger.js';
 import {
   todoRunsInDirectChat,
@@ -82,8 +88,13 @@ export interface TodoTurnLaunch {
 export interface TodoTurnsDeps {
   /** The DorkOS database (`todo_turns`). */
   readonly db: Db;
-  /** Start the turn; resolves with the chat it runs in, or rejects. */
-  launch(request: TodoTurnLaunch): Promise<{ sessionId: string }>;
+  /**
+   * Settle where and how the turn runs (its chat, its card, its level); resolves with the turn to
+   * start, or rejects.
+   */
+  prepare(request: TodoTurnLaunch): Promise<Omit<WakeRequest['start'], 'origin'>>;
+  /** Save the turn's wake (the run record's `wakeChat`), inside the write that counts the turn. */
+  wake(request: WakeRequest): boolean;
   /** Whether an agent is paused. */
   isPaused(agentId: string): boolean;
   /**
@@ -341,7 +352,7 @@ export class TodoTurns {
       .all().length;
   }
 
-  /** Launch the turn at the to-do's stored power, counted against its charge. */
+  /** Start the turn at the to-do's stored power, counted against its charge. */
   private async start(
     row: TodoRow,
     agentId: string,
@@ -351,10 +362,9 @@ export class TodoTurns {
     const source = row.sourceRoomEntryId
       ? this.deps.readSource(row.sourceRoomEntryId, agentId)
       : undefined;
-    // Counted before launch, so two to-dos in one tick cannot both spend the last turn.
-    const turn = this.record(row, agentId, chargedTo, 'started', null);
+    let start: Omit<WakeRequest['start'], 'origin'>;
     try {
-      const { sessionId } = await this.deps.launch({
+      start = await this.deps.prepare({
         todoId: row.id,
         agentId,
         content: buildTodoTurnPrompt(row, source),
@@ -363,23 +373,29 @@ export class TodoTurns {
         inDirectChat: todoRunsInDirectChat(row),
         cardForPerson: row.assignedByKind === 'person',
       });
-      this.deps.db
-        .update(todoTurns)
-        .set({ sessionId, startedAt: this.now().toISOString() })
-        .where(eq(todoTurns.id, turn.id))
-        .run();
-      return { status: 'started', sessionId };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       // Not started, so not counted: it waits to be tried again on the next check.
-      this.deps.db
-        .update(todoTurns)
-        .set({ status: 'retry', reason: `launch failed: ${message}`.slice(0, 300) })
-        .where(eq(todoTurns.id, turn.id))
-        .run();
+      this.record(row, agentId, chargedTo, 'retry', `launch failed: ${message}`.slice(0, 300));
       logger.warn('[todos] a to-do turn did not start', { todoId: row.id, error: message });
       return { status: 'retry', reason: 'launch failed' };
     }
+    // Counted again in the write that starts it: another to-do may have spent the last turn while
+    // this one's chat was found. The row and its wake commit together, keyed by the row's id.
+    return this.deps.db.transaction(() => {
+      if (chargedTo !== null && this.startedToday(chargedTo) >= TODO_TURNS_PER_ASSIGNER_PER_DAY) {
+        this.record(row, agentId, chargedTo, 'queued', 'daily cap');
+        return { status: 'queued' as const };
+      }
+      const turn = this.record(row, agentId, chargedTo, 'started', null, start.sessionId);
+      // `chat-message` is the origin whose turns a ceiling read at launch holds (DOR-3088).
+      this.deps.wake({
+        sourceKind: 'todo',
+        eventId: turn.id,
+        start: { ...start, origin: { kind: 'chat-message' } },
+      });
+      return { status: 'started' as const, sessionId: start.sessionId };
+    });
   }
 
   /** Write one ledger row. */
@@ -388,7 +404,8 @@ export class TodoTurns {
     agentId: string,
     chargedTo: string | null,
     status: TodoTurnRow['status'],
-    reason: string | null
+    reason: string | null,
+    sessionId: string | null = null
   ): TodoTurnRow {
     const at = this.now();
     const turn: TodoTurnRow = {
@@ -399,9 +416,9 @@ export class TodoTurns {
       status,
       reason,
       day: utcDay(at),
-      sessionId: null,
+      sessionId,
       createdAt: at.toISOString(),
-      startedAt: null,
+      startedAt: sessionId !== null ? at.toISOString() : null,
     };
     this.deps.db.insert(todoTurns).values(turn).run();
     return turn;

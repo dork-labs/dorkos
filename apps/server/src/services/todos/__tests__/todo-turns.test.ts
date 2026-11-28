@@ -14,6 +14,7 @@ import { TodoPromiseService } from '../todo-promise-service.js';
 import { TodoPromiseStore } from '../todo-promise-store.js';
 import { TodoService } from '../todo-service.js';
 import { TodoStore } from '../todo-store.js';
+import type { WakeRequest } from '@dorkos/shared/turn-port';
 import { TODO_TURNS_PER_ASSIGNER_PER_DAY, TodoTurns, type TodoTurnLaunch } from '../todo-turns.js';
 import { buildTodoTurnPrompt } from '../todo-turn-prompt.js';
 import type { TodoActor } from '../todo-authority.js';
@@ -46,6 +47,7 @@ describe('to-do turns', () => {
   let todos: TodoService;
   let turns: TodoTurns;
   let launches: TodoTurnLaunch[];
+  let wakes: WakeRequest[];
   let paused: Set<string>;
   let budget: (assigner: string) => boolean;
   let pending: Promise<unknown>[];
@@ -71,6 +73,7 @@ describe('to-do turns', () => {
       accounts: new AccountIds({ db, installId: 'inst-1', readOwnerAccount: () => null }),
     });
     launches = [];
+    wakes = [];
     paused = new Set();
     budget = () => true;
     pending = [];
@@ -78,9 +81,17 @@ describe('to-do turns', () => {
     turns = new TodoTurns({
       db,
       now: () => now,
-      launch: async (request) => {
+      prepare: async (request) => {
         launches.push(request);
-        return { sessionId: `chat-${launches.length}` };
+        return {
+          sessionId: `chat-${launches.length}`,
+          content: request.content,
+          tier: 'owner',
+        };
+      },
+      wake: (request) => {
+        wakes.push(request);
+        return true;
       },
       isPaused: (id) => paused.has(id),
       sharedBudget: (assigner) => budget(assigner),
@@ -424,7 +435,8 @@ describe('to-do turns', () => {
         );
       }
       await settled();
-      expect(launches).toHaveLength(TODO_TURNS_PER_ASSIGNER_PER_DAY);
+      // All eleven were asked for in one tick: the write that starts each counts again.
+      expect(wakes).toHaveLength(TODO_TURNS_PER_ASSIGNER_PER_DAY);
       expect(ledger().filter((t) => t.status === 'queued')).toHaveLength(1);
     });
 
@@ -458,9 +470,10 @@ describe('to-do turns', () => {
       turns = new TodoTurns({
         db,
         now: () => now,
-        launch: async () => {
+        prepare: async () => {
           throw new Error('runtime down');
         },
+        wake: () => true,
         isPaused: () => false,
         sharedBudget: () => true,
         readSource: () => undefined,
@@ -473,6 +486,36 @@ describe('to-do turns', () => {
         status: 'retry',
         reason: 'launch failed',
       });
+    });
+
+    it('saves the turn’s wake with the row that counts it, keyed by the row (T7)', async () => {
+      // Purpose: fails if the wake were keyed by anything but the ledger row, or saved apart from it.
+      todos.create(PERSON, { what: 'Ship it', assignee: { kind: 'agent', agentId: 'agent-a' } });
+      await settled();
+      const [row] = ledger();
+      expect(row).toMatchObject({ status: 'started', sessionId: 'chat-1' });
+      expect(wakes).toEqual([
+        expect.objectContaining({ sourceKind: 'todo', eventId: row!.id, start: expect.anything() }),
+      ]);
+      // A wake that cannot be saved takes its row with it: nothing is counted that will not run.
+      turns = new TodoTurns({
+        db,
+        now: () => now,
+        prepare: async (request) => ({
+          sessionId: 'chat-x',
+          content: request.content,
+          tier: 'owner',
+        }),
+        wake: () => {
+          throw new Error('the outbox is gone');
+        },
+        isPaused: () => false,
+        sharedBudget: () => true,
+        readSource: () => undefined,
+      });
+      todos.create(PERSON, { what: 'Ship again', assignee: { kind: 'agent', agentId: 'agent-b' } });
+      await expect(settled()).rejects.toThrow(/outbox/);
+      expect(ledger()).toHaveLength(1);
     });
   });
 

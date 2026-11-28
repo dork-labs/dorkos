@@ -69,7 +69,7 @@ describe('a held call whose approval stops being answerable', () => {
     db = createTestDb();
     approvals = new ApprovalService(db);
     queue = [];
-    stopDelivery = startApprovalVerdictDelivery(approvals);
+    stopDelivery = startApprovalVerdictDelivery(approvals, () => false);
     initCapabilityTierGate({ approvals });
     // A person set it to Ask: under Trusted a delete runs, recorded, with no card.
     askFor('mesh_unregister');

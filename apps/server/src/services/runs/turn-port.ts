@@ -169,6 +169,7 @@ export class SpaceTurnPort {
    *   row, the run, the queue row its words become and the caller's receipt share
    *   one id. Not part of the port's payload; the space side mints every run id.
    * @returns The run's id, its status (`queued`) and its place among the chat's waiting runs.
+   *   A start under a `startKey` that already made a run saves nothing and answers that run.
    * @throws {TurnStartRefusedError} When the start is refused before anything is saved.
    */
   start(input: StartTurnInput, opts: { runId?: string } = {}): StartTurnResult {
@@ -212,7 +213,10 @@ export class SpaceTurnPort {
       throw new TurnStartRefusedError('agent_paused', `${paused.name} is paused.`);
     }
     const { runs, effects } = this.deps;
-    const run = runs.transaction(() => {
+    const [run, again] = runs.transaction((): [TurnRun, boolean] => {
+      // One key, one run (§6.4): a source asking again is answered, never doubled.
+      const made = start.startKey !== undefined ? runs.findByStartKey(start.startKey) : undefined;
+      if (made) return [made, true];
       let created = runs.create({
         ...(opts.runId !== undefined ? { id: opts.runId } : {}),
         chatKey: start.sessionId,
@@ -222,6 +226,7 @@ export class SpaceTurnPort {
         ...(start.agentId !== undefined ? { agentId: start.agentId } : {}),
         ...(start.sourceRef !== undefined ? { sourceRef: start.sourceRef } : {}),
         ...(start.notAfter !== undefined ? { notAfter: start.notAfter } : {}),
+        ...(start.startKey !== undefined ? { startKey: start.startKey } : {}),
       });
       const waits = this.deps.preview?.(created, startPayloadOf(start));
       if (waits !== undefined) created = runs.move(created, 'queued', { waitReason: waits });
@@ -231,14 +236,16 @@ export class SpaceTurnPort {
         runId: created.id,
         // The chat it orders behind: only a run whose words stay at their
         // source waits in line here; a composer's words wait as a queue row.
-        ...(wordsWaitInComposer(start.origin) ? {} : { sessionId: created.sessionId }),
+        ...(wordsWaitInComposer(start.origin, start.notAfter)
+          ? {}
+          : { sessionId: created.sessionId }),
         payload: startPayloadOf(start),
         delivery: 'repeatable',
         notAfter: start.notAfter ?? null,
       });
-      return created;
+      return [created, false];
     });
-    this.words.set(run.id, start.content);
+    if (!again) this.words.set(run.id, start.content);
     return { runId: run.id, status: run.status, queuePosition: this.queuePositionOf(run) };
   }
 

@@ -196,6 +196,12 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
         const agentId = resolveAgentIdForPath(cwd);
         return { ...(cwd ? { cwd } : {}), ...(agentId ? { agentId } : {}) };
       },
+      // A wake starts its turn only in a chat stored somewhere (T7): live in this
+      // process, or in its runtime's storage, which a cold start resumes from.
+      chatExists: async (sessionId, cwd) => {
+        const runtime = await runtimeRegistry.resolveForSession(sessionId);
+        return runtime.hasSession(sessionId) || (await runtime.getSession(cwd, sessionId)) != null;
+      },
     },
   });
 

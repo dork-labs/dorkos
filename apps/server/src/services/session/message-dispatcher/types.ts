@@ -336,8 +336,11 @@ export interface DispatchMessageOpts {
    *   waits.
    * - `'refuse'` — answer `{ accepted: false }` and write nothing, while the
    *   agent is still producing. For a trigger a machine generated on somebody's
-   *   behalf (an MCP sign-in resume, a UI action), where the reason it was sent
-   *   may not survive the wait and firing it late is worse than not firing it.
+   *   behalf (the cut-short-work wake), where the reason it was sent may not
+   *   survive the wait and firing it late is worse than not firing it. A caller
+   *   on the turn port says the same with a deadline (`notAfter`, spec
+   *   `turns-survive-restarts` §3.2): a widget click and a sign-in resume moved
+   *   there in T7.
    *   Once the turn has ENDED there is nothing to fire late into, so the message
    *   is accepted and runs as the stream finishes closing — with no queue row
    *   behind it, and dropped rather than deferred if that stream outlasts the
@@ -499,7 +502,7 @@ export interface DispatchPlan {
    *
    * **`'refuse-foreign'` is deliberately NOT this**, though it can wait in the
    * same window. What the two carry is different: a `'refuse'` trigger is
-   * machine-generated (a widget click, a sign-in nudge) and belongs to nobody,
+   * machine-generated (a cut-short-work wake) and belongs to nobody,
    * while a `'refuse-foreign'` message is a person's words in a room, which
    * DOR-1230 accepts precisely so the room answers them. Those keep their PLACE
    * IN LINE — bounded by what is left of their original wait — rather than being

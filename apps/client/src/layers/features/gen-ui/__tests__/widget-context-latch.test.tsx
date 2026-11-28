@@ -79,6 +79,7 @@ describe('widget action latch re-entrancy', () => {
       actionId: 'move-1-0',
       payload: undefined,
       widgetTitle: 'Board',
+      eventId: expect.any(String),
     });
   });
 

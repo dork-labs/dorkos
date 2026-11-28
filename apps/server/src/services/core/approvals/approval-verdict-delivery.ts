@@ -47,6 +47,16 @@
  * sweeps those at boot; without it a restart mid-decision reproduced this exact
  * bug one layer down.
  *
+ * ## The claim and the wake are one write (spec `turns-survive-restarts` §6.3, T7)
+ *
+ * Delivery is a wake (`wake_chat`), keyed by the approval's own id and saved in
+ * the transaction that takes the claim. So a restart after the claim never
+ * strands an answer that was claimed and not yet sent, and the run the wake
+ * makes is keyed the same way, so the agent is told once. Everything after the
+ * write (is the chat still stored, is it busy, is its agent paused) is the
+ * wake's to decide, with retries, and a chat that is gone drops the wake: the
+ * claim stays, as a settled ending.
+ *
  * ## Which surfaces a verdict can actually reach, and why that is not every one
  *
  * Delivery needs a server-bound ADDRESS. The in-session Claude Code server and
@@ -65,38 +75,36 @@
  * writer is what stops a verdict reading as a formatted block on one runtime and
  * a JSON dump on the others the moment an address does exist.
  *
- * ## Why the fan-out listener does nothing but hand off
+ * ## Why the fan-out listener only writes
  *
  * `eventFanOut` listeners run synchronously on the broadcast write path, ahead of
  * every connected client, and its own contract says work that is not cheap
- * belongs on a queue the listener owns. A delivery is a database read, a runtime
- * resolve, a possible session cold-start and a dispatch — so the listener returns
- * immediately and the delivery runs detached, with its own error handling.
+ * belongs on a queue the listener owns. The listener does one read and one
+ * write: the claim and the wake. The outbox is that queue; the runtime resolve,
+ * a possible cold start and the turn are its worker's.
  *
  * @module services/core/approvals/approval-verdict-delivery
  */
 import type { ApprovalOutcome } from '@dorkos/shared/approval-schemas';
 import type { ApprovalVerdictData } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
+import type { WakeRequest } from '@dorkos/shared/turn-port';
 
 import { logger } from '../../../lib/logger.js';
 import { eventFanOut } from '../event-fan-out.js';
-import { runtimeRegistry } from '../runtime-registry.js';
-import {
-  dispatchMessage,
-  getOrCreateProjector,
-  peekProjector,
-  persistenceModeFor,
-} from '../../session/index.js';
+import { peekProjector } from '../../session/index.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import type { ApprovalService } from './approval-service.js';
 import { ceilingForContinuation } from '../turn-power/continuation-hold.js';
 
 /** The approval primitive this module needs — no more of it than that. */
-type VerdictSource = Pick<
-  ApprovalService,
-  'verdictDelivery' | 'claimVerdictDelivery' | 'releaseVerdictDelivery'
->;
+type VerdictSource = Pick<ApprovalService, 'verdictDelivery' | 'claimVerdictDelivery'>;
+
+/**
+ * Saves a wake, and the claim with it, in one write: the run record's
+ * `wakeChat`, handed in at startup (this domain never imports the record).
+ */
+export type VerdictWake = (request: WakeRequest, claim: () => boolean) => boolean;
 
 /**
  * The turn's own `content`, wrapped in the registered `approval_verdict` tag.
@@ -142,115 +150,74 @@ const TRIGGER_CONTENT: Record<ApprovalVerdictData['outcome'], string> = {
 };
 
 /**
- * Deliver one approval's verdict to the session that asked for it.
+ * Deliver one approval's verdict to the session that asked for it: take the
+ * delivery claim and save the wake that carries the answer, in one write.
  *
- * Never throws and never rejects: it runs detached from a broadcast nothing is
- * awaiting, so a failure here must not escape into whoever wrote the decision.
- * Every way it can decline is a log line.
+ * Never throws: it runs on a broadcast nothing is awaiting, so a failure here
+ * must not escape into whoever wrote the decision. Every way it can decline is
+ * a log line or a `false`.
  *
  * @param approvals - The approval store, for the row and the delivery claim.
  * @param approvalId - The approval a person has just answered.
+ * @param wake - Saves the wake with the claim.
+ * @returns Whether this call took the claim and saved the wake.
  */
-export async function deliverApprovalVerdict(
+export function deliverApprovalVerdict(
   approvals: VerdictSource,
-  approvalId: string
-): Promise<void> {
-  // Tracked so a failure can hand the claim BACK. `notified_at` means
-  // "delivered", not "attempted": every throw below happens before a turn is
-  // accepted, so keeping the claim on one would mark an answer delivered that
-  // nobody received and lock out every later attempt at it. Found live, on a
-  // session whose recorded directory sat outside the DorkOS boundary — the
-  // resolve threw, the row said `notified_at`, and the agent was never told.
-  let claimed = false;
+  approvalId: string,
+  wake: VerdictWake
+): boolean {
   try {
     // Read first, because it is cheap and it answers "is there anywhere to
     // deliver to at all" — the sessionless surfaces and the still-pending rows
     // never reach the claim.
     const delivery = approvals.verdictDelivery(approvalId);
-    if (!delivery) return;
-
-    // The claim decides the race with the in-session hold. Losing it means the
-    // hold is waiting on this same approval and will report the answer itself,
-    // in the turn the agent is still running.
-    if (!approvals.claimVerdictDelivery(approvalId)) return;
-    claimed = true;
-
+    if (!delivery) return false;
     const { sessionId, cwd, verdict } = delivery;
-    const runtime = await runtimeRegistry.resolveForSession(sessionId);
-    // WHERE the turn runs, resolved once and threaded through every hop that
-    // takes one. The ROW's directory wins: the projector registry empties on
-    // restart and an approval outlives one easily inside two hours, which is the
-    // DOR-981 lesson and the reason the column exists.
-    //
-    // The two fallbacks behind it are not decoration. A session can reach the
-    // gate with no directory of its own (`UiToolSession.cwd` is optional), and an
-    // earlier version of this line read `cwd ?? ''` — which then STAMPED `''`
-    // onto the live session's own projector two calls down, moving a running
-    // session to nowhere. `mcp-signin-resume.ts:154` has carried this exact
-    // three-step ladder since DOR-981; this is the same ladder, not a new one.
+    // WHERE the turn runs. The ROW's directory wins: the projector registry
+    // empties on restart and an approval outlives one easily inside two hours,
+    // which is the DOR-981 lesson and the reason the column exists. The two
+    // fallbacks behind it are not decoration: a session can reach the gate with
+    // no directory of its own (`UiToolSession.cwd` is optional), and an empty
+    // one once moved a running session to nowhere. `mcp-signin-resume.ts` carries
+    // the same three-step ladder.
     const workingDir = cwd ?? peekProjector(sessionId)?.cwd ?? DEFAULT_CWD;
-    // The live session map empties on restart and on eviction, while an approval
-    // outlives both. A stored session cold-starts through the dispatcher; one
-    // that exists nowhere is gone for good and there is nothing to tell.
-    if (!runtime.hasSession(sessionId)) {
-      if (!(await runtime.getSession(workingDir, sessionId))) {
-        // The claim is KEPT here, unlike on the error path below, and the
-        // difference is the whole distinction: a session that is gone will not
-        // come back, so this is a settled ending rather than a failed attempt.
-        // Releasing would leave the row inviting attempts that can only ever
-        // reach the same conclusion.
-        logger.info('[approval-verdict] session is gone — nobody left to tell', {
+    // Losing the claim means the in-session hold is waiting on this same
+    // approval and will report the answer itself, in the turn the agent is
+    // still running: then nothing is saved.
+    return wake(
+      {
+        sourceKind: 'approval',
+        eventId: approvalId,
+        start: {
           sessionId,
-          approvalId,
-        });
-        return;
-      }
-    }
-
-    const projector = getOrCreateProjector(sessionId, workingDir, {
-      persist: persistenceModeFor(runtime.getCapabilities()),
-    });
-    projector.cwd = workingDir;
-
-    await dispatchMessage({
-      turnStarter: 'agent',
-      // DorkOS carries the bound chat on with the verdict: it adds no power to it.
-      origin: { kind: 'resume' },
-      sessionId,
-      clientId: `approval-verdict-${approvalId}`,
-      content: TRIGGER_CONTENT[verdict.outcome],
-      cwd: workingDir,
-      projector,
-      runtime,
-      // The structured verdict, rendered per adapter through the shared writer.
-      approvalVerdict: verdict,
-      // Queued rather than refused — see the module doc. An answer that arrives
-      // after the current turn is still the answer; one that is dropped is the
-      // bug this module exists to fix.
-      whenBusy: 'queue',
-      // Held when the chat's latest turn was, as every turn nobody asked for is (DOR-3037).
-      ...ceilingForContinuation(sessionId),
-      onError: (err) => {
-        logger.warn('[approval-verdict] detached turn error', {
-          sessionId,
-          approvalId,
-          error: err instanceof Error ? err.message : String(err),
-        });
+          cwd: workingDir,
+          content: TRIGGER_CONTENT[verdict.outcome],
+          // DorkOS carries the bound chat on with the verdict: it adds no power to it.
+          origin: { kind: 'resume' },
+          tier: 'owner',
+          // The structured verdict, rendered per adapter through the shared writer.
+          approvalVerdict: verdict,
+          // Held when the chat's latest turn was, as every turn nobody asked for is (DOR-3037).
+          ...ceilingForContinuation(sessionId),
+          // No deadline: a busy chat waits rather than refusing. An answer that
+          // arrives after the current turn is still the answer; one that is
+          // dropped is the bug this module exists to fix.
+        },
+        // The live session map empties on restart and on eviction, while an
+        // approval outlives both. A stored session cold-starts; one that exists
+        // nowhere is gone for good, and the wake is dropped with the claim kept.
+        onlyIfChatExists: { cwd: workingDir },
       },
-    });
+      () => approvals.claimVerdictDelivery(approvalId)
+    );
   } catch (err) {
-    // Nothing reached the agent, so the answer is still owed: hand the claim
-    // back rather than leaving the row saying somebody was told. Releasing here
-    // cannot buy a double delivery, on any outcome — a decided approval is never
-    // re-decided (`decide` refuses a non-pending row), and an expired one is
-    // spent by the sweep that settled it (`sweepExpired` skips rows with a
-    // `consumedAt`), so in neither case is there a second broadcast for a second
-    // claimant to win.
-    if (claimed) approvals.releaseVerdictDelivery(approvalId);
-    logger.warn('[approval-verdict] could not deliver the verdict', {
+    // The claim rolled back with the wake, so the answer is still owed.
+    logger.warn('[approval-verdict] could not save the verdict’s wake', {
       approvalId,
       error: err instanceof Error ? err.message : String(err),
     });
+    return false;
   }
 }
 
@@ -272,9 +239,13 @@ export async function deliverApprovalVerdict(
  * just acted on itself.
  *
  * @param approvals - The approval store to read verdicts and claims from.
+ * @param wake - Saves each verdict's wake with its claim.
  * @returns An unsubscribe function. Idempotent.
  */
-export function startApprovalVerdictDelivery(approvals: VerdictSource): () => void {
+export function startApprovalVerdictDelivery(
+  approvals: VerdictSource,
+  wake: VerdictWake
+): () => void {
   return eventFanOut.subscribe((eventName, data) => {
     if (eventName !== 'approval_resolved') return;
     const payload = data as { approvalId?: string; outcome?: ApprovalOutcome };
@@ -287,9 +258,7 @@ export function startApprovalVerdictDelivery(approvals: VerdictSource): () => vo
     }
     const approvalId = payload.approvalId;
     if (!approvalId) return;
-    // Detached on purpose: everything below this line is a database read, a
-    // runtime resolve and a dispatch, and this listener is on the broadcast's
-    // synchronous write path ahead of every connected client.
-    void deliverApprovalVerdict(approvals, approvalId);
+    // One read and one write on the broadcast's path; the turn is the outbox's.
+    deliverApprovalVerdict(approvals, approvalId, wake);
   });
 }

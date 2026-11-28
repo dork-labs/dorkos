@@ -92,7 +92,6 @@ const NO_LIMIT = problemBody('conflict', {
 });
 /** A queued message id this queue does not hold. */
 const NOT_QUEUED = problemBody('queued_message_not_found');
-const ISO = /^\d{4}-\d\d-\d\dT[\d:.]+Z$/;
 /** The 202 every accepted message answers with. */
 const ACCEPTED = z
   .object({
@@ -1489,23 +1488,17 @@ describe('contract: the session routes, driven by hand (login off)', { timeout: 
     expect(first.status).toBe(202);
     await until(server, busy, 'streaming');
 
-    // A widget action is answered by the turn it was clicked in: refused while
-    // another window's turn runs, naming that window.
-    const locked = await call(
+    // A widget action is accepted while another window's turn runs: it waits
+    // for that turn, briefly, and never as a message in the queue (spec
+    // `turns-survive-restarts` §6.3).
+    const clicked = await call(
       server,
       'POST',
       `${S}/${busy}/ui-action`,
       { actionId: 'a', widgetId: 'w', toolCallId: 't' },
       { 'X-Client-Id': 'window-two' }
     );
-    expect(locked.status).toBe(409);
-    expect(locked.json).toEqual({
-      ...problemBody('session_locked', {
-        detail: 'Wait for the reply to finish, then try again.',
-      }),
-      lockedBy: 'window-one',
-      lockedAt: expect.stringMatching(ISO),
-    });
+    expect(clicked.status).toBe(202);
 
     // A message is never refused: it waits its turn.
     const queued = await call(

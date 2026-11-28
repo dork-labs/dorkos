@@ -61,6 +61,7 @@ import { queueKeyOf } from '../resolution/session-key-registry.js';
 import { isRunHeld, turnFacts } from './facts.js';
 import { stopRunTurn } from './run-events.js';
 import type { ComputerTurnPort } from './computer-face.js';
+import { TURN_PORT_CLIENT_PREFIX } from './client-id.js';
 
 /** What the computer face needs at startup. */
 export interface ComputerTurnPortDeps {
@@ -113,7 +114,7 @@ function clientIdOf(runId: string, origin: TurnOrigin): string {
   if (origin.kind === 'extension-message' || origin.kind === 'extension-start') {
     return `${EXTENSION_CLIENT_PREFIX}${runId}`;
   }
-  return `${origin.kind === 'heartbeat' ? HEARTBEAT_CLIENT_PREFIX : 'turn-port:'}${runId}`;
+  return `${origin.kind === 'heartbeat' ? HEARTBEAT_CLIENT_PREFIX : TURN_PORT_CLIENT_PREFIX}${runId}`;
 }
 
 /**
@@ -143,7 +144,7 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
     async start(input) {
       const request = TurnStartRequestSchema.parse(input);
       if (holds(request.runId)) return { refused: 'already_held' };
-      const composer = wordsWaitInComposer(request.origin);
+      const composer = wordsWaitInComposer(request.origin, request.notAfter);
       const live = turnFacts()?.dispatcher.liveRunOf(queueKeyOf(request.sessionId));
       const chatBusy = live !== undefined && live !== request.runId;
       if (!composer && chatBusy) return { refused: 'chat_busy' };
@@ -185,12 +186,14 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
           ? { permissionCeiling: request.permissionCeiling }
           : {}),
         ...(request.unattended ? { unattended: true } : {}),
+        ...(request.continuationHold ? { continuationHold: true as const } : {}),
         ...(request.carriedMarks ? { carriedMarks: request.carriedMarks } : {}),
         turnOptions: {
           ...(request.systemPromptAppend !== undefined
             ? { systemPromptAppend: request.systemPromptAppend }
             : {}),
           ...(request.settings ? { settings: request.settings } : {}),
+          ...(request.approvalVerdict ? { approvalVerdict: request.approvalVerdict } : {}),
           ...(request.task
             ? {
                 taskTurn: {

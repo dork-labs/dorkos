@@ -1,23 +1,17 @@
 /**
- * The production seams behind {@link TodoTurns} (DOR-3088): how a to-do's turn reaches the session
- * launcher, whether its agent is paused, the rooms' shared budget, and the source message read
- * from the room. Kept apart so the turns' own tests drive fakes and this is the one file that
- * reaches the launcher for a to-do.
+ * The production seams behind {@link TodoTurns} (DOR-3088): where and how a to-do's turn runs,
+ * the wake that starts it (spec `turns-survive-restarts` §6.3, through the turn port), whether
+ * its agent is paused, the rooms' shared budget, and the source message read from the room. Kept
+ * apart so the turns' own tests drive fakes and this is the one file that starts a to-do's turn.
  *
  * @module services/todos/todo-turn-wiring
  */
 import { randomUUID } from 'node:crypto';
-import { ulid } from 'ulidx';
 import { authors, eq, roomEntries, type Db } from '@dorkos/db';
 import type { MeshCore } from '@dorkos/mesh';
-import {
-  dispatchSessionMessage,
-  isSessionLaunchRefusal,
-} from '../session/launch/launch-session.js';
 import { agentPause } from '../mesh/pause/agent-pause.js';
 import { roomTurnBudget } from '../rooms/limits/shared-turn-budget.js';
 import { logger } from '../../lib/logger.js';
-import type { RoomSessionPlacePort } from '../workspace/room-session-place.js';
 import type { TodoTurnsDeps } from './todo-turns.js';
 import { agentInRoom } from './todo-source.js';
 import { todoDirectChatPort, type TodoDirectChatPort } from './todo-direct-chat.js';
@@ -28,21 +22,22 @@ export interface TodoTurnSeamDeps {
   readonly db: Db;
   /** Mesh, read per launch: it starts later in boot. */
   readonly meshCore: () => Pick<MeshCore, 'get' | 'getProjectPath'> | undefined;
-  /** Where a Direct chat's session stands in its room, read per launch (built later in boot). */
-  readonly roomSessionPlace?: () => RoomSessionPlacePort | undefined;
+  /** Saves a turn's wake (the run record's `wakeChat`), handed in at startup. */
+  readonly wake: TodoTurnsDeps['wake'];
   /** The person's Direct chats and the card writer; the live rooms unless a test passes its own. */
   readonly directChats?: TodoDirectChatPort;
 }
 
 /**
- * Build the launcher, pause check, shared budget and source reader for {@link TodoTurns}.
+ * Build the launch, the wake, the pause check, the shared budget and the source reader for
+ * {@link TodoTurns}.
  *
  * @param deps - The database and the lazy agent registry.
  */
 export function todoTurnSeams(deps: TodoTurnSeamDeps): Omit<TodoTurnsDeps, 'db' | 'now'> {
   const chats = deps.directChats ?? todoDirectChatPort(deps.db);
   return {
-    async launch(request) {
+    async prepare(request) {
       const mesh = deps.meshCore();
       const manifest = mesh?.get(request.agentId);
       const agentPath = mesh?.getProjectPath(request.agentId);
@@ -77,27 +72,20 @@ export function todoTurnSeams(deps: TodoTurnSeamDeps): Omit<TodoTurnsDeps, 'db' 
         request.permissionCeiling ?? (await chats.agentLevel(agentPath, manifest.runtime));
       // The person's own to-do runs in their Direct chat with the agent; every other to-do in a
       // fresh chat of its own, so no outside words enter the person's conversation. Unattended
-      // either way, and `chat-message` is the origin whose turns a ceiling read at launch holds.
+      // either way.
       const inChat = request.inDirectChat && chat !== undefined;
-      const sessionId = inChat ? chat!.sessionId : randomUUID();
-      const result = await dispatchSessionMessage({
-        origin: { kind: 'chat-message' },
-        sessionId,
-        messageId: ulid(),
-        request: { content: request.content, agentPath, runtime: manifest.runtime },
-        clientId: 'todos',
-        meshCore: mesh as MeshCore,
-        roomSessionPlace: inChat ? deps.roomSessionPlace?.() : undefined,
+      return {
+        sessionId: inChat ? chat!.sessionId : randomUUID(),
+        agentId: request.agentId,
+        content: request.content,
+        tier: 'owner',
+        runtime: manifest.runtime,
         unattended: true,
         permissionCeiling,
         ...(request.carriedMarks ? { carriedMarks: request.carriedMarks } : {}),
-        countsTowardLaunchCap: true,
-        onSettled: () => undefined,
-      });
-      if (isSessionLaunchRefusal(result)) throw new Error(result.message);
-      if (!result.accepted) throw new Error('The chat did not take the to-do.');
-      return { sessionId: result.canonicalId ?? sessionId };
+      };
     },
+    wake: deps.wake,
     isPaused: (agentId) => agentPause()?.pausedAgent(agentId) !== undefined,
     // Keyed by the assigner, so its to-do turns share the install's wallet with room turns.
     // When the rooms' limits are off this answers yes without counting.

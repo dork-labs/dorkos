@@ -6,15 +6,16 @@
  * message itself, once per handoff, whichever way the person handed it back.
  * The card used to send it, which left the agent asleep whenever that send
  * failed or the person resumed the browser some other way.
+ *
+ * The message is a wake (spec `turns-survive-restarts` §6.3, T7), keyed by the
+ * hand-off's own id and saved the moment the hand-off ends, so a restart before
+ * the turn starts loses nothing and a second end of one hand-off sends nothing
+ * more. Startup hands the wake's door in: this code is turn code, which never
+ * imports the run record (§3.4).
  */
 import type { LocalBrowserHandoff } from '@dorkos/shared/local-browser';
+import type { WakeRequest } from '@dorkos/shared/turn-port';
 import { logger } from '../../../../lib/logger.js';
-import {
-  dispatchSessionMessage,
-  isSessionLaunchRefusal,
-  type DispatchSessionMessageOpts,
-} from '../../launch/launch-session.js';
-import { HAND_BACK_CLIENT_ID } from './client-id.js';
 
 /**
  * The one message the agent gets after a hand back. Fixed text, with nothing from
@@ -22,45 +23,39 @@ import { HAND_BACK_CLIENT_ID } from './client-id.js';
  */
 export const HANDED_BACK_MESSAGE = 'I’m done in the browser. Please continue.';
 
-export { HAND_BACK_CLIENT_ID };
-
-/** What the wake needs, read when a handoff ends rather than at startup. */
+/** What the wake needs. */
 export interface HandBackWakeDeps {
-  /** Mesh, when it is running. */
-  meshCore: () => DispatchSessionMessageOpts['meshCore'];
-  /** The room binding port, so a room's chat resumes in the room's folder. */
-  roomSessionPlace: () => DispatchSessionMessageOpts['roomSessionPlace'];
+  /** Saves one event's wake (the run record's `wakeChat`). */
+  wake: (request: WakeRequest) => boolean;
 }
 
 /**
- * A handoff-end listener that sends the handed-back message into the handoff's chat.
+ * A handoff-end listener that wakes the handoff's chat with the handed-back message.
  * Stop and a closed window send nothing. A busy chat queues the message like any other.
  *
- * @param deps - Mesh and the room port, read at hand-back time.
+ * @param deps - The wake's door.
  */
 export function handBackWake(deps: HandBackWakeDeps): (handoff: LocalBrowserHandoff) => void {
-  const warn = (handoff: LocalBrowserHandoff, detail: Record<string, string>) =>
-    logger.warn('[Browser] Couldn’t wake the agent after a hand back', {
-      handoffId: handoff.id,
-      ...detail,
-    });
   return (handoff) => {
     if (handoff.outcome !== 'handed-back') return;
-    void dispatchSessionMessage({
-      // Only a person can hand back (both routes are person-only), so this is their
-      // message, sent to the chat they were helping.
-      origin: { kind: 'interactive' },
-      sessionId: handoff.sessionId,
-      request: { content: HANDED_BACK_MESSAGE },
-      clientId: HAND_BACK_CLIENT_ID,
-      meshCore: deps.meshCore(),
-      roomSessionPlace: deps.roomSessionPlace(),
-    })
-      .then((result) => {
-        if (isSessionLaunchRefusal(result)) warn(handoff, { refused: result.refused });
-      })
-      .catch((error: unknown) =>
-        warn(handoff, { error: error instanceof Error ? error.message : String(error) })
-      );
+    try {
+      deps.wake({
+        sourceKind: 'hand-back',
+        eventId: handoff.id,
+        start: {
+          sessionId: handoff.sessionId,
+          content: HANDED_BACK_MESSAGE,
+          // Only a person can hand back (both routes are person-only), so this is their
+          // message, sent to the chat they were helping.
+          origin: { kind: 'interactive' },
+          tier: 'owner',
+        },
+      });
+    } catch (error) {
+      logger.warn('[Browser] Couldn’t wake the agent after a hand back', {
+        handoffId: handoff.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   };
 }

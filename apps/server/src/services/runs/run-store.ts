@@ -106,6 +106,8 @@ export interface NewRun {
   agentId?: string;
   runtime?: string;
   runtimeTurnRef?: number;
+  /** The key its source made it under (§6.4): a second create with it fails on the unique index. */
+  startKey?: string;
 }
 
 /** The columns a status change may also set. */
@@ -475,6 +477,16 @@ export class RunStore {
   }
 
   /**
+   * The run its source made under this key (§6.4), if one was made.
+   *
+   * @param startKey - The key.
+   */
+  findByStartKey(startKey: string): TurnRun | undefined {
+    const row = this.db.select().from(turnRuns).where(eq(turnRuns.startKey, startKey)).get();
+    return row ? toRun(row) : undefined;
+  }
+
+  /**
    * Create a run: `queued` (transition 1) or a runtime's own `running` turn
    * (transition 2). Its `chat_seq` is allocated in the same transaction.
    *
@@ -503,6 +515,7 @@ export class RunStore {
           sessionId: chatKey,
           chatSeq: seq,
           chainId: id,
+          startKey: input.startKey ?? null,
           agentId: input.agentId ?? null,
           originJson: input.origin ? JSON.stringify(input.origin) : null,
           openedBy: input.openedBy,

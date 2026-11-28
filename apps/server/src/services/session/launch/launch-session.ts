@@ -147,12 +147,15 @@ export interface DispatchSessionMessageOpts {
    */
   launcher?: SessionLauncher;
   /**
-   * What a turn-port run carries beside its words (T12, a scheduled task's
-   * run): its system prompt's standing brief, the model and effort its caller
-   * resolved, and a task's own level and approved rules. Passed straight
-   * through; see `DispatchMessageOpts`.
+   * What a turn-port run carries beside its words: its system prompt's
+   * standing brief, the model and effort its caller resolved, and a task's own
+   * level and approved rules (T12, a scheduled task's run); an approval's
+   * verdict (T7, its wake). Passed straight through; see `DispatchMessageOpts`.
    */
-  turnOptions?: Pick<DispatchMessageOpts, 'systemPromptAppend' | 'settings' | 'taskTurn'>;
+  turnOptions?: Pick<
+    DispatchMessageOpts,
+    'systemPromptAppend' | 'settings' | 'taskTurn' | 'approvalVerdict'
+  >;
 }
 
 export {

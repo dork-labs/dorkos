@@ -15,16 +15,18 @@
  * eviction — DOR-302); unlike `/messages`, this route never CREATES sessions,
  * so an id that exists nowhere 404s.
  *
- * **Busy means the agent is still producing.** A click that lands while a turn
- * is running 409s SESSION_LOCKED — the person can see the agent working, and a
- * widget action run against a later turn is not the action they clicked. A click
- * that lands after the turn ENDED does not: the reply is finished and its buttons
- * are on screen, so the action is accepted and runs, even though the runtime may
- * still be closing the stream behind it (DOR-1239; the dispatcher's
- * `isStillProducing` draws that line).
+ * **A click is a wake, and never a late one** (spec `turns-survive-restarts`
+ * §6.3, T7). The click is saved as one `wake_chat`, keyed by the `eventId` the
+ * app minted for it (else one minted here per request), so a retried request
+ * starts one turn and a restart before the turn starts loses nothing. A click
+ * that lands while a turn is running waits for it to end, for a short while
+ * (`WAKE_NOT_LATE_MS`, the bound it used to wait before it refused a busy
+ * chat): a widget action run long after, against whatever a later turn left
+ * behind, is not the action the person clicked, so past that it is dropped.
  *
  * @module routes/session-ui-action-handler
  */
+import { randomUUID } from 'node:crypto';
 import type { Context } from 'hono';
 import { UiActionRequestSchema } from '@dorkos/shared/schemas';
 import { formatUiActionMessage } from '@dorkos/shared/ui-widget';
@@ -38,15 +40,11 @@ import type { RequestFacts } from '../http/request-facts.js';
 import { getDirectChats } from '../services/rooms/direct-chat/index.js';
 import { personTurnBound } from './room-post-bound.js';
 import { parseSessionId } from '../lib/route-utils.js';
-import { invalidSessionId, sessionLocked, sessionNotFound } from './session-route-replies.js';
+import { invalidSessionId, sessionNotFound } from './session-route-replies.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
-import {
-  dispatchMessage,
-  getOrCreateProjector,
-  peekProjector,
-  persistenceModeFor,
-} from '../services/session/index.js';
+import { peekProjector } from '../services/session/index.js';
+import { WAKE_NOT_LATE_MS, wakeChat } from '../services/runs/index.js';
 
 /** The ceiling a widget action's turn carries: see {@link personTurnBound}. */
 function uiActionCeiling(
@@ -61,7 +59,7 @@ function uiActionCeiling(
  * the module doc for semantics.
  *
  * @param c - The request context (`:id` route param + `UiActionRequest` body);
- *   answers 202 trigger / 400 / 404 / 409
+ *   answers 202 trigger / 400 / 404
  */
 export async function sessionUiActionHandler(c: Context<ApiEnv>): Promise<Response> {
   const sessionId = parseSessionId(c.req.param('id'));
@@ -92,64 +90,27 @@ export async function sessionUiActionHandler(c: Context<ApiEnv>): Promise<Respon
     }
   }
 
-  const clientId = c.req.header('x-client-id') || crypto.randomUUID();
-  const content = formatUiActionMessage(parsed.data);
+  const facts = honoRequestFacts(c);
   const { cwd } = parsed.data;
-
-  logger.info('[POST /ui-action] trigger', { sessionId, actionId: parsed.data.actionId });
-
-  // Persist this turn (DOR-189), mirroring the /messages route: a
-  // widget-triggered turn may be this process's FIRST touch of the projector
-  // (e.g. right after a restart), and minting it without persistence would both
-  // skip this turn's flush and — once its counter moves past 0 — block a later
-  // hydrate for the process's lifetime.
-  const projector = getOrCreateProjector(sessionId, cwd, {
-    persist: persistenceModeFor(runtime.getCapabilities()),
-  });
-  if (cwd !== undefined) projector.cwd = cwd;
-
-  const result = await dispatchMessage({
-    turnStarter: isPersonTurn(honoRequestFacts(c)) ? 'person' : 'agent',
-    origin: httpTurnOrigin(!isPersonTurn(honoRequestFacts(c))),
-    sessionId,
-    clientId,
-    content,
-    cwd,
-    projector,
-    runtime,
-    // Refuse rather than queue, unlike `/messages`. A widget action answers the
-    // turn it was rendered in; run minutes later against whatever a different
-    // turn left behind, it is not the action the person clicked.
-    whenBusy: 'refuse',
-    // From Wi-Fi, the turn runs at the runtime's default at most (DOR-3037), and an unproven
-    // action in a Direct chat's own session is held the same way (DOR-3088 G2).
-    ...uiActionCeiling(honoRequestFacts(c), sessionId),
-    onError: (err) => {
-      logger.warn('[POST /ui-action] detached turn error', {
-        sessionId,
-        error: err instanceof Error ? err.message : String(err),
-      });
+  // One click, one turn: the app's id for the click, else one per request.
+  const eventId = parsed.data.eventId ?? randomUUID();
+  logger.info('[POST /ui-action] trigger', { sessionId, actionId: parsed.data.actionId, eventId });
+  wakeChat({
+    sourceKind: 'ui-action',
+    eventId,
+    start: {
+      sessionId,
+      ...(cwd !== undefined ? { cwd } : {}),
+      content: formatUiActionMessage(parsed.data),
+      origin: httpTurnOrigin(!isPersonTurn(facts)),
+      tier: 'owner',
+      // Not late: a widget action answers the turn it was rendered in (see the module doc).
+      notAfter: Date.now() + WAKE_NOT_LATE_MS,
+      // From Wi-Fi, the turn runs at the runtime's default at most (DOR-3037), and an unproven
+      // action in a Direct chat's own session is held the same way (DOR-3088 G2).
+      ...uiActionCeiling(facts, sessionId),
     },
   });
-
-  if (!result.accepted) {
-    // Named by whatever actually refused it. Asking the runtime's lock here
-    // instead — a DIFFERENT authority, under the id this request happened to
-    // use rather than the canonical one the lock is keyed by — is how a 409
-    // came to report `lockedBy: "unknown"` over a session somebody was using
-    // (DOR-1239).
-    const holder = result.refusedBy;
-    logger.warn('[POST /ui-action] session busy', {
-      sessionId,
-      heldBy: holder?.clientId ?? 'unknown',
-      // Usually the clicker's own tab: a person clicking a button in a reply
-      // while the agent is working on the NEXT turn is the ordinary shape of
-      // this refusal, not a cross-window conflict. Worth saying, so the line
-      // does not read as a session locked against itself by mistake.
-      ownTurn: holder?.clientId === clientId,
-    });
-    return sessionLocked(c, holder?.clientId, holder?.since ?? Date.now());
-  }
-
-  return c.json({ sessionId: result.canonicalId }, 202);
+  // The id the runtime knows the chat by, as every trigger answers (DOR-1262).
+  return c.json({ sessionId: runtime.getInternalSessionId(sessionId) ?? sessionId }, 202);
 }
