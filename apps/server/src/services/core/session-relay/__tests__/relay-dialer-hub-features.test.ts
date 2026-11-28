@@ -15,7 +15,7 @@ import {
   decodeRelayFrame,
   encodeRelayFrame,
 } from '@dorkos/shared/session-relay';
-import { Wire } from '../../hub-relay/__tests__/relay-socket-pair.js';
+import { Wire } from '@dorkos/test-utils/relay-socket-pair';
 import { answerHello, pinnableKey, type PendingHubChannel, type RelayChannel } from '../channel.js';
 import { RelayDialer } from '../relay-dialer.js';
 import type { RelayPin } from '../pin-store.js';

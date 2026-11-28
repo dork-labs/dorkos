@@ -4,8 +4,9 @@
  * The hello both ways (spec `space-computer-contract` §4.1, W1, DOR-5164),
  * driven between the REAL hub end (`HubComputerConnection`) and either the
  * REAL computer end (`RelayDialer`) or a raw computer that runs the real
- * handshake and then seals whatever the test hands it. Proofs H1, H2 and H3
- * of §15.1, and Security's terms on the refusals and the agreed set.
+ * handshake and then seals whatever the test hands it. Proofs H2 and H3 of
+ * §15.1, and Security's terms on the refusals and the agreed set. H1 runs both
+ * ways in the wire conformance suite (`wire-conformance.test.ts`).
  */
 import { generateKeyPairSync, randomBytes, sign, type KeyObject } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -35,7 +36,7 @@ import {
   HubComputerConnection,
   type HubComputerConnectionOptions,
 } from '../computer-connection.js';
-import { Wire } from './relay-socket-pair.js';
+import { Wire } from '@dorkos/test-utils/relay-socket-pair';
 
 const ORIGIN = 'https://home.example.test';
 const LATER = '2099-01-01T00:00:00.000Z';
@@ -171,62 +172,6 @@ async function flush(wire: Wire): Promise<void> {
 describe('the hello both ways', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
-
-  it('H1: each side uses only the overlap, and the connection stays up', async () => {
-    const calls = serving();
-    const { wire, dialer, hub } = dial([...CHAT_ONLY, 'tools.list', 'tools.call'], {
-      ...AGENT_HOME,
-      calls,
-    });
-    expect(hub.agreedFeatures).toEqual(['tools.list']);
-    expect(dialer.agreedFeatures).toEqual(['tools.list']);
-
-    // Outside the overlap: refused on the computer, never sent.
-    const sentBefore = wire.computer.sent.length;
-    await expect(dialer.call(CALL)).resolves.toEqual({
-      ok: false,
-      error: expect.objectContaining({ code: 'needs_update', feature: 'tools.call' }),
-    });
-    expect(wire.computer.sent).toHaveLength(sentBefore);
-
-    // Inside it: served by the home.
-    const listed = dialer.call(LIST);
-    await flush(wire);
-    await expect(listed).resolves.toEqual({ ok: true, body: { tools: [] } });
-    expect(calls.served).toEqual([LIST]);
-    expect(hub.connected && dialer.connected).toBe(true);
-  });
-
-  it('H1: a call outside the overlap is refused naming its feature, and the connection stays up', async () => {
-    const calls = serving();
-    const computer = rawComputer([...CHAT_ONLY, 'tools.list', 'tools.call'], {
-      ...AGENT_HOME,
-      calls,
-    });
-    expect(computer.received[0]).toEqual({
-      type: 'features',
-      features: ['tools.list', 'computer.status'],
-    });
-
-    computer.send({ type: 'call', id: 'c1', call: CALL });
-    computer.send({ type: 'call', id: 'c2', call: LIST });
-    await flush(computer.wire);
-    expect(computer.results()).toEqual([
-      {
-        type: 'call.result',
-        id: 'c1',
-        ok: false,
-        error: expect.objectContaining({
-          status: 501,
-          code: 'needs_update',
-          feature: 'tools.call',
-        }),
-      },
-      { type: 'call.result', id: 'c2', ok: true, body: { tools: [] } },
-    ]);
-    expect(calls.served).toEqual([LIST]);
-    expect(computer.hub.connected).toBe(true);
-  });
 
   it('answers a call it cannot read with needs_update, naming no feature and echoing nothing', async () => {
     const computer = rawComputer([...CHAT_ONLY, 'tools.call'], AGENT_HOME);
