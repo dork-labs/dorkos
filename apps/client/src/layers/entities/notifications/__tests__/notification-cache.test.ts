@@ -5,7 +5,7 @@
  *
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { QueryClient, type InfiniteData } from '@tanstack/react-query';
 import type {
   ListNotificationsResponse,
@@ -15,6 +15,7 @@ import {
   applyNotificationRead,
   clearBumpedNotifications,
   MAX_LIVE_PAGE_ROWS,
+  TRIM_REFETCH_DELAY_MS,
   matchesLens,
   notificationsQueryKey,
   restoreNotifications,
@@ -462,20 +463,33 @@ describe('the live-page cap', () => {
     expect(read(client)).toHaveLength(MAX_LIVE_PAGE_ROWS);
   });
 
-  it('moves the cursor back to the last row it kept, so nothing is skipped', () => {
-    // `before: <cursor>` is exclusive. Leaving the cursor on a row the trim
-    // dropped would ask for everything OLDER than a row that is nowhere, and
-    // that row would never be seen again. Seeded defect: keep the original
-    // cursor and this reads the id of a row no longer in the page.
-    seed(client, undefined, infinite(page([build({ id: 'a000' })])));
+  it('reads a trimmed lens again once per burst, and offers no Load more that would skip the trim meanwhile', () => {
+    // The cursor is the server's and points past the rows the trim dropped, so
+    // "Load more" from it would skip them; only the server can give a cursor
+    // for the last row kept. Seeded defects: keep the cursor, skip the refetch,
+    // or refetch once per arrival.
+    vi.useFakeTimers();
+    try {
+      seed(
+        client,
+        undefined,
+        infinite({ ...page([build({ id: 'a000' })]), nextCursor: 'server-1' })
+      );
+      const invalidate = vi.spyOn(client, 'invalidateQueries');
 
-    for (let i = 0; i < MAX_LIVE_PAGE_ROWS + 5; i += 1) {
-      upsertNotification(client, build({ id: `n${String(i).padStart(3, '0')}` }));
+      for (let i = 0; i < MAX_LIVE_PAGE_ROWS + 5; i += 1) {
+        upsertNotification(client, build({ id: `n${String(i).padStart(3, '0')}` }));
+      }
+
+      const data = client.getQueryData<NotificationPages>(notificationsQueryKey());
+      expect(data?.pages[0]?.nextCursor).toBeNull();
+      expect(invalidate).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(TRIM_REFETCH_DELAY_MS);
+      expect(invalidate).toHaveBeenCalledTimes(1);
+      expect(client.getQueryState(notificationsQueryKey())?.isInvalidated).toBe(true);
+    } finally {
+      vi.useRealTimers();
     }
-
-    const data = client.getQueryData<NotificationPages>(notificationsQueryKey());
-    const rows = data?.pages[0]?.notifications ?? [];
-    expect(data?.pages[0]?.nextCursor).toBe(rows[rows.length - 1]?.id);
   });
 
   it('leaves a page that never reached the cap alone, cursor included', () => {

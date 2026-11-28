@@ -14,6 +14,8 @@
  */
 import { Hono } from 'hono';
 import { ListNotificationsQuerySchema } from '@dorkos/shared/notification-schemas';
+import { INVALID_CURSOR_DETAIL } from '@dorkos/shared/paging';
+import { encodePageCursor, openPageCursor } from '../lib/paging/keyset-page.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
@@ -21,6 +23,16 @@ import { readQuery } from '../http/request-query.js';
 import { notificationEntitlement } from '../services/notifications/notification-entitlement.js';
 import type { NotificationService } from '../services/notifications/notification-service.js';
 import { problem, validationProblem } from '@dorkos/http-kit';
+
+/**
+ * The list the Inbox's cursors are bound to. Plain, not sealed: every caller
+ * that reads the Inbox reads the same rows (one person's), and every other
+ * caller reads an empty list.
+ */
+const LIST = 'notifications';
+
+/** The refusal a cursor this list did not give is thrown as, before the list is read. */
+class InvalidCursorError extends Error {}
 
 /** What a caller that may not mark notifications read is told. */
 const NOT_THE_OPERATOR = 'Only the person a notification was for can mark it read, in DorkOS.';
@@ -34,8 +46,10 @@ const NOT_THE_OPERATOR = 'Only the person a notification was for can mark it rea
 export function createNotificationsRoutes(service: NotificationService): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
 
+  // Newest first by id (a ULID, fixed at creation), a page at a time (DOR-4982).
   router.get('/', (c) => {
-    const query = ListNotificationsQuerySchema.safeParse(readQuery(c));
+    // Strict, so the old `before` parameter is refused rather than read as page one.
+    const query = ListNotificationsQuerySchema.strict().safeParse(readQuery(c));
     if (!query.success) return validationProblem(c, query.error);
 
     // An unentitled caller gets `200` with an empty list, never `403`: the
@@ -44,7 +58,17 @@ export function createNotificationsRoutes(service: NotificationService): Hono<Ap
       return c.json({ notifications: [], nextCursor: null, unreadCount: 0 });
     }
 
-    return c.json(service.list(query.data));
+    const { cursor, ...filters } = query.data;
+    let beforeId: string | undefined;
+    try {
+      beforeId = cursor && openPageCursor(LIST, cursor, () => new InvalidCursorError())[1];
+    } catch (error) {
+      if (!(error instanceof InvalidCursorError)) throw error;
+      return problem(c, 'invalid_request', { detail: INVALID_CURSOR_DETAIL });
+    }
+    const { nextBeforeId, ...page } = service.list({ ...filters, ...(beforeId && { beforeId }) });
+    const nextCursor = nextBeforeId && encodePageCursor(LIST, [nextBeforeId, nextBeforeId]);
+    return c.json({ ...page, nextCursor });
   });
 
   router.patch('/:id/read', (c) => {

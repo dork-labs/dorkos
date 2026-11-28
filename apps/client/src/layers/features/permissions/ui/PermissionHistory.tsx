@@ -212,7 +212,7 @@ export function PermissionHistory({ agentId }: PermissionHistoryProps) {
     return <p className="text-muted-foreground text-sm">Couldn’t read the history.</p>;
   }
   if (isPending) return <Skeleton className="h-12 w-full" />;
-  const items = data?.items ?? [];
+  const items = data?.entries ?? [];
   if (items.length === 0) {
     return <p className="text-muted-foreground text-sm">No permission changes yet.</p>;
   }

@@ -41,8 +41,6 @@ const TYPE_ONLY_KEYS: Record<string, string> = {
 
 /** Server-only keys that stay in `@dorkos/shared`, each with the reason. */
 const SERVER_ONLY_KEYS: Record<string, string> = {
-  paging:
-    'A wire contract: the one paging shape every API list uses, for the REST paths and the agent tools alike (DOR-4982), which the client reads once its callers land.',
   'community-administer':
     'Community wire, frozen until the Community Space opens (AGENTS.md, "Where the system is going", rule 4).',
   'community-private-wire':

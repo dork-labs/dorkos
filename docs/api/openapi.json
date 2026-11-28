@@ -16629,7 +16629,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Pass as `cursor` for the next page; null on the last one."
           },
           "unreadCount": {
             "type": "integer",
@@ -18255,13 +18256,17 @@
               "$ref": "#/components/schemas/AuditEvent"
             }
           },
-          "nextBeforeSeq": {
-            "type": "integer",
-            "exclusiveMinimum": 0
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` for the next page; null on the last one."
           }
         },
         "required": [
-          "events"
+          "events",
+          "nextCursor"
         ]
       },
       "AuditEvent": {
@@ -76314,25 +76319,40 @@
           "Notifications"
         ],
         "summary": "List notification history",
-        "description": "**Preview.** This operation may change in any release.\n\nNewest first, cursor-paged. Filters are lenses, not a search. A caller that is not entitled to the operator view reads an empty list rather than a refusal, so a response never says that notifications exist.",
+        "description": "**Preview.** This operation may change in any release.\n\nNewest first (by id, which never changes), a page at a time: pass `nextCursor` back as `cursor` for the next page; it is null on the last one, and a cursor this list did not give is refused. Filters are lenses, not a search. A caller that is not entitled to the operator view reads an empty list rather than a refusal, so a response never says that notifications exist.",
         "parameters": [
           {
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 100,
-              "default": 25
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
             },
             "required": false,
+            "description": "How many this page holds, 1 to 200.",
             "name": "limit",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
             },
             "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Refused: `before` was removed; page with `cursor`."
+            },
+            "required": false,
+            "description": "Refused: `before` was removed; page with `cursor`.",
             "name": "before",
             "in": "query"
           },
@@ -95955,7 +95975,7 @@
           "Audit"
         ],
         "summary": "Read the audit log",
-        "description": "**Preview.** This operation may change in any release.\n\nRead the DorkOS audit log: every action anyone took, person or agent, newest first. Filter by actorId (who did it), targetId (what it was done to), action (a prefix such as \"config.\" or \"runtime.tool_used\"), operation, sessionId, and a since/until time window. Page backwards by passing nextBeforeSeq as beforeSeq. You see every action and every agent's work; a person's private chat and sign-in details are not shown to agents.",
+        "description": "**Preview.** This operation may change in any release.\n\nRead the DorkOS audit log: every action anyone took, person or agent, newest first. Filter by actorId (who did it), targetId (what it was done to), action (a prefix such as \"config.\" or \"runtime.tool_used\"), operation, sessionId, and a since/until time window. It comes a page at a time (limit, at most 200): pass nextCursor back as cursor for the next page; nextCursor is null on the last one. You see every action and every agent's work; a person's private chat and sign-in details are not shown to agents.",
         "parameters": [
           {
             "schema": {
@@ -96022,21 +96042,36 @@
           },
           {
             "schema": {
-              "type": "integer",
-              "exclusiveMinimum": 0
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
             },
             "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Refused: `beforeSeq` was removed; page with `cursor`."
+            },
+            "required": false,
+            "description": "Refused: `beforeSeq` was removed; page with `cursor`.",
             "name": "beforeSeq",
             "in": "query"
           },
           {
             "schema": {
               "type": "integer",
-              "exclusiveMinimum": 0,
+              "minimum": 1,
               "maximum": 200,
-              "default": 50
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
             },
             "required": false,
+            "description": "How many this page holds, 1 to 200.",
             "name": "limit",
             "in": "query"
           }
@@ -96299,7 +96334,7 @@
           "Audit"
         ],
         "summary": "Read one account’s history",
-        "description": "**Preview.** This operation may change in any release.\n\nEverything one account did, had done to it, or had done on its behalf, newest first: the per-account timeline of the audit log. accountId is an agent id, a person’s account id, or the install id the owner had before making an account (the two are read as one). The same filters and paging as reading the whole log.",
+        "description": "**Preview.** This operation may change in any release.\n\nEverything one account did, had done to it, or had done on its behalf, newest first: the per-account timeline of the audit log. accountId is an agent id, a person’s account id, or the install id the owner had before making an account (the two are read as one). The same filters as reading the whole log, and it comes a page at a time the same way: pass nextCursor back as cursor; null on the last page.",
         "parameters": [
           {
             "schema": {
@@ -96357,21 +96392,36 @@
           },
           {
             "schema": {
-              "type": "integer",
-              "exclusiveMinimum": 0
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
             },
             "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Refused: `beforeSeq` was removed; page with `cursor`."
+            },
+            "required": false,
+            "description": "Refused: `beforeSeq` was removed; page with `cursor`.",
             "name": "beforeSeq",
             "in": "query"
           },
           {
             "schema": {
               "type": "integer",
-              "exclusiveMinimum": 0,
+              "minimum": 1,
               "maximum": 200,
-              "default": 50
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
             },
             "required": false,
+            "description": "How many this page holds, 1 to 200.",
             "name": "limit",
             "in": "query"
           }

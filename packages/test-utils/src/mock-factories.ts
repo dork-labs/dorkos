@@ -1233,7 +1233,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     setPermissionPreset: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
     patchPermissionDefaults: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
     patchAgentPermissions: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
-    getPermissionHistory: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    getPermissionHistory: vi.fn().mockResolvedValue({ entries: [], nextCursor: null }),
     undoPermissionChange: vi.fn().mockResolvedValue({ changes: [], skipped: [] }),
     // Team roster (spec `identity-consistency` §W2.2). Honest-empty by default:
     // `warnings` is OMITTED on a clean read, never `[]`, so a test that does

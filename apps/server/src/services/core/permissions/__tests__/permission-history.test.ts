@@ -18,7 +18,7 @@ describe('listPermissionHistory', () => {
 
     const history = await listPermissionHistory(world.activity, { limit: 10 });
 
-    expect(history.items.map((i) => i.summary)).toEqual([
+    expect(history.entries.map((i) => i.summary)).toEqual([
       'Rooms set to Allowed for everyone',
       'Rooms set to Ask for everyone',
     ]);
@@ -49,8 +49,8 @@ describe('listPermissionHistory', () => {
       limit: 10,
     });
 
-    expect(history.items).toHaveLength(2);
-    expect(history.items.map((i) => i.summary)).toEqual([
+    expect(history.entries).toHaveLength(2);
+    expect(history.entries.map((i) => i.summary)).toEqual([
       'security-auditor: Rooms Blocked',
       'Rooms set to Allowed for everyone, and 1 agent updated',
     ]);
@@ -60,7 +60,7 @@ describe('listPermissionHistory', () => {
     const world = createPermissionWorld();
     await world.service.setDefaults({ areas: { rooms: 'ask' }, surface: 'settings' }, LOCAL);
 
-    const [row] = (await listPermissionHistory(world.activity, { limit: 10 })).items;
+    const [row] = (await listPermissionHistory(world.activity, { limit: 10 })).entries;
 
     expect(row).toMatchObject({
       actorLabel: 'Someone on this computer',
@@ -84,6 +84,6 @@ describe('listPermissionHistory', () => {
       actorId: null,
       metadata: null,
     });
-    expect((await listPermissionHistory(world.activity, { limit: 10 })).items).toEqual([]);
+    expect((await listPermissionHistory(world.activity, { limit: 10 })).entries).toEqual([]);
   });
 });

@@ -27,7 +27,7 @@ export function createAuditMethods(baseUrl: string) {
           sessionId: query?.sessionId,
           since: query?.since,
           until: query?.until,
-          beforeSeq: query?.beforeSeq,
+          cursor: query?.cursor,
           limit: query?.limit,
         },
       });
@@ -49,7 +49,7 @@ export function createAuditMethods(baseUrl: string) {
           sessionId: query?.sessionId,
           since: query?.since,
           until: query?.until,
-          beforeSeq: query?.beforeSeq,
+          cursor: query?.cursor,
           limit: query?.limit,
         },
       });

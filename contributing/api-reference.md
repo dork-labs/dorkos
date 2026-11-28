@@ -773,15 +773,17 @@ Schedules support an optional `agentId` field for agent-linked scheduling. When 
 
 Always mounted, no feature flag: `/api/notifications` and `/api/push` (spec `notification-system`, DOR-1383/1385).
 
-| Method | Path                          | Description                                             |
-| ------ | ----------------------------- | ------------------------------------------------------- |
-| GET    | `/api/notifications`          | List notification history, paginated, with unread count |
-| PATCH  | `/api/notifications/:id/read` | Mark one notification read                              |
-| POST   | `/api/notifications/read-all` | Mark every notification read                            |
-| GET    | `/api/push/vapid-public-key`  | The server's VAPID public key, for subscribing          |
-| GET    | `/api/push/subscriptions`     | List the push subscriptions, a page at a time           |
-| POST   | `/api/push/subscriptions`     | Register a push subscription                            |
-| DELETE | `/api/push/subscriptions/:id` | Remove a push subscription                              |
+| Method | Path                          | Description                                                    |
+| ------ | ----------------------------- | -------------------------------------------------------------- |
+| GET    | `/api/notifications`          | List notification history, a page at a time, with unread count |
+| PATCH  | `/api/notifications/:id/read` | Mark one notification read                                     |
+| POST   | `/api/notifications/read-all` | Mark every notification read                                   |
+| GET    | `/api/push/vapid-public-key`  | The server's VAPID public key, for subscribing                 |
+| GET    | `/api/push/subscriptions`     | List the push subscriptions, a page at a time                  |
+| POST   | `/api/push/subscriptions`     | Register a push subscription                                   |
+| DELETE | `/api/push/subscriptions/:id` | Remove a push subscription                                     |
+
+`GET /api/notifications` pages newest first by id (a ULID): `cursor` (the last page's `nextCursor`) and `limit` (1–200, default 50) in, `{ notifications, nextCursor, unreadCount }` out. The cursor is opaque and not sealed (every caller that may read the Inbox reads the same rows); one this list did not give, or the old `before` parameter, is refused `400`.
 
 `GET /api/notifications` and the two mark-read mutations are gated by `notificationEntitlement`, which reads the caller's principal, not a feature flag. A caller that is not the signed-in operator gets `200` with an empty list from the GET (never `403` — the response must not confirm to a machine that notifications about it exist), and a `403 NOTIFICATIONS_OPERATOR_ONLY` from either mutation, since marking something read is a claim only a person looking at a screen can make.
 
@@ -936,9 +938,11 @@ Every area, action, exception and Files & commands entry carries an optional `la
 
 ### GET /api/permissions/history
 
-Query params: `agentId` (optional), `before` (ISO 8601 cursor, optional), `limit` (1–100, default 50).
+Served by the capability mount (`permissions.view_history`, `services/core/permissions/agent-permission-views.ts`). Newest first by when the change happened, the id breaking a tie; a page at a time.
 
-- `200` - `{ items: PermissionHistoryEntry[], nextCursor: string | null }`
+Query params: `agentId` (optional), `cursor` (the last page's `nextCursor`, optional), `limit` (1–200, default 50). A cursor this list did not give is refused `400`, never read as page one.
+
+- `200` - `{ entries: PermissionHistoryEntry[], nextCursor: string | null }`
 
 ### POST /api/permissions/history/:eventId/undo
 

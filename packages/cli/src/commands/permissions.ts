@@ -54,14 +54,15 @@ Subcommands:
   set --preset <preset>             Choose a preset: trusted or careful
   set <area|action> <state>         Change one area or action for every agent
   reset <area|action>               Put an area or action back to the preset
-  history [--agent <agent>]         Show recent permission changes, with their ids
+  history [--agent <agent>]         Show recent permission changes, with their ids, a page at a time
   undo <id> [--force]               Undo one change from the history
 
 States: blocked, ask, allowed. Safety limits and Reach & secrets are never
 allowed: they can only be blocked or ask.
 
 Options:
-      --limit <n>   How many history rows to show (default 50, max 100)
+      --limit <n>   How many history rows to show (default 50, max 200)
+      --cursor <c>  Show the next page of history (the cursor the last page printed)
       --force       Undo even what changed since the recorded change
       --json        Print raw JSON instead of a table
 
@@ -432,45 +433,42 @@ async function runPermissionsHistory(rawArgs: string[]): Promise<number> {
     options: {
       agent: { type: 'string' },
       limit: { type: 'string' },
+      cursor: { type: 'string' },
       json: { type: 'boolean', default: false },
     },
     allowPositionals: false,
     strict: true,
   });
   const params = new URLSearchParams();
-  if (typeof values.limit === 'string') {
-    const limit = Number(values.limit);
-    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
-      throw new Error(`Invalid value for --limit: '${values.limit}' (expected 1 to 100).`);
-    }
-    params.set('limit', String(limit));
+  const limit = values.limit === undefined ? undefined : Number(values.limit);
+  if (limit !== undefined && !(Number.isInteger(limit) && limit >= 1 && limit <= 200)) {
+    throw new Error(`Invalid value for --limit: '${values.limit}' (expected 1 to 200).`);
   }
+  if (limit !== undefined) params.set('limit', String(limit));
+  if (typeof values.cursor === 'string') params.set('cursor', values.cursor);
   try {
     if (typeof values.agent === 'string') {
       params.set('agentId', (await resolveAgentRef(values.agent)).id);
     }
-    const qs = params.toString();
-    const history = await apiCall<PermissionHistoryResponse>(
-      'GET',
-      `/api/permissions/history${qs ? `?${qs}` : ''}`
-    );
+    const path = `/api/permissions/history${params.size > 0 ? `?${params}` : ''}`;
+    const history = await apiCall<PermissionHistoryResponse>('GET', path);
     if (values.json) {
       printJson(history);
       return 0;
     }
-    if (history.items.length === 0) {
+    if (history.entries.length === 0) {
       console.log('No permission changes yet.');
       return 0;
     }
-    const rows = history.items.map((item) => [
+    const rows = history.entries.map((item) => [
       item.id,
       item.occurredAt,
       item.actorDetail ? `${item.actorLabel} (${item.actorDetail})` : item.actorLabel,
       item.summary,
     ]);
     console.log(renderTable(['ID', 'WHEN', 'WHO', 'WHAT'], rows));
-    console.log('');
-    console.log('Undo a change with `dorkos permissions undo <id>`.');
+    console.log('\nUndo a change with `dorkos permissions undo <id>`.');
+    if (history.nextCursor) console.log(`Older changes: add --cursor ${history.nextCursor}`);
     return 0;
   } catch (err) {
     printError(err);

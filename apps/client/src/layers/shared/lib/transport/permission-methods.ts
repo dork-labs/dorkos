@@ -84,11 +84,11 @@ export function createPermissionMethods(baseUrl: string) {
 
     // Stays hand-written: `GET /api/permissions/history` has no operationId (DOR-5473).
     getPermissionHistory(
-      query: { agentId?: string; before?: string; limit?: number } = {}
+      query: { agentId?: string; cursor?: string; limit?: number } = {}
     ): Promise<PermissionHistoryResponse> {
       const params = new URLSearchParams();
       if (query.agentId) params.set('agentId', query.agentId);
-      if (query.before) params.set('before', query.before);
+      if (query.cursor) params.set('cursor', query.cursor);
       if (query.limit) params.set('limit', String(query.limit));
       const search = params.toString();
       return fetchJSON(baseUrl, `/permissions/history${search ? `?${search}` : ''}`);

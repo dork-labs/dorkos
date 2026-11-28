@@ -36,7 +36,6 @@ import {
   type PermissionChangedMetadata,
   type PermissionHistoryEntry,
   type PermissionAreaId,
-  type PermissionHistoryResponse,
   type PermissionLastChange,
   type PermissionSource,
   type PermissionSurface,
@@ -530,45 +529,39 @@ async function undoneLines(
 }
 
 /**
- * Read the permission history, newest first.
+ * Read the permission history, newest first by when it happened (a time that
+ * never changes), the higher id first on a tie.
  *
  * With `agentId`, returns the events about that agent: single-agent events by
  * their `resourceId`, and default or bulk events whose `changes` touched it. The
  * category is low volume, so the filter runs over pages of the category rather
- * than a JSON query. Each line says whether it has an Undo and whether it is
- * undone now.
+ * than a JSON query, before the page is cut: one row past `limit` says more
+ * follow. Each line says whether it has an Undo and whether it is undone now.
  *
  * @param activity - The Activity reader.
- * @param query - Optional agent, cursor and page size.
+ * @param query - Optional agent, the row the page starts after, and page size.
  */
 export async function listPermissionHistory(
   activity: Pick<ActivityService, 'list'>,
-  query: { agentId?: string; before?: string; limit: number }
-): Promise<PermissionHistoryResponse> {
+  query: { agentId?: string; after?: { at: string; id: string }; limit: number }
+): Promise<{ entries: PermissionHistoryEntry[]; more: boolean }> {
   const lines: HistoryLine[] = [];
-  let cursor = query.before;
+  let after = query.after;
   let exhausted = false;
-  while (lines.length < query.limit && !exhausted) {
-    const page = await activity.list({
-      limit: SCAN_PAGE,
-      categories: 'permissions',
-      ...(cursor ? { before: cursor } : {}),
-    });
+  while (lines.length <= query.limit && !exhausted) {
+    const page = await activity.list({ limit: SCAN_PAGE, categories: 'permissions' }, after);
     for (const row of page.items) {
-      cursor = row.occurredAt;
+      after = { at: row.occurredAt, id: row.id };
       const line = toHistoryLine(row, query.agentId);
-      if (!line) continue;
-      lines.push(line);
-      if (lines.length === query.limit) break;
+      if (line) lines.push(line);
+      if (lines.length > query.limit) break;
     }
     exhausted = page.nextCursor === null;
   }
-  const undone = await undoneLines(activity, lines);
-  const items = lines.map((line) => ({ ...line, undone: undone.has(line.id) }));
-  // A full page may be followed by an empty one; that costs a reader one extra
-  // request and never hides a row.
-  const last = items.at(-1);
-  return { items, nextCursor: items.length === query.limit && last ? last.occurredAt : null };
+  const shown = lines.slice(0, query.limit);
+  const undone = await undoneLines(activity, shown);
+  const entries = shown.map((line) => ({ ...line, undone: undone.has(line.id) }));
+  return { entries, more: lines.length > query.limit };
 }
 
 /** Whether a permission event is about one agent. */
@@ -626,7 +619,7 @@ export async function readLastChanges(
   const found = new Map<string, PermissionLastChange>();
   if (!activity) return found;
   const history = await listPermissionHistory(activity, { limit: LAST_CHANGE_DEPTH });
-  for (const entry of history.items) {
+  for (const entry of history.entries) {
     for (const change of entry.metadata.changes) {
       const key = permissionKeyOf(change);
       if (found.has(key)) continue;

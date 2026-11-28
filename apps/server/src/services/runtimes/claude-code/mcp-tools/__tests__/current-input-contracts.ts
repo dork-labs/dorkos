@@ -159,8 +159,9 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
           .map((node) => ({ id: cap.id, ...node }))
       );
       // +5 for the work graph reads' page sizes and tree depth (DOR-4970), +1 for
-      // `list_paused_agents`' page size (DOR-4982), +1 for `work_item_chats`' (DOR-4972).
-      expect(nodes).toHaveLength(18);
+      // `list_paused_agents`' page size (DOR-4982), +1 for `work_item_chats`' (DOR-4972);
+      // -2 for the audit reads' `beforeSeq`, replaced by an opaque `cursor` (DOR-4982).
+      expect(nodes).toHaveLength(16);
       const handlers = nodes.map(() => vi.fn(async (_deps, input) => input));
       const probes = nodes.map((node, index) =>
         defineCapability({

@@ -175,7 +175,6 @@
     "GET /api/notifications",
     "GET /api/owner-factors",
     "GET /api/permissions",
-    "GET /api/permissions/history",
     "GET /api/projects",
     "GET /api/projects/resolve",
     "GET /api/push/subscriptions",

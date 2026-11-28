@@ -78,6 +78,8 @@ dorkos call audit.query --input '{"action":"config.","limit":20}'
 dorkos call audit.account_timeline --input '{"accountId":"<agent id>"}'
 ```
 
+Both come a page at a time. When an answer's `nextCursor` isn't null, pass it back as `cursor` to read the next, older page.
+
 Your agents have the same reads as tools: `audit_query` to search the record, `audit_get` for one line and what it points to, `account_timeline` for one agent's or person's history, and `transcript_read` to read an agent's work chat.
 
 ## Acting on what you see

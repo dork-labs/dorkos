@@ -251,8 +251,6 @@ import {
   AgentPermissionsResponseSchema,
   PatchAgentPermissionsBodySchema,
   PatchPermissionDefaultsBodySchema,
-  PermissionHistoryQuerySchema,
-  PermissionHistoryResponseSchema,
   UndoConflictResponseSchema,
   UndoPermissionChangeBodySchema,
   UndoPermissionChangeResponseSchema,
@@ -4361,24 +4359,6 @@ registry.registerPath({
   },
 });
 
-registry.registerPath({
-  method: 'get',
-  path: '/api/permissions/history',
-  tags: ['Permissions'],
-  summary: 'Read the permission history',
-  description:
-    'Every permission change, newest first, with who made it. With `agentId`, the changes ' +
-    'that touched that agent, bulk changes included.',
-  request: { query: PermissionHistoryQuerySchema },
-  responses: {
-    500: INTERNAL_ERROR_RESPONSE,
-    200: {
-      description: 'Permission changes',
-      content: { 'application/json': { schema: PermissionHistoryResponseSchema } },
-    },
-  },
-});
-
 const TemplateBringsSchema = z.object({
   source: z.string(),
   contentHash: z.string(),
@@ -6540,7 +6520,9 @@ registry.registerPath({
   tags: ['Notifications'],
   summary: 'List notification history',
   description:
-    'Newest first, cursor-paged. Filters are lenses, not a search. A caller that is not ' +
+    'Newest first (by id, which never changes), a page at a time: pass `nextCursor` back as ' +
+    '`cursor` for the next page; it is null on the last one, and a cursor this list did not ' +
+    'give is refused. Filters are lenses, not a search. A caller that is not ' +
     'entitled to the operator view reads an empty list rather than a refusal, so a response ' +
     'never says that notifications exist.',
   request: { query: ListNotificationsQuerySchema },

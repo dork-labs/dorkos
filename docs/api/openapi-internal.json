@@ -12271,63 +12271,6 @@
         "x-stability": "internal"
       }
     },
-    "/api/permissions/history": {
-      "get": {
-        "tags": [
-          "Permissions"
-        ],
-        "summary": "Read the permission history",
-        "description": "Every permission change, newest first, with who made it. With `agentId`, the changes that touched that agent, bulk changes included.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": false,
-            "name": "agentId",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "required": false,
-            "name": "before",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 50
-            },
-            "required": false,
-            "name": "limit",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Permission changes",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PermissionHistoryResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalErrorProblem"
-          }
-        },
-        "operationId": "permissions.listHistory",
-        "x-stability": "internal"
-      }
-    },
     "/api/permissions/history/{eventId}/undo": {
       "post": {
         "tags": [
@@ -15782,6 +15725,177 @@
                     "active",
                     "devices"
                   ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-stability": "internal"
+      }
+    },
+    "/api/permissions/history": {
+      "get": {
+        "operationId": "permissions.view_history",
+        "tags": [
+          "Permissions"
+        ],
+        "summary": "Read the permission history",
+        "description": "Every permission change, newest first, with who made it and whether it has an Undo. With agentId, the changes that touched that agent, bulk changes included. It comes a page at a time (limit, at most 200): pass nextCursor back as cursor for the next page; nextCursor is null on the last one.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Only the changes that touched this agent, bulk changes included."
+            },
+            "required": false,
+            "description": "Only the changes that touched this agent, bulk changes included.",
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Refused: `before` was removed; page with `cursor`."
+            },
+            "required": false,
+            "description": "Refused: `before` was removed; page with `cursor`.",
+            "name": "before",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read the permission history result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionHistoryResponse"
                 }
               }
             }
@@ -21371,315 +21485,6 @@
           "surface"
         ]
       },
-      "PermissionHistoryResponse": {
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PermissionHistoryEntry"
-            }
-          },
-          "nextCursor": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "items",
-          "nextCursor"
-        ]
-      },
-      "PermissionHistoryEntry": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "occurredAt": {
-            "type": "string"
-          },
-          "actorLabel": {
-            "type": "string"
-          },
-          "actorDetail": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "summary": {
-            "type": "string"
-          },
-          "metadata": {
-            "type": "object",
-            "properties": {
-              "changes": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "target": {
-                      "oneOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "enum": [
-                                "default"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "kind"
-                          ]
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "enum": [
-                                "agent"
-                              ]
-                            },
-                            "agentId": {
-                              "type": "string"
-                            },
-                            "agentPath": {
-                              "type": "string"
-                            },
-                            "agentName": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "agentId",
-                            "agentPath",
-                            "agentName"
-                          ]
-                        }
-                      ]
-                    },
-                    "key": {
-                      "oneOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "enum": [
-                                "preset"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "kind"
-                          ]
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "enum": [
-                                "area"
-                              ]
-                            },
-                            "area": {
-                              "$ref": "#/components/schemas/PermissionAreaId"
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "area"
-                          ]
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "enum": [
-                                "action"
-                              ]
-                            },
-                            "action": {
-                              "type": "string"
-                            },
-                            "area": {
-                              "$ref": "#/components/schemas/PermissionAreaId"
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "action",
-                            "area"
-                          ]
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "enum": [
-                                "files"
-                              ]
-                            },
-                            "runtime": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "kind"
-                          ]
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "enum": [
-                                "chat"
-                              ]
-                            },
-                            "sessionId": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "sessionId"
-                          ]
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "kind": {
-                              "type": "string",
-                              "enum": [
-                                "account"
-                              ]
-                            },
-                            "accountId": {
-                              "type": "string"
-                            },
-                            "accountName": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "kind",
-                            "accountId",
-                            "accountName"
-                          ]
-                        }
-                      ]
-                    },
-                    "before": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "after": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "target",
-                    "key",
-                    "before",
-                    "after"
-                  ]
-                }
-              },
-              "surface": {
-                "$ref": "#/components/schemas/PermissionSurface"
-              },
-              "attribution": {
-                "$ref": "#/components/schemas/PermissionAttribution"
-              },
-              "approvalId": {
-                "type": "string"
-              },
-              "undoOf": {
-                "type": "string"
-              },
-              "origin": {
-                "type": "string",
-                "enum": [
-                  "arrival-screen",
-                  "extension-removed"
-                ]
-              },
-              "note": {
-                "type": "string",
-                "maxLength": 500
-              },
-              "roseChats": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "presetSnapshot": {
-                "type": "object",
-                "properties": {
-                  "preset": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "defaults": {
-                    "$ref": "#/components/schemas/PermissionOverrides"
-                  },
-                  "trustStop": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  }
-                },
-                "required": [
-                  "preset",
-                  "defaults",
-                  "trustStop"
-                ]
-              }
-            },
-            "required": [
-              "changes",
-              "surface",
-              "attribution"
-            ]
-          },
-          "undoable": {
-            "type": "boolean"
-          },
-          "undone": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "id",
-          "occurredAt",
-          "actorLabel",
-          "actorDetail",
-          "summary",
-          "metadata",
-          "undoable",
-          "undone"
-        ]
-      },
       "UndoPermissionChangeResponse": {
         "type": "object",
         "properties": {
@@ -22448,6 +22253,316 @@
         },
         "required": [
           "imageUrl"
+        ]
+      },
+      "PermissionHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionHistoryEntry"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` for the next page; null on the last one."
+          }
+        },
+        "required": [
+          "entries",
+          "nextCursor"
+        ]
+      },
+      "PermissionHistoryEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string"
+          },
+          "actorLabel": {
+            "type": "string"
+          },
+          "actorDetail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "changes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "target": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "default"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "agent"
+                              ]
+                            },
+                            "agentId": {
+                              "type": "string"
+                            },
+                            "agentPath": {
+                              "type": "string"
+                            },
+                            "agentName": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "agentId",
+                            "agentPath",
+                            "agentName"
+                          ]
+                        }
+                      ]
+                    },
+                    "key": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "preset"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "area"
+                              ]
+                            },
+                            "area": {
+                              "$ref": "#/components/schemas/PermissionAreaId"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "area"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "action"
+                              ]
+                            },
+                            "action": {
+                              "type": "string"
+                            },
+                            "area": {
+                              "$ref": "#/components/schemas/PermissionAreaId"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "action",
+                            "area"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "files"
+                              ]
+                            },
+                            "runtime": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "chat"
+                              ]
+                            },
+                            "sessionId": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "sessionId"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "account"
+                              ]
+                            },
+                            "accountId": {
+                              "type": "string"
+                            },
+                            "accountName": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "accountId",
+                            "accountName"
+                          ]
+                        }
+                      ]
+                    },
+                    "before": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "after": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "target",
+                    "key",
+                    "before",
+                    "after"
+                  ]
+                }
+              },
+              "surface": {
+                "$ref": "#/components/schemas/PermissionSurface"
+              },
+              "attribution": {
+                "$ref": "#/components/schemas/PermissionAttribution"
+              },
+              "approvalId": {
+                "type": "string"
+              },
+              "undoOf": {
+                "type": "string"
+              },
+              "origin": {
+                "type": "string",
+                "enum": [
+                  "arrival-screen",
+                  "extension-removed"
+                ]
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "roseChats": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "presetSnapshot": {
+                "type": "object",
+                "properties": {
+                  "preset": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "defaults": {
+                    "$ref": "#/components/schemas/PermissionOverrides"
+                  },
+                  "trustStop": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "preset",
+                  "defaults",
+                  "trustStop"
+                ]
+              }
+            },
+            "required": [
+              "changes",
+              "surface",
+              "attribution"
+            ]
+          },
+          "undoable": {
+            "type": "boolean"
+          },
+          "undone": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "occurredAt",
+          "actorLabel",
+          "actorDetail",
+          "summary",
+          "metadata",
+          "undoable",
+          "undone"
         ]
       },
       "FoundClaudeFolder": {

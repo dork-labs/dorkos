@@ -80,7 +80,7 @@ function Slot() {
 function renderPage(initialUrl: string) {
   const transport = createMockTransport({
     listActivityEvents: vi.fn().mockResolvedValue({ items: [ACTIVITY_ITEM], nextCursor: null }),
-    listAuditEvents: vi.fn().mockResolvedValue({ events: [AUDIT_EVENT] }),
+    listAuditEvents: vi.fn().mockResolvedValue({ events: [AUDIT_EVENT], nextCursor: null }),
   });
   const rootRoute = createRootRoute({ staticData: { header: null }, component: () => <Outlet /> });
   const activityRoute = createRoute({

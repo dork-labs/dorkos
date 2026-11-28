@@ -40,7 +40,7 @@ const PENDING = path.join(HERE, '..', 'hand-routes', 'pending.json');
  * change that shrinks the pending list. A route added to the pending list fails
  * here, and a PR that raises this number needs the API lead's OK first.
  */
-const PENDING_CEILING = 545;
+const PENDING_CEILING = 544;
 
 /**
  * The census's `ALL` entries that are neither allowlisted nor capabilities, each

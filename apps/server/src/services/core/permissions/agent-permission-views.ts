@@ -1,9 +1,11 @@
 /**
  * One agent's permissions and the level it runs at, as the capabilities the
  * mount serves on `GET /api/agents/{agentId}/permissions` and
- * `GET /api/agents/{agentId}/level` (DOR-4978, ADR 261125-114705).
+ * `GET /api/agents/{agentId}/level` (DOR-4978, ADR 261125-114705), and the
+ * permission history on `GET /api/permissions/history`, a page at a time
+ * (DOR-4982).
  *
- * Both are reads, `observe` with no permission area, like `list_my_permissions`:
+ * All three are reads, `observe` with no permission area, like `list_my_permissions`:
  * a switch that blocked them would hide an agent's own settings from it and
  * stop nothing. Neither changes anything, so neither can raise any agent's
  * power; the change stays `PATCH /api/agents/:agentId/permissions`, a person's.
@@ -20,13 +22,19 @@ import { z } from 'zod';
 import {
   AgentLevelResponseSchema,
   AgentPermissionsResponseSchema,
+  PermissionHistoryQuerySchema,
+  PermissionHistoryResponseSchema,
   type AgentLevelResponse,
 } from '@dorkos/shared/permissions';
 import {
   defineCapability,
+  invalidCursor,
   type CapabilityDomain,
   CapabilityToolError,
 } from '../capabilities/capability-definition.js';
+import { encodePageCursor, openPageCursor } from '../../../lib/paging/keyset-page.js';
+import type { ActivityService } from '../../activity/activity-service.js';
+import { listPermissionHistory } from './permission-history.js';
 import { PermissionError, type PermissionService } from './permission-service.js';
 
 /** What the running server teaches these reads to read from. */
@@ -35,6 +43,8 @@ export interface AgentPermissionViews {
   permissions: Pick<PermissionService, 'getAgent'>;
   /** The level an agent runs at (`agent-level.ts`); `null` for an id no agent has. */
   readLevel: (agentId: string) => Promise<AgentLevelResponse | null>;
+  /** The Activity log the permission history is read from. */
+  activity: Pick<ActivityService, 'list'>;
 }
 
 let views: AgentPermissionViews | undefined;
@@ -123,8 +133,49 @@ export const viewAgentLevelCapability = defineCapability({
   },
 });
 
-/** The permission reads the app's Permissions and profile pages make, one agent at a time. */
+/**
+ * The list the history's cursors are bound to. Plain, not sealed: every reader
+ * of the history reads the same rows.
+ */
+const HISTORY_LIST = 'permission-history';
+
+/** `permissions.view_history`: every permission change, newest first, a page at a time. */
+export const viewPermissionHistoryCapability = defineCapability({
+  id: 'permissions.view_history',
+  title: 'Read the permission history',
+  description:
+    'Every permission change, newest first, with who made it and whether it has an Undo. ' +
+    'With agentId, the changes that touched that agent, bulk changes included. It comes a ' +
+    'page at a time (limit, at most 200): pass nextCursor back as cursor for the next page; ' +
+    'nextCursor is null on the last one.',
+  tier: 'observe',
+  area: null,
+  areaNote: READ_NOTE,
+  input: PermissionHistoryQuerySchema,
+  output: PermissionHistoryResponseSchema,
+  surfaces: { http: { method: 'get', path: '/api/permissions/history' } },
+  invoke: async (_deps, { agentId, cursor, limit }) => {
+    const after = cursor && openPageCursor(HISTORY_LIST, cursor, invalidCursor);
+    const page = await listPermissionHistory(wiredViews().activity, {
+      limit,
+      ...(agentId ? { agentId } : {}),
+      ...(after ? { after: { at: after[0], id: after[1] } } : {}),
+    });
+    const last = page.entries.at(-1);
+    return {
+      entries: page.entries,
+      nextCursor:
+        page.more && last ? encodePageCursor(HISTORY_LIST, [last.occurredAt, last.id]) : null,
+    };
+  },
+});
+
+/** The permission reads the app's Permissions and profile pages make. */
 export const permissionViewsDomain: CapabilityDomain = {
   name: 'permissions',
-  capabilities: [viewAgentPermissionsCapability, viewAgentLevelCapability],
+  capabilities: [
+    viewAgentPermissionsCapability,
+    viewAgentLevelCapability,
+    viewPermissionHistoryCapability,
+  ],
 };

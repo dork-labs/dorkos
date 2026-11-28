@@ -144,6 +144,7 @@ export function conformanceSampleInputs(
     'agent.current': { path: '/conformance' },
     'permissions.view_agent': { id: 'conformance-agent' },
     'permissions.view_agent_level': { id: 'conformance-agent' },
+    'permissions.view_history': {},
     // Valid input; each person-only door refuses the anonymous call before it runs.
     'mcp.check_global_args': { args: ['--verbose'] },
     'mcp.add_global_server': {

@@ -100,11 +100,35 @@ describe('Audit routes', () => {
       const first = await request(fixtureServer).get('/api/audit?limit=2');
       expect(first.status).toBe(200);
       expect(first.body.events.map((e: { seq: number }) => e.seq)).toEqual([4, 3]);
-      expect(first.body.nextBeforeSeq).toBe(3);
-      const next = await request(fixtureServer).get('/api/audit?limit=2&beforeSeq=3');
+      const next = await request(fixtureServer)
+        .get('/api/audit')
+        .query({ limit: 2, cursor: first.body.nextCursor });
       expect(next.body.events.map((e: { seq: number }) => e.seq)).toEqual([2, 1]);
-      expect(next.body.nextBeforeSeq).toBeUndefined();
+      expect(next.body.nextCursor).toBeNull();
     });
+
+    it('refuses a cursor it did not give, or gave another reader, rather than starting again', async () => {
+      const ownerCursor = (await request(fixtureServer).get('/api/audit?limit=1')).body.nextCursor;
+      const asAgent = await request(fixtureServer)
+        .get('/api/audit')
+        .query({ cursor: ownerCursor })
+        .set(AGENT);
+      expect(asAgent.status).toBe(400);
+      expect(asAgent.body).toMatchObject({ code: 'invalid_request' });
+      const made = await request(fixtureServer).get('/api/audit/accounts/system/timeline?cursor=3');
+      expect(made.status).toBe(400);
+    });
+
+    it.each(['/api/audit', '/api/audit/accounts/system/timeline'])(
+      'refuses the old beforeSeq on %s, naming cursor, rather than answering page one',
+      async (path) => {
+        const res = await request(fixtureServer).get(`${path}?beforeSeq=3`);
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('invalid_request');
+        expect(JSON.stringify(res.body)).toContain('pass the last page');
+        expect(JSON.stringify(res.body)).toMatch(/beforeSeq[^"]*cursor/);
+      }
+    );
 
     it('never shows an agent an admins row, in a list or by id', async () => {
       const list = await request(fixtureServer).get('/api/audit').set(AGENT);
@@ -141,7 +165,7 @@ describe('Audit routes', () => {
         .set(AGENT);
       expect(one.body).not.toHaveProperty('session');
       const filtered = await request(fixtureServer).get('/api/audit?sessionId=chat-x').set(AGENT);
-      expect(filtered.body).toEqual({ events: [] });
+      expect(filtered.body).toEqual({ events: [], nextCursor: null });
 
       const asOwner = await request(fixtureServer).get('/api/audit?sessionId=chat-x');
       expect(asOwner.body.events[0].source).toMatchObject({ sessionId: 'chat-x' });

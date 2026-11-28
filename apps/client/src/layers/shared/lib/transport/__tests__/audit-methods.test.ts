@@ -22,11 +22,11 @@ describe('createAuditMethods', () => {
   const methods = createAuditMethods('/api');
 
   it('reads the audit log with only the filters it was given', async () => {
-    const fetchMock = answer({ events: [], nextBeforeSeq: 3 });
+    const fetchMock = answer({ events: [], nextCursor: 'page-2' });
     await expect(
-      methods.listAuditEvents({ action: 'config.', beforeSeq: 9, limit: 50 })
-    ).resolves.toEqual({ events: [], nextBeforeSeq: 3 });
-    expect(fetchMock.mock.calls[0]![0]).toBe('/api/audit?action=config.&beforeSeq=9&limit=50');
+      methods.listAuditEvents({ action: 'config.', cursor: 'page-1', limit: 50 })
+    ).resolves.toEqual({ events: [], nextCursor: 'page-2' });
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/audit?action=config.&cursor=page-1&limit=50');
   });
 
   it('reads one account’s timeline, the id escaped into the path', async () => {

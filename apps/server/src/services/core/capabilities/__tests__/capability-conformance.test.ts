@@ -414,9 +414,9 @@ const registry = composeDorkOsCapabilityRegistry({
   auditDeps: {
     log: {
       verify: () => ({ ok: true, checked: 0, lastSeq: 0, lastHash: '0'.repeat(64) }),
-      query: () => ({ events: [] }),
+      query: () => ({ events: [], more: false }),
       getWithLinks: () => undefined,
-      timeline: () => ({ events: [] }),
+      timeline: () => ({ events: [], more: false }),
     },
   },
   // The pause domain serves `/api/agents/{agentId}/pause|resume` and

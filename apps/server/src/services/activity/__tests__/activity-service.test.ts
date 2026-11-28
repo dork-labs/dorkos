@@ -225,6 +225,22 @@ describe('ActivityService', () => {
       expect(page2.items[0].occurredAt < page1.items[1].occurredAt).toBe(true);
     });
 
+    it('pages on the whole key, so rows written in the same instant are neither skipped nor repeated', async () => {
+      await insertEvents(5, { occurredAt: '2026-11-27T00:00:00.000Z' });
+      const whole = (await service.list({ limit: 10 })).items.map((i) => i.id);
+      const paged: string[] = [];
+      let after: { at: string; id: string } | undefined;
+      for (;;) {
+        const page = await service.list({ limit: 2 }, after);
+        paged.push(...page.items.map((i) => i.id));
+        const last = page.items.at(-1);
+        if (page.nextCursor === null || !last) break;
+        after = { at: last.occurredAt, id: last.id };
+      }
+      expect(paged).toEqual(whole);
+      expect(whole).toEqual([...whole].sort().reverse());
+    });
+
     it('filters by category', async () => {
       await service.emit({
         occurredAt: new Date().toISOString(),

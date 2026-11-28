@@ -325,6 +325,8 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   // Settings, the same an agent reads on the permissions page (DOR-4978).
   'permissions.view_agent': 'local',
   'permissions.view_agent_level': 'local',
+  // The history: DorkOS's own summaries of each change, and who made it (DOR-4982).
+  'permissions.view_history': 'local',
   'heartbeat.end_beat': 'local',
   'heartbeat.status': 'local',
   'heartbeat.wakers_off': 'local',

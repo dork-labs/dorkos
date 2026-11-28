@@ -155,7 +155,7 @@ describe('the arrival line in the history', () => {
     // Marked by what made it, not by its wording.
     expect(line.metadata).toMatchObject({ origin: 'arrival-screen' });
     const history = await listPermissionHistory(world.activity, { limit: 10 });
-    expect(history.items[0]).toMatchObject({ id: line.id, undoable: false });
+    expect(history.entries[0]).toMatchObject({ id: line.id, undoable: false });
     await expect(
       world.service.undo(line.id, { force: true }, personWriter('local-trust'))
     ).rejects.toMatchObject({
@@ -226,7 +226,7 @@ describe('isArrivalScreenLine', () => {
       writer: { attribution: 'outside', actorType: 'system', actorLabel: 'DorkOS' },
       note: ARRIVAL_NOTE,
     });
-    const [line] = (await listPermissionHistory(world.activity, { limit: 5 })).items;
+    const [line] = (await listPermissionHistory(world.activity, { limit: 5 })).entries;
     expect(line).toMatchObject({ undoable: false });
     await expect(
       world.service.undo(line!.id, { force: true }, personWriter('local-trust'))

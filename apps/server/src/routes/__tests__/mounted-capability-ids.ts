@@ -105,6 +105,7 @@ export const MOUNTED_CAPABILITY_IDS: readonly string[] = [
   'link.resolve',
   'permissions.view_agent',
   'permissions.view_agent_level',
+  'permissions.view_history',
   'heartbeat.view_page',
   'heartbeat.wakers_off',
   'heartbeat.choose_triage_credits',

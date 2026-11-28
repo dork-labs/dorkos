@@ -15,8 +15,8 @@ export interface ActivityTransport {
   listActivityEvents(query?: Partial<ListActivityQuery>): Promise<ListActivityResponse>;
 
   /**
-   * List audit events the caller may see, newest first. Page backwards by
-   * passing the previous page's `nextBeforeSeq` as `beforeSeq`.
+   * List audit events the caller may see, newest first, a page at a time:
+   * pass the previous page's `nextCursor` as `cursor`.
    */
   listAuditEvents(query?: Partial<AuditQuery>): Promise<AuditQueryResult>;
 
@@ -25,7 +25,7 @@ export interface ActivityTransport {
    * newest first. For an agent, `accountId` is the agent's id.
    *
    * @param accountId - The account whose timeline to read.
-   * @param query - Optional filters and the `beforeSeq` page cursor.
+   * @param query - Optional filters and the `cursor` of the page before.
    */
   getAccountTimeline(
     accountId: string,

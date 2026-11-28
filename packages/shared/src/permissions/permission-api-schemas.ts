@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from '../zod-openapi.js';
 import { CAPABILITY_TIERS } from '../capabilities.js';
 import { ProblemSchema } from '../problem.js';
+import { nextCursorOutput, pageCursorInput, pageLimitInput, retiredPageParam } from '../paging.js';
 import {
   AgentPermissionsSchema,
   PermissionAreaIdSchema,
@@ -274,13 +275,17 @@ export const PatchAgentPermissionsBodySchema = z
 /** `PATCH /api/agents/:agentId/permissions` body. */
 export type PatchAgentPermissionsBody = z.infer<typeof PatchAgentPermissionsBodySchema>;
 
-/** `GET /api/permissions/history` query. */
+/** `GET /api/permissions/history` query: an optional agent, and the page. */
 export const PermissionHistoryQuerySchema = z
   .object({
-    agentId: z.string().min(1).optional(),
-    /** ISO 8601 cursor: events older than this. */
-    before: z.string().datetime({ offset: true }).optional(),
-    limit: z.coerce.number().int().min(1).max(100).optional().default(50),
+    agentId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('Only the changes that touched this agent, bulk changes included.'),
+    cursor: pageCursorInput,
+    before: retiredPageParam('before'),
+    limit: pageLimitInput(),
   })
   .openapi('PermissionHistoryQuery');
 
@@ -318,8 +323,8 @@ export type PermissionHistoryEntry = z.infer<typeof PermissionHistoryEntrySchema
 /** `GET /api/permissions/history` response. */
 export const PermissionHistoryResponseSchema = z
   .object({
-    items: z.array(PermissionHistoryEntrySchema),
-    nextCursor: z.string().nullable(),
+    entries: z.array(PermissionHistoryEntrySchema),
+    nextCursor: nextCursorOutput,
   })
   .openapi('PermissionHistoryResponse');
 

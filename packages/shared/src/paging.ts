@@ -37,6 +37,24 @@ export function pageLimitInput(max: number = PAGE_LIMIT_MAX) {
     .describe(`How many this page holds, 1 to ${max}.`);
 }
 
+/**
+ * A paging parameter a list used before the one shape, refused by name rather
+ * than ignored, so an old caller gets a `400` saying to use `cursor` instead of
+ * page one for ever. No aliases (ADR 261123-170832): it never pages.
+ *
+ * @param name - The old parameter's name, e.g. `before`.
+ */
+export function retiredPageParam(name: string) {
+  const message = `${name} is no longer accepted: pass the last page's nextCursor as cursor.`;
+  // A string that never passes, rather than `z.never()`, so the API document
+  // and the tool catalog can still describe it (query values arrive as text).
+  return z
+    .string()
+    .refine(() => false, { message })
+    .optional()
+    .describe(`Refused: \`${name}\` was removed; page with \`cursor\`.`);
+}
+
 /** The query fields of a page: where to go on from, and how many. */
 export const PageQuerySchema = z.object({ cursor: pageCursorInput, limit: pageLimitInput() });
 

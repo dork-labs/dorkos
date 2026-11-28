@@ -454,15 +454,15 @@ describe('what the history says about Undo', () => {
 
     // The Undo is newer than the page asked for; it still counts.
     const older = await listPermissionHistory(world.activity, {
-      before: world.events[1]!.occurredAt,
+      after: { at: world.events[1]!.occurredAt, id: world.events[1]!.id },
       limit: 1,
     });
-    expect(older.items[0]).toMatchObject({ id: first, undoable: true, undone: true });
+    expect(older.entries[0]).toMatchObject({ id: first, undoable: true, undone: true });
 
     // Undo the Undo: the first change is in effect again.
     await world.service.undo(undo, {}, LOCAL);
     const all = await listPermissionHistory(world.activity, { limit: 10 });
-    const byId = new Map(all.items.map((item) => [item.id, item]));
+    const byId = new Map(all.entries.map((item) => [item.id, item]));
     expect(byId.get(first)).toMatchObject({ undone: false });
     expect(byId.get(undo)).toMatchObject({ undone: true });
   });
@@ -490,7 +490,7 @@ describe('what the history says about Undo', () => {
       },
     });
     const history = await listPermissionHistory(world.activity, { limit: 10 });
-    expect(history.items[0]).toMatchObject({ undoable: false, undone: false });
+    expect(history.entries[0]).toMatchObject({ undoable: false, undone: false });
   });
 });
 

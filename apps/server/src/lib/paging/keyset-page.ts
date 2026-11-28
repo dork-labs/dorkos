@@ -78,6 +78,39 @@ function decode(list: string, cursor: string, sealedFor: string | undefined): Pa
 }
 
 /**
+ * The cursor for a page that stopped at `key`, for a list cut in SQL rather
+ * than by {@link keysetPage} (the audit log, the Inbox, the permission
+ * history): the same opaque form, sealed when `sealedFor` names a reader.
+ *
+ * @param list - The list's name, bound into the cursor.
+ * @param key - The last row's key.
+ * @param sealedFor - The reader's key, for a list whose cursors are sealed to it.
+ */
+export function encodePageCursor(list: string, key: PageKey, sealedFor?: string): string {
+  return encode(list, key, sealedFor);
+}
+
+/**
+ * Where a cursor of {@link encodePageCursor} stopped, for a list cut in SQL;
+ * a cursor this list did not give, or another reader's, throws `refuse`.
+ *
+ * @param list - The list's name, as the cursor was given for.
+ * @param cursor - The cursor as sent.
+ * @param refuse - The error for a cursor this list did not give.
+ * @param sealedFor - The reader's key, for a list whose cursors are sealed to it.
+ */
+export function openPageCursor(
+  list: string,
+  cursor: string,
+  refuse: () => Error,
+  sealedFor?: string
+): PageKey {
+  const key = decode(list, cursor, sealedFor);
+  if (key === null) throw refuse();
+  return key;
+}
+
+/**
  * The list name a sealed cursor was given for, or null for one this reader
  * can't open. For a list whose name carries what page one was read under (the
  * recent chats' `touchedSince` and when page one was read), so a later page

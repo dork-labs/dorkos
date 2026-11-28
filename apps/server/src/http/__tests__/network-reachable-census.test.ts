@@ -60,7 +60,6 @@ function wifiApp() {
       path: '/api',
       routes: createPermissionsRoutes({
         permissions: world.service,
-        activity: world.activity,
         isLoginEnabled: () => false,
       }),
     },

@@ -106,7 +106,6 @@ async function setPreset(preset: string) {
       path: '/api',
       routes: createPermissionsRoutes({
         permissions: world.service,
-        activity: world.activity,
         isLoginEnabled: () => false,
       }),
     })
