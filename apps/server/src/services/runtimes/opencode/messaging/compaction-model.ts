@@ -177,3 +177,26 @@ async function readConfiguredDefaultModel(
   const config = unwrap(await client.config.get({ query: { directory: cwd } }), 'config.get');
   return parseModelSelection(config.model);
 }
+
+/**
+ * Ask the sidecar to compact a session on `model`. `arm` runs right before the
+ * request, so the turn's plugin checks cover compaction too (DOR-5258).
+ *
+ * @param client - The sidecar's client.
+ * @param ocSessionId - The OpenCode session to compact.
+ * @param model - The model the summary runs on.
+ * @param arm - Arms the turn's in-turn plugin checks.
+ * @throws {Error} When the sidecar refuses the request.
+ */
+export async function summarizeOpenCodeSession(
+  client: OpencodeClient,
+  ocSessionId: string,
+  model: OpenCodeModelSelection,
+  arm: () => void
+): Promise<void> {
+  arm();
+  const summarized = await client.session.summarize({ path: { id: ocSessionId }, body: model });
+  if (summarized.error !== undefined) {
+    throw new Error(`OpenCode session.summarize failed: ${JSON.stringify(summarized.error)}`);
+  }
+}
