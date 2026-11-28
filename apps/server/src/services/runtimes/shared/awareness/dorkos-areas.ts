@@ -285,7 +285,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       'runtimes.key_status',
       'runtimes.opencode_key_setup',
       'runtimes.doe_model_setup',
-      // An OpenRouter sign-in's status, at this computer (DOR-4978).
+      // An OpenRouter sign-in's status (DOR-4978) rides here too, with no words of its own. It is
+      // not person-only: any caller at this computer without a program key may read it.
       'runtimes.openrouter_sign_in_status',
       // Chat from the web (`session-relay.*`, DOR-4978) rides here with no words of its own:
       // an agent reads only its status; the rest is person-only.

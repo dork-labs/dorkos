@@ -36,6 +36,9 @@ import {
 } from '../services/session/session-state-projector.js';
 import { validateBoundary } from '../lib/boundary.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
+import { logger } from '../lib/logger.js';
+import { CapabilityToolError } from '../services/core/capabilities/capability-definition.js';
+import { COMPUTER_READ_SENTENCES } from '../services/core/runtime-doors/runtime-read-refusals.js';
 
 /**
  * The reader the running server serves the runtime setup reads from.
@@ -144,7 +147,14 @@ export function computerReader(): ComputerReader {
       try {
         return await getGitStatus(dir ? await validateBoundary(dir) : DEFAULT_CWD);
       } catch (err) {
-        throw boundaryToolError(err) ?? err;
+        const refused = boundaryToolError(err);
+        if (refused) throw refused;
+        // As the hand route did: the folder goes to the log, never into the answer.
+        logger.error('[git] GET /status failed', { err, dir });
+        throw new CapabilityToolError({
+          code: 'GIT_STATUS_FAILED',
+          error: COMPUTER_READ_SENTENCES.gitFailed,
+        });
       }
     },
     openRouterSignIn: (state) => openRouterOAuthStore.status(state),

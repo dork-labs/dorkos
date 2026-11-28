@@ -40,6 +40,7 @@ import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import { computerReadsRegistry } from '../../http/__tests__/computer-reads-registry.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
+import { getGitStatus } from '../../services/core/git-status.js';
 
 // `git.status` is a capability the mount serves, so the test serves the server's real routing.
 const admission = new MainRequestAdmission();
@@ -75,5 +76,20 @@ describe('Git Routes', () => {
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('invalid_request');
     });
+  });
+
+  it('answers an unexpected git failure as the hand route did, never naming the folder', async () => {
+    vi.mocked(getGitStatus).mockRejectedValueOnce(new Error('git exploded in /Users/fixture/repo'));
+
+    const res = await request(testServer)
+      .get('/api/git/status')
+      .query({ dir: '/Users/fixture/repo' });
+
+    expect([res.status, res.body.code, res.body.detail]).toEqual([
+      500,
+      'internal_error',
+      'DorkOS hit an error on its side.',
+    ]);
+    expect(res.text).not.toContain('/Users/fixture');
   });
 });

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(api): eight reads about this computer move onto the capability mount (DOR-4978)'
+  - 'fix(api): an unexpected git status failure answers and logs as the hand route did (DOR-4978)'
 ---
 
 ### Changed

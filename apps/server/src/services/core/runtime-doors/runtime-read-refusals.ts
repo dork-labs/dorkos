@@ -32,6 +32,8 @@ export const COMPUTER_READ_SENTENCES = {
   notReady: 'DorkOS is still starting. Try again in a moment.',
   chatIdInvalid: 'That isn’t a chat id.',
   chatNotFound: 'No chat with that id.',
+  // The hand route answered a bare `internal_error`, whose title is this sentence.
+  gitFailed: 'DorkOS hit an error on its side.',
 } as const;
 
 /** One refusal: its problem code, its fixed sentence, and the other sentences it may say. */
@@ -64,4 +66,5 @@ export const RUNTIME_TOOL_REFUSALS: Readonly<Record<string, RuntimeToolRefusal>>
   COMPUTER_READS_UNAVAILABLE: { code: 'temporarily_unavailable', detail: C.notReady },
   DEBUG_CHAT_ID_INVALID: { code: 'invalid_request', detail: C.chatIdInvalid },
   DEBUG_CHAT_NOT_FOUND: { code: 'session_not_found', detail: C.chatNotFound },
+  GIT_STATUS_FAILED: { code: 'internal_error', detail: C.gitFailed },
 };
