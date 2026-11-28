@@ -1,5 +1,6 @@
 /**
- * Discovery routes — SSE-streamed filesystem scanning for AI-configured projects.
+ * Discovery routes — `POST /api/discovery/scans`, the one folder scan for
+ * agents (DOR-4982), documented in `services/core/openapi/discovery-scan-openapi.ts`.
  *
  * Delegates to `meshCore.discover()` (unified scanner) and streams results as SSE,
  * written to the raw Node response (`http/raw-node-stream.ts`) so each event
@@ -9,7 +10,7 @@
  */
 import type { ServerResponse } from 'node:http';
 import { Hono } from 'hono';
-import { z } from 'zod';
+import type { z } from 'zod';
 import type { MeshCore } from '@dorkos/mesh';
 import type { ExistingAgent } from '@dorkos/shared/mesh-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -18,14 +19,7 @@ import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { isWithinBoundary, getBoundary } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { createScanBrowserWarner } from '../services/browser/agent-browser-lint.js';
-
-/** Zod schema for the POST /scan request body. */
-const ScanRequestSchema = z.object({
-  root: z.string().optional(),
-  roots: z.array(z.string()).optional(),
-  maxDepth: z.number().int().min(1).max(10).optional(),
-  timeout: z.number().int().min(1000).max(120000).optional(),
-});
+import { DiscoveryScanRequestSchema as ScanRequestSchema } from '../services/core/openapi/discovery-scan-openapi.js';
 
 /**
  * Create the Discovery routes with the SSE scan endpoint.
@@ -36,7 +30,7 @@ const ScanRequestSchema = z.object({
 export function createDiscoveryRoutes(meshCore: MeshCore): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
 
-  router.post('/scan', async (c) => {
+  router.post('/scans', async (c) => {
     const parsed = ScanRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) return validationProblem(c, parsed.error);
     const data = parsed.data;

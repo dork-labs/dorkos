@@ -1,7 +1,7 @@
 /**
  * How the page learns that the second projection pass happened.
  *
- * `POST /api/harness/sync` answers without waiting for an approval card, so a
+ * `POST /api/harness/syncs` answers without waiting for an approval card, so a
  * package's hooks land — or do not — some time after the response. The status
  * on screen is stale from that moment until something re-reads it, and the only
  * thing that knows a decision was made is the global stream's

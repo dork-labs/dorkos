@@ -1,6 +1,6 @@
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 /**
- * `GET /api/rooms/:id/export` through the real app mount (DOR-1225).
+ * `GET /api/rooms/:id/history` through the real app mount (DOR-1225).
  *
  * The service tests beside this one own what the file SAYS; this one owns what
  * comes over the wire — the media type, the download headers, the line framing,
@@ -113,7 +113,7 @@ function parseExport(body: string): {
   return { header, entries: lines.slice(1, -1) as RoomExportEntry[], summary };
 }
 
-describe('GET /api/rooms/:id/export', () => {
+describe('GET /api/rooms/:id/history', () => {
   let db: Db;
   let roomId: string;
 
@@ -141,7 +141,7 @@ describe('GET /api/rooms/:id/export', () => {
     await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'first' });
     await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'second' });
 
-    const res = await request(testServer).get(`/api/rooms/${roomId}/export`);
+    const res = await request(testServer).get(`/api/rooms/${roomId}/history`);
 
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('application/x-ndjson');
@@ -159,7 +159,7 @@ describe('GET /api/rooms/:id/export', () => {
       .post(`/api/rooms/${roomId}/entries`)
       .send({ text: 'a message\nwith a break' });
 
-    const res = await request(testServer).get(`/api/rooms/${roomId}/export`);
+    const res = await request(testServer).get(`/api/rooms/${roomId}/history`);
 
     const lines = res.text.split('\n').filter((line) => line.length > 0);
     // Three lines for three objects: the newline inside the message must have
@@ -170,7 +170,7 @@ describe('GET /api/rooms/:id/export', () => {
   });
 
   it('answers 404 for a room the caller may not see, with no partial body', async () => {
-    const res = await request(testServer).get('/api/rooms/room_nope/export');
+    const res = await request(testServer).get('/api/rooms/room_nope/history');
 
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('room_not_found');
@@ -188,9 +188,9 @@ describe('GET /api/rooms/:id/export', () => {
     await request(testServer).post(`/api/rooms/${roomId}/entries`).send({ text: 'after ana' });
 
     const asAna = await request(testServer)
-      .get(`/api/rooms/${roomId}/export`)
+      .get(`/api/rooms/${roomId}/history`)
       .set('X-DorkOS-Agent', token);
-    const asOperator = await request(testServer).get(`/api/rooms/${roomId}/export`);
+    const asOperator = await request(testServer).get(`/api/rooms/${roomId}/history`);
 
     // The token decides who is exporting, and nothing about the request does.
     // Same room, same moment, two different files.

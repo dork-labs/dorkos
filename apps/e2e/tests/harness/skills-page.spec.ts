@@ -96,7 +96,7 @@ test.describe('Skills — what each of your tools can see', () => {
     // in before the page is opened, so the chips below are the same on a busy
     // machine as on an idle one. The click that does this from the UI is the
     // second test's subject, and this is the same route it calls.
-    const synced = await request.post('/api/harness/sync', {
+    const synced = await request.post('/api/harness/syncs', {
       data: { projectPath: agent.projectPath },
     });
     expect(synced.ok(), await synced.text()).toBe(true);
@@ -239,7 +239,7 @@ test.describe('Skills — what each of your tools can see', () => {
     const skill = repo.harnessNativeSkill();
 
     // Setup, not the subject: the same starting tree the first test uses.
-    const synced = await request.post('/api/harness/sync', {
+    const synced = await request.post('/api/harness/syncs', {
       data: { projectPath: agent.projectPath },
     });
     expect(synced.ok(), await synced.text()).toBe(true);

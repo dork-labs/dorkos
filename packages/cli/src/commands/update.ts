@@ -6,7 +6,7 @@
  * date, or could not check (and why).
  *
  * - **With a name**, the check asks the one-package door,
- *   `POST /api/marketplace/packages/:name/update`.
+ *   `POST /api/marketplace/packages/:name/update-checks`.
  * - **Without one**, it asks the all-packages door in ONE request,
  *   `GET /api/marketplace/updates`: the server checks every installation in
  *   view (every scope, or `--project`'s view) and answers one line's worth per
@@ -128,7 +128,7 @@ async function checkOne(name: string, args: UpdateArgs): Promise<number> {
   try {
     result = await apiCall<UpdateResult>(
       'POST',
-      `/api/marketplace/packages/${encodeURIComponent(name)}/update`,
+      `/api/marketplace/packages/${encodeURIComponent(name)}/update-checks`,
       body
     );
   } catch (err) {

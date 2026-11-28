@@ -24,7 +24,14 @@ export const APP_OWN_ROUTES: readonly AppOwnRoute[] = [
   { method: 'GET', target: `/api/uploads/8a3b2c1d-shot.png?cwd=${q('C:\\proj')}` },
   // A marketplace source saved by an older DorkOS, whose name holds a `/`.
   { method: 'DELETE', target: `/api/marketplace/sources?name=${q('acme/plugins')}` },
-  { method: 'POST', target: `/api/marketplace/sources/refresh?name=${q('acme/plugins')}` },
+  // Refreshing one sends its name in the body (DOR-4982).
+  { method: 'POST', target: '/api/marketplace/sources/refreshes' },
+  // Unlinking a project's dev link, and deleting a room file: the folder rides in the query.
+  {
+    method: 'DELETE',
+    target: `/api/marketplace/dev-links/flow?scope=project&projectPath=${q('/Users/qa/app')}`,
+  },
+  { method: 'DELETE', target: `/api/rooms/r1/files?path=${q('docs/plan.md')}&baseCommit=abc1234` },
   // A package name with a dot, which stays in the path.
   { method: 'POST', target: '/api/marketplace/packages/acme.flow-tools/install' },
 ];

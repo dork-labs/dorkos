@@ -255,7 +255,7 @@ router.get('/:id/entries', (c) => {
 });
 
 /**
- * GET /:id/export — this room's whole history as a JSONL file (DOR-1225).
+ * GET /:id/history — this room's whole history as a JSONL file (DOR-1225).
  *
  * **A GET, not a POST that writes a path**, and the alternative is worth naming
  * because it is the one somebody will suggest. A room export exists to be
@@ -277,8 +277,8 @@ router.get('/:id/entries', (c) => {
  * attachment route carries them: this is a file of other people's words, and
  * nothing about it should ever render as a document on the app's own origin.
  */
-router.get('/:id/export', (c) =>
-  roomRoute(c, 'GET /:id/export', (caller) => {
+router.get('/:id/history', (c) =>
+  roomRoute(c, 'GET /:id/history', (caller) => {
     const lines = getRoomService().exportRoom(c.req.param('id'), caller().id);
     const first = lines.next();
     // Checked rather than cast. The generator's contract is that its first line

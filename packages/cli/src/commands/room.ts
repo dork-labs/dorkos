@@ -2,7 +2,7 @@
  * CLI handler for `dorkos room export` (DOR-1225).
  *
  * Rooms live only in the DorkOS database, so this is the verb that turns one
- * into a file: `GET /api/rooms/:id/export` streamed straight to disk, one JSON
+ * into a file: `GET /api/rooms/:id/history` streamed straight to disk, one JSON
  * object per line. The server decides WHAT the file says; this command decides
  * WHERE it lands, which is the split that keeps a filesystem write on the
  * machine the person is sitting at rather than behind an HTTP route.
@@ -287,7 +287,7 @@ async function writeExportFile(
 export async function runRoomExport(args: RoomExportArgs): Promise<number> {
   try {
     const roomId = await resolveRoomId(args.room);
-    const res = await apiRequest('GET', `/api/rooms/${encodeURIComponent(roomId)}/export`);
+    const res = await apiRequest('GET', `/api/rooms/${encodeURIComponent(roomId)}/history`);
     if (!res.body) throw new Error('The server sent no export.');
 
     const toStdout = args.out === STDOUT_TARGET;

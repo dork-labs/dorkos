@@ -203,7 +203,7 @@ describe('POST /api/marketplace/dev-links', () => {
     // Purpose: the person reads the preview, then says yes; the yes must cover
     // what they read, not whatever the folder holds when the request lands.
     const preview = await request(server)
-      .post('/api/marketplace/dev-links/preview')
+      .post('/api/marketplace/dev-links/previews')
       .send({ path: work, scope: 'global' });
     expect(preview.status).toBe(200);
     await mkdir(path.join(work, 'hooks'), { recursive: true });
@@ -233,7 +233,7 @@ describe('POST /api/marketplace/dev-links', () => {
   it("links the person's yes when the folder still reads as the preview said", async () => {
     // Purpose: the control for the refusal above; an unchanged folder links.
     const preview = await request(server)
-      .post('/api/marketplace/dev-links/preview')
+      .post('/api/marketplace/dev-links/previews')
       .send({ path: work, scope: 'global' });
     const res = await request(server)
       .post('/api/marketplace/dev-links')
@@ -302,12 +302,12 @@ describe('POST /api/marketplace/dev-links', () => {
   });
 });
 
-describe('POST /api/marketplace/dev-links/preview', () => {
+describe('POST /api/marketplace/dev-links/previews', () => {
   it('says what linking would do, and changes nothing', async () => {
     // Purpose: the dialog previews on blur; a preview that linked would be a
     // link without a yes.
     const res = await request(server)
-      .post('/api/marketplace/dev-links/preview')
+      .post('/api/marketplace/dev-links/previews')
       .send({ path: work, scope: 'global' });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ name: 'flow', path: work, slot: slot(), replaces: null });
@@ -318,7 +318,7 @@ describe('POST /api/marketplace/dev-links/preview', () => {
     // Purpose: the terminal sends this back as expectedChange, so it must be
     // the same text the link compares, including the set-aside line.
     const res = await request(server)
-      .post('/api/marketplace/dev-links/preview')
+      .post('/api/marketplace/dev-links/previews')
       .send({ path: work, scope: 'global' });
     expect(res.body.change).toContain(`Folder: ${work}`);
     expect(res.body.change).toContain('Extensions it may run: none');
@@ -327,7 +327,7 @@ describe('POST /api/marketplace/dev-links/preview', () => {
   it('refuses an unknown field', async () => {
     // Purpose: the body is strict, so a typo is not silently a different request.
     const res = await request(server)
-      .post('/api/marketplace/dev-links/preview')
+      .post('/api/marketplace/dev-links/previews')
       .send({ path: work, scope: 'global', replace: true });
     expect(res.status).toBe(400);
   });
@@ -341,26 +341,20 @@ describe('GET and unlink', () => {
     expect(listed.body.links).toEqual([expect.objectContaining({ name: 'flow', state: 'active' })]);
 
     agentHeader = 'agent-token';
-    const refused = await request(server)
-      .post('/api/marketplace/dev-links/flow/unlink')
-      .send({ scope: 'global' });
+    const refused = await request(server).delete('/api/marketplace/dev-links/flow?scope=global');
     expect(refused.status).toBe(403);
     expect(refused.body.code).toBe('operator_only');
     expect(await readlink(slot())).toBe(work);
 
     agentHeader = undefined;
-    const done = await request(server)
-      .post('/api/marketplace/dev-links/flow/unlink')
-      .send({ scope: 'global' });
+    const done = await request(server).delete('/api/marketplace/dev-links/flow?scope=global');
     expect(done.status).toBe(200);
     expect(done.body).toEqual({ restored: 'removed' });
   });
 
   it('refuses a name that is not a package name', async () => {
     // Purpose: the name is joined into a slot path.
-    const res = await request(server)
-      .post('/api/marketplace/dev-links/..%2Fetc/unlink')
-      .send({ scope: 'global' });
+    const res = await request(server).delete('/api/marketplace/dev-links/..%2Fetc?scope=global');
     expect(res.status).toBe(400);
   });
 });

@@ -106,17 +106,15 @@ const EXCEPTIONS: Record<string, string> = {
   'marketplace/package-actions POST /packages/:name/check-files':
     'Checks installed files against the record; changes nothing.',
   'marketplace/package-actions POST /packages/:name/uninstall': 'Removes a package.',
-  'marketplace/package-actions POST /packages/:name/update':
+  'marketplace/package-actions POST /packages/:name/update-checks':
     'Checks for a newer version; applying one is held in updates.ts.',
-  'marketplace/dev-links POST /dev-links/preview': 'Shows what a link would run; links nothing.',
-  'marketplace/dev-links POST /dev-links/:name/unlink': 'Removes a linked folder.',
+  'marketplace/dev-links POST /dev-links/previews': 'Shows what a link would run; links nothing.',
+  'marketplace/dev-links DELETE /dev-links/:name': 'Removes a linked folder.',
   'marketplace/held-back POST /held-back/:name/review':
     'Asks the person about a held-back package on a card; allows nothing.',
   'marketplace/sources DELETE /sources': 'Removes package sources.',
   'marketplace/sources DELETE /sources/:name': 'Removes a package source.',
-  'marketplace/sources POST /sources/refresh':
-    'Re-reads the sources a person already added; adds none.',
-  'marketplace/sources POST /sources/:name/refresh':
+  'marketplace/sources POST /sources/refreshes':
     'Re-reads a source a person already added; adds none.',
   'shapes POST /:name/fork': 'Copies a Shape to edit; applies nothing.',
   'workspaces POST /ports': 'Reads a workspace’s ports.',

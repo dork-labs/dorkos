@@ -381,7 +381,7 @@ async function seedSessions(): Promise<SeededSession[]> {
  * `marketplace-installed` shot shows.
  *
  * A bare package-name install resolves against the marketplace.json CACHE
- * (`MarketplaceCache`, warmed by the `sources/:name/refresh` route or any
+ * (`MarketplaceCache`, warmed by the `sources/refreshes` route or any
  * browse fetch) — it never fetches inline — so this refreshes that cache
  * first; skipping it 404s with "Package not found (refresh marketplace cache
  * first)" even though the fixture is genuinely on disk. Returns `false`
@@ -390,7 +390,9 @@ async function seedSessions(): Promise<SeededSession[]> {
  */
 async function seedMarketplaceInstalls(): Promise<boolean> {
   try {
-    await postJson(`${API_URL}/api/marketplace/sources/${MARKETPLACE_SOURCE_NAME}/refresh`, {});
+    await postJson(`${API_URL}/api/marketplace/sources/refreshes`, {
+      name: MARKETPLACE_SOURCE_NAME,
+    });
     await postJson(`${API_URL}/api/marketplace/packages/flow/install`, {});
     await postJson(`${API_URL}/api/marketplace/packages/flow/install`, {
       projectPath: path.join(FLEET_ROOT, 'atlas'),

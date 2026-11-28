@@ -4,7 +4,7 @@
  * Stops a package running from a folder on this computer: the installed copy
  * set aside when it was linked comes back, or, when there was none, the
  * package is removed. The folder itself is never touched. Calls
- * `POST /api/marketplace/dev-links/:name/unlink`.
+ * `DELETE /api/marketplace/dev-links/:name`.
  *
  * Only a person can unlink, not an agent; with sign-in on, only a person
  * signed in to the app. The route enforces both, and this prints its refusal.
@@ -106,10 +106,12 @@ export function describeUnlink(name: string, result: UnlinkResultBody): string[]
 export async function runMarketplaceUnlink(args: MarketplaceUnlinkArgs): Promise<number> {
   let result: UnlinkResultBody;
   try {
+    const scope = args.projectPath
+      ? `scope=project&projectPath=${encodeURIComponent(args.projectPath)}`
+      : 'scope=global';
     result = await apiCall<UnlinkResultBody>(
-      'POST',
-      `/api/marketplace/dev-links/${encodeURIComponent(args.name)}/unlink`,
-      args.projectPath ? { scope: 'project', projectPath: args.projectPath } : { scope: 'global' }
+      'DELETE',
+      `/api/marketplace/dev-links/${encodeURIComponent(args.name)}?${scope}`
     );
   } catch (err) {
     // The route's refusals (an agent, or sign-in on) are already plain sentences.

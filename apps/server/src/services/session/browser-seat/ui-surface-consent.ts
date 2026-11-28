@@ -20,7 +20,7 @@
  *
  * `UI_COMMAND_REACH` (`@dorkos/shared/schemas`) classifies every `control_ui`
  * action, and the `reaches-the-machine` ones leave the browser. Today that is
- * `apply_layout`, which the app answers by POSTing `/api/shapes/:name/apply` —
+ * `apply_layout`, which the app answers by POSTing `/api/shapes/:name/applications` —
  * and what that touches is a person's disk and configuration, not just pixels:
  * it writes a `SKILL.md` into their skills root for each schedule the Shape
  * declares, records a receipt under the DorkOS home naming what it wrote, always

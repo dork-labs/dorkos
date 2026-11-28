@@ -93,7 +93,7 @@
  * asking: the create pipeline, `POST /api/agents`, and `POST /api/mesh/agents`.
  * The fourth is `MeshCore.onAgentAdopted` — a discovery scan walking past a
  * `.dork/agent.json` this machine had never registered — and that scan is run
- * BOTH by a person (`POST /api/discovery/scan`, the `mesh_discover` tool) and,
+ * BOTH by a person (`POST /api/discovery/scans`, the `mesh_discover` tool) and,
  * every five minutes, by the mesh reconciler rebuilding the registry from files
  * (ADR-0043, `reconciler.ts`'s step 5). The reconciler half is DorkOS catching
  * up on its own records, which is precisely the case

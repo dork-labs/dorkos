@@ -99,14 +99,10 @@ beforeEach(() => {
 /** Every person-only door, as a request. */
 const PERSON_DOORS = [
   () => request(fixtureServer).get('/api/mesh/denied'),
-  () =>
-    request(fixtureServer)
-      .post('/api/mesh/discover')
-      .send({ roots: ['/projects'] }),
   () => request(fixtureServer).post('/api/mesh/agents').send({ path: '/projects/new' }),
   () => request(fixtureServer).delete('/api/mesh/agents/agent-ranger'),
   () => request(fixtureServer).delete('/api/mesh/agents/agent-ranger/data'),
-  () => request(fixtureServer).post('/api/mesh/deny').send({ path: '/projects/new' }),
+  () => request(fixtureServer).post('/api/mesh/denied').send({ path: '/projects/new' }),
   () => request(fixtureServer).delete('/api/mesh/denied?path=/projects/new'),
   () =>
     request(fixtureServer)
@@ -128,7 +124,7 @@ describe('a person’s registry doors', () => {
   it('name the tool an agent uses instead, where there is one', async () => {
     serve(AS_SCOUT);
     const deny = await request(fixtureServer)
-      .post('/api/mesh/deny')
+      .post('/api/mesh/denied')
       .set('X-DorkOS-Agent', 'scout-token')
       .send({ path: '/projects/new' });
     expect(deny.body.detail).toBe('Agents hide a folder from discovery with mesh_deny.');

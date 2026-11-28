@@ -81,9 +81,7 @@ test.describe('Run a package from a folder', () => {
   test.afterAll(async ({ request }) => {
     // If the test stopped between linking and unlinking, unlink here so the
     // leg's later specs never see this package. A 404 means it is already gone.
-    await request.post(`/api/marketplace/dev-links/${PACKAGE}/unlink`, {
-      data: { scope: 'global' },
-    });
+    await request.delete(`/api/marketplace/dev-links/${PACKAGE}?scope=global`);
     if (folder) rmSync(folder, { recursive: true, force: true });
     await request.post('/api/extensions/reload', { data: {} });
   });

@@ -41,7 +41,6 @@ const BLANK_DISPLAY_NAME =
 export const MESH_TOOL_REFUSALS: Readonly<Record<string, MeshToolRefusal>> = {
   MESH_AGENT_NOT_FOUND: { code: 'not_found', detail: 'No agent with that id.' },
   MESH_AGENT_FOLDER_UNKNOWN: { code: 'not_found', detail: 'This agent’s folder isn’t known.' },
-  MESH_DISCOVERY_FAILED: { code: 'internal_error', detail: 'The folder scan failed. Try again.' },
   MESH_SCAN_ROOT_NOT_ANCESTOR: {
     code: 'invalid_request',
     detail: '`scanRoot` must be a folder that holds the agent’s folder.',

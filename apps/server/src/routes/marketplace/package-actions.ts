@@ -62,7 +62,7 @@ const CheckFilesRequestBodySchema = z.object({
 });
 
 /**
- * Body schema for `POST /api/marketplace/packages/:name/update`: an advisory
+ * Body schema for `POST /api/marketplace/packages/:name/update-checks`: an advisory
  * check, nothing else. Strict, so the retired `apply` is refused with a 400
  * rather than silently read as a check: an update is applied only through
  * `POST /updates`, which shows what it runs first (DOR-2306).
@@ -441,13 +441,13 @@ export function mountPackageActionRoutes(
     }
   });
 
-  // POST /packages/:name/update -- advisory update check of one package.
+  // POST /packages/:name/update-checks -- advisory update check of one package.
   //
   // Advisory only. Applying an update goes through `POST /updates`, whose body
   // carries what the person was shown each new version runs (DOR-2306); this
   // body schema is strict, so a retired `apply: true` is a 400, never a check
   // that a caller mistakes for an update.
-  app.post('/packages/:name/update', async (c) => {
+  app.post('/packages/:name/update-checks', async (c) => {
     const name = c.req.param('name');
     const body = readJsonBody(c) as { apply?: unknown } | undefined;
     if (body?.apply === true) return outdatedClientResponse(c);

@@ -254,7 +254,7 @@ export function readStatus(projectPath: string): Promise<TestResponse> {
 /** The sync, as the page makes it. */
 export function syncProject(projectPath: string): Promise<TestResponse> {
   return request(servers.testServer)
-    .post('/api/harness/sync')
+    .post('/api/harness/syncs')
     .send({ projectPath })
     .then((res) => res);
 }

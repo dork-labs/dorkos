@@ -175,26 +175,12 @@ contractSuite('mesh, agent and discovery groups', [
 
   // mesh: writes refused
   {
-    name: 'POST /api/mesh/discover refuses a body with no roots',
+    // Folded into `POST /api/discovery/scans`, the one scan (DOR-4982).
+    name: 'POST /api/mesh/discover is the /api 404',
     method: 'POST',
     path: '/api/mesh/discover',
-    body: { roots: [] },
-    expect: { status: 400, schema: VALIDATION_FAILED },
-  },
-  {
-    name: 'POST /api/mesh/discover refuses a root outside the boundary',
-    method: 'POST',
-    path: '/api/mesh/discover',
-    body: { roots: ['/'] },
-    expect: { status: 403, headers: PROBLEM_TYPE, body: OUTSIDE },
-  },
-  {
-    name: 'POST /api/mesh/discover refuses malformed JSON as the chain does',
-    method: 'POST',
-    path: '/api/mesh/discover',
-    headers: { 'content-type': 'application/json' },
-    body: '{"roots":',
-    expect: { status: 400, schema: MALFORMED_JSON },
+    body: { roots: [REPO_ROOT] },
+    expect: { status: 404, body: NOT_FOUND },
   },
   {
     name: 'POST /api/mesh/agents refuses an empty body',
@@ -294,16 +280,16 @@ contractSuite('mesh, agent and discovery groups', [
     expect: { status: 400, schema: VALIDATION_FAILED },
   },
   {
-    name: 'POST /api/mesh/deny refuses a body with no path',
+    name: 'POST /api/mesh/denied refuses a body with no path',
     method: 'POST',
-    path: '/api/mesh/deny',
+    path: '/api/mesh/denied',
     body: { reason: 'nothing' },
     expect: { status: 400, schema: VALIDATION_FAILED },
   },
   {
-    name: 'POST /api/mesh/deny refuses a path outside the boundary',
+    name: 'POST /api/mesh/denied refuses a path outside the boundary',
     method: 'POST',
-    path: '/api/mesh/deny',
+    path: '/api/mesh/denied',
     body: { path: '/' },
     expect: { status: 403, headers: PROBLEM_TYPE, body: OUTSIDE },
   },
@@ -651,16 +637,16 @@ contractSuite('mesh, agent and discovery groups', [
 
   // discovery
   {
-    name: 'POST /api/discovery/scan refuses a depth out of range',
+    name: 'POST /api/discovery/scans refuses a depth out of range',
     method: 'POST',
-    path: '/api/discovery/scan',
+    path: '/api/discovery/scans',
     body: { root: REPO_ROOT, maxDepth: 0 },
     expect: { status: 400, schema: VALIDATION_FAILED },
   },
   {
-    name: 'POST /api/discovery/scan refuses a root outside the boundary, before streaming',
+    name: 'POST /api/discovery/scans refuses a root outside the boundary, before streaming',
     method: 'POST',
-    path: '/api/discovery/scan',
+    path: '/api/discovery/scans',
     body: { roots: [REPO_ROOT, '/'] },
     expect: {
       status: 403,
@@ -671,8 +657,16 @@ contractSuite('mesh, agent and discovery groups', [
     },
   },
   {
-    name: 'GET /api/discovery/scan is the /api 404',
-    path: '/api/discovery/scan',
+    name: 'POST /api/discovery/scans refuses malformed JSON as the chain does',
+    method: 'POST',
+    path: '/api/discovery/scans',
+    headers: { 'content-type': 'application/json' },
+    body: '{"roots":',
+    expect: { status: 400, schema: MALFORMED_JSON },
+  },
+  {
+    name: 'GET /api/discovery/scans is the /api 404',
+    path: '/api/discovery/scans',
     expect: { status: 404, body: NOT_FOUND },
   },
 
@@ -1006,7 +1000,7 @@ describe('contract: mesh, agents and discovery, driven by hand (login off)', () 
     const dir = freshDir('denied');
     await check(server, {
       method: 'POST',
-      path: '/api/mesh/deny',
+      path: '/api/mesh/denied',
       body: { path: dir, reason: 'contract' },
       expect: { status: 201, body: { success: true } },
     });
@@ -1063,30 +1057,14 @@ describe('contract: mesh, agents and discovery, driven by hand (login off)', () 
     });
   });
 
-  it('lists candidates through the mesh and streams a scan through discovery', async () => {
+  it('streams a scan through discovery', async () => {
     const root = freshDir('scan');
     const project = path.join(root, 'project');
     mkdirSync(project, { recursive: true });
     writeFileSync(path.join(project, 'CLAUDE.md'), '# A project an agent works in\n');
     await check(server, {
       method: 'POST',
-      path: '/api/mesh/discover',
-      body: { roots: [root], maxDepth: 2 },
-      expect: {
-        status: 200,
-        schema: z
-          .object({
-            candidates: z
-              .array(z.object({ path: z.string() }).loose())
-              .refine((found) => found.some((candidate) => candidate.path === project)),
-            truncated: z.literal(false),
-          })
-          .strict(),
-      },
-    });
-    await check(server, {
-      method: 'POST',
-      path: '/api/discovery/scan',
+      path: '/api/discovery/scans',
       headers: { origin: SERVER_ORIGIN },
       body: { root, maxDepth: 2, timeout: 10_000 },
       expect: {
@@ -1108,7 +1086,7 @@ describe('contract: mesh, agents and discovery, driven by hand (login off)', () 
     // A trailing slash reaches the same stream; only its headers are pinned.
     await check(server, {
       method: 'POST',
-      path: '/api/discovery/scan/',
+      path: '/api/discovery/scans/',
       body: { roots: [root], maxDepth: 1, timeout: 10_000 },
       expect: { status: 200, headers: EVENT_STREAM },
     });

@@ -547,7 +547,7 @@ were the only thing bounding such a turn. Decide it by who started the turn, nev
   and for `room_repo_status`, the shape of somebody's work.
   Do not add it to make a client's life easier. **A member reads only
   above its `joinedSeq`** — the same floor the ambient window keeps, and the same
-  floor `GET /api/rooms/:id/export` keeps for every caller **but one**. The export
+  floor `GET /api/rooms/:id/history` keeps for every caller **but one**. The export
   is this domain's eighth read path and the only one that can drop the floor: the
   install's OWNER exporting a room they are a member of gets it from `seq` 0,
   because an export is the exit path (DOR-596 C2) rather than one participant's

@@ -9,7 +9,7 @@
  * The single hard failure is "Shape not installed" ({@link ShapeNotInstalledError});
  * every other missing piece degrades to a `warnings[]` entry and a still-`ok`
  * result, mirroring the per-runtime degradation model (ADR-0310). The return
- * value is the exact `POST /api/shapes/:name/apply` response body (spec §9): the
+ * value is the exact `POST /api/shapes/:name/applications` response body (spec §9): the
  * `applied` field carries the resolved chrome + outcomes so the client acts
  * without a second fetch.
  *
@@ -128,7 +128,7 @@ export interface AppliedShape {
   schedulesRemoved: string[];
 }
 
-/** The full result of {@link applyShape} — also the `POST /api/shapes/:name/apply` body. */
+/** The full result of {@link applyShape} — also the `POST /api/shapes/:name/applications` body. */
 export interface ApplyShapeResult {
   ok: boolean;
   applied: AppliedShape;

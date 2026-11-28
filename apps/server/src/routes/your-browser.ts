@@ -14,7 +14,7 @@ export function createYourBrowserRoutes(
   enabled: () => boolean = () => env.DORKOS_YOUR_BROWSER_ENABLED
 ): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
-  router.post('/scan', async (c) => {
+  router.post('/profile-scans', async (c) => {
     c.header('Cache-Control', 'no-store');
     if (!enabled()) return problem(c, 'not_found', { detail: 'Browser discovery is off.' });
     const facts = honoRequestFacts(c);

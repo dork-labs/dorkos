@@ -164,14 +164,14 @@ describe('DELETE /sources/:name', () => {
   });
 });
 
-describe('POST /sources/:name/refresh', () => {
+describe('POST /sources/refreshes', () => {
   it('fetches the source fresh, returns its listing, and clears the update check memos', async () => {
     await h.post('/sources', { name: 'refreshable', source: 'https://example.com/refresh' });
     // The add fetched the listing once already (DOR-2304); count the refresh alone.
     h.fetcher.fetchMarketplaceJson.mockClear();
     h.updateFlow.clearMemos.mockClear();
 
-    const res = await h.post('/sources/refreshable/refresh');
+    const res = await h.post('/sources/refreshes', { name: 'refreshable' });
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
@@ -191,15 +191,16 @@ describe('POST /sources/:name/refresh', () => {
   });
 
   it('returns 404 when the source does not exist', async () => {
-    const res = await h.post('/sources/missing/refresh');
+    const res = await h.post('/sources/refreshes', { name: 'missing' });
     expect(res.status).toBe(404);
   });
 });
 
-// The app sends the name in the query string (DOR-4212): a name saved by an
-// older DorkOS may hold a `/`, and Remote Access refuses an encoded `/` in a
-// URL path. The path form stays for the CLI and every name made today.
-describe('the ?name= forms', () => {
+// A name saved by an older DorkOS may hold a `/`, and Remote Access refuses an
+// encoded `/` in a URL path (DOR-4212): the app removes one with `?name=` and
+// refreshes one with the name in the body. The path form of removing stays for
+// the CLI and every name made today.
+describe('names that hold a /', () => {
   const LEGACY = 'acme/plugins';
 
   /** A source saved before names were checked, written the way it sits on disk. */
@@ -226,10 +227,10 @@ describe('the ?name= forms', () => {
     expect(await h.cache.readMarketplace(LEGACY)).toBeNull();
   });
 
-  it('POST /sources/refresh?name= refreshes a legacy name holding a /', async () => {
+  it('POST /sources/refreshes refreshes a legacy name holding a /', async () => {
     await seedLegacySource();
 
-    const res = await h.post(`/sources/refresh?name=${encodeURIComponent(LEGACY)}`);
+    const res = await h.post('/sources/refreshes', { name: LEGACY });
 
     expect(res.status).toBe(200);
     expect(h.fetcher.fetchMarketplaceJson.mock.calls[0][0].name).toBe(LEGACY);
@@ -252,11 +253,17 @@ describe('the ?name= forms', () => {
   it.each([
     ['DELETE', '/sources'],
     ['DELETE', '/sources?name='],
-    ['POST', '/sources/refresh'],
-    ['POST', '/sources/refresh?name=a&name=b'],
-  ])('%s %s with no single name is a 400', async (method, target) => {
-    const res = method === 'DELETE' ? await h.del(target) : await h.post(target);
-    expect(res.status).toBe(400);
+  ])('%s %s with no single name is a 400', async (_method, target) => {
+    expect((await h.del(target)).status).toBe(400);
+  });
+
+  it.each([
+    ['no body', undefined],
+    ['an empty name', { name: '' }],
+    ['two names', { name: ['a', 'b'] }],
+    ['an unknown field', { name: 'a', force: true }],
+  ])('POST /sources/refreshes with %s is a 400', async (_label, body) => {
+    expect((await h.post('/sources/refreshes', body)).status).toBe(400);
   });
 
   it('DELETE /sources?name= refuses an agent, as the path form does', async () => {
@@ -329,6 +336,6 @@ describe('the operator-only bar on the source routes (DOR-502)', () => {
 
     h.agentHeader = 'agent-token';
     expect((await h.get('/sources')).status).toBe(200);
-    expect((await h.post('/sources/readable/refresh')).status).toBe(200);
+    expect((await h.post('/sources/refreshes', { name: 'readable' })).status).toBe(200);
   });
 });

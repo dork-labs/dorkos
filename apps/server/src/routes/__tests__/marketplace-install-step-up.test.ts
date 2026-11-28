@@ -197,7 +197,7 @@ describe('marketplace install and update confirmation', () => {
 
   it('checks one package for updates at once', async () => {
     const res = await owner
-      .call('post', `/api/marketplace/packages/${PACKAGE}/update`, 'own-tunnel')
+      .call('post', `/api/marketplace/packages/${PACKAGE}/update-checks`, 'own-tunnel')
       .send({});
     expect(res.status).toBe(200);
     expect(res.body.heldActionId).toBeUndefined();

@@ -79,7 +79,7 @@ export interface ShapeUpdateHooks {
   getActiveShapeName(): string | null;
   /**
    * Re-apply an installed Shape (the same idempotent `applyShape` service the
-   * `POST /api/shapes/:name/apply` route runs). The result is not surfaced to
+   * `POST /api/shapes/:name/applications` route runs). The result is not surfaced to
    * the update caller; failures are logged, never thrown.
    *
    * @param name - The installed Shape name to re-apply.

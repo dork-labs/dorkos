@@ -344,8 +344,8 @@ contractSuite('the room routes, login off, the refusals', [
     },
   },
   {
-    name: 'GET /api/rooms/:id/export answers 404 for a room that does not exist',
-    path: `/api/rooms/${NO_ROOM}/export`,
+    name: 'GET /api/rooms/:id/history answers 404 for a room that does not exist',
+    path: `/api/rooms/${NO_ROOM}/history`,
     expect: { status: 404, headers: PROBLEM_TYPE, schema: NO_SUCH_ROOM },
   },
   {
@@ -572,7 +572,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     for (const rest of [
       '',
       '/entries',
-      '/export',
+      '/history',
       '/canvas',
       '/sessions',
       '/files',
@@ -982,8 +982,8 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     );
   });
 
-  it('GET /api/rooms/:id/export streams the history as JSONL', async () => {
-    const exported = await call(server, 'GET', rooms('/export'));
+  it('GET /api/rooms/:id/history streams the history as JSONL', async () => {
+    const exported = await call(server, 'GET', rooms('/history'));
     expectAnswer(exported, 200);
     expect(exported.headers['content-type']).toBe('application/x-ndjson; charset=utf-8');
     expect(exported.headers['content-disposition']).toMatch(/^attachment; filename=".+\.jsonl"$/);
@@ -1304,11 +1304,11 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     commit = listed.json.commit as string;
   });
 
-  it('POST /api/rooms/:id/files/upload commits a multipart upload in one go', async () => {
+  it('POST /api/rooms/:id/files commits a multipart upload in one go', async () => {
     const uploaded = await call(
       server,
       'POST',
-      rooms('/files/upload'),
+      rooms('/files'),
       multipart([
         { field: 'dir', content: 'docs' },
         { field: 'baseCommit', content: commit },
@@ -1329,12 +1329,12 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     commit = listed.json.commit as string;
   });
 
-  it('POST /api/rooms/:id/files/upload refuses an agent, a clash, too many files and bad fields', async () => {
+  it('POST /api/rooms/:id/files refuses an agent, a clash, too many files and bad fields', async () => {
     const one = multipart([
       { field: 'files', filename: 'x.txt', type: 'text/plain', content: 'x' },
     ]);
     expectRefusal(
-      await call(server, 'POST', rooms('/files/upload'), one, { ...MULTIPART, ...member.header }),
+      await call(server, 'POST', rooms('/files'), one, { ...MULTIPART, ...member.header }),
       403,
       'person_only'
     );
@@ -1342,7 +1342,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
       await call(
         server,
         'POST',
-        rooms('/files/upload'),
+        rooms('/files'),
         multipart([
           { field: 'dir', content: 'docs' },
           { field: 'files', filename: 'b.bin', type: 'text/plain', content: 'again' },
@@ -1359,7 +1359,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
       content: String(i),
     }));
     expectAnswer(
-      await call(server, 'POST', rooms('/files/upload'), multipart(many), MULTIPART),
+      await call(server, 'POST', rooms('/files'), multipart(many), MULTIPART),
       400,
       problemBody('room_upload_too_many_files', {
         detail: 'One upload can carry at most 20 files.',
@@ -1369,7 +1369,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
       await call(
         server,
         'POST',
-        rooms('/files/upload'),
+        rooms('/files'),
         multipart([{ field: 'wrong', filename: 'w.txt', type: 'text/plain', content: 'w' }]),
         MULTIPART
       ),
@@ -1380,7 +1380,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
       await call(
         server,
         'POST',
-        rooms('/files/upload'),
+        rooms('/files'),
         multipart([
           { field: 'replace', content: 'not json' },
           { field: 'files', filename: 'r.txt', type: 'text/plain', content: 'r' },
@@ -1394,7 +1394,7 @@ describe('contract: the room routes, driven by hand (login off)', () => {
       await call(
         server,
         'POST',
-        rooms('/files/upload'),
+        rooms('/files'),
         multipart([
           {
             field: 'files',
@@ -1422,15 +1422,15 @@ describe('contract: the room routes, driven by hand (login off)', () => {
       detail: 'There were no files in that upload.',
     });
     expectAnswer(
-      await call(server, 'POST', rooms('/files/upload'), multipart([]), MULTIPART),
+      await call(server, 'POST', rooms('/files'), multipart([]), MULTIPART),
       400,
       noFiles
     );
-    expectAnswer(await call(server, 'POST', rooms('/files/upload')), 400, noFiles);
+    expectAnswer(await call(server, 'POST', rooms('/files')), 400, noFiles);
   });
 
-  it('POST /api/rooms/:id/files/move and /files/delete change the tree, and refuse a stale lock', async () => {
-    const moved = await call(server, 'POST', rooms('/files/move'), {
+  it('PATCH and DELETE /api/rooms/:id/files change the tree, and refuse a stale lock', async () => {
+    const moved = await call(server, 'PATCH', rooms('/files'), {
       from: 'docs/b.bin',
       to: 'docs/c.bin',
       baseCommit: commit,
@@ -1439,26 +1439,21 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     expect(moved.json).toMatchObject({ paths: ['docs/c.bin'] });
     const afterMove = (await call(server, 'GET', rooms('/files'))).json.commit as string;
     expectAnswer(
-      await call(server, 'POST', rooms('/files/delete'), {
-        path: 'docs/c.bin',
-        baseCommit: commit,
-      }),
+      await call(server, 'DELETE', rooms(`/files?path=docs/c.bin&baseCommit=${commit}`)),
       409
     );
     expectAnswer(
-      await call(server, 'POST', rooms('/files/delete'), {
-        path: 'docs/c.bin',
-        baseCommit: afterMove,
-      }),
+      await call(server, 'DELETE', rooms(`/files?path=docs/c.bin&baseCommit=${afterMove}`)),
       200
     );
-    expectAnswer(await call(server, 'POST', rooms('/files/move'), {}), 400, VALIDATION_FAILED);
+    expectAnswer(await call(server, 'PATCH', rooms('/files'), {}), 400, VALIDATION_FAILED);
+    expectAnswer(await call(server, 'DELETE', rooms('/files')), 400, VALIDATION_FAILED);
     expectRefusal(
       await call(
         server,
-        'POST',
-        rooms('/files/delete'),
-        { path: 'ROOM.md', baseCommit: afterMove },
+        'DELETE',
+        rooms(`/files?path=ROOM.md&baseCommit=${afterMove}`),
+        undefined,
         member.header
       ),
       403,

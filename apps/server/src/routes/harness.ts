@@ -1,6 +1,6 @@
 /**
  * The two agent-file routes for one project: `GET /api/harness/status`, which
- * reads and never writes, and `POST /api/harness/sync`, which is the Sync now
+ * reads and never writes, and `POST /api/harness/syncs`, which is the Sync now
  * button (spec `harness-sync-status` §2.1 and §2.2).
  *
  * Everything from here down to "What the sync does" is about the GET alone.
@@ -109,7 +109,7 @@
  *
  * ## What the sync does, and what it says first
  *
- * `POST /api/harness/sync` applies the projection plan through
+ * `POST /api/harness/syncs` applies the projection plan through
  * `projectWithConsent` — the one seam, never the engine's bare `project()` —
  * and answers with the recomputed status. Four things about it are decisions
  * rather than details:
@@ -439,8 +439,8 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
     }
   });
 
-  // POST /api/harness/sync  { projectPath: <absolute path> }
-  router.post('/sync', async (c) => {
+  // POST /api/harness/syncs  { projectPath: <absolute path> }
+  router.post('/syncs', async (c) => {
     // Ahead of validation on purpose, the order `POST /api/marketplace/sources`
     // uses: a caller that may not do this at all gets one answer whatever it
     // sent, rather than a schema it can probe.
@@ -456,7 +456,7 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
       return validationProblem(c, parsed.error);
     }
 
-    const resolved = await resolveProject(c, parsed.data.projectPath, 'POST /sync');
+    const resolved = await resolveProject(c, parsed.data.projectPath, 'POST /syncs');
     if (typeof resolved !== 'string') return resolved;
 
     // Before the seam, because `loadManifest` throws ENOENT there and a project

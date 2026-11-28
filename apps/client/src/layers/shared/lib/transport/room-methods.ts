@@ -277,29 +277,29 @@ export function createRoomMethods(baseUrl: string) {
         const bytes = await file.arrayBuffer();
         form.append(ROOM_UPLOAD_FILES_FIELD, new Blob([bytes], { type: file.type }), file.name);
       }
-      return fetchJSON<RoomFileChangeResponse>(
-        baseUrl,
-        `/rooms/${encodeURIComponent(id)}/files/upload`,
-        { method: 'POST', body: form, timeout: ROOM_FILE_UPLOAD_TIMEOUT_MS }
-      );
+      return fetchJSON<RoomFileChangeResponse>(baseUrl, `/rooms/${encodeURIComponent(id)}/files`, {
+        method: 'POST',
+        body: form,
+        timeout: ROOM_FILE_UPLOAD_TIMEOUT_MS,
+      });
     },
 
     /** Rename or move one file or folder, as one commit. */
     async moveRoomFile(id: string, req: RoomFileMoveRequest): Promise<RoomFileChangeResponse> {
-      return (await api.call('rooms.moveFiles', {
+      return (await api.call('rooms.move_file', {
         path: { id },
         body: req,
       })) as RoomFileChangeResponse;
     },
 
     /**
-     * Delete one file or folder, as one commit. A POST, because the request
-     * carries its lock in a body and a DELETE body is one proxies may drop.
+     * Delete one file or folder, as one commit. The path and its lock ride in
+     * the query: a DELETE body is one proxies may drop.
      */
     async deleteRoomFile(id: string, req: RoomFileDeleteRequest): Promise<RoomFileChangeResponse> {
-      return (await api.call('rooms.deleteFiles', {
+      return (await api.call('rooms.delete_file', {
         path: { id },
-        body: req,
+        query: { path: req.path, baseCommit: req.baseCommit },
       })) as RoomFileChangeResponse;
     },
 

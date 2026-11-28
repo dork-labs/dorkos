@@ -235,7 +235,7 @@ export class RoomReads {
   }
 
   /**
-   * A room's whole history as JSONL — `GET /api/rooms/:id/export` (DOR-1225).
+   * A room's whole history as JSONL — `GET /api/rooms/:id/history` (DOR-1225).
    *
    * Rooms live only in SQLite, and this is the projection that pays back what
    * that costs them: a file you can grep, copy, and keep. **It is a copy and

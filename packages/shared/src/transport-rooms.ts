@@ -70,7 +70,7 @@ import type {
 
 /**
  * What {@link RoomTransport.uploadRoomFiles} sends — the multipart fields of
- * `POST /api/rooms/{id}/files/upload`, before they are strings.
+ * `POST /api/rooms/{id}/files`, before they are strings.
  */
 export interface RoomFileUploadInput {
   /** The folder to upload into, relative to the repo root; `''` for the top. */

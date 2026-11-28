@@ -129,7 +129,7 @@ export const WIFI_REFUSED_ROUTES: readonly WifiRefusedRoute[] = [
     // Private browser metadata is read only for the owner over a trusted connection.
     surface: 'host',
     methods: 'writes',
-    pattern: /^\/api\/your-browser\/scan$/,
+    pattern: /^\/api\/your-browser\/profile-scans$/,
     reason: `Find browser profiles ${ON_THE_COMPUTER}`,
   },
   // A queue starts chats later with nobody watching, at the agent's own level, so
@@ -227,7 +227,7 @@ export const WIFI_REFUSED_ROUTES: readonly WifiRefusedRoute[] = [
     surface: 'host',
     methods: 'writes',
     pattern:
-      /^\/api\/(?:harness\/(?:sync|adopt)|workspaces|directory|agents|agents\/create|agents\/current\/migrate-persona)$/,
+      /^\/api\/(?:harness\/(?:syncs|adopt)|workspaces|directory|agents|agents\/create|agents\/current\/migrate-persona)$/,
     reason: `Change folders and agents' setup ${ON_THE_COMPUTER}`,
   },
   {
@@ -241,7 +241,7 @@ export const WIFI_REFUSED_ROUTES: readonly WifiRefusedRoute[] = [
     surface: 'host',
     methods: 'writes',
     pattern:
-      /^\/api\/marketplace\/(?:packages\/[^/]+\/(?:install|uninstall|update|keep-files)|held-back\/[^/]+\/decision|updates|dev-links)(?:\/|$)/,
+      /^\/api\/marketplace\/(?:packages\/[^/]+\/(?:install|uninstall|update-checks|keep-files)|held-back\/[^/]+\/decision|updates|dev-links)(?:\/|$)/,
     reason: `Install and remove packages ${ON_THE_COMPUTER}`,
   },
   {
@@ -254,7 +254,7 @@ export const WIFI_REFUSED_ROUTES: readonly WifiRefusedRoute[] = [
   {
     surface: 'host',
     methods: 'writes',
-    pattern: /^\/api\/shapes\/[^/]+\/apply$/,
+    pattern: /^\/api\/shapes\/[^/]+\/applications$/,
     reason: `Change folders and agents' setup ${ON_THE_COMPUTER}`,
   },
   {

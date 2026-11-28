@@ -66,7 +66,7 @@ const BYTES = "writes a file's bytes, not an event stream";
 
 /** Every production file under `apps/server/src` with a marker, by path. */
 const SOURCES: Readonly<Record<string, Source>> = {
-  'routes/discovery.ts': { markers: 2, serves: ['POST /api/discovery/scan'] },
+  'routes/discovery.ts': { markers: 2, serves: ['POST /api/discovery/scans'] },
   'routes/events.ts': { markers: 2, serves: ['GET /api/events'] },
   'routes/extensions-rooms.ts': {
     markers: 2,
@@ -113,6 +113,7 @@ const SOURCES: Readonly<Record<string, Source>> = {
     why: 'treats a request for a stream as one that must come from the hub page',
   },
   'services/core/openapi-registry.ts': { markers: 2, why: API_DOCUMENT },
+  'services/core/openapi/discovery-scan-openapi.ts': { markers: 1, why: API_DOCUMENT },
   'services/core/openapi/events-openapi.ts': { markers: 1, why: API_DOCUMENT },
   'services/core/openapi/served-streams-openapi.ts': { markers: 1, why: API_DOCUMENT },
   'services/core/remote/command-stream.ts': { markers: 2, why: CLIENT },
@@ -142,9 +143,7 @@ const SOURCES: Readonly<Record<string, Source>> = {
  * ends the wait. Documenting one before its path is fixed would raise the API
  * lint's `verb-path` count.
  */
-const NOT_DOCUMENTED_YET: Readonly<Record<string, string>> = {
-  'POST /api/discovery/scan': 'verb path; renamed in A5 (DOR-4982), then documented',
-};
+const NOT_DOCUMENTED_YET: Readonly<Record<string, string>> = {};
 
 /** Streams outside `/api`, each with the specification that describes it. */
 const OTHER_PROTOCOL_STREAMS: Readonly<Record<string, string>> = {

@@ -2340,15 +2340,23 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'post',
-  path: '/api/marketplace/sources/{name}/refresh',
+  path: '/api/marketplace/sources/refreshes',
+  operationId: 'marketplace.refresh_source',
   tags: ['Marketplace'],
   summary: 'Force refetch of a source marketplace.json',
   description:
-    'Checks the source now. When it cannot be reached but a copy is cached, answers 200 with ' +
-    'that copy, `stale: true`, the `reason`, and `fetchedAt` set to when the copy was fetched. ' +
-    'With nothing cached, answers 502.',
+    'Checks the source now. The name rides in the body, so a name saved by an older DorkOS ' +
+    'that holds a `/` needs no special spelling. When the source cannot be reached but a copy ' +
+    'is cached, answers 200 with that copy, `stale: true`, the `reason`, and `fetchedAt` set to ' +
+    'when the copy was fetched. With nothing cached, answers 502.',
   request: {
-    params: z.object({ name: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({ name: z.string().min(1).describe('The source name') }).strict(),
+        },
+      },
+    },
   },
   responses: {
     200: {
@@ -2367,46 +2375,7 @@ registry.registerPath({
         },
       },
     },
-    404: problemResponse('`not_found`: source not found'),
-    502: problemResponse(
-      '`upstream_unavailable`: the source could not be fetched and nothing is cached'
-    ),
-  },
-});
-
-registry.registerPath({
-  method: 'post',
-  path: '/api/marketplace/sources/refresh',
-  // The query form of `POST /sources/{name}/refresh`, which keeps the derived id.
-  operationId: 'marketplace.refreshSourcesByQuery',
-  tags: ['Marketplace'],
-  summary: 'Force refetch of a source marketplace.json',
-  description:
-    'From the app, the name goes in the `name` query parameter: a name saved by an older ' +
-    'DorkOS may hold a `/`, and Remote Access refuses an encoded `/` in a URL path. ' +
-    'Checks the source now. When it cannot be reached but a copy is cached, answers 200 with ' +
-    'that copy, `stale: true`, the `reason`, and `fetchedAt` set to when the copy was fetched. ' +
-    'With nothing cached, answers 502.',
-  request: {
-    query: z.object({ name: z.string().describe('The source name') }),
-  },
-  responses: {
-    200: {
-      description: 'The listing, fetched now or (when `stale`) the last cached copy',
-      content: {
-        'application/json': {
-          schema: z.object({
-            marketplace: LocalMarketplaceJsonSchema,
-            fetchedAt: z.string().describe('When this copy of the listing was fetched'),
-            stale: z.boolean().describe('True when the source could not be reached'),
-            reason: z
-              .string()
-              .optional()
-              .describe('Why the source could not be reached; present only when `stale`'),
-          }),
-        },
-      },
-    },
+    400: problemResponse('`invalid_request`: the body does not name one source'),
     404: problemResponse('`not_found`: source not found'),
     502: problemResponse(
       '`upstream_unavailable`: the source could not be fetched and nothing is cached'
@@ -2706,7 +2675,8 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'post',
-  path: '/api/marketplace/packages/{name}/update',
+  path: '/api/marketplace/packages/{name}/update-checks',
+  operationId: 'marketplace.check_update',
   tags: ['Marketplace'],
   summary: 'Check one package for an update',
   description:
@@ -2881,7 +2851,8 @@ const DevLinkScopeBody = {
 
 registry.registerPath({
   method: 'post',
-  path: '/api/marketplace/dev-links/preview',
+  path: '/api/marketplace/dev-links/previews',
+  operationId: 'marketplace.preview_dev_link',
   tags: ['Marketplace'],
   summary: 'Preview running a package from a folder',
   description:
@@ -2995,8 +2966,9 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: 'post',
-  path: '/api/marketplace/dev-links/{name}/unlink',
+  method: 'delete',
+  path: '/api/marketplace/dev-links/{name}',
+  operationId: 'marketplace.unlink_dev_link',
   tags: ['Marketplace'],
   summary: 'Unlink a dev link',
   description:
@@ -3004,9 +2976,7 @@ registry.registerPath({
     'folder) and puts a set-aside installed copy back with its approvals.',
   request: {
     params: z.object({ name: z.string() }),
-    body: {
-      content: { 'application/json': { schema: z.object(DevLinkScopeBody).strict() } },
-    },
+    query: z.object(DevLinkScopeBody).strict(),
   },
   responses: {
     200: {
@@ -3485,7 +3455,9 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'post',
-  path: '/api/shapes/{name}/apply',
+  path: '/api/shapes/{name}/applications',
+  // Keeps its id across the A5 rename (DOR-4982): the generated client calls it by name.
+  operationId: 'shapes.apply',
   tags: ['Shapes'],
   summary: 'Apply an installed Shape',
   description:
@@ -4669,7 +4641,9 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'get',
-  path: '/api/rooms/{id}/export',
+  path: '/api/rooms/{id}/history',
+  // Keeps its id across the A5 rename (DOR-4982).
+  operationId: 'rooms.export',
   tags: ['Rooms'],
   summary: "Export a room's whole history as a JSONL file",
   description:
@@ -5239,7 +5213,8 @@ const roomFileChangeResponses = {
 
 registry.registerPath({
   method: 'post',
-  path: '/api/rooms/{id}/files/upload',
+  path: '/api/rooms/{id}/files',
+  operationId: 'rooms.upload_files',
   tags: ['Rooms'],
   summary: "Upload files into a room's files",
   description:
@@ -5263,8 +5238,9 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: 'post',
-  path: '/api/rooms/{id}/files/move',
+  method: 'patch',
+  path: '/api/rooms/{id}/files',
+  operationId: 'rooms.move_file',
   tags: ['Rooms'],
   summary: "Rename or move one of a room's files or folders",
   description:
@@ -5277,15 +5253,16 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: 'post',
-  path: '/api/rooms/{id}/files/delete',
+  method: 'delete',
+  path: '/api/rooms/{id}/files',
+  operationId: 'rooms.delete_file',
   tags: ['Rooms'],
   summary: "Delete one of a room's files or folders",
   description:
-    "One commit, `Delete <path>` (a folder with a trailing `/`), authored as the person, and one quiet room entry (`kind: 'delete'`). `baseCommit` is required, and every file under `path` must be unchanged since it — nobody deletes a file they have not seen — or 409 `file_changed`. The room's history keeps what was deleted: it is a commit, so an agent or git can bring it back. POST rather than DELETE because the request carries a body.",
+    "One commit, `Delete <path>` (a folder with a trailing `/`), authored as the person, and one quiet room entry (`kind: 'delete'`). `baseCommit` is required, and every file under `path` must be unchanged since it — nobody deletes a file they have not seen — or 409 `file_changed`. The room's history keeps what was deleted: it is a commit, so an agent or git can bring it back. `path` and `baseCommit` ride in the query, since a DELETE body is one proxies may drop.",
   request: {
     params: RoomIdParams,
-    body: { content: { 'application/json': { schema: RoomFileDeleteRequestSchema } } },
+    query: RoomFileDeleteRequestSchema,
   },
   responses: roomFileChangeResponses,
 });
@@ -6369,7 +6346,9 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'post',
-  path: '/api/harness/sync',
+  path: '/api/harness/syncs',
+  // Keeps its id across the A5 rename (DOR-4982): the generated client calls it by name.
+  operationId: 'harness.sync',
   tags: ['Harness'],
   summary: 'Share this project’s agent files with every agent tool it has turned on',
   description:

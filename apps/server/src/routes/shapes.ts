@@ -3,7 +3,7 @@
  *
  * - `GET  /api/shapes` — installed Shapes (name, displayName, active flag, lineage),
  *   a page at a time, A to Z by name as the list always came (DOR-4982).
- * - `POST /api/shapes/:name/apply` — apply a Shape; returns the exact §5 value
+ * - `POST /api/shapes/:name/applications` — apply a Shape; returns the exact §5 value
  *   `{ ok, applied, warnings[], offeredAgents[] }` so the client restores the
  *   chrome (`applied.layout`) without a second fetch.
  * - `POST /api/shapes/:name/fork` — fork a Shape (body
@@ -221,8 +221,8 @@ export function createShapesRoutes(deps: ShapesRouterDeps): Hono<ApiEnv> {
     })
   );
 
-  // POST /api/shapes/:name/apply — apply a Shape. Only "not installed" is fatal.
-  router.post('/:name/apply', async (c) => {
+  // POST /api/shapes/:name/applications — apply a Shape. Only "not installed" is fatal.
+  router.post('/:name/applications', async (c) => {
     const name = c.req.param('name');
     const malformed = refuseNonSlug(c, name);
     if (malformed) return malformed;

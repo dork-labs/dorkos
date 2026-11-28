@@ -1,7 +1,7 @@
 /**
  * Building a room's export, line by line (DOR-1225).
  *
- * The whole shape of `GET /api/rooms/:id/export` lives here: the header, every
+ * The whole shape of `GET /api/rooms/:id/history` lives here: the header, every
  * entry, the trailing receipt, and the paging loop that walks a log with no
  * upper bound. {@link RoomService.exportRoom} is the only caller — it decides
  * WHO may export and HOW MUCH, and hands the answer over as a

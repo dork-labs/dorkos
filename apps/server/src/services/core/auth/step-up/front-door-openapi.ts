@@ -89,7 +89,7 @@ export const HELD_WRITES = new Set([
   'post /api/marketplace/dev-links',
   'post /api/marketplace/held-back/{name}/decision',
   'post /api/marketplace/sources',
-  'post /api/shapes/{name}/apply',
+  'post /api/shapes/{name}/applications',
   'post /api/relay/bindings/{id}/move',
   'post /api/relay/unclaimed-chats/{id}/claim',
   // DOR-4355 M3, Security's census nit: every held M3 route documents its 428.

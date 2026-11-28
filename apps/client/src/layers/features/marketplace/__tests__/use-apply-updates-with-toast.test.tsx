@@ -380,7 +380,9 @@ describe('useApplyUpdatesWithToast', () => {
     // Purpose: the server's message names an API route, which a person cannot
     // act on; the refusal's code gets a sentence of its own.
     const refusal = Object.assign(
-      new Error('Update them one at a time with POST /api/marketplace/packages/:name/update.'),
+      new Error(
+        'Update them one at a time with POST /api/marketplace/packages/:name/update-checks.'
+      ),
       { code: 'needs_approval', status: 403 }
     );
     await runApply([makeCheck(), FLOW], { error: refusal });

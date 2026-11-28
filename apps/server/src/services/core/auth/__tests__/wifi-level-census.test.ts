@@ -133,7 +133,7 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'PATCH /api/notifications/:id',
     'PATCH /api/notifications',
     'POST /api/diff/baseline/advance',
-    'POST /api/discovery/scan',
+    'POST /api/discovery/scans',
     'POST /api/agents/resolve',
     'POST /api/workspaces/ports',
     'POST /api/workspaces/:id/pin',

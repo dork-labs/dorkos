@@ -104,7 +104,7 @@ Any directory with a `.dork/agent.json` file is a valid agent location. You're n
 Mesh doesn't watch your filesystem for new `.dork/agent.json` files. Discovery only runs when triggered:
 
 - Clicking "Search for projects" in the app.
-- Calling `POST /api/mesh/discover` or the `mesh_discover` MCP tool.
+- Calling `POST /api/discovery/scans` or the `mesh_discover` MCP tool.
 - On startup, a background reconciler walks every path in `mesh.scanRoots` (configured in `config.json`) and picks up any manifests added since the last scan.
 
 If you drop a new `.dork/agent.json` file into a directory Mesh has never walked, it stays invisible until a scan reaches that directory. This is deliberate: filesystem watchers are expensive and noisy, and pull-based discovery gives you deterministic control over when the registry changes.
@@ -135,12 +135,12 @@ Any directory that already contains a `.dork/agent.json` manifest is auto-import
 Trigger a scan from the app with **Bring in existing projects** (see [Try it](#try-it)), or use the REST API:
 
 ```bash
-curl -X POST http://localhost:4242/api/mesh/discover \
+curl -N -X POST http://localhost:4242/api/discovery/scans \
   -H "Content-Type: application/json" \
   -d '{ "roots": ["/home/user/projects"], "maxDepth": 5 }'
 ```
 
-The response is an array of `DiscoveryCandidate` objects, each containing the directory path, the strategy that matched, and hints about the agent's name and capabilities. In the app, each candidate appears as a card with **Add**, **Skip** and **Deny** buttons.
+The answer is a stream of events, sent as the scan walks. Each `candidate` event is one folder: the directory path, the strategy that matched, and hints about the agent's name and capabilities. An `existing-agent` event is a folder that already had an agent file and was added. The stream ends with one `complete` event. In the app, each candidate appears as a card with **Add**, **Skip** and **Deny** buttons.
 
 <Callout type="info">
   Discovery is non-destructive. It only reads filesystem markers and never modifies your project
@@ -294,7 +294,7 @@ When an agent's health state changes, Mesh emits a lifecycle event through the R
 Deny a candidate in the app (click **Deny** on its card) or with the API:
 
 ```bash
-curl -X POST http://localhost:4242/api/mesh/deny \
+curl -X POST http://localhost:4242/api/mesh/denied \
   -H "Content-Type: application/json" \
   -d '{ "path": "/home/user/projects/legacy-bot", "reason": "Deprecated project" }'
 ```

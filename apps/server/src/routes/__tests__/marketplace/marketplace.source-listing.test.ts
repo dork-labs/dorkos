@@ -84,7 +84,7 @@ describe('GET /sources reports each source last fetch (DOR-2324)', () => {
     const copyFetchedAt = (await h.cache.readMarketplace('mine'))!.fetchedAt.toISOString();
     refuseConnections();
 
-    await h.post('/sources/mine/refresh');
+    await h.post('/sources/refreshes', { name: 'mine' });
 
     expect(await lastFetchOf('mine')).toEqual({
       state: 'stale',
@@ -179,7 +179,7 @@ describe('add and refresh with the real fetcher (DOR-2304)', () => {
     const cachedAt = (await h.cache.readMarketplace('mine'))!.fetchedAt.toISOString();
     refuseConnections();
 
-    const res = await h.post('/sources/mine/refresh');
+    const res = await h.post('/sources/refreshes', { name: 'mine' });
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
@@ -194,7 +194,7 @@ describe('add and refresh with the real fetcher (DOR-2304)', () => {
     serve(notFound);
     await h.post('/sources', { name: 'gone', source: 'https://github.com/me/gone' });
 
-    const res = await h.post('/sources/gone/refresh');
+    const res = await h.post('/sources/refreshes', { name: 'gone' });
 
     expect(res.status).toBe(502);
     expect(res.body.detail).toBe(

@@ -29,7 +29,7 @@ export function createLocalBrowserMethods(
     // Stays hand-written: it asks the browser not to cache the answer (DOR-5473).
     scanYourBrowsers: async () =>
       YourBrowserScanSchema.parse(
-        await fetchJSON(baseUrl, '/your-browser/scan', {
+        await fetchJSON(baseUrl, '/your-browser/profile-scans', {
           method: 'POST',
           body: '{}',
           cache: 'no-store',

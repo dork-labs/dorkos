@@ -79,7 +79,6 @@ export const MOUNTED_CAPABILITY_IDS: readonly string[] = [
   'mesh.status',
   'mesh.topology',
   'mesh.list_denied',
-  'mesh.discover',
   'mesh.register_agent',
   'mesh.remove_agent',
   'mesh.delete_agent_data',

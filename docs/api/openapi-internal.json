@@ -6602,8 +6602,9 @@
         "x-stability": "internal"
       }
     },
-    "/api/your-browser/scan": {
+    "/api/your-browser/profile-scans": {
       "post": {
+        "operationId": "yourBrowser.scan",
         "tags": [
           "Local browser"
         ],
@@ -6701,7 +6702,6 @@
             }
           }
         },
-        "operationId": "yourBrowser.scan",
         "x-stability": "internal"
       }
     },
@@ -12935,8 +12935,9 @@
         "x-stability": "internal"
       }
     },
-    "/api/harness/sync": {
+    "/api/harness/syncs": {
       "post": {
+        "operationId": "harness.sync",
         "tags": [
           "Harness"
         ],
@@ -13649,7 +13650,6 @@
             }
           }
         },
-        "operationId": "harness.sync",
         "x-stability": "internal"
       }
     },

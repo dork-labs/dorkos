@@ -19,8 +19,6 @@ import { InsideRoomFilesError, isManifestGitTracked, ManifestUnreadableError } f
 import {
   CrossNamespaceRuleSchema,
   DenyRequestSchema,
-  DiscoverRequestSchema,
-  DiscoveryCandidateSchema,
   RegisterAgentRequestSchema,
   UpdateAccessRuleRequestSchema,
   AgentManifestSchema,
@@ -31,7 +29,6 @@ import { defineCapability } from '../../core/capabilities/capability-definition.
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 import { validateBoundary, validateBoundaryOrDorkHome } from '../../../lib/boundary.js';
 import { logger } from '../../../lib/logger.js';
-import { createScanBrowserWarner } from '../../browser/agent-browser-lint.js';
 import { notifyAgentCreated } from '../../core/agent-created-hook.js';
 import { personActivityActor } from '../../activity/activity-actor.js';
 import { logOrphanedInstalls } from '../orphaned-installs.js';
@@ -39,9 +36,6 @@ import { resolveAgentIdentity } from '../normalize-agent-identity.js';
 import { registrationFields } from '../agent-patch.js';
 import { MESH_AGENT_PARAM, meshOf, PERSON_DOOR_NOTE } from './mesh-capability-deps.js';
 import { IDENTITY_REFUSAL, meshRefusal } from './mesh-refusals.js';
-
-/** The most candidates one scan answers with. */
-const MAX_CANDIDATES = 1000;
 
 /** The same folder refusal every door answers (`PATH_OUTSIDE_BOUNDARY`). */
 function outsideBoundary(): CapabilityToolError {
@@ -67,51 +61,6 @@ async function inBoundary(
 const AgentId = z.string().min(1).describe('The Mesh id of the agent.');
 /** What a removal answers. */
 const Success = z.object({ success: z.boolean() });
-
-/** `mesh.discover`: scan folders for agents. */
-export const meshDiscoverCapability = defineCapability({
-  id: 'mesh.discover',
-  title: 'Scan folders for agents',
-  description:
-    'Scan folders for agent candidates. A folder that already holds an agent file is ' +
-    'registered as it is found. Answers at most 1000 candidates.',
-  tier: 'act',
-  area: null,
-  areaNote: PERSON_DOOR_NOTE,
-  input: DiscoverRequestSchema,
-  output: z.object({ candidates: z.array(DiscoveryCandidateSchema), truncated: z.boolean() }),
-  surfaces: {
-    http: {
-      method: 'post',
-      path: '/api/mesh/discover',
-      audience: 'person',
-      agentsUse:
-        'Agents scan for, register and remove agents with mesh_discover, mesh_register and mesh_unregister.',
-    },
-  },
-  invoke: async (deps, input) => {
-    const { meshCore } = meshOf(deps);
-    const roots: string[] = [];
-    for (const root of input.roots) roots.push(await inBoundary(root));
-    const candidates = [];
-    const options = input.maxDepth ? { maxDepth: input.maxDepth } : undefined;
-    // A folder the scan finds may hold a browser server outside DorkOS's guard (DOR-3957).
-    const warnBrowsers = createScanBrowserWarner(logger);
-    try {
-      for await (const event of meshCore.discover(roots, options)) {
-        if (event.type === 'candidate') {
-          candidates.push(event.data);
-          warnBrowsers(event.data.path);
-        }
-        if (candidates.length >= MAX_CANDIDATES) break;
-      }
-    } catch (err) {
-      logger.error('[Mesh] Discovery failed', { err });
-      throw meshRefusal('MESH_DISCOVERY_FAILED');
-    }
-    return { candidates, truncated: candidates.length >= MAX_CANDIDATES };
-  },
-});
 
 /** Answer a registration `registerByPath` refused. */
 function registrationRefusal(err: unknown): CapabilityToolError {
@@ -335,7 +284,7 @@ export const meshDenyFolderCapability = defineCapability({
   surfaces: {
     http: {
       method: 'post',
-      path: '/api/mesh/deny',
+      path: '/api/mesh/denied',
       success: 201,
       audience: 'person',
       agentsUse: 'Agents hide a folder from discovery with mesh_deny.',
@@ -417,7 +366,6 @@ export const meshSetAccessRuleCapability = defineCapability({
 
 /** A person's changes to the registry, in the mesh domain. */
 export const MESH_WRITE_CAPABILITIES = [
-  meshDiscoverCapability,
   meshRegisterAgentCapability,
   meshRemoveAgentCapability,
   meshDeleteAgentDataCapability,

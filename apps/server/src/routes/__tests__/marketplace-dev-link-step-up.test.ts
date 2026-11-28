@@ -74,9 +74,11 @@ describe('dev link confirmation', () => {
   });
 
   it('unlinks at once', async () => {
-    const res = await owner
-      .call('post', '/api/marketplace/dev-links/northwind-pack/unlink', 'own-tunnel')
-      .send({ scope: 'global' });
+    const res = await owner.call(
+      'delete',
+      '/api/marketplace/dev-links/northwind-pack?scope=global',
+      'own-tunnel'
+    );
     expect(res.status).toBe(200);
     expect(res.body.heldActionId).toBeUndefined();
     expect(devLinks.unlink).toHaveBeenCalledOnce();

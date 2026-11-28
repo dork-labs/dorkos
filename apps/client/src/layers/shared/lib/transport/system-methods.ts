@@ -620,7 +620,7 @@ export function createSystemMethods(baseUrl: string) {
       onEvent: (event: TransportScanEvent) => void,
       signal?: AbortSignal
     ): Promise<void> {
-      const response = await fetch(`${baseUrl}/discovery/scan`, {
+      const response = await fetch(`${baseUrl}/discovery/scans`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

@@ -20,6 +20,7 @@ import { DevLinkError } from '../../services/marketplace/dev-links/errors.js';
 import type { DevLinkService } from '../../services/marketplace/dev-links/index.js';
 import { problem, readJsonBody, sendProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../../http/request-facts.js';
+import { readQuery } from '../../http/request-query.js';
 import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
 import type { MarketplaceContext, MarketplaceRouteContext } from './context.js';
 import { validationFailed } from './shared.js';
@@ -47,7 +48,7 @@ function scopeIsConsistent(body: { scope: 'global' | 'project'; projectPath?: st
   return (body.scope === 'project') === (body.projectPath !== undefined);
 }
 
-/** Body schema for `POST /api/marketplace/dev-links/preview`. */
+/** Body schema for `POST /api/marketplace/dev-links/previews`. */
 export const DevLinkPreviewBodySchema = z
   .object({
     path: PathField,
@@ -80,8 +81,8 @@ export const DevLinkCreateBodySchema = z
     message: 'projectPath is required for, and only for, scope project',
   });
 
-/** Body schema for `POST /api/marketplace/dev-links/:name/unlink`. */
-export const DevLinkUnlinkBodySchema = z.object(ScopeFields).strict().refine(scopeIsConsistent, {
+/** Query schema for `DELETE /api/marketplace/dev-links/:name`. */
+const DevLinkUnlinkQuerySchema = z.object(ScopeFields).strict().refine(scopeIsConsistent, {
   message: 'projectPath is required for, and only for, scope project',
 });
 
@@ -120,8 +121,8 @@ export function mountDevLinkRoutes(
     return { refused: validationFailed(c, parsed.error) };
   };
 
-  // POST /dev-links/preview -- what linking a folder would do. Changes nothing.
-  app.post('/dev-links/preview', async (c) => {
+  // POST /dev-links/previews -- what linking a folder would do. Changes nothing.
+  app.post('/dev-links/previews', async (c) => {
     const devLinks = deps.devLinks;
     if (!devLinks) return unavailable(c);
     const parsed = parse(DevLinkPreviewBodySchema, c);
@@ -212,9 +213,9 @@ export function mountDevLinkRoutes(
     }
   });
 
-  // POST /dev-links/:name/unlink -- the person only, on the bar for deciding
-  // an approval card: unlinking changes which code runs.
-  app.post('/dev-links/:name/unlink', async (c) => {
+  // DELETE /dev-links/:name?scope=&projectPath= -- the person only, on the bar
+  // for deciding an approval card: unlinking changes which code runs.
+  app.delete('/dev-links/:name', async (c) => {
     const authority = readCallerAuthority(honoRequestFacts(c));
     if (!trustedCaller(authority)) {
       if (!resolveDecisionAuthority(authority).allowed) {
@@ -231,9 +232,9 @@ export function mountDevLinkRoutes(
     const name = DevLinkPackageNameSchema.safeParse(c.req.param('name'));
     if (!name.success)
       return problem(c, 'invalid_request', { detail: 'That is not a package name.' });
-    const parsed = parse(DevLinkUnlinkBodySchema, c);
-    if (parsed.refused) return parsed.refused;
-    const body = parsed.data;
+    const query = DevLinkUnlinkQuerySchema.safeParse(readQuery(c));
+    if (!query.success) return validationFailed(c, query.error);
+    const body = query.data;
     const confined = await ctx.confineProjectPath(c, body.projectPath);
     if (confined.refused) return confined.refused;
     try {

@@ -91,7 +91,7 @@ export const HAND_ROUTE_ALLOWLIST: readonly HandRouteAllowlistEntry[] = [
   },
   {
     method: 'POST',
-    path: '/api/discovery/scan',
+    path: '/api/discovery/scans',
     category: 'stream',
     reason: 'A folder scan that streams what it finds (SSE).',
   },
@@ -149,7 +149,7 @@ export const HAND_ROUTE_ALLOWLIST: readonly HandRouteAllowlistEntry[] = [
   },
   {
     method: 'POST',
-    path: '/api/rooms/:id/files/upload',
+    path: '/api/rooms/:id/files',
     category: 'bytes',
     reason: 'A multipart upload into a room folder.',
   },
@@ -173,7 +173,7 @@ export const HAND_ROUTE_ALLOWLIST: readonly HandRouteAllowlistEntry[] = [
   },
   {
     method: 'GET',
-    path: '/api/rooms/:id/export',
+    path: '/api/rooms/:id/history',
     category: 'bytes',
     reason: 'A room export, streamed as a download.',
   },

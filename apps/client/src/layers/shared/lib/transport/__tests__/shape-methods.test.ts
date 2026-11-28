@@ -44,7 +44,7 @@ describe('createShapeMethods', () => {
     let fetchMock = answer({});
     await methods.applyShape('my shape');
     expect(sent(fetchMock)).toEqual({
-      url: '/api/shapes/my%20shape/apply',
+      url: '/api/shapes/my%20shape/applications',
       method: 'POST',
       body: undefined,
     });

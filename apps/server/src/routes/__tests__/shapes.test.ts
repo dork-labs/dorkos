@@ -179,10 +179,10 @@ describe('shapes router', () => {
     expect(made.status).toBe(400);
   });
 
-  it('POST /api/shapes/:name/apply returns the §5 contract (applied chrome + warnings + offers)', async () => {
+  it('POST /api/shapes/:name/applications returns the §5 contract (applied chrome + warnings + offers)', async () => {
     const { app, setActiveShape } = await buildApp();
     const res = await request(fixtureTarget.mount(app))
-      .post('/api/shapes/linear-ops/apply')
+      .post('/api/shapes/linear-ops/applications')
       .send({});
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
@@ -197,9 +197,11 @@ describe('shapes router', () => {
     expect(setActiveShape).toHaveBeenCalledWith('linear-ops');
   });
 
-  it('POST /api/shapes/:name/apply returns 404 when the Shape is not installed', async () => {
+  it('POST /api/shapes/:name/applications returns 404 when the Shape is not installed', async () => {
     const { app } = await buildApp();
-    const res = await request(fixtureTarget.mount(app)).post('/api/shapes/ghost/apply').send({});
+    const res = await request(fixtureTarget.mount(app))
+      .post('/api/shapes/ghost/applications')
+      .send({});
     expect(res.status).toBe(404);
     expect(res.headers['content-type']).toContain('application/problem+json');
     expect(res.body).toMatchObject({
@@ -317,10 +319,10 @@ describe('shapes router', () => {
     // escapes the shapes/ root. Both :name handlers must 400 before any
     // filesystem resolution. (The proven exploit: fork copied a tree from
     // OUTSIDE shapes/ and returned 201.)
-    it('POST /api/shapes/:name/apply rejects a traversal name with 400', async () => {
+    it('POST /api/shapes/:name/applications rejects a traversal name with 400', async () => {
       const { app } = await buildApp();
       const res = await request(fixtureTarget.mount(app))
-        .post('/api/shapes/..%2F..%2Fsecret/apply')
+        .post('/api/shapes/..%2F..%2Fsecret/applications')
         .send({});
       expect(res.status).toBe(400);
       expect(res.body.detail).toMatch(/isn’t a Shape name/);
@@ -350,7 +352,7 @@ describe('shapes router', () => {
     it('still 404s for a well-formed but absent name (semantics preserved)', async () => {
       const { app } = await buildApp();
       const applyRes = await request(fixtureTarget.mount(app))
-        .post('/api/shapes/ghost/apply')
+        .post('/api/shapes/ghost/applications')
         .send({});
       expect(applyRes.status).toBe(404);
       const forkRes = await request(fixtureServer).post('/api/shapes/ghost/fork').send({});
@@ -361,7 +363,7 @@ describe('shapes router', () => {
   /**
    * The tier gate on apply (DOR-625).
    *
-   * `POST /api/shapes/:name/apply` had no gate of any kind — no `authorize`, no
+   * `POST /api/shapes/:name/applications` had no gate of any kind — no `authorize`, no
    * trusted-caller check, no confirmation provider — while applying a Shape writes
    * a `SKILL.md` into the operator's own skills root for every schedule it
    * declares, rewrites the active-Shape config, turns extensions on and off, and
@@ -377,7 +379,7 @@ describe('shapes router', () => {
    * own cockpit sends no agent header and is unaffected; a caller that names itself
    * an agent is asked first.
    */
-  describe('POST /api/shapes/:name/apply answers to the tier gate', () => {
+  describe('POST /api/shapes/:name/applications answers to the tier gate', () => {
     let approvals: ApprovalService;
 
     beforeEach(() => {
@@ -394,7 +396,7 @@ describe('shapes router', () => {
       const { app, setActiveShape, createSchedule } = await buildApp();
 
       const res = await request(fixtureTarget.mount(app))
-        .post('/api/shapes/linear-ops/apply')
+        .post('/api/shapes/linear-ops/applications')
         .set('x-dorkos-agent', 'dork_agent_token')
         .send({});
 
@@ -414,7 +416,7 @@ describe('shapes router', () => {
       const { app, createSchedule } = await buildApp();
 
       const asked = await request(fixtureTarget.mount(app))
-        .post('/api/shapes/linear-ops/apply')
+        .post('/api/shapes/linear-ops/applications')
         .set('x-dorkos-agent', 'dork_agent_token')
         .send({});
       expect(createSchedule).not.toHaveBeenCalled();
@@ -422,7 +424,7 @@ describe('shapes router', () => {
       approvals.grant(asked.body.approvalId as string);
 
       const done = await request(fixtureServer)
-        .post('/api/shapes/linear-ops/apply')
+        .post('/api/shapes/linear-ops/applications')
         .set('x-dorkos-agent', 'dork_agent_token')
         .set('x-dorkos-approval', asked.body.approvalToken as string)
         .send({});
@@ -437,7 +439,7 @@ describe('shapes router', () => {
       // this the operator, so the gate is skipped and the click just works.
       const { app, setActiveShape } = await buildApp();
       const res = await request(fixtureTarget.mount(app))
-        .post('/api/shapes/linear-ops/apply')
+        .post('/api/shapes/linear-ops/applications')
         .send({});
       expect(res.status).toBe(200);
       expect(setActiveShape).toHaveBeenCalledWith('linear-ops');
@@ -488,7 +490,7 @@ describe('shapes router', () => {
       resetCapabilityTierGate();
       const { app, createSchedule } = await buildApp();
       const res = await request(fixtureTarget.mount(app))
-        .post('/api/shapes/linear-ops/apply')
+        .post('/api/shapes/linear-ops/applications')
         .set('x-dorkos-agent', 'dork_agent_token')
         .send({});
 

@@ -33,7 +33,7 @@ const SHAPES = {
 
 test.describe('Shapes — switcher keyboard focus @smoke', () => {
   test.beforeEach(async ({ page, basePage }) => {
-    // Only the list is stubbed, by exact pathname: `/api/shapes/:name/apply`
+    // Only the list is stubbed, by exact pathname: `/api/shapes/:name/applications`
     // and `/fork` stay live so a stray click still hits the real server rather
     // than a silently faked success.
     await page.route(

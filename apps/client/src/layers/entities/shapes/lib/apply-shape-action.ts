@@ -3,7 +3,7 @@
  * app-shell UI dispatcher (agent-issued `apply_layout`) and the switcher UI
  * drive (DOR-355 task 3.1, mirroring the `switchAgentCwd` seam).
  *
- * It POSTs `/api/shapes/:name/apply`, then acts on the response WITHOUT a second
+ * It POSTs `/api/shapes/:name/applications`, then acts on the response WITHOUT a second
  * fetch (the review-locked §5/§9 contract): restore the chrome through the UI
  * dispatcher, live-remount extensions so newly-activated slots appear (W1c),
  * refresh the installed-Shapes list, surface every degradation warning to the

@@ -452,7 +452,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/core/mcp-tool-gate.ts':
         'the hand-registered MCP tools, which are not registry capabilities and so cannot inherit it (DOR-468)',
       'routes/shapes.ts':
-        'POST /api/shapes/:name/apply, which owns its own effect and has no capability twin — shapes is not a registry domain, and minting one purely so authorizeCapability had something to look up would add an agent-invocable path to the effect being closed (DOR-625)',
+        'POST /api/shapes/:name/applications, which owns its own effect and has no capability twin — shapes is not a registry domain, and minting one purely so authorizeCapability had something to look up would add an agent-invocable path to the effect being closed (DOR-625)',
       'services/core/capabilities/tier-enforcement.ts':
         'the definition itself, plus authorizeCapability next to it',
     },
@@ -850,7 +850,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/marketplace/flows/install-plugin.ts':
         "the install flow; the person's install request is held at `POST /api/marketplace/packages/:name/install` (DOR-4355), an agent's asks on a card",
       'services/shapes/apply-shape.ts':
-        "applying a Shape; the person's apply is held at `POST /api/shapes/:name/apply` (DOR-4355), an agent's asks on a card",
+        "applying a Shape; the person's apply is held at `POST /api/shapes/:name/applications` (DOR-4355), an agent's asks on a card",
     },
   },
   {

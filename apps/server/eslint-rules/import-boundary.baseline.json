@@ -329,7 +329,7 @@
     "memory -> core/untrusted-text": 2,
     "mesh -> activity": 1,
     "mesh -> audit": 5,
-    "mesh -> browser": 2,
+    "mesh -> browser": 1,
     "mesh -> core": 4,
     "mesh -> core/agent-identity": 3,
     "mesh -> core/capabilities": 6,

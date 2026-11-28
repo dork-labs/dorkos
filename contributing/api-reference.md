@@ -365,34 +365,34 @@ A new route is a capability with an `http` surface, served by the generic mount 
 
 The marketplace routes are mounted at `/api/marketplace` and backed by injected service dependencies (source manager, cache, fetcher, installer, uninstall/update flows). Route file: `apps/server/src/routes/marketplace.ts`, with one module per route group under `apps/server/src/routes/marketplace/`.
 
-| Method   | Path                                          | Description                                                                                         |
-| -------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `GET`    | `/api/marketplace/sources`                    | List configured marketplace sources                                                                 |
-| `POST`   | `/api/marketplace/sources`                    | Add a new source (`{ name, source, enabled? }`)                                                     |
-| `DELETE` | `/api/marketplace/sources/:name`              | Remove a source (also `DELETE /sources?name=`, see below)                                           |
-| `POST`   | `/api/marketplace/sources/:name/refresh`      | Force-refetch a source's `marketplace.json` (also `POST /sources/refresh?name=`)                    |
-| `GET`    | `/api/marketplace/installed`                  | List installed packages from `~/.dork/plugins/` and `~/.dork/agents/`                               |
-| `GET`    | `/api/marketplace/installed/:name`            | Get a single installed package by name                                                              |
-| `GET`    | `/api/marketplace/cache`                      | Cache status (counts, total bytes, whether automatic cleanup is paused)                             |
-| `DELETE` | `/api/marketplace/cache`                      | Wipe the entire marketplace cache                                                                   |
-| `POST`   | `/api/marketplace/cache/prune`                | Remove cached packages no install needs (no options)                                                |
-| `GET`    | `/api/marketplace/packages`                   | Aggregate packages from all enabled sources                                                         |
-| `GET`    | `/api/marketplace/packages/:name`             | Fetch and validate a single package entry (`?marketplace=` to pin source)                           |
-| `POST`   | `/api/marketplace/packages/:name/preview`     | Build a `PermissionPreview` without installing                                                      |
-| `POST`   | `/api/marketplace/packages/:name/install`     | Install a package (`{ marketplace?, source?, force?, yes?, projectPath? }`)                         |
-| `POST`   | `/api/marketplace/packages/:name/uninstall`   | Uninstall a package (`{ purge?, projectPath? }`)                                                    |
-| `POST`   | `/api/marketplace/packages/:name/update`      | Advisory update check; pass `{ apply: true }` to apply the update                                   |
-| `POST`   | `/api/marketplace/packages/:name/check-files` | Give an install an older DorkOS made its installed-files record, or say why not                     |
-| `POST`   | `/api/marketplace/packages/:name/keep-files`  | A person's "Keep these as mine" for files an update kept but could not sort (signed-in person only) |
-| `GET`    | `/api/marketplace/updates`                    | One update check per installation, with what each newer version runs                                |
-| `POST`   | `/api/marketplace/updates`                    | Reinstall exactly the installations a person was shown, held to what they saw                       |
-| `GET`    | `/api/marketplace/held-back`                  | Global packages held back from sessions, and why                                                    |
-| `POST`   | `/api/marketplace/held-back/:name/review`     | Raise the approval card for a held-back package again                                               |
-| `POST`   | `/api/marketplace/held-back/:name/decision`   | A person's allow or refuse for a held-back package (trusted caller only)                            |
-| `GET`    | `/api/marketplace/dev-links`                  | Every dev link and whether it is in force                                                           |
-| `POST`   | `/api/marketplace/dev-links/preview`          | What linking a folder would do; changes nothing                                                     |
-| `POST`   | `/api/marketplace/dev-links`                  | Make a dev link (tier-gated: an agent gets a card, 202, or a 403)                                   |
-| `POST`   | `/api/marketplace/dev-links/:name/unlink`     | Remove a dev link (the person only)                                                                 |
+| Method   | Path                                            | Description                                                                                         |
+| -------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/marketplace/sources`                      | List configured marketplace sources                                                                 |
+| `POST`   | `/api/marketplace/sources`                      | Add a new source (`{ name, source, enabled? }`)                                                     |
+| `DELETE` | `/api/marketplace/sources/:name`                | Remove a source (also `DELETE /sources?name=`, see below)                                           |
+| `POST`   | `/api/marketplace/sources/refreshes`            | Force-refetch a source's `marketplace.json` (`{ name }`)                                            |
+| `GET`    | `/api/marketplace/installed`                    | List installed packages from `~/.dork/plugins/` and `~/.dork/agents/`                               |
+| `GET`    | `/api/marketplace/installed/:name`              | Get a single installed package by name                                                              |
+| `GET`    | `/api/marketplace/cache`                        | Cache status (counts, total bytes, whether automatic cleanup is paused)                             |
+| `DELETE` | `/api/marketplace/cache`                        | Wipe the entire marketplace cache                                                                   |
+| `POST`   | `/api/marketplace/cache/prune`                  | Remove cached packages no install needs (no options)                                                |
+| `GET`    | `/api/marketplace/packages`                     | Aggregate packages from all enabled sources                                                         |
+| `GET`    | `/api/marketplace/packages/:name`               | Fetch and validate a single package entry (`?marketplace=` to pin source)                           |
+| `POST`   | `/api/marketplace/packages/:name/preview`       | Build a `PermissionPreview` without installing                                                      |
+| `POST`   | `/api/marketplace/packages/:name/install`       | Install a package (`{ marketplace?, source?, force?, yes?, projectPath? }`)                         |
+| `POST`   | `/api/marketplace/packages/:name/uninstall`     | Uninstall a package (`{ purge?, projectPath? }`)                                                    |
+| `POST`   | `/api/marketplace/packages/:name/update-checks` | Advisory update check; applying one goes through `POST /updates`                                    |
+| `POST`   | `/api/marketplace/packages/:name/check-files`   | Give an install an older DorkOS made its installed-files record, or say why not                     |
+| `POST`   | `/api/marketplace/packages/:name/keep-files`    | A person's "Keep these as mine" for files an update kept but could not sort (signed-in person only) |
+| `GET`    | `/api/marketplace/updates`                      | One update check per installation, with what each newer version runs                                |
+| `POST`   | `/api/marketplace/updates`                      | Reinstall exactly the installations a person was shown, held to what they saw                       |
+| `GET`    | `/api/marketplace/held-back`                    | Global packages held back from sessions, and why                                                    |
+| `POST`   | `/api/marketplace/held-back/:name/review`       | Raise the approval card for a held-back package again                                               |
+| `POST`   | `/api/marketplace/held-back/:name/decision`     | A person's allow or refuse for a held-back package (trusted caller only)                            |
+| `GET`    | `/api/marketplace/dev-links`                    | Every dev link and whether it is in force                                                           |
+| `POST`   | `/api/marketplace/dev-links/previews`           | What linking a folder would do; changes nothing                                                     |
+| `POST`   | `/api/marketplace/dev-links`                    | Make a dev link (tier-gated: an agent gets a card, 202, or a 403)                                   |
+| `DELETE` | `/api/marketplace/dev-links/:name`              | Remove a dev link (the person only; `?scope=` and `projectPath=`)                                   |
 
 The five lists (`GET /sources`, `/installed`, `/packages`, `/held-back`, `/dev-links`) come a page at a time (DOR-4982): `cursor` and `limit` in, `nextCursor` back, each in its own order (the sources file's, source by source as each listing names its packages, scan order). The installed and held-back lists seal their cursor to the reader, because an agent reads them without a person's folders (`services/marketplace/doors/marketplace-list-page.ts`). The `marketplace_list_marketplaces` and `marketplace_list_installed` tools page the same way. `GET /updates` is one check per installation in view and is not paged.
 
@@ -1414,22 +1414,7 @@ All mesh endpoints are under `/api/mesh/` and are always mounted (no feature fla
 
 Mesh manages an in-memory registry of discovered agent peers. Agents heartbeat to maintain their presence and query the topology to find collaborators.
 
-### POST /api/mesh/discover
-
-Trigger peer discovery for a given working directory. Scans for `.dork/agent.json` files in ancestor and sibling directories.
-
-**Request body:**
-
-```json
-{
-  "cwd": "/path/to/project"
-}
-```
-
-**Responses:**
-
-- `200` - `{ candidates: DiscoveryCandidate[] }`
-- `400` - Missing `cwd`
+Scanning folders for agents is `POST /api/discovery/scans`, a stream (see [Discovery](#post-apidiscoveryscans)).
 
 ### POST /api/mesh/agents
 
@@ -1566,7 +1551,7 @@ Update access control rules for the topology. Defines which agents may communica
 - `200` - `{ ok: true }`
 - `400` - Validation error
 
-### POST /api/mesh/deny
+### POST /api/mesh/denied
 
 Add an agent to the deny list. Denied agents cannot communicate with any mesh member.
 
@@ -1688,9 +1673,9 @@ The map is keyed by registered runtime type; it is not a fixed Claude-only inven
 
 ## Discovery Endpoint
 
-### POST /api/discovery/scan
+### POST /api/discovery/scans
 
-SSE endpoint that streams agent discovery results. Performs a BFS filesystem scan for AI-configured projects (AGENTS.md, .claude/, .cursor/, .dork/agent.json markers). No feature flag required.
+The one folder scan for agents (DOR-4982 folded `POST /api/mesh/discover` into it). Streams what a BFS filesystem scan finds as it walks (AGENTS.md, .claude/, .cursor/, .dork/agent.json markers). A folder that already holds an agent file is registered as it is found. No feature flag required. The frames are typed in the API document (`services/core/openapi/discovery-scan-openapi.ts`).
 
 **Request body:**
 
@@ -1702,16 +1687,17 @@ SSE endpoint that streams agent discovery results. Performs a BFS filesystem sca
 }
 ```
 
-`roots` is required (array of directory paths to scan). `maxDepth` (default 4) and `timeout` (default 30000ms) are optional.
+Every field is optional. `roots` (or one `root`) names the folders; with neither, the scan starts at the boundary. `maxDepth` is 1 to 10 (default 5) and `timeout` is 1000 to 120000 ms (default 30000).
 
 **Response:** `text/event-stream` with these event types:
 
-- `candidate` - Discovered project: `{ path, markers, runtime, name }`
-- `progress` - Scan progress: `{ scannedDirs, currentDir }`
-- `complete` - Scan finished: `{ totalCandidates, scannedDirs, duration }`
-- `error` - Scan error: `{ message }`
+- `candidate` - A folder that looks like an agent: `DiscoveryCandidate` (`{ path, strategy, hints, discoveredAt }`)
+- `existing-agent` - A folder that already held an agent file, now registered: `{ path, name, runtime, description }`
+- `progress` - Scan progress: `{ scannedDirs, foundAgents }`
+- `complete` - Scan finished, sent once, last: `{ scannedDirs, foundAgents, timedOut }`
+- `error` - The scan stopped early: `{ error }` (the reason stays in the log)
 
-All `roots` paths are validated against the configured directory boundary (403 if outside).
+All roots are checked against the configured directory boundary before the stream opens (403 `outside_boundary`).
 
 ## File Uploads
 

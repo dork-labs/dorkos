@@ -8,7 +8,6 @@ import type {
   AgentManifestUpdate,
   AgentPathEntry,
   CreateAgentRequestBody,
-  DiscoveryCandidate,
   DenialRecord,
   AgentPauseList,
   AgentPauseResult,
@@ -27,16 +26,6 @@ export function createMeshMethods(baseUrl: string) {
 
     listMeshAgentPaths(): Promise<{ agents: AgentPathEntry[] }> {
       return fetchJSON(baseUrl, '/mesh/agents/paths');
-    },
-
-    discoverMeshAgents(
-      roots: string[],
-      maxDepth?: number
-    ): Promise<{ candidates: DiscoveryCandidate[] }> {
-      return fetchJSON(baseUrl, '/mesh/discover', {
-        method: 'POST',
-        body: JSON.stringify({ roots, ...(maxDepth !== undefined && { maxDepth }) }),
-      });
     },
 
     // The roster comes in pages, newest registered first (DOR-4982); the app reads it whole.
@@ -87,7 +76,7 @@ export function createMeshMethods(baseUrl: string) {
     },
 
     denyMeshAgent(path: string, reason?: string, denier?: string): Promise<{ success: boolean }> {
-      return fetchJSON(baseUrl, '/mesh/deny', {
+      return fetchJSON(baseUrl, '/mesh/denied', {
         method: 'POST',
         body: JSON.stringify({ path, ...(reason && { reason }), ...(denier && { denier }) }),
       });

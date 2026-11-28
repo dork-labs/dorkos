@@ -733,7 +733,7 @@ describe('room files routes', () => {
       const upload = vi.spyOn(getRoomFileEditor(), 'upload');
 
       const res = await request(testServer)
-        .post(`/api/rooms/${roomId}/files/upload`)
+        .post(`/api/rooms/${roomId}/files`)
         .field('dir', 'designs')
         .field('baseCommit', base)
         .attach('files', Buffer.from([0x89, 0x50, 0x00]), { filename: 'résumé.png' })
@@ -766,7 +766,7 @@ describe('room files routes', () => {
       const roomId = await roomWithFiles();
 
       const res = await request(testServer)
-        .post(`/api/rooms/${roomId}/files/upload`)
+        .post(`/api/rooms/${roomId}/files`)
         .field('dir', 'docs')
         .field('baseCommit', await headOf(roomId))
         .attach('files', Buffer.from('mine\n'), { filename: 'plan.md' });
@@ -783,7 +783,7 @@ describe('room files routes', () => {
       await store.write({ ...sidecar, caps: { ...sidecar.caps, maxFileBytes: 16 } });
 
       const res = await request(testServer)
-        .post(`/api/rooms/${roomId}/files/upload`)
+        .post(`/api/rooms/${roomId}/files`)
         .attach('files', Buffer.alloc(64, 1), { filename: 'big.bin' });
 
       expect(res.status).toBe(409);
@@ -793,7 +793,7 @@ describe('room files routes', () => {
 
     it('refuses more than twenty files', async () => {
       const roomId = await roomWithFiles();
-      let req = request(testServer).post(`/api/rooms/${roomId}/files/upload`);
+      let req = request(testServer).post(`/api/rooms/${roomId}/files`);
       for (let i = 0; i < 21; i++) {
         req = req.attach('files', Buffer.from('x'), { filename: `f${i}.md` });
       }
@@ -812,17 +812,17 @@ describe('room files routes', () => {
 
       const answers = await Promise.all([
         request(testServer)
-          .post(`/api/rooms/${roomId}/files/upload`)
+          .post(`/api/rooms/${roomId}/files`)
           .set('X-DorkOS-Agent', token)
           .attach('files', Buffer.from('x'), { filename: 'a.md' }),
         request(testServer)
-          .post(`/api/rooms/${roomId}/files/move`)
+          .patch(`/api/rooms/${roomId}/files`)
           .set('X-DorkOS-Agent', token)
           .send({ from: 'ROOM.md', to: 'R.md', baseCommit: base }),
         request(testServer)
-          .post(`/api/rooms/${roomId}/files/delete`)
+          .delete(`/api/rooms/${roomId}/files`)
           .set('X-DorkOS-Agent', token)
-          .send({ path: 'ROOM.md', baseCommit: base }),
+          .query({ path: 'ROOM.md', baseCommit: base }),
         request(testServer)
           .post(`/api/rooms/${roomId}/files/from-attachment`)
           .set('X-DorkOS-Agent', token)
@@ -841,15 +841,15 @@ describe('room files routes', () => {
       const roomId = await roomWithFiles();
 
       const moved = await request(testServer)
-        .post(`/api/rooms/${roomId}/files/move`)
+        .patch(`/api/rooms/${roomId}/files`)
         .send({ from: 'docs', to: 'archive/docs', baseCommit: await headOf(roomId) });
       expect(moved.status).toBe(200);
       expect(moved.body.paths).toEqual(['archive/docs/plan.md']);
       expect(moved.body.lastCommit).toMatchObject({ subject: 'Rename docs/ to archive/docs/' });
 
       const deleted = await request(testServer)
-        .post(`/api/rooms/${roomId}/files/delete`)
-        .send({ path: 'archive', baseCommit: moved.body.commit });
+        .delete(`/api/rooms/${roomId}/files`)
+        .query({ path: 'archive', baseCommit: moved.body.commit });
       expect(deleted.status).toBe(200);
       expect(deleted.body.lastCommit).toMatchObject({ subject: 'Delete archive/' });
 
@@ -868,7 +868,7 @@ describe('room files routes', () => {
       expect(theirs.status).toBe(200);
 
       const res = await request(testServer)
-        .post(`/api/rooms/${roomId}/files/move`)
+        .patch(`/api/rooms/${roomId}/files`)
         .send({ from: 'docs', to: 'old-docs', baseCommit: opened });
 
       expect(res.status).toBe(409);
@@ -917,7 +917,7 @@ describe('room files routes', () => {
       it('an NFD upload with no replace is refused ROOM_FILE_EXISTS', async () => {
         const roomId = await roomWithCafe();
         const res = await request(testServer)
-          .post(`/api/rooms/${roomId}/files/upload`)
+          .post(`/api/rooms/${roomId}/files`)
           .field('baseCommit', await headOf(roomId))
           .attach('files', Buffer.from('overwritten\n'), { filename: NFD });
 
@@ -942,7 +942,7 @@ describe('room files routes', () => {
         const roomId = await roomWithCafe();
         const base = await headOf(roomId);
         const res = await request(testServer)
-          .post(`/api/rooms/${roomId}/files/upload`)
+          .post(`/api/rooms/${roomId}/files`)
           .field('baseCommit', base)
           .field('replace', JSON.stringify([NFD]))
           .attach('files', Buffer.from('overwritten\n'), { filename: NFD })
@@ -966,11 +966,11 @@ describe('room files routes', () => {
       const base = await headOf(roomId);
 
       const moved = await request(testServer)
-        .post(`/api/rooms/${roomId}/files/move`)
+        .patch(`/api/rooms/${roomId}/files`)
         .send({ from: 'docs', to: 'old-docs', baseCommit: null });
       const deleted = await request(testServer)
-        .post(`/api/rooms/${roomId}/files/delete`)
-        .send({ path: 'docs', baseCommit: null });
+        .delete(`/api/rooms/${roomId}/files`)
+        .query({ path: 'docs', baseCommit: null });
 
       expect(moved.status).toBe(400);
       expect(deleted.status).toBe(400);

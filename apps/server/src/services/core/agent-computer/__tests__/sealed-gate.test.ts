@@ -217,7 +217,7 @@ describe('the session gate on an agent computer', () => {
       ['POST', '/api/community-connections'],
       ['POST', '/api/hub/link'],
       ['POST', '/api/desktop/sign-in'],
-      ['POST', '/api/discovery/scan'],
+      ['POST', '/api/discovery/scans'],
       ['POST', '/api/directory'],
       ['POST', '/api/communities/c1/dms'],
       ['POST', '/api/workspaces'],

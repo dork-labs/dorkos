@@ -120,7 +120,7 @@ describe('runMarketplaceLink', () => {
     expect(await runMarketplaceLink(args())).toBe(0);
 
     expect(confirmMock).toHaveBeenCalledWith(`Run flow from ${realFolder}?`);
-    expect(call(0).url).toMatch(/\/api\/marketplace\/dev-links\/preview$/);
+    expect(call(0).url).toMatch(/\/api\/marketplace\/dev-links\/previews$/);
     // The link the person typed is resolved: the folder shown is the folder linked.
     expect(call(0).body).toEqual({ path: realFolder, scope: 'global' });
     expect(call(1).url).toMatch(/\/api\/marketplace\/dev-links$/);

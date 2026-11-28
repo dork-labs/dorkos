@@ -939,16 +939,6 @@ export type TopologyView = z.infer<typeof TopologyViewSchema>;
 
 // === HTTP Request/Response Schemas ===
 
-/** Request body for POST /api/mesh/discover */
-export const DiscoverRequestSchema = z
-  .object({
-    roots: z.array(z.string().min(1)).min(1),
-    maxDepth: z.number().int().min(1).optional(),
-  })
-  .openapi('DiscoverRequest');
-
-export type DiscoverRequest = z.infer<typeof DiscoverRequestSchema>;
-
 /** Request body for POST /api/mesh/agents */
 export const RegisterAgentRequestSchema = z
   .object({
@@ -973,7 +963,7 @@ export const RegisterAgentRequestSchema = z
 
 export type RegisterAgentRequest = z.infer<typeof RegisterAgentRequestSchema>;
 
-/** Request body for POST /api/mesh/deny */
+/** Request body for POST /api/mesh/denied */
 export const DenyRequestSchema = z
   .object({
     path: z.string().min(1),

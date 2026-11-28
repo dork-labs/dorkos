@@ -896,6 +896,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/discovery/scans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Scan folders for agents (SSE)
+         * @description Walks the folders and streams what it finds as it goes. A folder that already holds an agent file is registered as it is found and sent as an `existing-agent` frame. Every root must sit inside the boundary, or the scan is refused before the stream opens.
+         */
+        post: operations["discovery.scan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hub/computers": {
         parameters: {
             query?: never;
@@ -1954,7 +1974,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/marketplace/sources/{name}/refresh": {
+    "/api/marketplace/sources/refreshes": {
         parameters: {
             query?: never;
             header?: never;
@@ -1965,29 +1985,9 @@ export interface paths {
         put?: never;
         /**
          * Force refetch of a source marketplace.json
-         * @description Checks the source now. When it cannot be reached but a copy is cached, answers 200 with that copy, `stale: true`, the `reason`, and `fetchedAt` set to when the copy was fetched. With nothing cached, answers 502.
+         * @description Checks the source now. The name rides in the body, so a name saved by an older DorkOS that holds a `/` needs no special spelling. When the source cannot be reached but a copy is cached, answers 200 with that copy, `stale: true`, the `reason`, and `fetchedAt` set to when the copy was fetched. With nothing cached, answers 502.
          */
-        post: operations["marketplace.refreshSources"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/marketplace/sources/refresh": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Force refetch of a source marketplace.json
-         * @description From the app, the name goes in the `name` query parameter: a name saved by an older DorkOS may hold a `/`, and Remote Access refuses an encoded `/` in a URL path. Checks the source now. When it cannot be reached but a copy is cached, answers 200 with that copy, `stale: true`, the `reason`, and `fetchedAt` set to when the copy was fetched. With nothing cached, answers 502.
-         */
-        post: operations["marketplace.refreshSourcesByQuery"];
+        post: operations["marketplace.refresh_source"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2145,7 +2145,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/marketplace/packages/{name}/update": {
+    "/api/marketplace/packages/{name}/update-checks": {
         parameters: {
             query?: never;
             header?: never;
@@ -2158,7 +2158,7 @@ export interface paths {
          * Check one package for an update
          * @description Advisory only: nothing is reinstalled. Updates are applied through `POST /api/marketplace/updates`, which shows what each new version runs first. A body with `apply` is refused (400).
          */
-        post: operations["marketplace.updatePackages"];
+        post: operations["marketplace.check_update"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2228,7 +2228,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/marketplace/dev-links/preview": {
+    "/api/marketplace/dev-links/previews": {
         parameters: {
             query?: never;
             header?: never;
@@ -2241,7 +2241,7 @@ export interface paths {
          * Preview running a package from a folder
          * @description Read-only. Names the package, the slot the link would take, an installed copy it would set aside, what the folder runs on its own, and the extensions it carries. A folder that cannot be linked answers with the reason.
          */
-        post: operations["marketplace.previewDevLinks"];
+        post: operations["marketplace.preview_dev_link"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2274,7 +2274,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/marketplace/dev-links/{name}/unlink": {
+    "/api/marketplace/dev-links/{name}": {
         parameters: {
             query?: never;
             header?: never;
@@ -2283,12 +2283,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        post?: never;
         /**
          * Unlink a dev link
          * @description The person only: the same bar as deciding an approval card. Takes the link out (never the folder) and puts a set-aside installed copy back with its approvals.
          */
-        post: operations["marketplace.unlinkDevLinks"];
-        delete?: never;
+        delete: operations["marketplace.unlink_dev_link"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2530,7 +2530,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/shapes/{name}/apply": {
+    "/api/shapes/{name}/applications": {
         parameters: {
             query?: never;
             header?: never;
@@ -3255,7 +3255,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/rooms/{id}/export": {
+    "/api/rooms/{id}/history": {
         parameters: {
             query?: never;
             header?: never;
@@ -3584,11 +3584,29 @@ export interface paths {
          */
         get: operations["rooms.getFiles"];
         put?: never;
-        post?: never;
-        delete?: never;
+        /**
+         * Upload files into a room's files
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     Multipart: up to 20 files in the `files` field, plus `dir` (the folder, relative to the repo root; empty for the root; missing folders are created), `baseCommit` (what the person's view was read at), and `replace` (a JSON list of the file NAMES this upload may overwrite). **One commit for the whole upload**, `Upload N files to <dir>/` (`to the top folder` for the root), authored as the person, and one quiet room entry (`body.fileChange`, `kind: 'upload'`) that wakes nobody. Each file must be new at `main`, or named in `replace` and unchanged since `baseCommit` — anything else already there is 409 `room_file_exists`, naming the path, so the app can ask whether to replace it. Uploads are bytes: binary files are fine. **Refused before a byte is read** when the caller may not change this room's files. Each file is capped at the room's own frozen file limit while it is still being read (409 `file_too_large`); more than 20 files is 400 `room_upload_too_many_files`. The files are staged on disk, never in memory, and the staging folder is gone before the response is sent. A failure part-way leaves the room's files exactly as they were.
+         */
+        post: operations["rooms.upload_files"];
+        /**
+         * Delete one of a room's files or folders
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     One commit, `Delete <path>` (a folder with a trailing `/`), authored as the person, and one quiet room entry (`kind: 'delete'`). `baseCommit` is required, and every file under `path` must be unchanged since it — nobody deletes a file they have not seen — or 409 `file_changed`. The room's history keeps what was deleted: it is a commit, so an agent or git can bring it back. `path` and `baseCommit` ride in the query, since a DELETE body is one proxies may drop.
+         */
+        delete: operations["rooms.delete_file"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Rename or move one of a room's files or folders
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     One commit, `Rename <from> to <to>` (a folder is written with a trailing `/`), authored as the person, and one quiet room entry (`kind: 'rename'`). `baseCommit` is required: every file under `from` must be unchanged since it, or 409 `file_changed` with the conflict. `to` must not exist (409 `room_file_exists`); missing folders above it are created, and a folder segment that differs only in capitals from one the room has is refused, naming the real one. A file keeps its executable bit. A link or another repository inside a moved folder is refused rather than carried. A rename that only changes capitals is allowed.
+         */
+        patch: operations["rooms.move_file"];
         trace?: never;
     };
     "/api/rooms/{id}/files/raw": {
@@ -3635,72 +3653,6 @@ export interface paths {
          */
         put: operations["rooms.updateFilesContent"];
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/rooms/{id}/files/upload": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Upload files into a room's files
-         * @description **Preview.** This operation may change in any release.
-         *
-         *     Multipart: up to 20 files in the `files` field, plus `dir` (the folder, relative to the repo root; empty for the root; missing folders are created), `baseCommit` (what the person's view was read at), and `replace` (a JSON list of the file NAMES this upload may overwrite). **One commit for the whole upload**, `Upload N files to <dir>/` (`to the top folder` for the root), authored as the person, and one quiet room entry (`body.fileChange`, `kind: 'upload'`) that wakes nobody. Each file must be new at `main`, or named in `replace` and unchanged since `baseCommit` — anything else already there is 409 `room_file_exists`, naming the path, so the app can ask whether to replace it. Uploads are bytes: binary files are fine. **Refused before a byte is read** when the caller may not change this room's files. Each file is capped at the room's own frozen file limit while it is still being read (409 `file_too_large`); more than 20 files is 400 `room_upload_too_many_files`. The files are staged on disk, never in memory, and the staging folder is gone before the response is sent. A failure part-way leaves the room's files exactly as they were.
-         */
-        post: operations["rooms.uploadFiles"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/rooms/{id}/files/move": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Rename or move one of a room's files or folders
-         * @description **Preview.** This operation may change in any release.
-         *
-         *     One commit, `Rename <from> to <to>` (a folder is written with a trailing `/`), authored as the person, and one quiet room entry (`kind: 'rename'`). `baseCommit` is required: every file under `from` must be unchanged since it, or 409 `file_changed` with the conflict. `to` must not exist (409 `room_file_exists`); missing folders above it are created, and a folder segment that differs only in capitals from one the room has is refused, naming the real one. A file keeps its executable bit. A link or another repository inside a moved folder is refused rather than carried. A rename that only changes capitals is allowed.
-         */
-        post: operations["rooms.moveFiles"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/rooms/{id}/files/delete": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Delete one of a room's files or folders
-         * @description **Preview.** This operation may change in any release.
-         *
-         *     One commit, `Delete <path>` (a folder with a trailing `/`), authored as the person, and one quiet room entry (`kind: 'delete'`). `baseCommit` is required, and every file under `path` must be unchanged since it — nobody deletes a file they have not seen — or 409 `file_changed`. The room's history keeps what was deleted: it is a commit, so an agent or git can bring it back. POST rather than DELETE because the request carries a body.
-         */
-        post: operations["rooms.deleteFiles"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5270,7 +5222,13 @@ export interface paths {
          */
         get: operations["mesh.list_denied"];
         put?: never;
-        post?: never;
+        /**
+         * Hide a folder from discovery
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     Hide a folder from agent discovery, with an optional reason.
+         */
+        post: operations["mesh.deny_folder"];
         /**
          * Show a folder to discovery again
          * @description **Preview.** This operation may change in any release.
@@ -5278,28 +5236,6 @@ export interface paths {
          *     Clear a folder’s denial, so discovery sees it again. The folder goes in `path`.
          */
         delete: operations["mesh.clear_denial"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mesh/discover": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Scan folders for agents
-         * @description **Preview.** This operation may change in any release.
-         *
-         *     Scan folders for agent candidates. A folder that already holds an agent file is registered as it is found. Answers at most 1000 candidates.
-         */
-        post: operations["mesh.discover"];
-        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -5322,28 +5258,6 @@ export interface paths {
          *     Take an agent off the team and delete its `.dork` folder. Refused when git tracks the agent file: remove the agent without its data instead.
          */
         delete: operations["mesh.delete_agent_data"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mesh/deny": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Hide a folder from discovery
-         * @description **Preview.** This operation may change in any release.
-         *
-         *     Hide a folder from agent discovery, with an optional reason.
-         */
-        post: operations["mesh.deny_folder"];
-        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -7459,7 +7373,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/your-browser/scan": {
+    "/api/your-browser/profile-scans": {
         parameters: {
             query?: never;
             header?: never;
@@ -8746,7 +8660,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/harness/sync": {
+    "/api/harness/syncs": {
         parameters: {
             query?: never;
             header?: never;
@@ -10463,6 +10377,27 @@ export interface components {
             /** @enum {string} */
             status: "revoked";
             approvalId: string;
+        };
+        /** @description A `candidate` frame: a folder that looks like an agent. */
+        DiscoveryCandidate: {
+            path: string;
+            strategy: string;
+            hints: components["schemas"]["AgentHints"];
+            /** Format: date-time */
+            discoveredAt: string;
+        };
+        AgentHints: {
+            suggestedName: string;
+            detectedRuntime: components["schemas"]["AgentRuntime"];
+            inferredCapabilities?: string[];
+            description?: string;
+        };
+        /** @enum {string} */
+        AgentRuntime: "claude-code" | "cursor" | "codex" | "opencode" | "doe" | "windsurf" | "gemini" | "cline" | "roo-code" | "copilot" | "amazon-q" | "continue" | "augment" | "jetbrains-ai" | "kilo-code" | "trae" | "other";
+        /** @description A `progress` frame: how far the scan has walked. */
+        ScanProgress: {
+            scannedDirs: number;
+            foundAgents: number;
         };
         /** @enum {string} */
         MessageDisposition: "queue" | "steer" | "stage";
@@ -13214,8 +13149,6 @@ export interface components {
              */
             createdBy?: string;
         };
-        /** @enum {string} */
-        AgentRuntime: "claude-code" | "cursor" | "codex" | "opencode" | "doe" | "windsurf" | "gemini" | "cline" | "roo-code" | "copilot" | "amazon-q" | "continue" | "augment" | "jetbrains-ai" | "kilo-code" | "trae" | "other";
         /**
          * @default {
          *       "responseMode": "always"
@@ -14757,23 +14690,6 @@ export interface components {
             deniedBy: string;
             /** Format: date-time */
             deniedAt: string;
-        };
-        DiscoveryCandidate: {
-            path: string;
-            strategy: string;
-            hints: components["schemas"]["AgentHints"];
-            /** Format: date-time */
-            discoveredAt: string;
-        };
-        AgentHints: {
-            suggestedName: string;
-            detectedRuntime: components["schemas"]["AgentRuntime"];
-            inferredCapabilities?: string[];
-            description?: string;
-        };
-        DiscoverRequest: {
-            roots: string[];
-            maxDepth?: number;
         };
         RegisterAgentRequest: {
             path: string;
@@ -19917,6 +19833,66 @@ export interface operations {
             };
         };
     };
+    "discovery.scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description One folder to scan. `roots` wins when both are sent. */
+                    root?: string;
+                    /** @description The folders to scan. With neither field, the scan starts at the boundary. */
+                    roots?: string[];
+                    /** @description How deep to walk. Default 5. */
+                    maxDepth?: number;
+                    /** @description When to stop, in milliseconds. Default 30000. */
+                    timeout?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description An SSE stream: `candidate`, `existing-agent` and `progress` frames while it walks, then one `complete` frame, or an `error` frame when it stops early. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["DiscoveryCandidate"] | {
+                        path: string;
+                        name: string;
+                        runtime: components["schemas"]["AgentRuntime"];
+                        description: string;
+                    } | components["schemas"]["ScanProgress"] | (components["schemas"]["ScanProgress"] & {
+                        timedOut: boolean;
+                    }) | {
+                        error: string;
+                    };
+                };
+            };
+            /** @description `invalid_request`: the body does not fit */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `outside_boundary`: a root is outside the folders DorkOS may use */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     "hub.listComputers": {
         parameters: {
             query?: never;
@@ -24008,77 +23984,21 @@ export interface operations {
             };
         };
     };
-    "marketplace.refreshSources": {
+    "marketplace.refresh_source": {
         parameters: {
             query?: never;
-            header?: never;
-            path: {
-                name: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The listing, fetched now or (when `stale`) the last cached copy */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        marketplace: {
-                            name: string;
-                            plugins: ({
-                                name: string;
-                                source: string;
-                                description?: string;
-                                version?: string;
-                            } & {
-                                [key: string]: unknown;
-                            })[];
-                        } & {
-                            [key: string]: unknown;
-                        };
-                        /** @description When this copy of the listing was fetched */
-                        fetchedAt: string;
-                        /** @description True when the source could not be reached */
-                        stale: boolean;
-                        /** @description Why the source could not be reached; present only when `stale` */
-                        reason?: string;
-                    };
-                };
-            };
-            /** @description `not_found`: source not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description `upstream_unavailable`: the source could not be fetched and nothing is cached */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    "marketplace.refreshSourcesByQuery": {
-        parameters: {
-            query: {
-                /** @description The source name */
-                name: string;
-            };
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description The source name */
+                    name: string;
+                };
+            };
+        };
         responses: {
             /** @description The listing, fetched now or (when `stale`) the last cached copy */
             200: {
@@ -24107,6 +24027,15 @@ export interface operations {
                         /** @description Why the source could not be reached; present only when `stale` */
                         reason?: string;
                     };
+                };
+            };
+            /** @description `invalid_request`: the body does not name one source */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description `not_found`: source not found */
@@ -25304,7 +25233,7 @@ export interface operations {
             };
         };
     };
-    "marketplace.updatePackages": {
+    "marketplace.check_update": {
         parameters: {
             query?: never;
             header?: never;
@@ -26080,7 +26009,7 @@ export interface operations {
             };
         };
     };
-    "marketplace.previewDevLinks": {
+    "marketplace.preview_dev_link": {
         parameters: {
             query?: never;
             header?: never;
@@ -26451,25 +26380,20 @@ export interface operations {
             };
         };
     };
-    "marketplace.unlinkDevLinks": {
+    "marketplace.unlink_dev_link": {
         parameters: {
-            query?: never;
+            query: {
+                scope: "global" | "project";
+                /** @description Required for, and only for, scope project. */
+                projectPath?: string;
+            };
             header?: never;
             path: {
                 name: string;
             };
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": {
-                    /** @enum {string} */
-                    scope: "global" | "project";
-                    /** @description Required for, and only for, scope project. */
-                    projectPath?: string;
-                };
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Unlinked */
             200: {
@@ -35188,6 +35112,321 @@ export interface operations {
             };
         };
     };
+    "rooms.upload_files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": {
+                    files: string[];
+                    dir?: string;
+                    baseCommit?: string;
+                    /** @description A JSON array of file names. */
+                    replace?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The change is one commit on the room’s `main`, authored as the person, and one quiet room entry */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        commit: string;
+                        paths: string[];
+                        lastCommit: {
+                            sha: string;
+                            author: string;
+                            at: string;
+                            subject: string;
+                        } | null;
+                    };
+                };
+            };
+            /** @description A path that could mean somewhere else, names the room’s own git directory, or puts a file inside a file (`room_file_path_invalid`); something that is not a file where a file was meant, or a name that differs only in capitals from one the room has (`room_file_not_readable`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`agent_identity_unverified`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The caller is an agent; only people change a room’s files (`person_only`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No such room, or the caller is not a member of it (`room_not_found`) — the same answer for both — or no such file or folder (`room_file_not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A path changed since the person read it — `file_changed`, the ONLY code that carries `conflict` — or the room already holds that path (`room_file_exists`, naming it), or one of the room-state refusals a save gives (`main_checkout_dirty`, `file_too_large`, `repo_cap_exceeded`, `room_archived`, `room_has_no_repo`, `room_repos_disabled`, `room_repo_git_unavailable`). Switch on `code` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": (components["schemas"]["Problem"] & {
+                        /** @enum {string} */
+                        code?: "file_changed";
+                        conflict: {
+                            path: string;
+                            commit: string;
+                            lastCommit: {
+                                sha: string;
+                                author: string;
+                                at: string;
+                                subject: string;
+                            } | null;
+                        };
+                    }) | components["schemas"]["Problem"];
+                };
+            };
+            /** @description Another write held the room’s queue and the wait ran out (`merge_in_flight`) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "rooms.delete_file": {
+        parameters: {
+            query: {
+                path: string;
+                baseCommit: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The change is one commit on the room’s `main`, authored as the person, and one quiet room entry */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        commit: string;
+                        paths: string[];
+                        lastCommit: {
+                            sha: string;
+                            author: string;
+                            at: string;
+                            subject: string;
+                        } | null;
+                    };
+                };
+            };
+            /** @description A path that could mean somewhere else, names the room’s own git directory, or puts a file inside a file (`room_file_path_invalid`); something that is not a file where a file was meant, or a name that differs only in capitals from one the room has (`room_file_not_readable`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`agent_identity_unverified`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The caller is an agent; only people change a room’s files (`person_only`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No such room, or the caller is not a member of it (`room_not_found`) — the same answer for both — or no such file or folder (`room_file_not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A path changed since the person read it — `file_changed`, the ONLY code that carries `conflict` — or the room already holds that path (`room_file_exists`, naming it), or one of the room-state refusals a save gives (`main_checkout_dirty`, `file_too_large`, `repo_cap_exceeded`, `room_archived`, `room_has_no_repo`, `room_repos_disabled`, `room_repo_git_unavailable`). Switch on `code` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": (components["schemas"]["Problem"] & {
+                        /** @enum {string} */
+                        code?: "file_changed";
+                        conflict: {
+                            path: string;
+                            commit: string;
+                            lastCommit: {
+                                sha: string;
+                                author: string;
+                                at: string;
+                                subject: string;
+                            } | null;
+                        };
+                    }) | components["schemas"]["Problem"];
+                };
+            };
+            /** @description Another write held the room’s queue and the wait ran out (`merge_in_flight`) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "rooms.move_file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    from: string;
+                    to: string;
+                    baseCommit: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The change is one commit on the room’s `main`, authored as the person, and one quiet room entry */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        commit: string;
+                        paths: string[];
+                        lastCommit: {
+                            sha: string;
+                            author: string;
+                            at: string;
+                            subject: string;
+                        } | null;
+                    };
+                };
+            };
+            /** @description A path that could mean somewhere else, names the room’s own git directory, or puts a file inside a file (`room_file_path_invalid`); something that is not a file where a file was meant, or a name that differs only in capitals from one the room has (`room_file_not_readable`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`agent_identity_unverified`) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The caller is an agent; only people change a room’s files (`person_only`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No such room, or the caller is not a member of it (`room_not_found`) — the same answer for both — or no such file or folder (`room_file_not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description A path changed since the person read it — `file_changed`, the ONLY code that carries `conflict` — or the room already holds that path (`room_file_exists`, naming it), or one of the room-state refusals a save gives (`main_checkout_dirty`, `file_too_large`, `repo_cap_exceeded`, `room_archived`, `room_has_no_repo`, `room_repos_disabled`, `room_repo_git_unavailable`). Switch on `code` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": (components["schemas"]["Problem"] & {
+                        /** @enum {string} */
+                        code?: "file_changed";
+                        conflict: {
+                            path: string;
+                            commit: string;
+                            lastCommit: {
+                                sha: string;
+                                author: string;
+                                at: string;
+                                subject: string;
+                            } | null;
+                        };
+                    }) | components["schemas"]["Problem"];
+                };
+            };
+            /** @description Another write held the room’s queue and the wait ran out (`merge_in_flight`) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     "rooms.getFilesRaw": {
         parameters: {
             query: {
@@ -35436,325 +35675,6 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Another write held the room’s queue and the wait ran out (`merge_in_flight`) */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    "rooms.uploadFiles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "multipart/form-data": {
-                    files: string[];
-                    dir?: string;
-                    baseCommit?: string;
-                    /** @description A JSON array of file names. */
-                    replace?: string;
-                };
-            };
-        };
-        responses: {
-            /** @description The change is one commit on the room’s `main`, authored as the person, and one quiet room entry */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        commit: string;
-                        paths: string[];
-                        lastCommit: {
-                            sha: string;
-                            author: string;
-                            at: string;
-                            subject: string;
-                        } | null;
-                    };
-                };
-            };
-            /** @description A path that could mean somewhere else, names the room’s own git directory, or puts a file inside a file (`room_file_path_invalid`); something that is not a file where a file was meant, or a name that differs only in capitals from one the room has (`room_file_not_readable`) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`agent_identity_unverified`) */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The caller is an agent; only people change a room’s files (`person_only`) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description No such room, or the caller is not a member of it (`room_not_found`) — the same answer for both — or no such file or folder (`room_file_not_found`) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description A path changed since the person read it — `file_changed`, the ONLY code that carries `conflict` — or the room already holds that path (`room_file_exists`, naming it), or one of the room-state refusals a save gives (`main_checkout_dirty`, `file_too_large`, `repo_cap_exceeded`, `room_archived`, `room_has_no_repo`, `room_repos_disabled`, `room_repo_git_unavailable`). Switch on `code` */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": (components["schemas"]["Problem"] & {
-                        /** @enum {string} */
-                        code?: "file_changed";
-                        conflict: {
-                            path: string;
-                            commit: string;
-                            lastCommit: {
-                                sha: string;
-                                author: string;
-                                at: string;
-                                subject: string;
-                            } | null;
-                        };
-                    }) | components["schemas"]["Problem"];
-                };
-            };
-            /** @description Another write held the room’s queue and the wait ran out (`merge_in_flight`) */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    "rooms.moveFiles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": {
-                    from: string;
-                    to: string;
-                    baseCommit: string;
-                };
-            };
-        };
-        responses: {
-            /** @description The change is one commit on the room’s `main`, authored as the person, and one quiet room entry */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        commit: string;
-                        paths: string[];
-                        lastCommit: {
-                            sha: string;
-                            author: string;
-                            at: string;
-                            subject: string;
-                        } | null;
-                    };
-                };
-            };
-            /** @description A path that could mean somewhere else, names the room’s own git directory, or puts a file inside a file (`room_file_path_invalid`); something that is not a file where a file was meant, or a name that differs only in capitals from one the room has (`room_file_not_readable`) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`agent_identity_unverified`) */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The caller is an agent; only people change a room’s files (`person_only`) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description No such room, or the caller is not a member of it (`room_not_found`) — the same answer for both — or no such file or folder (`room_file_not_found`) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description A path changed since the person read it — `file_changed`, the ONLY code that carries `conflict` — or the room already holds that path (`room_file_exists`, naming it), or one of the room-state refusals a save gives (`main_checkout_dirty`, `file_too_large`, `repo_cap_exceeded`, `room_archived`, `room_has_no_repo`, `room_repos_disabled`, `room_repo_git_unavailable`). Switch on `code` */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": (components["schemas"]["Problem"] & {
-                        /** @enum {string} */
-                        code?: "file_changed";
-                        conflict: {
-                            path: string;
-                            commit: string;
-                            lastCommit: {
-                                sha: string;
-                                author: string;
-                                at: string;
-                                subject: string;
-                            } | null;
-                        };
-                    }) | components["schemas"]["Problem"];
-                };
-            };
-            /** @description Another write held the room’s queue and the wait ran out (`merge_in_flight`) */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    "rooms.deleteFiles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": {
-                    path: string;
-                    baseCommit: string;
-                };
-            };
-        };
-        responses: {
-            /** @description The change is one commit on the room’s `main`, authored as the person, and one quiet room entry */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        commit: string;
-                        paths: string[];
-                        lastCommit: {
-                            sha: string;
-                            author: string;
-                            at: string;
-                            subject: string;
-                        } | null;
-                    };
-                };
-            };
-            /** @description A path that could mean somewhere else, names the room’s own git directory, or puts a file inside a file (`room_file_path_invalid`); something that is not a file where a file was meant, or a name that differs only in capitals from one the room has (`room_file_not_readable`) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The caller presented an `X-DorkOS-Agent` token this machine could not verify — revoked, expired, or never minted here (`agent_identity_unverified`) */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The caller is an agent; only people change a room’s files (`person_only`) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description No such room, or the caller is not a member of it (`room_not_found`) — the same answer for both — or no such file or folder (`room_file_not_found`) */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description A path changed since the person read it — `file_changed`, the ONLY code that carries `conflict` — or the room already holds that path (`room_file_exists`, naming it), or one of the room-state refusals a save gives (`main_checkout_dirty`, `file_too_large`, `repo_cap_exceeded`, `room_archived`, `room_has_no_repo`, `room_repos_disabled`, `room_repo_git_unavailable`). Switch on `code` */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": (components["schemas"]["Problem"] & {
-                        /** @enum {string} */
-                        code?: "file_changed";
-                        conflict: {
-                            path: string;
-                            commit: string;
-                            lastCommit: {
-                                sha: string;
-                                author: string;
-                                at: string;
-                                subject: string;
-                            } | null;
-                        };
-                    }) | components["schemas"]["Problem"];
                 };
             };
             /** @description Another write held the room’s queue and the wait ran out (`merge_in_flight`) */
@@ -46638,20 +46558,21 @@ export interface operations {
             };
         };
     };
-    "mesh.clear_denial": {
+    "mesh.deny_folder": {
         parameters: {
-            query?: {
-                /** @description The denied folder, absolute. */
-                path?: string;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DenyRequest"];
+            };
+        };
         responses: {
-            /** @description Show a folder to discovery again result */
-            200: {
+            /** @description Hide a folder from discovery result */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -46753,28 +46674,26 @@ export interface operations {
             };
         };
     };
-    "mesh.discover": {
+    "mesh.clear_denial": {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description The denied folder, absolute. */
+                path?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["DiscoverRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Scan folders for agents result */
+            /** @description Show a folder to discovery again result */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        candidates: components["schemas"]["DiscoveryCandidate"][];
-                        truncated: boolean;
+                        success: boolean;
                     };
                 };
             };
@@ -46891,122 +46810,6 @@ export interface operations {
                     "application/json": {
                         success: boolean;
                         deletedPath: string;
-                    };
-                };
-            };
-            /** @description A person must allow the call first; nothing ran */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CapabilityApprovalRequired"];
-                };
-            };
-            /** @description `invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description `agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description `unknown_capability`: not available on this computer; `not_found`: the thing it names */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The capability refused because of the state it met, such as `conflict` */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description `precondition_failed`: something changed since the caller looked */
-            412: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description `internal_error`: something went wrong running it */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description `signin_unreachable`: the remote server did not answer */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description `temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    "mesh.deny_folder": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["DenyRequest"];
-            };
-        };
-        responses: {
-            /** @description Hide a folder from discovery result */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        success: boolean;
                     };
                 };
             };
