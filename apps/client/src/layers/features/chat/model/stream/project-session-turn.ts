@@ -36,6 +36,7 @@ import { mapHistoryMessages } from './stream-history-helpers';
 import { foldCapabilityApproval, foldCapabilityApprovalResolved } from './capability-approval-fold';
 import { foldMcpSignin, foldMcpSigninResolved } from './mcp-signin-fold';
 import { isPromptResolution, settledInteractionIds } from './turn-resolutions';
+import { resolvedToolStatus } from './resolved-tool-status';
 import { applyWorkLeftEnded, isNoticeEvent, noticePart } from './notice-folds';
 
 /** Stable id for the synthesized trailing in-progress assistant bubble. */
@@ -332,23 +333,6 @@ function foldElicitation(
   }
 }
 
-/** The resolution kinds an interaction can settle with. */
-type InteractionResolution = NonNullable<InteractionResolvedEvent['resolution']>;
-
-/** The settled tool-part status for a resolution outcome. */
-function resolvedToolStatus(
-  resolution: InteractionResolution | undefined
-): 'running' | 'complete' | 'error' {
-  if (resolution === 'denied') return 'error';
-  // Expired / cancelled (no operator action): the gated tool never ran and no
-  // real tool_result is guaranteed to follow — settle as error.
-  if (resolution === 'expired' || resolution === 'cancelled') return 'error';
-  if (resolution === 'answered') return 'complete';
-  // Approved (or unknown): the tool is now executing; the following
-  // tool_result event carries the real terminal status.
-  return 'running';
-}
-
 /**
  * Settle the pending state on the part matching a resolved interaction, and —
  * for an approval — record HOW it was answered.
@@ -365,8 +349,12 @@ function resolvedToolStatus(
 function foldInteractionResolved(parts: MessagePart[], event: InteractionResolvedEvent) {
   const toolCall = findToolCallPart(parts, event.id);
   if (toolCall) {
-    if (toolCall.status === 'pending') {
-      toolCall.status = resolvedToolStatus(event.resolution);
+    // A running row settles too when nobody allowed it: a Stop's withdrawal
+    // means the gated tool never ran, whatever the last frame said. The
+    // server's history settles it the same way (DOR-3202).
+    const settled = resolvedToolStatus(event.resolution);
+    if (toolCall.status === 'pending' || (toolCall.status === 'running' && settled === 'error')) {
+      toolCall.status = settled;
       toolCall.approvalRemainingMs = undefined;
     }
     // `approvalOutcomeOf` is the one definition of what a resolution earns,

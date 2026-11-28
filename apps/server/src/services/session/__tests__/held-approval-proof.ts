@@ -7,6 +7,8 @@ import { getOrCreateProjector } from '../session-state-projector.js';
 export interface ApprovalProbes {
   atApproval: (approval: ApprovalEvent, invocation?: { toolCallId: string }) => Promise<void>;
   afterTurn: () => Promise<void>;
+  /** Every answer the person gave that the runtime took, in order (true = allow). */
+  answers?: readonly boolean[];
 }
 
 /**

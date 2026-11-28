@@ -1,4 +1,7 @@
-import { runtimeApprovalConformance } from './runtime-conformance-approval.js';
+import {
+  runtimeApprovalConformance,
+  type ApprovalTurnProbes,
+} from './runtime-conformance-approval.js';
 import { runtimeRestartConformance, type RestartCaseOpts } from './runtime-conformance-restart.js';
 import { assertRuntimeTimingEvents } from './runtime-timing-conformance.js';
 /**
@@ -54,7 +57,6 @@ import {
 import { INJECTED_CONTEXT_TAGS } from './injected-context-tags.js';
 import { assertSubfolderListing } from './runtime-conformance-subfolder.js';
 import type {
-  ApprovalEvent,
   HistoryMessage,
   InterruptReceipt,
   PermissionModeId,
@@ -395,11 +397,7 @@ export interface RuntimeConformanceOpts extends RestartCaseOpts {
     runtime: AgentRuntime,
     sessionId: string,
     content: string,
-    probes: {
-      /** Native invocation identity when the answerable permission has a distinct id. */
-      atApproval: (approval: ApprovalEvent, invocation?: { toolCallId: string }) => Promise<void>;
-      afterTurn: () => Promise<void>;
-    }
+    probes: ApprovalTurnProbes
   ) => Promise<StreamEvent[]>;
   /**
    * Drives ONE turn to the point where it is OPEN, calls `midTurn`, then lets it

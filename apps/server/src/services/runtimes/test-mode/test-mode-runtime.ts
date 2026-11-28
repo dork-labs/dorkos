@@ -852,7 +852,9 @@ export class TestModeRuntime implements AgentRuntime {
     const pending = interactionGate.pendingInteractionIds(sessionId);
     if (!interactionGate.abort(sessionId)) return notRunning;
     const projector = peekProjector(sessionId);
-    for (const interactionId of pending) projector?.resolveInteraction(interactionId);
+    // Withdrawn, as a real runtime's abort reports it, so the tool row settles
+    // rather than spinning on after the turn (DOR-3202).
+    for (const interactionId of pending) projector?.resolveInteraction(interactionId, 'cancelled');
     return { outcome: declared ?? 'closed', runtime: this.type };
   }
 

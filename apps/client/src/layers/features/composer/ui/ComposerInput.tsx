@@ -98,6 +98,8 @@ export interface ComposerInputProps {
    * component only reflects it.
    */
   stopPending?: boolean;
+  /** What the stop controls are called, when not "Stop generating". */
+  stopLabel?: string;
   /** Queue the current input for sending after streaming completes. */
   onQueue?: () => void;
   /**
@@ -260,6 +262,7 @@ export function ComposerInput({
   queueDepth = 0,
   onStop,
   stopPending = false,
+  stopLabel,
   onQueue,
   onSteer,
   onStage,
@@ -546,6 +549,7 @@ export function ComposerInput({
           onSubmit={onSubmit}
           onStop={handleStopClick}
           stopPending={stopPending}
+          {...(stopLabel === undefined ? {} : { stopLabel })}
           onQueue={onQueue}
           onSteer={onSteer}
           onStage={onStage}

@@ -80,8 +80,14 @@ export function openCodeApprovalTurn(
     ...probes,
     afterTurn: async () => {
       await originalAfterTurn();
-      expect(vi.mocked(client.postSessionIdPermissionsPermissionId).mock.calls).toHaveLength(
-        stopped ? 0 : 1
+      // Exactly the person's own answers reach OpenCode, each as they chose it.
+      // A Stop withdraws the card and never answers it on their behalf, so a
+      // stopped turn with no answer sends nothing (DOR-3202).
+      const replies = vi
+        .mocked(client.postSessionIdPermissionsPermissionId)
+        .mock.calls.map(([request]) => request.body?.response);
+      expect(replies).toEqual(
+        (probes.answers ?? []).map((approved) => (approved ? 'once' : 'reject'))
       );
     },
   };

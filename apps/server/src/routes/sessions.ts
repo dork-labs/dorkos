@@ -41,6 +41,7 @@ import { logError, logger } from '../lib/logger.js';
 import { askForPersonBeforeChat } from '../http/person-session-refusal.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { askEntitlement, type AskSubject } from '../services/session/asks/ask-entitlement.js';
+import { withdrawAsksAfterIdleStop } from '../services/session/turn-stream/withdrawn-asks.js';
 import type { RoomBindingsPort, SessionOriginResolvers } from '../services/session/index.js';
 import {
   listPendingInteractionsAcrossSessions,
@@ -634,6 +635,8 @@ export function createSessionRoutes(
       // about the one ending where pressing Stop again is the only move they have.
       const receipt = await runtime.interruptQuery(sessionId);
       recordStopReceipt(stoppedRun, receipt);
+      // Nothing was running, so a card still listed would never be answered.
+      withdrawAsksAfterIdleStop(peekProjector(sessionId), receipt, runtime, sessionId);
       return c.json({ receipt, cancelledQueued });
     } catch (err) {
       // Adapters are contractually forbidden from throwing for an ordinary refusal

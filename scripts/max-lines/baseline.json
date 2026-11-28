@@ -15,7 +15,7 @@
     "apps/client/src/dev/showcases/SettingsShowcases.tsx": 742,
     "apps/client/src/layers/entities/session/model/stream/session-stream-store.ts": 593,
     "apps/client/src/layers/features/canvas/model/use-devtools-bridge.ts": 976,
-    "apps/client/src/layers/features/chat/model/stream/project-session-turn.ts": 688,
+    "apps/client/src/layers/features/chat/model/stream/project-session-turn.ts": 681,
     "apps/client/src/layers/features/dashboard-sidebar/ui/context/ConnectCommunityDialog.tsx": 525,
     "apps/client/src/layers/shared/lib/transport/stream-manager.ts": 528,
     "apps/client/src/layers/shared/lib/transport/system-methods.ts": 529,
@@ -129,6 +129,6 @@
     "packages/test-utils/src/fake-community-adapter.ts": 789,
     "packages/test-utils/src/mock-factories.ts": 1223,
     "packages/test-utils/src/runtime-capability-matrix.ts": 700,
-    "packages/test-utils/src/runtime-conformance.ts": 2304
+    "packages/test-utils/src/runtime-conformance.ts": 2303
   }
 }

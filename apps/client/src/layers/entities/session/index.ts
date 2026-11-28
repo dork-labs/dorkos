@@ -104,6 +104,7 @@ export {
 } from './model/stream/session-stream-store';
 export type { SessionStreamState } from './model/stream/session-stream-store';
 export { useSessionWorkLeft, workLeftLineId } from './model/stream/use-session-work-left';
+export { useSessionRuntimeTurn } from './model/stream/use-session-runtime-turn';
 export {
   useSessionRuns,
   useSessionRunNotice,

@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { createRef, type FormEvent } from 'react';
+import { createRef, type FormEvent, type ReactElement } from 'react';
 import { Button, Field, FieldError, FieldLabel, Input, Notice } from '../index.js';
 
 afterEach(() => {
@@ -234,6 +234,27 @@ describe('portable control contract', () => {
       expect(cells()[0]!.className).toContain('invisible');
       expect(cells()[1]!.className).not.toContain('invisible');
       expect(getByTestId('icon').parentElement!.tagName).toBe('BUTTON');
+    });
+
+    // Centred, the shorter label sat half the width difference away from its icon.
+    it('starts the label at the icon when there is one, and centres it when not', () => {
+      const cell = (ui: ReactElement) =>
+        render(ui).container.querySelector('button > span')!.className;
+      expect(
+        cell(
+          <Button loadingLabel="Stopping…" loading={false}>
+            <svg />
+            Stop
+          </Button>
+        )
+      ).toContain('justify-items-start');
+      expect(
+        cell(
+          <Button loadingLabel="Stopping…" loading={false}>
+            Stop
+          </Button>
+        )
+      ).toContain('justify-items-center');
     });
 
     it('names an icon-only button by its loading label', () => {
