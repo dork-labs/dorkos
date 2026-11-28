@@ -10,11 +10,14 @@ import { createCloudMethods } from '../cloud-methods';
 import { createComputerMethods } from '../computer-methods';
 import { createConnectorMethods } from '../connector-methods';
 import { createFrameBridgeMethods } from '../frame-bridge-methods';
+import { createGlobalMcpMethods } from '../global-mcp-methods';
+import { createMcpMethods } from '../mcp-methods';
 import { createOnboardingMethods } from '../onboarding-methods';
 import { createPermissionMethods } from '../permission-methods';
 import { createProfileMethods } from '../profile-methods';
 import { createProjectMethods } from '../project-methods';
 import { createQueuedChatMethods } from '../queued-chat-methods';
+import { createRelayMethods } from '../relay-methods';
 import { createRemoteAccessMethods } from '../remote-access-methods';
 import { createSessionLocationMethods } from '../session-location-methods';
 import { createSystemMethods } from '../system-methods';
@@ -37,6 +40,9 @@ const locations = createSessionLocationMethods(base);
 const cloud = createCloudMethods(base);
 const system = createSystemMethods(base);
 const conn = createConnectorMethods(base);
+const relay = createRelayMethods(base, window1);
+const mcp = createMcpMethods(base);
+const stdio = { transport: 'stdio' as const, command: 'npx', args: [], env: {} };
 const input = {
   leaseId: 'l1',
   generation: 2,
@@ -269,6 +275,34 @@ const plain: Record<string, () => Promise<unknown>> = {
   'GET /api/health': () => system.health(),
   'GET /api/keep-awake': () => system.getKeepAwake(),
   'GET /api/templates': () => system.getTemplates(),
+  'POST /api/config/mcp/rotate-token': () => system.rotateMcpLocalToken(),
+  'POST /api/config/mcp/reveal-token': () => system.revealMcpLocalToken(),
+  // Relay connections. A paged list asks for its first page at the full page size.
+  'GET /api/relay/adapters?limit=200': () => relay.listRelayAdapters(),
+  'GET /api/relay/adapters/catalog?limit=200': () => relay.getAdapterCatalog(),
+  'GET /api/relay/bindings?limit=200': () => relay.getBindings(),
+  'POST /api/relay/adapters {"type":"telegram","id":"t 1","config":{"token":"x"}}': () =>
+    relay.addRelayAdapter('telegram', 't 1', { token: 'x' }),
+  'PATCH /api/relay/adapters/t%2F1/config {"config":{"token":"x"}}': () =>
+    relay.updateRelayAdapterConfig('t/1', { token: 'x' }),
+  // Managed MCP servers. The path-only verbs have always sent `{}`, and still do.
+  'GET /api/agents/a%2F1/mcp-servers?limit=200': () => mcp.listAgentMcpServers('a/1'),
+  [`POST /api/agents/a%2F1/mcp-servers {"name":"fs","connection":${JSON.stringify(stdio)}}`]: () =>
+    mcp.addAgentMcpServer({ agentId: 'a/1', name: 'fs', connection: stdio }),
+  'POST /api/agents/a/mcp-servers/s%2F1/import {}': () =>
+    mcp.importAgentMcpServer({ agentId: 'a', name: 's/1' }),
+  'PATCH /api/agents/a/mcp-servers/s%2F1 {"enabled":false}': () =>
+    mcp.updateAgentMcpServer({ agentId: 'a', name: 's/1', enabled: false }),
+  'DELETE /api/agents/a/mcp-servers/s%2F1': () => mcp.removeAgentMcpServer('a', 's/1'),
+  'POST /api/agents/a/mcp-servers/s%2F1/enable {}': () => mcp.enableAgentMcpServer('a', 's/1'),
+  'POST /api/agents/a/mcp-servers/s%2F1/disable {}': () => mcp.disableAgentMcpServer('a', 's/1'),
+  'POST /api/agents/a/mcp-servers/s%2F1/test {}': () => mcp.testAgentMcpServer('a', 's/1'),
+  'PUT /api/agents/a/mcp-servers/s%2F1/client {"clientId":"c"}': () =>
+    mcp.setMcpClientCredentials('a', 's/1', { clientId: 'c', clientSecret: '' }),
+  'PUT /api/agents/a/mcp-servers/s%2F1/client {"clientId":"c","clientSecret":"k"}': () =>
+    mcp.setMcpClientCredentials('a', 's/1', { clientId: 'c', clientSecret: 'k' }),
+  'POST /api/mcp-servers/s%2F1/tools': () =>
+    createGlobalMcpMethods(base).checkGlobalMcpServerTools('s/1'),
 };
 
 describe('calls on the generated client', () => {
@@ -286,5 +320,22 @@ describe('calls on the generated client', () => {
     expect(headers.get('X-Client-Id')).toBe(clientId);
     expect(headers.get('Content-Type')).toBe('application/json');
     expect(init?.credentials).toBe('include');
+  });
+});
+
+describe('a managed MCP change a person confirms', () => {
+  type Opts = { approvalToken?: string };
+  it.each([
+    ['add', (o: Opts) => mcp.addAgentMcpServer({ agentId: 'a', name: 'f', connection: stdio }, o)],
+    ['import', (o: Opts) => mcp.importAgentMcpServer({ agentId: 'a', name: 'f' }, o)],
+    ['update', (o: Opts) => mcp.updateAgentMcpServer({ agentId: 'a', name: 'f' }, o)],
+  ])('%s carries the approval token, and only on the retry', async (_verb, call) => {
+    const fetchMock = answer([]);
+    await call({});
+    await call({ approvalToken: 't-1' });
+    const [first, retry] = fetchMock.mock.calls.map(([, init]) => new Headers(init?.headers));
+    expect(first!.has('X-DorkOS-Approval')).toBe(false);
+    expect(retry!.get('X-DorkOS-Approval')).toBe('t-1');
+    expect(retry!.get('Content-Type')).toBe('application/json');
   });
 });

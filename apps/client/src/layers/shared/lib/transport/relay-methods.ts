@@ -20,8 +20,9 @@ import type {
   ClaimUnclaimedChatRequest,
   ClaimUnclaimedChatResponse,
 } from '@dorkos/shared/relay-schemas';
+import { LIST_PAGE_LIMIT, readAllPages } from '../read-all-pages';
 import { createTransportApiClient } from './api-client';
-import { fetchAllPages, fetchJSON, fetchNoContent, buildQueryString } from './http-client';
+import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 import { responseError } from '../response-error';
 
 /** Create all Relay methods bound to a base URL. */
@@ -164,7 +165,14 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
     // The three connection lists come in pages (DOR-4982); these read them whole.
     async listRelayAdapters(): Promise<AdapterListItem[]> {
       type Page = { adapters: AdapterListItem[]; nextCursor: string | null };
-      const { rows } = await fetchAllPages(baseUrl, '/relay/adapters', {}, (p: Page) => p.adapters);
+      const { rows } = await readAllPages(
+        async (cursor) =>
+          (await api.call('relay.listAdapters', {
+            query: { cursor, limit: LIST_PAGE_LIMIT },
+          })) as Page,
+        (p) => p.adapters,
+        '/relay/adapters'
+      );
       return rows;
     },
 
@@ -176,20 +184,23 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
 
     async getAdapterCatalog(): Promise<CatalogEntry[]> {
       type Page = { entries: CatalogEntry[]; nextCursor: string | null };
-      const path = '/relay/adapters/catalog';
-      const { rows } = await fetchAllPages(baseUrl, path, {}, (p: Page) => p.entries);
+      const { rows } = await readAllPages(
+        async (cursor) =>
+          (await api.call('relay.listAdaptersCatalog', {
+            query: { cursor, limit: LIST_PAGE_LIMIT },
+          })) as Page,
+        (p) => p.entries,
+        '/relay/adapters/catalog'
+      );
       return rows;
     },
 
-    addRelayAdapter(
+    async addRelayAdapter(
       type: string,
       id: string,
       config: Record<string, unknown>
     ): Promise<{ ok: boolean }> {
-      return fetchJSON(baseUrl, '/relay/adapters', {
-        method: 'POST',
-        body: JSON.stringify({ type, id, config }),
-      });
+      return await api.call('relay.createAdapters', { body: { type, id, config } });
     },
 
     removeRelayAdapter(id: string): Promise<{ ok: boolean }> {
@@ -211,16 +222,14 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
       });
     },
 
-    updateRelayAdapterConfig(
+    async updateRelayAdapterConfig(
       id: string,
       config: Record<string, unknown>
     ): Promise<{ ok: boolean }> {
-      return fetchJSON(baseUrl, `/relay/adapters/${encodeURIComponent(id)}/config`, {
-        method: 'PATCH',
-        body: JSON.stringify({ config }),
-      });
+      return await api.call('relay.updateAdaptersConfig', { path: { id }, body: { config } });
     },
 
+    // Stays hand-written: the API document leaves out its body (DOR-5473).
     testRelayAdapterConnection(
       type: string,
       config: Record<string, unknown>
@@ -249,7 +258,14 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
 
     async getBindings(): Promise<AdapterBinding[]> {
       type Page = { bindings: AdapterBinding[]; nextCursor: string | null };
-      const { rows } = await fetchAllPages(baseUrl, '/relay/bindings', {}, (p: Page) => p.bindings);
+      const { rows } = await readAllPages(
+        async (cursor) =>
+          (await api.call('relay.listBindings', {
+            query: { cursor, limit: LIST_PAGE_LIMIT },
+          })) as Page,
+        (p) => p.bindings,
+        '/relay/bindings'
+      );
       // The server pages newest first; the app has always listed chat routes oldest first.
       return rows.sort(
         (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)

@@ -64,7 +64,8 @@ type JsonBody<Id extends OperationId> =
 
 /**
  * The only headers a call may add of its own, lowercased: a window's
- * `X-Client-Id`, and the connector catalog's ask for sign-in setup details.
+ * `X-Client-Id`, the connector catalog's ask for sign-in setup details, and
+ * the approval token a confirming retry of a capability call carries.
  * Everything else (the body's type, the cookie, credentials, the
  * community-owner header) belongs to the request path, so a call that names
  * anything not listed here is refused.
@@ -72,6 +73,7 @@ type JsonBody<Id extends OperationId> =
 export const ALLOWED_CALL_HEADERS: readonly string[] = [
   'x-client-id',
   'x-dorkos-catalog-auth-setup',
+  'x-dorkos-approval',
 ];
 
 /**
