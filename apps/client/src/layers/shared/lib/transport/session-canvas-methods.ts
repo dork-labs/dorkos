@@ -21,7 +21,8 @@ import type {
   CanvasEditingResponse,
   UpdateCanvasDocumentRequest,
 } from '@dorkos/shared/room-schemas';
-import { fetchJSON, fetchNoContent } from './http-client';
+import { createTransportApiClient } from './api-client';
+import { fetchJSON } from './http-client';
 
 /** The path prefix one session's canvas lives under. */
 function canvasPath(sessionId: string): string {
@@ -35,21 +36,24 @@ function canvasPath(sessionId: string): string {
  * @returns The six methods, for `Object.assign` onto the transport.
  */
 export function createSessionCanvasMethods(baseUrl: string) {
+  const api = createTransportApiClient(baseUrl);
   return {
-    listSessionCanvas(sessionId: string): Promise<CanvasDocument[]> {
-      return fetchJSON<{ documents: CanvasDocument[] }>(baseUrl, canvasPath(sessionId)).then(
-        (body) => body.documents
-      );
+    async listSessionCanvas(sessionId: string): Promise<CanvasDocument[]> {
+      const body = (await api.call('sessions.listCanvas', { path: { id: sessionId } })) as {
+        documents: CanvasDocument[];
+      };
+      return body.documents;
     },
 
-    getSessionCanvasDocument(
+    async getSessionCanvasDocument(
       sessionId: string,
       documentId: string
     ): Promise<CanvasDocument | null> {
-      return fetchJSON<CanvasDocument>(
-        baseUrl,
-        `${canvasPath(sessionId)}/${encodeURIComponent(documentId)}`
-      ).catch((err: unknown) => {
+      try {
+        return (await api.call('sessions.getCanvas', {
+          path: { id: sessionId, documentId },
+        })) as CanvasDocument;
+      } catch (err: unknown) {
         // A document that is not there is an answer, not a failure: the table is
         // LRU-capped and another window may have closed it a moment ago. Read
         // off the STATUS the client attaches rather than the sentence, which is
@@ -62,9 +66,10 @@ export function createSessionCanvasMethods(baseUrl: string) {
           return null;
         }
         throw err;
-      });
+      }
     },
 
+    // Stays hand-written: the API document can't describe a widget's definition (DOR-5473).
     openSessionCanvasDocument(
       sessionId: string,
       content: UiCanvasContent,
@@ -80,6 +85,7 @@ export function createSessionCanvasMethods(baseUrl: string) {
       });
     },
 
+    // Stays hand-written: the API document can't describe a widget's definition (DOR-5473).
     updateSessionCanvasDocument(
       sessionId: string,
       documentId: string,
@@ -92,22 +98,19 @@ export function createSessionCanvasMethods(baseUrl: string) {
       );
     },
 
-    closeSessionCanvasDocument(sessionId: string, documentId: string): Promise<void> {
-      return fetchNoContent(baseUrl, `${canvasPath(sessionId)}/${encodeURIComponent(documentId)}`, {
-        method: 'DELETE',
-      });
+    async closeSessionCanvasDocument(sessionId: string, documentId: string): Promise<void> {
+      await api.call('sessions.deleteCanvas', { path: { id: sessionId, documentId } });
     },
 
-    setSessionCanvasEditing(
+    async setSessionCanvasEditing(
       sessionId: string,
       documentId: string,
       editing: boolean
     ): Promise<CanvasEditingResponse> {
-      return fetchJSON<CanvasEditingResponse>(
-        baseUrl,
-        `${canvasPath(sessionId)}/${encodeURIComponent(documentId)}/editing`,
-        { method: 'POST', body: JSON.stringify({ editing }) }
-      );
+      return (await api.call('sessions.createCanvasEditing', {
+        path: { id: sessionId, documentId },
+        body: { editing },
+      })) as CanvasEditingResponse;
     },
   };
 }

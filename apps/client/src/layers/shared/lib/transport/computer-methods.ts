@@ -9,6 +9,7 @@ import { fetchJSON } from './http-client';
 
 /** Bind computer operations to the current authenticated DorkOS server. */
 export function createComputerMethods(baseUrl: string, clientId: () => string): ComputerTransport {
+  // Stays hand-written: every call sends its own `X-Client-Id` header (DOR-5473).
   const request = <T>(path: string, method = 'GET', body?: unknown): Promise<T> =>
     fetchJSON<T>(baseUrl, `/computers${path}`, {
       method,

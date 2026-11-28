@@ -17,6 +17,7 @@ import { fetchJSON } from './http-client';
  */
 export function createQueuedChatMethods(baseUrl: string, getClientId: () => string) {
   return {
+    // Stays hand-written: it sends its own `X-Client-Id` header (DOR-5473).
     async steerQueuedChatMessage(
       sessionId: string,
       messageId: string

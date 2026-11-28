@@ -19,6 +19,7 @@ import {
   type WifiSignInApprovalStep,
   type WifiSignInRequestList,
 } from '@dorkos/shared/signed-in-devices';
+import { createTransportApiClient } from './api-client';
 import { fetchJSON, fetchNoContent } from './http-client';
 
 /** The fields of an error `http-client` throws that these methods read. */
@@ -43,15 +44,15 @@ function passkeyStepOf(error: unknown): Exclude<PasskeyCheckedStep, { kind: 'don
  * @param baseUrl - Server base URL (already includes `/api`).
  */
 export function createDeviceMethods(baseUrl: string) {
+  const api = createTransportApiClient(baseUrl);
   return {
-    listSignedInDevices(): Promise<SignedInDeviceList> {
-      return fetchJSON(baseUrl, '/devices/sessions');
+    async listSignedInDevices(): Promise<SignedInDeviceList> {
+      return (await api.call('devices.listSessions', {})) as SignedInDeviceList;
     },
-    signOutDevice(id: string): Promise<void> {
-      return fetchNoContent(baseUrl, `/devices/sessions/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-      });
+    async signOutDevice(id: string): Promise<void> {
+      await api.call('devices.deleteSessions', { path: { id } });
     },
+    // Stays hand-written: waits for batch 3's no-body client (DOR-5473).
     signOutEverywhereElse(): Promise<SignOutEverywhereElseResult> {
       return fetchJSON(baseUrl, '/devices/sign-out-all', { method: 'POST' });
     },
@@ -61,9 +62,9 @@ export function createDeviceMethods(baseUrl: string) {
       passkey?: unknown
     ): Promise<PasskeyCheckedStep> {
       try {
-        await fetchNoContent(baseUrl, `/devices/sessions/${encodeURIComponent(id)}/runs-agents`, {
-          method: 'PUT',
-          body: JSON.stringify(passkey === undefined ? { on } : { on, passkey }),
+        await api.call('devices.updateSessionsRunsAgents', {
+          path: { id },
+          body: passkey === undefined ? { on } : { on, passkey },
         });
         return { kind: 'done' };
       } catch (error) {
@@ -72,16 +73,15 @@ export function createDeviceMethods(baseUrl: string) {
         throw error;
       }
     },
-    listWifiSignInRequests(): Promise<WifiSignInRequestList> {
-      return fetchJSON(baseUrl, '/devices/sign-in-requests');
+    async listWifiSignInRequests(): Promise<WifiSignInRequestList> {
+      return (await api.call('devices.getSignInRequests', {})) as WifiSignInRequestList;
     },
     async approveWifiSignIn(id: string, passkey?: unknown): Promise<WifiSignInApprovalStep> {
       try {
-        const approved = await fetchJSON<{ code: string; expiresAt: string }>(
-          baseUrl,
-          `/devices/sign-in-requests/${encodeURIComponent(id)}/approve`,
-          { method: 'POST', body: JSON.stringify(passkey === undefined ? {} : { passkey }) }
-        );
+        const approved = (await api.call('devices.approveSignInRequests', {
+          path: { id },
+          body: passkey === undefined ? {} : { passkey },
+        })) as { code: string; expiresAt: string };
         return { kind: 'approved', ...approved };
       } catch (error) {
         const step = passkeyStepOf(error);
@@ -89,19 +89,14 @@ export function createDeviceMethods(baseUrl: string) {
         throw error;
       }
     },
-    declineWifiSignIn(id: string): Promise<void> {
-      return fetchNoContent(
-        baseUrl,
-        `/devices/sign-in-requests/${encodeURIComponent(id)}/decline`,
-        {
-          method: 'POST',
-          body: JSON.stringify({}),
-        }
-      );
+    async declineWifiSignIn(id: string): Promise<void> {
+      // A write with no body sends `{}`, as this call always has.
+      await api.call('devices.declineSignInRequests', { path: { id } });
     },
-    listOwnerFactors(): Promise<OwnerFactorList> {
-      return fetchJSON(baseUrl, '/owner-factors');
+    async listOwnerFactors(): Promise<OwnerFactorList> {
+      return (await api.call('ownerFactors.list', {})) as OwnerFactorList;
     },
+    // Stays hand-written: the API document leaves out its `passkey` field (DOR-5473).
     async startAddingPasskey(label: string, passkey?: unknown): Promise<PasskeyStartStep> {
       try {
         const { options } = await fetchJSON<{ options: unknown }>(
@@ -119,12 +114,13 @@ export function createDeviceMethods(baseUrl: string) {
         throw error;
       }
     },
-    finishAddingPasskey(response: unknown): Promise<{ id: string; host: string }> {
-      return fetchJSON(baseUrl, '/owner-factors/passkeys/finish', {
-        method: 'POST',
-        body: JSON.stringify({ response }),
-      });
+    async finishAddingPasskey(response: unknown): Promise<{ id: string; host: string }> {
+      return (await api.call('ownerFactors.finishPasskeys', { body: { response } })) as {
+        id: string;
+        host: string;
+      };
     },
+    // Stays hand-written: the API document leaves out its `passkey` field (DOR-5473).
     async startAddingAuthenticator(
       label: string,
       passkey?: unknown
@@ -145,12 +141,12 @@ export function createDeviceMethods(baseUrl: string) {
         throw error;
       }
     },
-    confirmAuthenticator(id: string, code: string): Promise<{ id: string }> {
-      return fetchJSON(baseUrl, '/owner-factors/authenticator/confirm', {
-        method: 'POST',
-        body: JSON.stringify({ id, code }),
-      });
+    async confirmAuthenticator(id: string, code: string): Promise<{ id: string }> {
+      return (await api.call('ownerFactors.confirmAuthenticator', { body: { id, code } })) as {
+        id: string;
+      };
     },
+    // Stays hand-written: the API document gives this delete no body, and it sends one (DOR-5473).
     async removeOwnerFactor(id: string, passkey?: unknown): Promise<PasskeyCheckedStep> {
       try {
         await fetchNoContent(baseUrl, `/owner-factors/${encodeURIComponent(id)}`, {
