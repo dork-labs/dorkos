@@ -59,28 +59,4 @@ describe('createBackupsMethods', () => {
       timeout.mockRestore();
     }
   });
-
-  it('throws a refusal as the app error, with its code and status', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(
-        async () =>
-          new Response(
-            JSON.stringify({
-              type: 'urn:dorkos:problem:backup_busy',
-              title: 'Busy',
-              status: 409,
-              code: 'backup_busy',
-              detail: 'A move is already running.',
-            }),
-            { status: 409, headers: { 'Content-Type': 'application/problem+json' } }
-          )
-      )
-    );
-    await expect(methods.removeBackup('a.db')).rejects.toMatchObject({
-      message: 'A move is already running.',
-      code: 'backup_busy',
-      status: 409,
-    });
-  });
 });

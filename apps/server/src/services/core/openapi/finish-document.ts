@@ -2,10 +2,12 @@
  * The last pass over a generated OpenAPI document: every operation gets its
  * `operationId` (`operation-ids.ts`), the `security` it needs where that
  * differs from the default (`security-schemes.ts`) and its `x-stability`
- * (`stability.ts`), in that order.
+ * (`stability.ts`), in that order, and every nullable `$ref` is written as
+ * `anyOf` (`nullable-refs.ts`).
  *
  * @module services/core/openapi/finish-document
  */
+import { fixNullableRefs } from './nullable-refs.js';
 import { assignOperationIds, type OperationIdDocument } from './operation-ids.js';
 import { assignOperationSecurity } from './security-schemes.js';
 import { assignStability } from './stability.js';
@@ -27,4 +29,5 @@ export function finishDocument(
   assignOperationIds(document);
   assignOperationSecurity(document);
   assignStability(document, capabilityRoutes);
+  fixNullableRefs(document);
 }

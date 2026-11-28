@@ -52,9 +52,8 @@ export function createDeviceMethods(baseUrl: string) {
     async signOutDevice(id: string): Promise<void> {
       await api.call('devices.deleteSessions', { path: { id } });
     },
-    // Stays hand-written: waits for batch 3's no-body client (DOR-5473).
-    signOutEverywhereElse(): Promise<SignOutEverywhereElseResult> {
-      return fetchJSON(baseUrl, '/devices/sign-out-all', { method: 'POST' });
+    async signOutEverywhereElse(): Promise<SignOutEverywhereElseResult> {
+      return (await api.call('devices.signOutAll', {})) as SignOutEverywhereElseResult;
     },
     async setDeviceRunsAgents(
       id: string,
@@ -90,7 +89,7 @@ export function createDeviceMethods(baseUrl: string) {
       }
     },
     async declineWifiSignIn(id: string): Promise<void> {
-      // A write with no body sends `{}`, as this call always has.
+      // Sends no body: the document gives it none and the route reads none.
       await api.call('devices.declineSignInRequests', { path: { id } });
     },
     async listOwnerFactors(): Promise<OwnerFactorList> {

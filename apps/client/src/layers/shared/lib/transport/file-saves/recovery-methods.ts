@@ -1,26 +1,31 @@
-/** Fixed original-save evidence endpoints; no draft, pathname or caller authority input. */
+/**
+ * Fixed original-save evidence endpoints; no draft, pathname or caller authority input.
+ * Both go through the generated API client (DOR-5473).
+ */
 import {
   FileSaveDiscoverySchema,
   FileSaveRecoverResultSchema,
   FileSaveRecoverBodySchema,
 } from '@dorkos/shared/file-save/recovery';
 import type { Transport } from '@dorkos/shared/transport';
-import { fetchJSON } from '../http-client';
+import { createTransportApiClient } from '../api-client';
 /** Create validated HTTP methods for original-save discovery and proof-only recovery. */
 export function createFileSaveRecoveryMethods(
   baseUrl: string
 ): NonNullable<Transport['originalFileSaveRecovery']> {
-  const path = (documentId: string) => `/canvas/docs/${encodeURIComponent(documentId)}/file-saves`;
+  const api = createTransportApiClient(baseUrl);
   return {
     async discover(documentId) {
-      return FileSaveDiscoverySchema.parse(await fetchJSON(baseUrl, path(documentId)));
+      return FileSaveDiscoverySchema.parse(
+        await api.call('canvas.getDocsFileSaves', { path: { id: documentId } })
+      );
     },
     async recover(documentId, eventId, expectedIncarnation) {
       const body = FileSaveRecoverBodySchema.parse({ expectedIncarnation });
       return FileSaveRecoverResultSchema.parse(
-        await fetchJSON(baseUrl, `${path(documentId)}/${encodeURIComponent(eventId)}/recover`, {
-          method: 'POST',
-          body: JSON.stringify(body),
+        await api.call('canvas.createDocsFileSavesRecover', {
+          path: { id: documentId, eventId },
+          body,
         })
       );
     },

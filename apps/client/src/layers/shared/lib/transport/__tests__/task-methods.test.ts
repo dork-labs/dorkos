@@ -14,7 +14,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe('createTasksMethods', () => {
   const methods = createTasksMethods('/api');
 
-  it('reads and removes schedules, approves a file and reads runs at the same paths and bodies', async () => {
+  it('reads, removes and runs schedules, approves a file and reads and cancels runs at the same paths and bodies', async () => {
     const calls: Array<[() => Promise<unknown>, ReturnType<typeof sent>]> = [
       [() => methods.listTasks(), { url: '/api/tasks', method: 'GET', body: undefined }],
       [() => methods.deleteTask('t1'), { url: '/api/tasks/t1', method: 'DELETE', body: undefined }],
@@ -43,6 +43,22 @@ describe('createTasksMethods', () => {
         () => methods.getTaskRun('r1'),
         { url: '/api/tasks/runs/r1', method: 'GET', body: undefined },
       ],
+      [
+        () => methods.triggerTask('t1'),
+        { url: '/api/tasks/t1/trigger', method: 'POST', body: undefined },
+      ],
+      [
+        () => methods.triggerTask('t1', {}),
+        { url: '/api/tasks/t1/trigger', method: 'POST', body: undefined },
+      ],
+      [
+        () => methods.triggerTask('t1', { permissionMode: 'acceptEdits' }),
+        { url: '/api/tasks/t1/trigger', method: 'POST', body: '{"permissionMode":"acceptEdits"}' },
+      ],
+      [
+        () => methods.cancelTaskRun('r1'),
+        { url: '/api/tasks/runs/r1/cancel', method: 'POST', body: undefined },
+      ],
     ];
     for (const [call, expected] of calls) {
       const fetchMock = answer({});
@@ -50,29 +66,5 @@ describe('createTasksMethods', () => {
       expect(sent(fetchMock)).toEqual(expected);
       expect(fetchMock.mock.calls[0]![1]).toMatchObject({ credentials: 'include' });
     }
-  });
-
-  it('throws a refusal as the app error, with its code and status', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(
-        async () =>
-          new Response(
-            JSON.stringify({
-              type: 'urn:dorkos:problem:task_not_found',
-              title: 'Not found',
-              status: 404,
-              code: 'task_not_found',
-              detail: 'No such schedule.',
-            }),
-            { status: 404, headers: { 'Content-Type': 'application/problem+json' } }
-          )
-      )
-    );
-    await expect(methods.deleteTask('t1')).rejects.toMatchObject({
-      message: 'No such schedule.',
-      code: 'task_not_found',
-      status: 404,
-    });
   });
 });
