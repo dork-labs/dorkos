@@ -6,11 +6,8 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CallerPrincipal } from '../../../lib/caller-principal.js';
-import {
-  initSessionVisibility,
-  resetSessionVisibility,
-  sessionAudience,
-} from '../../audit/session-visibility.js';
+import { initSessionVisibility, resetSessionVisibility } from '../../audit/session-visibility.js';
+import { wireSessionListSpaceView } from '../../../startup/space-views.js';
 import {
   sessionListAudience,
   sessionListProjectOf,
@@ -46,29 +43,28 @@ describe('the session-list space view', () => {
   });
 
   it('answers as the space side once handed over, and fails closed again when cleared', () => {
-    initSessionVisibility((ids) => new Map(ids.map((id) => [id, 'space'] as const)));
     setSessionListSpaceView({
-      audience: sessionAudience,
+      audience: () => () => true,
       projectOf: (cwd) => (cwd === '/work/alpha' ? { root: '/work/alpha', name: 'alpha' } : null),
     });
-    for (const principal of EVERYONE) {
-      expect(sessionListAudience(AGENT_WORK)(principal), principal.kind).toBe(
-        sessionAudience(AGENT_WORK)(principal)
-      );
-    }
-    expect(sessionListAudience(AGENT_WORK)(AGENT)).toBe(true);
+    expect(sessionListAudience(AGENT_WORK)(PROGRAM)).toBe(true);
     expect(sessionListProjectOf('/work/alpha')).toEqual({ root: '/work/alpha', name: 'alpha' });
     expect(sessionListProjectOf('/work/plain')).toBeNull();
 
     setSessionListSpaceView(undefined);
-    expect(sessionListAudience(AGENT_WORK)(AGENT)).toBe(false);
+    expect(sessionListAudience(AGENT_WORK)(PROGRAM)).toBe(false);
     expect(sessionListAudience(AGENT_WORK)(OPERATOR)).toBe(true);
   });
 
-  it('never lets an agent hear about a person’s own chat, handed over or not', () => {
+  it('hands over every person, about every chat, and nobody else (DOR-4986)', () => {
+    // Every caller that is not an agent reads as the owner, who reads every chat;
+    // the stream admits only people, and the rule stays closed to anyone else.
     initSessionVisibility((ids) => new Map(ids.map((id) => [id, 'participants'] as const)));
-    expect(sessionListAudience('own-chat')(AGENT)).toBe(false);
-    setSessionListSpaceView({ audience: sessionAudience, projectOf: () => undefined });
-    expect(sessionListAudience('own-chat')(AGENT)).toBe(false);
+    wireSessionListSpaceView();
+    for (const principal of EVERYONE) {
+      expect(sessionListAudience('own-chat')(principal), principal.kind).toBe(
+        principal.kind === 'operator' || principal.kind === 'program'
+      );
+    }
   });
 });

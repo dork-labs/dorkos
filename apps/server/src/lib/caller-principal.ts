@@ -51,6 +51,23 @@ export type CallerPrincipal =
   | { readonly kind: 'relayed' };
 
 /**
+ * A person, as a reader of the global event stream (`GET /api/events`): the
+ * person at the app, or a program holding one of their keys. The stream admits
+ * nobody else (the person bar, `lib/http/person-bar.ts`), so its readers are
+ * typed this way and nothing on it is written for an agent.
+ */
+export type PersonPrincipal = Extract<CallerPrincipal, { readonly kind: 'operator' | 'program' }>;
+
+/**
+ * Whether a principal is a person ({@link PersonPrincipal}).
+ *
+ * @param principal - What is calling.
+ */
+export function isPersonPrincipal(principal: CallerPrincipal): principal is PersonPrincipal {
+  return principal.kind === 'operator' || principal.kind === 'program';
+}
+
+/**
  * Read the principal off a request's facts.
  *
  * Order is load-bearing and fails closed: the agent question is asked FIRST, so

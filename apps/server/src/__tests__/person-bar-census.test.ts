@@ -99,6 +99,10 @@ const ROUTE_BARS: Record<string, readonly string[]> = {
   'services/heartbeats/measures/page-capability.ts': ["audience: 'person'", 'accountOwner'],
   'services/mesh/doors/agent-persona-capability.ts': ["audience: 'person'"],
   'startup/steps/core-routes.ts': ['loginEnabled: personSessionRequired'],
+  // `GET /api/events` is a person's stream on SSE and the socket alike (DOR-4986).
+  'routes/global-events-connect.ts': ['assessPerson(facts'],
+  'routes/events.ts': ['admitEventsReader(facts)'],
+  'routes/events-socket.ts': ['admitEventsReader(facts)'],
 };
 
 describe('the person bar census', () => {
