@@ -13,13 +13,10 @@ import {
   clearTestHomes,
   registerTestHomes,
 } from '../../core/agent-identity/__tests__/agent-home-fixture.js';
-import {
-  TaskSchedulerService,
-  singleRuntimeSource,
-  type SchedulerAgentManager,
-} from '../task-scheduler-service.js';
+import { TaskSchedulerService } from '../task-scheduler-service.js';
 import { TaskStore } from '../task-store.js';
 import { registerClaudeCodeFacts } from '../../../startup/register-claude-code-facts.js';
+import { onRuntime, type RuntimeDouble } from './support/runtime-task-turns.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
 // refuses every path and turn code knows no Claude transcript.
@@ -31,7 +28,7 @@ const HOME_A = '/home/u/agents/alpha';
 const HOME_B = '/home/u/agents/bravo';
 
 /** Tell the fixture when its actual scheduled stream starts being consumed. */
-function agentManager(onTurnStart: () => void): SchedulerAgentManager {
+function agentManager(onTurnStart: () => void): RuntimeDouble {
   return {
     ensureSession: vi.fn(),
     sendMessage: vi.fn().mockImplementation(async function* () {
@@ -41,7 +38,7 @@ function agentManager(onTurnStart: () => void): SchedulerAgentManager {
     getInternalSessionId: vi.fn(() => undefined),
     acquireLock: vi.fn(() => true),
     releaseLock: vi.fn(),
-  } as unknown as SchedulerAgentManager;
+  } as unknown as RuntimeDouble;
 }
 
 const agents = [
@@ -57,7 +54,7 @@ const mesh = {
 describe('a run of a task another agent made', () => {
   let store: TaskStore;
   let db: Db;
-  let manager: SchedulerAgentManager;
+  let manager: RuntimeDouble;
   let service: TaskSchedulerService;
   let turnStarted: Promise<void>;
 
@@ -70,7 +67,7 @@ describe('a run of a task another agent made', () => {
     });
     service = new TaskSchedulerService({
       store,
-      runtimes: singleRuntimeSource(manager),
+      ...onRuntime(manager),
       config: { maxConcurrentRuns: 1, retentionCount: 100, mayFire: true, firingReason: 'test' },
       meshCore: mesh,
     });

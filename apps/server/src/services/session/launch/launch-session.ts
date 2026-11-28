@@ -37,7 +37,11 @@ import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { logError, logger } from '../../../lib/logger.js';
 import { runInDispatch } from '../../../lib/dispatch-context.js';
-import { dispatchMessage, type MessageDispatchResult } from '../message-dispatcher.js';
+import {
+  dispatchMessage,
+  type DispatchMessageOpts,
+  type MessageDispatchResult,
+} from '../message-dispatcher.js';
 import { getOrCreateProjector } from '../session-state-projector.js';
 import { persistenceModeFor } from '../projector-persistence.js';
 import { claudeCodeFacts } from '../resolution/claude-code-facts.js';
@@ -142,6 +146,13 @@ export interface DispatchSessionMessageOpts {
    * the server places itself (a schedule, a beat, a carry-over).
    */
   launcher?: SessionLauncher;
+  /**
+   * What a turn-port run carries beside its words (T12, a scheduled task's
+   * run): its system prompt's standing brief, the model and effort its caller
+   * resolved, and a task's own level and approved rules. Passed straight
+   * through; see `DispatchMessageOpts`.
+   */
+  turnOptions?: Pick<DispatchMessageOpts, 'systemPromptAppend' | 'settings' | 'taskTurn'>;
 }
 
 export {
@@ -758,6 +769,7 @@ async function launchSessionMessage(
       ...(opts.carriedMarks?.outsider === true
         ? { carriedMarks: { outsider: true as const } }
         : {}),
+      ...opts.turnOptions,
       projector,
       runtime,
       onError: (err) => {

@@ -25,10 +25,11 @@ vi.mock('../../../lib/logger.js', () => ({
 
 vi.mock('../../relay/relay-state.js', () => ({ isRelayEnabled: vi.fn(() => false) }));
 
-import { TaskSchedulerService, type SchedulerAgentManager } from '../task-scheduler-service.js';
+import { TaskSchedulerService } from '../task-scheduler-service.js';
 import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
+import { onRuntime, type RuntimeDouble } from './support/runtime-task-turns.js';
 
 /** Build a minimal CreateTaskStoreInput with defaults for required fields. */
 function taskInput(
@@ -70,7 +71,7 @@ describe('reporting a schedule croner refuses', () => {
     // Nobody else is writing to these sessions, so the write-lock is always free.
     acquireLock: vi.fn(() => true),
     releaseLock: vi.fn(),
-  } as unknown as SchedulerAgentManager;
+  } as unknown as RuntimeDouble;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -78,7 +79,7 @@ describe('reporting a schedule croner refuses', () => {
     vi.setSystemTime(new Date('2026-08-23T12:00:00Z'));
     db = createTestDb();
     store = new TaskStore(db);
-    service = new TaskSchedulerService(store, agent, CONFIG);
+    service = new TaskSchedulerService({ store: store, ...onRuntime(agent), config: CONFIG });
   });
 
   afterEach(() => {

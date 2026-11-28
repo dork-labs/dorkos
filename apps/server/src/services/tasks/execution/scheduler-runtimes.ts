@@ -1,97 +1,17 @@
 /**
- * The runtimes a scheduled run is handed to: the narrow agent-manager shape
- * the scheduler drives a turn through, the registry view it picks one from
- * (DOR-1615), and the one-manager source the tests build a scheduler with.
+ * The runtimes a scheduled run is resolved against: the registry view the
+ * scheduler picks one from (DOR-1615), the one read it still makes of a
+ * runtime, and the one-manager source the tests build a scheduler with. A
+ * run's turn starts through the turn port (`task-turns.ts`, T12), never on a
+ * runtime the scheduler holds.
  *
  * @module services/tasks/execution/scheduler-runtimes
  */
-import type {
-  EffortLevel,
-  InterruptReceipt,
-  PermissionMode,
-  StreamEvent,
-} from '@dorkos/shared/types';
-import type { SseResponse } from '@dorkos/shared/agent-runtime';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import type { RunExecutionRuntimes } from './resolve-run-execution.js';
 
-/** Narrow interface for the AgentManager methods used by the scheduler. */
+/** What the scheduler reads of the runtime a run resolved to. */
 export interface SchedulerAgentManager {
-  ensureSession(
-    sessionId: string,
-    opts: {
-      permissionMode: PermissionMode;
-      cwd?: string;
-      hasStarted?: boolean;
-      /**
-       * True for every scheduled run: nobody is watching, so a prompt this run
-       * raises is refused at the countdown rather than waiting for an answer
-       * that is not coming (spec `ask-parks-on-timeout` §7).
-       */
-      unattended?: boolean;
-      /**
-       * The model this run resolved to, in the runtime's own id space, or absent
-       * for "the runtime decides" (DOR-1347).
-       *
-       * Asked HERE and not only at `sendMessage`, because for claude-code this
-       * is the only call that can answer it: the runtime reads `session.model`
-       * when it launches a query, and that field is written once, when the
-       * session record is created (`messaging/launch-resolver.ts`). A model
-       * handed over afterwards reaches nothing. `agent-handler.ts` in the relay
-       * spreads its resolved settings into both calls for exactly this reason.
-       */
-      model?: string;
-      /** The reasoning-effort rung this run resolved to; absent leaves it unset. */
-      effort?: EffortLevel;
-      /**
-       * The schedule's Claude account (DOR-2384). Arrives here only because the
-       * run's settings are spread whole into both calls; the claude-code launch
-       * reads it off the send ({@link SchedulerAgentManager.sendMessage}).
-       */
-      accountHint?: string;
-    }
-  ): void;
-  sendMessage(
-    sessionId: string,
-    content: string,
-    opts?: {
-      permissionMode?: PermissionMode;
-      cwd?: string;
-      systemPromptAppend?: string;
-      /** Person-approved Claude Code rules scoped to this scheduled task's turn. */
-      taskApprovedAllow?: readonly string[];
-      /**
-       * Nobody can answer an approval card inside this turn, so it must not hold
-       * for one (`MessageOpts.unattendedApprovals`, spec `agent-permissions` D6).
-       */
-      unattendedApprovals?: boolean;
-      /**
-       * Sent again, for the same reason the permission mode and the cwd are: the
-       * runtime contract resolves a turn as per-send override → persisted → its
-       * own default, and a runtime whose sessions are not held in memory sees
-       * this call and not `ensureSession`.
-       */
-      model?: string;
-      /** See {@link SchedulerAgentManager.sendMessage}'s `model`. */
-      effort?: EffortLevel;
-      /**
-       * The schedule's Claude account as the launch hint
-       * (`MessageOpts.accountHint`, DOR-2384): read by the claude-code launch
-       * ladder only when this run starts a conversation, ignored by every other
-       * runtime. An id nobody registered falls through the ladder.
-       */
-      accountHint?: string;
-    }
-  ): AsyncGenerator<StreamEvent>;
-  /**
-   * End the in-flight turn for a session (`AgentRuntime.interruptQuery`).
-   *
-   * This is the ONLY way to stop a scheduled run: `sendMessage` takes no
-   * `AbortSignal` (see `MessageOpts`), so abandoning its stream leaves the agent
-   * running. Answers the {@link InterruptReceipt} vocabulary — `not-running`
-   * when there was no in-flight turn to abort.
-   */
-  interruptQuery(sessionId: string): Promise<InterruptReceipt>;
   /**
    * The runtime's OWN session id for a session key, after the SDK has minted or
    * kept one (`AgentRuntime.getInternalSessionId`).
@@ -104,24 +24,6 @@ export interface SchedulerAgentManager {
    * it asked to run under.
    */
   getInternalSessionId(sessionId: string): string | undefined;
-  /**
-   * Take the session write-lock (`AgentRuntime.acquireLock`), answering whether
-   * it was taken.
-   *
-   * An ATTENDED run holds it for the whole of its turn, for the reason a
-   * person's turn does: it is the only seam that serializes against a DIFFERENT
-   * writer, and a sticky task can resume the very session somebody is typing in
-   * (`session/run-projection.ts`). A scheduled fire on a fresh session never
-   * contends for it, and takes it uncontested.
-   */
-  acquireLock(sessionId: string, clientId: string, res: SseResponse, token?: symbol): boolean;
-  /** Give back a lock this run took (`AgentRuntime.releaseLock`). */
-  releaseLock(sessionId: string, clientId: string, token?: symbol): void;
-  /**
-   * End a turn the runtime left open (`AgentRuntime.settleOpenTurn`). Absent for
-   * a runtime that cannot strand one, which reads as "nothing to settle".
-   */
-  settleOpenTurn?(sessionId: string): Promise<boolean>;
 }
 
 /**

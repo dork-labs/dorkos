@@ -28,6 +28,7 @@ export const StartPayloadSchema = z.strictObject({
   runtime: fields.runtime,
   unattended: fields.unattended,
   carriedMarks: fields.carriedMarks,
+  task: fields.task,
 });
 
 /** A `start_turn` effect's payload. See {@link StartPayloadSchema}. */

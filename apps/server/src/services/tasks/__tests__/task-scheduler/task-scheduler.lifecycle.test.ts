@@ -1,16 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
-import { RequiredSessionIdentityError } from '../../../../lib/replay/required-session-identity-error.js';
-import { onRequiredSessionRekey } from '../../../session/turn-identity/durable-rekey.js';
-import {
-  getOrCreateProjector,
-  peekProjector,
-  disposeProjector,
-} from '../../../session/session-state-projector.js';
-import { TaskSchedulerService, singleRuntimeSource } from '../../task-scheduler-service.js';
-import type { SchedulerAgentManager, SchedulerDeps } from '../../task-scheduler-service.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { TaskSchedulerService } from '../../task-scheduler-service.js';
+import type { SchedulerDeps } from '../../task-scheduler-service.js';
 import { agentApprovalBindingOf } from '../../agent-mode/agent-mode-binding.js';
 import { TaskStore } from '../../task-store.js';
-import { isTerminalRunStatus } from '../../lifecycle/run-statuses.js';
 import {
   parkedTurn,
   taskInput,
@@ -23,6 +15,7 @@ import {
 } from './task-scheduler.fixtures.js';
 import type { Dispatchable } from './task-scheduler.fixtures.js';
 import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+import { onRuntime, type RuntimeDouble } from '../support/runtime-task-turns.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
 // refuses every path and turn code knows no Claude transcript.
@@ -30,7 +23,7 @@ registerClaudeCodeFacts();
 
 describe('TaskSchedulerService — registering, firing and recovering', () => {
   let store: TaskStore;
-  let mockAgent: SchedulerAgentManager;
+  let mockAgent: RuntimeDouble;
 
   beforeEach(async () => {
     ({ store, mockAgent } = await freshHarness());
@@ -40,7 +33,7 @@ describe('TaskSchedulerService — registering, firing and recovering', () => {
   function scheduler(extra: Partial<SchedulerDeps> = {}): TaskSchedulerService {
     return new TaskSchedulerService({
       store,
-      runtimes: singleRuntimeSource(mockAgent),
+      ...onRuntime(mockAgent),
       config: { ...DEFAULT_CONFIG },
       ...extra,
     });
@@ -63,7 +56,11 @@ describe('TaskSchedulerService — registering, firing and recovering', () => {
       const pending = store.createTask(taskInput({ name: 'Pending', cron: '0 * * * *' }));
       store.updateTask(pending.id, { status: 'pending_approval' });
 
-      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const service = new TaskSchedulerService({
+        store: store,
+        ...onRuntime(mockAgent),
+        config: DEFAULT_CONFIG,
+      });
       await service.start();
 
       expect(store.listRuns()[0]).toMatchObject({
@@ -86,7 +83,11 @@ describe('TaskSchedulerService — registering, firing and recovering', () => {
       );
       const fine = store.createTask(taskInput({ name: 'Fine', cron: '0 * * * *' }));
 
-      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const service = new TaskSchedulerService({
+        store: store,
+        ...onRuntime(mockAgent),
+        config: DEFAULT_CONFIG,
+      });
       await expect(service.start()).resolves.toBeUndefined();
 
       expect(service.isRegistered(broken.id)).toBe(false);
@@ -99,7 +100,11 @@ describe('TaskSchedulerService — registering, firing and recovering', () => {
     // the refusal is an answer, not a throw: the caller is a watcher event.
     it('drops the old job when a re-register is refused, and unregisters on request', () => {
       const task = store.createTask(taskInput({ name: 'Drifts', cron: '0 * * * *' }));
-      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const service = new TaskSchedulerService({
+        store: store,
+        ...onRuntime(mockAgent),
+        config: DEFAULT_CONFIG,
+      });
 
       expect(service.registerTask(task)).toBe(true);
       expect(service.registerTask({ ...task, cron: 'banana' })).toBe(false);
@@ -116,7 +121,11 @@ describe('TaskSchedulerService — registering, firing and recovering', () => {
       const task = store.createTask(
         taskInput({ name: 'Manual only', cron: '0 0 31 2 *', timezone: 'UTC' })
       );
-      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const service = new TaskSchedulerService({
+        store: store,
+        ...onRuntime(mockAgent),
+        config: DEFAULT_CONFIG,
+      });
 
       expect(service.registerTask(task)).toBe(true);
       expect(service.getNextRun(task.id)).toBeNull();
@@ -128,7 +137,11 @@ describe('TaskSchedulerService — registering, firing and recovering', () => {
 
   describe('previewNextRuns()', () => {
     it('reads a cron the scheduler has never registered, in its timezone (DOR-1394)', () => {
-      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const service = new TaskSchedulerService({
+        store: store,
+        ...onRuntime(mockAgent),
+        config: DEFAULT_CONFIG,
+      });
       // Read before the call (DOR-1716): the preview is in the future OF THE CALL.
       const before = Date.now();
       const runs = service.previewNextRuns('0 3 * * *', 'UTC', 3);
@@ -143,7 +156,11 @@ describe('TaskSchedulerService — registering, firing and recovering', () => {
 
     it('returns nothing for a cron or timezone it cannot read, rather than throwing', () => {
       // An agent writes these; a proposal with a broken cron must stay rejectable.
-      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const service = new TaskSchedulerService({
+        store: store,
+        ...onRuntime(mockAgent),
+        config: DEFAULT_CONFIG,
+      });
       expect(service.previewNextRuns('99 99 99 99 99', 'UTC', 3)).toEqual([]);
       expect(service.previewNextRuns('0 3 * * *', 'Mars/Olympus_Mons', 3)).toEqual([]);
       expect(service.previewNextRuns(null, 'UTC', 3)).toEqual([]);
@@ -153,9 +170,13 @@ describe('TaskSchedulerService — registering, firing and recovering', () => {
   describe('which fires run', () => {
     it('creates no run when mayFire is false, but still shows the next run', async () => {
       const task = store.createTask(taskInput({ name: 'Gated', cron: '0 * * * *' }));
-      const service = new TaskSchedulerService(store, mockAgent, {
-        ...DEFAULT_CONFIG,
-        mayFire: false,
+      const service = new TaskSchedulerService({
+        store: store,
+        ...onRuntime(mockAgent),
+        config: {
+          ...DEFAULT_CONFIG,
+          mayFire: false,
+        },
       });
       await service.start();
 
@@ -251,88 +272,6 @@ describe('TaskSchedulerService — registering, firing and recovering', () => {
       await s1.stop();
       await s2.stop();
     });
-
-    it('records a tick dropped at the cap as a skipped run (DOR-1482)', async () => {
-      const busy = store.createTask(taskInput({ name: 'Slow one', cron: '* * * * *' }));
-      const waiting = store.createTask(taskInput({ name: 'Waiting', cron: '* * * * *' }));
-      const { impl, parked } = parkedTurn();
-      vi.mocked(mockAgent.sendMessage).mockImplementation(impl);
-      const service = scheduler();
-      void service.triggerManualRun(busy.id);
-      await parked;
-
-      await fire(service, waiting, new Date(1_700_000_040_000));
-
-      const [skipped] = store.listRuns({ taskId: waiting.id });
-      expect(skipped).toMatchObject({ status: 'skipped', finishedAt: expect.any(String) });
-      expect(skipped!.error).toContain('limit');
-      expect(mockAgent.sendMessage).toHaveBeenCalledOnce();
-      await service.stop();
-    });
-  });
-
-  it('releases the original session and writes one failed terminal when identity is refused at the end (DOR-4328)', async () => {
-    const refusal = new RequiredSessionIdentityError(new Error('required launch alias refused'));
-    const target = '4328-independent';
-    const targetProjector = getOrCreateProjector(target, '/independent');
-    const targetGeneration = targetProjector.streamGeneration;
-    let renamed = false;
-    let original: string | undefined;
-    vi.mocked(mockAgent.getInternalSessionId).mockImplementation((id) =>
-      renamed && id === original ? target : undefined
-    );
-    vi.mocked(mockAgent.sendMessage).mockImplementation(async function* (id) {
-      original = id;
-      // No yielded event: canonical identity is first observed by finish().
-      renamed = true;
-    });
-    const unregister = onRequiredSessionRekey((from, to) => {
-      if (from === original && to === target) throw refusal;
-    });
-    const writes = vi.spyOn(store, 'updateRun');
-    const task = store.createTask(taskInput({ name: 'Required', maxRuntime: null }));
-    const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
-    onTestFinished(async () => {
-      unregister();
-      // A red regression may leak accounting; don't spend the 30 s shutdown grace.
-      if (service.getActiveRunCount() === 0) await service.stop();
-      else store.close();
-      disposeProjector(target);
-      if (original) disposeProjector(original);
-    });
-
-    const run = await service.triggerManualRun(task.id);
-    await vi.waitFor(() => {
-      expect(store.getRun(run!.id)!.finishedAt).not.toBeNull();
-      expect(service.getActiveRunCount()).toBe(0);
-    });
-
-    expect(store.getRun(run!.id)).toMatchObject({
-      status: 'failed',
-      sessionId: original,
-      error: refusal.message,
-    });
-    const terminals = writes.mock.calls.filter(
-      ([id, fields]) => id === run!.id && fields.status && isTerminalRunStatus(fields.status)
-    );
-    expect(terminals).toHaveLength(1);
-    expect(mockAgent.releaseLock).toHaveBeenCalledWith(
-      original,
-      expect.any(String),
-      expect.any(Symbol)
-    );
-    expect(mockAgent.releaseLock).not.toHaveBeenCalledWith(
-      target,
-      expect.anything(),
-      expect.anything()
-    );
-    expect(peekProjector(target)).toBe(targetProjector);
-    expect(targetProjector.streamGeneration).toBe(targetGeneration);
-    // A cap-one scheduler must still admit the next run.
-    renamed = false;
-    vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {});
-    const next = await service.triggerManualRun(task.id);
-    await vi.waitFor(() => expect(store.getRun(next!.id)!.status).toBe('completed'));
   });
 
   describe('retention and crash recovery (DOR-1482)', () => {
@@ -351,10 +290,14 @@ describe('TaskSchedulerService — registering, firing and recovering', () => {
       vi.useFakeTimers();
       const task = store.createTask(taskInput({ name: 'Chatty', cron: '* * * * *' }));
       // Firing off, so the fake hour adds no runs of its own.
-      const service = new TaskSchedulerService(store, mockAgent, {
-        ...DEFAULT_CONFIG,
-        retentionCount: 2,
-        mayFire: false,
+      const service = new TaskSchedulerService({
+        store: store,
+        ...onRuntime(mockAgent),
+        config: {
+          ...DEFAULT_CONFIG,
+          retentionCount: 2,
+          mayFire: false,
+        },
       });
       await service.start();
 

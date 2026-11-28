@@ -83,7 +83,6 @@
     "src/services/tasks/session/late-run-output.ts": 1,
     "src/services/tasks/session/run-account-fallback.ts": 1,
     "src/services/tasks/session/run-account.ts": 1,
-    "src/services/tasks/session/run-projection.ts": 1,
     "src/services/tasks/sync/file-agent-level.ts": 2,
     "src/services/tasks/task-scheduler-service.ts": 1,
     "src/services/todos/todo-direct-chat.ts": 1,

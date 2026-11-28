@@ -18,7 +18,7 @@ import path from 'node:path';
 import { TaskReconciler } from '../task-reconciler.js';
 import { TaskRegistrar } from '../task-registrar.js';
 import { TaskStore } from '../task-store.js';
-import { TaskSchedulerService, type SchedulerAgentManager } from '../task-scheduler-service.js';
+import { TaskSchedulerService } from '../task-scheduler-service.js';
 import { ScheduleIdentityRegistry } from '../schedule-identity.js';
 import { attachAgentRoots } from '../attach-task-roots.js';
 import { agentSkillsRoot, agentTaskRoots, globalTaskRoots } from '../skills-roots.js';
@@ -32,6 +32,7 @@ import {
   touchesFile,
 } from '../task-file-update.js';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { onRuntime, type RuntimeDouble } from './support/runtime-task-turns.js';
 
 /** A skill whose frontmatter carries a `schedule:` block. */
 function scheduledSkill(
@@ -51,7 +52,7 @@ function plainSkill(name: string): string {
 }
 
 /** An agent manager that would run a turn, if anything here ever fired one. */
-function silentAgentManager(): SchedulerAgentManager {
+function silentAgentManager(): RuntimeDouble {
   return {
     ensureSession: vi.fn(),
     sendMessage: vi.fn().mockImplementation(async function* () {}),
@@ -59,7 +60,7 @@ function silentAgentManager(): SchedulerAgentManager {
     getInternalSessionId: vi.fn(() => undefined),
     acquireLock: vi.fn(() => true),
     releaseLock: vi.fn(),
-  } as unknown as SchedulerAgentManager;
+  } as unknown as RuntimeDouble;
 }
 
 describe('schedules discovered in skills roots', () => {
@@ -78,11 +79,15 @@ describe('schedules discovered in skills roots', () => {
     skillsDir = agentSkillsRoot(projectPath);
     await mkdir(skillsDir, { recursive: true });
     store = new TaskStore(createTestDb());
-    scheduler = new TaskSchedulerService(store, silentAgentManager(), {
-      maxConcurrentRuns: 1,
-      retentionCount: 100,
-      mayFire: true,
-      firingReason: 'test',
+    scheduler = new TaskSchedulerService({
+      store: store,
+      ...onRuntime(silentAgentManager()),
+      config: {
+        maxConcurrentRuns: 1,
+        retentionCount: 100,
+        mayFire: true,
+        firingReason: 'test',
+      },
     });
     registrar = new TaskRegistrar({ store, scheduler });
     reconciler = new TaskReconciler(store, registrar, new ScheduleIdentityRegistry());

@@ -36,9 +36,10 @@ import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { readScheduleFromSkill } from '../skills-root-discovery.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
-import { TaskSchedulerService, type SchedulerAgentManager } from '../task-scheduler-service.js';
+import { TaskSchedulerService } from '../task-scheduler-service.js';
 import { TaskStore } from '../task-store.js';
 import { registerClaudeCodeFacts } from '../../../startup/register-claude-code-facts.js';
+import { onRuntime, type RuntimeDouble } from './support/runtime-task-turns.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
 // refuses every path and turn code knows no Claude transcript.
@@ -71,7 +72,7 @@ const CONFIG = {
 describe('a schedule waiting for approval can still be run once', () => {
   let db: Db;
   let store: TaskStore;
-  let agent: SchedulerAgentManager;
+  let agent: RuntimeDouble;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -88,7 +89,7 @@ describe('a schedule waiting for approval can still be run once', () => {
       // Nobody else is writing to these sessions, so the write-lock is always free.
       acquireLock: vi.fn(() => true),
       releaseLock: vi.fn(),
-    } as unknown as SchedulerAgentManager;
+    } as unknown as RuntimeDouble;
   });
 
   /** A proposal parked exactly as `tasks_create` parks one. */
@@ -108,7 +109,7 @@ describe('a schedule waiting for approval can still be run once', () => {
 
   it('runs it as a manual run, and decides nothing about the approval', async () => {
     const task = parkedTask();
-    const service = new TaskSchedulerService(store, agent, CONFIG);
+    const service = new TaskSchedulerService({ store: store, ...onRuntime(agent), config: CONFIG });
     await service.start();
 
     const run = await service.triggerManualRun(task.id);
@@ -146,7 +147,7 @@ describe('a schedule waiting for approval can still be run once', () => {
     const file = path.join(folder, 'SKILL.md');
     const text =
       "---\nname: sample\ndescription: Sample\npermissions: bypassPermissions\nschedule:\n  cron: '0 3 * * *'\n---\nRead the sample list.\n";
-    const service = new TaskSchedulerService(store, agent, CONFIG);
+    const service = new TaskSchedulerService({ store: store, ...onRuntime(agent), config: CONFIG });
     try {
       await fs.writeFile(file, text);
       const parsed = parseSkillFile(file, text, SkillFrontmatterSchema, {
