@@ -1192,4 +1192,23 @@ export const CONFIG_MIGRATIONS = {
   // lacks it, and touches nothing else (DOR-5033). Absent already reads as
   // closed; this puts the choice on disk. See `seedAgentsMayPickOff`.
   '0.142.0': seedAgentsMayPickOff,
+  // v0.141.0 is the newest tag and 0.142.0 is taken, so this opens 0.143.0.
+  // Frozen from merge; anything further opens `'0.144.0'`.
+  //
+  // Disjoint from every other key here: `remoteComputers` is a new top-level
+  // section, which conf persists before migration selection. This anchor also
+  // heals a stored section missing its `enabled` leaf, as `'0.120.0'` does for
+  // `sessionRelay` (spec `space-computer-contract` W1, DOR-5164).
+  '0.143.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    const section = store.get('remoteComputers');
+    if (section !== null && typeof section === 'object' && !Array.isArray(section)) {
+      store.set('remoteComputers', {
+        ...section,
+        enabled: (section as { enabled?: unknown }).enabled === true,
+      });
+    }
+  },
 } as const;

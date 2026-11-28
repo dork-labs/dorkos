@@ -164,6 +164,9 @@
   "remoteAccess": {
     "enabled": true
   },
+  "remoteComputers": {
+    "enabled": false
+  },
   "rooms": {
     "collectDebounceMs": 500,
     "collectMaxEntries": 20,

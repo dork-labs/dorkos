@@ -19,6 +19,11 @@
  * and `connected`. Every pending request and open stream ends cleanly, with a
  * {@link RelayError}, when the connection does.
  *
+ * An agent computer's connection also carries the `features` frame and calls
+ * (`agent-computer-hello.ts`), only when the home's own record says it is one
+ * and the `remoteComputers.enabled` experiment is on. Otherwise a `call`
+ * closes the connection, as it always has.
+ *
  * Nothing here makes anyone a person or a signed-in user: the connection grants
  * no session, cookie or principal.
  *
@@ -52,6 +57,9 @@ import {
   type RelayChannel,
 } from '../session-relay/channel.js';
 import type { LinkedComputer } from './computer-store.js';
+import { AgentComputerLink, type AgentComputerHomeOptions } from './agent-computer-hello.js';
+import type { RelayFeaturesFrame } from '@dorkos/shared/session-relay-agent-computer';
+import type { AgentComputerFeature } from '@dorkos/shared/wire/features';
 
 /** How long a computer has to send `hello`, then `finish`, before the dial is dropped. */
 export const HUB_RELAY_HANDSHAKE_TIMEOUT_MS = 15_000;
@@ -131,7 +139,7 @@ export type RelayCallResult<Op extends RelayResultOp = RelayResultOp> =
 export type RelayStreamFrame = Extract<RelayComputerFrame, { type: 'stream.frame' }>['frame'];
 
 /** What a connection is told and given. */
-export interface HubComputerConnectionOptions {
+export interface HubComputerConnectionOptions extends AgentComputerHomeOptions {
   /** The upgraded socket. */
   socket: HubRelaySocket;
   /** The linked computer the dial's secret belongs to. */
@@ -173,6 +181,8 @@ export class HubComputerConnection {
   readonly computerId: string;
   private current: State = { state: 'hello' };
   private advertised: readonly string[] = [];
+  /** The agent-computer path, or `null` on today's path. */
+  private agent: AgentComputerLink | null = null;
   private viewers = 0;
   private nextId = 0;
   private readonly requests = new Map<string, PendingRequest>();
@@ -224,6 +234,11 @@ export class HubComputerConnection {
   /** The features the computer advertised in `hello`. A hint, never a permission. */
   get features(): readonly string[] {
     return this.advertised;
+  }
+
+  /** The agent-computer features both sides named; empty on today's path. */
+  get agreedFeatures(): readonly AgentComputerFeature[] {
+    return this.agent?.agreed ?? [];
   }
 
   /**
@@ -362,10 +377,15 @@ export class HubComputerConnection {
   }
 
   /** Seal and send one inner frame. `false` when it could not go out. */
-  private sendInner(frame: RelayWebFrame): boolean {
-    if (this.current.state !== 'open') return false;
+  private sendInner(frame: RelayWebFrame | RelayFeaturesFrame): boolean {
     const text = encodeRelayFrame(frame);
-    const sealed = text === null ? null : this.current.channel.seal(text);
+    return text !== null && this.sendText(text);
+  }
+
+  /** Seal and send one inner frame's text. `false` when it could not go out. */
+  private sendText(text: string): boolean {
+    if (this.current.state !== 'open') return false;
+    const sealed = this.current.channel.seal(text);
     if (!sealed) return false;
     this.options.socket.send(encodeRelayFrame(sealed)!);
     return true;
@@ -425,6 +445,11 @@ export class HubComputerConnection {
     if (this.handshakeTimer) clearTimeout(this.handshakeTimer);
     this.handshakeTimer = null;
     this.current = { state: 'open', channel };
+    this.agent = AgentComputerLink.open(this.options, this.advertised, (text) =>
+      this.sendText(text)
+    );
+    // The features frame goes first, so the computer can refuse it anywhere else.
+    if (this.agent?.featuresFrame) this.sendInner(this.agent.featuresFrame);
     this.heardFromComputer();
     this.heartbeatTimer = unref(
       setInterval(() => this.sendInner({ type: 'heartbeat' }), HUB_RELAY_HEARTBEAT_MS)
@@ -437,7 +462,17 @@ export class HubComputerConnection {
   private serve(channel: RelayChannel, text: string): void {
     const sealed = decodeRelayFrame(text, RelaySealedFrameSchema);
     const inner = sealed ? channel.open(sealed) : null;
-    const frame = inner === null ? null : decodeRelayFrame(inner, RelayComputerFrameSchema);
+    const read = inner === null ? null : this.read(inner);
+    if (read?.kind === 'answered') {
+      this.heardFromComputer();
+      return;
+    }
+    if (read?.kind === 'close' && read.reason === 'refusals') {
+      logger.warn('[HubRelay] A computer sent too many refused calls; closing');
+      this.close(1008);
+      return;
+    }
+    const frame = read?.kind === 'frame' ? read.frame : null;
     if (!frame) {
       logger.warn('[HubRelay] A frame from a computer failed to open; closing');
       this.close(1008);
@@ -479,6 +514,13 @@ export class HubComputerConnection {
         return;
       }
     }
+  }
+
+  /** Decode one opened frame: by the agent-computer path when there is one, else as today. */
+  private read(inner: string): ReturnType<AgentComputerLink['read']> {
+    if (this.agent) return this.agent.read(inner);
+    const frame = decodeRelayFrame(inner, RelayComputerFrameSchema);
+    return frame ? { kind: 'frame', frame } : { kind: 'close' };
   }
 
   /** Stop tracking a stream; returns it when it was open. */

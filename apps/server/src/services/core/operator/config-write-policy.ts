@@ -388,6 +388,9 @@ export const CONFIG_WRITE_POLICY = {
   // (DOR-2946). A "who can reach this computer" door, so a person opens it,
   // never an agent.
   'sessionRelay.enabled': 'operator-only',
+  // Whether agent computers may run this DorkOS's agents (DOR-5164). Another
+  // "who can reach this computer" door, so a person opens it, never an agent.
+  'remoteComputers.enabled': 'operator-only',
   // Whether the Docs experiment is on (DOR-2993). Like every experiment, a
   // person tries it, never an agent.
   'docs.enabled': 'operator-only',

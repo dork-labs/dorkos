@@ -232,6 +232,8 @@
   "relay.maxAgentTurnsTotalPerHour": "integer | null where {\"maximum\":100000,\"minimum\":0} (default)",
   "remoteAccess": "object (default)",
   "remoteAccess.enabled": "boolean (default)",
+  "remoteComputers": "object (default)",
+  "remoteComputers.enabled": "boolean (default)",
   "rooms": "object (default)",
   "rooms.collectDebounceMs": "integer where {\"maximum\":10000,\"minimum\":0} (default)",
   "rooms.collectMaxEntries": "integer where {\"maximum\":200,\"minimum\":1} (default)",

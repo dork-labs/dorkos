@@ -40,6 +40,7 @@ export const SAFEST_VALUES: ReadonlyMap<string, unknown> = new Map<string, unkno
   ['browser.enabled', false],
   ['computers.enabled', false],
   ['sessionRelay.enabled', false],
+  ['remoteComputers.enabled', false],
   ['spaces.enabled', false],
   ['a2a.enabled', false],
   ['harness.autoSync', false],

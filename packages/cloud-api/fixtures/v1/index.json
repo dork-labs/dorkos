@@ -171,6 +171,9 @@
     "remote/command-page-take-down.json": "RemoteCommandSchema",
     "hubs/wake-pass-mint-request.json": "WakePassMintRequestSchema",
     "hubs/wake-pass-mint.json": "WakePassMintResponseSchema",
-    "hubs/front-door-wake-request.json": "FrontDoorWakeRequestSchema"
+    "hubs/front-door-wake-request.json": "FrontDoorWakeRequestSchema",
+    "hubs/last-wake-pass.json": "HubLastWakeResponseSchema",
+    "hubs/last-wake-next-wake.json": "HubLastWakeResponseSchema",
+    "hubs/last-wake-none.json": "HubLastWakeResponseSchema"
   }
 }

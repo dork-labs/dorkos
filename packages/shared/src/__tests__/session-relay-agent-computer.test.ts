@@ -27,12 +27,11 @@ import {
   relayCallRefusalFrame,
   missingAgentComputerFeature,
   missingRelayCallFeature,
-  negotiatedRelayCallFeatures,
   parseRelayCallResult,
-  relayCallFeatureRefusal,
   type AgentComputerRequest,
   type RelayCall,
 } from '../session-relay-agent-computer.js';
+import { agreedAgentComputerFeatures } from '../wire/features.js';
 
 const SESSION = '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c';
 const AGENT = '01KJXYKJYW4N8QGQ5W4GB6YM9J';
@@ -224,7 +223,7 @@ describe('features are negotiated', () => {
   });
 
   it('allows a call only when both sides advertised it', () => {
-    const negotiated = negotiatedRelayCallFeatures(
+    const negotiated = agreedAgentComputerFeatures(
       ['tools.list', 'tools.call', 'session.fork'],
       ['tools.call', 'computer.status']
     );
@@ -233,17 +232,7 @@ describe('features are negotiated', () => {
     expect(missingRelayCallFeature(negotiated, EVERY_CALL[0])).toBe('tools.list');
     expect(missingRelayCallFeature(negotiated, EVERY_CALL[2])).toBe('computer.status');
     // Before the hub's features frame arrives, the computer may ask nothing.
-    expect(negotiatedRelayCallFeatures([...RELAY_CALL_FEATURES], [])).toEqual([]);
-  });
-
-  it('refuses an unnegotiated call naming the feature, so a newer computer can say why', () => {
-    expect(relayCallFeatureRefusal(['tools.call'], EVERY_CALL[1])).toBeNull();
-    expect(relayCallFeatureRefusal(['tools.call'], EVERY_CALL[0])).toEqual({
-      status: 501,
-      code: 'needs_update',
-      message: expect.any(String),
-      feature: 'tools.list',
-    });
+    expect(agreedAgentComputerFeatures([...RELAY_CALL_FEATURES], [])).toEqual([]);
   });
 
   it('never lets a Mac parse an agent-computer frame, so it keeps today’s behaviour', () => {

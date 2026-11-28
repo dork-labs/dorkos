@@ -469,6 +469,14 @@
       "types": "./src/step-up.ts",
       "default": "./dist/step-up.js"
     },
+    "./session-relay-agent-computer": {
+      "types": "./src/session-relay-agent-computer.ts",
+      "default": "./dist/session-relay-agent-computer.js"
+    },
+    "./wire/features": {
+      "types": "./src/wire/features.ts",
+      "default": "./dist/wire/features.js"
+    },
     "./session-relay-link": {
       "types": "./src/session-relay-link.ts",
       "default": "./dist/session-relay-link.js"

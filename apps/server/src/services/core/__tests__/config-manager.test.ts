@@ -283,8 +283,8 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // migration, which is exactly when this check should be re-read. DOR-4188
     // lowered it by retiring three keys the upgrade floor left as no-ops;
     // DOR-4891 raised it by one ('0.140.0', which never reaches the helper),
-    // and DOR-5033 by one more ('0.142.0', which never reaches it either).
-    expect(Object.keys(bodies)).toHaveLength(56);
+    // DOR-5033 by one ('0.142.0') and DOR-5164 by one ('0.143.0'); neither reaches it.
+    expect(Object.keys(bodies)).toHaveLength(57);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')

@@ -111,6 +111,11 @@ export const V1_ROUTES = {
    */
   hubWakePasses: '/v1/hubs/self/wake-passes',
   /**
+   * `GET` why the hub was last woken (`HubLastWakeResponseSchema`), so it can
+   * audit the wake. Hub instance key only; answered 200.
+   */
+  hubLastWake: '/v1/hubs/self/last-wake',
+  /**
    * `POST` from a person's own computer, with its instance key and no body, to
    * wake its own account's hub so it can deliver a notice, or send or call
    * for a published page. Answered 202 with
