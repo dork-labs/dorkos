@@ -31,10 +31,11 @@ describe('createPushMethods', () => {
       body: undefined,
     });
 
-    fetchMock = answer({ subscriptions: [] });
+    // The list pages (DOR-4982): the read-all loop asks for the largest page.
+    fetchMock = answer({ subscriptions: [], nextCursor: null });
     await methods.listPushSubscriptions();
     expect(sent(fetchMock)).toEqual({
-      url: '/api/push/subscriptions',
+      url: '/api/push/subscriptions?limit=200',
       method: 'GET',
       body: undefined,
     });
