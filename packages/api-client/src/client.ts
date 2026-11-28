@@ -158,7 +158,10 @@ function queryString(values: Record<string, unknown> = {}): string {
  * Create a client bound to one API mount.
  *
  * A call sends a body only when it is given one, writes included, as the
- * app's hand-written writes do.
+ * app's hand-written writes do. A write sent with no body carries no
+ * `Content-Type` from here, and some server routes refuse a write without
+ * `application/json`: the `fetch` you pass must add it (the app's transport
+ * does).
  *
  * @param options - The base URL and the `fetch` to send with.
  * @returns The client.
