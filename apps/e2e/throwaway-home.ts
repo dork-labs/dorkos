@@ -56,7 +56,7 @@ if (widenedOutOfReach(REPO_ROOT, MAIN_CHECKOUT)) {
  * @param home - The folder to use as the server's home.
  * @returns The variables to set on the server.
  */
-export function isolatedHomeEnv(home: string): NodeJS.ProcessEnv {
+export function isolatedHomeEnv(home: string): Record<string, string> {
   return {
     HOME: home,
     CLAUDE_CONFIG_DIR: join(home, '.claude'),
@@ -124,6 +124,22 @@ export function makeThrowawayHome(dorkHome: string): string {
 }
 
 /**
+ * Every variable a server started from source needs to run on its throwaway
+ * home: the home itself, where Playwright keeps its browsers, and the boundary
+ * (see {@link REPO_ROOT}). A spec that starts its own server process spreads
+ * this into that process's environment.
+ *
+ * @param dorkHome - The server's `DORK_HOME`.
+ */
+export function serverEnvOnThrowawayHome(dorkHome: string): Record<string, string> {
+  return {
+    ...isolatedHomeEnv(throwawayHomeOf(dorkHome)),
+    PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsersPath(),
+    DORKOS_BOUNDARY: BOUNDARY_ROOT,
+  };
+}
+
+/**
  * The shell that starts a server from source on its throwaway home. `env` sits
  * after `pnpm exec`, so pnpm itself still runs on the real home.
  *
@@ -134,11 +150,7 @@ export function makeThrowawayHome(dorkHome: string): string {
  * @param dorkHome - The server's `DORK_HOME`.
  */
 export function bootServerOnThrowawayHome(dorkHome: string): string {
-  const assignments = Object.entries({
-    ...isolatedHomeEnv(throwawayHomeOf(dorkHome)),
-    PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsersPath(),
-    DORKOS_BOUNDARY: BOUNDARY_ROOT,
-  })
+  const assignments = Object.entries(serverEnvOnThrowawayHome(dorkHome))
     // Double quotes: this lands inside the leg's single-quoted `sh -c`.
     .map(([key, value]) => `${key}="${value}"`)
     .join(' ');

@@ -28,6 +28,11 @@ environment (a worktree, or any machine whose default ports are busy).
 - `chromium-production` — `tests/production/`, and the only project whose
   baseURL is the server's own port rather than a Vite one. It is how a browser
   here ever sees the shipped `Content-Security-Policy`; see below.
+- `restart` — `tests/restart/`, no leg and no browser. The spec starts its own
+  test-mode server on a throwaway home, kills it with `SIGKILL` and starts it
+  again, then reads the chat back over HTTP (spec `turns-survive-restarts`
+  §8, Tier B). It takes about two minutes, most of it waiting out the dead
+  run's lease.
 
 ## webServer legs
 
