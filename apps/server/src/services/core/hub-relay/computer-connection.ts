@@ -467,6 +467,11 @@ export class HubComputerConnection {
       this.heardFromComputer();
       return;
     }
+    if (read?.kind === 'close' && read.reason === 'refusals') {
+      logger.warn('[HubRelay] A computer sent too many refused calls; closing');
+      this.close(1008);
+      return;
+    }
     const frame = read?.kind === 'frame' ? read.frame : null;
     if (!frame) {
       logger.warn('[HubRelay] A frame from a computer failed to open; closing');

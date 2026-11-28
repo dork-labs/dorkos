@@ -39,7 +39,7 @@
  * serves (`homeFeaturesFrameFor` in `wire/features.ts`). The computer asks only
  * what both named (`agreedAgentComputerFeatures`, {@link missingRelayCallFeature}),
  * and treats the hub as serving none until that frame arrives; the hub refuses
- * any other call with `needs_update`.
+ * any other call with `needs_update` (`wireFeatureRefusal`).
  *
  * **What the computer is comes from the hub's records, never from `hello`.**
  * The hub decodes a connection's frames with {@link AgentComputerFrameSchema},
@@ -684,26 +684,4 @@ export function missingRelayCallFeature(
   call: RelayCall
 ): RelayCallFeature | null {
   return negotiated.includes(call.op) ? null : call.op;
-}
-
-/**
- * The refusal a hub answers a call with when its feature was not negotiated,
- * or `null` when it was. A newer computer reads it as "the hub needs an
- * update for" that feature.
- *
- * @param negotiated - From `agreedAgentComputerFeatures` (`wire/features.ts`).
- * @param call - The call the computer sent.
- */
-export function relayCallFeatureRefusal(
-  negotiated: readonly string[],
-  call: RelayCall
-): RelayError | null {
-  const feature = missingRelayCallFeature(negotiated, call);
-  if (feature === null) return null;
-  return {
-    status: 501,
-    code: 'needs_update',
-    message: 'This DorkOS does not serve that call yet.',
-    feature,
-  };
 }

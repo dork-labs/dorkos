@@ -39,6 +39,7 @@ import {
 } from '@dorkos/shared/session-relay';
 import {
   agreedAgentComputerFeatures,
+  isAgentComputerFeature,
   namesAgentComputerFeature,
   wireFeatureRefusal,
   type AgentComputerFeature,
@@ -196,7 +197,10 @@ export class HubFeatureLink {
     this.pending.delete(frame.id);
     clearTimeout(call.timer);
     if (!frame.ok) {
-      call.resolve({ ok: false, error: frame.error });
+      // A feature the home names is believed only when this build knows it.
+      const { feature, ...error } = frame.error;
+      const known = feature !== undefined && isAgentComputerFeature(feature);
+      call.resolve({ ok: false, error: known ? { ...error, feature } : error });
       return;
     }
     const body = parseRelayCallResult(call.op, frame.body);

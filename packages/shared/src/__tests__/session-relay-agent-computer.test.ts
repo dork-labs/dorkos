@@ -28,7 +28,6 @@ import {
   missingAgentComputerFeature,
   missingRelayCallFeature,
   parseRelayCallResult,
-  relayCallFeatureRefusal,
   type AgentComputerRequest,
   type RelayCall,
 } from '../session-relay-agent-computer.js';
@@ -234,16 +233,6 @@ describe('features are negotiated', () => {
     expect(missingRelayCallFeature(negotiated, EVERY_CALL[2])).toBe('computer.status');
     // Before the hub's features frame arrives, the computer may ask nothing.
     expect(agreedAgentComputerFeatures([...RELAY_CALL_FEATURES], [])).toEqual([]);
-  });
-
-  it('refuses an unnegotiated call naming the feature, so a newer computer can say why', () => {
-    expect(relayCallFeatureRefusal(['tools.call'], EVERY_CALL[1])).toBeNull();
-    expect(relayCallFeatureRefusal(['tools.call'], EVERY_CALL[0])).toEqual({
-      status: 501,
-      code: 'needs_update',
-      message: expect.any(String),
-      feature: 'tools.list',
-    });
   });
 
   it('never lets a Mac parse an agent-computer frame, so it keeps today’s behaviour', () => {

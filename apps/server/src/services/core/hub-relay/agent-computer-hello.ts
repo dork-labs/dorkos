@@ -26,8 +26,8 @@
 import {
   AgentComputerFrameSchema,
   encodeRelayCallResultFrame,
+  missingRelayCallFeature,
   readRelayCallId,
-  relayCallFeatureRefusal,
   relayCallRefusalFrame,
   type RelayCall,
   type RelayCallFeature,
@@ -89,7 +89,10 @@ export interface AgentComputerHomeOptions {
 
 /** What one opened inner frame from an agent computer comes to. */
 export type AgentComputerRead =
-  { kind: 'frame'; frame: RelayComputerFrame } | { kind: 'answered' } | { kind: 'close' };
+  | { kind: 'frame'; frame: RelayComputerFrame }
+  | { kind: 'answered' }
+  /** Close; `refusals` when the computer passed {@link HOME_MAX_REFUSALS}. */
+  | { kind: 'close'; reason?: 'refusals' };
 
 /** One agent computer's connection, as far as the hello and its calls go. */
 export class AgentComputerLink {
@@ -142,8 +145,8 @@ export class AgentComputerLink {
       return id === null ? { kind: 'close' } : this.refuse(id, wireFeatureRefusal());
     }
     if (frame.type !== 'call') return { kind: 'frame', frame };
-    const refusal = relayCallFeatureRefusal(this.agreed, frame.call);
-    if (refusal) return this.refuse(frame.id, refusal);
+    const missing = missingRelayCallFeature(this.agreed, frame.call);
+    if (missing !== null) return this.refuse(frame.id, wireFeatureRefusal(missing));
     this.serve(frame.id, frame.call);
     return { kind: 'answered' };
   }
@@ -154,7 +157,7 @@ export class AgentComputerLink {
       this.refusedAt.shift();
     }
     this.refusedAt.push(now);
-    if (this.refusedAt.length > HOME_MAX_REFUSALS) return { kind: 'close' };
+    if (this.refusedAt.length > HOME_MAX_REFUSALS) return { kind: 'close', reason: 'refusals' };
     // A refusal is a few hundred bytes, so it always encodes.
     return this.send(encodeRelayFrame(relayCallRefusalFrame(id, error))!)
       ? { kind: 'answered' }

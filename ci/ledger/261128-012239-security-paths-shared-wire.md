@@ -17,6 +17,11 @@ for turns, and the rule that each side uses only what both named. Spec
 On Security's call (t1j, 2026-11-27), `SECURITY_PATH_PATTERN` (workflow,
 reference fixture and `Policy.swift`, byte-identical) gains
 `packages/shared/src/wire/`, and the parity test gets a row with a look-alike
-(`packages/shared/src/wired/`) that stays off. This only widens which PRs need
+(`packages/shared/src/wired/`) that stays off. On the review of the same
+step, the shared files that hold Security's bounds join too:
+`packages/shared/src/session-relay.ts` (the feature-id bounds) and
+`session-relay-agent-computer.ts` (the `features` frame), each with a row
+and a look-alike that stays off (`session-relay-link.ts`,
+`session-relay-agent-computers.ts`). This only widens which PRs need
 Security's review. No job, timing or trigger changes, so nothing measurable
 should move.

@@ -23,6 +23,7 @@ import type { RelayPin } from '../pin-store.js';
 const ORIGIN = 'https://home.example.test';
 const LATER = '2099-01-01T00:00:00.000Z';
 const AGENT = '01KJXYKJYW4N8QGQ5W4GB6YM9J';
+const SESSION = '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c';
 const CHAT_ONLY = [...SESSION_RELAY_FEATURES];
 
 const hubKey = generateKeyPairSync('ed25519').privateKey;
@@ -135,6 +136,28 @@ describe('the computer’s half of the hello', () => {
     const home = rawHome(CHAT_ONLY);
     home.send(home.seal({ type: 'features', features: ['tools.list'] }));
     expect(home.dialer.connected).toBe(false);
+  });
+
+  it('believes a feature named in a refusal only when this build knows it', async () => {
+    const home = rawHome([...CHAT_ONLY, 'tools.list']);
+    home.send(home.seal({ type: 'features', features: ['tools.list'] }));
+    const list = { op: 'tools.list', agentId: AGENT, sessionId: SESSION } as const;
+    const outcomes = [];
+    for (const feature of ['zz.bogus', 'tools.list']) {
+      const outcome = home.dialer.call(list);
+      home.wire.pump();
+      const { id } = home.received.filter((frame) => frame.type === 'call').at(-1)!;
+      const error = { status: 501, code: 'needs_update', message: 'Update.', feature };
+      home.send(home.seal({ type: 'call.result', id, ok: false, error }));
+      outcomes.push(await outcome);
+    }
+    expect(outcomes).toEqual([
+      { ok: false, error: { status: 501, code: 'needs_update', message: 'Update.' } },
+      {
+        ok: false,
+        error: { status: 501, code: 'needs_update', message: 'Update.', feature: 'tools.list' },
+      },
+    ]);
   });
 
   it('answers a home request it does not serve with needs_update, and stays connected', () => {

@@ -261,12 +261,34 @@ describe('the hello both ways', () => {
     await flush(computer.wire);
     expect(computer.hub.connected).toBe(true);
 
+    const warned = vi.spyOn(logger, 'warn');
     computer.send({ type: 'call', id: 'd33', call: CALL });
     await flush(computer.wire);
     expect(computer.hub.connected).toBe(false);
+    expect(warned).toHaveBeenCalledWith(
+      '[HubRelay] A computer sent too many refused calls; closing'
+    );
+    warned.mockRestore();
   });
 
-  it('never falls back to a looser schema: a frame it cannot read that is not a call closes', async () => {
+  it('never falls back to a looser schema: an agreed call with one field too many is not served', async () => {
+    const calls = serving();
+    const computer = rawComputer([...CHAT_ONLY, 'tools.list'], { ...AGENT_HOME, calls });
+    expect(computer.hub.agreedFeatures).toEqual(['tools.list']);
+    computer.send({ type: 'call', id: 'c1', call: LIST, extra: 1 });
+    await flush(computer.wire);
+    expect(computer.results()).toEqual([
+      {
+        type: 'call.result',
+        id: 'c1',
+        ok: false,
+        error: { status: 501, code: 'needs_update', message: expect.any(String) },
+      },
+    ]);
+    expect(calls.served).toEqual([]);
+  });
+
+  it('closes on a frame it cannot read that is not a call', async () => {
     const computer = rawComputer([...CHAT_ONLY, 'tools.call'], AGENT_HOME);
     computer.send({ type: 'result', id: 'r1', ok: true, body: {}, extra: 'field' });
     await flush(computer.wire);
