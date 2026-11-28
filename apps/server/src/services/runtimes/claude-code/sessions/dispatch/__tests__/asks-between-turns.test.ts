@@ -38,7 +38,7 @@ describe('a new turn keeps the asks no turn has shown yet', () => {
 });
 
 describe('the between-turns notifier', () => {
-  it("uses a turn's own notifier while it is set, and opens a window for an ask when none is", () => {
+  it("uses a turn's own notifier while it is set, and opens a window for a card when none is", () => {
     const s = session();
     const open = vi.fn(() => true);
     openTurnsForAsks(s, open);
@@ -56,10 +56,15 @@ describe('the between-turns notifier', () => {
     s.eventQueueNotify?.();
     expect(open).not.toHaveBeenCalled();
 
+    // A heavy-job wait is a status: nobody is waited on, so it opens nothing.
     s.eventQueue.push({
       type: 'system_status',
       data: { message: 'waiting for a slot', status: LOAD_WAIT_STATUS },
     } as StreamEvent);
+    s.eventQueueNotify?.();
+    expect(open).not.toHaveBeenCalled();
+
+    s.eventQueue.push(approval('toolu_2'));
     s.eventQueueNotify?.();
     expect(open).toHaveBeenCalledTimes(1);
 

@@ -239,14 +239,23 @@ export function strandedResult(sessionId: string): SDKMessage {
 }
 
 /**
+ * The field DorkOS sets on a synthetic `result` that closes a window in which no
+ * model was called. The result mapper reads it and reports the turn's own cost
+ * as `0`, so a turn meter (`core/turn-power/teammate-turn-cost.ts`) counts the
+ * turn as free rather than at its estimate for a turn that reported no cost.
+ * Never set by the CLI.
+ */
+export const NO_MODEL_CALL_FIELD = 'dorkos_no_model_call';
+
+/**
  * The quiet `result` that ends a window opened only to show an ask (DOR-2698).
  *
- * A helper still working after the reply can ask a person something: an
- * approval card, or its heavy job waiting in line. The windower opens a window
- * so that ask reaches the chat, and closes it once nobody is being waited on.
- * Nothing failed and the CLI ended no turn, so this is a plain success: it
- * settles the turn `turn_end` with no error, and the card a person has not
- * answered yet stays pending in the session's state.
+ * A helper still working after the reply can ask a person to approve a tool
+ * call. The windower opens a window so that card reaches the chat, and closes
+ * it once nobody is being waited on. Nothing failed and the CLI ended no turn,
+ * so this is a plain success: it settles the turn `turn_end` with no error, and
+ * a card a person has not answered yet stays pending in the session's state.
+ * No model was called in it, so it says so ({@link NO_MODEL_CALL_FIELD}).
  *
  * @param sessionId - The session whose ask window is closing
  */
@@ -258,5 +267,6 @@ export function askSettledResult(sessionId: string): SDKMessage {
     result: '',
     uuid: `ask-settled-${sessionId}`,
     session_id: sessionId,
+    [NO_MODEL_CALL_FIELD]: true,
   } as unknown as SDKMessage;
 }

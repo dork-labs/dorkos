@@ -1278,7 +1278,8 @@ export class SessionTurnWindows {
    * chat (DOR-2698).
    *
    * A background helper still working after the reply can ask a person to
-   * approve a tool call, or wait in line for a heavy-job slot. The ask lands on
+   * approve a tool call (a heavy-job wait is a status, not an ask, and opens
+   * nothing: `dispatch/asks-between-turns.ts`). The ask lands on
    * the session's event queue, and only an open window's turn reads that queue,
    * so with no window the card sat unseen until the wait ran out, and a
    * person's next message cleared it. The window this opens carries the ask

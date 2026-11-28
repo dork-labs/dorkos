@@ -1,140 +1,30 @@
 /**
  * session-turn-windows: a background helper asks a person something after the
- * parent's reply ends (DOR-2698).
- *
- * The whole hop a real card takes on a warm process: the helper's tool call
- * reaches the production `canUseTool`, the card goes onto the session's event
- * queue, the between-turns notifier opens a window for it, and the production
- * `streamTurnWindow` and `feedProjector` carry it to a real session-state
- * projector. The answer goes through the real `SessionStore.approveTool`.
+ * parent's reply ends (DOR-2698). The warm session these cases drive is in
+ * `./asks.fixtures.ts`, the helper's captured frames in `./helper-frames.fixtures.ts`.
  */
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { SessionEvent } from '@dorkos/shared/session-stream';
-import { logger } from '../../../../../../lib/logger.js';
-import { feedProjector } from '../../../../../session/session-event-normalizer.js';
-import { SessionStateProjector } from '../../../../../session/session-state-projector.js';
-import { createCanUseTool } from '../../../messaging/interactive-handlers.js';
-import { openTurnsForAsks } from '../../dispatch/asks-between-turns.js';
-import { streamTurnWindow } from '../../pump-turn-stream.js';
-import { SessionPump } from '../../session-pump.js';
-import { isWaitingOnPerson, SessionStore } from '../../session-store.js';
-import { SessionTurnWindows, type TurnWindow } from '../../session-turn-windows.js';
-import { FakeQuery, initMessage } from '../fake-pump-query.js';
-import {
-  CWD,
-  groupWindows,
-  resultMessage,
-  settledOrPending,
-  textDeltaMessage,
-} from './session-turn-windows.fixtures.js';
-import { capturedHelperRun, HELPER_AGENT } from './helper-frames.fixtures.js';
-
-const SESSION_ID = 'sess-helper-asks';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { StreamEvent } from '@dorkos/shared/types';
+import { LOAD_WAIT_STATUS } from '@dorkos/shared/schemas';
+import { turnCostReader } from '../../../../../observability/ai-metadata.js';
+import { CWD, groupWindows, settledOrPending } from './session-turn-windows.fixtures.js';
+import { capturedHelperRun, helperProgress } from './helper-frames.fixtures.js';
+import { SESSION_ID, warmSession } from './asks.fixtures.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** A warm session wired the way `PersistentDispatch` wires one, with a real projector behind it. */
-function warmSession() {
-  vi.spyOn(logger, 'info').mockImplementation(() => undefined);
-  const store = new SessionStore();
-  store.ensureSession(SESSION_ID, { permissionMode: 'default' });
-  const session = store.findSession(SESSION_ID)!;
-  const projector = new SessionStateProjector(SESSION_ID);
-  const queries: FakeQuery[] = [];
-  const opened: TurnWindow[] = [];
-  const projected: Promise<void>[] = [];
-  const seen: SDKMessage[] = [];
-  const ref: { windows?: SessionTurnWindows } = {};
-  const pump = new SessionPump({
-    sessionId: SESSION_ID,
-    launch: () => {
-      const query = new FakeQuery();
-      queries.push(query);
-      return query;
-    },
-    onMessage: (message) => {
-      seen.push(message);
-      ref.windows?.onMessage(message);
-    },
-    onCrash: (crash) => ref.windows?.onCrash(crash),
-    drainGraceMs: 20,
-  });
-  const windows = new SessionTurnWindows({
-    sessionId: SESSION_ID,
-    pump,
-    usageTimeoutMs: 200,
-    waitingOnPerson: () => isWaitingOnPerson(session, Date.now()),
-    onWindowOpen: (window) => {
-      opened.push(window);
-      const runtime = window.origin === 'runtime';
-      const events = streamTurnWindow({
-        sessionId: SESSION_ID,
-        session,
-        window,
-        opts: { cwd: CWD, onSdkSessionRebind: async () => {} },
-        meshAgentId: undefined,
-        suppressEmptyTurnError: runtime,
-      });
-      projected.push(
-        feedProjector(
-          projector,
-          events,
-          runtime ? { origin: 'runtime' as const } : { userMessage: 'start a helper' }
-        )
-      );
-    },
-  });
-  ref.windows = windows;
-  openTurnsForAsks(session, () => windows.openForAsk());
-  const canUseTool = createCanUseTool(session, { debug: () => {}, info: () => {} });
-  const live = (): FakeQuery => queries[queries.length - 1]!;
-
-  return {
-    store,
-    session,
-    projector,
-    windows,
-    opened,
-    live,
-    stream: (): SessionEvent[] => projector.replayFrom(0),
-    /** Emit frames and wait until the windower has been handed every one. */
-    emitAll: async (frames: SDKMessage[]): Promise<void> => {
-      const target = seen.length + frames.length;
-      for (const frame of frames) live().emit(frame);
-      await vi.waitFor(() => expect(seen.length).toBe(target));
-    },
-    /** The person's first turn, then the parent's reply ends. */
-    firstTurn: async (): Promise<void> => {
-      const dispatching = windows.dispatch([{ content: 'start a helper', messageId: 'm1' }], CWD);
-      await vi.waitFor(() => expect(queries.length).toBe(1));
-      live().emit(initMessage());
-      await dispatching;
-      live().emit(capturedHelperRun().started);
-      live().emit(textDeltaMessage('a helper is on it'));
-      live().emit(resultMessage('m1'));
-      await vi.waitFor(() => expect(windows.openWindow).toBeUndefined());
-      await Promise.all(projected);
-    },
-    /** The helper's first Bash call reaching the approval gate, as the CLI asks it. */
-    helperAsks: () => {
-      const call = capturedHelperRun().calls[0] as unknown as {
-        message: { content: Array<{ id: string; input: Record<string, unknown> }> };
-      };
-      const block = call.message.content[0]!;
-      return {
-        toolUseId: block.id,
-        answer: canUseTool('Bash', block.input, {
-          signal: new AbortController().signal,
-          toolUseID: block.id,
-          agentID: HELPER_AGENT,
-        }),
-      };
-    },
-    projected,
-  };
+/** What a turn meter reads as this turn's own cost, for a runtime whose cost is a running total. */
+function meteredCost(events: StreamEvent[]): number | undefined {
+  const runtime = {
+    type: 'claude-code',
+    getCapabilities: () => ({ costUsdIsRunningTotal: true }),
+  } as unknown as Pick<AgentRuntime, 'type' | 'getCapabilities'>;
+  const reader = turnCostReader(runtime);
+  for (const event of events) reader.see(event);
+  return reader.costUsd();
 }
 
 describe("a helper's ask after the reply ends (DOR-2698)", () => {
@@ -147,11 +37,7 @@ describe("a helper's ask after the reply ends (DOR-2698)", () => {
 
     const { toolUseId, answer } = w.helperAsks();
     // The card opens a window, and its turn carries the card to the session's state.
-    await vi.waitFor(() =>
-      expect(w.stream()).toContainEqual(
-        expect.objectContaining({ type: 'approval_required', id: toolUseId })
-      )
-    );
+    await w.cardShown(toolUseId);
     expect(w.opened.map((window) => window.origin)).toEqual(['user', 'runtime']);
     expect(w.projector.getStatus().lifecycle).toBe('blocked');
 
@@ -180,6 +66,110 @@ describe("a helper's ask after the reply ends (DOR-2698)", () => {
       'runtime',
       'runtime',
     ]);
+  });
+
+  it('counts the turn that only showed a card as costing nothing', async () => {
+    const w = warmSession();
+    await w.firstTurn();
+    const { toolUseId } = w.helperAsks();
+    await w.cardShown(toolUseId);
+    w.store.approveTool(SESSION_ID, toolUseId, true);
+    await w.emitAll([capturedHelperRun().results[0]!]);
+    await Promise.all(w.projected);
+
+    const askTurn = w.streamEvents[1]!;
+    expect(askTurn).toContainEqual(
+      expect.objectContaining({
+        type: 'session_status',
+        data: expect.objectContaining({ turnCostUsd: 0 }),
+      })
+    );
+    // Not the estimate a turn that reported no cost is counted at.
+    expect(meteredCost(askTurn)).toBe(0);
+  });
+
+  it('stays open while the card still waits, whatever else the process writes', async () => {
+    const w = warmSession();
+    await w.firstTurn();
+    const { toolUseId } = w.helperAsks();
+    await w.cardShown(toolUseId);
+
+    // Another helper's progress and words arrive while the person decides.
+    await w.emitAll([helperProgress(3), capturedHelperRun().between[1]!]);
+    expect(w.windows.openWindow?.origin).toBe('runtime');
+    expect(w.opened).toHaveLength(2);
+    expect(w.session.pendingInteractions.has(toolUseId)).toBe(true);
+  });
+
+  it('becomes one turn when the report starts under a waiting card, ending on its own result', async () => {
+    const w = warmSession();
+    await w.firstTurn();
+    const { toolUseId } = w.helperAsks();
+    await w.cardShown(toolUseId);
+    const usageCallsBefore = w.live().contextUsageCalls;
+
+    // The report's segment starts while the card waits; the person answers mid-report.
+    const { delivery } = capturedHelperRun();
+    const firstWord = delivery.findIndex(
+      (f) =>
+        f.type === 'stream_event' &&
+        (f as { event?: { delta?: { type?: string } } }).event?.delta?.type === 'text_delta'
+    );
+    await w.emitAll(delivery.slice(0, firstWord + 1));
+    w.store.approveTool(SESSION_ID, toolUseId, true);
+    await w.emitAll(delivery.slice(firstWord + 1));
+    await vi.waitFor(() => expect(w.windows.openWindow).toBeUndefined());
+    await Promise.all(w.projected);
+
+    expect(w.opened.map((window) => window.origin)).toEqual(['user', 'runtime']);
+    const turns = groupWindows(w.stream());
+    expect(turns).toHaveLength(2);
+    expect(
+      turns[1]!.events.filter((e) => e.type === 'text_delta' && e.text === 'PARENT-ANSWERS-REPORT')
+    ).toHaveLength(1);
+    // Closed on the CLI's own result, with the turn's accounting fetched.
+    expect(w.live().contextUsageCalls).toBeGreaterThan(usageCallsBefore);
+    expect(w.streamEvents[1]!.some((e) => e.type === 'context_usage')).toBe(true);
+  });
+
+  it('shows an ask raised as the card turn ends in a turn of its own, never after its end', async () => {
+    let second: ReturnType<ReturnType<typeof warmSession>['helperAsks']> | undefined;
+    const w = warmSession({
+      onEvent: (windowIndex, event) => {
+        // The helper's next call asks the moment the first card's turn says `done`.
+        if (windowIndex === 1 && event.type === 'done') second = w.helperAsks(1);
+      },
+    });
+    await w.firstTurn();
+    const first = w.helperAsks();
+    await w.cardShown(first.toolUseId);
+    w.store.approveTool(SESSION_ID, first.toolUseId, true);
+    await w.emitAll([capturedHelperRun().results[0]!]);
+
+    await vi.waitFor(() => expect(second).toBeDefined());
+    await w.cardShown(second!.toolUseId);
+    const turns = groupWindows(w.stream());
+    expect(turns.map((t) => t.origin)).toEqual([undefined, 'runtime', 'runtime']);
+    expect(turns[2]!.events).toContainEqual(
+      expect.objectContaining({ type: 'approval_required', id: second!.toolUseId })
+    );
+  });
+
+  it('opens nothing for a heavy-job wait, so a message sent meanwhile goes straight through', async () => {
+    const w = warmSession();
+    await w.firstTurn();
+    // The notice the load gate writes while the helper's job waits for a slot.
+    w.session.eventQueue.push({
+      type: 'system_status',
+      data: { message: 'Waiting for a free slot', status: LOAD_WAIT_STATUS },
+    } as StreamEvent);
+    w.session.eventQueueNotify?.();
+    expect(w.windows.openWindow).toBeUndefined();
+    expect(w.opened).toHaveLength(1);
+
+    const next = w.windows.dispatch([{ content: 'something else', messageId: 'm2' }], CWD);
+    expect(await settledOrPending(next)).toBe('settled');
+    expect((await next).origin).toBe('user');
   });
 
   // The queue keeps a person's message waiting while a card waits on them, as

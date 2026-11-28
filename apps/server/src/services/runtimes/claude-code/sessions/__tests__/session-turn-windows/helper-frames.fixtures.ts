@@ -14,7 +14,9 @@
  * the CLI settled it and opened the delivery segment, where the parent answered
  * the report. The file keeps the helper's `task_started` and every frame after
  * the parent's first `result`; the parent's own first turn is left out, because
- * each test runs its own first turn through the harness.
+ * each test runs its own first turn through the harness. The one change from the
+ * wire: the machine's temporary paths (the task output file, the working folder,
+ * a socket) are replaced with made-up `/tmp/made-up-…` placeholders.
  *
  * **Built from captured shapes.** {@link helperToolCall}, {@link helperToolResult}
  * and {@link helperProgress} clone the captured frame of the same kind and change

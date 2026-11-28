@@ -9,22 +9,23 @@
  * queue, and it sets `eventQueueNotify` only while it runs, so between turns
  * the card sat unread: the chat looked idle, the session's state never showed
  * it, the helper waited until the wait ran out, and a person's next message
- * cleared the queue and the card with it. The heavy-job line's wait notice
- * (`tool-gate/load-gate-hook.ts`) had the same gap.
+ * cleared the queue and the card with it.
  *
  * Two pieces close it:
  *
  * - {@link openTurnsForAsks} gives the session a between-turns notifier. While
  *   a turn's stream runs, its own notifier is used exactly as before; when none
  *   does, a queued ask opens a window for it (`SessionTurnWindows.openForAsk`),
- *   whose turn carries the card to the chat and the session's state.
+ *   whose turn carries the card to the chat and the session's state. A turn's
+ *   stream that ends with an ask still queued wakes it too
+ *   (`pump-turn-stream.ts`), so an ask raised as a turn closes is not stranded
+ *   behind that turn's `done`.
  * - {@link keptAsks} is what a new turn's fresh queue starts with: any ask
  *   still waiting on a person that no turn has shown yet, so a dispatch never
  *   silently drops one.
  *
  * @module services/runtimes/claude-code/sessions/dispatch/asks-between-turns
  */
-import { LOAD_WAIT_STATUS } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { isInteractiveEvent } from '../../../shared/empty-stream-guard.js';
 import type { AgentSession } from '../../agent-types.js';
@@ -33,18 +34,19 @@ import type { AgentSession } from '../../agent-types.js';
 type AskSession = Pick<AgentSession, 'eventQueue' | 'eventQueueNotify' | 'pendingInteractions'>;
 
 /**
- * Whether this queued event is something a person should see while it waits:
- * an approval card, a question or a form, or a tool call's wait for a
- * heavy-job slot.
+ * Whether this queued event waits on a person: an approval card, a question or
+ * a form.
+ *
+ * A tool call's wait for a heavy-job slot (`LOAD_WAIT_STATUS`) is deliberately
+ * not one. It is a status, nobody is being waited on, and the CLI writes no
+ * frame until the slot frees, so a window opened for it would hold the session,
+ * and a person's next message, for the whole wait. It stays on the queue for
+ * the next turn to show.
  *
  * @param event - An event on the session's queue
  */
 export function isAskEvent(event: StreamEvent): boolean {
-  if (isInteractiveEvent(event)) return true;
-  return (
-    event.type === 'system_status' &&
-    (event.data as { status?: unknown } | undefined)?.status === LOAD_WAIT_STATUS
-  );
+  return isInteractiveEvent(event);
 }
 
 /** The open-a-window callback each session's notifier calls, swapped as its wiring is rebuilt. */
