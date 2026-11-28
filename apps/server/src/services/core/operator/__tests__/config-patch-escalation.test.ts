@@ -40,7 +40,7 @@ import { operatorDomain } from '../operator-capabilities.js';
 import { createConfigPatchHandler } from '../operator-tool-handlers.js';
 import { operatorOnlyAreasForPatch } from '../config-write-policy.js';
 import type { AgentIdentity } from '../../agent-identity/agent-identity-service.js';
-import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../agent-tool-kit/agent-tool-kit.js';
 
 const AGENT: AgentIdentity = {
   agentPath: '/agents/dorkbot',
@@ -138,7 +138,7 @@ describe('an agent patching a guarded setting', () => {
     });
     registry = composeRegistry([operatorDomain], {
       logger: { info() {}, warn() {}, error() {}, debug() {} } as never,
-      operatorDeps: {} as McpToolDeps,
+      operatorDeps: {} as AgentToolDeps,
     });
   });
 

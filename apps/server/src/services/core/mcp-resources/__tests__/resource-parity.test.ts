@@ -21,29 +21,29 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { noopLogger } from '@dorkos/shared/logger';
 
-import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../agent-tool-kit/agent-tool-kit.js';
 import { createDorkOsToolServer } from '../../../runtimes/claude-code/mcp-tools/index.js';
 import { createExternalMcpServer } from '../../mcp-server.js';
 import { composeDorkOsCapabilityRegistry } from '../../self-description/dorkos-registry.js';
 import { DORKOS_RESOURCE_URIS } from '../index.js';
 
-/** A hermetic `McpToolDeps` carrying only what the resources actually read. */
-function makeDeps(): McpToolDeps {
+/** A hermetic `AgentToolDeps` carrying only what the resources actually read. */
+function makeDeps(): AgentToolDeps {
   return {
     transcriptReader: {
       listSessions: async () => [],
-    } as unknown as McpToolDeps['transcriptReader'],
+    } as unknown as AgentToolDeps['transcriptReader'],
     defaultCwd: '/tmp/dorkos-resource-parity',
     meshCore: {
       list: () => [],
       get: () => undefined,
-    } as unknown as McpToolDeps['meshCore'],
+    } as unknown as AgentToolDeps['meshCore'],
     runtimeRegistry: {
       listRuntimes: () => [],
       resolveForSession: async () => {
         throw new Error('no runtime');
       },
-    } as unknown as McpToolDeps['runtimeRegistry'],
+    } as unknown as AgentToolDeps['runtimeRegistry'],
   };
 }
 

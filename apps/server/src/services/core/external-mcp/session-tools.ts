@@ -13,7 +13,7 @@
  */
 import type { ToolRegistrar } from '../mcp-tool-gate.js';
 import type { AgentIdentity } from '../agent-identity/index.js';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import { getSessionTools } from '../../runtimes/claude-code/mcp-tools/session-tools.js';
 import { ToolAnnotationPresets } from '../mcp-tool-metadata.js';
 import { registerFromDefinitions, type ExternalToolConfigs } from './register-from-definitions.js';
@@ -35,7 +35,7 @@ const SESSION_EXTERNAL_CONFIGS: ExternalToolConfigs = {
  */
 export function registerSessionTools(
   registrar: ToolRegistrar,
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   identity?: AgentIdentity
 ): void {
   // An inactive identity names who tried, never who may act.

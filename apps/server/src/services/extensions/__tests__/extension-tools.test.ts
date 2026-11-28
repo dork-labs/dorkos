@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../core/agent-tool-kit/agent-tool-kit.js';
 import {
   createListExtensionsHandler,
   createCreateExtensionHandler,
@@ -64,9 +64,9 @@ function createMockManager(overrides: Partial<ExtensionManager> = {}): Extension
   } as unknown as ExtensionManager;
 }
 
-function createDeps(extensionManager?: ExtensionManager): McpToolDeps {
+function createDeps(extensionManager?: ExtensionManager): AgentToolDeps {
   return {
-    transcriptReader: {} as McpToolDeps['transcriptReader'],
+    transcriptReader: {} as AgentToolDeps['transcriptReader'],
     defaultCwd: '/test',
     extensionManager,
   };

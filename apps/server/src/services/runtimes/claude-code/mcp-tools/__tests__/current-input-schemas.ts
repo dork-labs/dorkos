@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 
 /** One node in an original executable input, including wrappers and union branches. */
 export interface InputNode {
@@ -37,7 +37,7 @@ export function inputNodes(
 
 /** The actual SDK/client fixture supplied by the existing default-arguments suite. */
 export interface McpContractHarness {
-  createFullDeps: () => McpToolDeps;
+  createFullDeps: () => AgentToolDeps;
   connect: (instance: {
     connect: (transport: InMemoryTransport) => Promise<void>;
   }) => Promise<{ client: Client; close: () => Promise<void> }>;

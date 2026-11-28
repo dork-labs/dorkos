@@ -49,13 +49,13 @@ import type { ToolCallEscalation, ToolCallEscalatorCall } from './tool-call-esca
 
 /**
  * The service-dependency bag threaded into every capability's `invoke` at boot,
- * following the existing pattern (`McpToolDeps`, `MarketplaceMcpDeps`): a flat
+ * following the existing pattern (`AgentToolDeps`, `MarketplaceMcpDeps`): a flat
  * interface of service handles constructed once in `index.ts` and captured by
  * {@link composeRegistry}.
  *
  * The spine declares only the boot infra every domain shares. Migrating domains
  * (task 2.2) EXTEND this interface with the service handles they need — the same
- * way `McpToolDeps` grew — and each capability's `invoke` narrows to the subset
+ * way `AgentToolDeps` grew — and each capability's `invoke` narrows to the subset
  * it actually reads. It is deliberately not generic: a single concrete bag keeps
  * every call site and every downstream projection uniform.
  */

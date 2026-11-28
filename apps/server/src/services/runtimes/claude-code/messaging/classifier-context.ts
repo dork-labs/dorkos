@@ -88,7 +88,8 @@ import type { CapabilityTier } from '@dorkos/shared/capabilities';
 
 import { recordClassifierAssertion } from '../../../observability/auto-mode-stops.js';
 import { MCP_TOOL_TIERS, type McpToolTier } from '../../../core/mcp-tool-tiers.js';
-import { IN_SESSION_TOOL_PREFIX, isHostServedOrUnattributed } from '../mcp-tools/tool-exposure.js';
+import { isHostServedOrUnattributed } from '../mcp-tools/tool-exposure.js';
+import { IN_SESSION_TOOL_PREFIX } from '../../../core/tool-names/tool-names.js';
 
 /**
  * Every sentence DorkOS is able to say to the classifier, written out once.

@@ -6,7 +6,7 @@
  * @module services/runtimes/claude-code/mcp-tools/__tests__/run-history-never-ask
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { handRegisteredInSessionTools } from '../index.js';
 import { RUN_SUMMARIES_LEFT_OUT } from '../tasks/task-tool-parts.js';
 import {
@@ -41,7 +41,7 @@ function runHistory(session: { permissionMode: string }) {
     taskStore: { listRuns: () => [RUN], getTask: () => ({ id: 'sched-1', agentId: null }) },
     defaultCwd: '/tmp/test',
     dorkHome: '/tmp/test-dork-home',
-  } as unknown as McpToolDeps;
+  } as unknown as AgentToolDeps;
   const live = { eventQueue: [], cwd: '/agents/ana', sdkSessionId: 'ses-1', ...session };
   const tools = handRegisteredInSessionTools(deps, { session: live }) as unknown as SessionTool[];
   const tool = tools.find((t) => t.name === 'tasks_get_run_history')!;

@@ -15,8 +15,8 @@ import { z } from 'zod';
 import type { EffortLevel, PermissionMode, UpdateTaskRequest } from '@dorkos/shared/types';
 import { slugify } from '@dorkos/skills/slug';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
-import type { McpToolDeps } from '../types.js';
-import { jsonContent, requireTasks } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
+import { jsonContent, requireTasks } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { createDeleteScheduleHandler } from './task-delete-tool.js';
 import {
   PARKED_SCHEDULE_NOTE,
@@ -157,7 +157,7 @@ export {
  * told from an outsider, so the task parks (ADR 261006-225605).
  */
 export function createCreateScheduleHandler(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   resolveProvenance?: TaskProvenanceResolver,
   callerMarks?: CallerMarksResolver,
   callerAgent?: CallerAgentResolver
@@ -351,7 +351,7 @@ export function createCreateScheduleHandler(
  * the same seam ({@link applyTaskFileUpdate}).
  */
 export function createUpdateScheduleHandler(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   resolveProvenance?: TaskProvenanceResolver,
   callerMarks?: CallerMarksResolver,
   callerAgent?: CallerAgentResolver
@@ -723,7 +723,7 @@ export function createUpdateScheduleHandler(
  *   proposal genuinely has no session behind it and provenance stays null.
  */
 export function getTasksTools(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   resolveProvenance?: TaskProvenanceResolver,
   callerMarks?: CallerMarksResolver,
   callerAgent?: CallerAgentResolver

@@ -27,7 +27,7 @@ import {
   CLAUDE_CODE_DORKOS_TOOL_PREFIX,
   CODEX_DORKOS_TOOL_PREFIX,
   OPENCODE_DORKOS_TOOL_PREFIX,
-} from '../dorkos-tool-names.js';
+} from '../../../core/tool-names/tool-names.js';
 import {
   globsKeepIgnores,
   outsideFileTests,

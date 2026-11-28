@@ -15,7 +15,7 @@
  * @module services/runtimes/shared/prose/context-warning-block
  */
 import type { ContextWarningData } from '@dorkos/shared/additional-context';
-import { dorkosToolNameFor } from '../dorkos-tool-names.js';
+import { dorkosToolNameFor } from '../../../core/tool-names/tool-names.js';
 // Both names come from where each tool is registered, never spelled here: this
 // module is read by three runtimes, and a bare name in it would be one none of
 // them can call (DOR-1292).

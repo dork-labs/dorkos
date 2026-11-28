@@ -67,7 +67,7 @@ import { buildOpenCodeTurnContext } from '../runtimes/opencode/messaging/turn-co
 import { resolveLaunch } from '../runtimes/claude-code/messaging/launch-resolver.js';
 import type { AgentSession } from '../runtimes/claude-code/agent-types.js';
 import { createGetAgentHandler } from '../runtimes/claude-code/mcp-tools/core-tools.js';
-import type { McpToolDeps } from '../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../core/agent-tool-kit/agent-tool-kit.js';
 import { resolveSubjectLabel } from '../relay/subject-resolver.js';
 import { _resolveRuntimeTypeForNewSession } from '../session/launch/launch-session.js';
 import { RuntimeRegistry, runtimeRegistry } from '../core/runtime-registry.js';
@@ -247,7 +247,7 @@ describe('a worktree of a home repo reads the HOME identity', () => {
   });
 
   it('row 8: get_agent about the worktree answers with the home manifest', async () => {
-    const result = await createGetAgentHandler({} as McpToolDeps)({ cwd: tree });
+    const result = await createGetAgentHandler({} as AgentToolDeps)({ cwd: tree });
     const agent = agentIn(result);
     expect(agent?.name).toBe(HOME.name);
     expect(agent?.account).toBe(HOME.account);
@@ -260,7 +260,7 @@ describe('a worktree of a home repo reads the HOME identity', () => {
 
     const { text } = await buildAgentContextAppend(homeOf(resolveAgentHome(bare)), bare);
     expect(text).toContain(HOME.soul);
-    const result = await createGetAgentHandler({} as McpToolDeps)({ cwd: bare });
+    const result = await createGetAgentHandler({} as AgentToolDeps)({ cwd: bare });
     expect(agentIn(result)?.name).toBe(HOME.name);
   });
 
@@ -272,7 +272,7 @@ describe('a worktree of a home repo reads the HOME identity', () => {
       memory: '',
     });
     expect((await buildAgentContextAppend(undefined, tree)).text).not.toContain(BRANCH.soul);
-    const result = await createGetAgentHandler({} as McpToolDeps)({ cwd: tree });
+    const result = await createGetAgentHandler({} as AgentToolDeps)({ cwd: tree });
     expect(agentIn(result)).toBeNull();
   });
 });

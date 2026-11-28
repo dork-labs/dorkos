@@ -13,7 +13,7 @@
  *
  * @module services/runtimes/claude-code/tool-gate/always-on-reads
  */
-import { inSessionToolName } from '../mcp-tools/tool-exposure.js';
+import { inSessionToolName } from '../../../core/tool-names/tool-names.js';
 
 /** The always-on reads, by bare tool name. */
 export const ALWAYS_ON_READS = [

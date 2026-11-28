@@ -98,7 +98,7 @@ import {
   registerTestHomes,
 } from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
 import { checkClaudeLaunchAccount } from '../../launch-account-check.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { createSessionStartHandler } from '../session-tools.js';
 import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
 
@@ -112,11 +112,11 @@ const mesh = {
   listWithPaths: () => [{ id: 'a1', name: 'scout', displayName: 'Scout', projectPath: AGENT_HOME }],
 } as unknown as MeshCore;
 
-function makeDeps(): McpToolDeps {
+function makeDeps(): AgentToolDeps {
   return {
     meshCore: mesh,
     activityService: { emit: vi.fn(async () => undefined) },
-  } as unknown as McpToolDeps;
+  } as unknown as AgentToolDeps;
 }
 
 function asScout() {

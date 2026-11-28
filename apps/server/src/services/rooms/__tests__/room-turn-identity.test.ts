@@ -77,7 +77,7 @@ import { RuntimeRegistry } from '../../core/runtime-registry.js';
 import type { McpServerLaunch } from '../../runtimes/claude-code/messaging/message-sender-shared.js';
 import type { AgentSession } from '../../runtimes/claude-code/agent-types.js';
 import { createDorkOsToolServer } from '../../runtimes/claude-code/mcp-tools/index.js';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../core/agent-tool-kit/agent-tool-kit.js';
 import { roomsDomain } from '../room-capabilities.js';
 import {
   agentLookupFor,
@@ -117,11 +117,11 @@ const agents = agentLookupFor({
 });
 
 /** Deps for the in-session tool server — only the rooms verbs are driven. */
-function toolDeps(): McpToolDeps {
+function toolDeps(): AgentToolDeps {
   return {
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
-    } as unknown as McpToolDeps['transcriptReader'],
+    } as unknown as AgentToolDeps['transcriptReader'],
     defaultCwd: '/tmp/dor-2091',
     dorkHome: '/tmp/dorkos-test-home',
   };

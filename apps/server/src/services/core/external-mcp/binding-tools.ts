@@ -12,7 +12,7 @@
  * @module services/core/external-mcp/binding-tools
  */
 import type { ToolRegistrar } from '../mcp-tool-gate.js';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import { bindingToolDefinitions } from '../../runtimes/claude-code/mcp-tools/binding-tools.js';
 import { ToolAnnotationPresets } from '../mcp-tool-metadata.js';
 import { registerFromDefinitions, type ExternalToolConfigs } from './register-from-definitions.js';
@@ -34,6 +34,6 @@ const BINDING_EXTERNAL_CONFIGS: ExternalToolConfigs = {
  *   tool's permission tier before its handler.
  * @param deps - Shared MCP tool dependencies.
  */
-export function registerBindingTools(registrar: ToolRegistrar, deps: McpToolDeps): void {
+export function registerBindingTools(registrar: ToolRegistrar, deps: AgentToolDeps): void {
   registerFromDefinitions(registrar, bindingToolDefinitions(deps), BINDING_EXTERNAL_CONFIGS);
 }

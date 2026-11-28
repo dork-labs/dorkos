@@ -1,8 +1,8 @@
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { EXTENSION_ID_REGEX } from '@dorkos/extension-api';
-import type { McpToolDeps } from './types.js';
-import { jsonContent } from './types.js';
+import type { AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
+import { jsonContent } from '../../../core/agent-tool-kit/agent-tool-kit.js';
 import {
   EXTENSION_TEXT_NOTE,
   extensionForAgents,
@@ -256,7 +256,7 @@ runs they reach agents as \`<id>__<skill>\`, as a plugin's skills do (a plugin's
  * Guard that returns the ExtensionManager if available, or null if not.
  * Callers must check for null and return an appropriate error response.
  */
-function requireExtensionManager(deps: McpToolDeps) {
+function requireExtensionManager(deps: AgentToolDeps) {
   if (!deps.extensionManager) {
     return null;
   }
@@ -270,7 +270,7 @@ function requireExtensionManager(deps: McpToolDeps) {
  * The `path` field is intentionally excluded from the response to avoid
  * exposing server-internal filesystem details to agents.
  */
-export function createListExtensionsHandler(deps: McpToolDeps) {
+export function createListExtensionsHandler(deps: AgentToolDeps) {
   return async () => {
     const manager = requireExtensionManager(deps);
     if (!manager) {
@@ -303,7 +303,7 @@ export function createListExtensionsHandler(deps: McpToolDeps) {
  * @param manager - The extension manager.
  */
 async function waitingById(
-  manager: NonNullable<McpToolDeps['extensionManager']>
+  manager: NonNullable<AgentToolDeps['extensionManager']>
 ): Promise<Map<string, PendingExtensionApproval> | null> {
   try {
     const pending = await listPendingExtensionApprovals(manager, { forPerson: false });
@@ -320,7 +320,7 @@ async function waitingById(
  * Useful for agents diagnosing extension problems without sifting through
  * healthy extensions in the full list.
  */
-export function createGetExtensionErrorsHandler(deps: McpToolDeps) {
+export function createGetExtensionErrorsHandler(deps: AgentToolDeps) {
   return async () => {
     const manager = requireExtensionManager(deps);
     if (!manager) {
@@ -338,7 +338,7 @@ export function createGetExtensionErrorsHandler(deps: McpToolDeps) {
  * Does not require `extensionManager` to be initialized — the API reference
  * is always available regardless of extension system state.
  */
-export function createGetExtensionApiHandler(_deps: McpToolDeps) {
+export function createGetExtensionApiHandler(_deps: AgentToolDeps) {
   return async () => {
     return {
       content: [{ type: 'text' as const, text: EXTENSION_API_REFERENCE }],
@@ -356,7 +356,7 @@ export function createGetExtensionApiHandler(_deps: McpToolDeps) {
  *
  * @param deps - Shared MCP tool dependencies
  */
-export function createReloadExtensionsHandler(deps: McpToolDeps) {
+export function createReloadExtensionsHandler(deps: AgentToolDeps) {
   return async (args: { id?: string }) => {
     const manager = requireExtensionManager(deps);
     if (!manager) {
@@ -400,7 +400,7 @@ export function createReloadExtensionsHandler(deps: McpToolDeps) {
  *
  * @param deps - Shared MCP tool dependencies
  */
-export function createTestExtensionHandler(deps: McpToolDeps) {
+export function createTestExtensionHandler(deps: AgentToolDeps) {
   return async (args: { id: string }) => {
     const manager = requireExtensionManager(deps);
     if (!manager) {
@@ -442,7 +442,7 @@ export function createTestExtensionHandler(deps: McpToolDeps) {
  *   server only; see {@link ExtensionCreatorResolver}.
  */
 export function extensionToolDefinitions(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   resolveCreator?: ExtensionCreatorResolver
 ) {
   return [
@@ -532,7 +532,7 @@ export function extensionToolDefinitions(
  * @param deps - Shared MCP tool dependencies.
  * @param resolveCreator - Who is calling `create_extension` in this session.
  */
-export function getExtensionTools(deps: McpToolDeps, resolveCreator?: ExtensionCreatorResolver) {
+export function getExtensionTools(deps: AgentToolDeps, resolveCreator?: ExtensionCreatorResolver) {
   if (!deps.extensionManager) {
     const [getExtensionApi] = extensionToolDefinitions(deps);
     return [getExtensionApi];

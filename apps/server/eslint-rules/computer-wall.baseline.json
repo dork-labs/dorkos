@@ -361,11 +361,6 @@
       "frontDoor": 0,
       "tables": 0
     },
-    "src/services/runtimes/claude-code/mcp-tools/types.ts": {
-      "space": 12,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/runtimes/claude-code/messaging/classifier-context.ts": {
       "space": 1,
       "frontDoor": 0,

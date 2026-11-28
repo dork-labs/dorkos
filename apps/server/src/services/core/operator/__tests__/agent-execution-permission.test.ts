@@ -34,7 +34,7 @@ import { invokeCapabilityAsMcpResult } from '../../capabilities/mcp-projection.j
 import { ApprovalService } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
 import { initBoundary } from '../../../../lib/boundary.js';
-import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../agent-tool-kit/agent-tool-kit.js';
 import type { AgentIdentity } from '../../agent-identity/index.js';
 
 /** The agent doing the asking. */
@@ -95,7 +95,7 @@ beforeEach(async () => {
 
   registry = composeRegistry([operatorDomain], {
     logger: noopLogger,
-    operatorDeps: {} as McpToolDeps,
+    operatorDeps: {} as AgentToolDeps,
   });
   approvals = new ApprovalService(createTestDb());
   vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});

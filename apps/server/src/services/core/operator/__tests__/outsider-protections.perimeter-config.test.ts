@@ -62,7 +62,7 @@ import { eventFanOut } from '../../event-fan-out.js';
 import { operatorDomain } from '../operator-capabilities.js';
 import { createConfigPatchHandler } from '../operator-tool-handlers.js';
 import type { AgentIdentity } from '../../agent-identity/agent-identity-service.js';
-import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../agent-tool-kit/agent-tool-kit.js';
 
 const AGENT: AgentIdentity = {
   agentPath: '/agents/dorkbot',
@@ -145,7 +145,7 @@ describe('an agent at full power cannot change a perimeter setting by itself', (
     });
     registry = composeRegistry([operatorDomain], {
       logger: { info() {}, warn() {}, error() {}, debug() {} } as never,
-      operatorDeps: {} as McpToolDeps,
+      operatorDeps: {} as AgentToolDeps,
     });
   });
 

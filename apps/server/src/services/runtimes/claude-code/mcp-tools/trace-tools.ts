@@ -1,10 +1,10 @@
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import type { McpToolDeps } from './types.js';
-import { jsonContent, structuredJsonContent } from './types.js';
+import type { AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
+import { jsonContent, structuredJsonContent } from '../../../core/agent-tool-kit/agent-tool-kit.js';
 
 /** Guard that returns an error response when TraceStore is not available. */
-function requireTraceStore(deps: McpToolDeps) {
+function requireTraceStore(deps: AgentToolDeps) {
   if (!deps.traceStore) {
     return jsonContent({ error: 'Message tracing is off', code: 'TRACING_DISABLED' }, true);
   }
@@ -12,7 +12,7 @@ function requireTraceStore(deps: McpToolDeps) {
 }
 
 /** Get the full trace for a message by its ID. */
-export function createRelayGetTraceHandler(deps: McpToolDeps) {
+export function createRelayGetTraceHandler(deps: AgentToolDeps) {
   return async (args: { messageId: string }) => {
     const err = requireTraceStore(deps);
     if (err) return err;
@@ -26,7 +26,7 @@ export function createRelayGetTraceHandler(deps: McpToolDeps) {
 }
 
 /** Get aggregate delivery metrics from the TraceStore. */
-export function createRelayGetMetricsHandler(deps: McpToolDeps) {
+export function createRelayGetMetricsHandler(deps: AgentToolDeps) {
   return async () => {
     const err = requireTraceStore(deps);
     if (err) return err;
@@ -47,7 +47,7 @@ export function createRelayGetMetricsHandler(deps: McpToolDeps) {
  *
  * @param deps - Shared MCP tool dependencies.
  */
-export function traceToolDefinitions(deps: McpToolDeps) {
+export function traceToolDefinitions(deps: AgentToolDeps) {
   return [
     tool(
       'relay_get_trace',
@@ -70,7 +70,7 @@ export function traceToolDefinitions(deps: McpToolDeps) {
  *
  * @param deps - Shared MCP tool dependencies.
  */
-export function getTraceTools(deps: McpToolDeps) {
+export function getTraceTools(deps: AgentToolDeps) {
   if (!deps.traceStore) return [];
   return traceToolDefinitions(deps);
 }

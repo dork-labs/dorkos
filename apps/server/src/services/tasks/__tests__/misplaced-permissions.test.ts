@@ -18,7 +18,7 @@ import { needsScheduleApprovalAttention } from '../schedule-permission-clamp.js'
 import { armToolApproval } from '../../runtimes/claude-code/mcp-tools/tasks/task-tool-mode.js';
 import { grantOf } from '../agent-mode/__tests__/agent-mode-fixtures.js';
 import { agentModeSnapshotOf } from '../agent-mode/agent-mode-door.js';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../core/agent-tool-kit/agent-tool-kit.js';
 
 let folder: string;
 let file: string;
@@ -62,7 +62,7 @@ describe('a misplaced schedule mode', () => {
         setsMode: false,
       });
       const result = await armToolApproval(
-        { dorkHome: folder, taskStore: store } as McpToolDeps,
+        { dorkHome: folder, taskStore: store } as AgentToolDeps,
         { grant: grantOf({ approves: true, aboveDontAsk: false, snapshot }) },
         before,
         { structural: true, resolved: 'home', marked: false }
@@ -75,7 +75,7 @@ describe('a misplaced schedule mode', () => {
         setsMode: false,
       });
       const control = await armToolApproval(
-        { dorkHome: folder, taskStore: store } as McpToolDeps,
+        { dorkHome: folder, taskStore: store } as AgentToolDeps,
         { grant: grantOf({ approves: true, aboveDontAsk: false, snapshot: controlSnapshot }) },
         before,
         { structural: true, resolved: 'home', marked: false }

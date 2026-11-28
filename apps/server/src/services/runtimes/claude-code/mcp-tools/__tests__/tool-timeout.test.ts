@@ -26,15 +26,15 @@ import { DORKOS_MCP_TOOL_TIMEOUT_MS } from '../tool-timeout.js';
 import { CAPABILITY_APPROVAL_HOLD_CAP_MS } from '../../../../core/capabilities/capability-approval-hold.js';
 import { CAPABILITY_HOLD_PAUSE_GRACE_MS } from '../../../../session/session-state-projector.js';
 import { CONNECTOR_REQUEST_LIVE_HOLD_MS } from '../../../../connectors/runtime-capability-scope.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 
 /** Minimal deps — this file builds the server only to read its config. */
-function createDeps(): McpToolDeps {
+function createDeps(): AgentToolDeps {
   const stub = {} as never;
   return {
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
-    } as unknown as McpToolDeps['transcriptReader'],
+    } as unknown as AgentToolDeps['transcriptReader'],
     defaultCwd: '/tmp/dorkos-tool-timeout',
     dorkHome: '/tmp/dorkos-test-home',
     taskStore: stub,

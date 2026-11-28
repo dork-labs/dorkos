@@ -31,7 +31,7 @@ import type { ExtensionManager } from '../../extension-manager.js';
 import { knownProjectRootsForExtensions } from '../../../projects/extension-scan-roots.js';
 import { findOperatorOnlyPaths } from '../../../core/operator/config-write-policy.js';
 import { createCreateExtensionHandler } from '../../../runtimes/claude-code/mcp-tools/extension-tools.js';
-import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
 
 describe('the screen half is always pinned (client digest)', () => {
   it('keeps a server-only edit running, screen half included', () => {
@@ -135,7 +135,7 @@ describe('create_extension from an agent', () => {
       transcriptReader: {},
       defaultCwd: '/test',
       extensionManager: { createExtension } as unknown as ExtensionManager,
-    } as unknown as McpToolDeps;
+    } as unknown as AgentToolDeps;
     return { createExtension, handler: createCreateExtensionHandler(deps, () => creator) };
   }
 

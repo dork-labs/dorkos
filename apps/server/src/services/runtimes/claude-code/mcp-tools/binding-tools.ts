@@ -1,7 +1,7 @@
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import type { McpToolDeps } from './types.js';
-import { jsonContent } from './types.js';
+import type { AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
+import { jsonContent } from '../../../core/agent-tool-kit/agent-tool-kit.js';
 import { readableSessionIds } from '../../../audit/session-visibility.js';
 import type { AuditReader } from '../../../audit/visibility.js';
 
@@ -13,7 +13,7 @@ import type { AuditReader } from '../../../audit/visibility.js';
 const UNNAMED_AGENT: AuditReader = { kind: 'agent', accountId: 'unidentified' };
 
 /** Guard that returns an error response when BindingStore is not available. */
-function requireBindingStore(deps: McpToolDeps) {
+function requireBindingStore(deps: AgentToolDeps) {
   if (!deps.bindingStore) {
     return jsonContent({ error: 'Chat connections are off', code: 'BINDINGS_DISABLED' }, true);
   }
@@ -21,7 +21,7 @@ function requireBindingStore(deps: McpToolDeps) {
 }
 
 /** List all adapter-to-agent bindings. */
-export function createBindingListHandler(deps: McpToolDeps) {
+export function createBindingListHandler(deps: AgentToolDeps) {
   return async () => {
     const err = requireBindingStore(deps);
     if (err) return err;
@@ -31,7 +31,7 @@ export function createBindingListHandler(deps: McpToolDeps) {
 }
 
 /** Create a new adapter-to-agent binding. */
-export function createBindingCreateHandler(deps: McpToolDeps) {
+export function createBindingCreateHandler(deps: AgentToolDeps) {
   return async (args: {
     adapterId: string;
     agentId: string;
@@ -63,7 +63,7 @@ export function createBindingCreateHandler(deps: McpToolDeps) {
 }
 
 /** Delete an adapter-to-agent binding by ID. */
-export function createBindingDeleteHandler(deps: McpToolDeps) {
+export function createBindingDeleteHandler(deps: AgentToolDeps) {
   return async (args: { id: string }) => {
     const err = requireBindingStore(deps);
     if (err) return err;
@@ -73,7 +73,7 @@ export function createBindingDeleteHandler(deps: McpToolDeps) {
 }
 
 /** List active session mappings from the binding router. */
-export function createBindingListSessionsHandler(deps: McpToolDeps) {
+export function createBindingListSessionsHandler(deps: AgentToolDeps) {
   return async (args: { bindingId?: string }) => {
     if (!deps.bindingRouter) {
       return jsonContent(
@@ -140,7 +140,7 @@ export function createBindingListSessionsHandler(deps: McpToolDeps) {
  *
  * @param deps - Shared MCP tool dependencies.
  */
-export function bindingToolDefinitions(deps: McpToolDeps) {
+export function bindingToolDefinitions(deps: AgentToolDeps) {
   return [
     tool('binding_list', 'List all adapter-to-agent bindings.', {}, createBindingListHandler(deps)),
     tool(
@@ -187,7 +187,7 @@ export function bindingToolDefinitions(deps: McpToolDeps) {
  *
  * @param deps - Shared MCP tool dependencies.
  */
-export function getBindingTools(deps: McpToolDeps) {
+export function getBindingTools(deps: AgentToolDeps) {
   if (!deps.bindingStore) return [];
   return bindingToolDefinitions(deps);
 }

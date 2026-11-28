@@ -39,7 +39,7 @@ import { ClaudeConnectorTurnContext } from '../../connector-turn-context.js';
 import { createCanUseTool } from '../../messaging/interactive-handlers.js';
 import type { PendingInteraction } from '../../messaging/interaction-wait.js';
 import { createDorkOsToolServer } from '../index.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 
 vi.mock('../../../../../env.js', () => ({
   env: { DORKOS_PORT: 4242, MCP_API_KEY: undefined, DORKOS_OLLAMA_URL: 'http://127.0.0.1:11434' },
@@ -201,12 +201,12 @@ async function runTurn(row: Row) {
     eventQueue: [] as StreamEvent[],
     eventQueueNotify: () => {},
   };
-  const deps: McpToolDeps = {
+  const deps: AgentToolDeps = {
     defaultCwd: f.dir,
     dorkHome: f.dir,
     transcriptReader: {
       listSessions: async () => [],
-    } as unknown as McpToolDeps['transcriptReader'],
+    } as unknown as AgentToolDeps['transcriptReader'],
   };
   const dorkos = createDorkOsToolServer(
     deps,

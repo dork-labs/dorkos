@@ -230,6 +230,9 @@ for (const [match, miss, deep] of [
     `${S}/core/connections-leases/x.ts`,
     false,
   ],
+  // C9a's kernel homes (DOR-5482): the agent tool kit and the tool names left runtimes/.
+  [`${S}/core/agent-tool-kit/agent-tool-kit.ts`, `${S}/core/agent-tool-kits/x.ts`, false],
+  [`${S}/core/tool-names/tool-names.ts`, `${S}/core/tool-name/x.ts`, false],
 ]) {
   test(`${match.slice(S.length + 1)} is on the main list${deep ? ' and the deep list' : ' only'}`, () => {
     assert.ok(existsSync(resolve(root, match)), `${match} no longer exists`);

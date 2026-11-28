@@ -1,5 +1,5 @@
 /** Dependencies the shared task-create lifecycle reads from an MCP tool server. */
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import type { TaskLifecycleDeps } from '../../../../tasks/lifecycle/create-task-deps.js';
 import { readOperatorTimeZone } from '../../../../core/config/operator-time-zone.js';
 
@@ -12,7 +12,7 @@ import { readOperatorTimeZone } from '../../../../core/config/operator-time-zone
  * @param deps - The tool server's dependencies.
  * @returns The shared create lifecycle's dependency bag.
  */
-export function taskCreateLifecycleDeps(deps: McpToolDeps): TaskLifecycleDeps {
+export function taskCreateLifecycleDeps(deps: AgentToolDeps): TaskLifecycleDeps {
   return {
     store: deps.taskStore!,
     registrar: deps.resolveTaskRegistrar?.() ?? null,

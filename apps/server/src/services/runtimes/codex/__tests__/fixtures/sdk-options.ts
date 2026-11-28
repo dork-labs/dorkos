@@ -15,7 +15,7 @@
  */
 import { runtimeEnvironment } from '../../../shared/runtime-environment-config.js';
 import type { CodexOptions } from '@openai/codex-sdk';
-import { DORKOS_MCP_SERVER_NAME } from '../../../shared/dorkos-tool-names.js';
+import { DORKOS_MCP_SERVER_NAME } from '../../../../core/tool-names/tool-names.js';
 import { type DorkosMcpInjection } from '../../../shared/dorkos-mcp-injection.js';
 import {
   connectorHeaderEnv,

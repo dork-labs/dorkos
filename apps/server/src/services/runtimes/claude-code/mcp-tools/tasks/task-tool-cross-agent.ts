@@ -6,7 +6,7 @@
  * @module services/runtimes/claude-code/mcp-tools/tasks/task-tool-cross-agent
  */
 import type { PermissionMode, Task, UpdateTaskRequest } from '@dorkos/shared/types';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { marksHold, type TurnMarks } from '../../../../core/turn-power/turn-marks.js';
 import {
   agentNameOf,
@@ -45,7 +45,7 @@ export type CrossAgentDecision =
  * @param callerAgent - The external caller's verified home.
  */
 export function decideCrossAgent(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   target: string | null | undefined,
   resolveProvenance: TaskProvenanceResolver | undefined,
   callerAgent: CallerAgentResolver | undefined
@@ -114,7 +114,7 @@ function callingTurnOf(
  * @param mode - The mode the edit would save.
  */
 export async function capEditMode(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   task: Pick<Task, 'agentId' | 'runtime'>,
   mode: string
 ): Promise<string> {
@@ -146,7 +146,7 @@ export function isMarkedRefusal(
  * @param task - The task made.
  */
 export function forWhomOf(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   decision: CrossAgentDecision,
   task: Pick<Task, 'agentId'>
 ): string {
@@ -163,7 +163,7 @@ export function forWhomOf(
  * @param patch - The edit, changed in place.
  */
 export async function capPatch(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   decision: CrossAgentDecision,
   existing: Task,
   patch: UpdateTaskRequest
@@ -192,7 +192,7 @@ export async function capPatch(
  * @param updated - The task after the edit.
  */
 export function recordOtherEdit(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   decision: CrossAgentDecision,
   updated: Task
 ): void {
@@ -216,7 +216,7 @@ export function recordOtherEdit(
  * @returns Whether the marks were kept, so the edit parks.
  */
 export function markedEditParks(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   taskId: string,
   marks: TurnMarks,
   viaCard: boolean

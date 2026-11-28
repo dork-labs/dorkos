@@ -30,7 +30,7 @@ import { TaskReconciler } from '../../../../tasks/task-reconciler.js';
 import { ScheduleIdentityRegistry } from '../../../../tasks/schedule-identity.js';
 import { FakeScheduler } from '../../../../tasks/__tests__/fake-scheduler.js';
 import { skillsRoot } from '../../../../tasks/__tests__/task-root-fixtures.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { getTasksTools } from '../tasks/task-tools.js';
 import { REAPPROVAL_NOTE } from '../tasks/task-tool-copy.js';
 import {
@@ -87,7 +87,7 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
         getProjectPath: () => agentDir,
         listWithPaths: () => (agentDir ? [{ id: 'agent-1', projectPath: agentDir }] : []),
       },
-    } as unknown as McpToolDeps;
+    } as unknown as AgentToolDeps;
     // Called as the agent whose schedule it is: only its owner may edit an
     // agent's schedule (DOR-3640 R1).
     tools = Object.fromEntries(

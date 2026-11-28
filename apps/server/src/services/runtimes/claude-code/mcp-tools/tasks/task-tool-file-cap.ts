@@ -17,7 +17,7 @@
  * @module services/runtimes/claude-code/mcp-tools/tasks/task-tool-file-cap
  */
 import type { Task } from '@dorkos/shared/types';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import type { AgentModeCaller } from '../../../../tasks/agent-mode/agent-mode-decision.js';
 import {
   attestationOf,
@@ -82,7 +82,7 @@ export async function fileStateBefore(task: Task): Promise<FileState | null> {
  * @param caller - Who is writing, with whether a scheduled run started it.
  */
 export async function mayAttestFile(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   existing: Task,
   caller: AgentModeCaller
 ): Promise<boolean> {
@@ -123,7 +123,7 @@ async function announceLift(
  * @param caller - Who created it.
  */
 export async function attestNewTask(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   task: Task,
   caller: AgentModeCaller
 ): Promise<void> {
@@ -138,7 +138,7 @@ export async function attestNewTask(
  * prompt the task runs (M-D). Nothing otherwise, so the task stays capped.
  */
 async function attestOwnWrite(
-  store: NonNullable<McpToolDeps['taskStore']>,
+  store: NonNullable<AgentToolDeps['taskStore']>,
   existing: Task,
   updated: Task,
   before: FileState | null,
@@ -174,7 +174,7 @@ async function attestOwnWrite(
  * @param acceptFileHash - The hash the agent accepts the changed file by, when it does.
  */
 export async function attestToolWrite(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   existing: Task,
   updated: Task,
   caller: AgentModeCaller,

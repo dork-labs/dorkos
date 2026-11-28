@@ -11,8 +11,8 @@ import {
   createMeshStatusHandler,
   createMeshInspectHandler,
   createMeshQueryTopologyHandler,
-  type McpToolDeps,
 } from '../../runtimes/claude-code/mcp-tools/index.js';
+import { type AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import { runWithAuditActor } from '../../audit/audit-context.js';
 
 vi.mock('@dorkos/shared/manifest', () => ({
@@ -42,7 +42,7 @@ import {
 } from '../../../lib/boundary.js';
 import { setOnAgentCreated } from '../agent-created-hook.js';
 
-function createMockDeps(meshEnabled = true): McpToolDeps {
+function createMockDeps(meshEnabled = true): AgentToolDeps {
   const mockMeshCore = {
     discover: vi.fn(),
     register: vi.fn(),
@@ -63,14 +63,14 @@ function createMockDeps(meshEnabled = true): McpToolDeps {
   };
 
   return {
-    transcriptReader: {} as McpToolDeps['transcriptReader'],
+    transcriptReader: {} as AgentToolDeps['transcriptReader'],
     defaultCwd: '/test',
-    ...(meshEnabled && { meshCore: mockMeshCore as unknown as McpToolDeps['meshCore'] }),
+    ...(meshEnabled && { meshCore: mockMeshCore as unknown as AgentToolDeps['meshCore'] }),
   };
 }
 
 /** The mocked mesh core inside `deps`. */
-function meshOf(deps: McpToolDeps): Record<string, ReturnType<typeof vi.fn>> {
+function meshOf(deps: AgentToolDeps): Record<string, ReturnType<typeof vi.fn>> {
   return deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
 }
 
@@ -269,19 +269,19 @@ describe('Mesh MCP Tools', () => {
         'mesh_register',
         'registerByPath',
         validateBoundaryOrDorkHome,
-        (d: McpToolDeps) => createMeshRegisterHandler(d)({ path: '/etc/passwd' }),
+        (d: AgentToolDeps) => createMeshRegisterHandler(d)({ path: '/etc/passwd' }),
       ],
       [
         'mesh_discover',
         'discover',
         validateBoundary,
-        (d: McpToolDeps) => createMeshDiscoverHandler(d)({ roots: ['/etc'] }),
+        (d: AgentToolDeps) => createMeshDiscoverHandler(d)({ roots: ['/etc'] }),
       ],
       [
         'mesh_deny',
         'deny',
         validateBoundary,
-        (d: McpToolDeps) => createMeshDenyHandler(d)({ path: '/etc' }),
+        (d: AgentToolDeps) => createMeshDenyHandler(d)({ path: '/etc' }),
       ],
     ] as const)('%s rejects a path outside the boundary', async (_tool, method, guard, call) => {
       const deps = createMockDeps(true);

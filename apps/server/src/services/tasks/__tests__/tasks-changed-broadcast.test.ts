@@ -109,7 +109,7 @@ import { TaskRegistrar } from '../task-registrar.js';
 import { TaskStore } from '../task-store.js';
 import type { TaskSchedulerService } from '../task-scheduler-service.js';
 import { getTasksTools } from '../../runtimes/claude-code/mcp-tools/tasks/task-tools.js';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../core/agent-tool-kit/agent-tool-kit.js';
 import { ActivityService } from '../../activity/activity-service.js';
 import { activityEvents } from '@dorkos/db';
 import type { Task } from '@dorkos/shared/schemas';
@@ -173,7 +173,7 @@ describe('a task write tells the world it happened', () => {
       // in this suite, so the path only has to be the one the mock recognises.
       dorkHome: DORK_HOME,
       activityService,
-    } as unknown as McpToolDeps;
+    } as unknown as AgentToolDeps;
     tools = Object.fromEntries(
       (getTasksTools(deps) as unknown as SessionTool[]).map((t) => [t.name, t])
     );

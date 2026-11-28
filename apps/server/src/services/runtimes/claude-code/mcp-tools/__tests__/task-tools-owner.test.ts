@@ -24,7 +24,7 @@ import {
 } from '../../../../core/external-mcp/task-tools.js';
 import type { AgentIdentity } from '../../../../core/agent-identity/agent-identity-service.js';
 import type { ToolRegistrar } from '../../../../core/mcp-tool-gate.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { recordAudit } from '../../../../audit/audit-trail.js';
 import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
 
@@ -44,7 +44,7 @@ let store: TaskStore;
 let scratch: string;
 let homeA: string;
 let homeB: string;
-let deps: McpToolDeps;
+let deps: AgentToolDeps;
 
 beforeEach(async () => {
   vi.mocked(recordAudit).mockClear();
@@ -66,7 +66,7 @@ beforeEach(async () => {
       listWithPaths: () => agents,
       getProjectPath: (id: string) => agents.find((a) => a.id === id)?.projectPath,
     } as unknown as MeshCore,
-  } as unknown as McpToolDeps;
+  } as unknown as AgentToolDeps;
 });
 
 afterEach(async () => {

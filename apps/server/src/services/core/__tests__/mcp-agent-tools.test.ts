@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/index.js';
+import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 
 // ── Mock all dependencies before importing the handler ────────────────────────
 
@@ -77,14 +77,14 @@ vi.mock('fs/promises', () => ({
 
 import { createCreateAgentHandler } from '../../runtimes/claude-code/mcp-tools/agent-tools.js';
 
-function createMockDeps(): McpToolDeps {
+function createMockDeps(): AgentToolDeps {
   return {
-    transcriptReader: {} as McpToolDeps['transcriptReader'],
+    transcriptReader: {} as AgentToolDeps['transcriptReader'],
     defaultCwd: '/test',
     dorkHome: '/tmp/dorkos-test-home',
     meshCore: {
       syncFromDisk: vi.fn().mockResolvedValue(true),
-    } as unknown as McpToolDeps['meshCore'],
+    } as unknown as AgentToolDeps['meshCore'],
   };
 }
 

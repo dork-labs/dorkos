@@ -103,7 +103,7 @@ import { noteRoomTurnWords } from '../../../core/turn-power/outside-words.js';
 import { launchPlaceRefusal } from '../../../session/launch/launch-caller.js';
 import { registerSessionStartPreGate } from '../../../session/launch/session-start-pre-gate.js';
 import { ceilingHoldsForOutsider } from '@dorkos/shared/permission-semantics';
-import { jsonContent, type McpToolDeps } from './types.js';
+import { jsonContent, type AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
 
 /** The client id every `session_start` launch holds its session's write lock under. */
 export const SESSION_START_CLIENT_ID = 'mcp:session_start';
@@ -186,7 +186,7 @@ interface CallerAgent {
 
 /** The calling agent, when it is one Mesh has registered, and the chat it calls from. */
 function callerOf(
-  deps: Pick<McpToolDeps, 'meshCore'>,
+  deps: Pick<AgentToolDeps, 'meshCore'>,
   resolveCaller: SessionStartCallerResolver | undefined
 ):
   | (CallerAgent & {
@@ -246,7 +246,7 @@ registerSessionStartPreGate();
  *   account's project rules either way.
  */
 export function createSessionStartHandler(
-  deps: Pick<McpToolDeps, 'meshCore' | 'activityService' | 'taskStore'>,
+  deps: Pick<AgentToolDeps, 'meshCore' | 'activityService' | 'taskStore'>,
   resolveCaller?: SessionStartCallerResolver,
   checkAccount: typeof checkAccountLaunch = checkAccountLaunch
 ) {
@@ -597,7 +597,7 @@ export function createSessionStartHandler(
  * @param resolveCaller - Who is calling. Without one, every call is refused:
  *   a session always runs as the agent that asked for it.
  */
-export function getSessionTools(deps: McpToolDeps, resolveCaller?: SessionStartCallerResolver) {
+export function getSessionTools(deps: AgentToolDeps, resolveCaller?: SessionStartCallerResolver) {
   return [
     tool(
       'session_start',

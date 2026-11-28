@@ -185,7 +185,7 @@ import {
   registerTestHomes,
 } from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
 import { resolveLaunchAccountRoot as resolveLaunch } from '../../claude-config-dir.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import type { ToolRegistrar } from '../../../../core/mcp-tool-gate.js';
 import type { AgentIdentity } from '../../../../core/agent-identity/index.js';
 import { registerSessionTools } from '../../../../core/external-mcp/session-tools.js';
@@ -246,7 +246,7 @@ let meshAgents: MeshAgent[] = [];
 
 const mesh = { listWithPaths: () => meshAgents } as unknown as MeshCore;
 
-type Deps = McpToolDeps & { activityService: { emit: ReturnType<typeof vi.fn> } };
+type Deps = AgentToolDeps & { activityService: { emit: ReturnType<typeof vi.fn> } };
 
 function makeDeps(): Deps {
   return {

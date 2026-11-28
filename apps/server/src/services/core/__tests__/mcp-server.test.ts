@@ -77,31 +77,31 @@ vi.mock('../../../lib/logger.js', () => ({
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn().mockResolvedValue(null) }));
 
 import { createExternalMcpServer } from '../mcp-server.js';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 
 /** Create minimal deps with only required fields */
-function createMinimalDeps(): McpToolDeps {
+function createMinimalDeps(): AgentToolDeps {
   return {
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
-    } as unknown as McpToolDeps['transcriptReader'],
+    } as unknown as AgentToolDeps['transcriptReader'],
     defaultCwd: '/tmp/test',
     dorkHome: '/tmp/dorkos-test-home',
   };
 }
 
 /** Create full deps with all optional services present */
-function createFullDeps(): McpToolDeps {
+function createFullDeps(): AgentToolDeps {
   return {
     ...createMinimalDeps(),
-    taskStore: {} as unknown as McpToolDeps['taskStore'],
-    relayCore: {} as unknown as McpToolDeps['relayCore'],
-    adapterManager: {} as unknown as McpToolDeps['adapterManager'],
-    bindingStore: {} as unknown as McpToolDeps['bindingStore'],
-    bindingRouter: {} as unknown as McpToolDeps['bindingRouter'],
-    traceStore: {} as unknown as McpToolDeps['traceStore'],
-    meshCore: {} as unknown as McpToolDeps['meshCore'],
-    extensionManager: {} as unknown as McpToolDeps['extensionManager'],
+    taskStore: {} as unknown as AgentToolDeps['taskStore'],
+    relayCore: {} as unknown as AgentToolDeps['relayCore'],
+    adapterManager: {} as unknown as AgentToolDeps['adapterManager'],
+    bindingStore: {} as unknown as AgentToolDeps['bindingStore'],
+    bindingRouter: {} as unknown as AgentToolDeps['bindingRouter'],
+    traceStore: {} as unknown as AgentToolDeps['traceStore'],
+    meshCore: {} as unknown as AgentToolDeps['meshCore'],
+    extensionManager: {} as unknown as AgentToolDeps['extensionManager'],
   };
 }
 

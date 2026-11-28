@@ -28,7 +28,7 @@ import {
   type SchedulerRegistrationTarget,
 } from '../../../../tasks/task-registrar.js';
 import type { Task } from '@dorkos/shared/types';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { getTasksTools } from '../tasks/task-tools.js';
 
 /** The shape `tool()` returns, narrowed to what this test drives. */
@@ -78,7 +78,7 @@ describe('tasks_* tools sync the scheduler (DOR-1493)', () => {
       taskStore: store,
       defaultCwd: '/tmp/test',
       resolveTaskRegistrar: () => registrar,
-    } as unknown as McpToolDeps;
+    } as unknown as AgentToolDeps;
     tools = Object.fromEntries(
       (getTasksTools(deps) as unknown as SessionTool[]).map((t) => [t.name, t])
     );
@@ -126,7 +126,7 @@ describe('tasks_* tools sync the scheduler (DOR-1493)', () => {
     // The tools are built during boot, before the scheduler is; and Tasks can be
     // enabled with no scheduler at all in some deployments. Neither is a reason
     // for an edit to fail.
-    const bare = { taskStore: store, defaultCwd: '/tmp/test' } as unknown as McpToolDeps;
+    const bare = { taskStore: store, defaultCwd: '/tmp/test' } as unknown as AgentToolDeps;
     const bareTools = Object.fromEntries(
       (getTasksTools(bare) as unknown as SessionTool[]).map((t) => [t.name, t])
     );
