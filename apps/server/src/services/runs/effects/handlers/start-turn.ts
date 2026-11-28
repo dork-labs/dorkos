@@ -209,6 +209,7 @@ function requestOf(
   return {
     runId: run.id,
     attempt: run.attempt,
+    ...(run.continuesRunId !== null ? { continuesRunId: run.continuesRunId } : {}),
     sessionId: run.sessionId,
     ...(run.agentId !== null ? { agentId: run.agentId } : {}),
     content: words,

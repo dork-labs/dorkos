@@ -106,6 +106,14 @@ export interface WordSource {
     id: string,
     run: Pick<TurnRun, 'sessionId'>
   ): { extensionId: string; name: string } | undefined;
+  /**
+   * Let the words go for good: the run will never read them, though no move
+   * of its says so (recovery decided a turn a restart ended, §7.3, step 4).
+   *
+   * @param id - The source's own id.
+   * @param run - The run, by the chat it is kept under now.
+   */
+  forget?(id: string, run: Pick<TurnRun, 'sessionId'>): void;
 }
 
 /** Which runs a watcher hears. */
@@ -433,6 +441,19 @@ export class SpaceTurnPort {
     return this.sources
       .get(run.sourceRef.slice(0, colon))
       ?.app?.(run.sourceRef.slice(colon + 1), run);
+  }
+
+  /**
+   * Let a run's words go wherever its caller keeps them: this process's copy
+   * and its source's (`WordSource.forget`).
+   *
+   * @param run - The run.
+   */
+  forgetWords(run: Pick<TurnRun, 'id' | 'sourceRef' | 'sessionId'>): void {
+    this.words.delete(run.id);
+    if (run.sourceRef === null) return;
+    const colon = run.sourceRef.indexOf(':');
+    this.sources.get(run.sourceRef.slice(0, colon))?.forget?.(run.sourceRef.slice(colon + 1), run);
   }
 
   /**

@@ -149,6 +149,10 @@ export function sweepOrphanedMessageQueues(opts?: {
  * composer. A mini app's rows are adopted only by a resume that asks for them
  * (`orFromApps`, DOR-5232).
  *
+ * A chat the launch gate holds (spec `turns-survive-restarts` §7.5) is still
+ * resumed: its rows are parked, and the adoption that parks them asks the gate
+ * before it pumps, so nothing launches until the gate clears and wakes it.
+ *
  * One at a time, so a boot with many such chats does not resolve every runtime
  * at once, and one chat that cannot be resumed never stops the rest. The log
  * line names each chat it resumed by the first 8 characters of its id, so a

@@ -29,6 +29,7 @@ import {
   type LaunchVerdict,
   type ObservedTurnEnd,
 } from '../turn-port/facts.js';
+import { launchGateHolds } from '../turn-port/launch-gate.js';
 import type { DispatchPlan } from './types.js';
 
 /**
@@ -77,10 +78,12 @@ export function reportRun(fact: RunFact): void {
  *
  * @param plan - What the message carries: its chat and its origin.
  * @param queueMessageId - Its queue row, when it has one.
+ * @param startKey - The key its source made it under, when it has one.
  */
 export function acceptRun(
   plan: Pick<DispatchPlan, 'sessionId' | 'turn'>,
-  queueMessageId: string | undefined
+  queueMessageId: string | undefined,
+  startKey?: string
 ): string | undefined {
   return toRuns(
     'accept',
@@ -89,6 +92,7 @@ export function acceptRun(
         chatKey: queueKeyOf(plan.sessionId),
         origin: plan.turn.origin ?? null,
         ...(queueMessageId !== undefined ? { queueMessageId } : {}),
+        ...(startKey !== undefined ? { startKey } : {}),
       }),
     undefined
   );
@@ -131,13 +135,18 @@ export function adoptRun(sessionId: string, queueMessageId: string): string | un
 }
 
 /**
- * Whether a launch may go on, as the record answers it (transition 4): only
- * when no other run of the chat is `started` or `running`.
+ * Whether a launch may go on, as the record answers it: first the launch gate
+ * (spec §7.5: no run a restart ended that recovery has not decided, no
+ * continuation still to make or start, unless this is it), then
+ * transition 4, only when no other run of the chat is `started` or `running`.
+ * A launch the gate holds re-parks as one behind a live run does, and is
+ * woken by `schedulePump` when the gate clears.
  *
  * @param plan - The launching message.
  */
 export function launchVerdictOf(plan: DispatchPlan): LaunchVerdict {
   const { runId } = plan;
+  if (launchGateHolds(plan.sessionKey, runId)) return { kind: 'busy' };
   if (runId === undefined) return { kind: 'starting' };
   return toRuns('launch', (feed) => feed.launchBegins(runId), { kind: 'starting' });
 }

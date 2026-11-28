@@ -91,6 +91,7 @@ export interface DispatcherRunFeed {
    * @param input.queueMessageId - Its queue row, when it has one.
    * @param input.sourceRef - Where its words really are (`source_ref`, §4.1), when the row
    *   holds only a placeholder: a protected source's message.
+   * @param input.startKey - The key its source made it under (§6.4), when it has one.
    * @returns The new run's id.
    */
   accept(input: {
@@ -98,6 +99,7 @@ export interface DispatcherRunFeed {
     origin: TurnOrigin | null;
     queueMessageId?: string;
     sourceRef?: string;
+    startKey?: string;
   }): string;
   /**
    * A run the turn port handed over took its words into the queue: the row

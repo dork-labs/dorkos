@@ -16,11 +16,10 @@ import { env } from '../../env.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 import { logger, logError } from '../../lib/logger.js';
 import { sharedBackgroundWorkLedger } from '../../services/runtimes/claude-code/messaging/background-work-ledger.js';
-import { wakeChatsCutShort } from '../../services/session/runtime-turns/wake-cut-short-work.js';
 import { sweepOrphanedMessageQueues } from '../../services/session/index.js';
 import { resumeStrandedChatQueues } from '../../services/extensions/agent-send/agent-send-defaults.js';
 import { agentPause } from '../../services/mesh/pause/agent-pause.js';
-import { startRunEffects } from '../../services/runs/index.js';
+import { recoverRuns, startRunEffects } from '../../services/runs/index.js';
 import { recoverChatReports } from '../../services/session/chat-messages/chat-message-current.js';
 import { sweepExpiredTurnContext } from '../../services/session/turn-context/record-turn-context.js';
 import { INTERVALS } from '../../config/constants.js';
@@ -123,10 +122,26 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
     docDeliveryRunner,
   } = built;
 
-  // The outbox's worker, first: the follow-ups runs saved are carried out from
-  // here on, whatever below throws, and before any chat's queue resumes (spec
-  // `turns-survive-restarts` §7.3). Until it runs, the "finished" emitter
-  // tells every turn itself.
+  // Recovery, first (spec `turns-survive-restarts` §7.3): every run a restart
+  // ended is decided, and what follows it saved, before the worker carries
+  // anything out and before any chat's queue resumes. Background work a
+  // restart stopped wakes its chat through it (DOR-2065), as it always has: a
+  // room's chat and a scheduled task's have no person waiting on the work.
+  // The records are Claude Code's ledger's, so they name it as their runtime;
+  // whether it wakes is that runtime's own declaration.
+  const leftoverLedger = sharedBackgroundWorkLedger();
+  recoverRuns({
+    lostWork: backgroundWorkCutShort.map((record) => ({ ...record, runtime: 'claude-code' })),
+    release: (record) => leftoverLedger.release(record.key, record.since),
+    drivenElsewhere: (sessionIds) =>
+      new Set([
+        ...roomStore.resolveRoomOrigins(sessionIds).keys(),
+        ...(refs.taskStore?.resolveTaskOrigins(sessionIds).keys() ?? []),
+      ]),
+  });
+  // The outbox's worker, next: the follow-ups runs saved are carried out from
+  // here on, whatever below throws, and before any chat's queue resumes. Until
+  // it runs, the "finished" emitter tells every turn itself.
   startRunEffects();
 
   // Saved spin-off reports resume now, once the rooms link is wired (`mountCoreRoutes`): a report
@@ -173,25 +188,6 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
   if (refs.schedulerService && runsSchedules()) {
     await refs.schedulerService.start();
     logger.info('[Tasks] Scheduler started');
-  }
-
-  // Wake the chats the boot found owed a turn (DOR-2065), now that every
-  // runtime and session service is up. A room's chat (`room_sessions`) and a
-  // scheduled task's (`pulse_runs`) have no person waiting on the work, so they
-  // are skipped. Detached, and it never rejects.
-  if (backgroundWorkCutShort.length > 0) {
-    const leftoverLedger = sharedBackgroundWorkLedger();
-    logger.info('[DorkOS] waking chats whose background work a restart stopped', {
-      sessions: backgroundWorkCutShort.map((record) => record.sessionId),
-    });
-    void wakeChatsCutShort(backgroundWorkCutShort, {
-      release: (record) => leftoverLedger.release(record.key, record.since),
-      drivenElsewhere: (sessionIds) =>
-        new Set([
-          ...roomStore.resolveRoomOrigins(sessionIds).keys(),
-          ...(refs.taskStore?.resolveTaskOrigins(sessionIds).keys() ?? []),
-        ]),
-    });
   }
 
   // Messages other chats queued survive a restart, but nothing ran them until a

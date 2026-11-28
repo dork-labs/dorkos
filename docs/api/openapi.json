@@ -11343,6 +11343,9 @@
         ],
         "enum": [
           "restart_stopped",
+          "restart_continued",
+          "restart_waited_on_you",
+          "restart_chain_cap",
           null
         ]
       },
@@ -18384,6 +18387,7 @@
           "extension.decision",
           "extension.stopped",
           "extension.work_not_started",
+          "turn.restarted",
           "community.owner-replacement",
           "community.teammate-limit",
           "community.teammate-limits-reset",
