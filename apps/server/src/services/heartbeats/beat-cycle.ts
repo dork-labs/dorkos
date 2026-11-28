@@ -21,6 +21,7 @@
  * @module services/heartbeats/beat-cycle
  */
 import { randomUUID } from 'node:crypto';
+import { ulid } from 'ulidx';
 import type { TodoPromise } from '@dorkos/shared/todo-promise-schemas';
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import {
@@ -36,7 +37,7 @@ import type { BeatTurnLauncher } from './beat-launch.js';
 import type { BeatSeat, BeatSeatPort } from './accounts/beat-seat.js';
 import type { BeatPlan } from './beat-plan.js';
 import { buildBeatPrompt, type ReportMaterial } from './beat-prompt.js';
-import { registerBeatTurn, settleBeatTurn, type BeatTurn } from './beat-turns.js';
+import { liveBeatTurn, registerBeatTurn, settleBeatTurn, type BeatTurn } from './beat-turns.js';
 import type { HeartbeatStore } from './heartbeat-store.js';
 import {
   runGatherers,
@@ -128,12 +129,10 @@ export interface BeatTrack {
   signal?: AbortSignal;
 }
 
-/** How a beat ended, for the runner's retries. */
+/** How a beat ended. */
 export interface BeatResult {
   /** The outcome recorded. */
   outcome: BeatOutcome;
-  /** The launch cap was full: the runner retries. */
-  capFull?: boolean;
 }
 
 /** One finished beat's fields. */
@@ -355,7 +354,8 @@ export async function runTurn(
     seat.kind === 'move'
       ? { ...today, sessionId: (deps.mintId ?? randomUUID)(), isNew: true }
       : today;
-  const messageId = (deps.mintId ?? randomUUID)();
+  // A ULID: the turn port names the beat's run by it, and the dispatcher starts its turn under it.
+  const messageId = ulid();
   const content = buildBeatPrompt({
     agentName: agent.name,
     kind: ctx.kind,
@@ -368,12 +368,8 @@ export async function runTurn(
   });
   // Checked again just before the turn starts: a person may have started typing.
   if (!chat.isNew && deps.launcher.isBusy(chat.sessionId)) return busy(deps, ctx);
-  registerBeatTurn(chat.sessionId, {
-    agentId: agent.id,
-    beatId: ctx.beatId,
-    messageId,
-    kind: ctx.kind,
-  });
+  const beatTurn = { agentId: agent.id, beatId: ctx.beatId, messageId, kind: ctx.kind };
+  registerBeatTurn(chat.sessionId, beatTurn);
   // On the row before the turn starts, so a restart mid-beat still leaves it a beat
   // (DOR-3703, MD); `finish` writes it again if the launch settled on another id.
   deps.store.setBeatChat(ctx.beatId, chat.sessionId);
@@ -397,18 +393,25 @@ export async function runTurn(
   // the beat reads their words, so it runs no stronger than the lowest of them.
   const owed = deps.todoPromises.openCeiling?.(agent.id);
   const carried = combineCeilings(ceilingCarrying(read), owed);
+  // Resolves when the turn begins: after a wait, when every launch slot was taken.
   const launched = await deps.launcher.launch({
     sessionId: chat.sessionId,
     messageId,
-    agentPath: agent.projectPath,
+    agentId: agent.id,
     runtime: agent.runtime,
     content,
+    ...(track.signal ? { signal: track.signal } : {}),
     ...(seat.kind === 'move' ? { account: seat.accountId } : {}),
     ...(carried !== undefined ? { permissionCeiling: carried } : {}),
     ...(marksHold(read) ? { carriedMarks: { outsider: true as const } } : {}),
     onSettled: (outcome, refusal) => settle(outcome, refusal),
   });
-  if (launched.status !== 'started') return refused(deps, ctx, track, launched);
+  if (launched.status !== 'started') return refused(deps, ctx, track, launched.message);
+  // A person's own turn in the beat chat while the beat waited made the chat
+  // theirs for that turn (`noteTurnStarted`); the beat's turn is its own again.
+  if (liveBeatTurn(chat.sessionId)?.beatId !== ctx.beatId) {
+    registerBeatTurn(chat.sessionId, beatTurn);
+  }
   const sessionId = launched.sessionId;
   if (chat.isNew)
     deps.store.patchState(agent.id, { beatChatId: sessionId, beatChatDate: chat.date });
@@ -427,8 +430,7 @@ export async function runTurn(
   }
   // Refused before the agent saw the beat (DOR-2994): it could not start,
   // which is not the agent failing.
-  if (refusal !== undefined)
-    return refused(deps, ctx, track, { status: 'refused', message: refusal });
+  if (refusal !== undefined) return refused(deps, ctx, track, refusal);
   // Its account ran out mid-beat: run the beat once more, on another account.
   if (!afterLimit && !turn?.ended && deps.seats?.hitLimit(sessionId)) {
     return runTurn(deps, ctx, track, true);
@@ -458,26 +460,26 @@ function busy(deps: BeatCycleDeps, ctx: BeatContext): BeatResult {
   return { outcome: 'skipped' };
 }
 
-/** The turn did not start: the cap was full, or the launch refused it. */
+/**
+ * The turn did not start: the launch refused it. A full launch cap is never
+ * this: the beat waits for a slot (`beat-launch.ts`).
+ */
 function refused(
   deps: BeatCycleDeps,
   ctx: BeatContext,
   track: BeatTrack,
-  launched: { status: 'cap-full' } | { status: 'refused'; message: string }
+  message: string
 ): BeatResult {
   settleBeatTurn(track.chatSessionId!);
   track.settled = true;
   // The agent never saw this beat, so it ran no turn in that chat.
   deps.store.setBeatChat(ctx.beatId, null);
-  const capFull = launched.status === 'cap-full';
   finish(deps, ctx, {
     outcome: 'refused',
-    summary: capFull
-      ? 'Too many chats were running to start its beat turn.'
-      : 'Its beat turn could not start.',
-    reason: capFull ? 'LAUNCH_CAP_FULL' : launched.message,
+    summary: 'Its beat turn could not start.',
+    reason: message,
   });
-  return { outcome: 'refused', capFull };
+  return { outcome: 'refused' };
 }
 
 /** The turn settled: failed, ended without `end_beat`, or handed over raises. */

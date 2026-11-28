@@ -539,6 +539,14 @@ const callerTurnFields = {
    * rides the neutral context bag, never `content`, and is never drawn.
    */
   seedContext: z.string().min(1).max(SEED_CONTEXT_MAX_LENGTH).optional(),
+  /**
+   * Nobody is watching this turn (a heartbeat's beat): an approval card
+   * does not hold it, and an ask raised in it is refused at once. Per turn,
+   * never stored on the chat.
+   */
+  unattended: z.literal(true).optional(),
+  /** A mark the turn carries from what started it (`MessageOpts.carriedMarks`). */
+  carriedMarks: z.strictObject({ outsider: z.literal(true) }).optional(),
 };
 
 // === Space face ===

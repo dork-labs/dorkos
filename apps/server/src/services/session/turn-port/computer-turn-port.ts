@@ -30,7 +30,8 @@
  *
  * **Who it runs as.** The lock identity names the run, and a mini app's run
  * keeps the extension's prefix, so its turn carries the outsider mark as a
- * mini app's message always has (DOR-4594).
+ * mini app's message always has (DOR-4594). A beat's run takes the
+ * heartbeat's prefix, so its turn is recorded as a beat chat's.
  *
  * @module services/session/turn-port/computer-turn-port
  */
@@ -51,6 +52,7 @@ import {
   type DispatchSessionMessageResult,
   type SessionLaunchRefusal,
 } from '../launch/launch-session.js';
+import { HEARTBEAT_CLIENT_PREFIX } from '../launch/dispatch-options.js';
 import { cancelPendingDispatch } from '../message-dispatcher/queue-upkeep.js';
 import { cancelQueuedMessage } from '../queued-message-edits.js';
 import { launching, pending } from '../message-dispatcher/state.js';
@@ -100,10 +102,16 @@ async function dispatchOrRefuse(
   }
 }
 
-/** The lock identity of a run's turn: the run itself, under the extension prefix for a mini app. */
+/**
+ * The lock identity of a run's turn: the run itself, under the extension
+ * prefix for a mini app and the heartbeat prefix for a beat, whose context
+ * record names its place by it.
+ */
 function clientIdOf(runId: string, origin: TurnOrigin): string {
-  const app = origin.kind === 'extension-message' || origin.kind === 'extension-start';
-  return `${app ? EXTENSION_CLIENT_PREFIX : 'turn-port:'}${runId}`;
+  if (origin.kind === 'extension-message' || origin.kind === 'extension-start') {
+    return `${EXTENSION_CLIENT_PREFIX}${runId}`;
+  }
+  return `${origin.kind === 'heartbeat' ? HEARTBEAT_CLIENT_PREFIX : 'turn-port:'}${runId}`;
 }
 
 /**
@@ -172,6 +180,8 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
         ...(request.permissionCeiling !== undefined
           ? { permissionCeiling: request.permissionCeiling }
           : {}),
+        ...(request.unattended ? { unattended: true } : {}),
+        ...(request.carriedMarks ? { carriedMarks: request.carriedMarks } : {}),
       }).finally(() => inFlight.delete(request.runId));
       if (result === 'runtime_mismatch') return { refused: 'runtime_mismatch' };
       if (isSessionLaunchRefusal(result)) {

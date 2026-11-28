@@ -32,6 +32,7 @@ import { auditTrail } from '../audit/audit-trail.js';
 import { liveWakersOffReader } from './wakers-off/live-wakers-off.js';
 import { setWakersOffReader } from './wakers-off/wakers-off-capability.js';
 import type { SessionOriginResolvers } from '../session/origin/session-origin-overlays.js';
+import type { SpaceTurnPort } from '../runs/index.js';
 import { createReportsToChain, OWNER_FALLBACK_ACCOUNT_ID } from './reports-to.js';
 import { HeartbeatStore } from './heartbeat-store.js';
 import { RaiseStore } from './raises/raise-store.js';
@@ -76,6 +77,8 @@ export interface HeartbeatsWiringDeps extends DeliveryDeps {
   meshCore: () => MeshCore | undefined;
   /** To-dos, for the gatherer, the prompt and due wakes. */
   todoPromises: TodoPromiseService;
+  /** The turn port's space face a beat starts its turn through; `undefined` before startup wired it. */
+  turnPort: () => SpaceTurnPort | undefined;
 }
 
 /** What the composition root keeps. */
@@ -229,7 +232,7 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
     hoursFor: () => hours(),
     gatherers: gatherersFor(db, deps.todoPromises, openWork.reader),
     todoPromises: deps.todoPromises,
-    launcher: createBeatTurnLauncher(deps.meshCore),
+    launcher: createBeatTurnLauncher(deps.turnPort),
     outbox,
     reports: { raises, managerOf, isAgent, presenceOf, nameOf },
     ownTurnRunning: (agentId) => ownTurnRunning(resolveAgentIdForPath, agentId),

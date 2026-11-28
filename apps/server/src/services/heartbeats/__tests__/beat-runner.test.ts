@@ -16,7 +16,6 @@ import { initAuditTrail, resetAuditTrail } from '../../audit/audit-trail.js';
 import { HeartbeatStore } from '../heartbeat-store.js';
 import {
   BeatRunner,
-  LAUNCH_CAP_RETRY_MS,
   type BeatAgent,
   type BeatOutboxPort,
   type BeatRunnerDeps,
@@ -46,7 +45,9 @@ let store: HeartbeatStore;
 let changes: Change[];
 let heartbeatFile: HeartbeatFileRead;
 let runtime: FakeAgentRuntime;
-let launchResults: Array<BeatLaunchResult['status'] | 'refused-at-start'>;
+let launchResults: Array<BeatLaunchResult['status'] | 'refused-at-start' | 'waits'>;
+/** Frees the launch slot a waiting beat waits for. */
+let freeSlot: (() => void) | undefined;
 let launches: string[];
 let launchRuntimes: string[];
 let launchCeilings: unknown[];
@@ -83,8 +84,13 @@ function launcher(): BeatTurnLauncher {
       launchCarried.push(request.carriedMarks);
       currentSession = request.sessionId;
       const status = launchResults.shift() ?? 'started';
-      if (status === 'cap-full') return { status: 'cap-full' };
       if (status === 'refused') return { status: 'refused', message: 'no' };
+      // Every launch slot is taken: the turn starts once one frees (the turn port's wait).
+      if (status === 'waits') {
+        await new Promise<void>((resolve) => {
+          freeSlot = resolve;
+        });
+      }
       // Started, then refused before the agent saw it (DOR-2994).
       if (status === 'refused-at-start') {
         queueMicrotask(() => request.onSettled('failed', 'warm-ceiling'));
@@ -206,6 +212,7 @@ beforeEach(() => {
   heartbeatFile = { kind: 'absent' };
   runtime = new FakeAgentRuntime('claude-code');
   launchResults = [];
+  freeSlot = undefined;
   launches = [];
   launchRuntimes = [];
   launchCeilings = [];
@@ -340,23 +347,28 @@ describe('failures and refusals', () => {
     r.stop();
   });
 
-  it('records a full launch cap as refused and retries at 1, 2 and 5 minutes, then drops it', async () => {
+  it('waits at a full launch cap and runs the beat when a slot frees, never recording it refused', async () => {
+    // Purpose: fails if a beat at the cap ends refused ("Too many chats were running"), is
+    // dropped, or is launched again while its first launch still waits.
     changes = [LOCAL_MESSAGE];
-    launchResults = ['cap-full', 'cap-full', 'cap-full', 'cap-full'];
+    launchResults = ['waits'];
+    runtime.withScenarios([endsWith({ summary: 'Answered Dorian.' }, () => currentSession)]);
     const r = runner();
     await r.start();
-    await r.wake(juno.id, { wake: 'event:test' });
+    const done = r.wake(juno.id, { wake: 'event:test' });
+    await settle();
+    // Waiting: the beat is open and nothing is recorded yet.
     expect(launches).toHaveLength(1);
-    for (const delay of LAUNCH_CAP_RETRY_MS) {
-      await vi.advanceTimersByTimeAsync(delay);
-    }
-    expect(launches).toHaveLength(4);
-    // Every retry still carries the message: a refused beat loses nothing.
-    expect(launches.every((prompt) => prompt.includes('room-entry:e1'))).toBe(true);
+    expect(beats()).toMatchObject([{ outcome: null }]);
+    // A wake while it waits is owed a beat later, never a second launch now.
+    await r.wake(juno.id, { wake: 'event:test' });
     await vi.advanceTimersByTimeAsync(60 * 60_000);
-    expect(launches).toHaveLength(4);
-    expect(beats().every((b) => b.outcome === 'refused')).toBe(true);
-    expect(rows('heartbeat.beat').every((row) => row.outcome === 'refused')).toBe(true);
+    expect(launches).toHaveLength(1);
+    freeSlot!();
+    await settle();
+    await done;
+    expect(beats()).toMatchObject([{ outcome: 'worked', summary: 'Answered Dorian.' }]);
+    expect(rows('heartbeat.beat').every((row) => row.outcome === 'ok')).toBe(true);
     r.stop();
   });
 

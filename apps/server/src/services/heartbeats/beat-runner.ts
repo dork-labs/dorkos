@@ -13,9 +13,10 @@
  * - **Edits on disk and new agents** are picked up by a scan every
  *   {@link FILE_SCAN_MS}: an agent whose `HEARTBEAT.md` changed, or that was
  *   not armed before, is re-armed.
- * - **Retries.** A busy beat chat sets `wake_again`, run a few minutes after
- *   the beat. A full launch cap is retried at 1, 2 and 5 minutes, then dropped
- *   to the next beat. The two never share a timer.
+ * - **Waits and retries.** A beat that finds every launch slot taken waits
+ *   for one inside its turn's start (`beat-launch.ts`), so it is never refused
+ *   for a busy machine. A busy beat chat sets `wake_again`, run a few minutes
+ *   after the beat.
  * - **Report beats** (§3.4) have a timer of their own per agent, at the start
  *   of its chain person's day (`report-clock.ts`), whatever its `wake`, so an
  *   agent that wakes only on events still reports. A report due while a beat
@@ -55,9 +56,6 @@ import type { TurnMarks } from '../core/turn-power/turn-marks.js';
 
 /** One minute, in ms. */
 const MINUTE = 60_000;
-
-/** When a full launch cap is retried, then dropped (§7.1). */
-export const LAUNCH_CAP_RETRY_MS = [1 * MINUTE, 2 * MINUTE, 5 * MINUTE] as const;
 
 /** How soon a beat owed by `wake_again` runs. */
 export const WAKE_AGAIN_DELAY_MS = 5 * MINUTE;
@@ -195,8 +193,6 @@ export class BeatRunner {
   private readonly cycle: BeatCycleDeps;
   private readonly running = new Map<string, Promise<void>>();
   private readonly wakeAgainTimers = new Map<string, unknown>();
-  private readonly capTimers = new Map<string, unknown>();
-  private readonly capAttempts = new Map<string, number>();
   private readonly skippedThisStart = new Set<string>();
   private readonly offRecorded = new Set<string>();
   private readonly fileMtimes = new Map<string, number>();
@@ -254,7 +250,10 @@ export class BeatRunner {
     this.armScan();
   }
 
-  /** Stop every timer and retry. Running turns finish; their next beat is not armed. */
+  /**
+   * Stop every timer and retry. Running turns finish; a beat still waiting for
+   * its turn to start is taken back; their next beat is not armed.
+   */
   stop(): void {
     this.started = false;
     this.generation += 1;
@@ -262,11 +261,8 @@ export class BeatRunner {
     this.stopping = new AbortController();
     this.scheduler.clearAll();
     this.reportTimers.clearAll();
-    for (const timers of [this.wakeAgainTimers, this.capTimers]) {
-      for (const handle of timers.values()) this.clock.clearTimeout(handle);
-      timers.clear();
-    }
-    this.capAttempts.clear();
+    for (const handle of this.wakeAgainTimers.values()) this.clock.clearTimeout(handle);
+    this.wakeAgainTimers.clear();
     for (const handle of [this.pruneHandle, this.scanHandle]) {
       if (handle !== undefined) this.clock.clearTimeout(handle);
     }
@@ -331,13 +327,7 @@ export class BeatRunner {
   /** How many timers are armed, retries, reports and housekeeping included. */
   get armedTimers(): number {
     const housekeeping = [this.pruneHandle, this.scanHandle].filter((h) => h !== undefined).length;
-    return (
-      this.scheduler.size +
-      this.reportTimers.size +
-      this.wakeAgainTimers.size +
-      this.capTimers.size +
-      housekeeping
-    );
+    return this.scheduler.size + this.reportTimers.size + this.wakeAgainTimers.size + housekeeping;
   }
 
   /**
@@ -383,7 +373,6 @@ export class BeatRunner {
   /** One beat with its clean-up: whatever happens, the next one is armed. */
   private async beat(agent: BeatAgent, wake: BeatWake): Promise<void> {
     const track: BeatTrack = { signal: this.stopping.signal };
-    let capFull = false;
     try {
       const plan = await this.plan(agent);
       if (plan.settings.wake === 'off') {
@@ -392,11 +381,8 @@ export class BeatRunner {
       }
       // A stray timer for an agent that no longer beats on one does nothing.
       if (wake.wake === 'timer' && plan.settings.wake !== 'timed') return;
-      const result =
-        wake.wake === REPORT_WAKE
-          ? await this.reportBeat(plan, wake, track)
-          : await runBeat(this.cycle, plan, wake, track);
-      capFull = result?.capFull === true;
+      if (wake.wake === REPORT_WAKE) await this.reportBeat(plan, wake, track);
+      else await runBeat(this.cycle, plan, wake, track);
     } catch (err) {
       logger.warn('[heartbeats] a beat failed to run', {
         agentId: agent.id,
@@ -405,7 +391,7 @@ export class BeatRunner {
       if (track.beatId) failOpenBeat(this.cycle, agent, track.beatId, wake, err);
     } finally {
       if (track.chatSessionId && !track.settled) settleBeatTurn(track.chatSessionId);
-      this.afterBeat(agent.id, wake, capFull);
+      this.afterBeat(agent.id);
       await this.refreshAgent(agent.id).catch(() => undefined);
     }
   }
@@ -417,27 +403,13 @@ export class BeatRunner {
     return runReportBeat({ ...this.cycle, ...reports }, plan, wake, track);
   }
 
-  /** After a beat: retry a full cap, or run the beat a wake during it owed. */
-  private afterBeat(agentId: string, wake: BeatWake, capFull: boolean): void {
+  /** After a beat: run the beat a wake during it owed. */
+  private afterBeat(agentId: string): void {
     if (!this.started) return;
-    if (capFull) this.retryCapFull(agentId, wake);
-    else this.capAttempts.delete(agentId);
     const state = this.deps.store.getState(agentId);
     if (!state?.wakeAgain) return;
     this.deps.store.patchState(agentId, { wakeAgain: 0 });
     this.later(this.wakeAgainTimers, agentId, WAKE_AGAIN_DELAY_MS, { wake: 'event:wake-again' });
-  }
-
-  /** Retry a beat whose launch found the cap full: 1, 2, then 5 minutes, then drop. */
-  private retryCapFull(agentId: string, wake: BeatWake): void {
-    const attempt = this.capAttempts.get(agentId) ?? 0;
-    const delay = LAUNCH_CAP_RETRY_MS[attempt];
-    if (delay === undefined) {
-      this.capAttempts.delete(agentId);
-      return;
-    }
-    this.capAttempts.set(agentId, attempt + 1);
-    this.later(this.capTimers, agentId, delay, wake);
   }
 
   /** Run a beat later on one of the retry slots, so stop() can clear it. */
