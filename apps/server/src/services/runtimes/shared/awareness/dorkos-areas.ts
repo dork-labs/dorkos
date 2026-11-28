@@ -252,6 +252,12 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       'directory.',
       'workspaces.',
       'files.',
+      // This computer's own reads (diagnostics, runtime needs, memory backend, shell check,
+      // keep-awake, a folder's git status) ride here with no words of their own (DOR-4978).
+      'debug.',
+      'system.',
+      'keep-awake.',
+      'git.',
     ],
     areas: [],
     gate: 'read only',
@@ -279,6 +285,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
       'runtimes.key_status',
       'runtimes.opencode_key_setup',
       'runtimes.doe_model_setup',
+      // An OpenRouter sign-in's status, at this computer (DOR-4978).
+      'runtimes.openrouter_sign_in_status',
       // Chat from the web (`session-relay.*`, DOR-4978) rides here with no words of its own:
       // an agent reads only its status; the rest is person-only.
       'session-relay.',

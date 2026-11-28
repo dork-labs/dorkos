@@ -339,8 +339,9 @@ describe('main HTTP admission through the real app', () => {
     // too (DOR-4978). 86 -> 84: a person's to-do writes and promise changes
     // moved there too, so `/api/todos` and `/api/todo-promises` are asked for by hand.
     // 84 -> 83: the credits answer moved there too (DOR-4978). 83 -> 82: the
-    // Heartbeat page moved there too, so it is asked for by hand.
-    expect(mounts).toHaveLength(82);
+    // Heartbeat page moved there too, so it is asked for by hand. 82 -> 80: keep-awake
+    // and git status moved there too (DOR-4978).
+    expect(mounts).toHaveLength(80);
     const byHand = [
       '/',
       '/x/fixture',
@@ -363,6 +364,8 @@ describe('main HTTP admission through the real app', () => {
       '/api/todo-promises',
       '/api/heartbeats/triage-credits',
       '/api/agents/admission-fixture/heartbeat',
+      '/api/keep-awake',
+      '/api/git/status',
     ];
     for (const mount of [...mounts, ...byHand, '/unknown']) {
       expectTerminal(

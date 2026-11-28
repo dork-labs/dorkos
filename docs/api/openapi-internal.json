@@ -855,32 +855,6 @@
         "x-stability": "internal"
       }
     },
-    "/api/keep-awake": {
-      "get": {
-        "tags": [
-          "Keep awake"
-        ],
-        "summary": "Whether this computer is being kept awake",
-        "description": "Whether DorkOS is keeping this computer from idle-sleeping right now, what is keeping it awake (chats, room replies and task runs, each counted once), the setting, and why it cannot when it cannot (a container, a missing tool, or a refusal). The same payload is pushed as `keep_awake_status` on `GET /api/events` whenever it changes.",
-        "responses": {
-          "200": {
-            "description": "The keep-awake status",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/KeepAwakeStatus"
-                }
-              }
-            }
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalErrorProblem"
-          }
-        },
-        "operationId": "keepAwake.get",
-        "x-stability": "internal"
-      }
-    },
     "/api/onboarding/first-run": {
       "post": {
         "tags": [
@@ -16879,6 +16853,1359 @@
         "x-stability": "internal"
       }
     },
+    "/api/debug/auto-mode-stops": {
+      "get": {
+        "operationId": "debug.auto_mode_stops",
+        "tags": [
+          "Debug"
+        ],
+        "summary": "Read how often auto mode stopped an agent",
+        "description": "How often auto mode stopped the agent on a DorkOS tool since this process started, beside how many notes DorkOS attached to DorkOS tool calls in the same window. Counts only.",
+        "responses": {
+          "200": {
+            "description": "Read how often auto mode stopped an agent result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "stops": {
+                      "type": "integer",
+                      "description": "Approval cards auto mode caused on a DorkOS tool."
+                    },
+                    "stopsByTool": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer"
+                      },
+                      "description": "Stops per qualified tool name."
+                    },
+                    "stopSessions": {
+                      "type": "integer",
+                      "description": "Distinct chats that saw at least one stop."
+                    },
+                    "assertions": {
+                      "type": "integer",
+                      "description": "Notes DorkOS attached to a finished DorkOS tool call."
+                    },
+                    "assertionsByTier": {
+                      "type": "object",
+                      "properties": {
+                        "observe": {
+                          "type": "integer"
+                        },
+                        "act": {
+                          "type": "integer"
+                        },
+                        "destructive": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "since": {
+                      "type": "string",
+                      "description": "When this process started counting (ISO 8601)."
+                    }
+                  },
+                  "required": [
+                    "stops",
+                    "stopsByTool",
+                    "stopSessions",
+                    "assertions",
+                    "assertionsByTier",
+                    "since"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-stability": "internal"
+      }
+    },
+    "/api/debug/sessions/{sessionId}": {
+      "get": {
+        "operationId": "debug.chat_spine",
+        "tags": [
+          "Debug"
+        ],
+        "summary": "Read one chat’s live state",
+        "description": "One chat’s runtime, its live stream (lifecycle, counters, subscribers), who holds its lock, what it waits on, and how many durable events it recorded by type. Counts, states and ids only, never a message. An agent reads only a chat it may read.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The chat, by its session id."
+            },
+            "required": true,
+            "description": "The chat, by its session id.",
+            "name": "sessionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read one chat’s live state result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sessionId": {
+                      "type": "string"
+                    },
+                    "runtime": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "The runtime, or null when the read failed."
+                    },
+                    "runtimeBound": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ],
+                      "description": "False when `runtime` is the inference, not a recorded owner; null on failure."
+                    },
+                    "lifecycle": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "seq": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "subscribers": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "waiters": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "eventLogSize": {
+                      "type": "integer"
+                    },
+                    "ringSize": {
+                      "type": "integer"
+                    },
+                    "persistence": {
+                      "type": "string"
+                    },
+                    "projectorLive": {
+                      "type": "boolean"
+                    },
+                    "lockHeldBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "lockAcquiredAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "pendingInteractions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string"
+                          },
+                          "toolName": {
+                            "type": "string"
+                          },
+                          "startedAt": {
+                            "type": "string"
+                          },
+                          "remainingMs": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "startedAt",
+                          "remainingMs"
+                        ]
+                      }
+                    },
+                    "durableEvents": {
+                      "type": "object",
+                      "properties": {
+                        "total": {
+                          "type": "integer"
+                        },
+                        "byType": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "number"
+                          }
+                        }
+                      },
+                      "required": [
+                        "total",
+                        "byType"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "sessionId",
+                    "runtime",
+                    "runtimeBound",
+                    "lifecycle",
+                    "seq",
+                    "subscribers",
+                    "waiters",
+                    "projectorLive",
+                    "lockHeldBy",
+                    "lockAcquiredAt",
+                    "pendingInteractions",
+                    "durableEvents"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-stability": "internal"
+      }
+    },
+    "/api/system/requirements": {
+      "get": {
+        "operationId": "system.requirements",
+        "tags": [
+          "System"
+        ],
+        "summary": "Read what each runtime needs",
+        "description": "Every registered runtime’s dependency checks and whether it is ready or needs connecting, probed concurrently and time-bounded per runtime.",
+        "responses": {
+          "200": {
+            "description": "Read what each runtime needs result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "runtimes": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "dependencies": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "description": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "satisfied",
+                                    "missing",
+                                    "outdated",
+                                    "unknown"
+                                  ]
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "enum": [
+                                    "credentials_unreadable"
+                                  ]
+                                },
+                                "version": {
+                                  "type": "string"
+                                },
+                                "requiredVersion": {
+                                  "type": "string"
+                                },
+                                "installHint": {
+                                  "type": "string"
+                                },
+                                "infoUrl": {
+                                  "type": "string"
+                                },
+                                "expiresAt": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "description",
+                                "status"
+                              ]
+                            }
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "ready",
+                              "connect",
+                              "unknown"
+                            ]
+                          },
+                          "connect": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "install",
+                                  "login",
+                                  "provider-picker"
+                                ]
+                              },
+                              "label": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "label"
+                            ]
+                          },
+                          "provider": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "dependencies"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "runtimes"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-stability": "internal"
+      }
+    },
+    "/api/system/memory": {
+      "get": {
+        "operationId": "system.memory",
+        "tags": [
+          "System"
+        ],
+        "summary": "Read which memory backend serves",
+        "description": "Which memory backend is configured, which one is serving agent calls right now, and why they differ when one was benched.",
+        "responses": {
+          "200": {
+            "description": "Read which memory backend serves result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "configuredId": {
+                      "type": "string"
+                    },
+                    "activeId": {
+                      "type": "string"
+                    },
+                    "benched": {
+                      "type": "boolean"
+                    },
+                    "benchReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "configuredId",
+                    "activeId",
+                    "benched",
+                    "benchReason"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-stability": "internal"
+      }
+    },
+    "/api/system/shell-check": {
+      "get": {
+        "operationId": "system.shell_check",
+        "tags": [
+          "System"
+        ],
+        "summary": "Read the shell check’s state",
+        "description": "Whether DorkOS’s check on agents’ shell commands is down, whether a person may go on without it, and whether one chose to until restart.",
+        "responses": {
+          "200": {
+            "description": "Read the shell check’s state result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "down": {
+                      "type": "boolean"
+                    },
+                    "full": {
+                      "type": "boolean"
+                    },
+                    "canContinue": {
+                      "type": "boolean"
+                    },
+                    "continuing": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "down",
+                    "full",
+                    "canContinue",
+                    "continuing"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-stability": "internal"
+      }
+    },
+    "/api/keep-awake": {
+      "get": {
+        "operationId": "keep-awake.status",
+        "tags": [
+          "Keep-awake"
+        ],
+        "summary": "Read whether this computer is kept awake",
+        "description": "Whether DorkOS is keeping this computer from idle-sleeping right now, what is keeping it awake (chats, room replies and task runs, each counted once), the setting, and why it cannot when it cannot. The same payload is pushed as `keep_awake_status` on `GET /api/events` whenever it changes.",
+        "responses": {
+          "200": {
+            "description": "Read whether this computer is kept awake result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeepAwakeStatus"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-stability": "internal"
+      }
+    },
+    "/api/git/status": {
+      "get": {
+        "operationId": "git.status",
+        "tags": [
+          "Git"
+        ],
+        "summary": "Read a folder’s git status",
+        "description": "A folder’s branch, its tracking branch, ahead and behind counts, and how many files are modified, staged, untracked or conflicted; `{ \"error\": \"not_git_repo\" }` for a folder that is not in a git checkout. Leave out `dir` for the default folder.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "A folder inside the ones DorkOS may use."
+            },
+            "required": false,
+            "description": "A folder inside the ones DorkOS may use.",
+            "name": "dir",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read a folder’s git status result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/GitStatusResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/GitStatusError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-stability": "internal"
+      }
+    },
+    "/api/runtimes/opencode/openrouter/oauth/status": {
+      "get": {
+        "operationId": "runtimes.openrouter_sign_in_status",
+        "tags": [
+          "Runtimes"
+        ],
+        "summary": "Read an OpenRouter sign-in’s status",
+        "description": "Whether the OpenRouter sign-in started with `state` is pending, connected or failed. An unknown or expired `state` reads as an error. Only at this computer.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The sign-in’s state."
+            },
+            "required": false,
+            "description": "The sign-in’s state.",
+            "name": "state",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read an OpenRouter sign-in’s status result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "connected",
+                        "error"
+                      ]
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A person must allow the call first; nothing ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityApprovalRequired"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`unknown_capability`: not available on this computer; `not_found`: the thing it names",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The capability refused because of the state it met, such as `conflict`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "`precondition_failed`: something changed since the caller looked",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal_error`: something went wrong running it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`signin_unreachable`: the remote server did not answer",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "x-stability": "internal"
+      }
+    },
     "/api/directory": {
       "get": {
         "operationId": "directory.browse",
@@ -24369,6 +25696,80 @@
           "maxOutputTokens"
         ],
         "additionalProperties": false
+      },
+      "GitStatusResponse": {
+        "type": "object",
+        "properties": {
+          "branch": {
+            "type": "string",
+            "description": "Current branch name or HEAD SHA if detached"
+          },
+          "ahead": {
+            "type": "integer",
+            "description": "Commits ahead of remote tracking branch"
+          },
+          "behind": {
+            "type": "integer",
+            "description": "Commits behind remote tracking branch"
+          },
+          "modified": {
+            "type": "integer",
+            "description": "Count of modified files (staged + unstaged)"
+          },
+          "staged": {
+            "type": "integer",
+            "description": "Count of staged files"
+          },
+          "untracked": {
+            "type": "integer",
+            "description": "Count of untracked files"
+          },
+          "conflicted": {
+            "type": "integer",
+            "description": "Count of files with merge conflicts"
+          },
+          "clean": {
+            "type": "boolean",
+            "description": "True if working directory is clean"
+          },
+          "detached": {
+            "type": "boolean",
+            "description": "True if HEAD is detached"
+          },
+          "tracking": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Remote tracking branch name"
+          }
+        },
+        "required": [
+          "branch",
+          "ahead",
+          "behind",
+          "modified",
+          "staged",
+          "untracked",
+          "conflicted",
+          "clean",
+          "detached",
+          "tracking"
+        ]
+      },
+      "GitStatusError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "not_git_repo"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
       },
       "BrowseDirectoryResponse": {
         "type": "object",

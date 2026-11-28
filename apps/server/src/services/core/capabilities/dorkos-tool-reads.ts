@@ -392,6 +392,16 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'runtimes.key_status': 'local',
   'runtimes.opencode_key_setup': 'local',
   'runtimes.doe_model_setup': 'local',
+  // This computer's own reads (DOR-4978): counts, statuses and settings DorkOS wrote. The
+  // OpenRouter sign-in's error is one of DorkOS's own sentences, never OpenRouter's words.
+  'runtimes.openrouter_sign_in_status': 'local',
+  'debug.auto_mode_stops': 'local',
+  'debug.chat_spine': 'local',
+  'system.requirements': 'local',
+  'system.memory': 'local',
+  'system.shell_check': 'local',
+  'keep-awake.status': 'local',
+  'git.status': 'local',
   relay_list_endpoints: 'local',
   relay_notify_user: 'local',
   relay_list_adapters: 'local',

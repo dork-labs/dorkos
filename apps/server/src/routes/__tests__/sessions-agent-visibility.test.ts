@@ -90,6 +90,11 @@ import { recordDispatchStart } from '../../services/observability/dispatch-buffe
 import { noopLogger } from '@dorkos/shared/logger';
 import { composeRegistry } from '../../services/core/capabilities/index.js';
 import { diffDomain } from '../../services/diff/diff-capabilities.js';
+import {
+  computerReadsDomains,
+  setComputerReader,
+} from '../../services/core/runtime-doors/computer-read-capabilities.js';
+import { computerReader } from '../runtime-settings-reader.js';
 import { sessionReadsDomain } from '../../services/core/self-description/dorkos-registry.js';
 import { registerClaudeCodeFacts } from '../../startup/register-claude-code-facts.js';
 
@@ -98,13 +103,17 @@ import { registerClaudeCodeFacts } from '../../startup/register-claude-code-fact
 registerClaudeCodeFacts();
 
 const admission = new MainRequestAdmission();
+// One chat's debug spine is a capability the mount serves, read through boot's reader (DOR-4978).
+setComputerReader(computerReader());
 /** The session routes' deps; the `/recent` test lends them an agent folder. */
 const sessionDeps: { meshCore?: never } = {};
 // Routed as the running server routes: the diff routes answer from Hono, and
 // all but the raw bytes are capabilities the mount serves, as are the chat reads.
 const server = listeningServer(
   composedListener(admission, {
-    capabilities: composeRegistry([diffDomain, sessionReadsDomain], { logger: noopLogger }),
+    capabilities: composeRegistry([diffDomain, sessionReadsDomain, ...computerReadsDomains], {
+      logger: noopLogger,
+    }),
     sessions: sessionDeps,
   })
 );

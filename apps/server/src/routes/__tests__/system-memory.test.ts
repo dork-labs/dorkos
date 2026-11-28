@@ -54,6 +54,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
+import { computerReadsRegistry } from '../../http/__tests__/computer-reads-registry.js';
 import { logger } from '../../lib/logger.js';
 import {
   getMemoryProvider,
@@ -62,8 +63,10 @@ import {
 } from '../../services/memory/registry.js';
 
 const admission = new MainRequestAdmission();
-// Routed as the running server routes: the moved groups answer from Hono.
-const testServer = listeningServer(composedListener(admission));
+// Routed as the running server routes: this computer's reads answer from the mount.
+const testServer = listeningServer(
+  composedListener(admission, { capabilities: computerReadsRegistry() })
+);
 const CUSTOM = 'acme-memory';
 
 let warn: ReturnType<typeof vi.spyOn>;

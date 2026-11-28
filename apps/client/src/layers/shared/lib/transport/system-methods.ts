@@ -5,6 +5,7 @@
  * @module shared/lib/transport/system-methods
  */
 import { createAccountSigninMethods } from './account-signin-methods';
+import { createComputerReadMethods } from './computer-read-methods';
 import type { DoeCreditsCatalog, DoeInferenceStatus } from '@dorkos/shared/runtime-connect';
 import type { DoeInferenceConfig } from '@dorkos/shared/config-schema';
 import type {
@@ -20,8 +21,6 @@ import type {
   ServerConfig,
   ModelOption,
   SubagentInfo,
-  GitStatusResponse,
-  GitStatusError,
   UploadResult,
   UploadProgress,
   WorkbenchProbeRequest,
@@ -44,7 +43,6 @@ import type {
   StoreCredentialResult,
   OpenRouterKeyResult,
   OpenRouterOAuthStart,
-  OpenRouterOAuthStatus,
   OllamaStatus,
   OllamaModelCatalog,
   OllamaPullProgress,
@@ -53,10 +51,8 @@ import type {
 } from '@dorkos/shared/runtime-connect';
 import type { ListActivityQuery, ListActivityResponse } from '@dorkos/shared/activity-schemas';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
-import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
+import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import { MAX_CAPABILITY_LIMIT, type CapabilityCatalog } from '@dorkos/shared/capabilities';
-import type { MemoryProviderStatus } from '@dorkos/shared/memory-provider';
-import type { KeepAwakeStatus } from '@dorkos/shared/schemas';
 import type { TransportScanOptions, TransportScanEvent } from '@dorkos/shared/mesh-schemas';
 import { createTransportApiClient } from './api-client';
 import { fetchJSON, buildQueryString } from './http-client';
@@ -121,6 +117,7 @@ export function createSystemMethods(baseUrl: string) {
   const api = createTransportApiClient(baseUrl);
   return {
     ...createAccountSigninMethods(baseUrl),
+    ...createComputerReadMethods(baseUrl),
     // ── Filesystem ────────────────────────────────────────────────────────
 
     async browseDirectory(
@@ -279,11 +276,6 @@ export function createSystemMethods(baseUrl: string) {
 
     writeFile: (...args: Parameters<Transport['writeFile']>) => writeFileOverHttp(baseUrl, ...args),
 
-    getGitStatus(cwd?: string): Promise<GitStatusResponse | GitStatusError> {
-      const qs = buildQueryString({ dir: cwd });
-      return fetchJSON<GitStatusResponse | GitStatusError>(baseUrl, `/git/status${qs}`);
-    },
-
     // ── Commands ──────────────────────────────────────────────────────────
 
     async getCommands(
@@ -416,18 +408,6 @@ export function createSystemMethods(baseUrl: string) {
       };
     },
 
-    checkRequirements(): Promise<SystemRequirements> {
-      return fetchJSON<SystemRequirements>(baseUrl, '/system/requirements');
-    },
-
-    async getKeepAwake(): Promise<KeepAwakeStatus> {
-      return (await api.call('keepAwake.get', {})) as KeepAwakeStatus;
-    },
-
-    getMemoryProviderStatus(): Promise<MemoryProviderStatus> {
-      return fetchJSON<MemoryProviderStatus>(baseUrl, '/system/memory');
-    },
-
     provisionRuntime(
       runtimeType: string,
       onProgress?: (progress: RuntimeProvisionProgress) => void
@@ -535,14 +515,6 @@ export function createSystemMethods(baseUrl: string) {
       return fetchJSON<OpenRouterOAuthStart>(baseUrl, '/runtimes/opencode/openrouter/oauth/start', {
         method: 'POST',
       });
-    },
-
-    getOpenRouterOAuthStatus(state: string): Promise<OpenRouterOAuthStatus> {
-      const qs = buildQueryString({ state });
-      return fetchJSON<OpenRouterOAuthStatus>(
-        baseUrl,
-        `/runtimes/opencode/openrouter/oauth/status${qs}`
-      );
     },
 
     detectOllama(): Promise<OllamaStatus> {

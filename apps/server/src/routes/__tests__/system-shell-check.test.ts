@@ -44,12 +44,7 @@ beforeEach(() => {
   took.mockReturnValue(true);
 });
 
-describe('/api/system/shell-check', () => {
-  it('answers the status to anyone the chain let in', async () => {
-    const response = await app().request('/shell-check');
-    expect(await response.json()).toEqual(STATUS);
-  });
-
+describe('POST /api/system/shell-check/continue', () => {
   it('goes on for a person at this computer, and records it', async () => {
     const response = await post();
     expect(response.status).toBe(200);

@@ -9,7 +9,6 @@ import { registerSessionContinueOpenApi } from '../../session/fleet/continue-ope
 import { registerSessionLocationsOpenApi } from '../../session/resolution/session-locations-openapi.js';
 import { registerProjectsOpenApi } from '../../projects/projects-openapi.js';
 import { registerAccountEligibilityOpenApi } from '../usage/account-eligibility-openapi.js';
-import { registerKeepAwakeOpenApi } from '../keep-awake/keep-awake-openapi.js';
 import { registerOnboardingOpenApi } from '../onboarding/onboarding-openapi.js';
 import { registerComputerOpenApi } from '../../computers/computer-openapi.js';
 import { registerBrowserScanOpenApi } from '../../browser/profile-scan-openapi.js';
@@ -47,7 +46,6 @@ export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
   registerSessionLocationsOpenApi(registry);
   registerProjectsOpenApi(registry);
   registerAccountEligibilityOpenApi(registry);
-  registerKeepAwakeOpenApi(registry);
   registerOnboardingOpenApi(registry);
   registerComputerOpenApi(registry);
   // The file save itself (`PUT /api/files/content`) is the `files.save` capability (DOR-4978).

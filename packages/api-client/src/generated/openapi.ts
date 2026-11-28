@@ -6911,26 +6911,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/keep-awake": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Whether this computer is being kept awake
-         * @description Whether DorkOS is keeping this computer from idle-sleeping right now, what is keeping it awake (chats, room replies and task runs, each counted once), the setting, and why it cannot when it cannot (a container, a missing tool, or a refusal). The same payload is pushed as `keep_awake_status` on `GET /api/events` whenever it changes.
-         */
-        get: operations["keepAwake.get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/onboarding/first-run": {
         parameters: {
             query?: never;
@@ -9026,6 +9006,166 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/debug/auto-mode-stops": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read how often auto mode stopped an agent
+         * @description How often auto mode stopped the agent on a DorkOS tool since this process started, beside how many notes DorkOS attached to DorkOS tool calls in the same window. Counts only.
+         */
+        get: operations["debug.auto_mode_stops"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/debug/sessions/{sessionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one chat’s live state
+         * @description One chat’s runtime, its live stream (lifecycle, counters, subscribers), who holds its lock, what it waits on, and how many durable events it recorded by type. Counts, states and ids only, never a message. An agent reads only a chat it may read.
+         */
+        get: operations["debug.chat_spine"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/requirements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read what each runtime needs
+         * @description Every registered runtime’s dependency checks and whether it is ready or needs connecting, probed concurrently and time-bounded per runtime.
+         */
+        get: operations["system.requirements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read which memory backend serves
+         * @description Which memory backend is configured, which one is serving agent calls right now, and why they differ when one was benched.
+         */
+        get: operations["system.memory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/shell-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the shell check’s state
+         * @description Whether DorkOS’s check on agents’ shell commands is down, whether a person may go on without it, and whether one chose to until restart.
+         */
+        get: operations["system.shell_check"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/keep-awake": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read whether this computer is kept awake
+         * @description Whether DorkOS is keeping this computer from idle-sleeping right now, what is keeping it awake (chats, room replies and task runs, each counted once), the setting, and why it cannot when it cannot. The same payload is pushed as `keep_awake_status` on `GET /api/events` whenever it changes.
+         */
+        get: operations["keep-awake.status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a folder’s git status
+         * @description A folder’s branch, its tracking branch, ahead and behind counts, and how many files are modified, staged, untracked or conflicted; `{ "error": "not_git_repo" }` for a folder that is not in a git checkout. Leave out `dir` for the default folder.
+         */
+        get: operations["git.status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runtimes/opencode/openrouter/oauth/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read an OpenRouter sign-in’s status
+         * @description Whether the OpenRouter sign-in started with `state` is pending, connected or failed. An unknown or expired `state` reads as an error. Only at this computer.
+         */
+        get: operations["runtimes.openrouter_sign_in_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/directory": {
         parameters: {
             query?: never;
@@ -9990,39 +10130,6 @@ export interface components {
             project: string;
             allow: string[] | null;
         };
-        KeepAwakeStatus: {
-            /** @description The `keepAwake.whileAgentsWork` setting. */
-            enabled: boolean;
-            /** @description Whether this computer can be held awake right now. False with reason `denied` is temporary: it is retried. */
-            supported: boolean;
-            reason: components["schemas"]["KeepAwakeUnsupportedReason"];
-            /** @description Whether the operating system is being told to stay awake right now. */
-            asserted: boolean;
-            /** @description What is keeping the computer awake. Each piece of work counts once. */
-            working: {
-                /** @description Agent turns in flight that are not room replies or task runs. */
-                chats: number;
-                /** @description Room replies in flight. */
-                rooms: number;
-                /** @description Task runs in flight. A run counts once, including its turn. */
-                tasks: number;
-                /** @description Awake for a scheduled run that is about to start. */
-                waking: boolean;
-            };
-            /** @description Waking the computer for scheduled runs. Not built yet: always disabled, `unsupported`, with no next wake and no setup command. */
-            wake: {
-                enabled: boolean;
-                /** @enum {string} */
-                setup: "ready" | "needed" | "unsupported";
-                nextWakeAt: string | null;
-                setupCommand: string | null;
-            };
-        };
-        /**
-         * @description Why not, when `supported` is false; null otherwise. `denied` is retried on a backoff and when the setting is switched off and on; the others last until restart.
-         * @enum {string|null}
-         */
-        KeepAwakeUnsupportedReason: "container" | "tool-missing" | "denied" | "platform" | null;
         FileDocumentSaveReceipt: {
             documentId: string;
             eventId: string;
@@ -11166,6 +11273,39 @@ export interface components {
             resolvedAt: string;
             resolvedBy?: string;
         };
+        KeepAwakeStatus: {
+            /** @description The `keepAwake.whileAgentsWork` setting. */
+            enabled: boolean;
+            /** @description Whether this computer can be held awake right now. False with reason `denied` is temporary: it is retried. */
+            supported: boolean;
+            reason: components["schemas"]["KeepAwakeUnsupportedReason"];
+            /** @description Whether the operating system is being told to stay awake right now. */
+            asserted: boolean;
+            /** @description What is keeping the computer awake. Each piece of work counts once. */
+            working: {
+                /** @description Agent turns in flight that are not room replies or task runs. */
+                chats: number;
+                /** @description Room replies in flight. */
+                rooms: number;
+                /** @description Task runs in flight. A run counts once, including its turn. */
+                tasks: number;
+                /** @description Awake for a scheduled run that is about to start. */
+                waking: boolean;
+            };
+            /** @description Waking the computer for scheduled runs. Not built yet: always disabled, `unsupported`, with no next wake and no setup command. */
+            wake: {
+                enabled: boolean;
+                /** @enum {string} */
+                setup: "ready" | "needed" | "unsupported";
+                nextWakeAt: string | null;
+                setupCommand: string | null;
+            };
+        };
+        /**
+         * @description Why not, when `supported` is false; null otherwise. `denied` is retried on a backoff and when the setting is switched off and on; the others last until restart.
+         * @enum {string|null}
+         */
+        KeepAwakeUnsupportedReason: "container" | "tool-missing" | "denied" | "platform" | null;
         TunnelStatus: {
             enabled: boolean;
             connected: boolean;
@@ -16016,6 +16156,32 @@ export interface components {
             contextWindow: number;
             maxOutputTokens: number;
         } | null;
+        GitStatusResponse: {
+            /** @description Current branch name or HEAD SHA if detached */
+            branch: string;
+            /** @description Commits ahead of remote tracking branch */
+            ahead: number;
+            /** @description Commits behind remote tracking branch */
+            behind: number;
+            /** @description Count of modified files (staged + unstaged) */
+            modified: number;
+            /** @description Count of staged files */
+            staged: number;
+            /** @description Count of untracked files */
+            untracked: number;
+            /** @description Count of files with merge conflicts */
+            conflicted: number;
+            /** @description True if working directory is clean */
+            clean: boolean;
+            /** @description True if HEAD is detached */
+            detached: boolean;
+            /** @description Remote tracking branch name */
+            tracking: string | null;
+        };
+        GitStatusError: {
+            /** @enum {string} */
+            error: "not_git_repo";
+        };
         BrowseDirectoryResponse: {
             path: string;
             entries: components["schemas"]["DirectoryEntry"][];
@@ -54709,27 +54875,6 @@ export interface operations {
             };
         };
     };
-    "keepAwake.get": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The keep-awake status */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KeepAwakeStatus"];
-                };
-            };
-            500: components["responses"]["InternalErrorProblem"];
-        };
-    };
     "onboarding.createFirstRun": {
         parameters: {
             query?: never;
@@ -63350,6 +63495,981 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DoeInferenceStatus"];
+                };
+            };
+            /** @description A person must allow the call first; nothing ran */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilityApprovalRequired"];
+                };
+            };
+            /** @description `invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `unknown_capability`: not available on this computer; `not_found`: the thing it names */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The capability refused because of the state it met, such as `conflict` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `precondition_failed`: something changed since the caller looked */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `internal_error`: something went wrong running it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `signin_unreachable`: the remote server did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "debug.auto_mode_stops": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read how often auto mode stopped an agent result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Approval cards auto mode caused on a DorkOS tool. */
+                        stops: number;
+                        /** @description Stops per qualified tool name. */
+                        stopsByTool: {
+                            [key: string]: number;
+                        };
+                        /** @description Distinct chats that saw at least one stop. */
+                        stopSessions: number;
+                        /** @description Notes DorkOS attached to a finished DorkOS tool call. */
+                        assertions: number;
+                        assertionsByTier: {
+                            observe?: number;
+                            act?: number;
+                            destructive?: number;
+                        };
+                        /** @description When this process started counting (ISO 8601). */
+                        since: string;
+                    };
+                };
+            };
+            /** @description A person must allow the call first; nothing ran */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilityApprovalRequired"];
+                };
+            };
+            /** @description `invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `unknown_capability`: not available on this computer; `not_found`: the thing it names */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The capability refused because of the state it met, such as `conflict` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `precondition_failed`: something changed since the caller looked */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `internal_error`: something went wrong running it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `signin_unreachable`: the remote server did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "debug.chat_spine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The chat, by its session id. */
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read one chat’s live state result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        sessionId: string;
+                        /** @description The runtime, or null when the read failed. */
+                        runtime: string | null;
+                        /** @description False when `runtime` is the inference, not a recorded owner; null on failure. */
+                        runtimeBound: boolean | null;
+                        lifecycle: string | null;
+                        seq: number | null;
+                        subscribers: number | null;
+                        waiters: number | null;
+                        eventLogSize?: number;
+                        ringSize?: number;
+                        persistence?: string;
+                        projectorLive: boolean;
+                        lockHeldBy: string | null;
+                        lockAcquiredAt: string | null;
+                        pendingInteractions: {
+                            kind: string;
+                            toolName?: string;
+                            startedAt: string;
+                            remainingMs: number;
+                        }[];
+                        durableEvents: {
+                            total: number;
+                            byType: {
+                                [key: string]: number;
+                            };
+                        };
+                    };
+                };
+            };
+            /** @description A person must allow the call first; nothing ran */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilityApprovalRequired"];
+                };
+            };
+            /** @description `invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `unknown_capability`: not available on this computer; `not_found`: the thing it names */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The capability refused because of the state it met, such as `conflict` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `precondition_failed`: something changed since the caller looked */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `internal_error`: something went wrong running it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `signin_unreachable`: the remote server did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "system.requirements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read what each runtime needs result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        runtimes: {
+                            [key: string]: {
+                                dependencies: {
+                                    name: string;
+                                    description: string;
+                                    /** @enum {string} */
+                                    status: "satisfied" | "missing" | "outdated" | "unknown";
+                                    /** @enum {string} */
+                                    reason?: "credentials_unreadable";
+                                    version?: string;
+                                    requiredVersion?: string;
+                                    installHint?: string;
+                                    infoUrl?: string;
+                                    expiresAt?: string;
+                                }[];
+                                /** @enum {string} */
+                                state?: "ready" | "connect" | "unknown";
+                                connect?: {
+                                    /** @enum {string} */
+                                    kind: "install" | "login" | "provider-picker";
+                                    label: string;
+                                };
+                                provider?: string;
+                            };
+                        };
+                    };
+                };
+            };
+            /** @description A person must allow the call first; nothing ran */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilityApprovalRequired"];
+                };
+            };
+            /** @description `invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `unknown_capability`: not available on this computer; `not_found`: the thing it names */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The capability refused because of the state it met, such as `conflict` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `precondition_failed`: something changed since the caller looked */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `internal_error`: something went wrong running it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `signin_unreachable`: the remote server did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "system.memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read which memory backend serves result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        configuredId: string;
+                        activeId: string;
+                        benched: boolean;
+                        benchReason: string | null;
+                    };
+                };
+            };
+            /** @description A person must allow the call first; nothing ran */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilityApprovalRequired"];
+                };
+            };
+            /** @description `invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `unknown_capability`: not available on this computer; `not_found`: the thing it names */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The capability refused because of the state it met, such as `conflict` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `precondition_failed`: something changed since the caller looked */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `internal_error`: something went wrong running it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `signin_unreachable`: the remote server did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "system.shell_check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read the shell check’s state result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        down: boolean;
+                        full: boolean;
+                        canContinue: boolean;
+                        continuing: boolean;
+                    };
+                };
+            };
+            /** @description A person must allow the call first; nothing ran */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilityApprovalRequired"];
+                };
+            };
+            /** @description `invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `unknown_capability`: not available on this computer; `not_found`: the thing it names */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The capability refused because of the state it met, such as `conflict` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `precondition_failed`: something changed since the caller looked */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `internal_error`: something went wrong running it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `signin_unreachable`: the remote server did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "keep-awake.status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read whether this computer is kept awake result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeepAwakeStatus"];
+                };
+            };
+            /** @description A person must allow the call first; nothing ran */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilityApprovalRequired"];
+                };
+            };
+            /** @description `invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `unknown_capability`: not available on this computer; `not_found`: the thing it names */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The capability refused because of the state it met, such as `conflict` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `precondition_failed`: something changed since the caller looked */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `internal_error`: something went wrong running it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `signin_unreachable`: the remote server did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "git.status": {
+        parameters: {
+            query?: {
+                /** @description A folder inside the ones DorkOS may use. */
+                dir?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read a folder’s git status result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitStatusResponse"] | components["schemas"]["GitStatusError"];
+                };
+            };
+            /** @description A person must allow the call first; nothing ran */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilityApprovalRequired"];
+                };
+            };
+            /** @description `invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `unknown_capability`: not available on this computer; `not_found`: the thing it names */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The capability refused because of the state it met, such as `conflict` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `precondition_failed`: something changed since the caller looked */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `internal_error`: something went wrong running it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `signin_unreachable`: the remote server did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "runtimes.openrouter_sign_in_status": {
+        parameters: {
+            query?: {
+                /** @description The sign-in’s state. */
+                state?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read an OpenRouter sign-in’s status result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "pending" | "connected" | "error";
+                        error?: string;
+                    };
                 };
             };
             /** @description A person must allow the call first; nothing ran */
