@@ -50,6 +50,13 @@ export interface FileScan {
   readonly helperBuilt: number;
   /** `env:` properties that read `process.env`, as `line: text`. */
   readonly processEnvLeaks: readonly string[];
+  /** Call arguments that are `process.env` whole, or an object spreading it, as `line: text`. */
+  readonly wholeEnvArguments: readonly string[];
+  /**
+   * Starts whose `env:` calls `childEnvironment('git-fetch'` or `hardenedGitEnv(`
+   * (the kinds that keep the real `GITHUB_TOKEN`), with the `cwd:` each passes.
+   */
+  readonly gitFetchStarts: readonly { line: number; cwd: string }[];
 }
 
 /**
@@ -141,6 +148,8 @@ export function scanChildStarts(
   const lineOf = (node: ts.Node): number =>
     file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1;
   const processEnvLeaks: string[] = [];
+  const wholeEnvArguments: string[] = [];
+  const gitFetchStarts: { line: number; cwd: string }[] = [];
   let helperBuilt = 0;
   const where = (node: ts.Node): string => {
     const { line } = file.getLineAndCharacterOfPosition(node.getStart(file));
@@ -199,13 +208,28 @@ export function scanChildStarts(
       const args = (node as ts.CallExpression | ts.NewExpression).arguments ?? [];
       const env = envOf(args);
       const callee = (node as ts.CallExpression | ts.NewExpression).expression;
+      if (env && /childEnvironment\('git-fetch'|hardenedGitEnv\(/.test(env.getText(file)))
+        gitFetchStarts.push({ line: lineOf(node), cwd: cwdOf(args) });
       if (env && helperCall.test(env.getText(file))) helperBuilt += 1;
       else
         unlisted.push({
           line: lineOf(node),
-          site: `${flat(callee)} env: ${env ? flat(env) : '(none)'}`,
+          site: `${flat(callee)} env: ${env ? flat(env) : '(none)'}${bindingsOf(env)}`,
         });
     }
+    if (
+      ts.isCallExpression(node) &&
+      node.arguments.some(
+        (arg) =>
+          /^process\.env$/.test(flat(arg)) ||
+          (ts.isObjectLiteralExpression(arg) &&
+            arg.properties.some(
+              (property) =>
+                ts.isSpreadAssignment(property) && flat(property.expression) === 'process.env'
+            ))
+      )
+    )
+      wholeEnvArguments.push(`${lineOf(node)}: ${flat(node)}`);
     // A start passed on as a value (a default spawner, a cast) starts children
     // the scanner can't follow: it counts as a site to name.
     if (ts.isIdentifier(node) && direct.has(node.text) && escapes(node))
@@ -215,6 +239,43 @@ export function scanChildStarts(
       });
     ts.forEachChild(node, visit);
   };
+  // Every value a plain name is given in this file, so a listed start that
+  // passes `env` stops matching when `env` is pointed somewhere else.
+  const assigned = new Map<string, string[]>();
+  const note = (name: string, value: ts.Node): void => {
+    assigned.set(name, [...(assigned.get(name) ?? []), flat(value)]);
+  };
+  const collect = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer)
+      note(node.name.text, node.initializer);
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isIdentifier(node.left)
+    )
+      note(node.left.text, node.right);
+    if (ts.isParameter(node) && ts.isIdentifier(node.name) && node.initializer)
+      note(node.name.text, node.initializer);
+    ts.forEachChild(node, collect);
+  };
+  collect(file);
+  function bindingsOf(env: ts.Expression | null): string {
+    if (!env || !ts.isIdentifier(env)) return '';
+    const values = [...new Set(assigned.get(env.text) ?? [])].sort();
+    return values.map((value) => ` | ${env.text} = ${value}`).join('');
+  }
+  function cwdOf(args: readonly ts.Expression[]): string {
+    for (const arg of args) {
+      if (!ts.isObjectLiteralExpression(arg)) continue;
+      for (const property of arg.properties) {
+        if (ts.isPropertyAssignment(property) && property.name.getText(file) === 'cwd')
+          return flat(property.initializer);
+        if (ts.isShorthandPropertyAssignment(property) && property.name.text === 'cwd')
+          return 'cwd';
+      }
+    }
+    return '(none)';
+  }
   visit(file);
-  return { unlisted, helperBuilt, processEnvLeaks };
+  return { unlisted, helperBuilt, processEnvLeaks, wholeEnvArguments, gitFetchStarts };
 }

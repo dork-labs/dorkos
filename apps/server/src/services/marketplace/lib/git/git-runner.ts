@@ -227,14 +227,16 @@ function untrackGit(pid: number): void {
 }
 
 /**
- * Run one git command. `cwd` is the fetch directory, or `undefined` for
- * `ls-remote`, which needs no repository. A rejection carries git's `stdout`
+ * Run one git command in `freshCwd`: a folder DorkOS just made, either the
+ * fetch directory or a `freshGitFolder()` (`lib/git-safety.ts`) for `ls-remote` and
+ * `--version`. Never the server's own working folder, whose `.git/config`
+ * an agent can write. A rejection carries git's `stdout`
  * and `stderr`, as `execFile`'s promise form does, and `killed: true` when
  * git ran out of time. Every way of stopping git (its time running out, a
  * size limit, an output limit) stops its whole process tree.
  *
  * @param args - Git's arguments.
- * @param cwd - Where git runs.
+ * @param freshCwd - Where git runs: a folder DorkOS just made.
  * @param timeout - How long it may run, in milliseconds.
  * @param config - `git -c` settings passed through the environment.
  * @param options - Watching, streaming, input and extra environment.
@@ -242,7 +244,7 @@ function untrackGit(pid: number): void {
  */
 export async function runGit(
   args: string[],
-  cwd: string | undefined,
+  freshCwd: string,
   timeout: number,
   config: GitConfigEntry[] = [],
   options: GitRunOptions = {}
@@ -259,7 +261,7 @@ export async function runGit(
     // The hardening as `-c` too: the environment copy is read only by git 2.31
     // and later, and this repo supports 2.25 (DOR-2326).
     const child = spawn('git', [...internalGitArgs(), ...args], {
-      cwd,
+      cwd: freshCwd,
       // Confine git to safe transports so an author-controlled URL cannot reach
       // the `ext::`/`file::` helpers, and never prompt for a credential.
       env: { ...withGitConfigEnv(hardenedGitEnv(), config), ...options.env },

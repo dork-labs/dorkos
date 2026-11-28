@@ -40,7 +40,7 @@ import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { isSafeGitUrl } from '@dorkos/marketplace';
 import { logger } from '../../../lib/logger.js';
-import { hardenedGitEnv, internalGitArgs } from '../../../lib/git-safety.js';
+import { freshGitFolder, hardenedGitEnv, internalGitArgs } from '../../../lib/git-safety.js';
 import { env } from '../../../env.js';
 import { childEnvironment } from '@dorkos/shared/child-environment';
 
@@ -260,15 +260,20 @@ export function resolveGitAuth(): string | undefined {
     return env.GITHUB_TOKEN;
   }
 
+  // gh runs in a folder DorkOS just made, never the server's own.
+  const fresh = freshGitFolder();
   try {
     const token = execSync('gh auth token', {
+      cwd: fresh.cwd,
       encoding: 'utf-8',
       timeout: 5000,
-      env: childEnvironment('git-fetch'),
+      env: { ...childEnvironment('git-fetch'), ...fresh.env },
     }).trim();
     return token || undefined;
   } catch {
     return undefined;
+  } finally {
+    fresh.dispose();
   }
 }
 
@@ -500,6 +505,11 @@ export async function execGitClone(
   onProgress?: ProgressCallback
 ): Promise<void> {
   const cloneUrl = withGitHubToken(url, auth);
+  // The clone runs in a folder DorkOS just made, never the server's own (its
+  // `.git/config` could name a program that sees the token); so the target is
+  // made absolute against the folder it was named from.
+  const destination = path.resolve(target);
+  const fresh = freshGitFolder();
 
   return new Promise<void>((resolve, reject) => {
     const proc = spawn(
@@ -522,13 +532,14 @@ export async function execGitClone(
         // Supported since git 2.24, below this repo's 2.25 floor.
         '--end-of-options',
         cloneUrl,
-        target,
+        destination,
       ],
       {
+        cwd: fresh.cwd,
         stdio: ['ignore', 'pipe', 'pipe'],
         // Confine git to safe transports so an author-controlled URL cannot
         // reach the `ext::`/`file::` helpers and run arbitrary commands.
-        env: hardenedGitEnv(),
+        env: { ...hardenedGitEnv(), ...fresh.env },
         timeout: GIT_CLONE_TIMEOUT_MS,
       }
     );
@@ -557,9 +568,13 @@ export async function execGitClone(
     // Cast needed: multiple @types/node versions in the monorepo cause
     // ChildProcessByStdio to lose .on() overloads under pnpm strict hoisting
     const procEvents = proc as unknown as EventEmitter;
-    procEvents.on('error', (err: Error) => reject(err));
+    procEvents.on('error', (err: Error) => {
+      fresh.dispose();
+      reject(err);
+    });
 
     procEvents.on('close', async (code: number | null) => {
+      fresh.dispose();
       if (code !== 0) {
         reject(new Error(`git clone exited with code ${code}: ${redactAuthTokens(stderr)}`));
         return;
@@ -567,7 +582,7 @@ export async function execGitClone(
 
       // Remove .git directory after successful clone
       try {
-        await rm(path.join(target, '.git'), { recursive: true, force: true });
+        await rm(path.join(destination, '.git'), { recursive: true, force: true });
       } catch (err) {
         logger.warn('Failed to remove .git directory after clone', { err });
       }

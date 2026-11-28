@@ -17,7 +17,10 @@ const census = JSON.parse(
   readFileSync(new URL('./child-env-census.json', import.meta.url), 'utf8')
 ) as {
   wrappers: Record<string, string>;
-  sites: Record<string, { kind: string; reason: string; starts: string[] }>;
+  sites: Record<
+    string,
+    { kind: string; reason: string; starts: string[]; handsProcessEnvTo?: string[] }
+  >;
 };
 
 /** Where DorkOS's running code lives: the server, the CLI, and the packages they start children from. */
@@ -49,7 +52,15 @@ function read(file: string): string {
   return readFileSync(`${repoRoot}${file}`, 'utf8');
 }
 
-describe('the child environment census', () => {
+const scans = new Map<string, ReturnType<typeof scanChildStarts>>();
+/** One scan per file for the whole census: the tree is large. */
+function scanned(file: string): ReturnType<typeof scanChildStarts> {
+  let scan = scans.get(file);
+  if (!scan) scans.set(file, (scan = scanChildStarts(file, read(file), HELPERS)));
+  return scan;
+}
+
+describe('the child environment census', { timeout: 30_000 }, () => {
   const sites = census.sites;
 
   it('finds every start that skips the helper, each exactly as its row names it', () => {
@@ -58,7 +69,7 @@ describe('the child environment census', () => {
     for (const file of sourceFiles()) {
       const text = read(file);
       if (!/child_process|node-pty|StdioClientTransport/.test(text)) continue;
-      const scan = scanChildStarts(file, text, HELPERS);
+      const scan = scanned(file);
       helperBuilt += scan.helperBuilt;
       if (scan.unlisted.length > 0) found[file] = scan.unlisted.map((start) => start.site).sort();
     }
@@ -74,7 +85,7 @@ describe('the child environment census', () => {
   it('lists no start that inherits the whole process.env', () => {
     for (const [file, row] of Object.entries(sites))
       for (const start of row.starts)
-        expect(start, file).not.toMatch(/env: \(none\)$|process\.env/);
+        expect(start.split(' | ')[0], file).not.toMatch(/env: \(none\)$|process\.env/);
   });
 
   it('keeps GITHUB_TOKEN only for git on a repository DorkOS just made', () => {
@@ -86,16 +97,36 @@ describe('the child environment census', () => {
       'apps/server/src/lib/git-safety.ts',
       // `gh auth token`, before a template download.
       'apps/server/src/services/core/agent-templates/template-downloader.ts',
-      // The workspace clone into a new folder, its one unaudited git call.
-      'apps/server/src/services/workspace/providers/git.ts',
     ]);
+  });
+
+  it('runs every start that keeps GITHUB_TOKEN in a folder DorkOS just made', () => {
+    const starts: string[] = [];
+    for (const file of sourceFiles()) {
+      const text = read(file);
+      if (!/child_process/.test(text)) continue;
+      for (const start of scanned(file).gitFetchStarts)
+        starts.push(`${file}:${start.line} cwd: ${start.cwd}`);
+    }
+    expect(starts.length).toBeGreaterThanOrEqual(3);
+    // `fresh.cwd` from freshGitFolder(), or git-runner's `freshCwd` parameter.
+    expect(starts.filter((start) => !/cwd: (fresh\.cwd|freshCwd)$/.test(start))).toEqual([]);
+  });
+
+  it('lets no file with a listed start hand process.env on whole, but where its row says', () => {
+    for (const [file, row] of Object.entries(sites)) {
+      const handed = scanned(file).wholeEnvArguments.map((site) =>
+        site.slice(site.indexOf(': ') + 2)
+      );
+      expect(handed, file).toEqual(row.handsProcessEnvTo ?? []);
+    }
   });
 
   it('lets no env spread process.env, and no runtime pass it whole', () => {
     const leaks: string[] = [];
     for (const file of sourceFiles()) {
       const text = read(file);
-      for (const site of scanChildStarts(file, text, HELPERS).processEnvLeaks) {
+      for (const site of scanned(file).processEnvLeaks) {
         const whole = /env:\s*process\.env\s*$/.test(site.slice(site.indexOf(':') + 1).trim());
         const runtime = /services\/runtimes\/|packages\/doe\//.test(file);
         if (!whole || runtime) leaks.push(`${file}:${site}`);
@@ -155,6 +186,25 @@ describe('the child environment census', () => {
     const spread =
       "import { spawn } from 'node:child_process';\nspawn('x', [], { env: { ...process.env } });";
     expect(scanChildStarts('fixture.ts', spread, HELPERS).processEnvLeaks).toHaveLength(1);
+  });
+
+  it('fails a listed start whose env variable is pointed at process.env', () => {
+    const file = 'apps/server/src/services/runtimes/claude-code/sessions/tracked-spawn.ts';
+    const source = read(file);
+    const before = scanChildStarts(file, source, HELPERS).unlisted.map((start) => start.site);
+    expect(before.sort()).toEqual([...sites[file]!.starts].sort());
+    const repointed = scanChildStarts(
+      file,
+      `${source}\nfunction later(env: unknown) { env = process.env; }\n`,
+      HELPERS
+    ).unlisted.map((start) => start.site);
+    expect(repointed.sort()).not.toEqual([...sites[file]!.starts].sort());
+    const handedOn = scanChildStarts(
+      'apps/server/src/services/runtimes/codex/app-server/protocol/snapshot.ts',
+      "import { execFileSync } from 'node:child_process';\nrun(process.env);\n",
+      HELPERS
+    ).wholeEnvArguments;
+    expect(handedOn).toHaveLength(1);
   });
 
   it('fails a listed start swapped to process.env', () => {

@@ -2,6 +2,7 @@
 covers:
   - 'fix(server): the project .env file can’t change how DorkOS or its agents run (DOR-5481)'
   - 'fix(server): the project .env file can no longer change how DorkOS signs you in (DOR-5481)'
+  - 'fix(server): git that keeps the token runs in a folder DorkOS just made (DOR-5481)'
 ---
 
 ### Changed
