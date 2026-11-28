@@ -207,8 +207,9 @@ export function SessionComposer({
   const waitingOnPerson = awaitingDecision || activeInteraction !== null;
   const turnOpen = isStreaming || waitingOnPerson;
   // A card raised in a turn no person started (a helper asking after the
-  // reply) gets no Stop: stopping that turn would also end the background work
-  // the last turn left. Its own Don't allow answers it (DOR-5492).
+  // reply, the agent waking itself up) gets no Stop for now: stopping a helper's
+  // ask window would also end the background work the last turn left. The
+  // card's own Don't allow answers it; DOR-5492 decides what Stop means there.
   const runtimeTurn = useSessionRuntimeTurn(sessionId);
   // A quick lookup says nothing, so a chat that is set up doesn't flicker. Pressing
   // Check again starts the wait over, and says so at once.

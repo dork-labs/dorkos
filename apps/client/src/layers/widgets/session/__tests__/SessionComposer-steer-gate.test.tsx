@@ -458,7 +458,19 @@ describe('a chat waiting on a person still offers Stop (DOR-3202)', () => {
     );
   });
 
-  it('offers no Stop on a card a helper raised after the reply (DOR-5492)', () => {
+  it('keeps Stop on a card in a turn a person started', () => {
+    hydrateWaiting([], [{ seq: 6, type: 'turn_start', userMessage: 'publish the notes' }]);
+    render(
+      <SessionComposerBench
+        {...baseProps}
+        status="idle"
+        interaction={{ ...baseProps.interaction, active: approvalCard }}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
+  });
+
+  it('offers no Stop on a card in a turn the agent started itself (DOR-5492)', () => {
     hydrateWaiting([], [{ seq: 6, type: 'turn_start', origin: 'runtime' }]);
     render(
       <SessionComposerBench
