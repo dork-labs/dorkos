@@ -5,6 +5,7 @@
  * where one was sent.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createAccountMethods } from '../account-methods';
 import { createAccountSigninMethods } from '../account-signin-methods';
 import { createCloudMethods } from '../cloud-methods';
 import { createComputerMethods } from '../computer-methods';
@@ -16,6 +17,7 @@ import { createOnboardingMethods } from '../onboarding-methods';
 import { createPermissionMethods } from '../permission-methods';
 import { createProfileMethods } from '../profile-methods';
 import { createProjectMethods } from '../project-methods';
+import { createPushMethods } from '../push-methods';
 import { createQueuedChatMethods } from '../queued-chat-methods';
 import { createRelayMethods } from '../relay-methods';
 import { createRemoteAccessMethods } from '../remote-access-methods';
@@ -42,6 +44,7 @@ const system = createSystemMethods(base);
 const conn = createConnectorMethods(base);
 const relay = createRelayMethods(base, window1);
 const mcp = createMcpMethods(base);
+const accounts = createAccountMethods(base);
 const stdio = { transport: 'stdio' as const, command: 'npx', args: [], env: {} };
 const input = {
   leaseId: 'l1',
@@ -285,6 +288,46 @@ const plain: Record<string, () => Promise<unknown>> = {
     relay.addRelayAdapter('telegram', 't 1', { token: 'x' }),
   'PATCH /api/relay/adapters/t%2F1/config {"config":{"token":"x"}}': () =>
     relay.updateRelayAdapterConfig('t/1', { token: 'x' }),
+  // Claude Code accounts. A folder with a space in it goes out as `+` now, not `%20`.
+  'GET /api/runtimes/codex/accounts/usage': () => accounts.getAccountUsage('codex'),
+  'GET /api/runtimes/claude-code/accounts/found': () => accounts.getFoundClaudeFolders(),
+  'POST /api/runtimes/claude-code/accounts/found/dismiss {"path":"/Users/me/.claude2"}': () =>
+    accounts.dismissFoundClaudeFolder('/Users/me/.claude2'),
+  'GET /api/runtimes/claude-code/account-eligibility': () => accounts.getAccountEligibility(),
+  'GET /api/runtimes/claude-code/account-eligibility?project=%2Fwork%2Frepo': () =>
+    accounts.getAccountEligibility('/work/repo'),
+  'PUT /api/runtimes/claude-code/project-accounts {"project":"/work/repo","allow":["a","b"]}': () =>
+    accounts.setProjectAccounts('/work/repo', ['a', 'b']),
+  'PUT /api/runtimes/claude-code/project-accounts {"project":"/work/repo","allow":null}': () =>
+    accounts.setProjectAccounts('/work/repo', null),
+  'POST /api/runtimes/claude-code/project-accounts/without-credits {"sessionId":"s1"}': () =>
+    accounts.keepCreditsOutOfProject('s1'),
+  'PUT /api/runtimes/claude-code/accounts/a%2F1/only-projects {"projects":["/p"]}': () =>
+    accounts.setAccountOnlyProjects('a/1', ['/p']),
+  'PUT /api/runtimes/claude-code/accounts/a%2F1/only-projects {"projects":null}': () =>
+    accounts.setAccountOnlyProjects('a/1', null),
+  'PUT /api/runtimes/claude-code/accounts/a%2F1/no-auto-move {"noAutoMove":true}': () =>
+    accounts.setAccountNoAutoMove('a/1', true),
+  'PUT /api/runtimes/claude-code/accounts/a%2F1/agents-may-pick {"agentsMayPick":false}': () =>
+    accounts.setAccountAgentsMayPick('a/1', false),
+  // Relay messages and endpoints. A subject or id with a slash in it is escaped now.
+  'GET /api/relay/messages/m1': () => relay.getRelayMessage('m1'),
+  'GET /api/relay/messages/m1/status': () => relay.getRelayDeliveryReceipt('m1'),
+  'POST /api/relay/messages {"subject":"relay.agent.a","payload":{"x":1},"from":"relay.human.console","replyTo":"relay.human.r"}':
+    () =>
+      relay.sendRelayMessage({
+        subject: 'relay.agent.a',
+        payload: { x: 1 },
+        from: 'relay.human.console',
+        replyTo: 'relay.human.r',
+      }),
+  'GET /api/relay/endpoints': () => relay.listRelayEndpoints(),
+  'DELETE /api/relay/endpoints/relay.agent.a': () => relay.unregisterRelayEndpoint('relay.agent.a'),
+  'GET /api/relay/endpoints/relay.agent.a/inbox': () => relay.readRelayInbox('relay.agent.a'),
+  'GET /api/relay/endpoints/relay.agent.a/inbox?status=failed&cursor=c&limit=5': () =>
+    relay.readRelayInbox('relay.agent.a', { status: 'failed', cursor: 'c', limit: 5 }),
+  // Web push. The list pages; the read-all loop asks for the largest page.
+  'GET /api/push/subscriptions?limit=200': () => createPushMethods(base).listPushSubscriptions(),
   // Managed MCP servers. The path-only verbs have always sent `{}`, and still do.
   'GET /api/agents/a%2F1/mcp-servers?limit=200': () => mcp.listAgentMcpServers('a/1'),
   [`POST /api/agents/a%2F1/mcp-servers {"name":"fs","connection":${JSON.stringify(stdio)}}`]: () =>
