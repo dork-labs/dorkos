@@ -16,13 +16,24 @@
  *   started, or once that chat has not been seen working for
  *   {@link CLAIM_IDLE_LIMIT_MS}, so a dead chat cannot hold work forever.
  *
- * Every claim, refusal, release and lapse is an audit row.
+ * Every claim, refusal, release and lapse is an audit row. Every claim and
+ * every end of one (a release, a lapse, a hand-over, the cleanup of a chat that
+ * never started) is also handed to the recorder in the same transaction
+ * (`./work-claim-links.ts`), which writes it into the work graph as history.
+ * A renewal and a re-key change no span, so they record nothing.
  *
  * @module services/session/claims/work-claim-service
  */
-import { and, eq, workClaims, type Db, type WorkClaimRow } from '@dorkos/db';
+import { and, eq, workClaims, type Db, type DbTransaction, type WorkClaimRow } from '@dorkos/db';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
+import { logger } from '../../../lib/logger.js';
 import { recordAudit } from '../../audit/audit-trail.js';
+import {
+  workClaimRecorder,
+  type WorkClaimChange,
+  type WorkClaimRecorder,
+  type WorkClaimWriter,
+} from './work-claim-links.js';
 
 /** How long a claim outlives its chat's last sign of work. */
 export const CLAIM_IDLE_LIMIT_MS = 2 * 60 * 60 * 1000;
@@ -83,27 +94,40 @@ function cleanNote(note: string | undefined): string | null {
   return (note && sanitizeIdentity(note, CLAIM_NOTE_MAX_LENGTH)) ?? null;
 }
 
+/** Who took a claim, for its history: the claim tool by default. */
+export interface WorkClaimBy {
+  /** What took it. */
+  writer: Extract<WorkClaimWriter, 'claim-tool' | 'session-start'>;
+  /** The chat whose action it was: the claiming chat itself, or the chat that started it. */
+  chatId: string | null;
+}
+
 /** What the service needs. */
 export interface WorkClaimServiceDeps {
   /** The DorkOS database. */
   db: Db;
   /** The clock, in epoch milliseconds. Tests pin it. */
   now?: () => number;
+  /** Where each change's history goes; the one set at startup when left out. */
+  recordChange?: WorkClaimRecorder;
 }
 
 /** Claims, checks and releases work for one agent's chats. */
 export class WorkClaimService {
   private readonly db: Db;
   private readonly now: () => number;
+  private readonly recordChange: () => WorkClaimRecorder | null;
 
   /**
    * Build the service over the database.
    *
-   * @param deps - The database and, in tests, a clock.
+   * @param deps - The database and, in tests, a clock and a recorder.
    */
   constructor(deps: WorkClaimServiceDeps) {
     this.db = deps.db;
     this.now = deps.now ?? (() => Date.now());
+    const given = deps.recordChange;
+    this.recordChange = given ? () => given : workClaimRecorder;
   }
 
   /**
@@ -113,8 +137,15 @@ export class WorkClaimService {
    * @param sessionId - The chat claiming, from the verified turn.
    * @param key - A normalised key ({@link normaliseClaimKey}).
    * @param note - What the chat is doing, shown to the agent's other chats.
+   * @param by - What took it, for its history: the claim tool, by the chat itself, by default.
    */
-  claim(agentId: string, sessionId: string, key: string, note?: string): WorkClaimResult {
+  claim(
+    agentId: string,
+    sessionId: string,
+    key: string,
+    note?: string,
+    by: WorkClaimBy = { writer: 'claim-tool', chatId: sessionId }
+  ): WorkClaimResult {
     const at = new Date(this.now()).toISOString();
     let lapsed = false;
     const result = this.db.transaction((tx) => {
@@ -132,7 +163,18 @@ export class WorkClaimService {
         .onConflictDoNothing()
         .run();
       const row = this.row(tx, agentId, key)!;
-      if (inserted.changes > 0) return { ok: true as const, claim: toClaim(row), renewed: false };
+      if (inserted.changes > 0) {
+        this.note(tx, {
+          transition: 'claimed',
+          agentId,
+          sessionId,
+          key,
+          at,
+          writer: by.writer,
+          recordingChatId: by.chatId,
+        });
+        return { ok: true as const, claim: toClaim(row), renewed: false };
+      }
       if (row.sessionId !== sessionId)
         return { ok: false as const, code: 'CLAIMED' as const, holder: toClaim(row) };
       tx.update(workClaims)
@@ -163,7 +205,7 @@ export class WorkClaimService {
     for (const row of rows) {
       if (keys && !keys.includes(row.claimKey)) continue;
       if (this.isIdle(row)) {
-        if (this.lapseIfIdle(this.db, agentId, row.claimKey))
+        if (this.db.transaction((tx) => this.lapseIfIdle(tx, agentId, row.claimKey)))
           this.auditLapse(agentId, row.claimKey);
         continue;
       }
@@ -182,11 +224,24 @@ export class WorkClaimService {
   release(agentId: string, sessionId: string, key: string): WorkClaimReleaseResult {
     const row = this.row(this.db, agentId, key);
     if (!row || this.isIdle(row)) {
-      if (row && this.lapseIfIdle(this.db, agentId, key)) this.auditLapse(agentId, key);
+      if (row && this.db.transaction((tx) => this.lapseIfIdle(tx, agentId, key)))
+        this.auditLapse(agentId, key);
       return { ok: false, code: 'NOT_CLAIMED' };
     }
     if (row.sessionId !== sessionId) return { ok: false, code: 'NOT_YOURS', holder: toClaim(row) };
-    this.delete(agentId, key);
+    const at = new Date(this.now()).toISOString();
+    this.db.transaction((tx) => {
+      this.delete(tx, agentId, key);
+      this.note(tx, {
+        transition: 'released',
+        agentId,
+        sessionId,
+        key,
+        at,
+        writer: 'release-tool',
+        recordingChatId: sessionId,
+      });
+    });
     this.audit('work_claim.released', agentId, key, 'ok');
     return { ok: true };
   }
@@ -212,8 +267,20 @@ export class WorkClaimService {
    */
   releaseSession(sessionId: string, reason: string): void {
     const rows = this.db.select().from(workClaims).where(eq(workClaims.sessionId, sessionId)).all();
+    const at = new Date(this.now()).toISOString();
     for (const row of rows) {
-      this.delete(row.agentId, row.claimKey);
+      this.db.transaction((tx) => {
+        this.delete(tx, row.agentId, row.claimKey);
+        this.note(tx, {
+          transition: 'released',
+          agentId: row.agentId,
+          sessionId: row.sessionId,
+          key: row.claimKey,
+          at,
+          writer: 'session-end',
+          recordingChatId: null,
+        });
+      });
       this.audit('work_claim.released', row.agentId, row.claimKey, 'ok', reason);
     }
   }
@@ -241,17 +308,27 @@ export class WorkClaimService {
    */
   handOver(agentId: string, key: string, from: string, to: string): boolean {
     const at = new Date(this.now()).toISOString();
-    const moved = this.db
-      .update(workClaims)
-      .set({ sessionId: to, lastSeenAt: at })
-      .where(
-        and(
-          eq(workClaims.agentId, agentId),
-          eq(workClaims.claimKey, key),
-          eq(workClaims.sessionId, from)
+    const moved = this.db.transaction((tx) => {
+      const changed = tx
+        .update(workClaims)
+        .set({ sessionId: to, lastSeenAt: at })
+        .where(
+          and(
+            eq(workClaims.agentId, agentId),
+            eq(workClaims.claimKey, key),
+            eq(workClaims.sessionId, from)
+          )
         )
-      )
-      .run();
+        .run();
+      if (changed.changes > 0) {
+        // The giver's span ends and the taker's starts at one time. Both rows name the taking
+        // chat as the recording chat (the architect's rule, DOR-4972), on the giver's release too.
+        const change = { agentId, key, at, writer: 'hand-over', recordingChatId: to } as const;
+        this.note(tx, { ...change, transition: 'released', sessionId: from });
+        this.note(tx, { ...change, transition: 'claimed', sessionId: to });
+      }
+      return changed;
+    });
     if (moved.changes > 0) this.audit('work_claim.claimed', agentId, key, 'ok', 'handed over');
     return moved.changes > 0;
   }
@@ -268,23 +345,48 @@ export class WorkClaimService {
       .get();
   }
 
-  /** Delete the claim when its chat went idle. Returns whether it did; the caller audits. */
-  private lapseIfIdle(db: Pick<Db, 'select' | 'delete'>, agentId: string, key: string): boolean {
-    const row = this.row(db, agentId, key);
+  /**
+   * Delete the claim when its chat went idle, inside the caller's transaction.
+   * Its span ends when it lapsed, idle-limit after the chat was last seen, not
+   * when the sweep noticed. Returns whether it did; the caller audits.
+   */
+  private lapseIfIdle(tx: DbTransaction, agentId: string, key: string): boolean {
+    const row = this.row(tx, agentId, key);
     if (!row || !this.isIdle(row)) return false;
-    db.delete(workClaims)
-      .where(and(eq(workClaims.agentId, agentId), eq(workClaims.claimKey, key)))
-      .run();
+    this.delete(tx, agentId, key);
+    this.note(tx, {
+      transition: 'released',
+      agentId,
+      sessionId: row.sessionId,
+      key,
+      at: new Date(Date.parse(row.lastSeenAt) + CLAIM_IDLE_LIMIT_MS).toISOString(),
+      writer: 'lapse-sweep',
+      recordingChatId: null,
+    });
     return true;
+  }
+
+  /** Hand a change to the recorder in its transaction. A recorder's failure never fails the claim. */
+  private note(tx: DbTransaction, change: WorkClaimChange): void {
+    const record = this.recordChange();
+    if (!record) return;
+    try {
+      record(tx, change);
+    } catch (err) {
+      logger.warn('[work-claims] the claim history was not recorded', {
+        transition: change.transition,
+        writer: change.writer,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   private auditLapse(agentId: string, key: string): void {
     this.audit('work_claim.expired', agentId, key, 'ok', 'its chat went idle');
   }
 
-  private delete(agentId: string, key: string): void {
-    this.db
-      .delete(workClaims)
+  private delete(tx: DbTransaction, agentId: string, key: string): void {
+    tx.delete(workClaims)
       .where(and(eq(workClaims.agentId, agentId), eq(workClaims.claimKey, key)))
       .run();
   }

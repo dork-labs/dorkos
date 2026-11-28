@@ -95,7 +95,10 @@ export async function claimForStart(input: ClaimForStartInput): Promise<ClaimFor
   if (!raw || !input.agentId || !claims) return null;
   const key = normaliseClaimKey(raw);
   if (!key) return null;
-  const result = claims.claim(input.agentId, input.sessionId, key);
+  const result = claims.claim(input.agentId, input.sessionId, key, undefined, {
+    writer: 'session-start',
+    chatId: input.callerSessionId,
+  });
   if (result.ok || input.args.startAnyway) return null;
   const holder = result.holder.sessionId;
   // The calling chat holds it itself: naming it hands the job on to the new lane, and a

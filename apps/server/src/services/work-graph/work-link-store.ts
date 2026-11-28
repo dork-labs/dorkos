@@ -32,11 +32,14 @@ import {
   inArray,
   WORK_LINK_RELATIONS,
   WORK_LINK_SOURCE_MAX_LENGTH,
+  WORK_LINK_SPAN_RELATIONS,
   workLinks,
   type Db,
+  type DbTransaction,
   type SQL,
   type WorkLinkRelation,
   type WorkLinkRow,
+  type WorkLinkSpanRelation,
 } from '@dorkos/db';
 import { isDorkId } from '@dorkos/shared/dork-ref';
 import type { EntityKind, EntityRef } from '@dorkos/shared/entity-ref';
@@ -44,7 +47,31 @@ import { monotonicFactory } from 'ulidx';
 import type { TurnMarks } from '../core/turn-power/turn-marks.js';
 import { decodeWorkLinkRef, encodeWorkLinkRef } from './work-link-ref.js';
 
-export { WORK_LINK_RELATIONS, type WorkLinkRelation } from '@dorkos/db';
+export {
+  WORK_LINK_RELATIONS,
+  WORK_LINK_SPAN_RELATIONS,
+  type WorkLinkRelation,
+  type WorkLinkSpanRelation,
+} from '@dorkos/db';
+
+/**
+ * What may write a `claims` or `released` row (DOR-4972), a closed list: the
+ * claim tool, `session_start`'s claim for the chat it starts, the release
+ * tool, the lapse sweep that ends a claim whose chat went idle, a hand-over
+ * from one chat to another, and the session-end cleanup of a chat that never
+ * started. The span query maps it to how a span ended.
+ */
+export const CLAIM_LINK_SOURCES = [
+  'claim-tool',
+  'session-start',
+  'release-tool',
+  'lapse-sweep',
+  'hand-over',
+  'session-end',
+] as const;
+
+/** One of {@link CLAIM_LINK_SOURCES}. */
+export type ClaimLinkSource = (typeof CLAIM_LINK_SOURCES)[number];
 
 /** How many `rekeyed_from` steps {@link WorkLinkStore.resolveRekey} follows at most. */
 export const REKEY_MAX_DEPTH = 32;
@@ -62,7 +89,8 @@ const SOURCE_PATTERN = new RegExp(`^[a-z][a-z0-9-]{0,${WORK_LINK_SOURCE_MAX_LENG
  * worktree, and works on a ticket, a pull request or a branch (DOR-5264, as
  * the table's own doc reads them). A chat produces a to-do (DOR-5266; a
  * promise is a to-do); a room entry joins `produced` when its write site lands.
- * The rest are left open until their write sites land.
+ * A chat claims and releases a ticket or a pull request (DOR-4972). The rest
+ * are left open until their write sites land.
  */
 const RELATION_KINDS: Partial<
   Record<WorkLinkRelation, { from: readonly EntityKind[]; to: readonly EntityKind[] }>
@@ -73,7 +101,20 @@ const RELATION_KINDS: Partial<
   started: { from: ['chat'], to: ['chat'] },
   produced: { from: ['chat'], to: ['todo'] },
   rekeyed_from: { from: ['chat'], to: ['chat'] },
+  claims: { from: ['chat'], to: ['ticket', 'pr'] },
+  released: { from: ['chat'], to: ['ticket', 'pr'] },
 };
+
+/** Whether a relation records a span of time, unique by its time as well. */
+export function isSpanRelation(relation: WorkLinkRelation): relation is WorkLinkSpanRelation {
+  return (WORK_LINK_SPAN_RELATIONS as readonly string[]).includes(relation);
+}
+
+/** Whether a time is written the one way this store writes times: ISO 8601 in UTC, to the millisecond. */
+function isStoredTime(value: string): boolean {
+  const ms = Date.parse(value);
+  return !Number.isNaN(ms) && new Date(ms).toISOString() === value;
+}
 
 /** One edge to record. */
 export interface WorkLinkInput {
@@ -89,6 +130,12 @@ export interface WorkLinkInput {
   recordingChatId?: string | null;
   /** The marks of the turn that recorded it, read live when it is written. */
   turnMarks?: TurnMarks | null;
+  /**
+   * When the transition happened (ISO 8601), for a span relation only, where
+   * it is required: the claim's own time from the lock, never the time the
+   * edge is written. A repeat of one transition then lands nothing.
+   */
+  recordedAt?: string;
 }
 
 /** One recorded edge. */
@@ -120,6 +167,7 @@ export type WorkLinkRefusal =
   | 'self-link'
   | 'bad-source'
   | 'bad-recording-chat'
+  | 'bad-time'
   | 'already-rekeyed';
 
 /** What {@link WorkLinkStore.record} came to. */
@@ -203,11 +251,18 @@ export class WorkLinkStore {
    * edge out of an old id that already has one, to a different new id, is
    * refused as `already-rekeyed`: the first re-key is the true one.
    *
+   * A span relation (`claims`, `released`) takes its time from the caller and
+   * a source from {@link CLAIM_LINK_SOURCES}; its exact repeat is the same
+   * relation and ends at the same time.
+   *
    * @param input - The edge.
+   * @param tx - The caller's transaction, when the edge must land with its
+   *   act (a claim's edge lands with the lock change).
    * @returns The stored edge, or why it was refused. Throws only when the
    *   database itself fails.
    */
-  record(input: WorkLinkInput): WorkLinkRecordResult {
+  record(input: WorkLinkInput, tx?: DbTransaction): WorkLinkRecordResult {
+    const db = tx ?? this.db;
     const fromRef = encodeWorkLinkRef(input.from);
     if (fromRef === null) return { ok: false, reason: 'bad-from' };
     const toRef = encodeWorkLinkRef(input.to);
@@ -218,6 +273,14 @@ export class WorkLinkStore {
       return { ok: false, reason: 'bad-kinds' };
     if (fromRef === toRef) return { ok: false, reason: 'self-link' };
     if (!SOURCE_PATTERN.test(input.source)) return { ok: false, reason: 'bad-source' };
+    const span = isSpanRelation(input.relation);
+    if (span && !(CLAIM_LINK_SOURCES as readonly string[]).includes(input.source))
+      return { ok: false, reason: 'bad-source' };
+    if (
+      span ? !input.recordedAt || !isStoredTime(input.recordedAt) : input.recordedAt !== undefined
+    )
+      return { ok: false, reason: 'bad-time' };
+    const recordedAt = input.recordedAt ?? new Date(this.now()).toISOString();
     const recordingChatId = input.recordingChatId ?? null;
     if (recordingChatId !== null && !isDorkId(recordingChatId))
       return { ok: false, reason: 'bad-recording-chat' };
@@ -226,31 +289,33 @@ export class WorkLinkStore {
       if (first !== undefined && first !== fromRef) return { ok: false, reason: 'already-rekeyed' };
     }
 
-    const inserted = this.db
+    const inserted = db
       .insert(workLinks)
       .values({
         id: this.newId(this.now()),
         fromRef,
         toRef,
         relation: input.relation,
-        recordedAt: new Date(this.now()).toISOString(),
+        recordedAt,
         recordingChatId,
         source: input.source,
         turnMarks: input.turnMarks ? JSON.stringify(input.turnMarks) : null,
       })
-      .onConflictDoNothing({ target: [workLinks.fromRef, workLinks.relation, workLinks.toRef] })
+      // Either partial unique index (`work_links_edge_unique`, `work_links_span_unique`).
+      .onConflictDoNothing()
       .returning()
       .all();
     const row =
       inserted[0] ??
-      this.db
+      db
         .select()
         .from(workLinks)
         .where(
           and(
             eq(workLinks.fromRef, fromRef),
             eq(workLinks.relation, input.relation),
-            eq(workLinks.toRef, toRef)
+            eq(workLinks.toRef, toRef),
+            ...(span ? [eq(workLinks.recordedAt, recordedAt)] : [])
           )
         )
         .get();

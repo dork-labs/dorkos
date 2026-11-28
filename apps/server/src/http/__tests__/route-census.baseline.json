@@ -395,6 +395,7 @@
     "GET /api/todos/:id",
     "GET /api/tunnel/status",
     "GET /api/uploads/:filename",
+    "GET /api/work-items/chats",
     "GET /api/workbench/serve/:token",
     "GET /api/workbench/serve/:token/:splat{.+}",
     "GET /api/workspaces",
