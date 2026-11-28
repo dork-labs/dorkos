@@ -290,7 +290,7 @@ export function personGitEmail(authorId: string): string {
  */
 export function gitEnv(ceilingDir: string, cwd: string): NodeJS.ProcessEnv {
   // git needs PATH and HOME; the redirecting vars are removed below.
-  const env: NodeJS.ProcessEnv = childEnvironment('git');
+  const env: NodeJS.ProcessEnv = childEnvironment('git-local');
   for (const name of REDIRECTING_GIT_VARS) delete env[name];
   return {
     ...env,

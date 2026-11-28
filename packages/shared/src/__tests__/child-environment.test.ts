@@ -47,7 +47,7 @@ const DORKOS_NAMES = [
 ];
 
 describe('childEnvironment', () => {
-  it.each(['project-work', 'git', 'browser'] as const)(
+  it.each(['project-work', 'git-local', 'browser'] as const)(
     '%s keeps the person’s environment and drops every name DorkOS owns',
     (kind) => {
       const env = childEnvironment(kind, { parent: REAL, platform: 'darwin' });
@@ -61,6 +61,14 @@ describe('childEnvironment', () => {
       });
     }
   );
+
+  it('git-fetch keeps only the real GITHUB_TOKEN of DorkOS’s names; git-local drops it', () => {
+    const fetch = childEnvironment('git-fetch', { parent: REAL });
+    expect(fetch.GITHUB_TOKEN).toBe(REAL.GITHUB_TOKEN);
+    for (const name of DORKOS_NAMES.filter((name) => name !== 'GITHUB_TOKEN'))
+      expect(fetch, name).not.toHaveProperty(name);
+    expect(childEnvironment('git-local', { parent: REAL })).not.toHaveProperty('GITHUB_TOKEN');
+  });
 
   it('drops DorkOS’s names whatever their case on Windows', () => {
     const env = childEnvironment('project-work', {
@@ -98,6 +106,10 @@ describe('childEnvironment', () => {
       HOME: REAL.HOME,
       LANG: REAL.LANG,
     });
+  });
+
+  it('fails closed on a kind it does not know', () => {
+    expect(() => childEnvironment('git' as never, { parent: REAL })).toThrow(/Unknown/);
   });
 
   it('self-restart gets the real environment whole, as a copy', () => {

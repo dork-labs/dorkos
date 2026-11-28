@@ -264,7 +264,7 @@ export function resolveGitAuth(): string | undefined {
     const token = execSync('gh auth token', {
       encoding: 'utf-8',
       timeout: 5000,
-      env: childEnvironment('git'),
+      env: childEnvironment('git-fetch'),
     }).trim();
     return token || undefined;
   } catch {

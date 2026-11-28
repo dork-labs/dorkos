@@ -915,7 +915,7 @@ if (shouldOpenBrowser && process.stdin.isTTY) {
 }
 
 // Non-blocking update check (fire-and-forget)
-checkForUpdate(__CLI_VERSION__)
+checkForUpdate(__CLI_VERSION__, projectSettings)
   .then((latestVersion) => {
     if (latestVersion) {
       const msg = `Update available: ${__CLI_VERSION__} → ${latestVersion}`;

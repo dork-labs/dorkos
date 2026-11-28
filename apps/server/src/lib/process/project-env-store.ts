@@ -3,12 +3,24 @@
  * memory. Never in `process.env`, behind no route and no tool, never logged.
  * Empty when DorkOS was not started by the CLI (the desktop app, `pnpm dev`).
  *
+ * Read when first asked after the CLI left it, not at load: the CLI imports
+ * server modules (its config store) before it reads the project `.env`, and
+ * in a single module graph this module loads then.
+ *
  * @module lib/process/project-env-store
  */
-import { takeProjectSettings, type ProjectSettingName } from '@dorkos/shared/project-environment';
+import {
+  readProjectSettings,
+  type ProjectHandoff,
+  type ProjectSettingName,
+} from '@dorkos/shared/project-environment';
 
-/** Taken once, when this module first loads. */
-const settings = takeProjectSettings();
+let taken: ProjectHandoff | undefined;
+
+function handoff(): ProjectHandoff | undefined {
+  taken ??= readProjectSettings();
+  return taken;
+}
 
 /**
  * One allowed setting from the project `.env`, for the server's own reading.
@@ -17,5 +29,14 @@ const settings = takeProjectSettings();
  * @returns The value, or `undefined` when the file did not set it.
  */
 export function projectSetting(name: ProjectSettingName): string | undefined {
-  return settings[name];
+  return handoff()?.settings[name];
+}
+
+/**
+ * Whether the project `.env` named `BETTER_AUTH_SECRET` while the real
+ * environment did not, so sessions were signed with the file's value before
+ * this release. Read by the one-time rotation (`services/core/auth/secret.ts`).
+ */
+export function authSecretCameFromProjectFile(): boolean {
+  return handoff()?.authSecretFromFile ?? false;
 }

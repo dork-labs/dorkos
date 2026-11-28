@@ -143,7 +143,7 @@ function readGitVersion(): string {
     encoding: 'utf-8',
     stdio: 'pipe',
     timeout: 10_000,
-    env: childEnvironment('git'),
+    env: childEnvironment('git-local'),
   });
 }
 

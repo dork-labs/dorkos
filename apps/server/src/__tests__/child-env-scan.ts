@@ -30,10 +30,22 @@ const CHILD_PROCESS_STARTS = new Set([
   'fork',
 ]);
 
+/** A start whose environment is not helper-built. */
+export interface UnlistedStart {
+  /** Its line, for messages. */
+  readonly line: number;
+  /**
+   * What the census matches a row against: the callee and the `env:` it
+   * passes (`spawn env: options.env`), `(none)` when it passes none, or the
+   * start's name and what it was passed into when it escapes as a value.
+   */
+  readonly site: string;
+}
+
 /** What the scanner found in one file. */
 export interface FileScan {
-  /** Starts whose environment is not helper-built, as `line: text`. */
-  readonly unlisted: readonly string[];
+  /** Starts whose environment is not helper-built. */
+  readonly unlisted: readonly UnlistedStart[];
   /** Starts whose environment is helper-built. */
   readonly helperBuilt: number;
   /** `env:` properties that read `process.env`, as `line: text`. */
@@ -123,7 +135,11 @@ export function scanChildStarts(
   collectAliases(file);
 
   const helperCall = new RegExp(`\\b(${helpers.join('|')})\\(`);
-  const unlisted: string[] = [];
+  const unlisted: UnlistedStart[] = [];
+  const flat = (node: ts.Node): string =>
+    withoutComments(node.getText(file)).replace(/\s+/g, ' ').trim();
+  const lineOf = (node: ts.Node): number =>
+    file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1;
   const processEnvLeaks: string[] = [];
   let helperBuilt = 0;
   const where = (node: ts.Node): string => {
@@ -182,13 +198,21 @@ export function scanChildStarts(
     if (start) {
       const args = (node as ts.CallExpression | ts.NewExpression).arguments ?? [];
       const env = envOf(args);
+      const callee = (node as ts.CallExpression | ts.NewExpression).expression;
       if (env && helperCall.test(env.getText(file))) helperBuilt += 1;
-      else unlisted.push(where(node));
+      else
+        unlisted.push({
+          line: lineOf(node),
+          site: `${flat(callee)} env: ${env ? flat(env) : '(none)'}`,
+        });
     }
     // A start passed on as a value (a default spawner, a cast) starts children
     // the scanner can't follow: it counts as a site to name.
     if (ts.isIdentifier(node) && direct.has(node.text) && escapes(node))
-      unlisted.push(where(node.parent));
+      unlisted.push({
+        line: lineOf(node),
+        site: `${node.text} as a value: ${flat(node.parent).slice(0, 80)}`,
+      });
     ts.forEachChild(node, visit);
   };
   visit(file);

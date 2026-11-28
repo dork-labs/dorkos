@@ -11,7 +11,8 @@
  * | kind | env | used by |
  * | --- | --- | --- |
  * | `project-work` | real env minus every name DorkOS owns | the person's terminal, workspace hooks, the CLI's editor |
- * | `git` | real env minus every name DorkOS owns | git and gh: they need the person's ssh agent, credential helper and proxy |
+ * | `git-fetch` | real env minus DorkOS's names, keeping the real `GITHUB_TOKEN` | git or gh on a repository DorkOS just made in a new folder: a clone, a download |
+ * | `git-local` | real env minus every name DorkOS owns | git or gh in an existing working tree an agent can write, whose settings may name a program |
  * | `browser` | real env minus every name DorkOS owns | Chrome and Playwright: a desktop browser needs the display and locale |
  * | `npm-install` | home, path, npm's cache and config, proxy and CA names | the marketplace's `npm install --ignore-scripts` |
  * | `os-helper` | home, path, locale, temp, and the desktop session | `open`, `xdg-open`, `ps`, `security`, `taskkill`, `ip` |
@@ -23,7 +24,13 @@ import { isDorkosOwnedEnvName } from './project-environment.js';
 
 /** A child kind this module builds. */
 export type ProcessChildKind =
-  'project-work' | 'git' | 'browser' | 'npm-install' | 'os-helper' | 'self-restart';
+  | 'project-work'
+  | 'git-fetch'
+  | 'git-local'
+  | 'browser'
+  | 'npm-install'
+  | 'os-helper'
+  | 'self-restart';
 
 /** An environment-like record. */
 export type EnvRecord = Readonly<Record<string, string | undefined>>;
@@ -103,12 +110,23 @@ const OS_HELPER_NAMES = [
 /** Every kind's names, for the allow-list kinds; `null` means "the real env minus DorkOS's own". */
 const ALLOW_LISTS: Readonly<Record<ProcessChildKind, readonly string[] | null | 'whole'>> = {
   'project-work': null,
-  git: null,
+  'git-fetch': null,
+  'git-local': null,
   browser: null,
   'npm-install': NPM_INSTALL_NAMES,
   'os-helper': OS_HELPER_NAMES,
   'self-restart': 'whole',
 };
+
+/**
+ * Whether a kind keeps one of DorkOS's own names: only `git-fetch` keeps the
+ * real `GITHUB_TOKEN`, for a repository DorkOS itself just made, whose settings
+ * no agent has written. A tree an agent can write may name a program (a
+ * filter, a credential helper, `core.sshCommand`) that would read it.
+ */
+function keepsOwn(kind: ProcessChildKind, name: string): boolean {
+  return kind === 'git-fetch' && name.toUpperCase() === 'GITHUB_TOKEN';
+}
 
 /**
  * The names an allow-list kind passes, for tests and the census.
@@ -135,11 +153,13 @@ export function childEnvironment(
   const parent = options.parent ?? process.env;
   const windows = (options.platform ?? process.platform) === 'win32';
   const list = ALLOW_LISTS[kind];
+  // Fail closed: a kind this build does not know passes nothing.
+  if (list === undefined) throw new Error(`Unknown child environment kind: ${String(kind)}`);
   const allowed = Array.isArray(list) ? new Set(list) : null;
   const result: Record<string, string> = {};
   for (const [name, value] of Object.entries(parent)) {
     if (value === undefined) continue;
-    if (list === null && isDorkosOwnedEnvName(name)) continue;
+    if (list === null && isDorkosOwnedEnvName(name) && !keepsOwn(kind, name)) continue;
     // Compared upper-case: npm's lower-case spellings (`npm_config_cache`, `https_proxy`) count too.
     if (allowed && !allowed.has(name.toUpperCase())) continue;
     result[name] = value;

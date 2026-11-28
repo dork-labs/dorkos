@@ -41,11 +41,17 @@ export function loadProjectEnv(
   const envPath = path.join(dir, '.env');
   const settings: Partial<Record<ProjectSettingName, string>> = {};
   const ignored: string[] = [];
+  let authSecretFromFile = false;
   if (fs.existsSync(envPath)) {
     for (const [key, value] of Object.entries(parse(fs.readFileSync(envPath)))) {
       if (isProjectSettingName(key)) {
         if (realEnv[key] === undefined) settings[key] = value;
-      } else if (isDorkosOwnedEnvName(key) || SYSTEM_NAMES_DORKOS_READS.has(key)) ignored.push(key);
+      } else if (isDorkosOwnedEnvName(key) || SYSTEM_NAMES_DORKOS_READS.has(key)) {
+        ignored.push(key);
+        // Before this release a session secret here signed sign-ins; the server rotates it once.
+        if (key === 'BETTER_AUTH_SECRET' && value.trim() && !realEnv[key]?.trim())
+          authSecretFromFile = true;
+      }
     }
   }
   if (ignored.length > 0) {
@@ -56,6 +62,6 @@ export function loadProjectEnv(
     );
   }
   const frozen = Object.freeze(settings);
-  handProjectSettings(frozen);
+  handProjectSettings({ settings: frozen, authSecretFromFile });
   return frozen;
 }

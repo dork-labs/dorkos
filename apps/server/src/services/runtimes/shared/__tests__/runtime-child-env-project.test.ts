@@ -96,4 +96,24 @@ describe('a project .env and the runtimes', () => {
     expect(env.DO_NOT_TRACK).toBe('1');
     expect(process.env.DO_NOT_TRACK).toBeUndefined();
   });
+
+  it('reaches no agent shell: OpenCode’s tools inherit the sidecar’s env', async () => {
+    await loadThenImport();
+    const { buildSidecarSpawnEnv } = await import('../../opencode/server-manager.js');
+    const { OPENCODE_OWN_PLAN } = await import('../../opencode/credits-sidecar.js');
+    const sidecar = buildSidecarSpawnEnv(OPENCODE_OWN_PLAN, 'fixture-password', {});
+    expect(JSON.stringify(sidecar)).not.toContain(SENTINEL);
+    for (const name of PROJECT_NAMES) expect(sidecar, name).not.toHaveProperty(name);
+  });
+
+  it('reaches no agent shell: Doe’s builder shell runs with the Doe turn projection', async () => {
+    const { childEnvironment } = await loadThenImport();
+    // The builder shell spawns with exactly the policy env this call builds.
+    const source = fs.readFileSync(new URL('../../doe/execute-turn.ts', import.meta.url), 'utf8');
+    expect(source).toMatch(
+      /builderExecutionPolicy: \{[\s\S]*?environment: childEnvironment\('doe', 'turn',/
+    );
+    const builder = childEnvironment('doe', 'turn', { DORKOS_SESSION_ID: 'fixture-session' });
+    expect(JSON.stringify(builder)).not.toContain(SENTINEL);
+  });
 });

@@ -548,13 +548,7 @@ const result = serverEnvSchema
       ? { ...parsed, DORKOS_HOST: AGENT_COMPUTER_HOST }
       : parsed
   )
-  .safeParse({
-    ...process.env,
-    DORKOS_HUB_INSTANCE_KEY: keptKeys[HUB_KEY_SLOT],
-    // The project .env may turn telemetry off. It arrives in memory, never
-    // through process.env, so no child process inherits it.
-    DO_NOT_TRACK: process.env.DO_NOT_TRACK ?? projectSetting('DO_NOT_TRACK'),
-  });
+  .safeParse({ ...process.env, DORKOS_HUB_INSTANCE_KEY: keptKeys[HUB_KEY_SLOT] });
 
 if (!result.success) {
   console.error('\n  Missing or invalid environment variables:\n');
@@ -564,6 +558,18 @@ if (!result.success) {
 }
 
 export const env = result.data;
+
+// The project .env may turn telemetry off. Its value arrives in memory, never
+// through process.env (so no child inherits it), and possibly after this
+// module loads: read it when asked.
+// (A refused parse has no env: the process is already exiting.)
+if (result.success) {
+  const realDoNotTrack = env.DO_NOT_TRACK;
+  Object.defineProperty(env, 'DO_NOT_TRACK', {
+    enumerable: true,
+    get: () => realDoNotTrack ?? projectSetting('DO_NOT_TRACK'),
+  });
+}
 
 // Read once, above; nothing a child process inherits may carry it.
 delete process.env.DORKOS_HUB_INSTANCE_KEY;

@@ -152,8 +152,9 @@ export async function runGit(
           ...minimalGitEnv(),
           ...(unsafe.length > 0 ? { GIT_ATTR_SOURCE: EMPTY_TREE } : {}),
         }
-      : // A clone from an address needs PATH, HOME and the credential helper.
-        childEnvironment('git', {
+      : // Only the clone into a new folder runs unaudited; it needs PATH, HOME
+        // and the credential helper.
+        childEnvironment('git-fetch', {
           set: {
             ...env,
             GIT_ALLOW_PROTOCOL: WORKSPACE_GIT_PROTOCOLS,

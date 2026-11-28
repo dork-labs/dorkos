@@ -52,8 +52,10 @@ const ALLOWED_GIT_PROTOCOLS = 'https:ssh:git';
 export function hardenedGitEnv(): NodeJS.ProcessEnv {
   return withGitConfigEnv(
     {
-      // git needs PATH, HOME, proxy and credential vars, never DorkOS's own names.
-      ...childEnvironment('git'),
+      // git needs PATH, HOME, proxy and credential vars. Every caller fetches into a
+      // folder DorkOS just made (a template, a marketplace package), so the real
+      // GITHUB_TOKEN stays; no other DorkOS name does.
+      ...childEnvironment('git-fetch'),
       GIT_ALLOW_PROTOCOL: ALLOWED_GIT_PROTOCOLS,
       GIT_TERMINAL_PROMPT: '0',
       // No lazy fetch either (DOR-3667): a fresh clone is ours, but a read of a

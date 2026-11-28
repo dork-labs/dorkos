@@ -47,7 +47,7 @@ export const runCommand: RunCommand = async (command, args, { cwd, signal }) => 
     execFile(
       command,
       args,
-      { cwd, signal, timeout: 2000, maxBuffer: 256 * 1024, env: childEnvironment('git') },
+      { cwd, signal, timeout: 2000, maxBuffer: 256 * 1024, env: childEnvironment('git-local') },
       (err, stdout) => (err ? reject(err) : resolve(stdout))
     );
   });

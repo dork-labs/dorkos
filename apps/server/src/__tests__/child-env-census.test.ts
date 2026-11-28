@@ -17,7 +17,7 @@ const census = JSON.parse(
   readFileSync(new URL('./child-env-census.json', import.meta.url), 'utf8')
 ) as {
   wrappers: Record<string, string>;
-  sites: Record<string, { calls: number; kind: string; reason: string }>;
+  sites: Record<string, { kind: string; reason: string; starts: string[] }>;
 };
 
 /** Where DorkOS's running code lives: the server, the CLI, and the packages they start children from. */
@@ -33,7 +33,11 @@ const ROOTS = [
 const HELPERS = ['childEnvironment', ...Object.keys(census.wrappers)];
 
 function sourceFiles(): string[] {
-  return execFileSync('git', ['ls-files', ...ROOTS], { cwd: repoRoot, encoding: 'utf8' })
+  // Untracked files count too: a new file is a new start before it is committed.
+  return execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', ...ROOTS], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  })
     .split('\n')
     .filter(
       (file) =>
@@ -48,27 +52,43 @@ function read(file: string): string {
 describe('the child environment census', () => {
   const sites = census.sites;
 
-  it('finds every start that skips the helper, and nothing it lists is stale', () => {
-    const found: Record<string, number> = {};
-    const unlisted: string[] = [];
+  it('finds every start that skips the helper, each exactly as its row names it', () => {
+    const found: Record<string, string[]> = {};
     let helperBuilt = 0;
     for (const file of sourceFiles()) {
       const text = read(file);
       if (!/child_process|node-pty|StdioClientTransport/.test(text)) continue;
       const scan = scanChildStarts(file, text, HELPERS);
       helperBuilt += scan.helperBuilt;
-      if (scan.unlisted.length === 0) continue;
-      found[file] = scan.unlisted.length;
-      if (sites[file]?.calls !== scan.unlisted.length)
-        unlisted.push(...scan.unlisted.map((site) => `${file}:${site}`));
+      if (scan.unlisted.length > 0) found[file] = scan.unlisted.map((start) => start.site).sort();
     }
-    expect(unlisted).toEqual([]);
+    // A start swapped to another env (process.env included) no longer matches its row.
     expect(found).toEqual(
-      Object.fromEntries(Object.entries(sites).map(([f, row]) => [f, row.calls]))
+      Object.fromEntries(Object.entries(sites).map(([file, row]) => [file, [...row.starts].sort()]))
     );
     // Starts that build their env at the call. A drop means one moved off the
     // helper; a rise is a new helper-built start: update the count.
-    expect(helperBuilt).toBe(49);
+    expect(helperBuilt).toBe(50);
+  });
+
+  it('lists no start that inherits the whole process.env', () => {
+    for (const [file, row] of Object.entries(sites))
+      for (const start of row.starts)
+        expect(start, file).not.toMatch(/env: \(none\)$|process\.env/);
+  });
+
+  it('keeps GITHUB_TOKEN only for git on a repository DorkOS just made', () => {
+    const fetchers = sourceFiles().filter((file) =>
+      /childEnvironment\('git-fetch'/.test(read(file))
+    );
+    expect(fetchers.sort()).toEqual([
+      // hardenedGitEnv: template clones and marketplace fetches into new folders.
+      'apps/server/src/lib/git-safety.ts',
+      // `gh auth token`, before a template download.
+      'apps/server/src/services/core/agent-templates/template-downloader.ts',
+      // The workspace clone into a new folder, its one unaudited git call.
+      'apps/server/src/services/workspace/providers/git.ts',
+    ]);
   });
 
   it('lets no env spread process.env, and no runtime pass it whole', () => {
@@ -108,12 +128,15 @@ describe('the child environment census', () => {
     for (const [file, row] of Object.entries(sites)) {
       expect(['owned', 'forwarded'], file).toContain(row.kind);
       expect(row.reason.length, file).toBeGreaterThan(20);
+      expect(row.starts.length, file).toBeGreaterThan(0);
     }
   });
 
   it('fails a start added without the helper', () => {
     const bare = "import { spawn } from 'node:child_process';\nspawn('x', []);\n";
-    expect(scanChildStarts('fixture.ts', bare, HELPERS).unlisted).toEqual(["2: spawn('x', [])"]);
+    expect(scanChildStarts('fixture.ts', bare, HELPERS).unlisted).toEqual([
+      { line: 2, site: 'spawn env: (none)' },
+    ]);
     for (const source of [
       "import { execFile as run } from 'node:child_process';\nrun('x', [], { cwd: '/' });",
       "import * as cp from 'child_process';\ncp.execSync('x', { env: process.env });",
@@ -132,5 +155,19 @@ describe('the child environment census', () => {
     const spread =
       "import { spawn } from 'node:child_process';\nspawn('x', [], { env: { ...process.env } });";
     expect(scanChildStarts('fixture.ts', spread, HELPERS).processEnvLeaks).toHaveLength(1);
+  });
+
+  it('fails a listed start swapped to process.env', () => {
+    const file = 'apps/server/src/services/runtimes/codex/app-server/protocol/snapshot.ts';
+    const source = read(file);
+    const listed = "{ encoding: 'utf8', env }";
+    expect(source).toContain(listed);
+    const swapped = scanChildStarts(
+      file,
+      source.replace(listed, "{ encoding: 'utf8', env: process.env }"),
+      HELPERS
+    ).unlisted.map((start) => start.site);
+    expect(swapped.sort()).not.toEqual([...sites[file]!.starts].sort());
+    expect(swapped).toContain('execFileSync env: process.env');
   });
 });

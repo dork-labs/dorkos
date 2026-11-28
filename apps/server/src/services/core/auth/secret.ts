@@ -31,7 +31,12 @@
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { claimSecretText } from '../../../lib/secret-store/secret-file.js';
+import {
+  claimSecretText,
+  publishSecretFile,
+  quarantineSecretFile,
+} from '../../../lib/secret-store/secret-file.js';
+import { authSecretCameFromProjectFile } from '../../../lib/process/project-env-store.js';
 import { logger } from '../../../lib/logger.js';
 
 /**
@@ -42,6 +47,12 @@ import { logger } from '../../../lib/logger.js';
  * from it. A dedicated `0600` file keeps the secret off that surface.
  */
 export const SECRET_FILE_NAME = 'better-auth-secret';
+
+/**
+ * Marks that the one-time rotation for a session secret that came from the
+ * project `.env` file has been done (DOR-5481). Its presence is the record.
+ */
+export const PROJECT_FILE_ROTATION_MARK = 'better-auth-secret.project-env-rotated';
 
 /** Owner-only file mode for the persisted secret (`rw-------`). */
 const SECRET_FILE_MODE = 0o600;
@@ -87,6 +98,7 @@ export function resolveBetterAuthSecret(dorkHome: string): string {
   if (fromEnv) return fromEnv;
 
   const secretPath = path.join(dorkHome, SECRET_FILE_NAME);
+  rotateProjectFileSecretOnce(dorkHome, secretPath);
 
   try {
     const persisted = fs.readFileSync(secretPath, 'utf8').trim();
@@ -120,6 +132,29 @@ export function resolveBetterAuthSecret(dorkHome: string): string {
     logger.info('[Auth] Generated a persistent session-signing secret', { path: secretPath });
   }
   return claimed.value;
+}
+
+/**
+ * Before this release a `BETTER_AUTH_SECRET` in the project `.env` file signed
+ * sign-ins. That file can't change how DorkOS signs you in any more, and its
+ * value may have been shared with the project, so the first boot that finds
+ * it there (and not in the real environment) sets the stored secret aside and
+ * lets a fresh one be made. Once only: the mark file records it, and claiming
+ * the mark is atomic, so two boots at once rotate once. Never logs the value.
+ *
+ * @param dorkHome - The DorkOS data directory.
+ * @param secretPath - The persisted secret's path.
+ */
+function rotateProjectFileSecretOnce(dorkHome: string, secretPath: string): void {
+  if (!authSecretCameFromProjectFile()) return;
+  const mark = path.join(dorkHome, PROJECT_FILE_ROTATION_MARK);
+  if (fs.existsSync(mark)) return;
+  if (!publishSecretFile(mark, `${new Date().toISOString()}\n`, SECRET_FILE_MODE)) return;
+  quarantineSecretFile(secretPath);
+  logger.warn(
+    '[Auth] Everyone was signed out once: the project .env file can no longer change how ' +
+      'DorkOS signs you in, so DorkOS made a new sign-in key. Sign in again.'
+  );
 }
 
 /**

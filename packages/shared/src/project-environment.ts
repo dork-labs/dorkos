@@ -104,31 +104,44 @@ export function isProjectSettingName(name: string): name is ProjectSettingName {
 /** The settings the project `.env` gave, frozen. */
 export type ProjectSettings = Readonly<Partial<Record<ProjectSettingName, string>>>;
 
-/** Where the CLI leaves the settings for the server it imports into the same process. */
+/** What the CLI hands the server about the project `.env`. Values only for the allowed settings. */
+export interface ProjectHandoff {
+  /** The allowed settings the file gave, frozen. */
+  readonly settings: ProjectSettings;
+  /**
+   * Whether the file named `BETTER_AUTH_SECRET` while the real environment did
+   * not: before this release DorkOS signed sessions with that value. Name only.
+   */
+  readonly authSecretFromFile: boolean;
+}
+
+/** Where the CLI leaves the hand-off for the server it imports into the same process. */
 const HANDOFF = Symbol.for('dorkos.project-settings');
 
-type HandoffHolder = { [HANDOFF]?: ProjectSettings };
+type HandoffHolder = { [HANDOFF]?: ProjectHandoff };
 
 /**
- * Leave the project `.env` settings for the server, in memory, before the CLI
- * imports it. Never through `process.env`.
+ * Leave the project `.env` hand-off for the server, in memory. Never through
+ * `process.env`.
  *
- * @param settings - The allowed settings the file gave.
+ * @param handoff - The allowed settings, and whether the file named the session secret.
  */
-export function handProjectSettings(settings: ProjectSettings): void {
-  (globalThis as HandoffHolder)[HANDOFF] = Object.freeze({ ...settings });
+export function handProjectSettings(handoff: ProjectHandoff): void {
+  (globalThis as HandoffHolder)[HANDOFF] = Object.freeze({
+    settings: Object.freeze({ ...handoff.settings }),
+    authSecretFromFile: handoff.authSecretFromFile,
+  });
 }
 
 /**
- * Take the settings {@link handProjectSettings} left, once: the hand-off is
- * cleared, so nothing else in the process can read it later. Empty when the
- * server was not started by the CLI (the desktop app, `pnpm dev`).
+ * Read the hand-off {@link handProjectSettings} left. It holds no secret (two
+ * settings and a yes or no), so it stays put: the CLI's bundle and the
+ * server's may each carry a copy of this module, and one reading it must not
+ * hide it from the other. `undefined` while none has been left (yet), and
+ * always when the CLI did not start the server (the desktop app, `pnpm dev`).
  *
- * @returns The frozen settings.
+ * @returns The frozen hand-off, or `undefined`.
  */
-export function takeProjectSettings(): ProjectSettings {
-  const holder = globalThis as HandoffHolder;
-  const settings = holder[HANDOFF] ?? Object.freeze({});
-  delete holder[HANDOFF];
-  return settings;
+export function readProjectSettings(): ProjectHandoff | undefined {
+  return (globalThis as HandoffHolder)[HANDOFF];
 }
