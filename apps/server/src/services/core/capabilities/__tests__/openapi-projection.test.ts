@@ -10,6 +10,9 @@ import {
   type CapabilityDeps,
   type CapabilityDomain,
 } from '../index.js';
+import { composeCapabilityRegistryForDocs } from '../../self-description/dorkos-registry.js';
+import { PageQuerySchema, nextCursorOutput } from '@dorkos/shared/paging';
+import { WORK_GRAPH_READ_ROWS } from './work-graph-read-rows.js';
 
 const deps: CapabilityDeps = { logger: noopLogger };
 
@@ -317,4 +320,91 @@ describe('registerCapabilitiesInOpenApi', () => {
       registerCapabilitiesInOpenApi(composeRegistry([demoDomain], deps), doc)
     ).not.toThrow();
   });
+});
+
+describe('the work graph reads in the document (DOR-4973)', () => {
+  /** A JSON schema node, with `$ref`s into the document's components. */
+  type Node = { $ref?: string; properties?: Record<string, Node>; [key: string]: unknown };
+  type Param = { name: string; in: string; schema?: Node };
+
+  const composed = composeCapabilityRegistryForDocs();
+  const workGraphDoc = new OpenAPIRegistry();
+  registerCapabilitiesInOpenApi(composed, workGraphDoc);
+  const spec = generate(workGraphDoc);
+  /** Follow a `$ref` into the components, so inline and named schemas read alike. */
+  const resolve = (node: Node | undefined): Node | undefined =>
+    node?.$ref
+      ? (spec.components?.schemas?.[node.$ref.split('/').pop()!] as Node | undefined)
+      : node;
+
+  // The shared page shape, projected from `@dorkos/shared/paging` itself.
+  const reference = defineCapability({
+    id: 'demo.page',
+    title: 'Page things',
+    description: 'A page of demo things.',
+    tier: 'observe',
+    area: null,
+    input: PageQuerySchema,
+    output: z.object({ things: z.array(z.string()), nextCursor: nextCursorOutput }),
+    surfaces: { http: { method: 'get', path: '/api/demo/page' } },
+    invoke: async () => ({ things: [], nextCursor: null }),
+  });
+  const refDoc = new OpenAPIRegistry();
+  registerCapabilitiesInOpenApi(
+    composeRegistry([{ name: 'demo', capabilities: [reference] }], deps),
+    refDoc
+  );
+  const refGet = generate(refDoc).paths?.['/api/demo/page']?.get;
+  const refParams = (refGet?.parameters ?? []) as Param[];
+  const refCursor = refParams.find((p) => p.name === 'cursor')?.schema;
+  const refLimit = refParams.find((p) => p.name === 'limit')?.schema;
+  const refNext = (
+    refGet?.responses?.['200']?.content?.['application/json']?.schema as Node | undefined
+  )?.properties?.nextCursor;
+
+  it('has a reference page shape to compare against', () => {
+    expect(refCursor).toMatchObject({ type: 'string' });
+    expect(refLimit).toMatchObject({ type: 'integer', minimum: 1 });
+    expect(refNext?.type).toEqual(['string', 'null']);
+  });
+
+  it('has one row for every work graph read', () => {
+    const reads = composed.capabilities
+      .filter(
+        (capability) =>
+          capability.id.startsWith('work-graph.') &&
+          capability.tier === 'observe' &&
+          capability.surfaces.http
+      )
+      .map((capability) => capability.id)
+      .sort();
+    expect(reads).toEqual(WORK_GRAPH_READ_ROWS.map((row) => row.id).sort());
+  });
+
+  it.each(WORK_GRAPH_READ_ROWS)(
+    '$id is GET $path under its own id, paged the shared way',
+    (row) => {
+      const get = spec.paths?.[row.path]?.get;
+      expect(get?.operationId).toBe(row.id);
+
+      const params = (get?.parameters ?? []) as Array<Param & { required?: boolean }>;
+      // The first page needs neither field.
+      expect(params.find((p) => p.name === 'cursor')?.required ?? false).toBe(false);
+      expect(params.find((p) => p.name === 'limit')?.required ?? false).toBe(false);
+      expect(params.find((p) => p.name === 'cursor')).toMatchObject({
+        in: 'query',
+        schema: refCursor,
+      });
+      const limit = params.find((p) => p.name === 'limit');
+      expect(limit?.in).toBe('query');
+      expect(limit?.schema).toMatchObject({ type: refLimit?.type, minimum: refLimit?.minimum });
+
+      const page = resolve(
+        get?.responses?.['200']?.content?.['application/json']?.schema as Node | undefined
+      );
+      expect(page?.required).toEqual(expect.arrayContaining([row.list, 'nextCursor']));
+      expect(resolve(page?.properties?.[row.list])?.type).toBe('array');
+      expect(resolve(page?.properties?.nextCursor)?.type).toEqual(refNext?.type);
+    }
+  );
 });

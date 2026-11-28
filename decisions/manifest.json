@@ -8272,6 +8272,26 @@
       "supersedes": null,
       "amends": ["261124-150519"],
       "affects": ["apps/server/src/services/extensions/**", "packages/extension-api/**"]
+    },
+    {
+      "id": "261127-215412",
+      "slug": "data-is-read-through-capabilities-and-graphql-comes-last",
+      "title": "Data is read through capabilities over the entity-and-edge model; every surface is generated from one declaration, and a read-only GraphQL comes last",
+      "status": "proposed",
+      "created": "2026-11-27",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "amends": ["261123-170830"],
+      "affects": [
+        "apps/server/src/services/core/capabilities/**",
+        "apps/server/src/services/core/self-description/dorkos-registry.ts",
+        "apps/server/src/routes/capability-http.ts",
+        "apps/server/src/services/work-graph/**",
+        "apps/server/src/services/audit/visibility.ts",
+        "packages/shared/src/paging.ts",
+        "packages/cli/src/commands/call.ts"
+      ]
     }
   ]
 }
