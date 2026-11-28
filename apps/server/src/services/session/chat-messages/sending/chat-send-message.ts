@@ -78,7 +78,7 @@ export async function sendChatMessage(options: SendOptions): Promise<ChatSendRec
   const seatTarget = await resolveChatSeatTarget(deps, caller, input);
   const target: ChatTarget = seatTarget
     ? { sessionId: seatTarget.seat.sessionId }
-    : await resolveChatTarget(deps, caller, input.to, input.replyTo);
+    : await resolveChatTarget(deps, caller, input.to, input.replyTo, kind);
   const sender = options.sender;
   const fromChatTitle = await deps.chatTitle(caller.sessionId).catch(() => null);
   const replyToId = seatTarget

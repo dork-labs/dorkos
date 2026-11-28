@@ -188,6 +188,10 @@ export class DurableReportBack {
       if (this.isStopped()) return;
       const current = journal.get(row.id);
       const state = current?.state;
+      // The seat it was saved for is gone (the agent left while the report waited): the old chat
+      // takes it now. A seat gone while the server was down is released at recovery.
+      const released = current && state === 'ready' ? journal.releaseGoneSeat(current) : null;
+      if (released) return this.deliverSaved(journal.get(row.id)!, released, parent);
       const wait = this.retrySteps[saved.attempt];
       if (
         current &&
