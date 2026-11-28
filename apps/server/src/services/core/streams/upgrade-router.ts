@@ -41,6 +41,7 @@ import {
 } from './stream-upgrade-auth.js';
 import { gateAccessFor } from '../auth/gate-policy.js';
 import { logger } from '../../../lib/logger.js';
+import { upgradeRequestFacts, type RequestFacts } from '../../../http/request-facts.js';
 import type { MainRequestAdmission } from '../lifecycle/main-request-admission.js';
 import { admitHubRequest, trackHubConnection } from '../hub/hub-serving.js';
 import { registerLiveConnection } from '../auth/sessions/live-connections.js';
@@ -80,6 +81,12 @@ export interface UpgradeAttempt {
    * Empty for a route whose `credential` is `bearer-of-id`.
    */
   readonly locals: StreamUpgradeLocals;
+  /**
+   * The upgrade's whole facts (`upgradeRequestFacts`): transport, ingress and
+   * the identity in {@link UpgradeAttempt.locals}, for a policy that needs more
+   * than the headers, such as the person bar on `/api/events`.
+   */
+  readonly facts: RequestFacts;
 }
 
 /** A route's answer: bind the socket, or refuse with an HTTP status. */
@@ -352,6 +359,7 @@ export function attachUpgradeRouter(
           headers: req.headers,
           match: claimed.match,
           locals,
+          facts: upgradeRequestFacts(req, locals),
         });
       };
 

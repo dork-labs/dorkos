@@ -1,0 +1,11 @@
+---
+covers:
+  - 'feat(runs): after a restart, each cut reply is decided once, and nothing jumps ahead of it (DOR-5234)'
+  - 'feat(runs): a chat whose message a restart lost hears it in a report, and no kept row stays hidden (DOR-5234)'
+  - 'feat(runs): recovery never carries on a private message whose outcome is unknown (DOR-5234)'
+  - "fix(runs): a continuation after a restart carries its caller's own start, never more trust (DOR-5234)"
+---
+
+### Added
+
+- When DorkOS restarts during a reply, the chat now says what happened to it, and your inbox gets one note: the reply stopped and you can send a message to continue, or it was waiting on your answer. A message the agent may not have read before the restart comes back to your composer as a draft, never sent twice. Messages queued behind that reply wait until it is sorted out, then run in your order (DOR-5234)

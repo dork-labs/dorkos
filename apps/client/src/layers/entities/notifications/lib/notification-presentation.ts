@@ -91,6 +91,8 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'approval.pending': ShieldQuestion,
   'session.error': CircleAlert,
   'turn.completed': CheckCircle2,
+  // A reply a restart cut, or a start it lost (spec `turns-survive-restarts` §7.4).
+  'turn.restarted': RotateCcw,
   'run.completed': CheckCircle2,
   'dm.received': MessageSquare,
   'mention.received': MessageSquare,

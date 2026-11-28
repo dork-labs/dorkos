@@ -8,7 +8,7 @@
  */
 import type { TurnRunRow } from '@dorkos/db';
 import { TurnOriginSchema, type TurnOrigin } from '@dorkos/shared/turn-port';
-import type { RunEndingDetail, RunPatch, TurnRun } from './run-store.js';
+import type { LostBackgroundWork, RunEndingDetail, RunPatch, TurnRun } from './run-types.js';
 
 /**
  * Whether an error is SQLite refusing a unique index, through any wrapper
@@ -59,6 +59,17 @@ function parseWarnings(json: string | null): TurnRun['warnings'] {
   }
 }
 
+/** Read stored lost background work, degrading an unreadable value to none. */
+function parseLost(json: string | null): LostBackgroundWork[] {
+  if (json === null) return [];
+  try {
+    const parsed: unknown = JSON.parse(json);
+    return Array.isArray(parsed) ? (parsed as LostBackgroundWork[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * A stored row as the store answers it.
  *
@@ -96,6 +107,7 @@ export function toRun(row: TurnRunRow): TurnRun {
     endedAt: row.endedAt,
     recoveryDecidedAt: row.recoveryDecidedAt,
     startKey: row.startKey,
+    lostBackground: parseLost(row.lostBackgroundJson),
     settledAt: row.settledAt,
   };
 }

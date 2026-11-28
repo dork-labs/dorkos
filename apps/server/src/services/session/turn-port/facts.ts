@@ -87,9 +87,15 @@ export interface DispatcherRunFeed {
    * @param input.chatKey - The chat, by the id its queue rows are kept under.
    * @param input.origin - What started it; `null` when nobody recorded it.
    * @param input.queueMessageId - Its queue row, when it has one.
+   * @param input.startKey - The key its source made it under (§6.4), when it has one.
    * @returns The new run's id.
    */
-  accept(input: { chatKey: string; origin: TurnOrigin | null; queueMessageId?: string }): string;
+  accept(input: {
+    chatKey: string;
+    origin: TurnOrigin | null;
+    queueMessageId?: string;
+    startKey?: string;
+  }): string;
   /**
    * A run the turn port handed over took its words into the queue: the row
    * is recorded on the run (§4.7, write 1). Called inside the transaction

@@ -32,6 +32,7 @@ import {
 import { installTurnContextStore } from '../../services/session/turn-context/index.js';
 import { installWorkLinkStore } from '../../services/work-graph/index.js';
 import { installRunRecord } from '../../services/runs/index.js';
+import { reportLostChatMessage } from '../../services/session/chat-messages/chat-message-current.js';
 import { knownChatCwd } from '../../services/core/runtime-seam/live-runtime-cwd.js';
 import { resolveAgentIdForPath } from '../../services/mesh/agent-path-lookup.js';
 import { ulid } from 'ulidx';
@@ -51,7 +52,10 @@ import {
 } from '../../services/extensions/person-record/person-record.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { chatFolderById } from '../../services/core/agent-identity/session-agent.js';
-import { setContinuationHoldDb } from '../../services/core/turn-power/continuation-hold.js';
+import {
+  ceilingForContinuation,
+  setContinuationHoldDb,
+} from '../../services/core/turn-power/continuation-hold.js';
 import { setOutsideWordsDb } from '../../services/core/turn-power/outside-words.js';
 import {
   createChatRiseFacts,
@@ -190,6 +194,16 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
       },
     },
     onResumed: (listener) => agentPause()?.onResumed(listener) ?? (() => {}),
+    // What recovery reads after a restart (spec §7.2, §7.3): each runtime's own
+    // declaration, never an assumption about one, and the bound a turn that
+    // picks a chat up on its own carries (DOR-3037).
+    recovery: {
+      capabilitiesOf: (type) =>
+        runtimeRegistry.has(type) ? runtimeRegistry.get(type).getCapabilities() : undefined,
+      ceilingOf: (sessionId) => ceilingForContinuation(sessionId).permissionCeiling,
+      cwdOf: (sessionId) => knownChatCwd(db, sessionId),
+      reportLost: reportLostChatMessage,
+    },
     handlers: {
       placeOf: (sessionId) => {
         const cwd = knownChatCwd(db, sessionId);

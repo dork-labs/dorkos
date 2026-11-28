@@ -11,7 +11,7 @@
  *
  * @module startup/space-views
  */
-import { sessionAudience } from '../services/audit/session-visibility.js';
+import { isPersonPrincipal } from '../lib/caller-principal.js';
 import { operatorAudience } from '../services/notifications/notification-entitlement.js';
 import { projectRegistry } from '../services/projects/project-registry.js';
 import { moveRunSessions } from '../services/tasks/session/active-run-sessions.js';
@@ -30,13 +30,17 @@ import {
 import { remoteAccessOn } from '../middleware/remote-access-switch.js';
 
 /**
- * Hand the session-list stream who may hear about each session (an agent's
- * connection only about sessions it may read, spec `audit-trail` §3.4) and
- * which project a folder belongs to.
+ * Hand the session-list stream who may hear about each session, and which
+ * project a folder belongs to.
+ *
+ * Every person, about every session: on this computer every caller that is not
+ * an agent reads as its owner, who reads every chat (`routes/audit-reader.ts`),
+ * and only a person reads the stream (DOR-4986). Anything else is refused, so
+ * the rule stays closed if another kind of reader ever reaches it.
  */
 export function wireSessionListSpaceView(): void {
   setSessionListSpaceView({
-    audience: sessionAudience,
+    audience: () => isPersonPrincipal,
     projectOf: (cwd) => projectRegistry.peek(cwd),
   });
 }

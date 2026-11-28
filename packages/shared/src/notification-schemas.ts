@@ -131,6 +131,12 @@ export const NOTIFICATION_KINDS = [
    */
   'extension.work_not_started',
   /**
+   * DorkOS restarted during a chat's reply, or before a turn could start (spec
+   * `turns-survive-restarts` §7.3, §7.4, DOR-5161): the reply is being picked
+   * back up, or it stopped and why. One row per run; notable; relay never.
+   */
+  'turn.restarted',
+  /**
    * Someone asked the host to make someone else the owner of a community this person owns, or
    * that request completed (DOR-2543). One per request and phase.
    */

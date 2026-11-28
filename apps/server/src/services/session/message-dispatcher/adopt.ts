@@ -27,6 +27,7 @@ import { parkDispatch, unwatchedSettle } from './park.js';
 import { schedulePump } from './pump.js';
 import { awaitsPersonSend } from './pause-hold.js';
 import { adoptRun } from './run-feed.js';
+import { launchGateHolds } from '../turn-port/launch-gate.js';
 import type { DispatchMessageOpts, DispatchPlan, MessageDispatchResult } from './types.js';
 
 /** Inputs for {@link adoptQueuedMessages}. */
@@ -125,7 +126,9 @@ export function adoptMessagesForDispatch(
  * sends somebody's message twice.
  *
  * Ends by giving the queue a chance to move: an idle session with rows on disk
- * has nothing else coming that would ever start them.
+ * has nothing else coming that would ever start them. Unless the launch gate
+ * holds the chat (§7.5): the rows wait parked, and the gate's clearing wakes
+ * the pump.
  *
  * @param opts - The session, its projector, and the runtime to run on
  * @returns How many rows were newly adopted
@@ -240,7 +243,9 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
       rows: swept,
     });
   }
-  if (adopted > 0) schedulePump(sessionKey);
+  // Parked, but not pumped while the launch gate holds the chat (spec
+  // `turns-survive-restarts` §7.5): its clearing wakes the pump.
+  if (adopted > 0 && !launchGateHolds(sessionKey)) schedulePump(sessionKey);
   return adopted;
 }
 
@@ -333,6 +338,6 @@ export function adoptAcceptedPrivateMessages(opts: AdoptQueuedMessagesOpts): num
     }
     adopted += 1;
   }
-  if (adopted > 0) schedulePump(sessionKey);
+  if (adopted > 0 && !launchGateHolds(sessionKey)) schedulePump(sessionKey);
   return adopted;
 }

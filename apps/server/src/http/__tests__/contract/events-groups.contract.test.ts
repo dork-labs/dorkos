@@ -7,9 +7,10 @@
  * and what the Electron main process reads for its tray count, and no browser
  * spec reads it, so this file is its only guard. It pins the wire bytes, not a
  * parser's reading of them: the exact headers, the `connected` frame first, a
- * live broadcast, the heartbeat, which caller a frame addressed to a person
- * reaches (a read cursor reaches only its own person, never an agent), and
- * that a client leaving frees its place. Replay from `Last-Event-ID` is
+ * live broadcast, the heartbeat, that only a person may open it (an agent is
+ * refused with `person_only`, DOR-4986), which person a frame addressed to a
+ * person reaches (a read cursor reaches only its own person), and that a client
+ * leaving frees its place. Replay from `Last-Event-ID` is
  * `routes/__tests__/events-replay.test.ts`; here an id it never wrote is cold.
  *
  * The WebSocket the cockpit opens on the same path is an upgrade, not a
@@ -46,6 +47,10 @@ const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 const CORS_REFUSED = z.object({ code: z.literal('origin_not_allowed') }).loose();
 const HOST_REFUSED = z.object({ code: z.literal('host_not_allowed') }).loose();
 const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
+/** The person bar's refusal of an agent on this stream (`EVENTS_PERSON_BAR`). */
+const AGENT_REFUSED = problemBody('person_only', {
+  detail: 'Only a person can open the app’s live updates. Agents use their own tools.',
+});
 /** The global stream's ceiling on concurrent readers (`SSE.MAX_TOTAL_CLIENTS`). */
 const MAX_CLIENTS = 500;
 /** The heartbeat interval (`SSE.HEARTBEAT_INTERVAL_MS`), and a margin past it. */
@@ -370,12 +375,25 @@ describe('contract: the global event stream, driven by hand (login off)', () => 
     stream.close();
   });
 
+  it('refuses an agent, verified or not, with the person bar’s sentence', async () => {
+    const seat = await seedAgent(server);
+    for (const [name, headers] of [
+      ['an unverified agent', AGENT],
+      ['a verified agent', seat.header],
+      ['an approval token', { 'X-DorkOS-Approval': 'not-a-real-token' }],
+    ] as const) {
+      await checkContractCase(server!.baseUrl, {
+        name,
+        path: '/api/events',
+        headers,
+        expect: { status: 403, headers: PROBLEM_TYPE, body: AGENT_REFUSED },
+      });
+    }
+  });
+
   it('streams a live broadcast to every reader, and a person’s frames only to that person', async () => {
     const seat = await seedAgent(server);
     const person = await held();
-    const agent = await held('/api/events', AGENT);
-    const verifiedAgent = await held('/api/events', seat.header);
-    expect(agent.text()).toMatch(CONNECTED_FRAME);
 
     // `config_changed` and a session's `read_cursor` are both the person's.
     // The rename after them reaches every reader.
@@ -397,17 +415,7 @@ describe('contract: the global event stream, driven by hand (login off)', () => 
       eventNames(personText).indexOf('read_cursor')
     );
     expect(personText.indexOf(thread)).toBeLessThan(personText.indexOf(name));
-
-    for (const stream of [agent, verifiedAgent]) {
-      const agentText = await stream.waitFor((text) => text.includes(name));
-      expect(eventNames(agentText)).toContain('agents_changed');
-      expect(agentText).not.toContain(thread);
-      expect(eventNames(agentText)).not.toContain('read_cursor');
-      expect(eventNames(agentText)).not.toContain('config_changed');
-    }
     person.close();
-    agent.close();
-    verifiedAgent.close();
   });
 
   it(
@@ -523,7 +531,7 @@ describe('contract: the global event stream with login on', () => {
     });
   });
 
-  it('sends a room’s read cursor to its signed-in member, never to an agent seated in it', async () => {
+  it('sends a room’s read cursor to its signed-in member, and refuses an agent seated in it', async () => {
     const owner = { ...cookie, origin: server!.baseUrl };
     const seat = await seedAgent(server, owner);
     const created = await setup(
@@ -541,10 +549,11 @@ describe('contract: the global event stream with login on', () => {
 
     const member = await connected(server, '/api/events', cookie);
     // The owner's own sign-in, presenting the seated agent's proof: an agent.
-    const seated = await connected(server, '/api/events', { ...cookie, ...seat.header });
-    const outsider = await connected(server, '/api/events', {
-      ...cookie,
-      ...(await seedAgent(server, owner)).header,
+    await checkContractCase(server!.baseUrl, {
+      name: 'the seated agent, on the owner’s cookie',
+      path: '/api/events',
+      headers: { ...cookie, ...seat.header },
+      expect: { status: 403, headers: PROBLEM_TYPE, body: AGENT_REFUSED },
     });
 
     await setup(server, 'PUT', `/api/read-cursors/room/${roomId}`, { lastReadSeq: 1 }, owner);
@@ -558,13 +567,7 @@ describe('contract: the global event stream with login on', () => {
     );
     expect(cursorAt, memberText).toBeGreaterThan(-1);
     expect(cursorAt).toBeLessThan(memberText.indexOf(name));
-    for (const stream of [seated, outsider]) {
-      const agentText = await stream.waitFor((text) => text.includes(name));
-      expect(eventNames(agentText)).not.toContain('read_cursor');
-    }
     member.close();
-    seated.close();
-    outsider.close();
   });
 
   it('streams to the owner’s cookie', async () => {

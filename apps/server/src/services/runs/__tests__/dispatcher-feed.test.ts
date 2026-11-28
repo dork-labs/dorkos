@@ -1021,7 +1021,7 @@ describe('what this step adds to the map (§4.7, F10 to F12)', () => {
     queue.rekeySession(canonical, sessionId);
   });
 
-  it('F10b: retiring a dead boot’s started run keeps its in_turn row, for recovery to hand back', async () => {
+  it('F10b: a dead boot’s started run is retired and decided before the launch, its words handed back as a draft', async () => {
     const caught = queue.enqueue({
       sessionId,
       content: 'words a crash caught mid-turn',
@@ -1046,18 +1046,19 @@ describe('what this step adds to the map (§4.7, F10 to F12)', () => {
     const mine = runs.listForChat(sessionId).find((run) => run.id !== dead.id)!;
     await vi.waitFor(() => expect(runs.get(mine.id)?.status).toBe('ended'));
 
+    // The launch gate (§7.5) had recovery decide it first (§7.3, step 4).
     expect(runs.get(dead.id)).toMatchObject({
-      status: 'ended',
       ending: 'process_died',
-      endingDetail: { delivery: 'unknown' },
-      recoveryDecidedAt: null,
+      endingDetail: { delivery: 'unknown', restart: 'quiet' },
     });
-    // Only a settle deletes a kept row; this one waits for T15 to restore it.
+    expect(runs.get(dead.id)?.recoveryDecidedAt).not.toBeNull();
+    // Never replayed: the person's words come back as a restored draft.
     expect(queue.get(caught.id)).toMatchObject({
-      inTurn: true,
+      inTurn: false,
+      restored: true,
       content: 'words a crash caught mid-turn',
     });
-    expect(listQueuedMessages(sessionId)).toEqual([]);
+    expect(listQueuedMessages(sessionId).map((row) => row.id)).toEqual([caught.id]);
   });
 
   it('a refusal before acceptance writes no run', async () => {

@@ -40,7 +40,7 @@ export function registerEventsOpenApi(registry: OpenAPIRegistry): void {
       'on every event after the opening frames, `id:` is an opaque resume cursor (send it back',
       'whole; read `seq` from `data:`, never from the id). Every connect opens with',
       '`connected` (with `resumed: true` when it picked up from your cursor), then any missed',
-      'events, then `tunnel_status` with remote access as it is now (never to an agent), then one',
+      'events, then `tunnel_status` with remote access as it is now, then one',
       '`session_status` for each chat that is working, waiting on a person or stopped with an',
       'error; those opening frames have no `id:`. The server keeps the last',
       `${EVENT_REPLAY_LIMITS.maxEvents} events (at most ${EVENT_REPLAY_LIMITS.maxBytes / 1024} KiB,`,
@@ -48,8 +48,10 @@ export function registerEventsOpenApi(registry: OpenAPIRegistry): void {
       'its first `at`. A `heartbeat` event arrives every 15 seconds. The same path answers a',
       'WebSocket upgrade, which is what the DorkOS app uses: each message is the same event,',
       '`{ seq, at, type, payload }`, with the cursor beside it as `id`, resuming from `?resume=`.',
-      'An event addressed to a person (settings, the inbox, an',
-      "ask's detail, remote access) never reaches a reader that presents an agent token.",
+      'Only a person reads it: an agent identity or an approval token, a page on another site and,',
+      'with login on, an API key without a browser session are refused with `person_only` (a',
+      '`4403` close frame on the socket). Who may read each event (a room, a read cursor) is',
+      'checked as each frame is written, live or replayed; a cursor gives no rights of its own.',
     ].join(' '),
     request: {
       query: z.object({
@@ -69,6 +71,9 @@ export function registerEventsOpenApi(registry: OpenAPIRegistry): void {
         description: "An SSE stream; each frame's `data:` is one `DorkOsEvent`.",
         content: { 'text/event-stream': { schema: DorkOsEventSchema } },
       },
+      403: problemResponse(
+        '`person_only`: an agent, a page on another site, or (with login on) a key without a browser session.'
+      ),
       503: problemResponse(
         '`temporarily_unavailable`: too many live connections are open. Try again soon.'
       ),

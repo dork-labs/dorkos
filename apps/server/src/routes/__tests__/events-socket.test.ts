@@ -66,20 +66,33 @@ function recordingSocket(): {
 }
 
 /**
- * An upgrade as the router hands it to this route.
+ * An upgrade as the router hands it to this route, from this computer.
  *
- * `headers` and `locals` are the two the route reads, because the principal it
- * registers with the fan-out comes from exactly the facts the credential gate
- * resolved (`StreamUpgradeLocals` is `res.locals`-shaped for this reason).
+ * The route reads `facts`, which the router builds from the headers and the
+ * identity its credential gate resolved (`upgradeRequestFacts`), so the
+ * person bar and the principal it registers read exactly what the gate saw.
  *
- * @param attempt - Whatever this case wants to vary.
+ * @param attempt - The headers, identity and URL this case wants to vary.
  */
-function upgradeAttempt(attempt: Partial<UpgradeAttempt> = {}): UpgradeAttempt {
+function upgradeAttempt(
+  attempt: Partial<Pick<UpgradeAttempt, 'url' | 'headers' | 'locals'>> = {}
+): UpgradeAttempt {
+  const headers = attempt.headers ?? {};
+  const locals = attempt.locals ?? {};
   return {
-    url: new URL('http://localhost/api/events'),
-    headers: {},
-    locals: {},
-    ...attempt,
+    url: attempt.url ?? new URL('http://localhost/api/events'),
+    headers,
+    locals,
+    facts: {
+      headers: { host: 'localhost', ...headers },
+      peerAddress: '127.0.0.1',
+      forwardedAddress: '127.0.0.1',
+      connectionEncrypted: false,
+      method: 'GET',
+      ingress: 'direct',
+      user: locals.user,
+      agentIdentity: locals.agentIdentity,
+    },
   } as UpgradeAttempt;
 }
 
@@ -89,7 +102,9 @@ function upgradeAttempt(attempt: Partial<UpgradeAttempt> = {}): UpgradeAttempt {
  * @param attempt - The upgrade to authorize; a credential-free cockpit by
  *   default.
  */
-async function connect(attempt: Partial<UpgradeAttempt> = {}): Promise<DorkOsEventFrame[]> {
+async function connect(
+  attempt: Parameters<typeof upgradeAttempt>[0] = {}
+): Promise<DorkOsEventFrame[]> {
   const decision = await globalEventsRoute.authorize(upgradeAttempt(attempt));
   if (!decision.ok) throw new Error('the fan-out refused the connection');
   const { ws, frames } = recordingSocket();
@@ -156,7 +171,7 @@ describe('globalEventsRoute — the principal it registers', () => {
    *
    * @param attempt - The upgrade to authorize.
    */
-  async function principalOf(attempt: Partial<UpgradeAttempt>): Promise<unknown> {
+  async function principalOf(attempt: Parameters<typeof upgradeAttempt>[0]): Promise<unknown> {
     const addClient = vi.spyOn(eventFanOut, 'addClient').mockReturnValue(() => {});
     await connect(attempt);
     return addClient.mock.calls[0]?.[1];
@@ -166,12 +181,16 @@ describe('globalEventsRoute — the principal it registers', () => {
     expect(await principalOf({})).toEqual({ kind: 'operator' });
   });
 
-  it('registers a connection presenting an agent header as an agent', async () => {
-    const principal = await principalOf({
-      headers: { [AGENT_IDENTITY_HEADER]: 'tok_agent' },
-      locals: { agentIdentity: { agentId: 'agent_ana' } as never },
-    });
-    expect(principal).toEqual({ kind: 'agent' });
+  it('refuses a connection presenting an agent header, and registers nothing', async () => {
+    const addClient = vi.spyOn(eventFanOut, 'addClient');
+    const decision = await globalEventsRoute.authorize(
+      upgradeAttempt({
+        headers: { [AGENT_IDENTITY_HEADER]: 'tok_agent' },
+        locals: { agentIdentity: { agentId: 'agent_ana' } as never },
+      })
+    );
+    expect(decision).toMatchObject({ ok: false, status: 403, deliver: 'close-frame' });
+    expect(addClient).not.toHaveBeenCalled();
   });
 
   it('registers a connection holding a per-user API key as a program', async () => {

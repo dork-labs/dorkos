@@ -4,7 +4,8 @@ import { z } from 'zod';
 // The CLI imperatively sets DORKOS_PORT, TUNNEL_*, DORKOS_*_ENABLED, etc.
 // via process.env assignments in cli.ts to configure the server subprocess.
 // Those assignments remain in cli.ts with ESLint inline disables.
-const cliEnvSchema = z.object({
+/** Every variable the CLI itself reads; the project `.env` census walks it (`lib/project-env.ts`). */
+export const cliEnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   DORK_HOME: z.string().optional(),
   LOG_LEVEL: z.string().optional(),

@@ -1183,7 +1183,7 @@ export interface paths {
          * The global event stream (SSE, or WebSocket at the same path)
          * @description **Preview.** This operation may change in any release.
          *
-         *     One stream for the chat list and everything else that changes: rooms, tasks, agents, settings, approvals, Relay, extensions. Each SSE frame's `data:` is one event, `{ seq, at, type, payload }` (described below): `seq` is its place in this stream (it only grows and may skip). `seq` is `null` on a frame outside the numbering (the opening frames, the cold-connect snapshot, the heartbeat): never store it as a position, and never use it to order or drop a frame. `at` is when the server emitted it, `type` the event type and `payload` its data. `event:` repeats the type and, on every event after the opening frames, `id:` is an opaque resume cursor (send it back whole; read `seq` from `data:`, never from the id). Every connect opens with `connected` (with `resumed: true` when it picked up from your cursor), then any missed events, then `tunnel_status` with remote access as it is now (never to an agent), then one `session_status` for each chat that is working, waiting on a person or stopped with an error; those opening frames have no `id:`. The server keeps the last 500 events (at most 512 KiB, so fewer when events are large) for replay, filtered with the rights you have when you reconnect; a replayed event keeps its first `at`. A `heartbeat` event arrives every 15 seconds. The same path answers a WebSocket upgrade, which is what the DorkOS app uses: each message is the same event, `{ seq, at, type, payload }`, with the cursor beside it as `id`, resuming from `?resume=`. An event addressed to a person (settings, the inbox, an ask's detail, remote access) never reaches a reader that presents an agent token.
+         *     One stream for the chat list and everything else that changes: rooms, tasks, agents, settings, approvals, Relay, extensions. Each SSE frame's `data:` is one event, `{ seq, at, type, payload }` (described below): `seq` is its place in this stream (it only grows and may skip). `seq` is `null` on a frame outside the numbering (the opening frames, the cold-connect snapshot, the heartbeat): never store it as a position, and never use it to order or drop a frame. `at` is when the server emitted it, `type` the event type and `payload` its data. `event:` repeats the type and, on every event after the opening frames, `id:` is an opaque resume cursor (send it back whole; read `seq` from `data:`, never from the id). Every connect opens with `connected` (with `resumed: true` when it picked up from your cursor), then any missed events, then `tunnel_status` with remote access as it is now, then one `session_status` for each chat that is working, waiting on a person or stopped with an error; those opening frames have no `id:`. The server keeps the last 500 events (at most 512 KiB, so fewer when events are large) for replay, filtered with the rights you have when you reconnect; a replayed event keeps its first `at`. A `heartbeat` event arrives every 15 seconds. The same path answers a WebSocket upgrade, which is what the DorkOS app uses: each message is the same event, `{ seq, at, type, payload }`, with the cursor beside it as `id`, resuming from `?resume=`. Only a person reads it: an agent identity or an approval token, a page on another site and, with login on, an API key without a browser session are refused with `person_only` (a `4403` close frame on the socket). Who may read each event (a room, a read cursor) is checked as each frame is written, live or replayed; a cursor gives no rights of its own.
          */
         get: operations["events.get"];
         put?: never;
@@ -12667,7 +12667,7 @@ export interface components {
         /** @enum {string|null} */
         RunEnding: "completed" | "failed" | "stopped" | "limited" | "refused" | "shutdown" | "process_died" | null;
         /** @enum {string|null} */
-        RunNotice: "restart_stopped" | null;
+        RunNotice: "restart_stopped" | "restart_continued" | "restart_waited_on_you" | "restart_chain_cap" | null;
         SessionUpdateResponse: components["schemas"]["Session"] & {
             /** @enum {boolean} */
             permissionModePendingUntilNextTurn?: true;
@@ -14567,7 +14567,7 @@ export interface components {
             meta?: string;
         };
         /** @enum {string} */
-        NotificationKind: "step-up.remote-refused" | "ask.pending" | "schedule.parked" | "schedule.armed_by_agent" | "approval.pending" | "session.error" | "turn.completed" | "run.completed" | "dm.received" | "mention.received" | "agent.note" | "dead-letter.created" | "agent.unreachable" | "signin.required" | "update.installed" | "report.daily" | "account.limited" | "account.reset" | "credits.refused" | "extension.approval" | "extension.decision" | "extension.stopped" | "extension.work_not_started" | "community.owner-replacement" | "community.teammate-limit" | "community.teammate-limits-reset" | "spending.near-limit" | "spending.limit-reached" | "spending.meter-reset" | "browser.handoff" | "heartbeat.credits-offer" | "connector.destructive_pending" | "connector.destructive_executed" | "connector.access_narrowed" | "connector.write_available" | "mcp-server.tool_added" | "mcp-server.reserved_name" | "web.new_device" | "signin.check_added" | "signin.check_removed" | "agent.secret_files" | "agent.folder_rules_too_long" | "account.signin_review" | "shell.check_down" | "report.undelivered" | "todo.changed";
+        NotificationKind: "step-up.remote-refused" | "ask.pending" | "schedule.parked" | "schedule.armed_by_agent" | "approval.pending" | "session.error" | "turn.completed" | "run.completed" | "dm.received" | "mention.received" | "agent.note" | "dead-letter.created" | "agent.unreachable" | "signin.required" | "update.installed" | "report.daily" | "account.limited" | "account.reset" | "credits.refused" | "extension.approval" | "extension.decision" | "extension.stopped" | "extension.work_not_started" | "turn.restarted" | "community.owner-replacement" | "community.teammate-limit" | "community.teammate-limits-reset" | "spending.near-limit" | "spending.limit-reached" | "spending.meter-reset" | "browser.handoff" | "heartbeat.credits-offer" | "connector.destructive_pending" | "connector.destructive_executed" | "connector.access_narrowed" | "connector.write_available" | "mcp-server.tool_added" | "mcp-server.reserved_name" | "web.new_device" | "signin.check_added" | "signin.check_removed" | "agent.secret_files" | "agent.folder_rules_too_long" | "account.signin_review" | "shell.check_down" | "report.undelivered" | "todo.changed";
         /** @enum {string} */
         NotificationTier: "blocking" | "notable" | "quiet";
         NotificationSubject: {
@@ -20991,6 +20991,15 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": components["schemas"]["DorkOsEvent"];
+                };
+            };
+            /** @description `person_only`: an agent, a page on another site, or (with login on) a key without a browser session. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description `temporarily_unavailable`: too many live connections are open. Try again soon. */

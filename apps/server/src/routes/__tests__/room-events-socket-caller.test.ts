@@ -36,6 +36,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 import { roomEventsRoute } from '../room-events-socket.js';
 import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.js';
 import { authorizeStreamUpgrade } from '../../services/core/streams/stream-upgrade-auth.js';
+import { upgradeRequestFacts } from '../../http/request-facts.js';
 import {
   initAgentIdentityService,
   resetAgentIdentityService,
@@ -112,6 +113,7 @@ describe('the room stream upgrade', () => {
       headers,
       match: /^\/api\/rooms\/([^/]+)\/events$/.exec(path)!,
       locals: gate.locals,
+      facts: upgradeRequestFacts(upgrade, gate.locals),
     });
   }
 

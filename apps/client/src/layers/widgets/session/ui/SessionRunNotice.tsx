@@ -6,6 +6,10 @@ import { Notice } from '@/layers/shared/ui';
 /** What each run line says (spec `turns-survive-restarts` §7.4). */
 export const RUN_NOTICE_LINES: Record<RunNotice, string> = {
   restart_stopped: 'DorkOS restarted during this reply, so it stopped. Send a message to continue.',
+  restart_continued: 'DorkOS restarted during this reply. The agent is picking it back up.',
+  restart_waited_on_you: 'DorkOS restarted while this waited on you. Send a message to continue.',
+  restart_chain_cap:
+    'DorkOS restarted during this reply again. It stopped; send a message to retry.',
 };
 
 /**

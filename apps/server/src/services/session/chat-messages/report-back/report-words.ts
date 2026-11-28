@@ -44,6 +44,11 @@ const STATUS_LINE: Record<ReportNotice, string> = {
   holding: 'Ended this turn with background work still running. More may come.',
 };
 
+/** What a report says of a message a restart lost before the chat read it (spec `turns-survive-restarts` §7.3). */
+export const LOST_MESSAGE =
+  'DorkOS restarted before this chat read your message, so it was not answered. ' +
+  'Send it again if it still matters.';
+
 /** The Sent-card label each reason gets. */
 export const SUMMARY: Record<ReportNotice, string> = {
   finished: 'Finished',

@@ -108,8 +108,8 @@ and `/api/sessions/recent` leave a person's own chats out (both come a page at a
 page cursor works only for the caller it was given to), and every `/api/sessions/:id` route,
 reading or writing, answers `404 session_not_found` for one, the same answer as a chat that does
 not exist. Starting a new chat with `create: true` is the one thing an agent may do under an id
-nobody has used yet. The live list on `/api/events` leaves a person's own chats out of an agent's
-stream too. Without the header you are the owner and read everything, so this keeps your chats
+nobody has used yet. An agent cannot open the live list on `/api/events` at all: that stream
+is for people. Without the header you are the owner and read everything, so this keeps your chats
 from agents that identify themselves, as DorkOS's own agent tools do, and not from any program
 that calls the API without it.
 

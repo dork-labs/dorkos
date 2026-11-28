@@ -639,6 +639,40 @@ export class EffectStore {
     this.db.update(turnEffects).set({ payloadJson }).where(eq(turnEffects.id, id)).run();
   }
 
+  /**
+   * One effect by its idempotency key (§6.4).
+   *
+   * @param key - The key.
+   */
+  byKey(key: string): TurnEffect | undefined {
+    const row = this.db.select().from(turnEffects).where(eq(turnEffects.key, key)).get();
+    return row ? toEffect(row) : undefined;
+  }
+
+  /**
+   * Whether a chat has an effect of this kind still to carry out: what the
+   * launch gate reads for a continuation recovery decided but has not made
+   * yet (§7.5).
+   *
+   * @param kind - The kind.
+   * @param sessionId - The chat, as its queue rows are kept.
+   */
+  hasOpen(kind: EffectKind, sessionId: string): boolean {
+    return (
+      this.db
+        .select({ id: turnEffects.id })
+        .from(turnEffects)
+        .where(
+          and(
+            eq(turnEffects.kind, kind),
+            eq(turnEffects.sessionId, sessionId),
+            inArray(turnEffects.state, OPEN_STATES)
+          )
+        )
+        .get() !== undefined
+    );
+  }
+
   /** A run's `start_turn` effects. */
   private startsOf(runId: string) {
     return and(eq(turnEffects.kind, 'start_turn'), eq(turnEffects.runId, runId));
