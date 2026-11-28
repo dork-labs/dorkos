@@ -632,7 +632,6 @@ describe('the start_turn rules (§6.2)', () => {
     const chatMessage = (content: string) =>
       record.port.start({
         sessionId,
-        cwd: AGENT.home,
         content,
         origin: { kind: 'chat-message' },
         tier: 'owner',

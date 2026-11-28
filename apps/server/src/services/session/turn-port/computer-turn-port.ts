@@ -58,7 +58,7 @@ import {
 import { EXTENSION_CLIENT_PREFIX } from '@dorkos/shared/extension-id';
 import { chatClientId } from '@dorkos/shared/chat-client-id';
 import { parseDorkReference } from '@dorkos/shared/dork-ref';
-import { relayClientId } from '../../core/session-relay/relay-client-id.js';
+import { relayClientId } from '@dorkos/shared/session-relay';
 import type { PermissionModeId } from '@dorkos/shared/schemas';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import {

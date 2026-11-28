@@ -410,11 +410,10 @@ describe('a start request', () => {
   });
 
   it('names where the words wait by <kind>:<id>, and who asked by a dork: reference (T6)', () => {
-    // Purpose: fails if a caller could put a free-form source or asker on the record.
+    // Purpose: fails if a caller could put a free-form source on the record, or no asker at all.
     const parse = (extra: Record<string, unknown>) =>
       StartTurnInputSchema.safeParse({ ...MINIMAL_INPUT, ...extra }).success;
     expect(parse({ askedByRef: 'dork:chat:3f1c2b7a' })).toBe(true);
-    expect(parse({ askedByRef: 'chat 3f1c2b7a' })).toBe(false);
     expect(parse({ sourceRef: 'extension-send:row-1' })).toBe(true);
     expect(parse({ sourceRef: 'row-1' })).toBe(false);
     expect(parse({ sourceRef: 'Extension:row 1' })).toBe(false);

@@ -146,6 +146,22 @@ export const SESSION_RELAY_MAX_OPEN_STREAMS = 32;
 /** Most requests one connection may have unanswered at once; the next is refused. */
 export const SESSION_RELAY_MAX_INFLIGHT_REQUESTS = 16;
 
+/**
+ * The prefix of the lock identity a message sent from the web runs under:
+ * `relay:<run id>`. The dispatcher reads it so a web message is never taken
+ * for the owner's own clean send (DOR-4693); the turn port writes it.
+ */
+export const RELAY_CLIENT_PREFIX = 'relay:';
+
+/**
+ * The lock identity of one message sent from the web.
+ *
+ * @param id - The message's run id.
+ */
+export function relayClientId(id: string): string {
+  return `${RELAY_CLIENT_PREFIX}${id}`;
+}
+
 /** Most chats one `chats.list` answer carries. */
 export const SESSION_RELAY_MAX_CHATS = 200;
 
