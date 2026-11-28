@@ -75,6 +75,10 @@ const plain: Record<string, () => Promise<unknown>> = {
   'POST /api/workbench/bridge {"kind":"proxy","port":5173,"path":"/"}': () =>
     createFrameBridgeMethods(base).getFrameBridgeStatus({ kind: 'proxy', port: 5173, path: '/' }),
   'POST /api/remote-access/enrolment': () => createRemoteAccessMethods(base).startRemoteEnrolment(),
+  'POST /api/remote-access/mode {"mode":"managed"}': () =>
+    createRemoteAccessMethods(base).setRemoteAccessMode('managed'),
+  'POST /api/lan-access {"enabled":false}': () =>
+    createRemoteAccessMethods(base).setLanAccess(false),
   // Sign-in: the account pin lives only in the body; no pin means no body (DOR-1651).
   'POST /api/runtimes/claude-code/login {"accountId":"two"}': () =>
     signin.delegateRuntimeLogin('claude-code', { accountId: 'two' }),

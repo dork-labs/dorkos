@@ -133,6 +133,7 @@ export interface ApiClient {
    * @param input - Its path and query parameters, its JSON body and its own headers.
    * @param options - A signal for this call.
    * @returns The answer's JSON body, or `undefined` for an empty answer.
+   * @throws {SyntaxError} When a 2xx answer has a body that is not JSON.
    * @throws {ApiProblemError} When the answer is not 2xx (unless the `fetch`
    *   the client was given throws first).
    * @throws {TypeError} When `input.headers` names a header not in
@@ -221,16 +222,26 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
         ...(callOptions?.signal ? { signal: callOptions.signal } : {}),
       });
       const text = await res.text();
-      const parsed: unknown = text ? safeJson(text) : undefined;
       if (!res.ok) {
+        const parsed: unknown = text ? safeJson(text) : undefined;
         throw new ApiProblemError(res.status, parsed, res.statusText || `HTTP ${res.status}`);
       }
-      return parsed as OperationResult<typeof operationId>;
+      // An empty answer (a 204) is `undefined`. A body that is not JSON (an HTML
+      // fallback page, say) throws a `SyntaxError`, as `res.json()` did for the
+      // hand-written calls; the message never repeats the body.
+      if (!text) return undefined as OperationResult<typeof operationId>;
+      try {
+        return JSON.parse(text) as OperationResult<typeof operationId>;
+      } catch {
+        // No `cause`: the parser's own error quotes the start of the body.
+        // eslint-disable-next-line preserve-caught-error
+        throw new SyntaxError(`${operationId} answered with a body that is not JSON.`);
+      }
     },
   };
 }
 
-/** Parse JSON, or `undefined` when the text is not JSON. */
+/** Parse a failed answer's JSON, or `undefined` when it is not JSON. */
 function safeJson(text: string): unknown {
   try {
     return JSON.parse(text);

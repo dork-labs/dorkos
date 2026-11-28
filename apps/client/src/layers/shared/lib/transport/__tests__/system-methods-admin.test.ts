@@ -70,6 +70,14 @@ describe('restartServer', () => {
       DESKTOP_REFUSAL
     );
   });
+
+  it('posts to the admin route and hands back what it said', async () => {
+    const fetchMock = serve(200, { message: 'Restart initiated.' });
+    await expect(createSystemMethods(BASE).restartServer()).resolves.toEqual({
+      message: 'Restart initiated.',
+    });
+    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE}/admin/restart`);
+  });
 });
 
 describe('prepareReset', () => {

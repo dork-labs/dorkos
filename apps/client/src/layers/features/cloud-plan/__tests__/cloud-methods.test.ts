@@ -76,6 +76,16 @@ describe('the cloud transport methods', () => {
     await expect(methods.requestCloudAccountDeletion()).rejects.toThrow('boom');
   });
 
+  // Still hand-written: the grouping goes into the URL unencoded.
+  it('asks for the grouping the caller named', async () => {
+    const fetchMock = stubFetch(200, { available: false });
+    await methods.getCloudUsage('model');
+    expect(fetchMock.mock.calls[0]).toEqual([
+      'http://localhost:4242/api/cloud/usage?groupBy=model',
+      expect.anything(),
+    ]);
+  });
+
   it('delivers a seat refusal to the caller instead of throwing it away', async () => {
     stubFetch(200, { ok: false, problem: seatRequiredFixture });
     const result = await methods.releaseCloudSeat('seat_0001');
