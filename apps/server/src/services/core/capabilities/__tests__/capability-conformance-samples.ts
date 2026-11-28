@@ -136,6 +136,8 @@ export function conformanceSampleInputs(
     // the anonymous call before it runs.
     'runtimes.account_usage': { runtime: 'claude-code' },
     'runtimes.key_status': { type: 'claude-code' },
+    // A chat id that does not parse, so the debug read answers its own `DEBUG_CHAT_ID_INVALID`.
+    'debug.chat_spine': { sessionId: 'conformance-not-a-chat-id' },
     // One agent's reads and a persona move on `/api/agents/*` (DOR-4978). The person-only
     // ones refuse the anonymous call before they run; the permission reads answer that
     // DorkOS is still starting (no reader set).

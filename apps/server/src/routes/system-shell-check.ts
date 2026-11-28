@@ -1,6 +1,7 @@
 /**
- * What the app reads about DorkOS's check on agents' shell commands, and the person's choice to go
- * on without it until restart (DOR-3300).
+ * The person's choice to go on without DorkOS's check on agents' shell commands until restart
+ * (DOR-3300). What the app reads about the check is `system.shell_check`, a capability the mount
+ * serves (`services/core/runtime-doors/computer-read-capabilities.ts`, DOR-4978).
  *
  * **No agent route, and no file.** The choice lives in `guard-service.ts`'s memory. It takes the
  * three person bars (`extensions-person-bar.ts`) and a caller at this computer, so a phone gets the
@@ -40,8 +41,6 @@ const COPY: PersonBarCopy = {
  * @param router - The `/api/system` router.
  */
 export function mountShellCheckRoutes(router: Hono<ApiEnv>): void {
-  router.get('/shell-check', (c) => c.json(shellCheckStatus() satisfies ShellCheckStatus));
-
   router.post('/shell-check/continue', (c) => {
     const refused = refusedNotAPerson(c, COPY);
     if (refused) return refused;

@@ -64,6 +64,7 @@ import { createSessionReadsDomain } from '../../session/reads/session-read-capab
 import { auditTrail } from '../../audit/audit-trail.js';
 import { runtimeRegistry } from '../runtime-registry.js';
 import { runtimeReadsDomain } from '../runtime-doors/runtime-read-capabilities.js';
+import { computerReadsDomains } from '../runtime-doors/computer-read-capabilities.js';
 import { filesDomain } from '../directory/file-capabilities.js';
 import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
@@ -210,8 +211,9 @@ export function composeDorkOsCapabilityRegistry(
   domains.push(taskViewDomain);
   // The app's simplest chat reads (DOR-4978); each folds in the session read guard.
   domains.push(sessionReadsDomain);
-  // The app's runtime setup reads (DOR-4978); they say so themselves before the runtimes start.
-  domains.push(runtimeReadsDomain);
+  // The app's runtime setup reads and this computer's own reads (DOR-4978); they say so
+  // themselves before the runtimes start.
+  domains.push(runtimeReadsDomain, ...computerReadsDomains);
   // Unconditional too: the folder picker, the diff review and the workspace
   // reads read the filesystem and process-wide stores every server has, so
   // their paths answer wherever the hand routes used to. The file browser too
@@ -304,6 +306,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     taskViewDomain,
     sessionReadsDomain,
     runtimeReadsDomain,
+    ...computerReadsDomains,
     directoryDomain,
     diffDomain,
     workspacesDomain,

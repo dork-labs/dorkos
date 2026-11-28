@@ -700,15 +700,6 @@ describe('runtime connect endpoints', () => {
       expect(url.searchParams.get('callback_url')).toContain(`state=${res.body.state}`);
     });
 
-    it('polls a started flow as pending', async () => {
-      const start = await request(server).post('/api/runtimes/opencode/openrouter/oauth/start');
-      const res = await request(server)
-        .get('/api/runtimes/opencode/openrouter/oauth/status')
-        .query({ state: start.body.state });
-      expect(res.status).toBe(200);
-      expect(res.body).toEqual({ status: 'pending' });
-    });
-
     /** The landing record a callback's redirect points at. */
     function landingFrom(location: string) {
       const id = new URL(location, 'http://localhost').searchParams.get('landing') ?? '';

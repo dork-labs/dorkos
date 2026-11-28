@@ -64,22 +64,15 @@ import {
 import fs from 'node:fs';
 import path from 'node:path';
 import { problem } from '@dorkos/http-kit';
-import { parseSessionId } from '../lib/route-utils.js';
-import { canReadSession, readerOfRequest, sessionNotFoundProblem } from './audit-reader.js';
+import { readerOfRequest } from './audit-reader.js';
 import { readableSessionIds } from '../services/audit/session-visibility.js';
 import {
   recentDispatches,
   recentRefusals,
   DISPATCH_BUFFER_SIZE,
 } from '../services/observability/dispatch-buffers.js';
-import { autoModeStopStats } from '../services/observability/auto-mode-stops.js';
 import { phantomCancellationStats } from '../services/observability/phantom-cancellations.js';
-import {
-  listProjectorDebugCounters,
-  peekProjector,
-  getSessionEventStore,
-} from '../services/session/session-state-projector.js';
-import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import { listProjectorDebugCounters } from '../services/session/session-state-projector.js';
 import { getRoomService } from '../services/rooms/index.js';
 import {
   probeRoomBindingTranscript,
@@ -213,75 +206,16 @@ export function createDebugRoutes(source: () => DebugDeps | undefined): Hono<Api
     c.json(phantomCancellationStats(readLimit(readQuery(c).limit)))
   );
 
-  // GET /api/debug/auto-mode-stops — how often auto mode stopped the agent on a
-  // DorkOS tool, beside how many host-context notes DorkOS attached in the same
-  // window (spec `auto-mode-classifier-context`). Read with
-  // `DORKOS_CLASSIFIER_CONTEXT` on and again with it off to measure whether the
-  // notes removed any stops.
-  router.get('/auto-mode-stops', (c) => c.json(autoModeStopStats()));
+  // GET /api/debug/auto-mode-stops is `debug.auto_mode_stops`, a capability the mount
+  // serves (`services/core/runtime-doors/computer-read-capabilities.ts`, DOR-4978).
 
   // GET /api/debug/projectors — the live projector registry.
   router.get('/projectors', (c) =>
     c.json({ projectors: readableRows(honoRequestFacts(c), listProjectorDebugCounters()) })
   );
 
-  // GET /api/debug/sessions/:id — one session's live spine.
-  router.get('/sessions/:id', async (c) => {
-    const sessionId = parseSessionId(c.req.param('id'));
-    if (!sessionId) {
-      return problem(c, 'invalid_request', { detail: 'That isn’t a chat id.' });
-    }
-    // The same read check as the session routes (spec `audit-trail` §3.4).
-    if (!canReadSession(honoRequestFacts(c), sessionId)) return sessionNotFoundProblem(c);
-
-    const projector = peekProjector(sessionId);
-    // `resolveSessionRuntime`, not `getSessionRuntimeType`, for the second half it
-    // returns: an id nothing has bound resolves through the registry's legacy
-    // inference to `claude-code`, and a room placeholder is exactly such an id
-    // (DOR-1780). Reporting the guess as the runtime made this surface state as
-    // fact something no other surface would agree with. `bound: false` says the
-    // type is what this session WOULD get, not what it has.
-    const resolution = await runtimeRegistry
-      .resolveSessionRuntime(sessionId)
-      .catch(() => null as { type: string; bound: boolean } | null);
-    const runtime = resolution?.type ?? null;
-    const lock = runtimeRegistry.has(runtime ?? '')
-      ? (runtimeRegistry.get(runtime as string)?.getLockInfo(sessionId) ?? null)
-      : null;
-
-    // The `'record'`-mode rows a room-driven claude-code session writes (DOR-784)
-    // had NO reader until this line. Three rows a turn were being written to prove
-    // a turn had run at all, and the only way to see them was to open the
-    // database by hand — which is the shape of problem this whole surface exists
-    // to remove. Counts and the newest boundary only; the payloads carry text.
-    const store = getSessionEventStore();
-    const recorded = store?.readAll(sessionId) ?? [];
-    const byType: Record<string, number> = {};
-    for (const event of recorded) byType[event.type] = (byType[event.type] ?? 0) + 1;
-
-    return c.json({
-      sessionId,
-      runtime,
-      // `false` when `runtime` above is the registry's inference rather than a
-      // recorded owner; `null` when the read itself failed.
-      runtimeBound: resolution?.bound ?? null,
-      ...(projector
-        ? projector.debugCounters()
-        : { lifecycle: null, seq: null, subscribers: null, waiters: null }),
-      projectorLive: projector !== undefined,
-      lockHeldBy: lock?.clientId ?? null,
-      lockAcquiredAt: lock ? new Date(lock.acquiredAt).toISOString() : null,
-      pendingInteractions: (projector?.getPendingInteractions() ?? []).map((pending) => ({
-        // The DTO carries the prompt itself — the tool's input, the questions.
-        // Only the shape of the wait crosses this boundary.
-        kind: pending.type,
-        toolName: 'toolName' in pending ? pending.toolName : undefined,
-        startedAt: new Date(pending.startedAt).toISOString(),
-        remainingMs: pending.remainingMs,
-      })),
-      durableEvents: { total: recorded.length, byType },
-    });
-  });
+  // GET /api/debug/sessions/:id is `debug.chat_spine`, a capability the mount serves
+  // (`services/core/runtime-doors/computer-read-capabilities.ts`, DOR-4978).
 
   // GET /api/debug/rooms/:id/bindings — do this room's sessions still have their
   // conversations? Two answers, and the response says when they differ.

@@ -79,6 +79,7 @@ import {
 } from '../../services/session/session-state-projector.js';
 import type { RawSessionEvent } from '../../services/session/session-state-projector.js';
 import type { DebugDeps } from '../debug.js';
+import { computerReadsRegistry } from '../../http/__tests__/computer-reads-registry.js';
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000dbb01';
 const target = swappableServer();
@@ -90,9 +91,12 @@ const POISON = {
   token: 'sk-ant-oat01-POISONTOKEN',
 };
 
+// The auto-mode stops and one chat's spine are capabilities the mount serves (DOR-4978).
+const capabilities = computerReadsRegistry();
+
 function buildApp(deps?: DebugDeps) {
   const admission = new MainRequestAdmission();
-  return target.mount(composedListener(admission, deps ? { debug: deps } : undefined));
+  return target.mount(composedListener(admission, { capabilities, ...(deps && { debug: deps }) }));
 }
 
 beforeEach(() => {
@@ -263,13 +267,6 @@ describe('GET /api/debug/auto-mode-stops', () => {
       assertionsByTier: { observe: 1, act: 0, destructive: 0 },
     });
   });
-
-  it('answers with zeros before anything has happened', async () => {
-    const res = await get(buildApp(), '/api/debug/auto-mode-stops');
-    expect(res.body.stops).toBe(0);
-    expect(res.body.assertions).toBe(0);
-    expect(res.body.stopsByTool).toEqual({});
-  });
 });
 
 describe('GET /api/debug/projectors and /sessions/:id', () => {
@@ -325,13 +322,6 @@ describe('GET /api/debug/projectors and /sessions/:id', () => {
     expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
     expect(res.body.code).toBe('invalid_request');
     expect(JSON.stringify(res.body)).not.toContain('passwd');
-  });
-
-  it('answers for a session with no live projector', async () => {
-    const res = await get(buildApp(), `/api/debug/sessions/${SESSION_ID}`);
-    expect(res.status).toBe(200);
-    expect(res.body.projectorLive).toBe(false);
-    expect(res.body.lifecycle).toBeNull();
   });
 
   it('says when the runtime it reports is an inference rather than a recorded owner', async () => {

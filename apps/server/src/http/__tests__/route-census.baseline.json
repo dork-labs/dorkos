@@ -206,7 +206,7 @@
     "GET /api/debug/refusals",
     "GET /api/debug/relay/traces/:traceId",
     "GET /api/debug/rooms/:id/bindings",
-    "GET /api/debug/sessions/:id",
+    "GET /api/debug/sessions/:sessionId",
     "GET /api/devices/sessions",
     "GET /api/devices/sign-in-requests",
     "GET /api/diff/baseline",

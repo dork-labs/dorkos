@@ -278,17 +278,8 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
     });
   });
 
-  /**
-   * GET /api/runtimes/opencode/openrouter/oauth/status — poll an in-flight flow's
-   * status by `state` (the client polls after opening the authorize URL).
-   */
-  router.get('/opencode/openrouter/oauth/status', (c) => {
-    const refused = refuseNonLoopback(c);
-    if (refused) return refused;
-    const query = readQuery(c);
-    const state = typeof query.state === 'string' ? query.state : '';
-    return c.json(openRouterOAuthStore.status(state));
-  });
+  // GET /api/runtimes/opencode/openrouter/oauth/status is a capability the mount
+  // serves (`services/core/runtime-doors/computer-read-capabilities.ts`, DOR-4978).
 
   // --- Ollama (OpenCode Local) -----------------------------------------------
 

@@ -89,11 +89,6 @@ export function localOnlyRoutes(secret: string): LocalOnlyRoute[] {
       body: {},
     },
     {
-      name: 'GET /opencode/openrouter/oauth/status',
-      method: 'get',
-      path: '/api/runtimes/opencode/openrouter/oauth/status',
-    },
-    {
       name: 'GET /opencode/ollama',
       method: 'get',
       path: '/api/runtimes/opencode/ollama',

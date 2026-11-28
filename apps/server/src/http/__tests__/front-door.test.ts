@@ -33,6 +33,7 @@ import { attachUpgradeRouter } from '../../services/core/streams/upgrade-router.
 import { createFrontDoorServer, frontDoorListener } from '../front-door.js';
 import type { ApiEnv } from '../api-chain.js';
 import { composeFrontDoor } from '../hono-api.js';
+import { computerReadsRegistry } from './computer-reads-registry.js';
 import { streamToNodeResponse } from '../raw-node-stream.js';
 import { upgradeGuards } from '../../startup/upgrade-guards.js';
 
@@ -341,7 +342,8 @@ describe('front door', () => {
 
   describe('with the real app behind it', () => {
     const admission = new MainRequestAdmission();
-    const app = composeFrontDoor(admission);
+    // `/api/keep-awake` is a capability the mount serves (DOR-4978).
+    const app = composeFrontDoor(admission, { capabilities: computerReadsRegistry() });
 
     it('answers a real route in its documented shape', async () => {
       const base = await serveThroughFrontDoor(app);

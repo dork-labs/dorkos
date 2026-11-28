@@ -84,12 +84,10 @@ import {
 } from '../routes/extension-decisions.js';
 import feedbackRoutes, { feedbackBodyRule } from '../routes/feedback.js';
 import { createFileRoutes } from '../routes/files.js';
-import gitRoutes from '../routes/git.js';
 import { createHarnessRoutes, type HarnessRouterDeps } from '../routes/harness.js';
 import { createHealthRoutes, type HealthRouteDeps } from '../routes/health.js';
 import { createHubComputerRoutes } from '../routes/hub-computers.js';
 import { createHubLinkRoutes, hubLinkBodyRule } from '../routes/hub-link.js';
-import keepAwakeRoutes from '../routes/keep-awake.js';
 import { createMarketplaceRoutes, type MarketplaceRouteDeps } from '../routes/marketplace.js';
 import { createMcpRoutes, type McpServerFactory } from '../routes/mcp.js';
 import mcpConfigRoutes from '../routes/mcp-config.js';
@@ -378,10 +376,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/commands', commandRoutes);
   app.route('/api/subagents', subagentRoutes);
   app.route('/api/system', createSystemRoutes());
-  app.route('/api/keep-awake', keepAwakeRoutes);
   app.route('/api/errors', errorRoutes);
   app.route('/api/directory', directoryRoutes);
-  app.route('/api/git', gitRoutes);
   app.route('/api/workspaces', workspaceRoutes);
   app.route('/api/projects', projectRoutes);
   app.route('/api/read-cursors', readCursorRoutes);
