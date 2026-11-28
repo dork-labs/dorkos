@@ -328,12 +328,8 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     sessionRuntime: (sessionId) => runtimeRegistry.resolveForSession(sessionId),
   });
 
-  // The session relay, with the session routes' origin lookups and room port (B2).
-  wireSessionRelayStep({
-    meshCore: () => refs.meshCore,
-    origins,
-    roomSessionPlace: () => refs.roomSessionPlacePort,
-  });
+  // The session relay, with the session routes' origin lookups (B2).
+  wireSessionRelayStep({ meshCore: () => refs.meshCore, origins });
 
   // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).
   // ALWAYS ON: fans every registered runtime's transition-only session-list

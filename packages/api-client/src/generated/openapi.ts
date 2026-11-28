@@ -10126,7 +10126,7 @@ export interface components {
             name: string;
         };
         AccountEligibilityResponse: {
-            project: components["schemas"]["ProjectRef"] & (Record<string, never> | null);
+            project: components["schemas"]["ProjectRef"] | null;
             allow: string[] | null;
             accounts: components["schemas"]["AccountEligibilityRow"][];
             launch?: {
@@ -11073,7 +11073,7 @@ export interface components {
             status?: {
                 lifecycle: components["schemas"]["SessionLifecycle"];
                 limit: components["schemas"]["SessionLimit"];
-                accountUsage?: components["schemas"]["AccountUsage"] & (Record<string, never> | null);
+                accountUsage?: components["schemas"]["AccountUsage"] | null;
             };
             /**
              * @deprecated
@@ -11159,7 +11159,7 @@ export interface components {
             contextUsage: components["schemas"]["SessionContextUsage"];
             cost: number | null;
             usage?: components["schemas"]["UsageStatus"];
-            accountUsage?: components["schemas"]["AccountUsage"] & (Record<string, never> | null);
+            accountUsage?: components["schemas"]["AccountUsage"] | null;
             cacheStats: components["schemas"]["SessionCacheStats"];
             model: string | null;
             permissionMode: components["schemas"]["PermissionModeId"];
@@ -11235,7 +11235,7 @@ export interface components {
             interaction: components["schemas"]["PendingInteractionDTO"];
             roomId?: string;
             roomAuthorId?: string;
-            project?: components["schemas"]["ProjectRef"] & (Record<string, never> | null);
+            project?: components["schemas"]["ProjectRef"] | null;
         };
         PendingInteractionDTO: {
             /** @enum {string} */
@@ -11608,7 +11608,7 @@ export interface components {
             origin?: "session" | "external-mcp";
             otherArguments?: string;
             serviceAction?: components["schemas"]["ApprovalServiceAction"];
-            project?: components["schemas"]["ProjectRef"] & (Record<string, never> | null);
+            project?: components["schemas"]["ProjectRef"] | null;
         };
         MarketplaceApprovalSummary: {
             /** @enum {string} */
@@ -12911,7 +12911,7 @@ export interface components {
             readsOutsideText?: boolean;
             maxRuntime: number | null;
             permissionMode: components["schemas"]["PermissionMode"];
-            requestedPermissionMode?: components["schemas"]["PermissionMode"] & (string | null);
+            requestedPermissionMode?: components["schemas"]["PermissionMode"] | null;
             requestedAllow?: string[] | null;
             approvedAllow?: string[] | null;
             folderRules?: {
@@ -12928,7 +12928,7 @@ export interface components {
             runtime: string | null;
             /** @default null */
             model: string | null;
-            effort?: components["schemas"]["EffortLevel"] & (string | null);
+            effort?: components["schemas"]["EffortLevel"] | null;
             /** @default null */
             account: string | null;
             accountPinned?: boolean;
@@ -12969,7 +12969,7 @@ export interface components {
             lastRunAt?: string | null;
             /** @default [] */
             nextRuns: string[];
-            project?: components["schemas"]["ProjectRef"] & (Record<string, never> | null);
+            project?: components["schemas"]["ProjectRef"] | null;
             health?: components["schemas"]["TaskHealth"];
         };
         TaskRunPlace: {
@@ -13027,7 +13027,7 @@ export interface components {
             agentName?: string | null;
             at: string;
             mode: components["schemas"]["PermissionMode"];
-            previousMode: components["schemas"]["PermissionMode"] & (string | null);
+            previousMode: components["schemas"]["PermissionMode"] | null;
         } | null;
         TaskFileCap: {
             at: string;
@@ -13072,7 +13072,7 @@ export interface components {
             readsOutsideText?: boolean;
             runtime?: string | null;
             model?: string | null;
-            effort?: components["schemas"]["EffortLevel"] & (string | null);
+            effort?: components["schemas"]["EffortLevel"] | null;
             account?: string | null;
             permissionMode?: components["schemas"]["PermissionMode"];
             requestedPermissionMode?: components["schemas"]["PermissionMode"];
@@ -13092,7 +13092,7 @@ export interface components {
             readsOutsideText?: boolean;
             runtime?: string | null;
             model?: string | null;
-            effort?: components["schemas"]["EffortLevel"] & (string | null);
+            effort?: components["schemas"]["EffortLevel"] | null;
             account?: string | null;
             accountPinned?: boolean;
             permissionMode?: components["schemas"]["PermissionMode"];
@@ -13603,10 +13603,10 @@ export interface components {
             id: string;
             adapterId: string;
             chatId: string;
-            channelType: components["schemas"]["ChannelType"] & (string | null);
+            channelType: components["schemas"]["ChannelType"] | null;
             /** @enum {string} */
             chatKind: "dm" | "group";
-            platformChatType: components["schemas"]["PlatformChatType"] & (string | null);
+            platformChatType: components["schemas"]["PlatformChatType"] | null;
             senderName: string | null;
             senderId: string | null;
             chatTitle: string | null;
@@ -13711,18 +13711,18 @@ export interface components {
         /** @enum {string} */
         FilesAndCommandsSource: "agent" | "runtime" | "default" | "runtime-own";
         ResolvedFilesAndCommands: {
-            stop: components["schemas"]["PermissionStop"] & (string | null);
+            stop: components["schemas"]["PermissionStop"] | null;
             source: components["schemas"]["FilesAndCommandsSource"];
             lastChange?: components["schemas"]["PermissionLastChange"];
         };
         PatchAgentPermissionsBody: {
             areas?: {
-                [key: string]: components["schemas"]["PermissionState"] & (string | null);
+                [key: string]: components["schemas"]["PermissionState"] | null;
             };
             actions?: {
-                [key: string]: components["schemas"]["PermissionState"] & (string | null);
+                [key: string]: components["schemas"]["PermissionState"] | null;
             };
-            filesAndCommands?: components["schemas"]["PermissionStop"] & (string | null);
+            filesAndCommands?: components["schemas"]["PermissionStop"] | null;
             surface: components["schemas"]["PermissionSurface"];
         };
         RoomListResponse: {
@@ -14515,7 +14515,7 @@ export interface components {
             lastReadSeq: number;
         };
         ReadCursorResponse: {
-            cursor: components["schemas"]["ReadCursor"] & (Record<string, never> | null);
+            cursor: components["schemas"]["ReadCursor"] | null;
         };
         /** @enum {string} */
         AgentHealthStatus: "active" | "inactive" | "stale" | "unreachable";
@@ -15111,9 +15111,9 @@ export interface components {
             agentId: string;
         };
         AgentLevelResponse: {
-            effective: components["schemas"]["PermissionStop"] & (string | null);
+            effective: components["schemas"]["PermissionStop"] | null;
             effectiveMode: string | null;
-            declared: components["schemas"]["PermissionStop"] & (string | null);
+            declared: components["schemas"]["PermissionStop"] | null;
             cappedByPerson: boolean;
         };
         HeartbeatStatus: {
@@ -15631,7 +15631,7 @@ export interface components {
             lastSeenAt: string;
         };
         ProjectResolveResponse: {
-            project: components["schemas"]["ProjectRef"] & (Record<string, never> | null);
+            project: components["schemas"]["ProjectRef"] | null;
         };
         ProjectWithoutCreditsRequest: {
             sessionId: string;
@@ -15850,7 +15850,7 @@ export interface components {
             };
         };
         DefaultFilesAndCommands: {
-            stop: components["schemas"]["PermissionStop"] & (string | null);
+            stop: components["schemas"]["PermissionStop"] | null;
             presetStop: components["schemas"]["PermissionStop"];
             runtimes: {
                 runtime: string;
@@ -15880,10 +15880,10 @@ export interface components {
         };
         PatchPermissionDefaultsBody: {
             areas?: {
-                [key: string]: components["schemas"]["PermissionState"] & (string | null);
+                [key: string]: components["schemas"]["PermissionState"] | null;
             };
             actions?: {
-                [key: string]: components["schemas"]["PermissionState"] & (string | null);
+                [key: string]: components["schemas"]["PermissionState"] | null;
             };
             applyToAgents?: string[];
             surface: components["schemas"]["PermissionSurface"];
@@ -16195,7 +16195,7 @@ export interface components {
             title: string;
             why: string;
             detail: string | null;
-            project: components["schemas"]["ProjectRef"] & (Record<string, never> | null);
+            project: components["schemas"]["ProjectRef"] | null;
             projectLabel: string | null;
             since: string | null;
             actions: components["schemas"]["DecisionActions"];
@@ -16398,7 +16398,7 @@ export interface components {
             adds: string | null;
             since: string;
             why: string;
-            permissions?: components["schemas"]["ExtensionApprovalPermissions"] & (Record<string, never> | null);
+            permissions?: components["schemas"]["ExtensionApprovalPermissions"] | null;
             added?: components["schemas"]["ExtensionApprovalAdditions"];
             /** @default [] */
             agentTools: components["schemas"]["ExtensionAgentToolSummary"][];

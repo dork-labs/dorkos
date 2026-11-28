@@ -1,4 +1,4 @@
-/** The approval reads and the deny send exactly the requests the hand-written ones did (DOR-5473). */
+/** The approval reads and decisions send exactly the requests the hand-written ones did (DOR-5473). */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApprovalMethods } from '../approval-methods';
 import { answer, firstRequest } from './request-stub';
@@ -14,7 +14,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe('createApprovalMethods', () => {
   const methods = createApprovalMethods('/api');
 
-  it('reads approvals and denies one at the same paths and bodies', async () => {
+  it('reads approvals and decides them at the same paths and bodies', async () => {
     const calls: Array<[() => Promise<unknown>, ReturnType<typeof sent>]> = [
       [
         () => methods.listDeclinedHookApprovals(),
@@ -35,6 +35,26 @@ describe('createApprovalMethods', () => {
       [
         () => methods.denyApproval('a1'),
         { url: '/api/approvals/a1/deny', method: 'POST', body: '{}' },
+      ],
+      [
+        () => methods.grantApproval('a 1/x'),
+        { url: '/api/approvals/a%201%2Fx/grant', method: 'POST', body: undefined },
+      ],
+      [
+        () => methods.grantApproval('a1', { answer: 'once' }),
+        { url: '/api/approvals/a1/grant', method: 'POST', body: undefined },
+      ],
+      [
+        () => methods.grantApproval('a1', { answer: 'always' }),
+        { url: '/api/approvals/a1/grant', method: 'POST', body: '{"answer":"always"}' },
+      ],
+      [
+        () => methods.askAgainHookApproval('a/1'),
+        { url: '/api/approvals/a%2F1/ask-again', method: 'POST', body: undefined },
+      ],
+      [
+        () => methods.dismissAlwaysSuggestion('a/1'),
+        { url: '/api/approvals/a%2F1/dismiss-suggestion', method: 'POST', body: undefined },
       ],
     ];
     for (const [call, expected] of calls) {

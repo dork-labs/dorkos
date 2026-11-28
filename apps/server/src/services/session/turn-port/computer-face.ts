@@ -7,7 +7,21 @@
  * @module services/session/turn-port/computer-face
  */
 import type { InterruptReceipt } from '@dorkos/shared/schemas';
+import type { HandOverReceipt, HandOverRefusal } from '@dorkos/shared/turn-hand-over';
 import type { TurnStartAnswer, TurnStartRequest } from '@dorkos/shared/turn-port';
+
+export type { HandOverReceipt, HandOverRefusal } from '@dorkos/shared/turn-hand-over';
+
+/** The computer face's answer, with what this Mac adds for a caller that waits on it. */
+export interface HandOverResult {
+  answer: TurnStartAnswer;
+  /** With `accepted`: what the launch path said. */
+  receipt?: HandOverReceipt;
+  /** With a refusal at the door: its sentence. */
+  refusal?: HandOverRefusal;
+  /** Every launch slot filled between admission and the hand-over: the run waits for one. */
+  capFull?: true;
+}
 
 /** The computer face: what the space face's `start_turn` handler calls. */
 export interface ComputerTurnPort {
@@ -17,6 +31,14 @@ export interface ComputerTurnPort {
    * @param request - The run, its words inline, and what admission decided.
    */
   start(request: TurnStartRequest): Promise<TurnStartAnswer>;
+  /**
+   * {@link start}, answering also what the launch path said: for a caller that
+   * waits on the hand-over (a spin-off, the web relay; T6). Absent on a face
+   * that has nothing to add.
+   *
+   * @param request - The run, its words inline, and what admission decided.
+   */
+  handOver?(request: TurnStartRequest): Promise<HandOverResult>;
   /**
    * Let go of a run still waiting in the dispatcher, because its deadline
    * passed. A launch already under way is not touched: that launch ends it.

@@ -20,7 +20,7 @@
  *
  * @module services/runtimes/connect/delegated-login
  */
-import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
+import { childEnvironment } from '../shared/runtime-environment-config.js';
 import { spawn as nodeSpawn } from 'node:child_process';
 import path from 'node:path';
 import type { DelegatedLoginResult } from '@dorkos/shared/runtime-connect';
@@ -136,7 +136,9 @@ export async function resolveLoginCommand(
   switch (type) {
     case 'codex': {
       const binary = await resolveCodexBinaryPath();
-      return binary ? { binary, args: ['login'], env: runtimeEnvironment('codex', 'login') } : null;
+      return binary
+        ? { binary, args: ['login'], env: childEnvironment('runtime-login', 'codex') }
+        : null;
     }
     case 'claude-code': {
       // `claude auth login` saves the sign-in to the login Keychain on macOS,
@@ -149,7 +151,7 @@ export async function resolveLoginCommand(
       return {
         binary,
         args: ['auth', 'login'],
-        env: runtimeEnvironment('claude-code', 'login', claudeConfigDirEnv(root)),
+        env: childEnvironment('runtime-login', 'claude-code', claudeConfigDirEnv(root)),
       };
     }
     default:
@@ -196,7 +198,7 @@ export function runDelegatedLogin(
     const stderr = new StderrSample();
     const child = spawn(cmd.binary, cmd.args, {
       stdio: ['ignore', 'ignore', 'pipe'],
-      env: cmd.env ?? runtimeEnvironment('codex', 'login'),
+      env: cmd.env ?? childEnvironment('runtime-login', 'codex'),
     });
 
     const finish = (result: DelegatedLoginResult): void => {
@@ -256,7 +258,7 @@ export function pipeSecretToChild(
     const stderr = new StderrSample();
     const child = spawn(cmd.binary, cmd.args, {
       stdio: ['pipe', 'ignore', 'pipe'],
-      env: cmd.env ?? runtimeEnvironment('codex', 'login'),
+      env: cmd.env ?? childEnvironment('runtime-login', 'codex'),
     });
 
     const finish = (result: DelegatedLoginResult): void => {

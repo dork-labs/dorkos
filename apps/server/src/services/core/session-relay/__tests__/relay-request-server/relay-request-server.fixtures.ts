@@ -10,7 +10,8 @@ import {
 } from '@dorkos/shared/session-relay';
 import type { Session } from '@dorkos/shared/types';
 import type { RecordAuditInput } from '../../../../audit/audit-trail.js';
-import type { DispatchSessionMessageOpts } from '../../../../session/launch/launch-session.js';
+import type { StartTurnInput } from '@dorkos/shared/turn-port';
+import type { HandOverNowAnswer } from '@dorkos/shared/turn-hand-over';
 import type { DurableStreamSink } from '../../../streams/durable-stream-sink.js';
 import type { SessionStreamRequest } from '../../../streams/session-stream-plan.js';
 import {
@@ -74,7 +75,7 @@ export interface RelayHarness {
   audits: RecordAuditInput[];
   streams: OpenStream[];
   runtime: { type: string; interruptQuery: Mock; submitAnswers: Mock; approveTool: Mock };
-  dispatchSessionMessage: Mock<(o: DispatchSessionMessageOpts) => Promise<unknown>>;
+  handOverTurn: Mock<(input: StartTurnInput) => Promise<HandOverNowAnswer>>;
   emit: (frame: RelayComputerFrame) => void;
   send: (id: string, request: unknown) => void;
   settle: () => Promise<unknown>;
@@ -98,12 +99,15 @@ export function harness(
     submitAnswers: vi.fn(() => true),
     approveTool: vi.fn(() => true),
   };
-  const dispatchSessionMessage = vi.fn(async (o: DispatchSessionMessageOpts) => ({
-    accepted: true,
-    canonicalId: o.sessionId,
-    outcome: { requested: 'queue', applied: 'queue', messageId: 'm1' },
-    queuePosition: 1,
-    queued: false,
+  const handOverTurn = vi.fn(async (input: StartTurnInput): Promise<HandOverNowAnswer> => ({
+    kind: 'handed',
+    runId: '01KRELAYRUN000000000000000',
+    receipt: {
+      canonicalId: input.sessionId,
+      outcome: { requested: 'queue', applied: 'queue', messageId: 'm1' },
+      queuePosition: 1,
+      queued: false,
+    },
   }));
   const deps: RelayRequestServerDeps = {
     agents: () => AGENTS,
@@ -122,10 +126,7 @@ export function harness(
           sink.signal.addEventListener('abort', () => resolve());
         })
     ),
-    dispatchSessionMessage:
-      dispatchSessionMessage as unknown as RelayRequestServerDeps['dispatchSessionMessage'],
-    meshCore: () => undefined,
-    roomSessionPlace: () => undefined,
+    handOverTurn,
     resolveRuntime: vi.fn(async () => runtime),
     clearQueuedMessages: vi.fn(() => [
       { id: 'q1', content: 'later', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'x' },
@@ -134,7 +135,6 @@ export function harness(
       audits.push(input);
     },
     owner: () => ({ accountId: 'acct-owner', kind: 'person', name: 'Dorian' }),
-    mintClientId: () => 'relay:test',
     approvalKeys: () => null,
     approvalPin: () => null,
     pendingApproval: () => null,
@@ -160,7 +160,7 @@ export function harness(
     audits,
     streams,
     runtime,
-    dispatchSessionMessage,
+    handOverTurn,
     emit,
     send,
     settle,

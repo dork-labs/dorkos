@@ -18,7 +18,7 @@
  *
  * @module services/runtimes/opencode/providers/ollama-provision
  */
-import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
+import { childEnvironment } from '../../shared/runtime-environment-config.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { RuntimeProvisionProgress } from '@dorkos/shared/transport';
@@ -76,7 +76,7 @@ async function commandExistsDefault(command: string, platform: NodeJS.Platform):
   try {
     await execFileAsync(probe, [command], {
       timeout: COMMAND_PROBE_TIMEOUT_MS,
-      env: runtimeEnvironment('opencode', 'locator'),
+      env: childEnvironment('opencode', 'locator'),
     });
     return true;
   } catch {
@@ -90,7 +90,7 @@ async function runCommandDefault(command: string, args: string[]): Promise<Comma
     await execFileAsync(command, args, {
       timeout: INSTALL_TIMEOUT_MS,
       killSignal: 'SIGKILL',
-      env: runtimeEnvironment('opencode', 'provision'),
+      env: childEnvironment('opencode', 'provision'),
     });
     return { ok: true };
   } catch (err) {

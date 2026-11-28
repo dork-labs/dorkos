@@ -17,6 +17,7 @@ import { BrowserDownloadProgress, type BrowserPreparationListener } from './prep
 import { installedChromePath } from './connection/chrome-installation.js';
 import { disablePasswordSaving, disableTabRestore, profileHeld } from './plain-chromium.js';
 import { prepareAgentLaunch } from './connection/agent-launch.js';
+import { childEnvironment } from '@dorkos/shared/child-environment';
 const runFile = promisify(execFile);
 const require = createRequire(import.meta.url);
 export const LOCAL_PLAYWRIGHT_VERSION = '1.65.0-alpha-2026-10-30';
@@ -93,9 +94,8 @@ export async function acquireLocalChromium(
       timeout: 180_000,
       signal,
       maxBuffer: 2 * 1024 * 1024,
-      // Preserve installer proxy/certificate settings; this is a child environment, not app configuration.
-      // eslint-disable-next-line no-restricted-syntax
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      // Keeps the installer's proxy and certificate settings, none of DorkOS's own.
+      env: childEnvironment('browser', { set: { ELECTRON_RUN_AS_NODE: '1' } }),
     });
     const progress = new BrowserDownloadProgress((state) => {
       if (!signal?.aborted) onPreparation?.(state);

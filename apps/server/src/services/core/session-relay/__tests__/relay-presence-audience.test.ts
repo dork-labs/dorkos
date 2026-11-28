@@ -21,8 +21,8 @@ const BRIDGED: CallerPrincipal = { kind: 'bridged', platform: 'telegram', platfo
 const PIECES = {
   meshCore: () => undefined,
   origins: {},
-  roomSessionPlace: () => undefined,
   remoteAccessOn: () => false,
+  handOverTurn: () => undefined,
 };
 
 describe('the relay presence audience', () => {

@@ -32,12 +32,23 @@
  * **Who it runs as.** The lock identity names the run, and a mini app's run
  * keeps the extension's prefix, so its turn carries the outsider mark as a
  * mini app's message always has (DOR-4594). A beat's run takes the
- * heartbeat's prefix, so its turn is recorded as a beat chat's.
+ * heartbeat's prefix, so its turn is recorded as a beat chat's. A message sent
+ * from the web keeps the relay's prefix, so it is never read as the owner's
+ * own clean send (DOR-4693). A chat message runs as the chat that sent it
+ * (`askedByRef`), which is how the dispatcher holds it to that chat's level,
+ * keeps it behind the person's words and joins it with its neighbours; one
+ * that names no sending chat is refused before anything is queued (T6).
+ *
+ * **What a waiting caller hears.** `handOver` answers what `start` answers,
+ * plus what this Mac's launch path said: the receipt of an accepted run, or
+ * the sentence of a refusal. A caller handing its run over now (a spin-off,
+ * the web relay) shows those, as it did when it called the launch path itself.
  *
  * @module services/session/turn-port/computer-turn-port
  */
 import type { MeshCore } from '@dorkos/mesh';
 import {
+  isRelayOrigin,
   personTyped,
   TurnStartRequestSchema,
   wordsWaitInComposer,
@@ -45,6 +56,9 @@ import {
   type TurnOrigin,
 } from '@dorkos/shared/turn-port';
 import { EXTENSION_CLIENT_PREFIX } from '@dorkos/shared/extension-id';
+import { chatClientId } from '@dorkos/shared/chat-client-id';
+import { parseDorkReference } from '@dorkos/shared/dork-ref';
+import { relayClientId } from '@dorkos/shared/session-relay';
 import type { PermissionModeId } from '@dorkos/shared/schemas';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import {
@@ -61,7 +75,7 @@ import { launching, pending } from '../message-dispatcher/state.js';
 import { queueKeyOf } from '../resolution/session-key-registry.js';
 import { isRunHeld, turnFacts } from './facts.js';
 import { stopRunTurn } from './run-events.js';
-import type { ComputerTurnPort } from './computer-face.js';
+import type { ComputerTurnPort, HandOverResult } from './computer-face.js';
 import { TURN_PORT_CLIENT_PREFIX } from './client-id.js';
 
 /** What the computer face needs at startup. */
@@ -111,10 +125,16 @@ async function dispatchOrRefuse(
  * prefix for a mini app and the heartbeat prefix for a beat, whose context
  * record names its place by it.
  */
-function clientIdOf(runId: string, origin: TurnOrigin): string {
+function clientIdOf(runId: string, origin: TurnOrigin, askedByRef: string | undefined): string {
   if (origin.kind === 'extension-message' || origin.kind === 'extension-start') {
     return `${EXTENSION_CLIENT_PREFIX}${runId}`;
   }
+  if (origin.kind === 'chat-message') {
+    const sender = askedByRef === undefined ? undefined : parseDorkReference(askedByRef, 'chat');
+    if (!sender?.ok) throw new Error('A chat message names the chat that sent it');
+    return chatClientId(sender.value.id);
+  }
+  if (origin.kind === 'session-relay') return relayClientId(runId);
   return `${origin.kind === 'heartbeat' ? HEARTBEAT_CLIENT_PREFIX : TURN_PORT_CLIENT_PREFIX}${runId}`;
 }
 
@@ -130,6 +150,110 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
   const inFlight = new Set<string>();
   const holds = (runId: string): boolean =>
     inFlight.has(runId) || pending.has(runId) || launching.has(runId) || isRunHeld(runId);
+  async function handOver(input: unknown): Promise<HandOverResult> {
+    const request = TurnStartRequestSchema.parse(input);
+    if (holds(request.runId)) return { answer: { refused: 'already_held' } };
+    // A continuation after a restart (attempt 2 on) carries DorkOS's own
+    // words, never a person's: they stay at their source, out of every
+    // composer, whatever origin it copied from the turn it picks up (§7.3).
+    // A run with a deadline never waits as a row either (§3.5, T7).
+    const composer = wordsWaitInComposer(request.origin, request.notAfter) && request.attempt === 1;
+    const live = turnFacts()?.dispatcher.liveRunOf(queueKeyOf(request.sessionId));
+    const chatBusy = live !== undefined && live !== request.runId;
+    if (!composer && chatBusy) return { answer: { refused: 'chat_busy' } };
+    if (request.prepare || request.additionalDirectories) {
+      // Each arrives with the caller that first sets it (rooms, T10).
+      throw new Error('This computer face does not take launch options yet');
+    }
+    if (request.task && request.origin.kind !== 'schedule') {
+      throw new Error('Only a schedule’s run carries a task’s level');
+    }
+    if (request.relay && !isRelayOrigin(request.origin)) {
+      throw new Error('Only a relay delivery’s run carries a relay turn’s level');
+    }
+    let agentPath: string | undefined;
+    if (request.agentId !== undefined) {
+      agentPath = deps.meshCore()?.getProjectPath(request.agentId);
+      if (agentPath === undefined) return { answer: { refused: 'invalid_agent_path' } };
+    }
+    const clientId = clientIdOf(request.runId, request.origin, request.askedByRef);
+    // Nothing awaits between admission's cap check and the launch path's own
+    // claim of a slot, which it takes before its first await.
+    inFlight.add(request.runId);
+    const result = await dispatchOrRefuse(dispatch, {
+      sessionId: request.sessionId,
+      origin: request.origin,
+      runId: request.runId,
+      messageId: request.runId,
+      ...(composer ? {} : { wordsAtSource: true as const }),
+      request: {
+        content: request.content,
+        ...(request.cwd !== undefined ? { cwd: request.cwd } : {}),
+        ...(agentPath !== undefined ? { agentPath } : {}),
+        ...(request.seedContext !== undefined ? { seedContext: request.seedContext } : {}),
+        ...(request.runtime !== undefined ? { runtime: request.runtime } : {}),
+        ...(request.accountRef !== undefined ? { account: request.accountRef } : {}),
+      },
+      clientId,
+      meshCore: deps.meshCore() as MeshCore | undefined,
+      roomSessionPlace: deps.roomSessionPlace(),
+      ...(request.launcher ? { launcher: request.launcher } : {}),
+      // A composer's words into a busy chat add no turn beside the running one.
+      countsTowardLaunchCap: !personTyped(request.origin) && !(composer && chatBusy),
+      ...(request.permissionCeiling !== undefined
+        ? { permissionCeiling: request.permissionCeiling }
+        : {}),
+      ...(request.unattended ? { unattended: true } : {}),
+      ...(request.continuationHold ? { continuationHold: true as const } : {}),
+      ...(request.carriedMarks ? { carriedMarks: request.carriedMarks } : {}),
+      turnOptions: {
+        ...(request.systemPromptAppend !== undefined
+          ? { systemPromptAppend: request.systemPromptAppend }
+          : {}),
+        ...(request.settings ? { settings: request.settings } : {}),
+        ...(request.approvalVerdict ? { approvalVerdict: request.approvalVerdict } : {}),
+        ...(request.task
+          ? {
+              taskTurn: {
+                permissionMode: request.task.permissionMode as PermissionModeId,
+                ...(request.task.approvedAllow
+                  ? { approvedAllow: request.task.approvedAllow }
+                  : {}),
+              },
+            }
+          : {}),
+        ...(request.relay ? { relayTurn: request.relay } : {}),
+      },
+    }).finally(() => inFlight.delete(request.runId));
+    if (result === 'runtime_mismatch') return { answer: { refused: 'runtime_mismatch' } };
+    if (isSessionLaunchRefusal(result)) {
+      if (result.refused === 'LAUNCH_CAP_FULL') {
+        return { answer: { refused: 'chat_busy' }, capFull: true };
+      }
+      return {
+        answer: { refused: DOOR_REFUSALS[result.refused] },
+        refusal: {
+          code: result.refused,
+          message: result.message,
+          ...(result.agentId !== undefined ? { agentId: result.agentId } : {}),
+          ...(result.launcherRefused !== undefined
+            ? { launcherRefused: result.launcherRefused }
+            : {}),
+        },
+      };
+    }
+    if (!result.accepted) throw new Error('The dispatcher did not take a run it was handed');
+    return {
+      answer: { accepted: true },
+      receipt: {
+        ...(result.canonicalId !== undefined ? { canonicalId: result.canonicalId } : {}),
+        queued: result.queued,
+        queuePosition: result.queuePosition,
+        outcome: result.outcome,
+        ...(result.warnings ? { warnings: result.warnings } : {}),
+      },
+    };
+  }
   return {
     holds,
     withdraw: (runId) => {
@@ -143,84 +267,12 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
       return stopRunTurn(runId);
     },
     async start(input) {
-      const request = TurnStartRequestSchema.parse(input);
-      if (holds(request.runId)) return { refused: 'already_held' };
-      // A continuation after a restart (attempt 2 on) carries DorkOS's own
-      // words, never a person's: they stay at their source, out of every
-      // composer, whatever origin it copied from the turn it picks up (§7.3).
-      // A run with a deadline never waits as a row either (§3.5, T7).
-      const composer =
-        wordsWaitInComposer(request.origin, request.notAfter) && request.attempt === 1;
-      const live = turnFacts()?.dispatcher.liveRunOf(queueKeyOf(request.sessionId));
-      const chatBusy = live !== undefined && live !== request.runId;
-      if (!composer && chatBusy) return { refused: 'chat_busy' };
-      if (request.prepare || request.additionalDirectories) {
-        // Each arrives with the caller that first sets it (rooms, T10).
-        throw new Error('This computer face does not take launch options yet');
-      }
-      if (request.task && request.origin.kind !== 'schedule') {
-        throw new Error('Only a schedule’s run carries a task’s level');
-      }
-      let agentPath: string | undefined;
-      if (request.agentId !== undefined) {
-        agentPath = deps.meshCore()?.getProjectPath(request.agentId);
-        if (agentPath === undefined) return { refused: 'invalid_agent_path' };
-      }
-      // Nothing awaits between admission's cap check and the launch path's own
-      // claim of a slot, which it takes before its first await.
-      inFlight.add(request.runId);
-      const result = await dispatchOrRefuse(dispatch, {
-        sessionId: request.sessionId,
-        origin: request.origin,
-        runId: request.runId,
-        messageId: request.runId,
-        ...(composer ? {} : { wordsAtSource: true as const }),
-        request: {
-          content: request.content,
-          ...(request.cwd !== undefined ? { cwd: request.cwd } : {}),
-          ...(agentPath !== undefined ? { agentPath } : {}),
-          ...(request.seedContext !== undefined ? { seedContext: request.seedContext } : {}),
-          ...(request.runtime !== undefined ? { runtime: request.runtime } : {}),
-          ...(request.accountRef !== undefined ? { account: request.accountRef } : {}),
-        },
-        clientId: clientIdOf(request.runId, request.origin),
-        meshCore: deps.meshCore() as MeshCore | undefined,
-        roomSessionPlace: deps.roomSessionPlace(),
-        // A composer's words into a busy chat add no turn beside the running one.
-        countsTowardLaunchCap: !personTyped(request.origin) && !(composer && chatBusy),
-        ...(request.permissionCeiling !== undefined
-          ? { permissionCeiling: request.permissionCeiling }
-          : {}),
-        ...(request.unattended ? { unattended: true } : {}),
-        ...(request.continuationHold ? { continuationHold: true as const } : {}),
-        ...(request.carriedMarks ? { carriedMarks: request.carriedMarks } : {}),
-        turnOptions: {
-          ...(request.systemPromptAppend !== undefined
-            ? { systemPromptAppend: request.systemPromptAppend }
-            : {}),
-          ...(request.settings ? { settings: request.settings } : {}),
-          ...(request.approvalVerdict ? { approvalVerdict: request.approvalVerdict } : {}),
-          ...(request.task
-            ? {
-                taskTurn: {
-                  permissionMode: request.task.permissionMode as PermissionModeId,
-                  ...(request.task.approvedAllow
-                    ? { approvedAllow: request.task.approvedAllow }
-                    : {}),
-                },
-              }
-            : {}),
-        },
-      }).finally(() => inFlight.delete(request.runId));
-      if (result === 'runtime_mismatch') return { refused: 'runtime_mismatch' };
-      if (isSessionLaunchRefusal(result)) {
-        if (result.refused === 'LAUNCH_CAP_FULL') {
-          throw new Error('The launch cap filled between admission and the hand-over');
-        }
-        return { refused: DOOR_REFUSALS[result.refused] };
-      }
-      if (!result.accepted) throw new Error('The dispatcher did not take a run it was handed');
-      return { accepted: true };
+      const handed = await handOver(input);
+      // The worker's hand-over retries with its backoff, as it always has.
+      if (handed.capFull)
+        throw new Error('The launch cap filled between admission and the hand-over');
+      return handed.answer;
     },
+    handOver,
   };
 }

@@ -24,7 +24,7 @@
  *
  * @module services/runtimes/opencode/providers/ollama-catalog
  */
-import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
+import { childEnvironment } from '../../shared/runtime-environment-config.js';
 import { execFile } from 'node:child_process';
 import os from 'node:os';
 import { promisify } from 'node:util';
@@ -180,7 +180,7 @@ async function probeNvidiaVramBytes(): Promise<number | null> {
       {
         timeout: NVIDIA_PROBE_TIMEOUT_MS,
         killSignal: 'SIGKILL',
-        env: runtimeEnvironment('opencode', 'process-inspection'),
+        env: childEnvironment('opencode', 'process-inspection'),
       }
     );
     return parseNvidiaVramBytes(stdout);

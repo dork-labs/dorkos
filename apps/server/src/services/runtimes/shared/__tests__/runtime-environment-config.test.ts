@@ -11,7 +11,19 @@ vi.mock('../../../core/config-manager.js', () => ({
   configManager: { get: () => ({ environment: { inherit } }) },
 }));
 
-import { runtimeEnvironment } from '../runtime-environment-config.js';
+import { childEnvironment } from '../runtime-environment-config.js';
+import type { EnvironmentPurpose, EnvironmentRuntime } from '../runtime-environment.js';
+
+/** One runtime child's environment, by purpose. */
+function runtimeEnv(
+  runtime: EnvironmentRuntime,
+  purpose: EnvironmentPurpose,
+  overrides?: Record<string, string>
+): Record<string, string> {
+  return purpose === 'login'
+    ? childEnvironment('runtime-login', runtime, overrides)
+    : childEnvironment(runtime, purpose, overrides);
+}
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -22,7 +34,7 @@ describe('what a turn tells the /flow plugin (DOR-2405)', () => {
   it.each(['claude-code', 'codex', 'opencode', 'doe'] as const)(
     'names the runtime and DorkOS as its host: %s',
     (runtime) => {
-      expect(runtimeEnvironment(runtime, 'turn')).toMatchObject({
+      expect(runtimeEnv(runtime, 'turn')).toMatchObject({
         FLOW_RUNTIME: runtime,
         FLOW_HARNESS: 'dorkos',
       });
@@ -41,13 +53,13 @@ describe('what a turn tells the /flow plugin (DOR-2405)', () => {
       vi.stubEnv('FLOW_HARNESS', 'cmux');
       inherit[configKey] = ['FLOW_RUNTIME', 'FLOW_HARNESS'];
       expect(
-        runtimeEnvironment(runtime, 'turn', { FLOW_RUNTIME: 'person', FLOW_HARNESS: 'spoof' })
+        runtimeEnv(runtime, 'turn', { FLOW_RUNTIME: 'person', FLOW_HARNESS: 'spoof' })
       ).toMatchObject({ FLOW_RUNTIME: runtime, FLOW_HARNESS: 'dorkos' });
     }
   );
 
   it('keeps the caller’s own overrides', () => {
-    expect(runtimeEnvironment('claude-code', 'turn', { CLAUDE_CONFIG_DIR: '/synthetic' })).toEqual(
+    expect(runtimeEnv('claude-code', 'turn', { CLAUDE_CONFIG_DIR: '/synthetic' })).toEqual(
       expect.objectContaining({ CLAUDE_CONFIG_DIR: '/synthetic', FLOW_HARNESS: 'dorkos' })
     );
   });
@@ -62,7 +74,7 @@ describe('what a turn tells the /flow plugin (DOR-2405)', () => {
       'provision',
       'process-inspection',
     ] as const)(`stays out of the ${runtime} helper process: %s`, (purpose) => {
-      const env = runtimeEnvironment(runtime, purpose);
+      const env = runtimeEnv(runtime, purpose);
       expect(env).not.toHaveProperty('FLOW_RUNTIME');
       expect(env).not.toHaveProperty('FLOW_HARNESS');
     });

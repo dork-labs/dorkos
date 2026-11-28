@@ -377,8 +377,8 @@ export function launchDispatchInner(
         turn.onTurnStart?.(seq);
       },
       projector: plan.projector,
-      // A turn-port run's watchers hear its events; a task's turn carries its level.
-      deps: withRunTurn(buildTurnDeps(plan.runtime), plan.runId, turn.taskTurn),
+      // A turn-port run's watchers hear its events; a task's or relay's turn carries its level.
+      deps: withRunTurn(buildTurnDeps(plan.runtime), plan.runId, turn),
       queueWaitMs: remainingMs,
       // A fresh id after a pause cut this row's turn; the row keeps its own (DOR-4353).
       messageId: runtimeMessageIdFor(messageId),

@@ -56,14 +56,9 @@ import { letGoOfWakeWords, WAKE_SOURCE } from './effects/wakes.js';
 import { StartPayloadSchema, startPayloadOf, type StartPayload } from './effects/start-payload.js';
 import type { RunStore, TurnRun } from './run-store.js';
 import { writeStopReceipt, writeStopRequest } from './run-stops.js';
+import { RUN_ENDS, runTurnEvents, stopRun, type RunTurnReading } from './run-turn-stream.js';
 
-/** The statuses after which a run never goes back in line, so its words are no longer needed. */
-export const RUN_ENDS: ReadonlySet<TurnRun['status']> = new Set([
-  'ended',
-  'settled',
-  'cancelled',
-  'superseded',
-]);
+export { RUN_ENDS };
 
 /** Why the space face refused a start before saving anything. */
 export type SpaceRefusalReason =
@@ -177,11 +172,16 @@ export class SpaceTurnPort {
    *   that keeps the words in its own row names the run by that row's id, so the
    *   row, the run, the queue row its words become and the caller's receipt share
    *   one id. Not part of the port's payload; the space side mints every run id.
+   * @param opts.handOverAt - Epoch ms before which the worker leaves its hand-over
+   *   alone: a caller handing the run over now (`hand-over-now.ts`) goes first.
    * @returns The run's id, its status (`queued`) and its place among the chat's waiting runs.
    *   A start under a `startKey` that already made a run saves nothing and answers that run.
    * @throws {TurnStartRefusedError} When the start is refused before anything is saved.
    */
-  start(input: StartTurnInput, opts: { runId?: string } = {}): StartTurnResult {
+  start(
+    input: StartTurnInput,
+    opts: { runId?: string; handOverAt?: number } = {}
+  ): StartTurnResult {
     const parsed = StartTurnInputSchema.safeParse(input);
     if (!parsed.success) {
       const tooLong =
@@ -236,6 +236,7 @@ export class SpaceTurnPort {
         ...(start.sourceRef !== undefined ? { sourceRef: start.sourceRef } : {}),
         ...(start.notAfter !== undefined ? { notAfter: start.notAfter } : {}),
         ...(start.startKey !== undefined ? { startKey: start.startKey } : {}),
+        ...(start.askedByRef !== undefined ? { askedByRef: start.askedByRef } : {}),
       });
       const waits = this.deps.preview?.(created, startPayloadOf(start));
       if (waits !== undefined) created = runs.move(created, 'queued', { waitReason: waits });
@@ -251,11 +252,23 @@ export class SpaceTurnPort {
         payload: startPayloadOf(start),
         delivery: 'repeatable',
         notAfter: start.notAfter ?? null,
+        ...(opts.handOverAt !== undefined ? { availableAt: opts.handOverAt } : {}),
       });
       return [created, false];
     });
     if (!again) this.words.set(run.id, start.content);
     return { runId: run.id, status: run.status, queuePosition: this.queuePositionOf(run) };
+  }
+
+  /**
+   * A registered agent's home, by its Mesh id: how a caller that knows an
+   * agent by its folder checks that an id it read there names that folder.
+   *
+   * @param agentId - The agent's Mesh id.
+   * @returns The home, or `undefined` when Mesh is not running or knows no such agent.
+   */
+  agentHomeOf(agentId: string): string | undefined {
+    return this.deps.agentHome?.()?.(agentId);
   }
 
   /**
@@ -328,6 +341,29 @@ export class SpaceTurnPort {
     const receipt = await computer.stop(runId);
     if (receipt) writeStopReceipt(this.deps.runs, request, receipt);
     return receipt;
+  }
+
+  /**
+   * A run's turn, read back as the events its runtime sends, until it is over
+   * (`run-turn-stream.ts`): for a caller that used to drive a runtime itself.
+   *
+   * @param runId - A run this caller started.
+   * @param reading - How a run that never started is worded.
+   */
+  turnEvents(runId: string, reading: RunTurnReading): AsyncGenerator<StreamEvent> {
+    return runTurnEvents(this, runId, reading);
+  }
+
+  /**
+   * Stop a run's turn, asking again once a launch under way has started
+   * (`run-turn-stream.ts`). Never rejects.
+   *
+   * @param runId - The run.
+   * @param by - Who asked, as a `dork:` reference, when known.
+   * @returns The receipt of the first ask, or `undefined` when no turn was running yet.
+   */
+  stopTurn(runId: string, by?: string): Promise<InterruptReceipt | undefined> {
+    return stopRun(this, runId, by);
   }
 
   /**

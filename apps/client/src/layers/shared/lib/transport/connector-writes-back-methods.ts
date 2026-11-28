@@ -1,5 +1,6 @@
 /**
- * The Transport methods for a connected app's writes-back switch (DOR-4794).
+ * The Transport methods for a connected app's writes-back switch (DOR-4794),
+ * through the generated API client (DOR-5473).
  *
  * @module shared/lib/transport/connector-writes-back-methods
  */
@@ -8,7 +9,7 @@ import type {
   ConnectorWritesBackChange,
   ConnectorWritesBackChangeRequest,
 } from '@dorkos/shared/connector-exclusion-schemas';
-import { fetchJSON } from './http-client';
+import { createTransportApiClient } from './api-client';
 
 /**
  * The methods.
@@ -16,11 +17,10 @@ import { fetchJSON } from './http-client';
  * @param baseUrl - The API's base URL.
  */
 export function createConnectorWritesBackMethods(baseUrl: string) {
-  const path = (connectionId: string) =>
-    `/connectors/connections/${encodeURIComponent(connectionId)}/writes-back`;
+  const api = createTransportApiClient(baseUrl);
   return {
     getConnectorWritesBack(connectionId: string): Promise<ConnectorWritesBack> {
-      return fetchJSON<ConnectorWritesBack>(baseUrl, path(connectionId));
+      return api.call('connectors.getConnectionsWritesBack', { path: { connectionId } });
     },
 
     // Turning it on is held for "Confirm it's you" by the app window's fetch,
@@ -29,9 +29,9 @@ export function createConnectorWritesBackMethods(baseUrl: string) {
       connectionId: string,
       change: ConnectorWritesBackChangeRequest
     ): Promise<ConnectorWritesBackChange> {
-      return fetchJSON<ConnectorWritesBackChange>(baseUrl, path(connectionId), {
-        method: 'PUT',
-        body: JSON.stringify(change),
+      return api.call('connectors.updateConnectionsWritesBack', {
+        path: { connectionId },
+        body: change,
       });
     },
   };

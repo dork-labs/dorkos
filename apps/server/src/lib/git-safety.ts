@@ -23,7 +23,11 @@
  *
  * @module lib/git-safety
  */
+import { childEnvironment } from '@dorkos/shared/child-environment';
 import { execFile } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { promisify } from 'node:util';
 import {
   gitConfigArgs,
@@ -33,6 +37,34 @@ import {
 } from '@dorkos/shared/git-hardening';
 import type { CheckResult } from '@dorkos/shared/health-schemas';
 import { logger } from './logger.js';
+
+/** A folder DorkOS just made for one git or gh call that keeps the real `GITHUB_TOKEN`. */
+export interface FreshGitFolder {
+  /** The empty folder, to run the call in. */
+  readonly cwd: string;
+  /** Keeps git from looking above it for a repository an agent could have planted. */
+  readonly env: { readonly GIT_CEILING_DIRECTORIES: string };
+  /** Removes the folder. */
+  dispose(): void;
+}
+
+/**
+ * Make an empty folder under the system temp folder for one `git-fetch` call
+ * (`ls-remote`, a clone, `gh auth token`). Never the server's own working
+ * folder: that is a project agents can write, and git reads its `.git/config`,
+ * which can name a program that would see the token. A census test
+ * (`__tests__/child-env-census.test.ts`) requires every such call to run in one.
+ *
+ * @returns The folder, its ceiling, and how to remove it.
+ */
+export function freshGitFolder(): FreshGitFolder {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-git-'));
+  return {
+    cwd,
+    env: { GIT_CEILING_DIRECTORIES: path.dirname(cwd) },
+    dispose: () => fs.rmSync(cwd, { recursive: true, force: true }),
+  };
+}
 
 /** How long `git --version` may take before git counts as unreadable. */
 const GIT_VERSION_TIMEOUT_MS = 10_000;
@@ -51,8 +83,10 @@ const ALLOWED_GIT_PROTOCOLS = 'https:ssh:git';
 export function hardenedGitEnv(): NodeJS.ProcessEnv {
   return withGitConfigEnv(
     {
-      // eslint-disable-next-line no-restricted-syntax -- git must inherit PATH/HOME/proxy/credential vars; we only ADD the protocol allowlist on top.
-      ...process.env,
+      // git needs PATH, HOME, proxy and credential vars. Every caller fetches into a
+      // folder DorkOS just made (a template, a marketplace package), so the real
+      // GITHUB_TOKEN stays; no other DorkOS name does.
+      ...childEnvironment('git-fetch'),
       GIT_ALLOW_PROTOCOL: ALLOWED_GIT_PROTOCOLS,
       GIT_TERMINAL_PROMPT: '0',
       // No lazy fetch either (DOR-3667): a fresh clone is ours, but a read of a
@@ -88,9 +122,10 @@ function gitVersionOutput(): Promise<string | undefined> {
   // under tests that mock `node:child_process` without `execFile`.
   installedGitVersion ??= (async () => {
     try {
+      // No repository and no network: no token either.
       const { stdout } = await promisify(execFile)('git', ['--version'], {
         timeout: GIT_VERSION_TIMEOUT_MS,
-        env: hardenedGitEnv(),
+        env: childEnvironment('git-local'),
       });
       return stdout;
     } catch (err) {

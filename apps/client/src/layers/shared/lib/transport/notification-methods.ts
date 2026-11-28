@@ -4,7 +4,7 @@
  * Three calls and no more: read a page, mark one read, mark them all read.
  * Everything else the Inbox does — a row arriving, a badge clearing on the other
  * device — rides the global SSE stream, so there is nothing to poll here.
- * The read goes through the generated API client (DOR-5473).
+ * All three go through the generated API client (DOR-5473).
  *
  * @module shared/lib/transport/notification-methods
  */
@@ -14,7 +14,6 @@ import type {
   MarkNotificationsReadResponse,
 } from '@dorkos/shared/notification-schemas';
 import { createTransportApiClient } from './api-client';
-import { fetchJSON } from './http-client';
 
 /**
  * Create the notification methods bound to a base URL.
@@ -43,20 +42,12 @@ export function createNotificationMethods(baseUrl: string) {
       return api.call('notifications.list', { query: values });
     },
 
-    // Stays hand-written: sends no body; the generated client sends {} on every write (DOR-5473).
     markNotificationRead(id: string): Promise<MarkNotificationsReadResponse> {
-      return fetchJSON<MarkNotificationsReadResponse>(
-        baseUrl,
-        `/notifications/${encodeURIComponent(id)}/read`,
-        { method: 'PATCH' }
-      );
+      return api.call('notifications.read', { path: { id } });
     },
 
-    // Stays hand-written: sends no body; the generated client sends {} on every write (DOR-5473).
     markAllNotificationsRead(): Promise<MarkNotificationsReadResponse> {
-      return fetchJSON<MarkNotificationsReadResponse>(baseUrl, '/notifications/read-all', {
-        method: 'POST',
-      });
+      return api.call('notifications.readAll', {});
     },
   };
 }

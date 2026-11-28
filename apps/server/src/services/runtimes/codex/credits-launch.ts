@@ -70,7 +70,7 @@ export function codexRoutesOrPays(name: string): boolean {
  * Codex's process; the thread's provider points at the credits relay, which
  * adds it on the way out.
  *
- * @param projected - `runtimeEnvironment('codex', 'turn')`.
+ * @param projected - `childEnvironment('codex', 'turn')`.
  */
 export function codexCreditsAppServerEnv(
   projected: Readonly<Record<string, string>>

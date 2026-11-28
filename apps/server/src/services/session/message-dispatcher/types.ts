@@ -25,7 +25,7 @@ import type { SessionLaunchWarning } from '@dorkos/shared/schemas';
 import type { SessionStateProjector } from '../session-state-projector.js';
 import type { TriggerTurnOpts, TriggerTurnResult } from '../trigger-turn.js';
 import type { CompactionBoundaryTag } from '../trigger-command-intent.js';
-import type { TaskTurnOptions } from './turn-deps.js';
+import type { RelayTurnOptions, TaskTurnOptions } from './turn-deps.js';
 
 /** The turn a session currently has open, and who owns it. */
 export interface InFlightTurn {
@@ -283,6 +283,8 @@ export interface DispatchMessageOpts {
   newSessionPermissionMode?: PermissionModeId;
   /** A scheduled task's own level and rules; see {@link TaskTurnOptions}. */
   taskTurn?: TaskTurnOptions;
+  /** A relay delivery's own level; see {@link RelayTurnOptions}. */
+  relayTurn?: RelayTurnOptions;
   /**
    * The loosest level this turn may run at. Passed straight through;
    * `MessageOpts.permissionCeiling` is the authority on what it means.
@@ -545,6 +547,7 @@ export interface DispatchPlan {
     | 'settings'
     | 'newSessionPermissionMode'
     | 'taskTurn'
+    | 'relayTurn'
     | 'permissionCeiling'
     | 'continuationHold'
     | 'carriedMarks'

@@ -21,6 +21,10 @@ describe('createHubMethods', () => {
         { url: '/api/hub/computers', method: 'GET', body: undefined },
       ],
       [
+        () => methods.createHubLinkCode(),
+        { url: '/api/hub/computers/link-code', method: 'POST', body: undefined },
+      ],
+      [
         () => methods.removeHubComputer('c 1/x'),
         { url: '/api/hub/computers/c%201%2Fx', method: 'DELETE', body: undefined },
       ],
@@ -39,6 +43,18 @@ describe('createHubMethods', () => {
       [
         () => methods.setSessionRelayLevel('full'),
         { url: '/api/session-relay/level', method: 'PATCH', body: '{"level":"full"}' },
+      ],
+      [
+        () => methods.pauseSessionRelay(),
+        { url: '/api/session-relay/pause', method: 'POST', body: undefined },
+      ],
+      [
+        () => methods.resumeSessionRelay(),
+        { url: '/api/session-relay/resume', method: 'POST', body: undefined },
+      ],
+      [
+        () => methods.endSessionRelayPresence(),
+        { url: '/api/session-relay/presence/end', method: 'POST', body: undefined },
       ],
       [
         () => methods.unlinkSessionRelay(),

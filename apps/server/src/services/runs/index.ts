@@ -33,7 +33,7 @@ import {
 } from '../session/turn-port/index.js';
 import { logger } from '../../lib/logger.js';
 import { createRunFactsSink } from './run-facts-sink.js';
-import { RUN_LEASE_RENEW_MS, RunStore, type RunStopRequest } from './run-store.js';
+import { RUN_LEASE_RENEW_MS, RunStore, type RunStopRequest, type TurnRun } from './run-store.js';
 import { writeStopReceipt, writeStopRequest, type StopRequestRef } from './run-stops.js';
 import { EffectStore } from './effects/effect-store.js';
 import { TurnNotices } from './effects/turn-notices.js';
@@ -51,6 +51,10 @@ import { RunRecovery, type BootFacts, type RunRecoveryDeps } from './recovery/ru
 import { RESTART_SOURCE, restartWordSource } from './recovery/continue-after-restart.js';
 import { restartHandlers } from './recovery/restart-handlers.js';
 import { ScheduleCap, type ScheduleCapSource } from './schedule-cap.js';
+import { WebChatCap } from './web-chat-cap.js';
+import { handOverNow } from './hand-over-now.js';
+import type { StartTurnInput } from '@dorkos/shared/turn-port';
+import type { HandOverNowAnswer } from '@dorkos/shared/turn-hand-over';
 
 export {
   IllegalRunTransitionError,
@@ -63,6 +67,7 @@ export {
 } from './run-store.js';
 export { createRunFactsSink } from './run-facts-sink.js';
 export type { ScheduleCapSource } from './schedule-cap.js';
+export type { RunTurnReading } from './run-turn-stream.js';
 export type { StopRequestRef } from './run-stops.js';
 export {
   RUN_ENDS,
@@ -98,6 +103,8 @@ export interface RunRecord {
    * @returns Whether this call saved the wake.
    */
   wake: (request: WakeRequest, claim?: () => boolean) => boolean;
+  /** Save a run and hand it over now, for a caller that answers its asker at once (T6). */
+  handOver: (input: StartTurnInput, opts?: { runId?: string }) => Promise<HandOverNowAnswer>;
 }
 
 let installed:
@@ -161,6 +168,18 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
   const effects = new EffectStore(db, { now });
   // A freed slot lets the runs waiting for one look again now, not at their next backoff.
   const scheduleCap = new ScheduleCap(() => effects.wakeAllStarts());
+  const webChatCap = new WebChatCap(() => effects.wakeAllStarts());
+  // Every slot a run takes the moment admission lets it go.
+  const slots = {
+    claim: (run: Pick<TurnRun, 'id' | 'origin'>) => {
+      scheduleCap.claim(run);
+      webChatCap.claim(run);
+    },
+    release: (runId: string) => {
+      scheduleCap.release(runId);
+      webChatCap.release(runId);
+    },
+  };
   // Every created or moved run puts its chat's runs on the chat's stream (§4.6).
   const view = (chatId: string): ChatRun[] => chatRunsOf(store, effects, chatId);
   const announcer = new RunAnnouncer(view);
@@ -174,6 +193,7 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
     // Read at call time: nothing moves a run before the record is built.
     onMoved: (run, from) => {
       scheduleCap.onRunMoved(run, from);
+      webChatCap.onRunMoved(run, from);
       starts.onRunMoved(run, from);
       announcer.changed(run.sessionId);
     },
@@ -186,6 +206,7 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
       machineFull: isAgentLaunchCapFull,
     }),
     scheduleFull: () => scheduleCap.full(),
+    webChatsFull: () => webChatCap.full(),
   };
   const admitRun = admission?.admit ?? admit;
   const port: SpaceTurnPort = new SpaceTurnPort({
@@ -255,7 +276,7 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
         queueRowExists,
         admission: admissionSources,
         admit: admitRun,
-        scheduleCap,
+        scheduleCap: slots,
       }),
     },
     epoch: opts.epoch,
@@ -273,6 +294,22 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
     scheduleCap,
     wake: (request, claim) =>
       effects.transaction(() => (claim?.() ?? true) && saveWake(effects, request, now())),
+    handOver: (input, handOpts) =>
+      handOverNow(
+        {
+          runs: store,
+          effects,
+          starts,
+          port,
+          computer: computer ?? getComputerTurnPort,
+          admission: admissionSources,
+          admit: admitRun,
+          slots,
+          now,
+        },
+        input,
+        handOpts
+      ),
   };
 }
 
@@ -356,6 +393,23 @@ export function wakeChat(request: WakeRequest, claim?: () => boolean): boolean {
 /** The space face of the turn port, or `undefined` before startup wired the run record. */
 export function turnPort(): SpaceTurnPort | undefined {
   return installed?.port;
+}
+
+/**
+ * Save a run and hand it over now (`hand-over-now.ts`, T6): for a caller that
+ * answers its own asker at once, a spin-off's first message or a message sent
+ * from the web. `undefined` before startup wired the run record.
+ *
+ * @param input - The start, as the space face's `start()` takes it.
+ * @param opts.runId - The run's id, when the caller minted it.
+ * @returns What became of the hand-over.
+ * @throws {TurnStartRefusedError} When the start is refused before anything is saved.
+ */
+export function handOverTurn(
+  input: StartTurnInput,
+  opts?: { runId?: string }
+): Promise<HandOverNowAnswer> | undefined {
+  return installed?.handOver(input, opts);
 }
 
 /**

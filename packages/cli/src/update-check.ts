@@ -3,6 +3,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { isEnvFlagOn, isTelemetryDisabledByEnv } from '@dorkos/shared/telemetry-consent';
+import type { ProjectSettings } from '@dorkos/shared/project-environment';
 import { resolveDorkHome } from './lib/dork-home.js';
 
 interface UpdateCache {
@@ -21,12 +22,16 @@ function getCachePath(): string {
 /**
  * Whether the update check is switched off: `DORKOS_UPDATE_CHECK_DISABLED`
  * (the server's own switch), or `DO_NOT_TRACK` / `DORKOS_TELEMETRY_DISABLED`,
- * which mean DorkOS sends nothing. Read at call time, the CLI's env convention.
+ * which mean DorkOS sends nothing. Read at call time, the CLI's env convention,
+ * with the project `.env` file's `DO_NOT_TRACK` where the environment has none.
  */
-function updateCheckDisabled(): boolean {
+function updateCheckDisabled(project: ProjectSettings): boolean {
   // eslint-disable-next-line no-restricted-syntax -- call-time env resolution (CLI convention)
   const env = process.env;
-  return isEnvFlagOn(env.DORKOS_UPDATE_CHECK_DISABLED) || isTelemetryDisabledByEnv(env);
+  return (
+    isEnvFlagOn(env.DORKOS_UPDATE_CHECK_DISABLED) ||
+    isTelemetryDisabledByEnv({ ...env, DO_NOT_TRACK: env.DO_NOT_TRACK ?? project.DO_NOT_TRACK })
+  );
 }
 
 /**
@@ -34,10 +39,14 @@ function updateCheckDisabled(): boolean {
  * touching the network or the cache when the check is switched off.
  *
  * @param currentVersion - The currently running version string (e.g., "0.1.0")
+ * @param project - The project `.env` file's allowed settings (`lib/project-env.ts`).
  * @returns The latest version string if newer than current, or null
  */
-export async function checkForUpdate(currentVersion: string): Promise<string | null> {
-  if (updateCheckDisabled()) return null;
+export async function checkForUpdate(
+  currentVersion: string,
+  project: ProjectSettings = {}
+): Promise<string | null> {
+  if (updateCheckDisabled(project)) return null;
 
   // 1. Check cache
   try {

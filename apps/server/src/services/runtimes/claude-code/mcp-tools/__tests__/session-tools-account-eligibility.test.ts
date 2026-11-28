@@ -100,6 +100,7 @@ import {
 import { checkClaudeLaunchAccount } from '../../launch-account-check.js';
 import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { createSessionStartHandler } from '../session-tools.js';
+import { installSpinOffPort } from './session-tools-port.fixture.js';
 import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
@@ -108,9 +109,14 @@ registerClaudeCodeFacts();
 
 const AGENT_HOME = '/work/agents/scout';
 
-const mesh = {
-  listWithPaths: () => [{ id: 'a1', name: 'scout', displayName: 'Scout', projectPath: AGENT_HOME }],
-} as unknown as MeshCore;
+const SCOUT = {
+  id: '01KSCVTAGENT00000000000001',
+  name: 'scout',
+  displayName: 'Scout',
+  projectPath: AGENT_HOME,
+};
+const mesh = { listWithPaths: () => [SCOUT] } as unknown as MeshCore;
+let uninstallPort: () => void;
 
 function makeDeps(): AgentToolDeps {
   return {
@@ -168,6 +174,7 @@ const ORIGINAL_CLAUDE_CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR;
 let claude: FakeAgentRuntime & { checkLaunchAccount?: unknown };
 
 beforeEach(() => {
+  uninstallPort = installSpinOffPort(() => [SCOUT]);
   vi.clearAllMocks();
   delete process.env.CLAUDE_CONFIG_DIR;
   __resetAccountAdvisorForTests();
@@ -217,6 +224,7 @@ beforeEach(() => {
 
 afterEach(() => {
   for (const [opts] of vi.mocked(dispatchMessage).mock.calls) opts.onSettled?.('ok');
+  uninstallPort();
   setAccountUsageStore(undefined);
   clearTestHomes();
   __resetAccountAdvisorForTests();

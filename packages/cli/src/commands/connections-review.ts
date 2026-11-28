@@ -1,4 +1,5 @@
 /** Requester-safe connector management review commands. */
+import { childEnvironment } from '@dorkos/shared/child-environment';
 import { execFile } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import {
@@ -67,9 +68,11 @@ function defaultOpenUrl(url: string): boolean {
   const parsed = new URL(url);
   if (parsed.protocol !== 'http:' || parsed.hostname !== 'localhost') return false;
   try {
-    if (process.platform === 'darwin') execFile('open', [url], () => {});
-    else if (process.platform === 'win32') execFile('cmd', ['/c', 'start', '', url], () => {});
-    else execFile('xdg-open', [url], () => {});
+    if (process.platform === 'darwin')
+      execFile('open', [url], { env: childEnvironment('os-helper') }, () => {});
+    else if (process.platform === 'win32')
+      execFile('cmd', ['/c', 'start', '', url], { env: childEnvironment('os-helper') }, () => {});
+    else execFile('xdg-open', [url], { env: childEnvironment('os-helper') }, () => {});
     return true;
   } catch {
     return false;

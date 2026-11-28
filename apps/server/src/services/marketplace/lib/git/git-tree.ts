@@ -55,6 +55,7 @@ import {
   measurePackageTree,
 } from '@dorkos/marketplace/package-size';
 import { parseGitVersion } from '@dorkos/shared/git-hardening';
+import { freshGitFolder } from '../../../../lib/git-safety.js';
 import { GitDownloadTooLargeError, runGit, type GitConfigEntry } from './git-runner.js';
 import {
   gitHubAuthConfig,
@@ -223,16 +224,21 @@ export async function lookupRemoteRef(cloneUrl: string, ref: string): Promise<Re
   const candidates = candidateRefNames(ref);
   const patterns = candidates.flatMap((name) => [name, `${name}^{}`]);
   let stdout: string;
+  // Never the server's own folder: its `.git/config` could name a program that sees the token.
+  const fresh = freshGitFolder();
   try {
     const auth = await gitAuth(cloneUrl);
     ({ stdout } = await runGit(
       ['ls-remote', END_OF_OPTIONS, auth.url, ...patterns],
-      undefined,
+      fresh.cwd,
       LS_REMOTE_TIMEOUT_MS,
-      auth.config
+      auth.config,
+      { env: fresh.env }
     ));
   } catch (err) {
     return { kind: 'unreachable', reason: reasonOf(err) };
+  } finally {
+    fresh.dispose();
   }
 
   const advertised = parseLsRemote(stdout);
@@ -642,10 +648,19 @@ let installedGit: Promise<[number, number] | undefined> | undefined;
 
 /** The installed git's version, from one `git --version` per process. */
 function gitVersion(): Promise<[number, number] | undefined> {
-  installedGit ??= runGit(['--version'], undefined, LS_REMOTE_TIMEOUT_MS).then(
-    ({ stdout }) => parseGitVersion(stdout),
-    () => undefined
-  );
+  installedGit ??= (async () => {
+    const fresh = freshGitFolder();
+    try {
+      const { stdout } = await runGit(['--version'], fresh.cwd, LS_REMOTE_TIMEOUT_MS, [], {
+        env: fresh.env,
+      });
+      return parseGitVersion(stdout);
+    } catch {
+      return undefined;
+    } finally {
+      fresh.dispose();
+    }
+  })();
   return installedGit;
 }
 

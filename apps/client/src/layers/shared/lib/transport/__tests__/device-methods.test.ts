@@ -59,6 +59,10 @@ describe('createDeviceMethods', () => {
         },
       ],
       [
+        () => methods.signOutEverywhereElse(),
+        { url: '/api/devices/sign-out-all', method: 'POST', body: undefined, type: json },
+      ],
+      [
         () => methods.listWifiSignInRequests(),
         { url: '/api/devices/sign-in-requests', method: 'GET', body: undefined, type: json },
       ],
@@ -85,7 +89,7 @@ describe('createDeviceMethods', () => {
         {
           url: '/api/devices/sign-in-requests/r%2F1/decline',
           method: 'POST',
-          body: '{}',
+          body: undefined,
           type: json,
         },
       ],

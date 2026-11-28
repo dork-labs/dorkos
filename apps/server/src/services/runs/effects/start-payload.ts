@@ -31,6 +31,8 @@ export const StartPayloadSchema = z.strictObject({
   task: fields.task,
   continuationHold: fields.continuationHold,
   approvalVerdict: fields.approvalVerdict,
+  relay: fields.relay,
+  launcher: fields.launcher,
 });
 
 /** A `start_turn` effect's payload. See {@link StartPayloadSchema}. */
@@ -50,6 +52,7 @@ export function startPayloadOf(start: StartTurnInput): StartPayload {
     sourceRef: _sourceRef,
     notAfter: _notAfter,
     startKey: _startKey,
+    askedByRef: _askedByRef,
     ...payload
   } = start;
   return payload;

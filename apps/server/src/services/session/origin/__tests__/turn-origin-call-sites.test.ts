@@ -117,10 +117,11 @@ const ORIGIN_HELPERS: Readonly<Record<string, readonly string[]>> = {
  * turn port names its origin at the space face's `start` (spec
  * `turns-survive-restarts` §3.1), spelled `door.start(` so it is told apart
  * from every other `start`; the computer face is a doorway like the launch
- * service, pinned at the bottom.
+ * service, pinned at the bottom. A caller that hands its run over at once
+ * (T6) names it at `handOverTurn({` or, for a spin-off, `startSpinOffTurn({`.
  */
 const BINDING_CALL =
-  /(?:persistSessionRuntime|dispatchSessionMessage|door\.start)\(|(?:wakeChat|\bwake)\(\s*\{/g;
+  /(?:persistSessionRuntime|dispatchSessionMessage|door\.start)\(|(?:handOverTurn|startSpinOffTurn|wakeChat|\bwake)\(\s*\{/g;
 
 /**
  * A wake (spec `turns-survive-restarts` §6.3) names its run's origin where its
@@ -174,6 +175,8 @@ describe('every session-binding call site declares what it is', () => {
       !source.includes('persistSessionRuntime(') &&
       !source.includes('dispatchSessionMessage(') &&
       !source.includes('door.start(') &&
+      !source.includes('handOverTurn(') &&
+      !source.includes('startSpinOffTurn(') &&
       !WAKE_CALL.test(source)
     )
       continue;

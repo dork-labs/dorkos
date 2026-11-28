@@ -21,11 +21,12 @@
  * ## Scope
  *
  * `apps/server/src` — where every cockpit, room, task, embedded and mesh
- * trigger lives. `packages/relay` is deliberately outside it: relay's adapters
- * drive agent-to-agent sessions of their own through `RuntimeAdapter`
- * (ADR-0075's per-agentId chain), they cannot import from `apps/server`, and no
- * person is typing into them. Widening this guard to cover them would be
- * asserting a rule that was never made.
+ * trigger lives. `packages/relay` is outside it, because a grep cannot tell
+ * which `AgentRuntimeLike` its handlers are handed: on this server every one is
+ * a port-backed stand-in (`services/relay/relay-turns/port-runtime.ts`, spec
+ * `turns-survive-restarts` T13), so a relay turn reaches the runtime only
+ * through the dispatcher. `relay-turns-through-port.test.ts` proves that by
+ * behaviour instead.
  *
  * @vitest-environment node
  */

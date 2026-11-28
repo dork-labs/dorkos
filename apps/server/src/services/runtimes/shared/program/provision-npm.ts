@@ -20,7 +20,7 @@ import { mkdir, rm } from 'node:fs/promises';
 import type { RuntimeProvisionProgress, RuntimeProvisionResult } from '@dorkos/shared/transport';
 import { logger, logError } from '../../../../lib/logger.js';
 import type { EnvironmentRuntime } from '../runtime-environment.js';
-import { runtimeEnvironment } from '../runtime-environment-config.js';
+import { childEnvironment } from '../runtime-environment-config.js';
 
 /** One runtime's npm-installed program, as {@link createNpmProvisioner} installs it. */
 export interface NpmProvisionTarget {
@@ -160,7 +160,7 @@ async function runNpmInstall(
     };
 
     const child = spawn(cmd, args, {
-      env: runtimeEnvironment(target.runtime, 'provision'),
+      env: childEnvironment(target.runtime, 'provision'),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 

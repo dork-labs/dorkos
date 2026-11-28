@@ -110,15 +110,14 @@
  *
  * @module server/services/rooms/repo/room-repo-git
  */
+import { childEnvironment } from '@dorkos/shared/child-environment';
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { promises as fsp } from 'node:fs';
 import { isSafeRoomRepoConfigKey, NO_REACH_GIT_ENV } from '@dorkos/shared/safe-git';
 import { RoomError, RoomRepoConfigUnsafeError } from '../room-errors.js';
-import { ROOM_GIT_CONFIG_ARGS, roomGitArgv } from './room-git-args.js';
-
-export { ROOM_GIT_CONFIG_ARGS };
+import { roomGitArgv } from './room-git-args.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -290,8 +289,8 @@ export function personGitEmail(authorId: string): string {
  * @returns The child environment.
  */
 export function gitEnv(ceilingDir: string, cwd: string): NodeJS.ProcessEnv {
-  // eslint-disable-next-line no-restricted-syntax -- git must inherit PATH/HOME; this REMOVES the redirecting vars and adds the confinement, which is only expressible against the real environment.
-  const env: NodeJS.ProcessEnv = { ...process.env };
+  // git needs PATH and HOME; the redirecting vars are removed below.
+  const env: NodeJS.ProcessEnv = childEnvironment('git-local');
   for (const name of REDIRECTING_GIT_VARS) delete env[name];
   return {
     ...env,

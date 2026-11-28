@@ -20,6 +20,7 @@
  *
  * @module services/runtimes/shared/policy/shell-protected-writes
  */
+import { childEnvironment } from '../runtime-environment-config.js';
 import { logger } from '../../../../lib/logger.js';
 import type { ProtectedPathRoots } from '../../../core/protected-paths/protected-path-check.js';
 import type { ShellChecker } from '../../claude-code/shell-guard/guard-host.js';
@@ -85,8 +86,9 @@ export async function checkShellProtectedWrites(
         dorkHome: roots.data,
         home: roots.home,
         accounts: roots.accounts,
-        // eslint-disable-next-line no-restricted-syntax -- the variables the agent's shell starts with (the sidecar and Doe's shell inherit them); only names the command spells reach the guard
-        env: process.env,
+        // The variables the agent's shell starts with (the sidecar and Doe's shell
+        // inherit their turn's env); only names the command spells reach the guard.
+        env: childEnvironment(runtime),
         agentHomes: () => roots.agentHomes,
         full,
         protectedWrites: true,

@@ -10,8 +10,9 @@ describe('HttpTransport.restartExtension', () => {
     await new HttpTransport('/api').restartExtension('notes app');
     expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
       '/api/extensions/notes%20app/restart',
-      expect.objectContaining({ method: 'POST', body: '{}', credentials: 'include' })
+      expect.objectContaining({ method: 'POST', credentials: 'include' })
     );
+    expect(fetchMock.mock.calls[0][1].body).toBeUndefined();
   });
 
   it('preserves the server refusal instead of reporting a restart', async () => {

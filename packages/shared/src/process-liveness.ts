@@ -19,6 +19,7 @@
  *
  * @module process-liveness
  */
+import { childEnvironment } from './child-environment.js';
 import { execFileSync } from 'node:child_process';
 
 /**
@@ -99,8 +100,8 @@ export function processStartTime(pid: number): Date | null {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
       timeout: PS_TIMEOUT_MS,
-      // eslint-disable-next-line no-restricted-syntax -- forwarding the real environment to a child process, with the C locale forced so `lstart` parses
-      env: { ...process.env, LC_ALL: 'C' },
+      // The C locale, so `lstart` parses.
+      env: childEnvironment('os-helper', { set: { LC_ALL: 'C' } }),
     }).trim();
     if (!raw) return null;
     const parsed = new Date(raw);

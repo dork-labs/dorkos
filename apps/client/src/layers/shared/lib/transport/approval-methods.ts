@@ -15,7 +15,6 @@ import type {
   PendingApprovalsResponse,
 } from '@dorkos/shared/approval-schemas';
 import { createTransportApiClient } from './api-client';
-import { fetchJSON } from './http-client';
 
 /**
  * Create the approval methods bound to a base URL.
@@ -28,11 +27,11 @@ export function createApprovalMethods(baseUrl: string) {
     async listDeclinedHookApprovals(): Promise<DeclinedHookApprovalsResponse> {
       return api.call('approvals.getDeclinedHooks', {});
     },
-    // Stays hand-written: waits for batch 3's no-body client (DOR-5473).
-    askAgainHookApproval(approvalId: string): Promise<{ ok: true; approvalId: string }> {
-      return fetchJSON(baseUrl, `/approvals/${encodeURIComponent(approvalId)}/ask-again`, {
-        method: 'POST',
-      });
+    async askAgainHookApproval(approvalId: string): Promise<{ ok: true; approvalId: string }> {
+      return (await api.call('approvals.createAskAgain', { path: { id: approvalId } })) as {
+        ok: true;
+        approvalId: string;
+      };
     },
     async listPendingApprovals(): Promise<PendingApprovalsResponse> {
       return api.call('approvals.getPending', {});
@@ -42,17 +41,15 @@ export function createApprovalMethods(baseUrl: string) {
       return api.call('approvals.getFullDetail', { path: { id: approvalId } });
     },
 
-    // Stays hand-written: the one-time yes sends no body; waits for batch 3's
-    // no-body client (DOR-5473).
-    grantApproval(
+    async grantApproval(
       approvalId: string,
       options?: { answer?: ApprovalAnswer }
     ): Promise<ApprovalDecisionResponse> {
-      return fetchJSON(baseUrl, `/approvals/${encodeURIComponent(approvalId)}/grant`, {
-        method: 'POST',
-        // Sent only for Always allow. An empty body is the plain one-time yes, and
-        // Express 5 reads it as `undefined`, which the route already handles.
-        ...(options?.answer === 'always' ? { body: JSON.stringify({ answer: 'always' }) } : {}),
+      return api.call('approvals.createGrant', {
+        path: { id: approvalId },
+        // Sent only for Always allow. No body is the plain one-time yes, which
+        // the route already handles.
+        ...(options?.answer === 'always' ? { body: { answer: 'always' as const } } : {}),
       });
     },
 
@@ -63,11 +60,10 @@ export function createApprovalMethods(baseUrl: string) {
       });
     },
 
-    // Stays hand-written: waits for batch 3's no-body client (DOR-5473).
-    dismissAlwaysSuggestion(approvalId: string): Promise<{ ok: true; approvalId: string }> {
-      return fetchJSON(baseUrl, `/approvals/${encodeURIComponent(approvalId)}/dismiss-suggestion`, {
-        method: 'POST',
-      });
+    async dismissAlwaysSuggestion(approvalId: string): Promise<{ ok: true; approvalId: string }> {
+      return (await api.call('approvals.createDismissSuggestion', {
+        path: { id: approvalId },
+      })) as { ok: true; approvalId: string };
     },
   };
 }

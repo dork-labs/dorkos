@@ -9,6 +9,7 @@
  * @module lib/process/kill-tree
  */
 import { execFile } from 'node:child_process';
+import { childEnvironment } from '@dorkos/shared/child-environment';
 
 /**
  * Stop a process and everything it started. On POSIX the process leads its
@@ -23,7 +24,7 @@ export function killProcessTree(
   pid: number,
   platform: NodeJS.Platform = process.platform,
   run: (file: string, args: string[]) => void = (file, args) => {
-    execFile(file, args, { windowsHide: true }, () => {});
+    execFile(file, args, { windowsHide: true, env: childEnvironment('os-helper') }, () => {});
   }
 ): void {
   if (platform === 'win32') {
