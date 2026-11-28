@@ -21,20 +21,22 @@
  * `Last-Event-ID` is sent what it missed from the bounded window
  * (`routes/global-events-connect.ts`).
  *
+ * Only a person reads it: the person bar (`assessPerson`) runs before anything
+ * else, through `admitEventsReader`, and refuses an agent (DOR-4986).
+ *
  * @module routes/events
  */
 import type { ServerResponse } from 'node:http';
 import { Hono } from 'hono';
 import { STREAM_RESUME_PARAM } from '@dorkos/shared/stream-socket';
-import { problem } from '@dorkos/http-kit';
+import { problem, sendProblem } from '@dorkos/http-kit';
 import { SSE } from '../config/constants.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { initSSEStream } from '../services/core/streams/stream-adapter.js';
 import { encodeBroadcast, eventFanOut, type FanOutClient } from '../services/core/event-fan-out.js';
-import { readCallerPrincipal } from '../lib/caller-principal.js';
-import { openGlobalStream } from './global-events-connect.js';
+import { admitEventsReader, openGlobalStream } from './global-events-connect.js';
 
 /**
  * Adapt a Node response to the fan-out's {@link FanOutClient} port.
@@ -65,6 +67,12 @@ const router = new Hono<ApiEnv>();
  * the client leaves.
  */
 router.get('/', (c) => {
+  // The person bar first, on the facts the chain already resolved (the session
+  // gate and the agent identity): this stream is a person's, never an agent's.
+  const facts = honoRequestFacts(c);
+  const admission = admitEventsReader(facts);
+  if (!admission.ok) return sendProblem(c, admission.refusal.body);
+
   // Answer BEFORE sending SSE headers, so a server at capacity returns a
   // readable 503 rather than a 200 that immediately fails.
   if (!eventFanOut.hasCapacity()) {
@@ -72,12 +80,6 @@ router.get('/', (c) => {
       detail: 'Too many live connections are open. Try again soon.',
     });
   }
-
-  // The principal comes from the chain that already ran the session gate and
-  // agent identity, so an addressed event (`interaction_pending`,
-  // `config_changed`) can tell this connection apart from an agent's.
-  const facts = honoRequestFacts(c);
-  const principal = readCallerPrincipal(facts);
   // The header an EventSource re-sends, or `?resume=`, which the socket uses.
   const header = facts.headers['last-event-id'];
   const cursor =
@@ -88,7 +90,7 @@ router.get('/', (c) => {
     const client = sseFanOutClient(res);
     // Registers, then sends the preamble and any replay in the same tick, so no
     // transition fired while the connect is served is missed or misordered.
-    const unsubscribe = openGlobalStream(client, principal, cursor);
+    const unsubscribe = openGlobalStream(client, admission.reader, cursor);
 
     // Keepalive heartbeat to prevent proxies/browsers from closing the connection
     const heartbeat = setInterval(() => {

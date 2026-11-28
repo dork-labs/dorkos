@@ -4,10 +4,10 @@
  * `computer-side-starts-alone` §5.12, I7's resolvers).
  *
  * The stream (`session-list-broadcaster.ts`) produces every session event
- * unfiltered; who may read a session is the space side's rule
- * (`audit/session-visibility.ts`'s `sessionAudience`), handed in at startup
- * through {@link setSessionListSpaceView}, the way `setQueuedChatView` hands
- * the queue its view.
+ * unfiltered; who may hear about a session is the space side's rule
+ * (`startup/space-views.ts`), handed in at startup through
+ * {@link setSessionListSpaceView}, the way `setQueuedChatView` hands the queue
+ * its view. The audience it returns is asked as each frame is written.
  *
  * **Fail-closed.** Until the view is set, every session's audience is the
  * operator alone ({@link ownerOnlyAudience}): no agent, program or relayed
@@ -26,7 +26,7 @@ import { ownerOnlyAudience } from '../../../lib/caller-principal.js';
 export interface SessionListSpaceView {
   /**
    * Which stream connections may hear about one session: the space side's
-   * `sessionAudience`.
+   * rule, asked as each frame is written.
    */
   audience: (sessionId: string) => BroadcastAudience;
   /**

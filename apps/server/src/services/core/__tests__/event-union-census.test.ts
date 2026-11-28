@@ -51,7 +51,7 @@ const NOT_SENT_BY_LITERAL: Record<string, string> = {
   relay_signal: 'eventType in relay-routes.ts',
 };
 
-/** One `eventFanOut.broadcast(` or `.broadcastRedacted(` call and its first argument. */
+/** One `eventFanOut.broadcast(` call and its first argument. */
 interface CallSite {
   readonly file: string;
   readonly firstArgument: string;
@@ -76,7 +76,7 @@ async function productionSources(dir: string): Promise<string[]> {
 /** Every broadcast call site, with its first argument as written. */
 async function callSites(): Promise<CallSite[]> {
   const sites: CallSite[] = [];
-  const pattern = /eventFanOut\.broadcast(?:Redacted)?\(\s*([^,]+?)\s*,/g;
+  const pattern = /eventFanOut\.broadcast\(\s*([^,]+?)\s*,/g;
   for (const file of await productionSources(SERVER_SRC)) {
     const rel = path.relative(SERVER_SRC, file).split(path.sep).join('/');
     for (const match of (await readFile(file, 'utf-8')).matchAll(pattern)) {

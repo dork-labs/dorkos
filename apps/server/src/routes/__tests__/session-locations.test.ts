@@ -15,6 +15,7 @@ import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 vi.mock('../../lib/http/person-bar.js', () => ({
   PERSON_BAR_CROSS_SITE: 'Open this from the DorkOS app.',
+  logPersonBarTrustedHosts: () => {},
   assessPerson: (facts: RequestFacts) =>
     facts.headers['x-dorkos-agent']
       ? { status: 403, body: { title: 'Person required', status: 403, code: 'person_only' } }

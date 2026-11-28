@@ -3,9 +3,10 @@
  * (ADR 261123-170833), over the real route and the real fan-out.
  *
  * The case that matters most is the filter: a replay must never hand a reader a
- * frame it could not have received live, so a resuming agent gets neither an
- * event addressed to the person nor the full rendering of a redacted one. The
- * tunnel's status is the snapshot's other part, and it is the person's only.
+ * frame it could not have received live, and rights are asked as each frame
+ * goes out, never captured. A cursor gives no rights: one taken from another
+ * reader's stream replays only what the resuming reader may read. The tunnel's
+ * status is the snapshot's other part.
  */
 import fs from 'node:fs';
 import http from 'node:http';
@@ -20,9 +21,27 @@ import { EVENT_REPLAY_LIMITS } from '../../lib/event-stream/event-replay-buffer.
 import { frontDoorReadAudience, type CallerPrincipal } from '../../lib/caller-principal.js';
 import { tunnelManager } from '../../services/core/tunnel-manager.js';
 import { initConfigManager } from '../../services/core/config-manager.js';
+import { roomAudience } from '../../services/rooms/service/room-audience.js';
 
 const AGENT = { 'x-dorkos-agent': 'tok_revoked' };
 const operatorOnly = (principal: CallerPrincipal): boolean => principal.kind === 'operator';
+
+/** A test-only header naming the user a program's key belongs to; see `asProgram`. */
+const PROGRAM_HEADER = 'x-test-program';
+
+/** The headers of a program holding user `userId`'s key, with login off. */
+const asProgram = (userId: string): Record<string, string> => ({ [PROGRAM_HEADER]: userId });
+
+/** Who is in room `r1` right now, read by its audience as each frame goes out. */
+const members = new Set<string>();
+const rooms = {
+  authorRegistry: { human: (id: string) => ({ id }) } as Parameters<
+    typeof roomAudience
+  >[1]['authorRegistry'],
+  requireMembership: (_roomId: string, authorId: string) => {
+    if (!members.has(authorId)) throw new Error('not a member');
+  },
+};
 
 let server: http.Server;
 let baseUrl: string;
@@ -37,7 +56,20 @@ beforeAll(() => {
 afterAll(() => fs.rmSync(home, { recursive: true, force: true }));
 
 beforeEach(async () => {
-  server = http.createServer(honoGroupListener({ path: '/api/events', routes: eventsRoutes }));
+  members.clear();
+  server = http.createServer(
+    honoGroupListener(
+      { path: '/api/events', routes: eventsRoutes },
+      {
+        // A key the gate would have verified, as the chain hands it on.
+        before: async (c, next) => {
+          const userId = c.req.header(PROGRAM_HEADER);
+          if (userId) c.set('user', { userId, credential: 'api-key' });
+          await next();
+        },
+      }
+    )
+  );
   await new Promise<void>((resolve) => server.listen(0, resolve));
   const addr = server.address();
   baseUrl = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}`;
@@ -142,26 +174,90 @@ describe('GET /api/events replay', () => {
     expect(cursor).toMatch(/^events-\d+-g\d+-\d+$/);
 
     eventFanOut.broadcast('config_changed', { sections: ['spaces'] }, operatorOnly);
-    eventFanOut.broadcastRedacted('session_status', { full: 1 }, { redacted: 1 }, operatorOnly);
     eventFanOut.broadcast('agents_changed', { kind: 'updated', agentId: 'a1' });
 
     const done = (text: string): boolean => text.includes('event: agents_changed');
     const person = await read({ 'last-event-id': cursor }, done);
-    const agent = await read({ ...AGENT, 'last-event-id': cursor }, done);
+    const program = await read({ ...asProgram('u1'), 'last-event-id': cursor }, done);
 
     expect(person).toMatch(connectedFrame('\\{"connectedAt":"[^"]+","resumed":true\\}'));
     expect(numbered(person).map((f) => [f.event, f.data])).toEqual([
       ['config_changed', '{"sections":["spaces"]}'],
-      ['session_status', '{"full":1}'],
       ['agents_changed', '{"kind":"updated","agentId":"a1"}'],
     ]);
-    // The agent could not have received the person's frame or the full status live.
-    expect(numbered(agent).map((f) => [f.event, f.data])).toEqual([
-      ['session_status', '{"redacted":1}'],
+    // The program could not have received the operator's frame live.
+    expect(numbered(program).map((f) => [f.event, f.data])).toEqual([
       ['agents_changed', '{"kind":"updated","agentId":"a1"}'],
     ]);
-    // One event, one seq, whichever rendering a reader got.
-    expect(numbered(agent)[0]!.id).toBe(numbered(person)[1]!.id);
+    expect(numbered(program)[0]!.id).toBe(numbered(person)[1]!.id);
+  });
+
+  it('refuses an agent, with or without a cursor', async () => {
+    const cursor = await marker();
+    for (const headers of [AGENT, { ...AGENT, 'last-event-id': cursor }]) {
+      const res = await fetch(`${baseUrl}/api/events`, { headers });
+      expect(res.status).toBe(403);
+      expect(await res.json()).toMatchObject({ code: 'person_only' });
+    }
+  });
+
+  it('gives a cursor no rights: another reader’s cursor replays only what the resuming reader may read', async () => {
+    members.add('u1');
+    const audience = roomAudience('r1', rooms);
+    const owner = stream(asProgram('u1'));
+    await owner((t) => t.includes('event: connected'));
+    eventFanOut.broadcast('tasks_changed', { before: true });
+    const cursor = numbered(await owner((t) => t.includes('"before":true'))).at(-1)!.id;
+    eventFanOut.broadcast('room_updated', { roomId: 'r1', secret: true }, audience);
+    eventFanOut.broadcast('tasks_changed', { after: true });
+    const done = (t: string): boolean => t.includes('"after":true');
+
+    // The cursor's own reader replays the room event; another program, and the
+    // operator (who is not in the room), resuming from the same cursor do not.
+    const mine = await read({ ...asProgram('u1'), 'last-event-id': cursor }, done);
+    expect(numbered(mine).map((f) => f.event)).toEqual(['room_updated', 'tasks_changed']);
+    for (const headers of [asProgram('u2'), {}]) {
+      const theirs = await read({ ...headers, 'last-event-id': cursor }, done);
+      expect(theirs).toContain('"resumed":true');
+      expect(numbered(theirs).map((f) => f.event)).toEqual(['tasks_changed']);
+    }
+  });
+
+  it('stops a live room’s events at the next frame once the reader leaves it', async () => {
+    members.add('u1');
+    const audience = roomAudience('r1', rooms);
+    const live = stream(asProgram('u1'));
+    await live((t) => t.includes('event: connected'));
+    eventFanOut.broadcast('room_updated', { roomId: 'r1', n: 1 }, audience);
+    await live((t) => t.includes('"n":1'));
+    members.delete('u1');
+    eventFanOut.broadcast('room_updated', { roomId: 'r1', n: 2 }, audience);
+    eventFanOut.broadcast('tasks_changed', { after: 'left' });
+    const text = await live((t) => t.includes('"after":"left"'));
+    expect(numbered(text).map((f) => f.data)).toEqual([
+      '{"roomId":"r1","n":1}',
+      '{"after":"left"}',
+    ]);
+  });
+
+  it('stops a chat’s frames at the next frame once the reader may no longer read it', async () => {
+    // The chat list's audience is the space side's rule, asked as each frame is
+    // written: when its answer changes, the next frame follows it.
+    const readable = new Set(['u1']);
+    const chat = (principal: CallerPrincipal): boolean =>
+      principal.kind === 'program' && readable.has(principal.userId);
+    const live = stream(asProgram('u1'));
+    await live((t) => t.includes('event: connected'));
+    eventFanOut.broadcast('session_status', { sessionId: 's1', n: 1 }, chat);
+    await live((t) => t.includes('"n":1'));
+    readable.delete('u1');
+    eventFanOut.broadcast('session_status', { sessionId: 's1', n: 2 }, chat);
+    eventFanOut.broadcast('tasks_changed', { after: 'private' });
+    const text = await live((t) => t.includes('"after":"private"'));
+    expect(numbered(text).map((f) => f.data)).toEqual([
+      '{"sessionId":"s1","n":1}',
+      '{"after":"private"}',
+    ]);
   });
 
   it('filters a replay with the rights the reader has when it resumes, not when sent', async () => {
@@ -243,7 +339,7 @@ describe('tunnel status on GET /api/events (it replaced GET /api/tunnel/stream)'
     return reader((t) => t.includes('"opened"'));
   }
 
-  it('opens with the current status, after any replay, for a person but never an agent', async () => {
+  it('opens with the current status, after any replay', async () => {
     const cursor = await marker();
     eventFanOut.broadcast('tunnel_status', { stale: true }, frontDoorReadAudience);
 
@@ -254,23 +350,20 @@ describe('tunnel status on GET /api/events (it replaced GET /api/tunnel/stream)'
     // The replayed change, then the snapshot, so the last one held is current.
     const resumed = await openingFrames({ 'last-event-id': cursor });
     expect(tunnelFrames(resumed)).toEqual([{ stale: true }, tunnelManager.status]);
-
-    for (const headers of [AGENT, { ...AGENT, 'last-event-id': cursor }]) {
-      expect(await openingFrames(headers)).not.toContain('tunnel_status');
-    }
   });
 
-  it('sends a change live to the person, not to an agent', async () => {
+  it('sends a change live to the person and to their keys', async () => {
     const person = stream({});
-    const agent = stream(AGENT);
+    const program = stream(asProgram('u1'));
     await person((t) => t.includes('event: connected'));
-    await agent((t) => t.includes('event: connected'));
+    await program((t) => t.includes('event: connected'));
     eventFanOut.broadcast('tunnel_status', { live: 1 }, frontDoorReadAudience);
     eventFanOut.broadcast('tasks_changed', { after: 'tunnel' });
-    const personText = await person((t) => t.includes('"after":"tunnel"'));
-    const agentText = await agent((t) => t.includes('"after":"tunnel"'));
-    expect(tunnelFrames(personText).at(-1)).toEqual({ live: 1 });
-    expect(agentText).not.toContain('tunnel_status');
+    for (const reader of [person, program]) {
+      expect(tunnelFrames(await reader((t) => t.includes('"after":"tunnel"'))).at(-1)).toEqual({
+        live: 1,
+      });
+    }
   });
 
   it('drops a tunnel_status that names no audience, so an unwired sender leaks nothing', async () => {

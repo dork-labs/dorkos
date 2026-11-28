@@ -1,13 +1,13 @@
 /**
  * The frames of the global event stream, `GET /api/events`: how one broadcast
- * is encoded for both wires, and which reader gets which rendering. Split from
+ * is encoded for both wires, and which reader gets it. Split from
  * `event-fan-out.ts`, which owns the readers and the numbering.
  *
  * @module lib/event-stream/global-event-frames
  */
 import type { DorkOsEventFrame } from '@dorkos/shared/dorkos-event-frame';
 import type { DorkOsEvent, DorkOsEventType } from '@dorkos/shared/dorkos-events';
-import type { CallerPrincipal } from '../caller-principal.js';
+import type { CallerPrincipal, PersonPrincipal } from '../caller-principal.js';
 
 /**
  * One broadcast, pre-rendered for both wire formats.
@@ -37,15 +37,18 @@ export interface FramePlace {
 }
 
 /**
- * Decide, per connected client, whether one broadcast is that client's to
- * receive.
+ * Decide, per connected reader, whether one broadcast is that reader's to
+ * receive. Asked as each frame is written, so it reads the rights the reader
+ * has then.
  *
  * Omitted at the call site means everyone, which is what most events on this
  * bus mean. Room events and `read_cursor` must name one: both say what a person
- * did in a place only some readers may see, so omitting it sends nothing. An
- * event carrying detail, like `interaction_pending` (the tool, the command and
- * the working directory), goes only to a connection entitled to it
- * (ADR 260819-022912).
+ * did in a place only some readers may see, so omitting it sends nothing.
+ *
+ * Typed over every {@link CallerPrincipal}, though only a person reads this
+ * stream, because several audiences are also the rule a route asks
+ * (`operatorAudience` is the inbox's), and each still refuses what it cannot
+ * place.
  *
  * @param principal - What the connection registered itself as.
  * @returns Whether to write the frame to that connection.
@@ -90,43 +93,50 @@ export function encodeBroadcast(
 }
 
 /**
- * One numbered broadcast: its encoded frames and who may read which. The same
+ * One numbered broadcast: its encoded frame and who may read it. The same
  * record serves the live write and a replay, so both use one filter, asked with
  * the reader's rights at the moment each is written.
  */
 export interface Delivery {
-  /** The frame for a reader entitled to the whole payload. */
-  readonly full: EncodedBroadcast;
-  /** The frame for everyone else, when the event has a redacted rendering. */
-  readonly redacted?: EncodedBroadcast;
-  /** Who gets {@link Delivery.full} rather than {@link Delivery.redacted}. */
-  readonly entitled?: BroadcastAudience;
-  /** Who gets either; absent means every reader. */
+  /** The frame, encoded once for every reader. */
+  readonly frame: EncodedBroadcast;
+  /** Who gets it; absent means every reader. */
   readonly audience?: BroadcastAudience;
 }
 
 /**
- * The frame one reader is owed, or none.
+ * The frame each reader is owed for one delivery, or none, decided when asked.
+ *
+ * The answer is kept per person for the life of the returned function, which
+ * is one frame's write: several windows of the same person ask the audience
+ * once. Nothing outlives the frame, so no answer can go stale and nothing
+ * needs invalidating when a right changes; the next frame asks again.
  *
  * @param delivery - The broadcast.
- * @param principal - The reader.
+ * @returns For a reader, its frame or `undefined`.
  */
-export function frameFor(
-  delivery: Delivery,
-  principal: CallerPrincipal
-): EncodedBroadcast | undefined {
-  if (delivery.audience && !delivery.audience(principal)) return undefined;
-  if (!delivery.entitled || delivery.entitled(principal)) return delivery.full;
-  return delivery.redacted;
+export function readerAnswers(
+  delivery: Delivery
+): (reader: PersonPrincipal) => EncodedBroadcast | undefined {
+  const { audience, frame } = delivery;
+  if (!audience) return () => frame;
+  const answers = new Map<string, boolean>();
+  return (reader) => {
+    const key = reader.kind === 'program' ? `program:${reader.userId}` : 'operator';
+    let admitted = answers.get(key);
+    if (admitted === undefined) {
+      admitted = audience(reader);
+      answers.set(key, admitted);
+    }
+    return admitted ? frame : undefined;
+  };
 }
 
 /**
- * The bytes one delivery holds: every rendering, on both wires.
+ * The bytes one delivery holds, on both wires.
  *
  * @param delivery - The broadcast.
  */
 export function deliveryBytes(delivery: Delivery): number {
-  const of = (frame: EncodedBroadcast | undefined): number =>
-    frame ? Buffer.byteLength(frame.sse) + Buffer.byteLength(frame.json) : 0;
-  return of(delivery.full) + of(delivery.redacted);
+  return Buffer.byteLength(delivery.frame.sse) + Buffer.byteLength(delivery.frame.json);
 }

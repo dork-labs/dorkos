@@ -17,18 +17,25 @@
  * reconnects with its last frame id is sent what it missed, filtered with the
  * rights it has when it resumes (ADR 261123-170833).
  *
+ * Every reader is a person ({@link PersonPrincipal}): the routes admit nobody
+ * else (DOR-4986). An event's audience is asked about each reader as each frame
+ * is written, live or replayed, never once per connection, so a reader who
+ * loses the right to an event stops getting it from the next frame on. Within
+ * one frame the answer is kept per person, so several windows of the same
+ * person cost one question, not one each.
+ *
  * @module services/event-fan-out
  */
 import type { DorkOsEventType } from '@dorkos/shared/dorkos-events';
 import { SSE } from '../../config/constants.js';
 import { logger } from '../../lib/logger.js';
-import type { CallerPrincipal } from '../../lib/caller-principal.js';
+import type { PersonPrincipal } from '../../lib/caller-principal.js';
 import type { ResumeCursor } from '../../lib/stream-cursor.js';
 import { EventReplayBuffer, type ReplayEntry } from '../../lib/event-stream/event-replay-buffer.js';
 import {
   deliveryBytes,
   encodeBroadcast,
-  frameFor,
+  readerAnswers,
   type BroadcastAudience,
   type Delivery,
   type EncodedBroadcast,
@@ -124,7 +131,7 @@ type UnscopedEventName<Name extends string> = [ScopedEventName<Name>] extends [n
  * Manages a set of connected clients and distributes events to all of them.
  */
 class EventFanOut {
-  private clients = new Set<{ client: FanOutClient; principal: CallerPrincipal }>();
+  private clients = new Set<{ client: FanOutClient; principal: PersonPrincipal }>();
   private listeners = new Set<EventFanOutListener>();
   /** The stream's numbering and replay window; frame ids read `events-…`. */
   private readonly replay = new EventReplayBuffer<Delivery>('events');
@@ -147,14 +154,14 @@ class EventFanOut {
    * separated by a handshake, and a full fan-out must stay full.
    *
    * @param client - The connected reader.
-   * @param principal - Who is on the other end, for the events that are
+   * @param principal - The person on the other end, for the events that are
    *   addressed rather than broadcast. **Required, never defaulted**: a default
    *   would be a silent allow for the next stream somebody adds, which is the
    *   argument `UpgradeRoute.credential` already makes — the gate gets tested,
    *   the WIRING of it does not. Both transports read it from the same
-   *   request facts through `readCallerPrincipal`.
+   *   request facts through the person bar (`admitEventsReader`).
    */
-  addClient(client: FanOutClient, principal: CallerPrincipal): () => void {
+  addClient(client: FanOutClient, principal: PersonPrincipal): () => void {
     if (this.clients.size >= SSE.MAX_TOTAL_CLIENTS) {
       logger.warn(`[EventFanOut] Max clients reached (${SSE.MAX_TOTAL_CLIENTS}), rejecting`);
       client.drop();
@@ -269,77 +276,7 @@ class EventFanOut {
     this.notifyListeners(eventName, data);
     if (requiresAudience(eventName) && !audience) return;
     this.publish(eventName, (place) => ({
-      full: encodeBroadcast(eventName, data, place),
-      ...(audience && { audience }),
-    }));
-  }
-
-  /**
-   * Broadcast ONE event rendered two ways: in full to the connections entitled
-   * to its detail, and redacted to the rest.
-   *
-   * `session_status` needs this and an audience alone cannot give it.
-   * `SessionStatus.activity` carries the tool a session is on and the one
-   * argument of it a person would recognize — for a `blocked` session that is
-   * the very thing the Ask is asking about — while the same frame carries the
-   * lifecycle every reader legitimately needs. Withholding the whole frame
-   * would leave an unentitled reader's view of that session silently stuck on
-   * its previous lifecycle, which is a worse property than the leak it closes;
-   * sending it whole is the leak. So the detail is dropped and the lifecycle is
-   * kept (spec `ask-entitlement`, review finding 1).
-   *
-   * Every property {@link broadcast} holds is held here:
-   *
-   * - **In-process listeners are notified ONCE**, with the FULL payload. They
-   *   are the server itself, not callers; a listener that received the same
-   *   event twice — or received a redacted one — would be a new bug.
-   * - **Each rendering is encoded once**, whatever the split, and kept with
-   *   the event so a replay filters the same way.
-   * - **Backpressure is unchanged**: each client is measured on the one frame
-   *   it actually received.
-   *
-   * @param eventName - The event name.
-   * @param full - The payload for entitled connections.
-   * @param redacted - The payload for everybody else.
-   * @param entitled - Which connections may have the full one.
-   * @param audience - Which connections get either rendering; omitted means
-   *   every one of them.
-   */
-  broadcastRedacted(
-    eventName: ScopedEventLiteral,
-    full: unknown,
-    redacted: unknown,
-    entitled: BroadcastAudience,
-    audience: BroadcastAudience
-  ): void;
-  broadcastRedacted<Name extends DorkOsEventType>(
-    eventName: Name & UnscopedEventName<Name>,
-    full: unknown,
-    redacted: unknown,
-    entitled: BroadcastAudience,
-    audience?: BroadcastAudience
-  ): void;
-  broadcastRedacted(
-    eventName: DorkOsEventType,
-    full: unknown,
-    redacted: unknown,
-    entitled: BroadcastAudience,
-    audience: BroadcastAudience
-  ): void;
-  broadcastRedacted(
-    eventName: DorkOsEventType,
-    full: unknown,
-    redacted: unknown,
-    entitled: BroadcastAudience,
-    audience?: BroadcastAudience
-  ): void {
-    this.notifyListeners(eventName, full);
-    if (requiresAudience(eventName) && !audience) return;
-    // Both renderings share one seq, one `at` and one frame id: they are one event.
-    this.publish(eventName, (place) => ({
-      full: encodeBroadcast(eventName, full, place),
-      redacted: encodeBroadcast(eventName, redacted, place),
-      entitled,
+      frame: encodeBroadcast(eventName, data, place),
       ...(audience && { audience }),
     }));
   }
@@ -357,8 +294,9 @@ class EventFanOut {
   /**
    * Send a reconnecting reader the events it missed, each filtered with the
    * rights the reader has now, when it resumes (an audience such as a room's
-   * membership is asked again). Call in the same tick as {@link addClient}, so
-   * no live broadcast lands between the two.
+   * membership is asked again). The cursor only says where to start: whoever's
+   * stream it came from, what is sent is what THIS reader may read. Call in the
+   * same tick as {@link addClient}, so no live broadcast lands between the two.
    *
    * @param client - The reader.
    * @param principal - Who the reader is.
@@ -366,18 +304,18 @@ class EventFanOut {
    */
   replayTo(
     client: FanOutClient,
-    principal: CallerPrincipal,
+    principal: PersonPrincipal,
     entries: readonly ReplayEntry<Delivery>[]
   ): void {
     for (const entry of entries) {
-      const frame = frameFor(entry.delivery, principal);
+      const frame = readerAnswers(entry.delivery)(principal);
       if (frame) client.send(frame);
     }
   }
 
   /**
    * Number one broadcast, stamp when it was emitted, keep it for replay, and
-   * write it to every reader it is for. Encoded once per rendering, whatever the
+   * write it to every reader it is for. Encoded once, whatever the
    * number of readers; a replay sends the same bytes, so the event keeps its
    * first `at`.
    *
@@ -418,16 +356,18 @@ class EventFanOut {
    * Write one broadcast to the connected clients it is for, dropping the gone
    * and the hopelessly backed-up.
    *
-   * @param delivery - The broadcast; {@link frameFor} picks each reader's frame.
+   * @param delivery - The broadcast; {@link readerAnswers} decides, per person,
+   *   whether it is theirs, asked now and once per person for this frame.
    */
   private writeToClients(delivery: Delivery): void {
+    const frameFor = readerAnswers(delivery);
     for (const entry of this.clients) {
       const { client } = entry;
       if (client.gone) {
         this.clients.delete(entry);
         continue;
       }
-      const frame = frameFor(delivery, entry.principal);
+      const frame = frameFor(entry.principal);
       if (!frame) continue;
       try {
         client.send(frame);
