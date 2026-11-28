@@ -8,12 +8,9 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { Task } from '@dorkos/shared/types';
 import { initBoundary } from '../../../lib/boundary.js';
 import { AGENT_PAUSED_SKIP_REASON } from '../lifecycle/agent-pause-hold.js';
-import {
-  TaskSchedulerService,
-  singleRuntimeSource,
-  type SchedulerAgentManager,
-} from '../task-scheduler-service.js';
+import { TaskSchedulerService } from '../task-scheduler-service.js';
 import { TaskStore } from '../task-store.js';
+import { onRuntime, type RuntimeDouble } from './support/runtime-task-turns.js';
 
 vi.mock('../../relay/relay-state.js', () => ({
   isRelayEnabled: vi.fn(() => false),
@@ -28,7 +25,7 @@ const PAUSED = { id: 'agent-1', name: 'Scout' };
 
 describe('a paused agent’s schedules (spec audit-trail PR5)', () => {
   let store: TaskStore;
-  let agentManager: SchedulerAgentManager;
+  let agentManager: RuntimeDouble;
   let paused: boolean;
   let pausedAt: string;
   const recordHeld = vi.fn();
@@ -46,11 +43,11 @@ describe('a paused agent’s schedules (spec audit-trail PR5)', () => {
       getInternalSessionId: vi.fn(() => undefined),
       acquireLock: vi.fn(() => true),
       releaseLock: vi.fn(),
-    } as unknown as SchedulerAgentManager;
+    } as unknown as RuntimeDouble;
     await initBoundary('/');
     service = new TaskSchedulerService({
       store,
-      runtimes: singleRuntimeSource(agentManager),
+      ...onRuntime(agentManager),
       config: { maxConcurrentRuns: 5, retentionCount: 100, mayFire: true, firingReason: 'test' },
       agentPauses: {
         pausedAgent: (agentId: string) =>

@@ -17,7 +17,7 @@ import { sleptDuringRunError } from '@dorkos/shared/schedule-notice-copy';
 import { createAwakeClock, type AwakeClock, type AwakeTimers } from '@dorkos/shared/awake-clock';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { initBoundary } from '../../../lib/boundary.js';
-import { TaskSchedulerService, singleRuntimeSource } from '../task-scheduler-service.js';
+import { TaskSchedulerService } from '../task-scheduler-service.js';
 import { TaskStore } from '../task-store.js';
 import { isTerminalRunStatus } from '../lifecycle/run-statuses.js';
 import {
@@ -27,6 +27,7 @@ import {
   runDeadline,
 } from '../timing/wake-settle.js';
 import { registerClaudeCodeFacts } from '../../../startup/register-claude-code-facts.js';
+import { onRuntime } from './support/runtime-task-turns.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
 // refuses every path and turn code knows no Claude transcript.
@@ -118,7 +119,7 @@ describe('a run the computer slept through (direct path)', () => {
     // 1s of work under a 500ms limit, 900ms of which the computer slept: 100ms awake.
     const service = new TaskSchedulerService({
       store,
-      runtimes: singleRuntimeSource(agentWorkingFor(1_000, () => slept(900)) as never),
+      ...onRuntime(agentWorkingFor(1_000, () => slept(900)) as never),
       config: CONFIG,
       wakeSettle: new WakeSettle(clock),
     });
@@ -231,7 +232,7 @@ describe('a scheduled run the computer’s sleep broke (DOR-3286)', () => {
     const armed = vi.spyOn(settle, 'run');
     const service = new TaskSchedulerService({
       store,
-      runtimes: singleRuntimeSource(agent as never),
+      ...onRuntime(agent as never),
       config: CONFIG,
       wakeSettle: settle,
     });
@@ -333,7 +334,7 @@ describe('a run queued behind a full computer (direct path, DOR-4576)', () => {
     });
     const service = new TaskSchedulerService({
       store,
-      runtimes: singleRuntimeSource(agent as never),
+      ...onRuntime(agent as never),
       config: CONFIG,
     });
     const run = await service.triggerManualRun(newTask(1_500).id);
@@ -350,7 +351,7 @@ describe('a run queued behind a full computer (direct path, DOR-4576)', () => {
     onFakeClock();
     const service = new TaskSchedulerService({
       store,
-      runtimes: singleRuntimeSource(agentQueuedFor(400, 2_000) as never),
+      ...onRuntime(agentQueuedFor(400, 2_000) as never),
       config: CONFIG,
     });
     const run = await service.triggerManualRun(newTask(300).id);

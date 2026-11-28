@@ -26,13 +26,10 @@ import {
   findOperatorOnlyTaskFields,
 } from '../task-write-policy.js';
 import { planTaskFileUpdate } from '../task-file-update.js';
-import {
-  TaskSchedulerService,
-  singleRuntimeSource,
-  type SchedulerAgentManager,
-} from '../task-scheduler-service.js';
+import { TaskSchedulerService } from '../task-scheduler-service.js';
 import { TaskStore } from '../task-store.js';
 import { registerClaudeCodeFacts } from '../../../startup/register-claude-code-facts.js';
+import { onRuntime, type RuntimeDouble } from './support/runtime-task-turns.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
 // refuses every path and turn code knows no Claude transcript.
@@ -197,7 +194,7 @@ describe('an agent may turn it on, never off', () => {
 });
 
 describe('a run of a task that reads outside text', () => {
-  let manager: SchedulerAgentManager;
+  let manager: RuntimeDouble;
   let service: TaskSchedulerService;
   let turnStarted: Promise<void>;
 
@@ -213,11 +210,11 @@ describe('a run of a task that reads outside text', () => {
         getInternalSessionId: vi.fn(() => undefined),
         acquireLock: vi.fn(() => true),
         releaseLock: vi.fn(),
-      } as unknown as SchedulerAgentManager;
+      } as unknown as RuntimeDouble;
     });
     service = new TaskSchedulerService({
       store,
-      runtimes: singleRuntimeSource(manager),
+      ...onRuntime(manager),
       config: { maxConcurrentRuns: 1, retentionCount: 100, mayFire: true, firingReason: 'test' },
       meshCore: mesh,
     });

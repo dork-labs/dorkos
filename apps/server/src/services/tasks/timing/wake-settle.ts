@@ -128,7 +128,7 @@ export interface RunDeadline {
  * @param maxRuntime - The task's time limit, if it has one.
  * @param operator - The operator's stop signal.
  * @param onWaiting - Told the wait's words when the turn starts waiting for a
- *   slot, and `null` when it starts.
+ *   slot, and `null` when it starts, with a time limit or without.
  */
 export function runDeadline(
   clock: AwakeClock,
@@ -143,7 +143,8 @@ export function runDeadline(
       signal: operator,
       timedOut: () => false,
       cancel: () => {},
-      observe: () => {},
+      // No limit to pause, but the row still says the run is waiting (T12).
+      observe: pauseWhileWaitingToStart({ pause: () => {}, resume: () => {} }, onWaiting),
       justWoke,
     };
   }

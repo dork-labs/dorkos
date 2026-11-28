@@ -8,11 +8,7 @@ import { ScheduleIdentityRegistry } from '../schedule-identity.js';
 import { skillsRoot } from './task-root-fixtures.js';
 import { TaskRegistrar } from '../task-registrar.js';
 import { FakeScheduler } from './fake-scheduler.js';
-import {
-  TaskSchedulerService,
-  singleRuntimeSource,
-  type SchedulerAgentManager,
-} from '../task-scheduler-service.js';
+import { TaskSchedulerService } from '../task-scheduler-service.js';
 import { TaskStore } from '../task-store.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
@@ -20,6 +16,7 @@ import type { Db } from '@dorkos/db';
 import type { MeshCore } from '@dorkos/mesh';
 import type { Task } from '@dorkos/shared/types';
 import { registerClaudeCodeFacts } from '../../../startup/register-claude-code-facts.js';
+import { onRuntime, type RuntimeDouble } from './support/runtime-task-turns.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
 // refuses every path and turn code knows no Claude transcript.
@@ -56,9 +53,9 @@ Run one tick of the /flow autonomous loop:
 4. Stop at the human-review gate or on a genuine question (needs-input).
 `;
 
-/** A FakeAgentRuntime is structurally a SchedulerAgentManager. */
-function asAgentManager(runtime: FakeAgentRuntime): SchedulerAgentManager {
-  return runtime as unknown as SchedulerAgentManager;
+/** A FakeAgentRuntime is structurally a RuntimeDouble. */
+function asAgentManager(runtime: FakeAgentRuntime): RuntimeDouble {
+  return runtime as unknown as RuntimeDouble;
 }
 
 /** Minimal MeshCore that resolves a project agent to its worktree path. */
@@ -159,7 +156,7 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
     runtime.withScenarios([async function* () {}, async function* () {}]);
     scheduler = new TaskSchedulerService({
       store,
-      runtimes: singleRuntimeSource(asAgentManager(runtime)),
+      ...onRuntime(asAgentManager(runtime)),
       config: {
         maxConcurrentRuns: 1,
         retentionCount: 100,

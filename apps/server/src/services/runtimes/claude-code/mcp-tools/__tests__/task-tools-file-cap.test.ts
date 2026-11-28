@@ -131,10 +131,7 @@ import { eventFanOut } from '../../../../core/event-fan-out.js';
 import { registerAgentModeEscalators } from '../../../../tasks/agent-mode/agent-mode-escalation.js';
 import type { Task } from '@dorkos/shared/types';
 import { ranTurn } from './task-tools-file-cap.fixtures.js';
-import {
-  TaskSchedulerService,
-  type SchedulerAgentManager,
-} from '../../../../tasks/task-scheduler-service.js';
+import { TaskSchedulerService } from '../../../../tasks/task-scheduler-service.js';
 import { isTerminalRunStatus } from '../../../../tasks/lifecycle/run-statuses.js';
 import { initBoundary } from '../../../../../lib/boundary.js';
 import { bodyHash } from '../../../../tasks/agent-mode/file-cap/file-hash.js';
@@ -164,6 +161,10 @@ import {
 } from '../../../../session/chat-messages/chat-started-turns.js';
 import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
 import { wireScheduledChatMoves } from '../../../../../startup/space-views.js';
+import {
+  onRuntime,
+  type RuntimeDouble,
+} from '../../../../tasks/__tests__/support/runtime-task-turns.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
 // refuses every path and turn code knows no Claude transcript, and a rekey moves no run's row.
@@ -522,14 +523,13 @@ describe('tasks_update and a SKILL file changed outside the tools (M4)', () => {
         getInternalSessionId: vi.fn(() => undefined),
         acquireLock: vi.fn(() => true),
         releaseLock: vi.fn(),
-      } as unknown as SchedulerAgentManager;
-      const service = new TaskSchedulerService(
+      } as unknown as RuntimeDouble;
+      const service = new TaskSchedulerService({
         store,
-        agentManager,
-        { maxConcurrentRuns: 5, retentionCount: 100, mayFire: true, firingReason: 'test' },
-        null,
-        deps.meshCore
-      );
+        ...onRuntime(agentManager),
+        config: { maxConcurrentRuns: 5, retentionCount: 100, mayFire: true, firingReason: 'test' },
+        meshCore: deps.meshCore,
+      });
       // Where it runs is not what this is about: agent A's own home.
       vi.spyOn(
         service as unknown as { resolveRunPlacement: () => Promise<unknown> },

@@ -17,14 +17,11 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { pulseDispatchLog, type Db } from '@dorkos/db';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { initBoundary } from '../../../lib/boundary.js';
-import {
-  TaskSchedulerService,
-  singleRuntimeSource,
-  type SchedulerAgentManager,
-} from '../task-scheduler-service.js';
+import { TaskSchedulerService } from '../task-scheduler-service.js';
 import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
 import type { AwakeClock } from '@dorkos/shared/awake-clock';
 import { WakeSettle } from '../timing/wake-settle.js';
+import { onRuntime, type RuntimeDouble } from './support/runtime-task-turns.js';
 
 vi.mock('../../relay/relay-state.js', () => ({
   isRelayEnabled: vi.fn(() => false),
@@ -36,7 +33,7 @@ const STALE_SKIP_COPY = 'Skipped: this computer was asleep when it was due.';
 /** Croner chunks every wait into timeouts of at most this long (`W` in its source). */
 const CRONER_CHUNK_MS = 30_000;
 
-function agent(): SchedulerAgentManager {
+function agent(): RuntimeDouble {
   return {
     ensureSession: vi.fn(),
     sendMessage: vi.fn().mockImplementation(async function* (): AsyncGenerator<StreamEvent> {
@@ -46,7 +43,7 @@ function agent(): SchedulerAgentManager {
     getInternalSessionId: vi.fn(() => undefined),
     acquireLock: vi.fn(() => true),
     releaseLock: vi.fn(),
-  } as unknown as SchedulerAgentManager;
+  } as unknown as RuntimeDouble;
 }
 
 function taskInput(
@@ -92,13 +89,13 @@ const BOTH_LEAD = {
 describe('late scheduled runs (DOR-2718)', () => {
   let db: Db;
   let store: TaskStore;
-  let mockAgent: SchedulerAgentManager;
+  let mockAgent: RuntimeDouble;
   const services: TaskSchedulerService[] = [];
 
   function scheduler(): TaskSchedulerService {
     const service = new TaskSchedulerService({
       store,
-      runtimes: singleRuntimeSource(mockAgent),
+      ...onRuntime(mockAgent),
       config: { maxConcurrentRuns: 5, retentionCount: 100, mayFire: true, firingReason: 'test' },
       leaderLock: BOTH_LEAD,
       wakeSettle: new WakeSettle(NO_SLEEP),

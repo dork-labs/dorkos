@@ -128,21 +128,6 @@ const ALLOWED = new Map<string, string>([
       'forwards a turn a caller already asked for, or refuses it for a paused agent, ' +
       'and starts nothing of its own.',
   ],
-  [
-    'apps/server/src/services/tasks/task-scheduler-service.ts',
-    'The scheduler drives its own turn: it consumes the stream in-band for the ' +
-      'run row and races it against a cancel signal, which is work no dispatcher ' +
-      'does for it. What it no longer skips is the SERIALIZATION. An ATTENDED run ' +
-      'takes the same chain slot, the same session write-lock, the same ' +
-      'stranded-turn settle and the same canonical rekey a dispatch takes, ' +
-      'through `tasks/session/run-projection.ts` — because it now feeds a ' +
-      'projector, and a sticky task can resume the very session somebody is ' +
-      'typing in. A SCHEDULED fire still needs none of it: it runs on a fresh ' +
-      'session of its own that no second writer can reach, and it opens no ' +
-      'projector at all. Spec §3.4 names `tasks/run-stream.ts` in the caller ' +
-      'list; that module turned out to be the abort-aware CONSUMER of an ' +
-      'already-started stream, not a trigger, so the real call site is this one.',
-  ],
 ]);
 
 /**

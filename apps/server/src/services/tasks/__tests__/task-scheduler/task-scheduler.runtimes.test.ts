@@ -7,8 +7,8 @@ import {
   clearTestHomes,
   registerTestHomes,
 } from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
-import { TaskSchedulerService, singleRuntimeSource } from '../../task-scheduler-service.js';
-import type { RelayRuntimePredicate, SchedulerAgentManager } from '../../task-scheduler-service.js';
+import { TaskSchedulerService } from '../../task-scheduler-service.js';
+import type { RelayRuntimePredicate } from '../../task-scheduler-service.js';
 import { assessTaskDispatch } from '../../../relay/task-dispatch/readiness.js';
 import { AdapterRegistry } from '@dorkos/relay';
 import type { AdapterStatus, RelayAdapter, RelayPublisher, RelayCore } from '@dorkos/relay';
@@ -34,6 +34,7 @@ import {
 } from './task-scheduler.fixtures.js';
 import type { MockRelay, RuntimeHarness, Dispatchable } from './task-scheduler.fixtures.js';
 import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+import { onRuntime, turnsOn, type RuntimeDouble } from '../support/runtime-task-turns.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
 // refuses every path and turn code knows no Claude transcript.
@@ -211,6 +212,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
     const service = new TaskSchedulerService({
       store,
       runtimes: rt.runtimesWith(['claude-code']),
+      turns: turnsOn(rt.runtimesWith(['claude-code'])),
       config: { ...DEFAULT_CONFIG },
       activityService: { emit } as unknown as ActivityService,
     });
@@ -367,6 +369,7 @@ describe('TaskSchedulerService — the agent a run stands in', () => {
     const service = new TaskSchedulerService({
       store,
       runtimes: rt.runtimesWith(['claude-code', 'codex']),
+      turns: turnsOn(rt.runtimesWith(['claude-code', 'codex'])),
       config: { ...DEFAULT_CONFIG },
       meshCore: meshAt(dir),
     });
@@ -387,6 +390,7 @@ describe('TaskSchedulerService — the agent a run stands in', () => {
       const service = new TaskSchedulerService({
         store,
         runtimes: rt.runtimesWith(['claude-code', 'codex']),
+        turns: turnsOn(rt.runtimesWith(['claude-code', 'codex'])),
         config: { ...DEFAULT_CONFIG },
         meshCore: meshAt(dir),
       });
@@ -408,7 +412,7 @@ describe('TaskSchedulerService — the agent a run stands in', () => {
 
 describe('agent CWD resolution (via triggerManualRun)', () => {
   let store: TaskStore;
-  let mockAgent: SchedulerAgentManager;
+  let mockAgent: RuntimeDouble;
   let agentDir: string;
 
   beforeEach(async () => {
@@ -423,7 +427,7 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
   function withMesh(meshAgents: Record<string, string> | null): TaskSchedulerService {
     return new TaskSchedulerService({
       store,
-      runtimes: singleRuntimeSource(mockAgent),
+      ...onRuntime(mockAgent),
       config: DEFAULT_CONFIG,
       meshCore: meshAgents ? createMockMeshCore(meshAgents) : null,
     });
@@ -447,7 +451,7 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
     const task = store.createTask(taskInput({ name: 'Boom', cron: '0 * * * *' }));
     vi.mocked(mockAgent.sendMessage).mockImplementation((() => {
       throw new Error('the runtime fell over');
-    }) as unknown as SchedulerAgentManager['sendMessage']);
+    }) as unknown as RuntimeDouble['sendMessage']);
     const service = withMesh(null);
 
     const run = await service.triggerManualRun(task.id);
