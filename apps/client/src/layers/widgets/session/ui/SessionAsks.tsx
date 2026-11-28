@@ -15,7 +15,7 @@ import { Square } from 'lucide-react';
 import type { ToolCallState } from '@/layers/shared/model/chat-message-types';
 import { ApprovalPrompt, AskStack, QuestionPrompt, useAnswerAsk } from '@/layers/features/ask';
 import { getToolLabel } from '@/layers/shared/lib';
-import { Button, Spinner } from '@/layers/shared/ui';
+import { Button } from '@/layers/shared/ui';
 import type { InteractiveToolHandle } from '@/layers/features/chat';
 
 /**
@@ -197,13 +197,20 @@ export function SessionAsks({
             <Button
               variant="ghost"
               size="sm"
-              // Heard once: it waits for the turn to settle rather than re-arming.
-              onClick={stopPending ? undefined : onStop}
-              {...(stopPending ? { 'aria-disabled': true, 'aria-busy': true } : {})}
+              onClick={onStop}
+              // The card's shortcuts listen on the whole page: Enter there
+              // approves and Escape refuses. Neither may answer from here.
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === 'Escape') e.stopPropagation();
+              }}
+              loading={stopPending}
+              loadingLabel="Stopping…"
+              // Named outright: the busy label rides in the button hidden, and
+              // not every engine leaves hidden text out of the name.
+              aria-label={stopPending ? 'Stopping…' : 'Stop'}
               className="text-muted-foreground hover:text-foreground ml-auto"
             >
-              {stopPending ? <Spinner size="xs" /> : <Square className="size-(--size-icon-xs)" />}
-              {stopPending ? 'Stopping…' : 'Stop'}
+              <Square className="size-(--size-icon-xs)" /> Stop
             </Button>
           )}
         </div>

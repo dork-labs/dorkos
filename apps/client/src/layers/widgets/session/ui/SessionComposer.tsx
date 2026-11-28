@@ -64,6 +64,7 @@ import { useStopTask } from '../model/use-stop-task';
 import {
   useDirectoryState,
   useSessionAwaitingDecision,
+  useSessionRuntimeTurn,
   useSessionChatState,
   useSessionChatStore,
   useSessionRuntime,
@@ -205,6 +206,10 @@ export function SessionComposer({
   // for the frames before the stream hydrates.
   const waitingOnPerson = awaitingDecision || activeInteraction !== null;
   const turnOpen = isStreaming || waitingOnPerson;
+  // A card raised in a turn no person started (a helper asking after the
+  // reply) gets no Stop: stopping that turn would also end the background work
+  // the last turn left. Its own Don't allow answers it (DOR-5492).
+  const runtimeTurn = useSessionRuntimeTurn(sessionId);
   // A quick lookup says nothing, so a chat that is set up doesn't flicker. Pressing
   // Check again starts the wait over, and says so at once.
   const [lookupChecks, setLookupChecks] = useState(0);
@@ -235,7 +240,7 @@ export function SessionComposer({
   // A turn parked on a person is not producing, so there is nothing to cut into.
   const canSteer =
     isStreaming && (capabilities?.supportsSteer ?? false) && (sessionSteerable ?? true);
-  const canAddContext = capabilities?.supportsContextStaging ?? false;
+  const canAddContext = isStreaming && (capabilities?.supportsContextStaging ?? false);
   // Whether a deny reason typed here reaches the agent at all. `true` while
   // capabilities are still loading and for every runtime that has not opted
   // out — most have the channel, so an unresolved answer should not hide an
@@ -634,7 +639,7 @@ export function SessionComposer({
             allowsDenyReason={allowsDenyReason}
             agentName={agentName}
             // The card replaces the box and its Stop with it, so it carries one.
-            onStop={handleStop}
+            {...(runtimeTurn ? {} : { onStop: handleStop })}
             stopPending={stopPending}
           />
         ) : null
@@ -756,6 +761,8 @@ export function SessionComposer({
         ...(pausedComposer.blocked ? { canSubmit: false } : {}),
         onStop: handleStop,
         stopPending,
+        // Waiting on a person, nothing is generating; the button says what it does.
+        ...(isStreaming ? {} : { stopLabel: 'Stop' }),
         onEscape: autocomplete.dismissPalettes,
         onClear: () => {
           setInput('');

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render as renderBare, screen, fireEvent, cleanup } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
-import { TransportProvider } from '@/layers/shared/model';
+import { TransportProvider, useInteractiveShortcuts } from '@/layers/shared/model';
 import type { ToolCallState } from '@/layers/shared/model/chat-message-types';
 import { SessionAsks } from '../ui/SessionAsks';
 
@@ -128,6 +129,70 @@ describe('SessionAsks', () => {
     it('says nothing when the queue is empty', () => {
       renderWithQueue(0);
       expect(screen.queryByText(/waiting/)).toBeNull();
+    });
+  });
+
+  describe('the Stop under the card (DOR-3202)', () => {
+    /** The card with the page-wide shortcuts a session wires beside it. */
+    function Harness(props: { onApprove: () => void; onDeny: () => void; onStop: () => void }) {
+      useInteractiveShortcuts({
+        activeInteraction: { type: 'approval', toolCallId: approvalInteraction.toolCallId },
+        onApprove: props.onApprove,
+        onDeny: props.onDeny,
+        onAlwaysAllow: vi.fn(),
+        onToggleOption: vi.fn(),
+        onNavigateOption: vi.fn(),
+        onNavigateQuestion: vi.fn(),
+        onSubmit: vi.fn(),
+        optionCount: 0,
+        focusedIndex: 0,
+      });
+      return (
+        <SessionAsks
+          sessionId="session-1"
+          activeInteraction={approvalInteraction}
+          pendingApprovals={[]}
+          focusedOptionIndex={0}
+          onToolRef={() => {}}
+          onToolDecided={() => {}}
+          onStop={props.onStop}
+        />
+      );
+    }
+
+    // Enter on the page approves and Escape refuses; on the focused Stop they
+    // must stop the turn and do nothing else.
+    for (const [key, label] of [
+      ['{Enter}', 'Enter'],
+      [' ', 'Space'],
+      ['{Escape}', 'Escape'],
+    ] as const) {
+      it(`${label} on the focused Stop never answers the card`, async () => {
+        const onApprove = vi.fn();
+        const onDeny = vi.fn();
+        const onStop = vi.fn();
+        render(<Harness onApprove={onApprove} onDeny={onDeny} onStop={onStop} />);
+        const stop = screen.getByRole('button', { name: 'Stop' });
+        stop.focus();
+        await userEvent.keyboard(key);
+        expect(onStop).toHaveBeenCalledTimes(label === 'Escape' ? 0 : 1);
+        expect(onApprove).not.toHaveBeenCalled();
+        expect(onDeny).not.toHaveBeenCalled();
+      });
+    }
+
+    it('draws no Stop when the session offers none', () => {
+      render(
+        <SessionAsks
+          sessionId="session-1"
+          activeInteraction={approvalInteraction}
+          pendingApprovals={[]}
+          focusedOptionIndex={0}
+          onToolRef={() => {}}
+          onToolDecided={() => {}}
+        />
+      );
+      expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
     });
   });
 });

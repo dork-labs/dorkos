@@ -244,4 +244,16 @@ describe('reconstructHistoryFromEvents — answered approvals', () => {
 
     expect(messages[1].toolCalls?.[0].approvalOutcome).toBe('allowed');
   });
+
+  it('settles a tool a Stop withdrew the card for, rather than leaving it running (DOR-3202)', () => {
+    const messages = reconstructHistoryFromEvents(
+      gatedTurn(
+        { seq: 3, type: 'tool_result', toolCallId: 'tc-1', toolName: 'Bash', status: 'running' },
+        { seq: 4, type: 'interaction_resolved', id: 'tc-1', resolution: 'cancelled', at: 1 },
+        { seq: 5, type: 'turn_end', terminalReason: 'aborted_streaming' }
+      )
+    );
+
+    expect(messages[1].toolCalls?.[0].status).toBe('error');
+  });
 });
