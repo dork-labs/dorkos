@@ -63,20 +63,16 @@ type JsonBody<Id extends OperationId> =
       : undefined;
 
 /**
- * Headers the request path owns, which a call's own `headers` may not name:
- * the body's type comes from its body, the cookie from the browser, and the
- * community-owner header from the app's transport. Compared without case.
+ * The only headers a call may add of its own, lowercased. Everything else (the
+ * body's type, the cookie, credentials, the community-owner header) belongs to
+ * the request path, so a call that names anything not listed here is refused.
  */
-export const RESERVED_CALL_HEADERS: readonly string[] = [
-  'content-type',
-  'cookie',
-  'x-dorkos-community-owner',
-];
+export const ALLOWED_CALL_HEADERS: readonly string[] = ['x-client-id'];
 
 /**
  * What a call to an operation takes: its path and query parameters, its JSON
- * body, and any headers this one call adds (never one of
- * {@link RESERVED_CALL_HEADERS}).
+ * body, and any headers this one call adds (only those in
+ * {@link ALLOWED_CALL_HEADERS}).
  */
 export type OperationInput<Id extends OperationId> = Field<'path', ParameterIn<Id, 'path'>> &
   Field<'query', ParameterIn<Id, 'query'>> &
@@ -139,8 +135,8 @@ export interface ApiClient {
    * @returns The answer's JSON body, or `undefined` for an empty answer.
    * @throws {ApiProblemError} When the answer is not 2xx (unless the `fetch`
    *   the client was given throws first).
-   * @throws {TypeError} When `input.headers` names a reserved header, before
-   *   anything is sent.
+   * @throws {TypeError} When `input.headers` names a header not in
+   *   {@link ALLOWED_CALL_HEADERS}, before anything is sent.
    */
   call<Id extends OperationId>(
     operationId: Id,
@@ -160,14 +156,20 @@ function fillPath(operationId: string, template: string, values: Record<string, 
   });
 }
 
-/** The call's own headers, refusing any the request path owns. */
-function callHeaders(operationId: string, values: Record<string, string> = {}): Headers {
-  for (const name of Object.keys(values)) {
-    if (RESERVED_CALL_HEADERS.includes(name.toLowerCase())) {
+/**
+ * The call's own headers, refusing any not on the allow list. The names are
+ * read back from `Headers`, which lowercases them, so a `Headers` instance or
+ * an entries array cast past the type is checked the same way. The error names
+ * the header, never its value.
+ */
+function callHeaders(operationId: string, values?: HeadersInit): Headers {
+  const headers = new Headers(values);
+  for (const name of headers.keys()) {
+    if (!ALLOWED_CALL_HEADERS.includes(name)) {
       throw new TypeError(`${operationId} may not set the "${name}" header itself.`);
     }
   }
-  return new Headers(values);
+  return headers;
 }
 
 /** Serialize query parameters, leaving out `undefined` and repeating arrays. */

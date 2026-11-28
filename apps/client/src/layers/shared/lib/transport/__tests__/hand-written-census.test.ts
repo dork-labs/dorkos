@@ -7,7 +7,8 @@
  * - `document-wrong`: the API document gets the call wrong (`operationId: the gap`)
  * - `multipart-or-stream`: a multipart body, a stream or a socket
  * - `own-header-or-cache`: a header, cache rule or fetch the client can't express
- * - `waits-to-move`: nothing stops it moving to the operationId it names
+ * - `waits-to-move`: nothing stops it moving to the operationId it names. Its
+ *   size is `waits-to-move-count`, which may only fall: lower it as they move.
  *
  * A method is hand-written when it reaches the network through anything but
  * the generated client: `fetchJSON` and its siblings, `fetch`, a socket, or a
@@ -26,6 +27,11 @@ const TRANSPORT = path.resolve(HERE, '..');
 const ROUTES = path.resolve(
   HERE,
   '../../../../../../../../packages/api-client/src/generated/operation-routes.ts'
+);
+// The server's own route list, so a `no-operation` route with a typo names no route.
+const SERVER_ROUTES = path.resolve(
+  HERE,
+  '../../../../../../../server/src/http/__tests__/route-census.baseline.json'
 );
 const HTTP_HELPERS = new Set(['fetchJSON', 'fetchNoContent', 'fetchResponse', 'fetchAllPages']);
 const GLOBALS = new Set(['fetch', 'EventSource', 'WebSocket', 'XMLHttpRequest']);
@@ -121,12 +127,20 @@ const operations = [
 
 /** Whether two paths are the same route, any parameter matching any segment. */
 function sameRoute(a: string, b: string): boolean {
-  const segments = (p: string) => p.split('/').map((s) => (/^(\{.*\}|\*)$/.test(s) ? '*' : s));
+  const segments = (p: string) => p.split('/').map((s) => (/^(\{.*\}|\*|:.+)$/.test(s) ? '*' : s));
   const [x, y] = [segments(a), segments(b)];
   return x.length === y.length && x.every((s, i) => s === '*' || y[i] === '*' || s === y[i]);
 }
 
-const listed = Object.values(census).flatMap((group) => Object.keys(group));
+const { 'waits-to-move-count': waitsToMoveCount, ...groups } = census;
+const listed = Object.values(groups).flatMap((group) => Object.keys(group));
+
+/** The server's concrete routes, as `METHOD /path` under the `/api` mount. */
+const serverRoutes = (
+  JSON.parse(fs.readFileSync(SERVER_ROUTES, 'utf8')) as { routes: string[] }
+).routes
+  .filter((route) => !route.startsWith('ALL '))
+  .map((route) => route.replace(' /api/', ' /').split(' ') as [string, string]);
 
 describe('the hand-written transport census', () => {
   it('lists every hand-written method, and only those', () => {
@@ -152,5 +166,18 @@ describe('the hand-written transport census', () => {
     );
     const missing = named.filter(([, id]) => !operations.some((op) => op.id === id));
     expect([...stale, ...missing.map(([key, id]) => `${key}: no ${id}`)]).toEqual([]);
+  });
+
+  it('names only routes the server serves', () => {
+    const unknown = Object.entries(census['no-operation']).filter(([, request]) => {
+      const [method, route] = request.split(' ');
+      return !serverRoutes.some(([m, served]) => m === method && sameRoute(served, route!));
+    });
+    expect(unknown.map(([key, request]) => `${key}: ${request}`)).toEqual([]);
+  });
+
+  it('only ever shrinks the methods that could move but have not', () => {
+    // Moved one? Lower `waits-to-move-count` to match. Added one? Move it instead.
+    expect(Object.keys(census['waits-to-move'])).toHaveLength(waitsToMoveCount);
   });
 });

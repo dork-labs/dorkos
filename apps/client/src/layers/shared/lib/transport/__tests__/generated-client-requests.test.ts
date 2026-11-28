@@ -52,8 +52,9 @@ const ownHeader: Record<string, () => Promise<unknown>> = {
   'DELETE /api/computers/control {"leaseId":"l1"}': () => computer.releaseComputerControl('l1'),
   [`POST /api/computers/input ${JSON.stringify(input)}`]: () => computer.sendComputerInput(input),
   'GET /api/computers/frame': () => computer.getComputerFrame(),
-  'POST /api/sessions/s1/queue/m%2F1/steer': () =>
-    createQueuedChatMethods(base, window1).steerQueuedChatMessage('s1', 'm/1'),
+  // Both ids are escaped now; the hand-written call sent the session id raw.
+  'POST /api/sessions/chat%20a/queue/m%2F1/steer': () =>
+    createQueuedChatMethods(base, window1).steerQueuedChatMessage('chat a', 'm/1'),
 };
 
 const plain: Record<string, () => Promise<unknown>> = {
@@ -104,7 +105,8 @@ const plain: Record<string, () => Promise<unknown>> = {
     queue.requeueWorkItem('a 1', 'i/1'),
   // Tasks. `null` clears a schedule's effort, so it must reach the server as `null`.
   'GET /api/tasks': () => tasks.listTasks(),
-  'PATCH /api/tasks/t1 {"effort":null}': () => tasks.updateTask('t1', { effort: null }),
+  // The task id is escaped now; the hand-written call sent it raw.
+  'PATCH /api/tasks/task%20a {"effort":null}': () => tasks.updateTask('task a', { effort: null }),
   'DELETE /api/tasks/t1': () => tasks.deleteTask('t1'),
   'POST /api/tasks/t1/approve-file {"hash":"h1"}': () => tasks.approveTaskFile('t1', null, 'h1'),
   'POST /api/tasks/t1/approve-file {"capAt":"2026-01-01T00:00:00Z","hash":"h1"}': () =>
