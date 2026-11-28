@@ -57,19 +57,30 @@ export type WaitReason = z.infer<typeof WaitReasonSchema>;
 
 /**
  * The one line a person sees about a run's ending (spec §7.4), by its case.
- * The app holds the words; the server says which case is true.
+ * The app holds the words; the server says which case is true. Each is what
+ * recovery decided for a run that ended `process_died` or `shutdown` in a
+ * boot that is gone (§7.3), or, before it decided, what the record already
+ * proves.
  *
- * - `restart_stopped`: the run ended `process_died` or `shutdown` in a boot
- *   that is gone, recovery has not decided it, nothing continues it, and the
- *   runtime had its words. "DorkOS restarted during this reply, so it
- *   stopped. Send a message to continue."
+ * - `restart_stopped`: nothing continues it; the runtime cannot pick a turn
+ *   back up, or recovery has not decided yet. "DorkOS restarted during this
+ *   reply, so it stopped. Send a message to continue."
+ * - `restart_continued`: a new turn in the same chat picks it back up.
+ *   "DorkOS restarted during this reply. The agent is picking it back up."
+ * - `restart_waited_on_you`: it was waiting on the person's answer. "DorkOS
+ *   restarted while this waited on you. Send a message to continue."
+ * - `restart_chain_cap`: it had already been picked back up three times.
+ *   "DorkOS restarted during this reply again. It stopped; send a message to
+ *   retry."
  *
- * The other cases of §7.4 (continued, waited on you, the chain cap) join when
- * recovery (T15) writes the facts they rest on, and never before. A client
- * one version behind reads a value it does not know as no line
- * (`parseSessionEvent` in the app), never as an unreadable frame.
+ * A restored draft's line ("This message may not have been seen") is the
+ * queue row's, not the run's. A client one version behind reads a value it
+ * does not know as no line (`parseSessionEvent` in the app), never as an
+ * unreadable frame.
  */
-export const RunNoticeSchema = z.enum(['restart_stopped']).openapi('RunNotice');
+export const RunNoticeSchema = z
+  .enum(['restart_stopped', 'restart_continued', 'restart_waited_on_you', 'restart_chain_cap'])
+  .openapi('RunNotice');
 
 /** A run's line. See {@link RunNoticeSchema}. */
 export type RunNotice = z.infer<typeof RunNoticeSchema>;

@@ -412,6 +412,7 @@ export function parkDispatch(
       ? { privateDispatchSignal: plan.turn.privateDispatchSignal }
       : {}),
     messageId: plan.messageId,
+    ...(plan.runId !== undefined ? { runId: plan.runId } : {}),
     sessionKey: plan.sessionKey,
     clientId: plan.clientId,
     runtime: plan.runtime,

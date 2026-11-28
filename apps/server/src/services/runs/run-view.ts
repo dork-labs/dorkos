@@ -18,15 +18,27 @@ import { LIVE_RUN_STATUSES, type ChatRun, type RunNotice } from '@dorkos/shared/
 import { logger } from '../../lib/logger.js';
 import { chatKeyOf, emitRunUpdate, waitingRowOrder } from '../session/turn-port/index.js';
 import type { EffectStore } from './effects/effect-store.js';
-import type { RunStore, TurnRun } from './run-store.js';
+import type { RestartDecision, RunStore, TurnRun } from './run-store.js';
 
 const LIVE: ReadonlySet<string> = new Set(LIVE_RUN_STATUSES);
 
+/** The line each decision of recovery's shows (§7.4); a quiet one shows none. */
+const LINES: Partial<Record<RestartDecision, RunNotice>> = {
+  continued: 'restart_continued',
+  not_resumable: 'restart_stopped',
+  waited_on_you: 'restart_waited_on_you',
+  chain_cap: 'restart_chain_cap',
+};
+
 /**
- * The line a person sees about a run's ending (§7.4), or `null`. Only the
- * case the record can already prove: a run that ended `process_died` or
- * `shutdown` (§7.1's undecided endings), that recovery has not decided and
- * nothing continues. Once T15 stamps a decision, the line follows it. Never:
+ * The line a person sees about a run's ending (§7.4), or `null`. Only for a
+ * run that ended `process_died` or `shutdown` (§7.1's restart endings):
+ *
+ * - once recovery decided it (§7.3), the line its decision names;
+ * - before then, `restart_stopped` when nothing continues it, which the
+ *   record can already prove.
+ *
+ * Never, before a decision:
  *
  * - for a run ended from `started` (`delivery: unknown`): the runtime may not
  *   have read its words, so a person's message comes back as a restored
@@ -41,13 +53,10 @@ const LIVE: ReadonlySet<string> = new Set(LIVE_RUN_STATUSES);
 function noticeOf(run: TurnRun, continued: boolean, epoch: string): RunNotice | null {
   const finished = run.status === 'ended' || run.status === 'settled';
   const restarted = run.ending === 'process_died' || run.ending === 'shutdown';
-  const shown =
-    finished &&
-    restarted &&
-    run.recoveryDecidedAt === null &&
-    !continued &&
-    run.endingDetail.delivery !== 'unknown' &&
-    run.ownerEpoch !== epoch;
+  if (!finished || !restarted) return null;
+  const decided = run.endingDetail.restart;
+  if (run.recoveryDecidedAt !== null) return decided ? (LINES[decided] ?? null) : null;
+  const shown = !continued && run.endingDetail.delivery !== 'unknown' && run.ownerEpoch !== epoch;
   return shown ? 'restart_stopped' : null;
 }
 

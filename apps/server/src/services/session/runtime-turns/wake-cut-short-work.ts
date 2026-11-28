@@ -21,15 +21,17 @@
  * automatic relaunch. Those simply clear the record, and the CLI's own notice
  * reaches the agent on its next turn.
  *
- * ## Each record wakes at most once — but survives a boot that dies
+ * ## Through the run record
  *
- * A record more than {@link STALE_BACKGROUND_WORK_MS} old is dropped without a
- * wake: the work it describes is long stale, and it bounds the retries below.
- *
- * A record is removed only once its chat has been settled: woken, refused as
- * busy, found gone, or skipped as not a person's chat. A dispatch that throws
- * leaves it for the next boot. A second wake for the same chat is refused by
- * `whenBusy: 'refuse'` when the first is still running.
+ * Recovery decides which records wake (`services/runs/recovery`, spec
+ * `turns-survive-restarts` §7.3): a record over a day old
+ * (`RUNS.RESTART_AGE_BOUND_MS`), a room's or a task's chat, or a runtime that
+ * does not declare `wakesForLostBackgroundWork` wakes nobody. Each record that
+ * wakes is a `lost_work_wake` effect, saved before the worker starts, whose
+ * handler calls {@link wakeCutShortChat}. The wake's run carries the effect's
+ * `start_key`, so a boot that dies mid-wake never wakes the chat twice, and a
+ * record is removed only once its chat has been settled: woken, refused as busy
+ * or found gone. A dispatch that throws is tried again.
  *
  * ## What it deliberately does NOT do
  *
@@ -62,42 +64,14 @@ export const CUT_SHORT_WAKE_MESSAGE =
   "DorkOS restarted while this chat's background work was still running, so that work " +
   'was stopped. Check what you were waiting on and carry on.';
 
-/**
- * How old a record may be and still wake its chat: one day. A record from a
- * server quit days ago describes work nobody is waiting on any more, and the
- * bound also ends the retries of a record whose wake keeps failing.
- */
-export const STALE_BACKGROUND_WORK_MS = 24 * 60 * 60 * 1000;
-
-/**
- * One chat a restart cut short, as the runtime that held its background work
- * recorded it (Claude Code's `background-work-ledger.ts` writes these). Declared
- * here, by what a wake reads, so turn code never imports a runtime's ledger.
- */
+/** One chat a restart cut short: the id to wake it under and the directory it runs in. */
 interface CutShortWork {
-  /** The key the chat's process was filed under in the server that stopped. */
-  key: string;
-  /** The id to wake the chat under. */
   sessionId: string;
-  /** The directory the chat runs in. */
   cwd: string;
-  /** When the process started holding the work, as epoch ms. */
-  since: number;
 }
 
 /** How one wake ended. Every outcome but `failed` settles the record. */
 export type WakeOutcome = 'woken' | 'busy' | 'gone' | 'failed';
-
-/** What {@link wakeChatsCutShort} needs beyond the records. */
-export interface WakeChatsCutShortOptions {
-  /** Remove a settled record, so the next boot does not wake its chat again. */
-  release: (record: CutShortWork) => void;
-  /**
-   * The ids, of those asked about, that belong to a room or a scheduled task
-   * and so have no person waiting on them. Absent when neither is known.
-   */
-  drivenElsewhere?: (sessionIds: string[]) => ReadonlySet<string>;
-}
 
 /**
  * Wake one chat whose background work a restart stopped.
@@ -105,11 +79,11 @@ export interface WakeChatsCutShortOptions {
  * Never throws and never rejects: it runs detached from boot, so every way it
  * can decline is a log line and an outcome.
  *
- * @param chat - The chat to wake and where it runs
+ * @param chat - The chat to wake, where it runs, and the key its run is made under
  * @returns How it ended
  */
 export async function wakeCutShortChat(
-  chat: Pick<CutShortWork, 'sessionId' | 'cwd'>
+  chat: Pick<CutShortWork, 'sessionId' | 'cwd'> & { startKey?: string }
 ): Promise<WakeOutcome> {
   const { sessionId, cwd } = chat;
   try {
@@ -135,6 +109,7 @@ export async function wakeCutShortChat(
       projector,
       runtime,
       whenBusy: 'refuse',
+      ...(chat.startKey !== undefined ? { startKey: chat.startKey } : {}),
       // Held when the chat's latest turn was, as every turn nobody asked for is (DOR-3037).
       ...ceilingForContinuation(sessionId),
       onError: (err) => {
@@ -160,46 +135,5 @@ export async function wakeCutShortChat(
       ...logError(err),
     });
     return 'failed';
-  }
-}
-
-/**
- * Wake every chat a previous run left a record for, one after another,
- * removing each record once its chat is settled.
- *
- * @param records - The records the boot read
- * @param opts - How to remove a record, and which chats are not a person's
- */
-export async function wakeChatsCutShort(
-  records: readonly CutShortWork[],
-  opts: WakeChatsCutShortOptions
-): Promise<void> {
-  let elsewhere: ReadonlySet<string> = new Set();
-  try {
-    const ids = [...new Set(records.flatMap((record) => [record.sessionId, record.key]))];
-    elsewhere = opts.drivenElsewhere?.(ids) ?? elsewhere;
-  } catch (err) {
-    // Unknown is treated as a person's chat: a wake a room did not need is
-    // cheaper than one a person did need and never got.
-    logger.warn('[background-work-wake] could not tell room and task chats apart', logError(err));
-  }
-  const now = Date.now();
-  for (const record of records) {
-    if (now - record.since > STALE_BACKGROUND_WORK_MS) {
-      logger.info('[background-work-wake] not waking a chat whose record is over a day old', {
-        sessionId: record.sessionId,
-        since: new Date(record.since).toISOString(),
-      });
-      opts.release(record);
-      continue;
-    }
-    if (elsewhere.has(record.sessionId) || elsewhere.has(record.key)) {
-      logger.info('[background-work-wake] not waking a room or scheduled-task chat', {
-        sessionId: record.sessionId,
-      });
-      opts.release(record);
-      continue;
-    }
-    if ((await wakeCutShortChat(record)) !== 'failed') opts.release(record);
   }
 }

@@ -23,7 +23,8 @@
  *   answers them before anything is bound or queued.
  *
  * **Where the words wait.** A run whose words wait in the composer
- * (`wordsWaitInComposer`) is queued as a row, recorded on its run. Any other
+ * (`wordsWaitInComposer`) is queued as a row, recorded on its run; never a
+ * continuation after a restart, whose words are DorkOS's own. Any other
  * run is handed to the dispatcher without one (`wordsAtSource`): never forced
  * at its wait bound, and handed back to the space side when a launch starts
  * no turn (transition 8, its `start_turn` back to `pending`).
@@ -129,7 +130,10 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
     async start(input) {
       const request = TurnStartRequestSchema.parse(input);
       if (holds(request.runId)) return { refused: 'already_held' };
-      const composer = wordsWaitInComposer(request.origin);
+      // A continuation after a restart (attempt 2 on) carries DorkOS's own
+      // words, never a person's: they stay at their source, out of every
+      // composer, whatever origin it copied from the turn it picks up (§7.3).
+      const composer = wordsWaitInComposer(request.origin) && request.attempt === 1;
       const live = turnFacts()?.dispatcher.liveRunOf(queueKeyOf(request.sessionId));
       const chatBusy = live !== undefined && live !== request.runId;
       if (!composer && chatBusy) return { refused: 'chat_busy' };

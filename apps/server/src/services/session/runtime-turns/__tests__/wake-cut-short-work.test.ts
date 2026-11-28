@@ -1,16 +1,11 @@
 /**
  * Waking, after a restart, a chat whose background work the restart stopped
- * (DOR-2065).
- *
- * The boot half: a record a previous run left behind wakes its chat exactly
- * once and is removed once the chat is settled, a record whose dispatch threw
- * survives for the next boot, and a room's or a task's chat is never woken.
+ * (DOR-2065): one chat's wake, as the `lost_work_wake` handler calls it. Which
+ * records wake, once each, and which are let go is recovery's, proven in
+ * `services/runs/__tests__/restart-matrix-lost-work.test.ts` (K13).
  *
  * @vitest-environment node
  */
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const dispatchMessage = vi.hoisted(() => vi.fn());
@@ -37,54 +32,25 @@ vi.mock('../../../../lib/logger.js', () => ({
   logError: (err: unknown) => ({ error: String(err) }),
 }));
 
-import {
-  BackgroundWorkLedger,
-  type BackgroundWorkRecord,
-} from '../../../runtimes/claude-code/messaging/background-work-ledger.js';
-import {
-  CUT_SHORT_WAKE_MESSAGE,
-  STALE_BACKGROUND_WORK_MS,
-  wakeChatsCutShort,
-} from '../wake-cut-short-work.js';
+import { CUT_SHORT_WAKE_MESSAGE, wakeCutShortChat } from '../wake-cut-short-work.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { noteTurnHold, setContinuationHoldDb } from '../../../core/turn-power/continuation-hold.js';
 
-/** A record written moments ago, well inside the staleness bound. */
-const RECENT = Date.now();
-
-let dorkHome: string;
-let ledger: BackgroundWorkLedger;
-
-/** The boot path as `index.ts` wires it: read, wake, remove each settled record. */
-async function boot(drivenElsewhere?: (ids: string[]) => ReadonlySet<string>): Promise<void> {
-  await wakeChatsCutShort(ledger.read(), {
-    release: (record: BackgroundWorkRecord) => ledger.release(record.key, record.since),
-    ...(drivenElsewhere !== undefined ? { drivenElsewhere } : {}),
-  });
-}
-
 beforeEach(() => {
-  dorkHome = fs.mkdtempSync(path.join(os.tmpdir(), 'bg-work-wake-'));
-  ledger = new BackgroundWorkLedger(dorkHome);
   dispatchMessage.mockReset();
   dispatchMessage.mockResolvedValue({ accepted: true });
   runtime.hasSession.mockReturnValue(true);
 });
 
-afterEach(() => {
-  fs.rmSync(dorkHome, { recursive: true, force: true });
-});
+afterEach(() => setContinuationHoldDb(undefined));
 
 describe('a wake for a chat whose latest turn was held (DOR-3037)', () => {
-  afterEach(() => setContinuationHoldDb(undefined));
-
   it('runs at the runtime default, and a chat whose turn was not held runs as it was', async () => {
     setContinuationHoldDb(createTestDb());
     noteTurnHold('sess-held', true);
     noteTurnHold('sess-free', false);
-    ledger.hold({ key: 'k-h', sessionId: 'sess-held', cwd: '/projects/one', since: RECENT });
-    ledger.hold({ key: 'k-f', sessionId: 'sess-free', cwd: '/projects/two', since: RECENT });
-    await boot();
+    await wakeCutShortChat({ sessionId: 'sess-held', cwd: '/projects/one' });
+    await wakeCutShortChat({ sessionId: 'sess-free', cwd: '/projects/two' });
     const bySession = new Map(
       dispatchMessage.mock.calls.map((call) => [call[0].sessionId, call[0].permissionCeiling])
     );
@@ -99,9 +65,8 @@ describe('a wake for a chat whose latest turn was held (DOR-3037)', () => {
     // A new process: the same rows, nothing in memory. `sess-old` ran before the
     // hold was recorded, so it has no row at all.
     setContinuationHoldDb(db);
-    ledger.hold({ key: 'k-h', sessionId: 'sess-held', cwd: '/projects/one', since: RECENT });
-    ledger.hold({ key: 'k-o', sessionId: 'sess-old', cwd: '/projects/two', since: RECENT });
-    await boot();
+    await wakeCutShortChat({ sessionId: 'sess-held', cwd: '/projects/one' });
+    await wakeCutShortChat({ sessionId: 'sess-old', cwd: '/projects/two' });
     const bySession = new Map(
       dispatchMessage.mock.calls.map((call) => [call[0].sessionId, call[0]])
     );
@@ -114,99 +79,42 @@ describe('a wake for a chat whose latest turn was held (DOR-3037)', () => {
   });
 });
 
-describe('a boot with background work a previous run left behind', () => {
-  it('wakes that chat exactly once and removes the record', async () => {
-    ledger.hold({ key: 'k-1', sessionId: 'sess-1', cwd: '/projects/one', since: RECENT });
+describe('one chat’s wake', () => {
+  it('starts a turn with today’s message under the key its run is made under', async () => {
+    const outcome = await wakeCutShortChat({
+      sessionId: 'sess-1',
+      cwd: '/projects/one',
+      startKey: 'lost-work:sess-1:1',
+    });
 
-    await boot();
-
+    expect(outcome).toBe('woken');
     expect(dispatchMessage).toHaveBeenCalledTimes(1);
     expect(dispatchMessage.mock.calls[0]![0]).toMatchObject({
       turnStarter: 'agent',
+      origin: { kind: 'resume' },
       sessionId: 'sess-1',
       cwd: '/projects/one',
       content: CUT_SHORT_WAKE_MESSAGE,
       whenBusy: 'refuse',
+      startKey: 'lost-work:sess-1:1',
     });
-    expect(ledger.read()).toEqual([]);
-
-    // The next boot finds nothing to wake.
-    await boot();
-    expect(dispatchMessage).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the record for the next boot when the dispatch throws', async () => {
-    ledger.hold({ key: 'k-err', sessionId: 'sess-err', cwd: '/projects/err', since: RECENT });
+  it('answers failed when the dispatch throws, so it is tried again', async () => {
     dispatchMessage.mockRejectedValueOnce(new Error('boom'));
-
-    await expect(boot()).resolves.toBeUndefined();
-    expect(ledger.read()).toEqual([expect.objectContaining({ key: 'k-err' })]);
-
-    await boot();
-    expect(dispatchMessage).toHaveBeenCalledTimes(2);
-    expect(ledger.read()).toEqual([]);
+    await expect(wakeCutShortChat({ sessionId: 's', cwd: '/p' })).resolves.toBe('failed');
   });
 
-  it('removes the record of a busy chat without queueing a wake behind its turn', async () => {
-    ledger.hold({ key: 'k-busy', sessionId: 'sess-busy', cwd: '/projects/busy', since: RECENT });
+  it('answers busy, queueing nothing behind a running turn', async () => {
     dispatchMessage.mockResolvedValue({ accepted: false });
-
-    await boot();
-
-    expect(dispatchMessage).toHaveBeenCalledTimes(1);
+    await expect(wakeCutShortChat({ sessionId: 's', cwd: '/p' })).resolves.toBe('busy');
     expect(dispatchMessage.mock.calls[0]![0].whenBusy).toBe('refuse');
-    expect(ledger.read()).toEqual([]);
   });
 
-  it('removes the record of a chat that no longer exists anywhere, waking nothing', async () => {
-    ledger.hold({ key: 'k-gone', sessionId: 'sess-gone', cwd: '/projects/gone', since: RECENT });
+  it('answers gone for a chat that no longer exists anywhere, waking nothing', async () => {
     runtime.hasSession.mockReturnValue(false);
     runtime.getSession.mockResolvedValueOnce(null as never);
-
-    await boot();
-
+    await expect(wakeCutShortChat({ sessionId: 's', cwd: '/p' })).resolves.toBe('gone');
     expect(dispatchMessage).not.toHaveBeenCalled();
-    expect(ledger.read()).toEqual([]);
-  });
-
-  it('does not wake a room or scheduled-task chat, and removes its record', async () => {
-    ledger.hold({ key: 'k-room', sessionId: 'sess-room', cwd: '/projects/room', since: RECENT });
-    ledger.hold({ key: 'k-mine', sessionId: 'sess-mine', cwd: '/projects/mine', since: RECENT });
-
-    await boot((ids) => new Set(ids.filter((id) => id === 'sess-room')));
-
-    expect(dispatchMessage).toHaveBeenCalledTimes(1);
-    expect(dispatchMessage.mock.calls[0]![0].sessionId).toBe('sess-mine');
-    expect(ledger.read()).toEqual([]);
-  });
-
-  it('drops a record older than a day without waking its chat', async () => {
-    const now = Date.now();
-    ledger.hold({
-      key: 'k-old',
-      sessionId: 'sess-old',
-      cwd: '/projects/old',
-      since: now - STALE_BACKGROUND_WORK_MS - 1,
-    });
-    ledger.hold({ key: 'k-new', sessionId: 'sess-new', cwd: '/projects/new', since: now - 1 });
-
-    await boot();
-
-    expect(dispatchMessage).toHaveBeenCalledTimes(1);
-    expect(dispatchMessage.mock.calls[0]![0].sessionId).toBe('sess-new');
-    expect(ledger.read()).toEqual([]);
-  });
-
-  it('does not remove a record this run has written for the same chat since', async () => {
-    ledger.hold({ key: 'k-1', sessionId: 'sess-1', cwd: '/projects/one', since: RECENT });
-    const records = ledger.read();
-    // The chat's process starts holding work again before its wake settles.
-    ledger.hold({ key: 'k-1', sessionId: 'sess-1', cwd: '/projects/one', since: RECENT + 1 });
-
-    await wakeChatsCutShort(records, {
-      release: (record) => ledger.release(record.key, record.since),
-    });
-
-    expect(ledger.read()).toEqual([expect.objectContaining({ since: RECENT + 1 })]);
   });
 });

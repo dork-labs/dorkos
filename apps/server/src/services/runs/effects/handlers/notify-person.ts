@@ -31,11 +31,13 @@
  */
 import { z } from 'zod';
 import { notify } from '../../../notifications/notification-service.js';
+import type { NotificationStoredWitness } from '../../../notifications/notification-store.js';
 import { sessionLabelFor } from '../../../notifications/notification-copy.js';
 import type { TurnRun } from '../../run-store.js';
 import type { NewEffect } from '../effect-store.js';
-import type { EffectHandler } from '../worker.js';
+import type { EffectAnswer, EffectContext, EffectHandler } from '../worker.js';
 import { WorkNotStartedPayloadSchema } from '../work-not-started.js';
+import { RestartNoticePayloadSchema } from '../restart-notices.js';
 
 /** How long a "finished" notice may still be told (§6.2). */
 export const NOTIFY_PERSON_NOT_AFTER_MS = 24 * 60 * 60 * 1000;
@@ -107,6 +109,24 @@ export interface NotifyPersonDeps {
 }
 
 /**
+ * Write one declared notice and mark the effect done in the transaction that
+ * stores its row (§6.4). A row already stored under its key is told already.
+ */
+async function tell(
+  ctx: EffectContext,
+  write: (onStored: NotificationStoredWitness) => Promise<{ deduped?: boolean }>
+): Promise<EffectAnswer> {
+  let told = false;
+  const result = await write((_tx, notificationId) => {
+    ctx.markDone({ notificationId });
+    told = true;
+  });
+  if (told) return { kind: 'done' };
+  if (result.deduped) return { kind: 'done', outcome: { alreadyTold: true } };
+  throw new Error('The notification was not stored');
+}
+
+/**
  * The handler: write the person's "finished" row and mark the effect done in
  * the same transaction.
  *
@@ -118,16 +138,12 @@ export function notifyPersonHandler(deps: NotifyPersonDeps = {}): EffectHandler 
       const notStarted = WorkNotStartedPayloadSchema.safeParse(effect.payload);
       if (notStarted.success) {
         const { notice: _notice, ...payload } = notStarted.data;
-        let told = false;
-        const result = await notify('extension.work_not_started', payload, {
-          onStored: (_tx, notificationId) => {
-            ctx.markDone({ notificationId });
-            told = true;
-          },
-        });
-        if (told) return { kind: 'done' };
-        if (result.deduped) return { kind: 'done', outcome: { alreadyTold: true } };
-        throw new Error('The notification was not stored');
+        return tell(ctx, (onStored) => notify('extension.work_not_started', payload, { onStored }));
+      }
+      const restarted = RestartNoticePayloadSchema.safeParse(effect.payload);
+      if (restarted.success) {
+        const { notice: _notice, ...payload } = restarted.data;
+        return tell(ctx, (onStored) => notify('turn.restarted', payload, { onStored }));
       }
       const parsed = TurnFinishedPayloadSchema.safeParse(effect.payload);
       if (!parsed.success) return { kind: 'drop', reason: 'unreadable_payload' };

@@ -1,8 +1,9 @@
 /**
  * The owner's notice for a mini app's start that was answered and then never
- * ran (spec `turns-survive-restarts` §3.1, §7.3 step 5; DOR-5232): the launch
- * refused it after `start()` had answered (the account rule, a paused agent,
- * its folder), or it kept failing to start. A start the app made is never
+ * ran (spec `turns-survive-restarts` §3.1, §7.3 steps 4 and 5; DOR-5232): the
+ * launch refused it after `start()` had answered (the account rule, a paused
+ * agent, its folder), it kept failing to start, or DorkOS restarted after its
+ * turn began and before its agent read the words. A start the app made is never
  * dropped silently, so the person who owns the app hears it once, with the
  * app's name and why.
  *
@@ -71,6 +72,8 @@ function why(reason: string): string {
       return 'It kept failing to start.';
     case 'start_lost':
       return 'Its first message was lost before it could start.';
+    case 'restarted':
+      return 'DorkOS restarted before its agent read the first message.';
     case 'removed':
       return 'Its message was taken off the chat’s queue.';
     case 'session_gone':
@@ -107,11 +110,13 @@ export const WORK_NOT_STARTED_ENTRIES: {
  * @param run - The run, cancelled.
  * @param app - The app that started it.
  * @param now - The clock, epoch ms.
+ * @param reason - Why; what `ending_detail` keeps unless said.
  */
 export function workNotStartedNotice(
   run: TurnRun,
   app: { extensionId: string; name: string },
-  now: number
+  now: number,
+  reason: string = run.endingDetail.cancelledBecause ?? 'start_failed'
 ): NewEffect {
   return {
     kind: 'notify_person',
@@ -124,7 +129,7 @@ export function workNotStartedNotice(
       sessionId: run.sessionId,
       extensionId: app.extensionId,
       name: app.name,
-      reason: run.endingDetail.cancelledBecause ?? 'start_failed',
+      reason,
     } satisfies z.infer<typeof WorkNotStartedPayloadSchema>,
     delivery: 'repeatable',
     notAfter: now + NOTIFY_PERSON_NOT_AFTER_MS,

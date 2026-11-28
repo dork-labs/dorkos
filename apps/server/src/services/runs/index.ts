@@ -18,8 +18,14 @@ import {
   getComputerTurnPort,
   isAgentLaunchCapFull,
   isRunHeld,
+  dropKeptRow,
   queueRowExists,
+  restoreDraftRow,
+  setLaunchGate,
   setTurnFactsSink,
+  tellSenderTurnLost,
+  wakeChat,
+  wakeChatForLostWork,
   type ComputerTurnPort,
 } from '../session/turn-port/index.js';
 import { logger } from '../../lib/logger.js';
@@ -36,6 +42,13 @@ import { startTurnHandler, type StartTurnDeps } from './effects/handlers/start-t
 import { admit } from './admission.js';
 import { SpaceTurnPort } from './turn-port.js';
 import { chatRunsOf, RunAnnouncer } from './run-view.js';
+import { RunRecovery, type BootFacts, type RunRecoveryDeps } from './recovery/run-recovery.js';
+import {
+  continueAfterRestartHandler,
+  RESTART_SOURCE,
+  restartWordSource,
+} from './recovery/continue-after-restart.js';
+import { lostWorkWakeHandler } from './recovery/lost-work.js';
 
 export {
   IllegalRunTransitionError,
@@ -70,6 +83,8 @@ export interface RunRecord {
   starts: StartTurns;
   /** A chat's runs as every device reads them (§4.6), by any id the chat answers to. */
   view: (chatId: string) => ChatRun[];
+  /** What follows the runs a restart ended (§7.3), and the launch gate's answer (§7.5). */
+  recovery: RunRecovery;
 }
 
 let installed:
@@ -104,6 +119,11 @@ export interface RunRecordOptions {
   admission?: Partial<Pick<StartTurnDeps, 'admission' | 'admit'>>;
   /** A lifted pause, heard so the runs it held go at once (`AgentPauseService.onResumed`). */
   onResumed?: (listener: () => void) => () => void;
+  /** What recovery reads of runtimes and chats (§7.2, §7.3); startup passes the registry's answers. */
+  recovery?: Pick<
+    RunRecoveryDeps,
+    'capabilitiesOf' | 'runtimeOf' | 'settledElsewhere' | 'ceilingOf' | 'cwdOf'
+  >;
 }
 
 /**
@@ -121,6 +141,7 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
     agentHome,
     admission,
     onResumed: _onResumed,
+    recovery: recoveryDeps,
     ...storeOpts
   } = opts;
   const now = opts.now ?? Date.now;
@@ -165,12 +186,41 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
       return 'wait' in verdict ? verdict.wait : undefined;
     },
   });
-  const starts: StartTurns = new StartTurns(store, effects, () => port, now);
+  const starts: StartTurns = new StartTurns(store, effects, () => port, now, wakeChat);
+  const recovery = new RunRecovery({
+    store,
+    effects,
+    port,
+    now,
+    chat: {
+      keyOf: chatKeyOf,
+      restoreDraft: restoreDraftRow,
+      dropRow: dropKeptRow,
+      tellSender: tellSenderTurnLost,
+      wake: wakeChat,
+    },
+    ...recoveryDeps,
+  });
+  // A continuation's words, read from the run it continues (§7.4).
+  port.registerSource(RESTART_SOURCE, restartWordSource(store));
   const worker = new EffectWorker({
     effects,
     runs: store,
+    // A dead boot's run whose lease ran out after the boot pass is decided here.
+    afterRetire: () => recovery.decidePending(),
     handlers: {
       ...effectHandlers(handlerDeps),
+      continue_after_restart: continueAfterRestartHandler({
+        runs: store,
+        effects,
+        ...(recoveryDeps?.ceilingOf ? { ceilingOf: recoveryDeps.ceilingOf } : {}),
+        ...(recoveryDeps?.cwdOf ? { cwdOf: recoveryDeps.cwdOf } : {}),
+      }),
+      lost_work_wake: lostWorkWakeHandler({
+        runs: store,
+        wake: wakeChatForLostWork,
+        release: (key) => recovery.releaseLostWork(key),
+      }),
       start_turn: startTurnHandler({
         runs: store,
         starts,
@@ -192,6 +242,7 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
     port,
     starts,
     view,
+    recovery,
   };
 }
 
@@ -210,6 +261,8 @@ export function installRunRecord(db: Db, opts: RunRecordOptions): RunStore {
   const record = createRunRecord(db, opts);
   const { store } = record;
   setTurnFactsSink(createRunFactsSink(store, record.notices, record.starts));
+  // Every launch path asks the gate first (§7.5): turn code reaches it through its seat.
+  setLaunchGate({ holds: (chatKey, runId) => record.recovery.holds(chatKey, runId) });
   const renew = setInterval(() => {
     try {
       store.renewLeases();
@@ -225,9 +278,21 @@ export function installRunRecord(db: Db, opts: RunRecordOptions): RunStore {
 }
 
 /**
+ * Recover the runs a restart ended (§7.3): decide each one, save what follows
+ * it, and the lost-work wakes. Called once the server is listening
+ * (`startup/steps/after-listen.ts`), before {@link startRunEffects} and before
+ * any chat's queue resumes. Never throws.
+ *
+ * @param facts - What the boot found beside the record: the background-work records.
+ */
+export function recoverRuns(facts: BootFacts = {}): void {
+  installed?.recovery.recoverAtBoot(facts);
+}
+
+/**
  * Start the outbox's worker. Called once the server is listening and the
- * notification pipeline exists (`startup/steps/after-listen.ts`), before any
- * chat's queue resumes (§7.3, step 8).
+ * notification pipeline exists (`startup/steps/after-listen.ts`), after
+ * {@link recoverRuns} and before any chat's queue resumes (§7.3, step 8).
  */
 export function startRunEffects(): void {
   if (!installed) return;
@@ -304,6 +369,7 @@ export function uninstallRunRecord(): void {
   installed.stopResumes?.();
   clearInterval(installed.renew);
   setTurnFactsSink(undefined);
+  setLaunchGate(undefined);
   installed = undefined;
 }
 

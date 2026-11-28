@@ -593,3 +593,22 @@ export const ROOMS = {
    */
   CLIENT_ID: 'dorkos-room',
 } as const;
+
+/** What recovery after a restart may do (spec `turns-survive-restarts` §7). */
+export const RUNS = {
+  /**
+   * How many times one turn may be picked back up after restarts, in total
+   * per chain (§7.1). No time window resets it: an agent whose own work
+   * restarts the server would reset a time-based count every time.
+   */
+  RESTART_CONTINUE_MAX: 3,
+  /**
+   * How old a sign of life may be and still start anything after a restart:
+   * one day. Past it a dead run is decided with its line only, and a lost
+   * background-work record wakes nobody. Recovery and the background-work
+   * wake both read this one bound, so the two never drift.
+   */
+  RESTART_AGE_BOUND_MS: 24 * 60 * 60 * 1000,
+  /** How long a continuation or a lost-work wake may wait to be made (§6.2). */
+  RESTART_FOLLOW_UP_MS: 60 * 60 * 1000,
+} as const;

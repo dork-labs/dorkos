@@ -497,6 +497,25 @@ export class MessageQueueStore {
   }
 
   /**
+   * DorkOS restarted before the runtime read this row's words: the row the
+   * turn kept ({@link markInTurn}) becomes a restored draft
+   * ({@link QueuedMessageRecord.restored}), out of line for good (spec
+   * `turns-survive-restarts` §7.3, step 4).
+   *
+   * @param messageId - The row
+   * @returns Whether a row kept for its turn was restored
+   */
+  markRestored(messageId: string): boolean {
+    return (
+      this.db
+        .update(sessionMessageQueue)
+        .set({ state: 'restored' })
+        .where(and(eq(sessionMessageQueue.id, messageId), eq(sessionMessageQueue.state, 'in_turn')))
+        .run().changes > 0
+    );
+  }
+
+  /**
    * Put a row {@link remove} handed back on the queue again, exactly as it was:
    * same id, words, sender, context, hold and place in line. For a message whose
    * turn started and was then stopped before the agent read it (DOR-4353).

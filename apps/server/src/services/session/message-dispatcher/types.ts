@@ -52,6 +52,8 @@ export interface PendingDispatch {
   privateDispatchSignal?: AbortSignal;
   /** The server-minted message id; the same id the queue row is keyed by. */
   messageId: string;
+  /** Its run (spec `turns-survive-restarts` §4.7): what the launch gate passes for a continuation. */
+  runId?: string;
   /** The session key it is queued under (canonical where one is known). */
   sessionKey: string;
   /** Who asked for it — the lock identity its turn will run under. */
@@ -188,6 +190,12 @@ export interface DispatchMessageOpts {
    * is recorded on that run rather than a new run being written.
    */
   runId?: string;
+  /**
+   * The key the run is made under, when its source minted one (spec
+   * `turns-survive-restarts` §6.4, `start_key`): a lost-work wake after a
+   * restart, so a boot that dies mid-wake never makes the run twice.
+   */
+  startKey?: string;
   /**
    * The words stay at their source, not in the queue (a turn-port run whose
    * words are not a composer's, §3.5): no queue row is written, the wait bound
