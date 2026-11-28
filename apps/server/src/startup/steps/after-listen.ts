@@ -65,7 +65,11 @@ import { runsSchedules } from '../../services/core/agent-computer/sealed.js';
 import { getLatestVersion } from '../../services/core/update-checker.js';
 import { startHubAssignmentSync } from '../../services/core/hub/hub-assignment-runner.js';
 import { hubSigningPublicKey, signWithHubKey } from '../../services/core/hub/hub-signing-key.js';
-import { setHubRelaySigner, setHubRelayWaker } from '../../services/core/hub-relay/index.js';
+import {
+  setHubRelaySigner,
+  setHubRelayWaker,
+  setRemoteComputersExperiment,
+} from '../../services/core/hub-relay/index.js';
 import { hubRelayWake } from '../../services/core/hub/hub-relay-wake.js';
 
 /** What {@link startAfterListen} reads from the startup steps before it. */
@@ -136,6 +140,9 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
     // A chat opened on a computer that is not connected asks Cloud to wake
     // it; a hub with no Cloud key wakes nobody.
     setHubRelayWaker(hubRelayWake());
+    // Agent computers' hello and calls, behind their experiment (spec
+    // `space-computer-contract` W1); read once per connection.
+    setRemoteComputersExperiment(() => configManager.get('remoteComputers')?.enabled === true);
   }
   // Start the npm update check now, in the background, so the first settings
   // read already knows the latest version without waiting on it (DOR-3226).

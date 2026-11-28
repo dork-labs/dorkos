@@ -19,6 +19,11 @@
  *   no viewers (or after the handshake, until the first report), so a hub can
  *   sleep. The next `viewer_open` dials again.
  *
+ * - It names every feature its server serves in `hello`, unfiltered, and
+ *   reads agent-computer frames only when it named one of their features
+ *   (`wire-clients/hub-features.ts`); otherwise it reads its hub's frames as
+ *   it always has.
+ *
  * The socket is injected ({@link RelayDialerDeps.connect}), so tests drive a
  * real hub end without a network.
  *
@@ -26,10 +31,10 @@
  */
 import type { KeyObject } from 'node:crypto';
 import type { RemoteCommandOutcome } from '@dork-labs/cloud-api';
+import type { RelayCall } from '@dorkos/shared/session-relay-agent-computer';
+import type { AgentComputerFeature } from '@dorkos/shared/wire/features';
 import {
   RelaySealedFrameSchema,
-  RelayWebFrameSchema,
-  SESSION_RELAY_FEATURES,
   SESSION_RELAY_IDLE_CLOSE_MS,
   decodeRelayFrame,
   encodeRelayFrame,
@@ -48,6 +53,11 @@ import {
 import type { RelayPin } from './pin-store.js';
 import type { RelayLinkState } from './relay-presence.js';
 import { RELAY_BACKLOGGED, RELAY_FRAME_TOO_LARGE } from './relay-errors.js';
+import {
+  HubFeatureLink,
+  RELAY_HUB_OFFLINE,
+  type RelayCallOutcome,
+} from './wire-clients/hub-features.js';
 
 /** How long the hub has to answer `hello` before the dial is dropped. */
 export const RELAY_HANDSHAKE_TIMEOUT_MS = 15_000;
@@ -132,7 +142,7 @@ export interface RelayDialerDeps {
 type State =
   | { state: 'idle' }
   | { state: 'dialing'; socket: RelaySocket }
-  | { state: 'open'; socket: RelaySocket; channel: RelayChannel };
+  | { state: 'open'; socket: RelaySocket; channel: RelayChannel; link: HubFeatureLink };
 
 /** One computer's relay connection to its hub. */
 export class RelayDialer {
@@ -190,6 +200,23 @@ export class RelayDialer {
     return this.viewerCount;
   }
 
+  /** The agent-computer features this computer and its hub both named; empty when not connected. */
+  get agreedFeatures(): readonly AgentComputerFeature[] {
+    return this.current.state === 'open' ? this.current.link.agreed : [];
+  }
+
+  /**
+   * Make one call to the hub. A call whose feature the hub did not agree to is
+   * refused here, never sent. Never rejects.
+   *
+   * @param call - The call.
+   */
+  call(call: RelayCall): Promise<RelayCallOutcome> {
+    const current = this.current;
+    if (current.state !== 'open') return Promise.resolve({ ok: false, error: RELAY_HUB_OFFLINE });
+    return current.link.call(call, (text) => this.sendText(current.socket, text));
+  }
+
   /** End the connection, if any. Called at shutdown and when the pin is removed. */
   close(): void {
     if (this.current.state !== 'idle') this.current.socket.close(1000, 'closing');
@@ -201,9 +228,9 @@ export class RelayDialer {
   }
 
   private dial(pin: RelayPin, computerKey: KeyObject): void {
-    const features = this.deps.server
-      .features()
-      .filter((feature) => (SESSION_RELAY_FEATURES as readonly string[]).includes(feature));
+    // Every feature the server serves, unfiltered (spec `space-computer-contract`
+    // §4.1): the hub uses only the ones it names too.
+    const features = [...this.deps.server.features()];
     const handshake = startComputerHandshake(pin.computerId, features, this.deps.appVersion);
     const url = `${pin.hubOrigin.replace(/^https:/, 'wss:')}${RELAY_COMPUTER_PATH}`;
     const socket = this.deps.connect(url, { Authorization: `Bearer ${pin.relaySecret}` });
@@ -230,7 +257,7 @@ export class RelayDialer {
     socket.on(
       'message',
       guarded((data: unknown, isBinary?: boolean) =>
-        this.receive(socket, pin, handshake, computerKey, data, isBinary === true)
+        this.receive(socket, pin, handshake, computerKey, features, data, isBinary === true)
       )
     );
     socket.on(
@@ -259,6 +286,7 @@ export class RelayDialer {
     pin: RelayPin,
     handshake: ComputerHandshake,
     computerKey: KeyObject,
+    features: readonly string[],
     data: unknown,
     isBinary: boolean
   ): void {
@@ -291,7 +319,12 @@ export class RelayDialer {
       }
       this.clearHandshakeTimer();
       socket.send(encodeRelayFrame(finished.finish)!);
-      this.current = { state: 'open', socket, channel: finished.channel };
+      this.current = {
+        state: 'open',
+        socket,
+        channel: finished.channel,
+        link: new HubFeatureLink(features),
+      };
       this.redialAfter = 0;
       this.startIdleTimer();
       this.heardFromHub(socket);
@@ -302,8 +335,8 @@ export class RelayDialer {
 
     const sealed = decodeRelayFrame(text, RelaySealedFrameSchema);
     const inner = sealed ? current.channel.open(sealed) : null;
-    const frame = inner === null ? null : decodeRelayFrame(inner, RelayWebFrameSchema);
-    if (!frame) {
+    const read = inner === null ? null : current.link.read(inner);
+    if (!read || read.kind === 'close') {
       logger.warn('[SessionRelay] A frame from the hub failed to open; closing the relay');
       this.drop(socket);
       return;
@@ -316,6 +349,12 @@ export class RelayDialer {
       this.close();
       return;
     }
+    if (read.kind === 'handled') return;
+    if (read.kind === 'reply') {
+      this.emit(socket, read.frame);
+      return;
+    }
+    const frame = read.frame;
     switch (frame.type) {
       case 'viewers':
         if (frame.count === 0) this.startIdleTimer();
@@ -349,23 +388,29 @@ export class RelayDialer {
       return;
     }
     const text = encodeRelayFrame(frame);
-    const sealed = text === null ? null : current.channel.seal(text);
-    if (!sealed) {
-      // Too large to send. A request answer becomes an error the hub can show;
-      // a stream frame is dropped and the stream ended.
-      if (frame.type === 'result') {
-        this.emit(socket, {
-          type: 'error',
-          id: frame.id,
-          ok: false,
-          error: { status: 500, code: 'internal', message: 'The answer was too large to relay.' },
-        });
-      } else if (frame.type === 'stream.frame') {
-        this.endStream(socket, frame.streamId, RELAY_FRAME_TOO_LARGE);
-      }
-      return;
+    if (text !== null && this.sendText(socket, text)) return;
+    // Too large to send. A request answer becomes an error the hub can show;
+    // a stream frame is dropped and the stream ended.
+    if (frame.type === 'result') {
+      this.emit(socket, {
+        type: 'error',
+        id: frame.id,
+        ok: false,
+        error: { status: 500, code: 'internal', message: 'The answer was too large to relay.' },
+      });
+    } else if (frame.type === 'stream.frame') {
+      this.endStream(socket, frame.streamId, RELAY_FRAME_TOO_LARGE);
     }
+  }
+
+  /** Seal and send one inner frame's text, if this socket is still the open one. */
+  private sendText(socket: RelaySocket, text: string): boolean {
+    const current = this.current;
+    if (current.state !== 'open' || current.socket !== socket) return false;
+    const sealed = current.channel.seal(text);
+    if (!sealed) return false;
     socket.send(encodeRelayFrame(sealed)!);
+    return true;
   }
 
   /** End one stream on both sides: the server stops it and tells the hub once. */
@@ -426,6 +471,7 @@ export class RelayDialer {
 
   private reset(): void {
     const wasOpen = this.current.state === 'open';
+    if (this.current.state === 'open') this.current.link.closeAll();
     this.current = { state: 'idle' };
     this.clearIdleTimer();
     this.clearHandshakeTimer();
