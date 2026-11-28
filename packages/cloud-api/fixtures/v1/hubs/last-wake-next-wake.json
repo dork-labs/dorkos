@@ -1,0 +1,9 @@
+{
+  "lastWake": {
+    "id": "wk_0001",
+    "at": "2026-12-02T09:00:00Z",
+    "cause": {
+      "kind": "next_wake"
+    }
+  }
+}
