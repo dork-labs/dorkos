@@ -183,6 +183,18 @@ describe('K4, K5, K6: killed while running', () => {
     expect(rows('turn.restarted')).toHaveLength(1);
   });
 
+  it('never carries on a private message whose outcome is unknown (DOR-5218)', async () => {
+    const dying = deadBoot();
+    const run = runningRun(dying.store);
+    dying.store.annotate(run.id, { endingDetail: { ...run.endingDetail, outcomeUnknown: true } });
+    kill();
+    boot();
+    await pass();
+
+    expect(h.record!.store.get(run.id)?.endingDetail).toMatchObject({ restart: 'quiet' });
+    expect(continuationsOf(run.id)).toEqual([]);
+  });
+
   it('K5: a runtime that cannot continue: nothing continues, and the line says so', async () => {
     h.declares.continuesInterruptedTurn = false;
     const run = runningRun(deadBoot().store);

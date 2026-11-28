@@ -69,6 +69,9 @@ export function decideRestart(run: TurnRun, facts: RestartFacts): RestartDecisio
   if (run.endingDetail.delivery === 'unknown') return 'quiet';
   // A stop someone asked for, even one no receipt confirmed (§4.4).
   if ((run.endingDetail.stopRequests?.length ?? 0) > 0) return 'quiet';
+  // A private message whose outcome is unknown is never carried on: its
+  // source's own `in_doubt` rule stands (§7.3, step 4; DOR-5218).
+  if (run.endingDetail.outcomeUnknown) return 'quiet';
   if (run.waitingOnPerson) return 'waited_on_you';
   // A turn nobody asked for: a lost-work wake covers what died with it.
   if (run.openedBy === 'runtime') return 'quiet';
