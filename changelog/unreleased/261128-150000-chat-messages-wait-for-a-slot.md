@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(chat): chat messages start their turns through the turn port and wait for a free slot (DOR-5503)'
+  - "fix(runs): a continuation does not carry a new direct chat's birth record (DOR-5503)"
 ---
 
 ### Changed
