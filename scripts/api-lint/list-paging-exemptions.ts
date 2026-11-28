@@ -67,11 +67,6 @@ export const LIST_PAGING_EXEMPTIONS: readonly ListPagingExemption[] = [
   e('/api/relay/unclaimed-chats', 'avoid-list', RELAY),
   e('/api/connectors/connections/{connectionId}/events/definitions', 'avoid-list', EVENTS),
   e('/api/connectors/connections/{connectionId}/events/subscriptions', 'avoid-list', EVENTS),
-  e(
-    '/api/connectors/access-changes',
-    'avoid-list',
-    'Waits with connection writes-back; the architect asked to leave it.'
-  ),
   e('/api/sessions/{id}/canvas', 'avoid-list', PER_CHAT),
   e('/api/sessions/{id}/chat-messages', 'avoid-list', PER_CHAT),
   e('/api/sessions/{id}/limit-history', 'avoid-list', PER_CHAT),
