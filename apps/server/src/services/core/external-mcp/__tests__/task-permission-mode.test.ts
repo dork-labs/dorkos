@@ -32,7 +32,7 @@ import { MainRequestAdmission } from '../../lifecycle/main-request-admission.js'
 import { configManager, initConfigManager } from '../../config-manager.js';
 import { rotateMcpLocalToken } from '../../auth/mcp-local-token.js';
 import { TaskStore } from '../../../tasks/task-store.js';
-import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../agent-tool-kit/agent-tool-kit.js';
 import type { Task } from '@dorkos/shared/schemas';
 
 const fixtureTarget = swappableServer();
@@ -106,10 +106,10 @@ describe('tasks_* operator-only field guard (external /mcp server)', () => {
       transcriptReader: { listSessions: vi.fn().mockResolvedValue([]) },
       defaultCwd: '/tmp/test',
       // Never written to here: every create in this suite is refused before the
-      // file step. Present because `McpToolDeps` requires it (DOR-1568).
+      // file step. Present because `AgentToolDeps` requires it (DOR-1568).
       dorkHome: '/tmp/dorkos-external-mcp-test',
       taskStore: store,
-    } as unknown as McpToolDeps;
+    } as unknown as AgentToolDeps;
 
     // The production `/mcp` mount: the `/api` chain, then the endpoint's own
     // gates, in front of a fresh server + transport per POST.

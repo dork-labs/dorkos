@@ -4,10 +4,8 @@
  * `relay_notify_user` resolves its bindings from.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import {
-  createRelayListEndpointsHandler,
-  type McpToolDeps,
-} from '../../runtimes/claude-code/mcp-tools/index.js';
+import { createRelayListEndpointsHandler } from '../../runtimes/claude-code/mcp-tools/index.js';
+import { type AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import { getRelayTools } from '../../runtimes/claude-code/mcp-tools/relay-tools.js';
 import {
   resolveSenderIdentity,
@@ -27,9 +25,9 @@ afterEach(() => clearTestHomes());
 /** Server-injected identity used in place of the removed self-declared `from`. */
 const SENDER: SenderIdentity = { subject: 'relay.agent.sender', agentId: 'sender' };
 
-function makeMockDeps(relayOverrides?: Record<string, unknown>): McpToolDeps {
+function makeMockDeps(relayOverrides?: Record<string, unknown>): AgentToolDeps {
   return {
-    transcriptReader: {} as McpToolDeps['transcriptReader'],
+    transcriptReader: {} as AgentToolDeps['transcriptReader'],
     defaultCwd: '/test',
     relayCore:
       relayOverrides === undefined
@@ -45,7 +43,7 @@ function makeMockDeps(relayOverrides?: Record<string, unknown>): McpToolDeps {
             ]),
             getDispatchInboxTtlMs: vi.fn().mockReturnValue(30 * 60 * 1000),
             ...relayOverrides,
-          } as unknown as McpToolDeps['relayCore']),
+          } as unknown as AgentToolDeps['relayCore']),
   };
 }
 
@@ -108,7 +106,7 @@ describe('relay_list_endpoints with type metadata', () => {
     };
     const handler = createRelayListEndpointsHandler({
       relayCore: mockRelay as never,
-    } as McpToolDeps);
+    } as AgentToolDeps);
     const result = await handler();
     const parsed = JSON.parse(result.content[0].text);
     const bySubject = Object.fromEntries(
@@ -135,7 +133,7 @@ describe('relay_list_endpoints with type metadata', () => {
     };
     const handler = createRelayListEndpointsHandler({
       relayCore: mockRelay as never,
-    } as McpToolDeps);
+    } as AgentToolDeps);
     const result = await handler();
     const parsed = JSON.parse(result.content[0].text);
     const dispatch = parsed.endpoints.find(
@@ -168,8 +166,8 @@ describe('resolveSenderIdentity', () => {
     // Mirrors the real getByPath contract: public manifest, namespace stripped.
     const getByPath = vi.fn().mockReturnValue({ id: 'a1', name: 'my-agent' });
     const deps = {
-      meshCore: { getSubjectByPath, getByPath } as unknown as McpToolDeps['meshCore'],
-    } as McpToolDeps;
+      meshCore: { getSubjectByPath, getByPath } as unknown as AgentToolDeps['meshCore'],
+    } as AgentToolDeps;
 
     const identity = resolveSenderIdentity(deps, '/projects/my-agent');
 
@@ -182,8 +180,8 @@ describe('resolveSenderIdentity', () => {
     const deps = {
       meshCore: {
         getSubjectByPath: vi.fn().mockReturnValue(undefined),
-      } as unknown as McpToolDeps['meshCore'],
-    } as McpToolDeps;
+      } as unknown as AgentToolDeps['meshCore'],
+    } as AgentToolDeps;
 
     const identity = resolveSenderIdentity(deps, '/tmp/scratch');
     // basename + a short hash of the FULL cwd (DOR-514), not bare
@@ -203,8 +201,8 @@ describe('resolveSenderIdentity', () => {
     const deps = {
       meshCore: {
         getSubjectByPath: vi.fn().mockReturnValue(undefined),
-      } as unknown as McpToolDeps['meshCore'],
-    } as McpToolDeps;
+      } as unknown as AgentToolDeps['meshCore'],
+    } as AgentToolDeps;
 
     const a = resolveSenderIdentity(deps, '/a/project');
     const b = resolveSenderIdentity(deps, '/b/project');
@@ -218,7 +216,7 @@ describe('resolveSenderIdentity', () => {
   });
 
   it('uses the external principal when there is no session (undefined cwd)', () => {
-    const identity = resolveSenderIdentity({} as McpToolDeps, undefined);
+    const identity = resolveSenderIdentity({} as AgentToolDeps, undefined);
     expect(identity.subject).toBe(EXTERNAL_MCP_SENDER);
     expect(identity.agentId).toBeUndefined();
   });

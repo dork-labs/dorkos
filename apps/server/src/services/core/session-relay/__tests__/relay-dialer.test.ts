@@ -203,11 +203,11 @@ describe('RelayDialer', () => {
     expect(sockets[0]!.headers).toEqual({ Authorization: `Bearer ${pin!.relaySecret}` });
   });
 
-  it('advertises only the features the protocol knows', () => {
+  it('H5: names every feature its server serves, unfiltered; the hub uses only what it names', () => {
     const { dialer, sockets } = setup();
     dialer.onViewerOpen(LATER);
     sockets[0]!.fire('open');
-    expect(JSON.parse(sockets[0]!.sent[0]!).features).toEqual(['session.stream']);
+    expect(JSON.parse(sockets[0]!.sent[0]!).features).toEqual(['session.stream', 'not-a-feature']);
   });
 
   it('connects to its own hub, proves itself, and serves requests sealed both ways', () => {

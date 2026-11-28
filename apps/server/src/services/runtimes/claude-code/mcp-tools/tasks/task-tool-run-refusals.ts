@@ -6,8 +6,8 @@
  * @module services/runtimes/claude-code/mcp-tools/tasks/task-tool-run-refusals
  */
 import type { Task } from '@dorkos/shared/types';
-import type { McpToolDeps } from '../types.js';
-import { jsonContent } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
+import { jsonContent } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { taskPermissionRulesRefusal } from '../../../../tasks/task-permission-rules.js';
 import {
   scheduleAccountRefusal,
@@ -34,7 +34,7 @@ interface RunFields {
  * @param args - The update's arguments.
  */
 export async function updateRunRefusal(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   existing: Task,
   args: RunFields
 ): Promise<ReturnType<typeof jsonContent> | null> {

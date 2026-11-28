@@ -126,6 +126,21 @@ export const RemoteAccessConfigSchema = z
   .default(() => ({ enabled: true }));
 
 /**
+ * Agent computers that run this DorkOS's agents over the relay (spec
+ * `space-computer-contract`, step W1, DOR-5164). An experiment, OFF by
+ * default: while it is off a home never sends an agent computer its features
+ * or takes a call from one, so nothing changes. A whole top-level section, so
+ * conf writes it into every stored config on its own; the `'0.143.0'`
+ * migration heals a stored section missing its leaf. Operator-only: it decides
+ * which computers may run work here.
+ */
+export const RemoteComputersConfigSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+  })
+  .default(() => ({ enabled: false }));
+
+/**
  * Where the server listens and what it opens on start (`server`). Every stored
  * config already carries this section, so conf never adds a new member to it on
  * its own: a field added here needs a migration that writes it.

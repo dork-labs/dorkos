@@ -22,7 +22,7 @@ import {
   renderBlockedAreaLines,
   resolveToolVisibilityFor,
 } from '../../shared/permission-tool-filter.js';
-import { OPENCODE_DORKOS_TOOL_PREFIX } from '../../shared/dorkos-tool-names.js';
+import { OPENCODE_DORKOS_TOOL_PREFIX } from '../../../core/tool-names/tool-names.js';
 import { joinFitted, type ContextPart } from '../../../session/context-window/context-fit.js';
 import { renderSkippedSkillLines } from './skipped-skills.js';
 

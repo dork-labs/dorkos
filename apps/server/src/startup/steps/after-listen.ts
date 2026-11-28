@@ -21,6 +21,7 @@ import { sweepOrphanedMessageQueues } from '../../services/session/index.js';
 import { resumeStrandedChatQueues } from '../../services/extensions/agent-send/agent-send-defaults.js';
 import { agentPause } from '../../services/mesh/pause/agent-pause.js';
 import { startRunEffects } from '../../services/runs/index.js';
+import { recoverChatReports } from '../../services/session/chat-messages/chat-message-current.js';
 import { sweepExpiredTurnContext } from '../../services/session/turn-context/record-turn-context.js';
 import { INTERVALS } from '../../config/constants.js';
 import { takeDailySnapshot } from '@dorkos/db';
@@ -65,7 +66,11 @@ import { runsSchedules } from '../../services/core/agent-computer/sealed.js';
 import { getLatestVersion } from '../../services/core/update-checker.js';
 import { startHubAssignmentSync } from '../../services/core/hub/hub-assignment-runner.js';
 import { hubSigningPublicKey, signWithHubKey } from '../../services/core/hub/hub-signing-key.js';
-import { setHubRelaySigner, setHubRelayWaker } from '../../services/core/hub-relay/index.js';
+import {
+  setHubRelaySigner,
+  setHubRelayWaker,
+  setRemoteComputersExperiment,
+} from '../../services/core/hub-relay/index.js';
 import { hubRelayWake } from '../../services/core/hub/hub-relay-wake.js';
 
 /** What {@link startAfterListen} reads from the startup steps before it. */
@@ -124,6 +129,13 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
   // tells every turn itself.
   startRunEffects();
 
+  // Saved spin-off reports resume now, once the rooms link is wired (`mountCoreRoutes`): a report
+  // into a room's old chat is refused before it (DOR-3753). The health tick asks again through
+  // `recoverAcceptedPrivateSessions`, which finds nothing more to recover.
+  void recoverChatReports().catch((error: unknown) => {
+    logger.warn('[reports] startup recovery remains durable', logError(error));
+  });
+
   // A hub reads who it belongs to and refuses everybody until it serves them
   // (DOR-2934). The server is listening, so Cloud's health check answers
   // while the first read is in flight.
@@ -136,6 +148,9 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
     // A chat opened on a computer that is not connected asks Cloud to wake
     // it; a hub with no Cloud key wakes nobody.
     setHubRelayWaker(hubRelayWake());
+    // Agent computers' hello and calls, behind their experiment (spec
+    // `space-computer-contract` W1); read once per connection.
+    setRemoteComputersExperiment(() => configManager.get('remoteComputers')?.enabled === true);
   }
   // Start the npm update check now, in the background, so the first settings
   // read already knows the latest version without waiting on it (DOR-3226).

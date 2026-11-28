@@ -2,6 +2,11 @@
 import { and, eq, roomMembers, rooms, authors, type Db } from '@dorkos/db';
 import { RoomSessionLedger } from '../../session-bindings/room-session-ledger.js';
 
+/**
+ * The seat a saved report is checked for: that seat, `'unavailable'` when the chat is a room's
+ * seat that cannot take it now, or null when the chat is no seat for this report and the report
+ * goes to it as a chat message.
+ */
 export type ReportSeatScope =
   { roomId: string; authorId: string; joinedAt: string; agentPath: string } | 'unavailable' | null;
 
@@ -23,7 +28,10 @@ export function spinOffPredatesMove(
 
 /**
  * A retired native ID and a deliberate seat move retain the original room/agent relation; a
- * move does only for a spin-off started at or before it ({@link spinOffPredatesMove}).
+ * move does only for a spin-off started at or before it ({@link spinOffPredatesMove}), while
+ * the agent's membership then still stands. Otherwise the session the seat moved off is no seat
+ * for this report, only the chat that started the spin-off: null, so the report goes there as a
+ * chat message, the way the live path falls through (DOR-3753).
  *
  * @param db - The database.
  * @param sessionId - The chat the spin-off reports to.
@@ -39,6 +47,8 @@ export function reportSeatScope(
   const moved = binding ? undefined : ledger.seatMovedFrom(sessionId);
   const seat = binding ?? moved;
   if (!seat) return null;
+  // Started after the move, or at an unknown time: the reopened old chat's own work, not the seat's.
+  if (moved && !spinOffPredatesMove(spinOffStartedAt, moved.movedAt)) return null;
   const room = db.select().from(rooms).where(eq(rooms.id, seat.roomId)).get();
   const member = db
     .select()
@@ -51,11 +61,12 @@ export function reportSeatScope(
     room.archived ||
     !member ||
     author?.kind !== 'agent' ||
-    (moved &&
-      (Date.parse(member.joinedAt) > moved.movedAt ||
-        !spinOffPredatesMove(spinOffStartedAt, moved.movedAt)))
+    (moved && Date.parse(member.joinedAt) > moved.movedAt)
   )
-    return 'unavailable';
+    // The seat it moved to is gone or is a later membership: the old chat takes it, as live does.
+    // An archived room keeps its current seat's binding, so that seat's spin-offs end as a notice
+    // while the old chat's go to the old chat: each report follows where its own chat stands.
+    return moved ? null : 'unavailable';
   return {
     roomId: seat.roomId,
     authorId: seat.authorId,

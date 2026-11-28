@@ -57,7 +57,7 @@ vi.mock('../../services/core/config-manager.js', async (importOriginal) => ({
 }));
 import { notifyAgentCreated, setOnAgentCreated } from '../../services/core/agent-created-hook.js';
 import { createMeshRegisterHandler } from '../../services/runtimes/claude-code/mcp-tools/mesh-tools.js';
-import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../services/core/agent-tool-kit/agent-tool-kit.js';
 import {
   ArrivalRecord,
   PersonSetPermissions,
@@ -254,7 +254,7 @@ describe('a folder cannot widen the agent it registers', () => {
       'tool-wide',
       '01JKARRIVETOOL000000000000'
     );
-    const register = createMeshRegisterHandler({ meshCore: mesh } as unknown as McpToolDeps);
+    const register = createMeshRegisterHandler({ meshCore: mesh } as unknown as AgentToolDeps);
     const result = await register({ path: dir, name: 'tool-wide', runtime: 'claude-code' });
     expect(result.isError).toBeFalsy();
     await expectScreened(dir);

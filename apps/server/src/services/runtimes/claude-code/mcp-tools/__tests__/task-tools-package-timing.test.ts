@@ -20,7 +20,7 @@ import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { hasSchedule } from '@dorkos/skills';
 import { TaskStore } from '../../../../tasks/task-store.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { getTasksTools } from '../tasks/task-tools.js';
 import { TIMING_REAPPROVAL_NOTE } from '../tasks/task-tool-copy.js';
 import { raiseStanding } from '../../../../notifications/standing-events.js';
@@ -70,7 +70,7 @@ describe('tasks_update and a package’s schedule’s timing', () => {
       defaultCwd: '/tmp/test',
       dorkHome,
       meshCore: { getProjectPath: () => null },
-    } as unknown as McpToolDeps;
+    } as unknown as AgentToolDeps;
     tools = Object.fromEntries(
       (getTasksTools(deps) as unknown as SessionTool[]).map((t) => [t.name, t])
     );

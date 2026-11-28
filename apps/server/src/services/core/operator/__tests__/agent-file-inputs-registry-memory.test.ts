@@ -29,7 +29,7 @@ import { eventFanOut } from '../../event-fan-out.js';
 import { recordTurnLevels } from '../../turn-power/turn-levels.js';
 import { choseFullAutonomy, resetChosenTurns } from '../../turn-power/full-autonomy.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
-import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../agent-tool-kit/agent-tool-kit.js';
 
 const SEED = {
   id: '01M054RMQAMZPXHWHRKPGY9Z87',
@@ -112,7 +112,7 @@ beforeEach(async () => {
     logger: noopLogger,
     // Established agent-boundaries-gate fixture: cwd resolves the real temp agent;
     // no mesh selector is used and no file operation is mocked.
-    operatorDeps: {} as McpToolDeps,
+    operatorDeps: {} as AgentToolDeps,
   });
 });
 

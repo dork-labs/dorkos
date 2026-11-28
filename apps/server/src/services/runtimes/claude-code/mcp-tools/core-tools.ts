@@ -4,8 +4,8 @@ import { homeOf, readHomeManifest, resolveAgentHome } from '../../../core/agent-
 import { env } from '../../../../env.js';
 import { SERVER_VERSION } from '../../../../lib/version.js';
 import { currentDistribution } from '../../../../lib/distribution/index.js';
-import type { McpToolDeps } from './types.js';
-import { jsonContent, structuredJsonContent } from './types.js';
+import type { AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
+import { jsonContent, structuredJsonContent } from '../../../core/agent-tool-kit/agent-tool-kit.js';
 
 /**
  * Resolve the agent working directory from either an `agent_id` or `cwd` argument.
@@ -17,7 +17,7 @@ import { jsonContent, structuredJsonContent } from './types.js';
  * @returns The resolved absolute working directory path
  */
 export function resolveAgentCwd(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   args: { agent_id?: string; cwd?: string }
 ): string {
   if (!args.agent_id && !args.cwd) {
@@ -88,7 +88,7 @@ export async function handleGetServerInfo(args: { include_uptime?: boolean }) {
  * and how many of its chats still have background work running (DOR-2065).
  * Requires either `agent_id` (ULID) or `cwd` (working directory path) to scope the query.
  */
-export function createGetSessionCountHandler(deps: McpToolDeps) {
+export function createGetSessionCountHandler(deps: AgentToolDeps) {
   return async function handleGetSessionCount(args: { agent_id?: string; cwd?: string }) {
     try {
       const resolvedCwd = resolveAgentCwd(deps, args);
@@ -131,7 +131,7 @@ export function createGetSessionCountHandler(deps: McpToolDeps) {
  * Requires either `agent_id` (ULID) or `cwd` (working directory path).
  * Always available — not guarded by any feature flag.
  */
-export function createGetAgentHandler(deps: McpToolDeps) {
+export function createGetAgentHandler(deps: AgentToolDeps) {
   return async (args: { agent_id?: string; cwd?: string }) => {
     try {
       // The folder resolved to the home it belongs to before anything is read:
@@ -170,7 +170,7 @@ const agentScopeSchema = {
  *
  * @param deps - Shared MCP tool dependencies.
  */
-export function getCoreTools(deps: McpToolDeps) {
+export function getCoreTools(deps: AgentToolDeps) {
   const handleGetSessionCount = createGetSessionCountHandler(deps);
   const handleGetAgent = createGetAgentHandler(deps);
 

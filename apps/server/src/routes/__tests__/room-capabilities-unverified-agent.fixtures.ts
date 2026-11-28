@@ -11,7 +11,7 @@ import request, { type Response, type Test } from '@dorkos/test-utils/supertest'
 import { agentIdentityTokens } from '@dorkos/db';
 import type { CapabilityRegistry } from '../../services/core/capabilities/index.js';
 import { createExternalMcpServer } from '../../services/core/mcp-server.js';
-import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../services/core/agent-tool-kit/agent-tool-kit.js';
 import {
   initAgentIdentityService,
   TOKEN_ABSOLUTE_TTL_MS,
@@ -48,11 +48,11 @@ export const agents = agentLookupFor({
 });
 
 /** Minimal deps for the external MCP server — the shape `mcp-integration` uses. */
-function minimalMcpDeps(): McpToolDeps {
+function minimalMcpDeps(): AgentToolDeps {
   return {
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
-    } as unknown as McpToolDeps['transcriptReader'],
+    } as unknown as AgentToolDeps['transcriptReader'],
     defaultCwd: '/tmp/test',
     dorkHome: '/tmp/dorkos-test-home',
   };

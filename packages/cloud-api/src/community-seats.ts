@@ -68,7 +68,7 @@ export const CommunitySeatPreviewSchema = z
       .min(1)
       .max(280)
       .describe(
-        'Who pays for a seat this invite adds, in the service`s own words. Show it as given; never parse it.'
+        'Who pays for a seat this invite adds, in the service`s own words: named by a display name or a role, never an email address or a billing detail. Show it as given; never parse it.'
       ),
   })
   .describe(

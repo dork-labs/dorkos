@@ -25,7 +25,7 @@ import { AccountIds } from '../../audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../audit/audit-trail.js';
 import { AgentUpdateError, updateAgentManifest } from '../../core/operator/agent-updater.js';
 import { createUpdateAgentHandler } from '../../core/operator/operator-tool-handlers.js';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../core/agent-tool-kit/agent-tool-kit.js';
 import type { MeshCore } from '@dorkos/mesh';
 
 const OWNER = 'acct-owner';
@@ -200,11 +200,11 @@ describe('the agent edit path (profile picker route and update_agent)', () => {
     await seed(mesh, manifest('B', { createdBy: 'A' }));
 
     const deps = {
-      transcriptReader: {} as McpToolDeps['transcriptReader'],
+      transcriptReader: {} as AgentToolDeps['transcriptReader'],
       defaultCwd: root,
       dorkHome: root,
       meshCore: mesh as unknown as MeshCore,
-    } satisfies McpToolDeps;
+    } satisfies AgentToolDeps;
     const result = await createUpdateAgentHandler(deps)({ agent_id: 'A', reportsTo: 'B' });
 
     expect(result.isError).toBe(true);
@@ -216,11 +216,11 @@ describe('the agent edit path (profile picker route and update_agent)', () => {
     const mesh = meshOverDisk();
     await seed(mesh, manifest('A', { createdBy: OWNER }));
     const deps = {
-      transcriptReader: {} as McpToolDeps['transcriptReader'],
+      transcriptReader: {} as AgentToolDeps['transcriptReader'],
       defaultCwd: root,
       dorkHome: root,
       meshCore: mesh as unknown as MeshCore,
-    } satisfies McpToolDeps;
+    } satisfies AgentToolDeps;
     await createUpdateAgentHandler(deps)({
       agent_id: 'A',
       description: 'x',

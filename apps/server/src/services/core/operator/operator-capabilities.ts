@@ -38,7 +38,7 @@ import { defineCapability, type CapabilityDomain } from '../capabilities/capabil
 import type { CapabilityDeps } from '../capabilities/index.js';
 import { unwrapMcpEnvelope } from '../capabilities/mcp-envelope.js';
 import { activityListCapability } from '../../activity/activity-capability.js';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import {
   createUpdateAgentHandler,
   createUpdateAgentBoundariesHandler,
@@ -74,7 +74,7 @@ const FEEDBACK_BODY_MAX_CHARS = 4000;
 
 /**
  * Extend the shared dependency bag with the operator domain's service handles.
- * The bag is the {@link McpToolDeps} the phase-1 operator handlers already
+ * The bag is the {@link AgentToolDeps} the phase-1 operator handlers already
  * consume (mesh, runtime registry, activity service). Optional so a registry
  * composed from other domains alone need not supply it; every operator
  * `invoke` asserts its presence via {@link requireOperatorDeps}.
@@ -82,7 +82,7 @@ const FEEDBACK_BODY_MAX_CHARS = 4000;
 declare module '../capabilities/capability-definition.js' {
   interface CapabilityDeps {
     /** Operator service handles consumed by the self-service/observability capabilities. */
-    operatorDeps?: McpToolDeps;
+    operatorDeps?: AgentToolDeps;
   }
 }
 
@@ -93,7 +93,7 @@ declare module '../capabilities/capability-definition.js' {
  * @param deps - The registry's shared dependency bag.
  * @returns The operator service handles.
  */
-function requireOperatorDeps(deps: CapabilityDeps): McpToolDeps {
+function requireOperatorDeps(deps: CapabilityDeps): AgentToolDeps {
   if (!deps.operatorDeps) {
     throw new Error('Operator capability invoked without operatorDeps in the registry bag.');
   }

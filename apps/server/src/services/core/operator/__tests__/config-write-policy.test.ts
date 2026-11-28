@@ -196,6 +196,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'relay.maxAgentTurnsTotalPerHour',
       // The master switch for every way in from another device (DOR-3650).
       'remoteAccess.enabled',
+      // Whether agent computers may run this DorkOS's agents (DOR-5164).
+      'remoteComputers.enabled',
       'rooms.collectDebounceMs',
       'rooms.collectMaxEntries',
       'rooms.engagedWindowMinutes',

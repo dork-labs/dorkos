@@ -1,7 +1,7 @@
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import type { McpToolDeps } from './types.js';
-import { jsonContent } from './types.js';
+import type { AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
+import { jsonContent } from '../../../core/agent-tool-kit/agent-tool-kit.js';
 import type { AdapterManager } from '../../../relay/adapter-manager.js';
 import {
   escalatedGrantFor,
@@ -11,7 +11,7 @@ import { gateCallerOf } from '../../../tasks/agent-mode/agent-mode-escalation.js
 import { readOutside } from '../../../tasks/credits/credits-work.js';
 
 /** Guard that returns an error response when adapters are not available. */
-function requireAdapterManager(deps: McpToolDeps) {
+function requireAdapterManager(deps: AgentToolDeps) {
   if (!deps.adapterManager) {
     return jsonContent({ error: 'Chat connections are off', code: 'ADAPTERS_DISABLED' }, true);
   }
@@ -19,7 +19,7 @@ function requireAdapterManager(deps: McpToolDeps) {
 }
 
 /** List all Relay adapters with their current status. */
-export function createRelayListAdaptersHandler(deps: McpToolDeps) {
+export function createRelayListAdaptersHandler(deps: AgentToolDeps) {
   return async () => {
     const err = requireAdapterManager(deps);
     if (err) return err;
@@ -34,7 +34,7 @@ function isOff(manager: AdapterManager, id: unknown): id is string {
 }
 
 /** Enable a Relay adapter by ID. */
-export function createRelayEnableAdapterHandler(deps: McpToolDeps) {
+export function createRelayEnableAdapterHandler(deps: AgentToolDeps) {
   return async (args: { id: string }) => {
     const err = requireAdapterManager(deps);
     if (err) return err;
@@ -60,7 +60,7 @@ export function createRelayEnableAdapterHandler(deps: McpToolDeps) {
 }
 
 /** Disable a Relay adapter by ID. */
-export function createRelayDisableAdapterHandler(deps: McpToolDeps) {
+export function createRelayDisableAdapterHandler(deps: AgentToolDeps) {
   return async (args: { id: string }) => {
     const err = requireAdapterManager(deps);
     if (err) return err;
@@ -75,7 +75,7 @@ export function createRelayDisableAdapterHandler(deps: McpToolDeps) {
 }
 
 /** Reload Relay adapter configuration from disk. */
-export function createRelayReloadAdaptersHandler(deps: McpToolDeps) {
+export function createRelayReloadAdaptersHandler(deps: AgentToolDeps) {
   return async () => {
     const err = requireAdapterManager(deps);
     if (err) return err;
@@ -135,7 +135,7 @@ export function registerAdapterEnableEscalator(manager: AdapterManager): () => v
  *
  * @param deps - Shared MCP tool dependencies.
  */
-export function adapterToolDefinitions(deps: McpToolDeps) {
+export function adapterToolDefinitions(deps: AgentToolDeps) {
   return [
     tool(
       'relay_list_adapters',
@@ -169,7 +169,7 @@ export function adapterToolDefinitions(deps: McpToolDeps) {
  *
  * @param deps - Shared MCP tool dependencies.
  */
-export function getAdapterTools(deps: McpToolDeps) {
+export function getAdapterTools(deps: AgentToolDeps) {
   if (!deps.adapterManager) return [];
   return adapterToolDefinitions(deps);
 }

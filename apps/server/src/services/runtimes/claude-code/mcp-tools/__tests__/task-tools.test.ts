@@ -26,7 +26,7 @@ import {
   type AgentIdentityService,
 } from '../../../../core/agent-identity/index.js';
 import { TaskStore } from '../../../../tasks/task-store.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { getTasksTools } from '../tasks/task-tools.js';
 import type { Task } from '@dorkos/shared/schemas';
 import {
@@ -91,7 +91,7 @@ describe('tasks_* operator-only field guard (in-session dorkos server)', () => {
         getProjectPath: () => agentHome,
         listWithPaths: () => [{ id: 'fixture-agent', projectPath: agentHome }],
       },
-    } as unknown as McpToolDeps;
+    } as unknown as AgentToolDeps;
     tools = Object.fromEntries(
       (getTasksTools(deps, undefined, undefined, () => agentHome) as unknown as SessionTool[]).map(
         (t) => [t.name, t]
@@ -464,7 +464,7 @@ describe('tasks_update closes the keeps-approved-bypass window (security)', () =
   beforeEach(() => {
     db = createTestDb();
     store = new TaskStore(db);
-    const deps = { taskStore: store, defaultCwd: '/tmp/test' } as unknown as McpToolDeps;
+    const deps = { taskStore: store, defaultCwd: '/tmp/test' } as unknown as AgentToolDeps;
     tools = Object.fromEntries(
       (getTasksTools(deps) as unknown as SessionTool[]).map((t) => [t.name, t])
     );
@@ -628,7 +628,7 @@ describe('tasks_update closes the keeps-approved-bypass window (security)', () =
 describe('tasks_create records who is proposing and why (DOR-1394)', () => {
   let db: Db;
   let store: TaskStore;
-  let deps: McpToolDeps;
+  let deps: AgentToolDeps;
   let emit: ReturnType<typeof vi.fn>;
   let identity: AgentIdentityService;
   let dorkHome: string;
@@ -659,7 +659,7 @@ describe('tasks_create records who is proposing and why (DOR-1394)', () => {
         listWithPaths: () => agents,
         getProjectPath: (id: string) => agents.find((agent) => agent.id === id)?.projectPath,
       },
-    } as unknown as McpToolDeps;
+    } as unknown as AgentToolDeps;
   });
 
   afterEach(async () => {

@@ -21,7 +21,7 @@ import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { SessionSchema } from '@dorkos/shared/schemas';
 import type { RuntimeRegistry } from '../runtime-registry.js';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import { aggregateSessionList } from '../../session/catalog/aggregate-session-list.js';
 import {
   firstVar,
@@ -62,7 +62,7 @@ const SessionListResourceSchema = z.object({
 });
 
 /** Guard that returns the injected registry or throws a clear "not available" error. */
-function requireRuntimeRegistry(deps: McpToolDeps): RuntimeRegistry {
+function requireRuntimeRegistry(deps: AgentToolDeps): RuntimeRegistry {
   if (!deps.runtimeRegistry) {
     resourceUnavailable('Runtime registry is not available.');
   }
@@ -78,7 +78,7 @@ function requireRuntimeRegistry(deps: McpToolDeps): RuntimeRegistry {
  */
 export function registerSessionResources(
   server: McpServer,
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   projectDir: string
 ): void {
   server.registerResource(

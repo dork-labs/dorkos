@@ -105,6 +105,17 @@ export const V1_ROUTES = {
    */
   hubPageReports: '/v1/hubs/self/page-reports',
   /**
+   * `POST` a hub's request for a wake pass (`WakePassMintRequestSchema`),
+   * answered 201 with `WakePassMintResponseSchema`; `DELETE` revokes every
+   * pass the hub holds, answered 204. Hub instance key only.
+   */
+  hubWakePasses: '/v1/hubs/self/wake-passes',
+  /**
+   * `GET` why the hub was last woken (`HubLastWakeResponseSchema`), so it can
+   * audit the wake. Hub instance key only; answered 200.
+   */
+  hubLastWake: '/v1/hubs/self/last-wake',
+  /**
    * `POST` from a person's own computer, with its instance key and no body, to
    * wake its own account's hub so it can deliver a notice, or send or call
    * for a published page. Answered 202 with
@@ -485,6 +496,13 @@ export const v1Path = {
    * @param instanceId - The computer's instance identifier.
    */
   instanceViewerOpen: (instanceId: string) => `/v1/instances/${enc(instanceId)}/viewer-open`,
+  /**
+   * `DELETE` one of the hub's wake passes, answered 204, also for a pass
+   * already revoked, expired or unknown. Hub instance key only.
+   *
+   * @param passId - The pass's id from its mint.
+   */
+  hubWakePass: (passId: string) => `/v1/hubs/self/wake-passes/${enc(passId)}`,
   /**
    * Forget one space in the account directory, answered with
    * `DirectoryRemovedResponseSchema`.

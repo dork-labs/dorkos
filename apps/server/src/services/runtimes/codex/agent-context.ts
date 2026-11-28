@@ -14,7 +14,7 @@ import {
   renderBlockedAreaLines,
   resolveToolVisibilityFor,
 } from '../shared/permission-tool-filter.js';
-import { CODEX_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
+import { CODEX_DORKOS_TOOL_PREFIX } from '../../core/tool-names/tool-names.js';
 
 /**
  * Where a Codex agent drives a browser (DOR-4357). On macOS, Codex's own

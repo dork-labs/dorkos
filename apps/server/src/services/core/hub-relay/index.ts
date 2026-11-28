@@ -49,6 +49,7 @@ export {
   hubRelayComputerRoute,
   liveServingOrigin,
   setHubRelaySigner,
+  setRemoteComputersExperiment,
   type HubLinkSigner,
 } from './relay-endpoint.js';
 export {

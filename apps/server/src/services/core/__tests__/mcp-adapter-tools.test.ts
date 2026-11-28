@@ -4,8 +4,8 @@ import {
   createRelayEnableAdapterHandler,
   createRelayDisableAdapterHandler,
   createRelayReloadAdaptersHandler,
-  type McpToolDeps,
 } from '../../runtimes/claude-code/mcp-tools/index.js';
+import { type AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 
 /** Create a mock AdapterManager with default stubs. */
 function makeMockAdapterManager(overrides?: Record<string, unknown>) {
@@ -33,12 +33,12 @@ function makeMockAdapterManager(overrides?: Record<string, unknown>) {
 
 function makeMockDeps(
   adapterManager?: ReturnType<typeof makeMockAdapterManager> | undefined
-): McpToolDeps {
+): AgentToolDeps {
   return {
-    transcriptReader: {} as McpToolDeps['transcriptReader'],
+    transcriptReader: {} as AgentToolDeps['transcriptReader'],
     defaultCwd: '/test',
     dorkHome: '/tmp/dorkos-test-home',
-    adapterManager: adapterManager as unknown as McpToolDeps['adapterManager'],
+    adapterManager: adapterManager as unknown as AgentToolDeps['adapterManager'],
   };
 }
 

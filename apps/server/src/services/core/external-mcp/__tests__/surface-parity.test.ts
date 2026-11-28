@@ -37,7 +37,7 @@ import { initConfigManager } from '../../config-manager.js';
 import { rotateMcpLocalToken } from '../../auth/mcp-local-token.js';
 import { handRegisteredInSessionTools } from '../../../runtimes/claude-code/mcp-tools/index.js';
 import { uiDomain } from '../../../session/browser-seat/ui-capabilities.js';
-import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../agent-tool-kit/agent-tool-kit.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 
 /**
@@ -47,12 +47,12 @@ import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mc
  * minimal fixture would silently compare a fraction of the surface and pass. Only
  * registration is exercised here, never a handler, so opaque stubs are enough.
  */
-function createFullDeps(): McpToolDeps {
+function createFullDeps(): AgentToolDeps {
   const stub = {} as never;
   return {
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
-    } as unknown as McpToolDeps['transcriptReader'],
+    } as unknown as AgentToolDeps['transcriptReader'],
     defaultCwd: '/tmp/test',
     dorkHome: '/tmp/dorkos-test-home',
     taskStore: stub,

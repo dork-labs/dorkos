@@ -103,7 +103,7 @@ import { noteRoomTurnWords } from '../../../core/turn-power/outside-words.js';
 import { launchPlaceRefusal } from '../../../session/launch/launch-caller.js';
 import { registerSessionStartPreGate } from '../../../session/launch/session-start-pre-gate.js';
 import { ceilingHoldsForOutsider } from '@dorkos/shared/permission-semantics';
-import { jsonContent, type McpToolDeps } from './types.js';
+import { jsonContent, type AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
 
 /** The client id every `session_start` launch holds its session's write lock under. */
 export const SESSION_START_CLIENT_ID = 'mcp:session_start';
@@ -186,7 +186,7 @@ interface CallerAgent {
 
 /** The calling agent, when it is one Mesh has registered, and the chat it calls from. */
 function callerOf(
-  deps: Pick<McpToolDeps, 'meshCore'>,
+  deps: Pick<AgentToolDeps, 'meshCore'>,
   resolveCaller: SessionStartCallerResolver | undefined
 ):
   | (CallerAgent & {
@@ -246,7 +246,7 @@ registerSessionStartPreGate();
  *   account's project rules either way.
  */
 export function createSessionStartHandler(
-  deps: Pick<McpToolDeps, 'meshCore' | 'activityService' | 'taskStore'>,
+  deps: Pick<AgentToolDeps, 'meshCore' | 'activityService' | 'taskStore'>,
   resolveCaller?: SessionStartCallerResolver,
   checkAccount: typeof checkAccountLaunch = checkAccountLaunch
 ) {
@@ -366,9 +366,10 @@ export function createSessionStartHandler(
     // Reports go back to a chat that can take chat messages, and to an agent's
     // seat in a room, which a report wakes with a turn of its own (DOR-3488).
     // A scheduled run or a bridged chat takes neither, so its spin-offs are
-    // never promised one (spec `spin-off-chats` §5). Nor is a seat's old chat,
-    // reopened after the seat moved: a spin-off started there now is after the
-    // move, and its reports never reach the seat (DOR-3753).
+    // never promised one (spec `spin-off-chats` §5). A seat's old chat, reopened
+    // after the seat moved, takes them as any chat does: a spin-off started there
+    // now is after the move, so its reports come to that chat, never the seat
+    // (`takesReportsAsChat`, DOR-3753).
     const parentChatId = caller.chat?.sessionId ?? null;
     const parentTakesMessages =
       parentChatId !== null && ((await getChatMessageService()?.canReceive(parentChatId)) ?? false);
@@ -596,7 +597,7 @@ export function createSessionStartHandler(
  * @param resolveCaller - Who is calling. Without one, every call is refused:
  *   a session always runs as the agent that asked for it.
  */
-export function getSessionTools(deps: McpToolDeps, resolveCaller?: SessionStartCallerResolver) {
+export function getSessionTools(deps: AgentToolDeps, resolveCaller?: SessionStartCallerResolver) {
   return [
     tool(
       'session_start',

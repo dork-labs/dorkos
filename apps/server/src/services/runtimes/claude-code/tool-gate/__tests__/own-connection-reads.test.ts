@@ -16,7 +16,7 @@ import { ceilingCarrying, marksHold } from '../../../../core/turn-power/turn-mar
 import { assignTurnBounds } from '../../turn-bounds.js';
 import type { CeilingedMode } from '../../turn-permission.js';
 import { CONNECTOR_RUNTIME_EXECUTION_CAPABILITY_IDS } from '../../../../connectors/runtime-capability-scope.js';
-import { inSessionToolName } from '../../mcp-tools/tool-exposure.js';
+import { inSessionToolName } from '../../../../core/tool-names/tool-names.js';
 import { createCanUseTool } from '../../messaging/interactive-handlers.js';
 import type { InteractiveSession, PendingInteraction } from '../../messaging/interaction-wait.js';
 import { NO_APPROVAL_SURFACE_DENIAL } from '../../sessions/tool-result-outcome.js';

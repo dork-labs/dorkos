@@ -12,7 +12,7 @@ import { formatRoomContext } from '../shared/room-context-block.js';
 import { renderProseContextBlock, type ProseContextEntry } from '../shared/prose/prose-context.js';
 import { runtimeFacts } from '../agent-facts.js';
 import { GEN_UI_CONTEXT } from '../shared/gen-ui-context.js';
-import { dorkosToolNameFor } from '../shared/dorkos-tool-names.js';
+import { dorkosToolNameFor } from '../../core/tool-names/tool-names.js';
 import {
   renderBlockedAreaLines,
   resolveToolVisibilityFor,

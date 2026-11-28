@@ -208,7 +208,7 @@
     "apps/server/src/services/rooms/__tests__/room-test-harness.ts": 529,
     "apps/server/src/services/rooms/__tests__/room-tool-only-replies.test.ts": 566,
     "apps/server/src/services/rooms/__tests__/room-turn-runner.test.ts": 2028,
-    "apps/server/src/services/rooms/__tests__/seat-report.test.ts": 720,
+    "apps/server/src/services/rooms/__tests__/seat-report.test.ts": 719,
     "apps/server/src/services/rooms/__tests__/team-room.test.ts": 506,
     "apps/server/src/services/rooms/__tests__/welcome-back-offers.test.ts": 587,
     "apps/server/src/services/rooms/canvas/__tests__/room-canvas-context.test.ts": 585,

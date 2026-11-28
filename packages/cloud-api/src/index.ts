@@ -38,5 +38,7 @@ export * from './published-pages.js';
 export * from './agent-computers.js';
 export * from './community-seats.js';
 export * from './hub-wake.js';
+export * from './hub-last-wake.js';
+export * from './wake-pass.js';
 export * from './directory.js';
 export * from './step-up.js';

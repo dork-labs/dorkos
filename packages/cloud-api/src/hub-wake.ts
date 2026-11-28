@@ -5,7 +5,7 @@ import { TimestampSchema } from './primitives.js';
 /**
  * What wakes a person's DorkOS in the cloud (a hub) while it is asleep.
  *
- * A hub may sleep when nobody is using it. Five things wake it, and nothing
+ * A hub may sleep when nobody is using it. Six things wake it, and nothing
  * else does:
  *
  * 1. **Its own next-wake time.** The hub says when its next schedule is due
@@ -24,18 +24,27 @@ import { TimestampSchema } from './primitives.js';
  *    hub or to keep a live run going.
  * 5. **A request for one of its published pages**, on its content host
  *    (`contentHost` in its assignment). A page is public by its link, so this
- *    is the one wake without a person's credential, and it is capped for each
+ *    is the one wake without any credential, and it is capped for each
  *    hub: at most {@link HUB_CONTENT_HOST_WAKE_MAX_PER_MINUTE} a minute and
  *    {@link HUB_CONTENT_HOST_WAKE_MAX_PER_HOUR} an hour, counted by the front
  *    door for that hub. Past either, the request answers `503` with
  *    `Retry-After` and the line "This page is starting. Try again in a
  *    minute." Only a request whose `Host` is a page's name under the content
  *    host counts; it reaches the hub's page server and nothing else.
+ * 6. **A wake pass the hub minted**, presented at its front door by the
+ *    pass's holder, such as a team space when one of the hub's agents is
+ *    mentioned there (`wake-pass.ts`). It carries no person's credential: the
+ *    pass is a credential the service issued, and the service checks it.
+ *
+ * Once awake, the hub reads which of these woke it
+ * (`GET /v1/hubs/self/last-wake`, `HubLastWakeResponseSchema` in
+ * `hub-last-wake.ts`), so it can audit the wake.
  *
  * Nothing else a computer does wakes its hub. A computer that wants the hub's
  * list of agents reads it only while the hub is already awake. **On the hub's
- * own address, an unsigned request never wakes a hub;** the content host's
- * capped wake is the only exception, and only for a page.
+ * own address, an unsigned request never wakes a hub;** the exceptions are the
+ * content host's capped wake, only for a page, and a wake pass, which carries
+ * a credential the service issued.
  *
  * A wake grants nothing. It starts the hub and nothing more: the hub still
  * checks a computer's dial against its own pin, and every other request as it

@@ -49,6 +49,20 @@ export const PORTS = [
       'defineCapability and its types: every domain declares its capabilities through it, and it imports no domain.',
     record: 'ADR 261123-170830 (the registry is the one place a capability is defined)',
   },
+  {
+    path: 'core/agent-tool-kit/agent-tool-kit',
+    reason:
+      'AgentToolDeps and the tool result helpers: every agent tool file, in whichever domain owns it, is handed and answers through them, and it imports no domain except for types.',
+    record:
+      'spec computer-side-starts-alone §5.1 (C9a: kernel homes, so no tool file imports runtimes/)',
+  },
+  {
+    path: 'core/tool-names/tool-names',
+    reason:
+      'How the DorkOS tool server and its tools are named on each runtime: tool files and prompt blocks in many domains spell them, and it imports no domain.',
+    record:
+      'spec computer-side-starts-alone §5.1 (C9a: kernel homes, so no tool file imports runtimes/)',
+  },
 ];
 
 /**

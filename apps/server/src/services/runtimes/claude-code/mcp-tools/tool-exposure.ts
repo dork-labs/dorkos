@@ -63,8 +63,10 @@
  * targeted test would otherwise read stale `dist` output. The living contract
  * and measured migration scope are in `contributing/agent-operator-surface.md`.
  *
- * The qualification and provenance helpers are Claude-specific; loading and
- * search policy is shared. Codex and OpenCode reach the same tools through
+ * The provenance helper is Claude-specific; loading and search policy is
+ * shared. The names themselves (`IN_SESSION_TOOL_PREFIX`, `inSessionToolName`,
+ * `DORKOS_MCP_SERVER_NAME`) live in `core/tool-names`, so a tool file outside
+ * `runtimes/` can spell them. Codex and OpenCode reach the same tools through
  * the external `/mcp` server — under `dorkos_ui` for the UI server Codex spawns
  * itself, and otherwise under whatever the person's harness config named it — so
  * the runtime-neutral blocks under `runtimes/shared/` and the capability
@@ -73,36 +75,12 @@
  * @module services/runtimes/claude-code/mcp-tools/tool-exposure
  */
 
-import {
-  CLAUDE_CODE_DORKOS_TOOL_PREFIX,
-  DORKOS_MCP_SERVER_NAME,
-} from '../../shared/dorkos-tool-names.js';
-
-/**
- * The name the in-session MCP server is created under.
- *
- * Re-exported rather than declared: the same name keys the `dorkos` server that
- * codex and opencode dial over HTTP, so it has one definition in
- * `runtimes/shared/dorkos-tool-names.ts` and every consumer reads that one. A
- * second copy here is how the registered name and the prefixes built from it
- * drift apart.
- */
-export { DORKOS_MCP_SERVER_NAME };
-
-/**
- * What Claude Code prepends to every in-session DorkOS tool name.
- *
- * Prose that teaches a tool must render this in front of it; a bare name in a
- * system-prompt block is a name the model cannot call.
- */
-export const IN_SESSION_TOOL_PREFIX = CLAUDE_CODE_DORKOS_TOOL_PREFIX;
-
 /**
  * Whether an MCP tool call could be served by the in-session server THIS host
  * registered, read from the provenance Claude Code attaches to it (SDK 0.3.274:
  * `mcpServer` on `canUseTool`, `mcp_server` on tool hooks).
  *
- * The name and the {@link IN_SESSION_TOOL_PREFIX} are not proof. A project's
+ * The name and the in-session prefix are not proof. A project's
  * `.mcp.json` can declare a server called `dorkos` whose tools then carry the
  * very same `mcp__dorkos__…` names, and the SDK says in as many words: "Key
  * trust decisions on `source`, not on the name or the tool-name prefix."
@@ -118,16 +96,6 @@ export const IN_SESSION_TOOL_PREFIX = CLAUDE_CODE_DORKOS_TOOL_PREFIX;
  */
 export function isHostServedOrUnattributed(provenance?: { source: string }): boolean {
   return provenance === undefined || provenance.source === 'sdk';
-}
-
-/**
- * Qualify a registered tool name the way Claude Code exposes it.
- *
- * @param bare - The name the tool is registered under (`react_to_room_entry`).
- * @returns The only string the model can actually call.
- */
-export function inSessionToolName(bare: string): string {
-  return `${IN_SESSION_TOOL_PREFIX}${bare}`;
 }
 
 export {

@@ -32,7 +32,7 @@
  */
 import type { PermissionModeId } from '@dorkos/shared/schemas';
 import { NEVER_ASK_MODE_ID } from '../runtime-constants.js';
-import { inSessionToolName } from '../mcp-tools/tool-exposure.js';
+import { inSessionToolName } from '../../../core/tool-names/tool-names.js';
 import {
   carriesOutsiderMark,
   ceilingOn,

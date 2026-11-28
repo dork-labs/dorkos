@@ -197,6 +197,7 @@ const MECHANISM_ENUMS: Record<string, string> = {
   CommunityNameUnavailableReasonSchema: 'why a short name cannot be used right now',
   CommunityMoveStateSchema: 'the stages of reading an owner export into a new community',
   CommunityMoveFailureCodeSchema: 'what went wrong with an export, in terms a person can act on',
+  WakePassReasonSchema: 'why a pass may wake its hub; names no allowance',
   HubAssignmentStateSchema: 'whether a hub belongs to a person yet; names no allowance',
   CloudComputerStateSchema: 'where an agent computer is in its life, not what anybody bought',
   CloudComputerStopReasonSchema: 'why an agent computer is stopped, in terms the app can show',

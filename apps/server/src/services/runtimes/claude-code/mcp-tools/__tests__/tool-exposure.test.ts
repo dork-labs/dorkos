@@ -51,13 +51,15 @@ import {
   ALWAYS_LOADED_TOOLS,
   AGENT_TO_AGENT_TOOLS,
   alwaysLoadedToolsFor,
-  IN_SESSION_TOOL_PREFIX,
-  inSessionToolName,
   searchHintFrom,
   toolExposure,
 } from '../tool-exposure.js';
+import {
+  IN_SESSION_TOOL_PREFIX,
+  inSessionToolName,
+} from '../../../../core/tool-names/tool-names.js';
 import { composeCapabilityRegistryForDocs } from '../../../../core/self-description/dorkos-registry.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { CONNECTOR_RUNTIME_CAPABILITY_IDS } from '../../../../connectors/runtime-capability-scope.js';
 import { createServerPrincipal } from '../../../../connectors/principal/server-principal.js';
 import { composeDorkOsCapabilityRegistry } from '../../../../core/self-description/dorkos-registry.js';
@@ -84,12 +86,12 @@ afterEach(() => clearTestHomes());
 const ALWAYS_LOAD_META = 'anthropic/alwaysLoad';
 
 /** Deps with every optional service handle present, so the whole surface builds. */
-function createFullDeps(): McpToolDeps {
+function createFullDeps(): AgentToolDeps {
   const stub = {} as never;
   return {
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
-    } as unknown as McpToolDeps['transcriptReader'],
+    } as unknown as AgentToolDeps['transcriptReader'],
     defaultCwd: '/tmp/dor-1292-exposure',
     dorkHome: '/tmp/dorkos-test-home',
     taskStore: stub,
@@ -122,7 +124,7 @@ interface AdvertisedTool {
  */
 async function advertisedTools(
   session?: { cwd?: string; connectorTurn?: unknown },
-  deps: McpToolDeps = createFullDeps(),
+  deps: AgentToolDeps = createFullDeps(),
   registry: CapabilityRegistry = composeCapabilityRegistryForDocs()
 ): Promise<AdvertisedTool[]> {
   const server = createDorkOsToolServer(
@@ -151,7 +153,7 @@ async function advertisedTools(
  * the same server-side lookup `resolveSenderIdentity` uses, so nothing the model
  * says can put a session on this path.
  */
-function createAgentSessionDeps(overrides: Partial<McpToolDeps> = {}): McpToolDeps {
+function createAgentSessionDeps(overrides: Partial<AgentToolDeps> = {}): AgentToolDeps {
   return {
     ...createFullDeps(),
     meshCore: {
@@ -159,7 +161,7 @@ function createAgentSessionDeps(overrides: Partial<McpToolDeps> = {}): McpToolDe
         cwd === '/agents/alpha'
           ? { subject: 'relay.agent.team.alpha', agentId: 'alpha' }
           : undefined,
-    } as unknown as McpToolDeps['meshCore'],
+    } as unknown as AgentToolDeps['meshCore'],
     ...overrides,
   };
 }

@@ -49,7 +49,7 @@ import {
   createCreateScheduleHandler,
   createUpdateScheduleHandler,
 } from '../../../runtimes/claude-code/mcp-tools/tasks/task-tools.js';
-import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../agent-tool-kit/agent-tool-kit.js';
 import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
@@ -62,13 +62,13 @@ const tasksHome = mkdtempSync(path.join(os.tmpdir(), 'dorkos-teammate-mark-tasks
 const boHome = mkdtempSync(path.join(os.tmpdir(), 'dorkos-teammate-mark-bo-'));
 
 /** What the in-session task tools need, over a real store. */
-function scheduleDeps(store: TaskStore): McpToolDeps {
+function scheduleDeps(store: TaskStore): AgentToolDeps {
   return {
     transcriptReader: { listSessions: async () => [] },
     defaultCwd: tasksHome,
     dorkHome: tasksHome,
     taskStore: store,
-  } as unknown as McpToolDeps;
+  } as unknown as AgentToolDeps;
 }
 
 const SPACE_ROOM = 'space-room';
@@ -226,7 +226,7 @@ describe('one mention later, the teammate mark still carries (DOR-3036)', () => 
         // Where its runs start: a real folder, as a registered agent's home always is.
         getProjectPath: (id: string) => (id === 'agent-bo' ? boHome : undefined),
       },
-    } as unknown as McpToolDeps;
+    } as unknown as AgentToolDeps;
     const create = createCreateScheduleHandler(deps, () => ({
       sessionId: bo,
       agentPath: '/agents/bo',

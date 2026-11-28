@@ -68,6 +68,18 @@ export interface HubRelayEndpointDeps {
 
 let hubSign: HubRelaySigner['sign'] | null = null;
 let hubPublicKey: (() => string) | null = null;
+let remoteComputersOn: () => boolean = () => false;
+
+/**
+ * Give the relay the `remoteComputers.enabled` experiment's reader (spec
+ * `space-computer-contract` W1). Off until it is called, and read once per
+ * connection, when the computer proves itself.
+ *
+ * @param read - Whether the experiment is on now.
+ */
+export function setRemoteComputersExperiment(read: () => boolean): void {
+  remoteComputersOn = read;
+}
 
 /**
  * Give the relay the hub's long-lived Ed25519 signing function and, for
@@ -131,6 +143,9 @@ function acceptLive(
       signer,
       onOpen: promoteConnection,
       onClose: forgetConnection,
+      // No `role` yet: every live connection is a `computer`. Step W2 reads
+      // the role from the home's record of this computer, never from `hello`.
+      agentComputers: () => remoteComputersOn(),
     })
   );
 }

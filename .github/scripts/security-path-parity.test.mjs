@@ -129,6 +129,12 @@ const additions = [
     'apps/server/src/startup/steps/work-graph-links.ts',
   ],
   ['packages/shared/src/work-graph-reads.ts', 'packages/shared/src/work-graph-reads-old.ts'],
+  ['packages/shared/src/wire/features.ts', 'packages/shared/src/wired/features.ts'],
+  ['packages/shared/src/session-relay.ts', 'packages/shared/src/session-relay-link.ts'],
+  [
+    'packages/shared/src/session-relay-agent-computer.ts',
+    'packages/shared/src/session-relay-agent-computers.ts',
+  ],
 ];
 for (const [match, miss] of additions) {
   test(`new trust path and rename: ${match}`, () => {
@@ -230,6 +236,9 @@ for (const [match, miss, deep] of [
     `${S}/core/connections-leases/x.ts`,
     false,
   ],
+  // C9a's kernel homes (DOR-5482): the agent tool kit and the tool names left runtimes/.
+  [`${S}/core/agent-tool-kit/agent-tool-kit.ts`, `${S}/core/agent-tool-kits/x.ts`, false],
+  [`${S}/core/tool-names/tool-names.ts`, `${S}/core/tool-name/x.ts`, false],
 ]) {
   test(`${match.slice(S.length + 1)} is on the main list${deep ? ' and the deep list' : ' only'}`, () => {
     assert.ok(existsSync(resolve(root, match)), `${match} no longer exists`);

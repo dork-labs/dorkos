@@ -6,8 +6,8 @@
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { HEARTBEAT_TEMPLATE_IDS } from '@dorkos/shared/heartbeat-schemas';
-import type { McpToolDeps } from './types.js';
-import { jsonContent } from './types.js';
+import type { AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
+import { jsonContent } from '../../../core/agent-tool-kit/agent-tool-kit.js';
 import { createAgentWorkspace, AgentCreationError } from '../../../core/agent-creator.js';
 
 /**
@@ -15,7 +15,7 @@ import { createAgentWorkspace, AgentCreationError } from '../../../core/agent-cr
  *
  * @param deps - MCP tool dependencies (uses meshCore for post-creation sync)
  */
-export function createCreateAgentHandler(deps: McpToolDeps) {
+export function createCreateAgentHandler(deps: AgentToolDeps) {
   return async (args: {
     name: string;
     directory?: string;
@@ -45,7 +45,7 @@ export function createCreateAgentHandler(deps: McpToolDeps) {
  *
  * @param deps - Shared MCP tool dependencies.
  */
-export function getAgentTools(deps: McpToolDeps) {
+export function getAgentTools(deps: AgentToolDeps) {
   return [
     tool(
       'create_agent',

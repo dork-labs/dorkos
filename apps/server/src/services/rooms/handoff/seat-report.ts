@@ -116,7 +116,8 @@ export class RoomSeatReports {
   /**
    * Whether `sessionId` is a room's seat now: the session the room keeps for the agent, or the
    * one a live turn there runs on. Not a session the seat moved off: a spin-off started from that
-   * chat now is started after the move, and no report of it can reach the seat (DOR-3753).
+   * chat now is started after the move, so its reports go to that chat as chat messages and never
+   * reach the seat (DOR-3753).
    *
    * @param sessionId - The chat.
    */

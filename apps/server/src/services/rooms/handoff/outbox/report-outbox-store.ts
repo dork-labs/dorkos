@@ -264,6 +264,31 @@ export class ReportOutboxStore {
     }
   }
 
+  /**
+   * Save a report checked for a seat as no seat's once that seat is gone: the agent left the room
+   * or the room was removed while the report waited (DOR-3753). It then goes to the chat that
+   * started its spin-off as a chat message, as a live report, or one saved after the leave, does.
+   * Only a seat that is gone: any other change of scope still fails {@link valid}.
+   *
+   * @param row - A waiting report.
+   * @returns The report as saved now, or null when nothing changed.
+   */
+  releaseGoneSeat(row: ReportOutboxRow): SavedReport | null {
+    try {
+      const saved = this.decode(row);
+      if (saved.seat === null || saved.seat === 'unavailable') return null;
+      const parent = reportTargetFromStore(this.starts, row.sourceSessionId)?.parentSessionId;
+      if (parent !== row.parentSessionId || this.seatScope(row.sourceSessionId, parent) !== null)
+        return null;
+      const released = { ...saved, seat: null };
+      return this.update(row.id, row.state === 'deferred' ? 'deferred' : 'ready', released)
+        ? released
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
   update(id: string, state: 'deferred' | 'ready', saved: SavedReport, deadline?: number): boolean {
     return (
       this.db
@@ -381,17 +406,18 @@ export class ReportOutboxStore {
           .all();
         const ready: ReportOutboxRow[] = [];
         for (const row of rows) {
-          if (!this.valid(row)) {
+          this.set(row.id, { bootOwner: this.owner });
+          const owned = { ...row, bootOwner: this.owner };
+          // A seat gone while the server was down: the chat that started it takes it (DOR-3753).
+          const current = this.releaseGoneSeat(owned) ? (this.get(row.id) ?? owned) : owned;
+          if (!this.valid(current)) {
             this.set(row.id, {
               state: 'quarantined',
               settledAt: now,
               noticeState: 'ready',
               terminalReason: 'Stored report scope could not be verified.',
             });
-          } else {
-            this.set(row.id, { bootOwner: this.owner });
-            ready.push({ ...row, bootOwner: this.owner });
-          }
+          } else ready.push(current);
         }
         return ready;
       },

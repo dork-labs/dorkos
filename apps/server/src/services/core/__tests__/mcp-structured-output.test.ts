@@ -34,7 +34,7 @@ import type {
 import type { Task } from '@dorkos/shared/schemas';
 import type { DeliveryMetrics } from '@dorkos/shared/relay-schemas';
 import { createExternalMcpServer } from '../mcp-server.js';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import {
   clearTestHomes,
   registerEveryFolderAsHome,
@@ -158,19 +158,19 @@ describe('external MCP structured-output tools (real tools/call pipeline)', () =
     await mkdir(path.join(agentDir, '.dork'), { recursive: true });
     await writeFile(path.join(agentDir, '.dork', 'agent.json'), JSON.stringify(MANIFEST), 'utf-8');
 
-    const deps: McpToolDeps = {
+    const deps: AgentToolDeps = {
       transcriptReader: {
         listSessions: async () => [],
-      } as unknown as McpToolDeps['transcriptReader'],
+      } as unknown as AgentToolDeps['transcriptReader'],
       defaultCwd: agentDir,
       dorkHome: '/tmp/dorkos-test-home',
       taskStore: {
         getTasks: () => [TASK],
         runHistory: () => () => ({ lastRunAt: null }),
-      } as unknown as McpToolDeps['taskStore'],
+      } as unknown as AgentToolDeps['taskStore'],
       traceStore: {
         getMetrics: () => METRICS,
-      } as unknown as McpToolDeps['traceStore'],
+      } as unknown as AgentToolDeps['traceStore'],
       meshCore: {
         list: () => [MANIFEST],
         getSubject: (agentId: string) => `relay.agent.demo.${agentId}`,
@@ -178,7 +178,7 @@ describe('external MCP structured-output tools (real tools/call pipeline)', () =
         getStatus: () => MESH_STATUS,
         inspect: () => MESH_INSPECT,
         getTopology: () => TOPOLOGY,
-      } as unknown as McpToolDeps['meshCore'],
+      } as unknown as AgentToolDeps['meshCore'],
     };
 
     const server = createExternalMcpServer(deps);
@@ -266,10 +266,10 @@ describe('external MCP structured-output tools (real tools/call pipeline)', () =
     // Same real pipeline, but with a handler whose return violates its
     // outputSchema (count as a string). If this ever passes as a non-error,
     // the runtime validation these tests depend on has been silently lost.
-    const badDeps: McpToolDeps = {
+    const badDeps: AgentToolDeps = {
       transcriptReader: {
         listSessions: async () => [],
-      } as unknown as McpToolDeps['transcriptReader'],
+      } as unknown as AgentToolDeps['transcriptReader'],
       defaultCwd: agentDir,
       dorkHome: '/tmp/dorkos-test-home',
       meshCore: {
@@ -277,7 +277,7 @@ describe('external MCP structured-output tools (real tools/call pipeline)', () =
         getStatus: () => ({ ...MESH_STATUS, totalAgents: 'drifted' }),
         inspect: () => MESH_INSPECT,
         getTopology: () => TOPOLOGY,
-      } as unknown as McpToolDeps['meshCore'],
+      } as unknown as AgentToolDeps['meshCore'],
     };
     const badServer = createExternalMcpServer(badDeps);
     const badClient = new Client({ name: 'drift-test', version: '1.0.0' });

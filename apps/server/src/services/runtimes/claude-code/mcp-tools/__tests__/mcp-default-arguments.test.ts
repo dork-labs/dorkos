@@ -22,7 +22,7 @@ vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn().mockResolvedVa
 
 import { createDorkOsToolServer, handRegisteredInSessionTools } from '../index.js';
 import { capabilityInputObject } from '../../../../core/capabilities/input-projection.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { noopLogger } from '@dorkos/shared/logger';
 import {
   capabilitiesForMcpServer,
@@ -42,12 +42,12 @@ import { registerExtensionListabilityTests } from './extension-listability-contr
 import { DEFAULT_CAPABILITY_LIMIT } from '../../../../core/self-description/catalog-projection.js';
 
 /** Deps with every optional service handle present, so the whole surface builds. */
-function createFullDeps(): McpToolDeps {
+function createFullDeps(): AgentToolDeps {
   const stub = {} as never;
   return {
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
-    } as unknown as McpToolDeps['transcriptReader'],
+    } as unknown as AgentToolDeps['transcriptReader'],
     defaultCwd: '/tmp/dor-2053-defaults',
     dorkHome: '/tmp/dorkos-test-home',
     taskStore: stub,

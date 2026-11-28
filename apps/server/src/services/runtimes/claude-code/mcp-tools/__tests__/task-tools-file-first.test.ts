@@ -25,7 +25,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { Task } from '@dorkos/shared/schemas';
 import { TaskStore } from '../../../../tasks/task-store.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { getTasksTools } from '../tasks/task-tools.js';
 import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
 
@@ -79,7 +79,7 @@ describe('tasks_create writes a file and files the task under an agent', () => {
         listWithPaths: () => [{ id: 'nightly-bot', projectPath }],
         getProjectPath: (id: string) => (id === 'nightly-bot' ? projectPath : null),
       },
-    } as unknown as McpToolDeps;
+    } as unknown as AgentToolDeps;
     tools = Object.fromEntries(
       (
         getTasksTools(deps, undefined, undefined, () => projectPath) as unknown as SessionTool[]
@@ -247,7 +247,7 @@ describe('tasks_update refuses to re-home a task instead of pretending', () => {
       taskStore: store,
       defaultCwd: '/tmp/test',
       dorkHome: '/tmp/dorkos-rehome-test',
-    } as unknown as McpToolDeps;
+    } as unknown as AgentToolDeps;
     tools = Object.fromEntries(
       (getTasksTools(deps) as unknown as SessionTool[]).map((t) => [t.name, t])
     );

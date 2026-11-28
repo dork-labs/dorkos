@@ -13,7 +13,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { buildCodexAgentContext } from '../agent-context.js';
-import { CODEX_DORKOS_TOOL_PREFIX } from '../../shared/dorkos-tool-names.js';
+import { CODEX_DORKOS_TOOL_PREFIX } from '../../../core/tool-names/tool-names.js';
 
 describe('the browser a Codex turn is pointed at (DOR-4357)', () => {
   it('names the browser tools DorkOS gives it, callable under Codex’s own prefix', async () => {

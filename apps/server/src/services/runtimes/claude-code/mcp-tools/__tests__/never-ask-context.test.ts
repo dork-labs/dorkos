@@ -15,7 +15,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { noopLogger } from '@dorkos/shared/logger';
 import { composeRegistry, defineCapability } from '../../../../core/capabilities/index.js';
 import { createDorkOsToolServer } from '../index.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 
 /** A read that answers with what it was told about the calling turn. */
 const probe = {
@@ -43,7 +43,7 @@ async function connect(session: { permissionMode: string }) {
   const live = { eventQueue: [], cwd: '/tmp/never-ask-probe', sdkSessionId: 'ses-1', ...session };
   const deps = { defaultCwd: '/tmp/never-ask-probe', dorkHome: '/tmp/never-ask-home' };
   const server = createDorkOsToolServer(
-    deps as unknown as McpToolDeps,
+    deps as unknown as AgentToolDeps,
     live,
     'ses-1',
     undefined,

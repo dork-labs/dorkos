@@ -5,10 +5,8 @@ import {
   NotificationService,
   setNotificationService,
 } from '../../notifications/notification-service.js';
-import {
-  createRelayNotifyUserHandler,
-  type McpToolDeps,
-} from '../../runtimes/claude-code/mcp-tools/index.js';
+import { createRelayNotifyUserHandler } from '../../runtimes/claude-code/mcp-tools/index.js';
+import { type AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import type { SenderIdentity } from '../../runtimes/claude-code/mcp-tools/relay-helpers.js';
 import { AdapterBindingSchema } from '@dorkos/shared/relay-schemas';
 import { resolveSenderIdentity } from '../../runtimes/claude-code/mcp-tools/relay-helpers.js';
@@ -98,7 +96,7 @@ function makeMockBridgeStore(overrides?: Record<string, unknown>) {
  * The seam the DM fallback writes through (DOR-1209); `deliverNotifyDm` itself runs for
  * real. The real room log is pinned in `services/relay/__tests__/notify-dm.test.ts`.
  */
-function makeMockNotifyDm(overrides: Partial<McpToolDeps['notifyDm']> = {}) {
+function makeMockNotifyDm(overrides: Partial<AgentToolDeps['notifyDm']> = {}) {
   return {
     rooms: {
       createRoom: vi.fn().mockReturnValue({ id: 'room-dm-1' }),
@@ -112,41 +110,41 @@ function makeMockNotifyDm(overrides: Partial<McpToolDeps['notifyDm']> = {}) {
     operatorAuthorId: vi.fn().mockReturnValue('author-human'),
     logger: { warn: vi.fn() },
     ...overrides,
-  } satisfies NonNullable<McpToolDeps['notifyDm']>;
+  } satisfies NonNullable<AgentToolDeps['notifyDm']>;
 }
 
 /** A binding store holding exactly `bindings`. */
-function storeOf(bindings: unknown[]): McpToolDeps['bindingStore'] {
+function storeOf(bindings: unknown[]): AgentToolDeps['bindingStore'] {
   return makeMockBindingStore({
     getAll: vi.fn().mockReturnValue(bindings),
-  }) as unknown as McpToolDeps['bindingStore'];
+  }) as unknown as AgentToolDeps['bindingStore'];
 }
 
 /** A binding router that has seen no active chat on any binding. */
-function noActiveChats(): McpToolDeps['bindingRouter'] {
+function noActiveChats(): AgentToolDeps['bindingRouter'] {
   return makeMockBindingRouter({
     getSessionsByBinding: vi.fn().mockReturnValue([]),
-  }) as unknown as McpToolDeps['bindingRouter'];
+  }) as unknown as AgentToolDeps['bindingRouter'];
 }
 
-function makeMockDeps(overrides: Partial<McpToolDeps> = {}): McpToolDeps {
+function makeMockDeps(overrides: Partial<AgentToolDeps> = {}): AgentToolDeps {
   return {
-    transcriptReader: {} as McpToolDeps['transcriptReader'],
+    transcriptReader: {} as AgentToolDeps['transcriptReader'],
     defaultCwd: '/test',
     dorkHome: '/tmp/dorkos-test-home',
     relayCore: {
       publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }),
-    } as unknown as McpToolDeps['relayCore'],
-    bindingStore: makeMockBindingStore() as unknown as McpToolDeps['bindingStore'],
-    bindingRouter: makeMockBindingRouter() as unknown as McpToolDeps['bindingRouter'],
-    adapterManager: makeMockAdapterManager() as unknown as McpToolDeps['adapterManager'],
-    bridgeStore: makeMockBridgeStore() as unknown as McpToolDeps['bridgeStore'],
+    } as unknown as AgentToolDeps['relayCore'],
+    bindingStore: makeMockBindingStore() as unknown as AgentToolDeps['bindingStore'],
+    bindingRouter: makeMockBindingRouter() as unknown as AgentToolDeps['bindingRouter'],
+    adapterManager: makeMockAdapterManager() as unknown as AgentToolDeps['adapterManager'],
+    bridgeStore: makeMockBridgeStore() as unknown as AgentToolDeps['bridgeStore'],
     ...overrides,
   };
 }
 
 /** Build the handler under test; the caller is the registered agent unless a test says otherwise. */
-function makeHandler(deps: McpToolDeps, identity: SenderIdentity = NOTIFY) {
+function makeHandler(deps: AgentToolDeps, identity: SenderIdentity = NOTIFY) {
   return createRelayNotifyUserHandler(deps, identity);
 }
 
@@ -218,7 +216,7 @@ describe('relay_notify_user', () => {
             ];
           return [];
         }),
-      }) as unknown as McpToolDeps['bindingRouter'],
+      }) as unknown as AgentToolDeps['bindingRouter'],
     });
     const handler = makeHandler(deps);
     const result = await handler({
@@ -246,7 +244,7 @@ describe('relay_notify_user', () => {
       bindingStore: storeOf([makeBinding({ id: 'b-1', adapterId: 'tg-main' })]),
       adapterManager: makeMockAdapterManager({
         listAdapters: vi.fn().mockReturnValue([]),
-      }) as unknown as McpToolDeps['adapterManager'],
+      }) as unknown as AgentToolDeps['adapterManager'],
     });
     const handler = makeHandler(deps);
     const result = await handler({
@@ -266,7 +264,7 @@ describe('relay_notify_user', () => {
     const deps = makeMockDeps({
       relayCore: {
         publish: vi.fn().mockRejectedValue(new Error('Network error')),
-      } as unknown as McpToolDeps['relayCore'],
+      } as unknown as AgentToolDeps['relayCore'],
     });
     const result = await makeHandler(deps)({ message: 'Hello' });
     expect(result.isError).toBe(true);
@@ -290,7 +288,7 @@ describe('relay_notify_user', () => {
   // (DOR-1209, point 3 of DOR-793).
   describe('DorkOS DM fallback (DOR-1209)', () => {
     /** Deps with no bindings at all — the stock install. */
-    function noIntegrationDeps(notifyDm = makeMockNotifyDm()): McpToolDeps {
+    function noIntegrationDeps(notifyDm = makeMockNotifyDm()): AgentToolDeps {
       return makeMockDeps({
         bindingStore: storeOf([]),
         notifyDm,
@@ -441,7 +439,7 @@ describe('relay_notify_user', () => {
             .mockReturnValue([
               { bindingId: 'b-1', chatId: 'chat-42', lastActivityAt: '2026-01-01T00:05:00.000Z' },
             ]),
-        }) as unknown as McpToolDeps['bridgeStore'],
+        }) as unknown as AgentToolDeps['bridgeStore'],
       });
       const handler = makeHandler(deps);
       const result = await handler({ message: 'Bridged heads up!' });
@@ -472,7 +470,7 @@ describe('relay_notify_user', () => {
         bindingRouter: noActiveChats(),
         bridgeStore: makeMockBridgeStore({
           listLiveBridges: vi.fn().mockReturnValue([{ bindingId: 'b-1', chatId: 'chat-42' }]),
-        }) as unknown as McpToolDeps['bridgeStore'],
+        }) as unknown as AgentToolDeps['bridgeStore'],
       });
       const handler = makeHandler(deps);
       const result = await handler({ message: 'Should never arrive' });
@@ -505,7 +503,7 @@ describe('relay_notify_user, by identity anchor', () => {
     });
 
     /** A mesh that places exactly one directory: Ana's own folder. */
-    function anaMeshDeps(): McpToolDeps {
+    function anaMeshDeps(): AgentToolDeps {
       return makeMockDeps({
         meshCore: {
           getSubjectByPath: vi.fn((p: string) =>
@@ -515,7 +513,7 @@ describe('relay_notify_user, by identity anchor', () => {
           ),
           get: vi.fn().mockReturnValue({ name: 'ana', displayName: 'Ana' }),
           getProjectPath: vi.fn().mockReturnValue('/agents/ana'),
-        } as unknown as McpToolDeps['meshCore'],
+        } as unknown as AgentToolDeps['meshCore'],
       });
     }
 

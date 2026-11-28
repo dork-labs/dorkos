@@ -9,9 +9,13 @@
  * scheduled run or a beat sent ({@link CHAT_UNATTENDED_ORIGINS}) goes to the
  * asking agent's DM chat, since nothing may be written into the run itself.
  *
+ * A spin-off's report also reaches a room's old chat that no room answers for
+ * now ({@link takesReportsAsChat}), as it would any chat that started it.
+ *
  * @module services/session/chat-messages/chat-target
  */
 import type { MeshCore } from '@dorkos/mesh';
+import type { ChatMessageKind } from '@dorkos/shared/chat-messages';
 import type { SessionFacts } from '../../extensions/agent-send/agent-send-defaults.js';
 import { ChatMessageError } from './chat-message-error.js';
 import type { ChatCaller } from './chat-message-service.js';
@@ -47,6 +51,38 @@ export const CHAT_SENDABLE_ORIGINS: ReadonlySet<string> = new Set([
  * agent's DM chat with the one answering, where that agent will see it.
  */
 export const CHAT_UNATTENDED_ORIGINS: ReadonlySet<string> = new Set(['schedule', 'heartbeat']);
+
+/** What is being sent: a chat's own message, or the server's report from a spin-off. */
+export type ChatSendKind = Extract<ChatMessageKind, 'message' | 'report'>;
+
+/**
+ * Whether a chat that is no ordinary target still takes a spin-off's report as a chat message: a
+ * chat a room started that no room answers for now. Its seat moved to a fresh session, or its
+ * agent left the room, and the chat stays one a person can reopen (DOR-3753). A spin-off started
+ * there reports to it as to any chat; a spin-off its seat started before a move still reports to
+ * the seat, which the room routes before this is asked (`toRoomSeat`). Reports only: a report is
+ * the server's own send, and no agent's `chat_send` or `chat_stop` reaches further.
+ *
+ * Only when the rooms are wired (`roomsWired`): before that, an unbound answer is not known to
+ * mean no room answers for the chat, and a seat must never take a report as a chat message.
+ * A removed community room's old chats take reports too, by decision: the turn runs under the
+ * spin-off's marks, and the room it could speak to is gone.
+ *
+ * @param facts - The target's binding, origin and room standing.
+ * @param kind - What is being sent.
+ */
+export function takesReportsAsChat(
+  facts: Pick<SessionFacts, 'bound' | 'roomBound' | 'launchOrigin' | 'roomsWired'>,
+  kind: ChatSendKind
+): boolean {
+  return (
+    kind === 'report' &&
+    facts.bound &&
+    facts.roomsWired === true &&
+    !facts.roomBound &&
+    facts.launchOrigin === 'room'
+  );
+}
 
 /** Where a send is going, once resolved. */
 export interface ChatTarget {
@@ -113,13 +149,15 @@ export function replyTargetOf(
  * @param caller - The calling chat.
  * @param to - A chat id or an agent id.
  * @param replyTo - The message the send answers, when named.
+ * @param kind - What is being sent; a report also reaches {@link takesReportsAsChat}.
  * @throws ChatMessageError when the target cannot take the message.
  */
 export async function resolveChatTarget(
   deps: ChatTargetDeps,
   caller: ChatCaller,
   to: string,
-  replyTo: string | undefined
+  replyTo: string | undefined,
+  kind: ChatSendKind = 'message'
 ): Promise<ChatTarget> {
   const mesh = deps.meshCore();
   const agentPath = mesh?.get(to) ? mesh.getProjectPath(to) : undefined;
@@ -131,7 +169,7 @@ export async function resolveChatTarget(
     );
   }
   try {
-    await assertChatSendable(deps, to, mesh !== undefined);
+    await assertChatSendable(deps, to, mesh !== undefined, kind);
   } catch (err) {
     const redirected = await unattendedReplyTarget(deps, caller, to, replyTo);
     if (redirected) return redirected;
@@ -208,12 +246,14 @@ export function isChatSendable(
  * @param deps - What it reads.
  * @param sessionId - The chat.
  * @param meshUp - Whether Mesh is running, so an unknown id is not just early.
+ * @param kind - What is being sent; a report also reaches {@link takesReportsAsChat}.
  * @throws ChatMessageError when the chat cannot take messages.
  */
 export async function assertChatSendable(
   deps: Pick<ChatTargetDeps, 'describeSession'>,
   sessionId: string,
-  meshUp: boolean
+  meshUp: boolean,
+  kind: ChatSendKind = 'message'
 ): Promise<SessionFacts> {
   const facts = await deps.describeSession(sessionId);
   if (!facts.bound) {
@@ -222,7 +262,7 @@ export async function assertChatSendable(
     }
     throw new ChatMessageError('NOT_FOUND', 'There is no agent or chat with that id here.');
   }
-  if (!isChatSendable(facts)) {
+  if (!isChatSendable(facts) && !takesReportsAsChat(facts, kind)) {
     throw new ChatMessageError(
       'NOT_ALLOWED',
       'That chat belongs to a room, a Telegram or Slack chat, or a scheduled run. Post in the ' +

@@ -75,6 +75,7 @@ import type { MessageSenderOpts } from '../messaging/message-sender-shared.js';
 import { detectPhantomCancellations } from '../messaging/phantom-cancellation.js';
 import { mapSdkMessageWithMedia } from '../media-capture.js';
 import { isTurnActivity } from './records/turn-activity.js';
+import { isAskEvent } from './dispatch/asks-between-turns.js';
 import type { TurnWindow } from './session-turn-windows.js';
 
 /** What one window needs to become a turn on the durable stream. */
@@ -151,7 +152,9 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
   try {
     let pending: Promise<IteratorResult<SDKMessage>> | null = null;
     for (;;) {
-      while (eventQueue.length > 0) {
+      // Nothing may follow `done`: an ask pushed after it waits on the queue for
+      // the notifier the `finally` below wakes (DOR-2698).
+      while (eventQueue.length > 0 && !emittedDone) {
         const queued = eventQueue.shift()!;
         if (queued.type === 'done') emittedDone = true;
         if (isInteractiveEvent(queued)) wasInteractive = true;
@@ -297,6 +300,11 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
     if (session.eventQueue === eventQueue) session.lastAssistantUuid = lastMainAssistantUuid;
     // Clear only this consumer's callback; a successor may already be waiting.
     if (session.eventQueueNotify === queueNotify) session.eventQueueNotify = undefined;
+    // An ask still queued as this turn ends reached no turn: wake whoever reads
+    // the queue now, which between turns opens a turn for it (DOR-2698).
+    if (session.eventQueue === eventQueue && eventQueue.some(isAskEvent)) {
+      session.eventQueueNotify?.();
+    }
   }
 
   // No `wasStopped()` conjunct here, unlike the in-loop arm above and unlike
