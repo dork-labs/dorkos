@@ -1,0 +1,15 @@
+{
+  "lastWake": {
+    "id": "wk_0002",
+    "at": "2026-12-02T14:05:00Z",
+    "cause": {
+      "kind": "wake_pass",
+      "passId": "wp_0001",
+      "holder": {
+        "kind": "space",
+        "spaceUrl": "https://spaces.example.invalid/c/3b2a1c0d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+      },
+      "reason": "mention"
+    }
+  }
+}
