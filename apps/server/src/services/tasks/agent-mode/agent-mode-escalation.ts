@@ -15,10 +15,10 @@
 import type { MeshCore } from '@dorkos/mesh';
 import type { CallPermission } from '../../core/capabilities/permission-enforcement.js';
 import type { GatedAction } from '../../core/capabilities/tier-enforcement.js';
-import {
-  registerToolCallEscalator,
-  type ToolCallContext,
-  type ToolCallEscalation,
+import type {
+  ToolCallContext,
+  ToolCallEscalation,
+  ToolCallEscalatorCall,
 } from '../../core/capabilities/tool-call-escalation.js';
 import { turnReadOutsideWords } from '../../core/turn-power/outsider-turn.js';
 import { liveRunOriginSources, withRunOrigin } from './agent-mode-run-origin.js';
@@ -134,24 +134,31 @@ function bodyOf(input: unknown): Record<string, unknown> {
   return body;
 }
 
+/** The two escalators, as the tasks capabilities' `escalate` fields ask them. */
+export interface AgentModeEscalators {
+  /** `tasks_update`'s: a mode, an approval or a credits raise is decided as its own action. */
+  update(call: ToolCallEscalatorCall): Promise<ToolCallEscalation | null>;
+  /** `tasks_create`'s: a mode is decided as its own action. */
+  create(call: ToolCallEscalatorCall): Promise<ToolCallEscalation | null>;
+}
+
 /**
- * Register the escalators for `tasks_create` and `tasks_update`. Called once at
- * boot, when the Tasks store exists.
+ * The escalators for `tasks_create` and `tasks_update`, which the tasks
+ * capabilities run as their `escalate` fields (C9a: they left the hand gate's
+ * name registry with the tools).
  *
  * @param deps - The store and Mesh.
  * @param sources - Override for tests.
- * @returns A function that removes both again.
  */
-export function registerAgentModeEscalators(
+export function agentModeEscalators(
   deps: {
     store: Pick<TaskStore, 'getTask' | 'approvals' | 'resolveTaskOrigins'>;
     meshCore?: Pick<MeshCore, 'getProjectPath'>;
   },
   sources: AgentModeSources = liveAgentModeSources(deps.meshCore)
-): () => void {
-  const removeUpdate = registerToolCallEscalator(
-    'tasks_update',
-    async ({ action, input, permission, context }) => {
+): AgentModeEscalators {
+  return {
+    async update({ action, input, permission, context }) {
       // The tool itself is off for this caller: its own refusal stands.
       if (permission?.state === 'blocked') return null;
       const body = bodyOf(input);
@@ -181,11 +188,8 @@ export function registerAgentModeEscalators(
             )
           : undefined;
       return credits(escalationFor(decision, action, permission, change));
-    }
-  );
-  const removeCreate = registerToolCallEscalator(
-    'tasks_create',
-    async ({ action, input, permission, context }) => {
+    },
+    async create({ action, input, permission, context }) {
       const body = bodyOf(input);
       if (!agentModeControlOn() || !reachesAgentMode(body)) return null;
       if (permission?.state === 'blocked') return null;
@@ -201,10 +205,6 @@ export function registerAgentModeEscalators(
           ? agentModeChangeOf({ door: 'create', body }, decision, deps.meshCore, caller.agentPath)
           : undefined;
       return escalationFor(decision, action, permission, change);
-    }
-  );
-  return () => {
-    removeUpdate();
-    removeCreate();
+    },
   };
 }

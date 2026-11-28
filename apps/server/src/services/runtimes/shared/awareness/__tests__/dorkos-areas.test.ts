@@ -6,6 +6,7 @@
  * new capability with no area line fails here, and so does a line whose stated
  * permission areas no longer match the ids it covers.
  */
+import { gateViewOf } from '../../../../core/capabilities/declarations/gate-action.js';
 import { describe, it, expect } from 'vitest';
 import { PERMISSION_AREA_IDS } from '@dorkos/shared/permissions';
 import { composeCapabilityRegistryForDocs } from '../../../../core/self-description/dorkos-registry.js';
@@ -15,8 +16,9 @@ import { estimateTokens } from '../../../../session/context-window/context-fit.j
 
 /** Every agent-reachable id, with the permission area it belongs to. */
 function everyId(): { id: string; area: string | null }[] {
+  // By the id the gate decides each as: a moved tool keeps its old name (C9a).
   const capabilities = composeCapabilityRegistryForDocs().capabilities.map((cap) => ({
-    id: cap.id,
+    id: gateViewOf(cap).id,
     area: cap.area,
   }));
   const tools = Object.entries(MCP_TOOL_TIERS as Record<string, McpToolTier>).map(([id, tool]) => ({

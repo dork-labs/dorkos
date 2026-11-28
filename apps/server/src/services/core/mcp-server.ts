@@ -5,7 +5,6 @@ import { resolveSenderIdentity } from '../runtimes/claude-code/mcp-tools/relay-h
 import { registerCoreTools } from './external-mcp/core-tools.js';
 import { registerAccountTools } from './external-mcp/account-tools.js';
 import { registerSessionTools } from './external-mcp/session-tools.js';
-import { registerTaskTools } from './external-mcp/task-tools.js';
 import { registerRelayTools } from './external-mcp/relay-tools.js';
 import { registerBindingTools } from './external-mcp/binding-tools.js';
 import { registerMeshTools } from './external-mcp/mesh-tools.js';
@@ -113,7 +112,6 @@ export function createExternalMcpServer(
   registerCoreTools(registrar, deps);
   registerAccountTools(registrar, deps);
   registerSessionTools(registrar, deps, identity);
-  registerTaskTools(registrar, deps, identity);
   registerRelayTools(registrar, deps, relayIdentity);
   registerBindingTools(registrar, deps);
   registerMeshTools(registrar, deps);

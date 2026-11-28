@@ -46,7 +46,8 @@ import { marketplaceDomain } from '../../marketplace-mcp/marketplace-capabilitie
 import { connectorDomain } from '../../connectors/connector-capabilities.js';
 import { mcpDomain } from '../../mesh/mcp-capabilities.js';
 import { roomsDomain } from '../../rooms/room-capabilities.js';
-import { capabilitiesDomain } from '../self-description/capabilities-domain.js';
+// Through the composition root, which registers both (C9a: no new pair for the tasks domain).
+import { capabilitiesDomain, tasksAgentToolsDomain } from '../self-description/dorkos-registry.js';
 import { permissionsDomain } from '../permissions/permission-capabilities.js';
 
 /**
@@ -59,7 +60,7 @@ import { permissionsDomain } from '../permissions/permission-capabilities.js';
  *
  * ## Why this list is written out rather than derived (DOR-499)
  *
- * These 18 names are exactly the `observe`-tier tools that reach the external
+ * These 16 names are exactly the `observe`-tier tools that reach the external
  * server, so deriving them from `MCP_TOOL_TIERS` would produce an identical set
  * today. That was considered and rejected, because the two lists mean different
  * things and only one of them is a security boundary:
@@ -87,9 +88,6 @@ const LEGACY_READ_ONLY_TOOL_NAMES: readonly string[] = [
   'get_server_info',
   'get_session_count',
   'get_agent',
-  // tasks
-  'tasks_list',
-  'tasks_get_run_history',
   // binding
   'binding_list',
   // agent + extension
@@ -215,6 +213,8 @@ export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   ...LEGACY_READ_ONLY_TOOL_NAMES,
   ...readOnlyCarveOutToolNames([
     ...operatorDomain.capabilities,
+    // The tasks tools' two reads keep the tokenless access they had as hand tools (C9a).
+    ...tasksAgentToolsDomain.capabilities,
     ...marketplaceDomain.capabilities,
     ...connectorDomain.capabilities,
     ...mcpDomain.capabilities,

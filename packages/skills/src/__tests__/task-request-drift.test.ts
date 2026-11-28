@@ -154,7 +154,7 @@ describe('request-vs-frontmatter drift — the fields POST /api/tasks writes int
     // actually spells it, since a mirror nobody applied is not a mirror.
     const source = readFileSync(
       new URL(
-        '../../../../apps/server/src/services/runtimes/claude-code/mcp-tools/tasks/task-tool-inputs.ts',
+        '../../../../apps/server/src/services/tasks/agent-tools/task-tool-inputs.ts',
         import.meta.url
       ),
       'utf8'

@@ -7,6 +7,7 @@
  * answering first reaches them not at all. That is the difference between "the
  * ladder works" and "the ladder is plugged in".
  */
+import { createTaskToolReach } from '../../../startup/task-tool-reach.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
@@ -29,7 +30,7 @@ import type { WebPushChannel } from '../channels/web-push.js';
 import type { RelayChannelDeps, RelayChannelPublisher } from '../channels/relay.js';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 import { TaskStore } from '../../tasks/task-store.js';
-import { getTasksTools } from '../../runtimes/claude-code/mcp-tools/tasks/task-tools.js';
+import { getTasksTools } from '../../tasks/agent-tools/task-tool-definitions.js';
 import type { AgentToolDeps } from '../../core/agent-tool-kit/agent-tool-kit.js';
 import {
   clearTestHomes,
@@ -237,7 +238,11 @@ describe('a session that stops on an error', () => {
 describe('a parked schedule that is removed rather than decided', () => {
   /** The `tasks_delete` handler a real session calls, over a real store. */
   function tasksDelete(store: TaskStore): (args: { id: string }) => Promise<unknown> {
-    const deps = { taskStore: store, defaultCwd: '/tmp/test' } as unknown as AgentToolDeps;
+    const deps = {
+      taskStore: store,
+      tasksReach: createTaskToolReach(),
+      defaultCwd: '/tmp/test',
+    } as unknown as AgentToolDeps;
     const tools = getTasksTools(deps) as unknown as Array<{
       name: string;
       handler: (args: Record<string, unknown>, extra: unknown) => Promise<unknown>;

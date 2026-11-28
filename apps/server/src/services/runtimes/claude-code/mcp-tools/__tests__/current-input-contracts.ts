@@ -57,10 +57,12 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
         // +4 defaultNodes/topDefaultFields/topDefaultCapabilities for their page sizes;
         // +1 each for `list_paused_agents`' page size (DOR-4982);
         // +1 each for `work_item_chats` (DOR-4972), and +1 for its page size.
-        relevant: 137,
-        ordinary: 125,
-        inSession: 124,
-        external: 92,
+        // +5 relevant/ordinary/inSession/external for the five tasks tools, moved off the hand
+        // gate onto the registry (C9a, DOR-5482); none has a default.
+        relevant: 142,
+        ordinary: 130,
+        inSession: 129,
+        external: 97,
         private: 12,
         defaultNodes: 35,
         topDefaultFields: 21,

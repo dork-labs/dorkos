@@ -19,6 +19,7 @@
 import type { TranscriptReader } from '../../runtimes/claude-code/sessions/transcript-reader.js';
 import type { TaskStore } from '../../tasks/task-store.js';
 import type { TaskRegistrar } from '../../tasks/task-registrar.js';
+import type { TaskToolReach } from '../../tasks/agent-tools/task-tool-reach.js';
 import type { RelayCore } from '@dorkos/relay';
 import type { AdapterManager } from '../../relay/adapter-manager.js';
 import type { BindingStore } from '../../relay/binding-store.js';
@@ -32,6 +33,36 @@ import type { RuntimeRegistry } from '../runtime-registry.js';
 import type { ActivityService } from '../../activity/activity-service.js';
 import type { ApprovalService } from '../approvals/index.js';
 import type { CapabilityHandlerContext } from '../capabilities/registry.js';
+
+/**
+ * Who is proposing a schedule, read at CALL time rather than at registration.
+ *
+ * Both fields are resolved lazily and for the same reason: the SDK rekeys a
+ * session to its canonical id mid-first-turn, so an id captured when the tool
+ * server was built names a session that no longer exists. The DevTools tools
+ * resolve their session id late for exactly this reason — see
+ * `mcp-tools/index.ts`.
+ *
+ * Absent entirely on the sessionless external `/mcp` server, where there is no
+ * session to attribute a proposal to and provenance stays null. Here, in the kit,
+ * because the account and extension tools read the same caller (C9a).
+ */
+export type TaskProvenanceResolver = () => {
+  /** The invoking session's canonical id. */
+  sessionId?: string;
+  /**
+   * The invoking session's working directory, which is the key agent identity
+   * is stored under (`agent-identity/agent-token-env.ts`) — so this is what
+   * later resolves the proposer's name.
+   */
+  agentPath?: string;
+  /** The folder the chat really runs in: its home, or a worktree mapped to it (DOR-3703). */
+  cwd?: string;
+  /** Every id the chat's turn levels may be kept under: its canonical one and its first. */
+  turnSessionIds?: string[];
+  /** The chat reads narrowed now: its turn runs where the status reads run unasked (DOR-4601). */
+  narrowedReads?: boolean;
+};
 
 /** Announce that these extensions have a new bundle ready, by id. */
 export type AnnounceExtensionsReloaded = (extensionIds: string[]) => void;
@@ -56,6 +87,12 @@ export interface AgentToolDeps {
   dorkHome: string;
   /** Optional Task store — undefined when Tasks is disabled */
   taskStore?: TaskStore;
+  /**
+   * What the tasks tools reach in other domains, handed in so they import none
+   * (`tasks/agent-tools/task-tool-reach.ts`). Without it the tasks tools refuse,
+   * as they do with Tasks off.
+   */
+  tasksReach?: TaskToolReach;
   /**
    * The registration seam that keeps running cron jobs in step with task rows,
    * resolved LAZILY (DOR-1493).
@@ -203,15 +240,19 @@ export function jsonContent(data: unknown, isError = false) {
   };
 }
 
+/** What a tasks tool answers when Tasks is off, or nothing was wired for it. */
+export const TASKS_OFF_ERROR = 'Scheduled tasks are turned off on this DorkOS';
+
 /**
- * Guard that returns an error response when Tasks is disabled, or `null` when
- * the `tasks_*` handler may proceed.
+ * Guard that returns an error response when Tasks is disabled, or the tasks
+ * tools were handed nothing to reach, or `null` when the `tasks_*` handler may
+ * proceed.
  *
  * @param deps - Shared MCP tool dependencies.
  */
 export function requireTasks(deps: AgentToolDeps) {
-  if (!deps.taskStore) {
-    return jsonContent({ error: 'Scheduled tasks are turned off on this DorkOS' }, true);
+  if (!deps.taskStore || !deps.tasksReach) {
+    return jsonContent({ error: TASKS_OFF_ERROR }, true);
   }
   return null;
 }

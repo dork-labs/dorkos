@@ -15,7 +15,10 @@ import type { ConfigManager } from '../config-manager.js';
 import type { ActivityService } from '../../activity/activity-service.js';
 import type { PermissionObserver } from './permission-observer.js';
 import type { ArrivalRecord } from './arrival-record.js';
-import { readAgentPermissionsFromManifest } from '../capabilities/permission-enforcement.js';
+import {
+  gateViewOf,
+  readAgentPermissionsFromManifest,
+} from '../capabilities/permission-enforcement.js';
 import {
   narrowArrivedPermissions,
   stricterPermissions,
@@ -76,8 +79,9 @@ export {
 export function permissionActions(
   registry: CapabilityRegistry | undefined
 ): PermissionActionInfo[] {
+  // Listed by the id the gate decides it as: a moved tool keeps its old name (C9a).
   const capabilities: PermissionActionInfo[] = (registry?.capabilities ?? []).map((cap) => ({
-    id: cap.id,
+    id: gateViewOf(cap).id,
     title: cap.title,
     tier: cap.tier,
     area: cap.area,

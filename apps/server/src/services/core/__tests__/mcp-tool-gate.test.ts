@@ -58,11 +58,11 @@ vi.mock('@dorkos/shared/manifest', async (importOriginal) => ({
   readManifest: vi.fn().mockResolvedValue(null),
 }));
 
+import { createTaskToolReach } from '../../../startup/task-tool-reach.js';
+import { MOVED_TASK_TOOLS } from '../../tasks/agent-tools/__tests__/gated-task-tools.js';
+import { externalProbeTools, inSessionProbeTools } from './mcp-tool-gate.fixtures.js';
 import { createExternalMcpServer } from '../mcp-server.js';
-import {
-  createDorkOsToolServer,
-  handRegisteredInSessionTools,
-} from '../../runtimes/claude-code/mcp-tools/index.js';
+import { createDorkOsToolServer } from '../../runtimes/claude-code/mcp-tools/index.js';
 import { MCP_TOOL_TIERS, gatedActionForMcpTool, type McpToolTier } from '../mcp-tool-tiers.js';
 import { READ_ONLY_MCP_TOOL_NAMES } from '../external-mcp/tool-security.js';
 import { UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
@@ -71,10 +71,7 @@ import {
   IDENTITY_SCOPED_TOOLS,
 } from '../../runtimes/claude-code/tool-gate/auto-allow.js';
 import { IN_SESSION_TOOL_PREFIX } from '../tool-names/tool-names.js';
-import {
-  composeCapabilityRegistryForDocs,
-  composeDorkOsCapabilityRegistry,
-} from '../self-description/dorkos-registry.js';
+import { composeCapabilityRegistryForDocs } from '../self-description/dorkos-registry.js';
 import {
   initCapabilityTierGate,
   resetCapabilityTierGate,
@@ -128,6 +125,7 @@ function createDeps(): AgentToolDeps {
   return {
     transcriptReader: { listSessions: vi.fn().mockResolvedValue([]) },
     defaultCwd: '/tmp/mcp-tool-gate',
+    tasksReach: createTaskToolReach(),
     taskStore: {
       // `tasks_delete` reads the row before removing it, so a schedule that was
       // waiting on the operator can have its standing condition ended
@@ -154,76 +152,10 @@ function createDeps(): AgentToolDeps {
   } as unknown as AgentToolDeps;
 }
 
-/** A registered tool as both servers expose it to this file. */
-interface ProbeTool {
-  name: string;
-  inputSchema: Record<string, unknown>;
-  outputSchema?: unknown;
-  call(args: unknown): Promise<CallToolResult>;
-}
-
-/** The in-session `dorkos` server's hand-registered tools, from the real composer. */
-function inSessionTools(identity?: AgentIdentity): Map<string, ProbeTool> {
-  const tools = handRegisteredInSessionTools(createDeps(), {
-    ...(identity ? { resolveContext: async () => ({ identity }) } : {}),
-  }) as unknown as {
-    name: string;
-    inputSchema: Record<string, unknown>;
-    handler: (args: unknown, extra: unknown) => Promise<CallToolResult>;
-  }[];
-  return new Map(
-    tools.map((tool) => [
-      tool.name,
-      {
-        name: tool.name,
-        inputSchema: tool.inputSchema,
-        call: (args: unknown) => tool.handler(args, {}),
-      },
-    ])
-  );
-}
-
-/**
- * The external `/mcp` server's hand-registered tools, from the real composer, with
- * the registry-generated ones removed — those are gated inside `registry.invoke`
- * and are not this file's subject.
- */
-function externalTools(identity?: AgentIdentity): Map<string, ProbeTool> {
-  const deps = createDeps();
-  const server = createExternalMcpServer(deps, undefined, undefined, identity);
-  const registered = (
-    server as unknown as {
-      _registeredTools: Record<
-        string,
-        {
-          inputSchema?: { shape?: Record<string, unknown> };
-          outputSchema?: unknown;
-          handler: (args: unknown, extra: unknown) => Promise<CallToolResult>;
-        }
-      >;
-    }
-  )._registeredTools;
-  const capabilityToolNames = new Set(
-    composeDorkOsCapabilityRegistry({
-      logger: { info() {}, warn() {}, error() {}, debug() {} } as never,
-      operatorDeps: deps,
-    })
-      .capabilities.filter((cap) => cap.surfaces.mcp?.servers.includes('external'))
-      .map((cap) => cap.surfaces.mcp!.toolName)
-  );
-
-  const tools = new Map<string, ProbeTool>();
-  for (const [name, tool] of Object.entries(registered)) {
-    if (capabilityToolNames.has(name)) continue;
-    tools.set(name, {
-      name,
-      inputSchema: tool.inputSchema?.shape ?? {},
-      outputSchema: tool.outputSchema,
-      call: (args: unknown) => tool.handler(args, {}),
-    });
-  }
-  return tools;
-}
+/** A registered tool as both servers expose it to this file (`mcp-tool-gate.fixtures.ts`). */
+const inSessionTools = (identity?: AgentIdentity) => inSessionProbeTools(createDeps, identity);
+const externalTools = (identity?: AgentIdentity) => externalProbeTools(createDeps, identity);
+const MOVED = MOVED_TASK_TOOLS;
 
 /** Read the plain payload back out of an MCP text result. */
 function payloadOf(result: CallToolResult): Record<string, unknown> {
@@ -270,8 +202,8 @@ function tierOf(bareName: string): string | undefined {
 
 /** The tools each server really registers by hand, resolved once. */
 const registeredByServer = {
-  'in-session': [...inSessionTools().keys()].sort(),
-  external: [...externalTools().keys()].sort(),
+  'in-session': [...inSessionTools().keys()].filter((name) => !MOVED.has(name)).sort(),
+  external: [...externalTools().keys()].filter((name) => !MOVED.has(name)).sort(),
 };
 
 /** The two tools this PR puts behind a person. */
@@ -311,15 +243,17 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       // A count, so a composer that silently registered nothing cannot make every
       // other check in this file vacuously green. Browser, canvas and chat tools are
       // capabilities, gated in `registry.invoke`, so they are not counted here.
-      expect(registeredByServer['in-session']).toHaveLength(39);
-      expect(registeredByServer.external).toHaveLength(37);
-      expect(declaredNames).toHaveLength(39);
+      // The five tasks tools are capabilities now (C9a), gated by these same names.
+      expect(registeredByServer['in-session']).toHaveLength(34);
+      expect(registeredByServer.external).toHaveLength(32);
+      expect(declaredNames).toHaveLength(34);
     });
 
     it('names exactly two tools destructive', () => {
       // Pinned by name. Promoting a third is a product decision, not a refactor,
       // and an approval card people learn to dismiss makes every card weaker.
-      expect(DESTRUCTIVE).toEqual(['mesh_unregister', 'tasks_delete']);
+      // `tasks_delete` is the other, now a capability gated as that name (C9a).
+      expect(DESTRUCTIVE).toEqual(['mesh_unregister']);
     });
   });
 
@@ -345,7 +279,7 @@ describe('hand-registered MCP tools carry a permission tier', () => {
         field: 'agentId',
         kind: 'agent',
       });
-      expect(gatedActionForMcpTool('tasks_delete').approvalSubject).toEqual({
+      expect(MOVED.get('tasks_delete')!.approvalSubject).toEqual({
         field: 'id',
         kind: 'task',
       });
@@ -599,7 +533,7 @@ describe('hand-registered MCP tools carry a permission tier', () => {
         const tools = server === 'in-session' ? inSessionTools() : externalTools();
         for (const tool of tools.values()) {
           const advertises = Object.keys(tool.inputSchema).includes('approvalToken');
-          const declared = MCP_TOOL_TIERS[tool.name];
+          const declared = MCP_TOOL_TIERS[tool.name] ?? MOVED.get(tool.name)!;
           const shouldAdvertise =
             declared.tier === 'destructive' || (declared.tier === 'act' && declared.area !== null);
           expect(
@@ -655,7 +589,7 @@ describe('hand-registered MCP tools carry a permission tier', () => {
     describe('audit scope', () => {
       /** A real `act` tool name with a probe handler, so only the gate is under test. */
       const probeTool = (handler: SdkMcpTool['handler']): SdkMcpTool => ({
-        name: 'tasks_update',
+        name: 'mesh_deny',
         description: 'probe',
         inputSchema: {},
         handler,
@@ -686,7 +620,7 @@ describe('hand-registered MCP tools carry a permission tier', () => {
         const rows = auditDb.select().from(auditEvents).all();
         expect(rows.map((row) => [row.action, row.actorKind, row.source])).toEqual([
           ['probe.wrote', 'agent', '{"surface":"mcp"}'],
-          ['mcp.tasks_update', 'agent', '{"surface":"mcp"}'],
+          ['mcp.mesh_deny', 'agent', '{"surface":"mcp"}'],
         ]);
       });
 
@@ -696,12 +630,12 @@ describe('hand-registered MCP tools carry a permission tier', () => {
           async () => ({ identity: AGENT })
         );
         await tool!.handler({}, {});
-        expect(gateAuditRows()).toMatchObject([{ action: 'mcp.tasks_update', outcome: 'failed' }]);
+        expect(gateAuditRows()).toMatchObject([{ action: 'mcp.mesh_deny', outcome: 'failed' }]);
       });
 
       it('records a read as nothing at all', async () => {
         const [tool] = gateHandRegisteredMcpTools(
-          [{ ...probeTool(async () => ({ content: [] })), name: 'tasks_list' }],
+          [{ ...probeTool(async () => ({ content: [] })), name: 'mesh_list' }],
           async () => ({ identity: AGENT })
         );
         await tool!.handler({}, {});
@@ -818,8 +752,9 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       // fail. Driven through the real composition roots, so the flag really is
       // set per server rather than merely accepted by the gate.
       it(`${server}: tells the agent to surface the approval to the operator`, async () => {
+        // A hand tool's poll answer: the moved tasks tools answer as every capability does (C9a).
         const payload = payloadOf(
-          await toolsFor(AGENT).get('tasks_delete')!.call(DESTRUCTIVE_INPUT.tasks_delete)
+          await toolsFor(AGENT).get('mesh_unregister')!.call(DESTRUCTIVE_INPUT.mesh_unregister)
         );
         const instructions = String((payload.retry as { instructions: string }).instructions);
 

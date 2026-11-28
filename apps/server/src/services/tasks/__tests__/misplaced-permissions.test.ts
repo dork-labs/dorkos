@@ -15,7 +15,7 @@ import { describeArmBlocker } from '../task-file-update.js';
 import { applyTaskFileUpdate } from '../lifecycle/update-task-file.js';
 import { checkMisplacedMode } from '../execution/misplaced-mode.js';
 import { needsScheduleApprovalAttention } from '../schedule-permission-clamp.js';
-import { armToolApproval } from '../../runtimes/claude-code/mcp-tools/tasks/task-tool-mode.js';
+import { armToolApproval } from '../agent-tools/task-tool-mode.js';
 import { grantOf } from '../agent-mode/__tests__/agent-mode-fixtures.js';
 import { agentModeSnapshotOf } from '../agent-mode/agent-mode-door.js';
 import type { AgentToolDeps } from '../../core/agent-tool-kit/agent-tool-kit.js';

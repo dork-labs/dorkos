@@ -18,7 +18,7 @@ import {
   registerTestHomes,
 } from '../../core/agent-identity/__tests__/agent-home-fixture.js';
 import { DeclaredReaders, setDeclaredReaders } from '../../core/turn-power/declared-readers.js';
-import { refuseOperatorOnlyTaskFields } from '../../runtimes/claude-code/mcp-tools/tasks/task-tool-parts.js';
+import { refuseOperatorOnlyTaskFields } from '../agent-tools/task-tool-parts.js';
 import type { TaskFileSync } from '../sync/task-file-sync.js';
 import { runMarked } from '../approvals/run-marks.js';
 import {

@@ -148,18 +148,18 @@ describe('the gate records a call an action-level Allowed let through', () => {
   it('covers the hand-registered MCP tools too, which no attribution observer sees', async () => {
     // The reason the line lives at the gate. These 47 tools are not registry
     // capabilities, so they never reach `registry.invoke` and never reach the
-    // attribution observer — an approved `tasks_delete` used to leave a "waiting for
+    // attribution observer — an approved `mesh_unregister` used to leave a "waiting for
     // approval" line and then silence about the deletion itself.
     // The REAL table, not a hand-built literal. A literal would keep this test green
-    // if `tasks_delete` were demoted to `act` tomorrow — the tool would stop being
+    // if `mesh_unregister` were demoted to `act` tomorrow — the tool would stop being
     // gated at all and the claim in this test's name would quietly stop being true.
-    const action = gatedActionForMcpTool('tasks_delete');
+    const action = gatedActionForMcpTool('mesh_unregister');
     expect(action.tier, 'this case only says anything while the tool is gated').toBe('destructive');
 
     const decision = enforceCapabilityTier({
-      permission: { ...ALWAYS_ALLOWED, area: 'tasks' },
+      permission: { ...ALWAYS_ALLOWED, area: 'agents' },
       action,
-      input: { id: 'task_01' },
+      input: { agentId: 'agent_01' },
       identity: IDENTITY,
       retryChannel: 'mcp-argument',
     });
@@ -168,7 +168,7 @@ describe('the gate records a call an action-level Allowed let through', () => {
     expect(decision.outcome).toBe('allowed');
     const rows = db.select().from(activityEvents).all();
     expect(rows.map((r) => r.eventType)).toEqual(['capability.auto_approved']);
-    expect(rows[0].resourceId).toBe('tasks_delete');
+    expect(rows[0].resourceId).toBe('mesh_unregister');
     expect(rows[0].resourceLabel).toBe(action.title);
   });
 

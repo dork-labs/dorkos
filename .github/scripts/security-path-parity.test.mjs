@@ -363,6 +363,8 @@ for (const [match, miss] of [
   ],
   ['apps/server/src/lib/http/own-origin-write.ts', 'apps/server/src/lib/http/own-origin-writes.ts'],
   ['apps/server/src/lib/http/person-bar.ts', 'apps/server/src/lib/http/person-bars.ts'],
+  // C9a (DOR-5482): what the tasks tools reach, wired at boot.
+  ['apps/server/src/startup/task-tool-reach.ts', 'apps/server/src/startup/task-tool-reaches.ts'],
 ]) {
   test(`${match} is on the main list only`, () => {
     assert.ok(existsSync(resolve(root, match)), `${match} no longer exists`);

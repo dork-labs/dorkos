@@ -55,6 +55,7 @@ import { agentComputerActionRefusal } from '../agent-computer/hub-owned.js';
 import { preGateRefusal } from './pre-gate-refusals.js';
 import { resolveApprovalSubject } from '../approvals/approval-subject.js';
 import { escalateCall } from './declarations/escalation.js';
+import { gateViewOf } from './declarations/gate-action.js';
 import type { ServerPrincipalProof } from '../connections-lease/index.js';
 import { isServerPrincipal } from '../../connectors/principal/server-principal.js';
 import {
@@ -195,6 +196,13 @@ export interface CapabilityInvocationContext {
    * authorization: it says where the caller is, not what it may do.
    */
   cwd?: string;
+  /**
+   * Every id the invoking chat's turn levels may be kept under: its canonical
+   * id and the one it started with, which differ until the first turn's rekey.
+   * Set only by the in-session server, for the tasks tools' marks and levels
+   * (C9a). Informational, never an authorization.
+   */
+  turnSessionIds?: readonly string[];
   /**
    * The invoking session's turn runs right now at a level where the status reads run unasked
    * (Never ask, Ask first, Accept edits: DOR-3971, DOR-4601), set only by the in-session server
@@ -389,6 +397,8 @@ export interface CapabilityHandlerContext {
    * a restart still resumes the agent in the right place (DOR-981).
    */
   cwd?: string;
+  /** See {@link CapabilityInvocationContext.turnSessionIds}. */
+  turnSessionIds?: readonly string[];
   /** See {@link CapabilityInvocationContext.narrowedReads}. */
   narrowedReads?: true;
   /** See {@link CapabilityInvocationContext.request}. */
@@ -778,7 +788,8 @@ export function composeRegistry(
       };
     },
     async invoke(id, input, context) {
-      const capability = lookup(id);
+      // Gated by its old tool name when it declares one, for every consumer below (C9a).
+      const capability = gateViewOf(lookup(id));
       if (!capability) {
         // A tool from a stopped or restarting extension is a normal moment,
         // not a wiring bug: an agent may still hold a tool list built while it
@@ -841,6 +852,7 @@ export function composeRegistry(
         ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
         ...(supplied.cwd ? { cwd: supplied.cwd } : {}),
         ...(supplied.narrowedReads ? { narrowedReads: true as const } : {}),
+        ...(supplied.turnSessionIds ? { turnSessionIds: supplied.turnSessionIds } : {}),
         ...(supplied.request ? { request: supplied.request } : {}),
         ...(supplied.serverPrincipal ? { serverPrincipal: supplied.serverPrincipal } : {}),
         ...(supplied.mcpServer ? { mcpServer: supplied.mcpServer } : {}),

@@ -1,4 +1,5 @@
 import os from 'node:os';
+import { createTaskToolReach } from '../../../startup/task-tool-reach.js';
 import path from 'node:path';
 import { mkdtempSync } from 'node:fs';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -9,12 +10,14 @@ import {
   createGetSessionCountHandler,
   createGetAgentHandler,
   createDorkOsToolServer,
-  createListSchedulesHandler,
-  createCreateScheduleHandler,
-  createUpdateScheduleHandler,
-  createDeleteScheduleHandler,
-  createGetRunHistoryHandler,
 } from '../../runtimes/claude-code/mcp-tools/index.js';
+import {
+  createCreateScheduleHandler,
+  createGetRunHistoryHandler,
+  createListSchedulesHandler,
+  createUpdateScheduleHandler,
+} from '../../tasks/agent-tools/task-tools.js';
+import { createDeleteScheduleHandler } from '../../tasks/agent-tools/task-delete-tool.js';
 import {
   clearTestHomes,
   registerEveryFolderAsHome,
@@ -133,6 +136,7 @@ function makeTasksDeps(
   return {
     ...makeMockDeps(),
     taskStore: makeMockTasksStore(storeOverrides),
+    tasksReach: createTaskToolReach(),
   };
 }
 

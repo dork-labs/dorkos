@@ -1,0 +1,229 @@
+/**
+ * How the `tasks_create` and `tasks_update` tools decide a write for ANOTHER agent (DOR-3938):
+ * only the in-session server, for a verified agent whose turn runs at Full autonomy unmarked.
+ * The rule itself is `tasks/approvals/cross-agent.ts`; this is the tools' side of it.
+ *
+ * @module services/tasks/agent-tools/task-tool-cross-agent
+ */
+import type { PermissionMode, Task, UpdateTaskRequest } from '@dorkos/shared/types';
+import type {
+  AgentToolDeps,
+  TaskProvenanceResolver,
+} from '../../core/agent-tool-kit/agent-tool-kit.js';
+import { reachOf } from './task-tool-reach.js';
+import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
+import {
+  agentNameOf,
+  auditCrossAgentTask,
+  capModeAtAgentLevel,
+  CROSS_AGENT_NEEDS_FULL_MESSAGE,
+  crossAgentRefusal,
+  turnMarksOf,
+  isForAnotherAgent,
+  type CrossAgentRefusal,
+} from '../approvals/cross-agent.js';
+import { capabilitiesForTaskRuntime } from '../scheduled-run-power.js';
+import { callerAgentPathOf, type CallerAgentResolver } from './task-tool-parts.js';
+
+/** What a write for another agent may do. */
+export type CrossAgentDecision =
+  /** The target is the caller, `global`, or the caller is not one this rule can vouch for. */
+  | { kind: 'own' }
+  /** Another agent, and the calling turn may write for it. */
+  | { kind: 'allowed'; callerAgentPath: string; sessionId: string; marks: TurnMarks }
+  /** Another agent, and the calling turn may not. */
+  | { kind: 'refused'; refusal: CrossAgentRefusal };
+
+/**
+ * Decide a write whose target (a create's `target`, or the stored agent of the task an update
+ * changes) may be another agent. The external `/mcp` server has no turn to read, so it never
+ * reaches `allowed`: its writes keep today's rule.
+ *
+ * @param deps - The tool dependencies, for Mesh.
+ * @param target - The agent id the write is for, `global`, or `null` for a global task.
+ * @param resolveProvenance - The in-session caller; absent on the external server.
+ * @param callerAgent - The external caller's verified home.
+ */
+export function decideCrossAgent(
+  deps: AgentToolDeps,
+  target: string | null | undefined,
+  resolveProvenance: TaskProvenanceResolver | undefined,
+  callerAgent: CallerAgentResolver | undefined
+): CrossAgentDecision {
+  const provenance = resolveProvenance?.() ?? {};
+  const { callerAgentPath } = callerAgentPathOf(provenance, callerAgent);
+  if (!isForAnotherAgent(target, callerAgentPath, deps.meshCore)) return { kind: 'own' };
+  const turn = callingTurnOf(resolveProvenance, callerAgent);
+  // Only a verified agent in a chat of its own: the external server has no turn to read.
+  if (!turn) {
+    return {
+      kind: 'refused',
+      refusal: { error: CROSS_AGENT_NEEDS_FULL_MESSAGE, code: 'cross_agent_needs_full' },
+    };
+  }
+  const refusal = crossAgentRefusal(turn);
+  return refusal
+    ? { kind: 'refused', refusal }
+    : // The same merged marks the gate checked are the ones the task keeps.
+      {
+        kind: 'allowed',
+        callerAgentPath: turn.agentPath,
+        sessionId: turn.sessionId,
+        marks: turnMarksOf(turn),
+      };
+}
+
+/**
+ * Whether the calling turn runs at Full autonomy, unmarked: the level its turn really ran at,
+ * so a stranger's turn in a chat set to Full stays below Full (the DOR-4136 rule). The external
+ * `/mcp` server has no turn to read, so it is never Full here.
+ *
+ * @param resolveProvenance - The in-session caller; absent on the external server.
+ * @param callerAgent - The external caller's verified home.
+ */
+export function callingTurnIsFull(
+  resolveProvenance: TaskProvenanceResolver | undefined,
+  callerAgent: CallerAgentResolver | undefined
+): boolean {
+  const turn = callingTurnOf(resolveProvenance, callerAgent);
+  return turn !== undefined && crossAgentRefusal(turn) === null;
+}
+
+/** The calling turn as the cross-agent rule reads it, or `undefined` with no verified chat. */
+function callingTurnOf(
+  resolveProvenance: TaskProvenanceResolver | undefined,
+  callerAgent: CallerAgentResolver | undefined
+): { sessionId: string; turnSessionIds?: string[]; agentPath: string } | undefined {
+  if (resolveProvenance === undefined) return undefined;
+  const provenance = resolveProvenance();
+  const { callerAgentPath } = callerAgentPathOf(provenance, callerAgent);
+  if (callerAgentPath === undefined || !provenance.sessionId) return undefined;
+  return {
+    sessionId: provenance.sessionId,
+    ...(provenance.turnSessionIds ? { turnSessionIds: provenance.turnSessionIds } : {}),
+    agentPath: callerAgentPath,
+  };
+}
+
+/**
+ * The mode an edit for another agent saves, capped at that agent's own level on the task's
+ * runtime (Security's Must 4): an edit can never raise another agent's task past it.
+ *
+ * @param deps - The tool dependencies, for Mesh.
+ * @param task - The task as it stands.
+ * @param mode - The mode the edit would save.
+ */
+export async function capEditMode(
+  deps: AgentToolDeps,
+  task: Pick<Task, 'agentId' | 'runtime'>,
+  mode: string
+): Promise<string> {
+  const agentPath = task.agentId ? deps.meshCore?.getProjectPath(task.agentId) : undefined;
+  return capModeAtAgentLevel(
+    mode,
+    agentPath ?? undefined,
+    capabilitiesForTaskRuntime(task.runtime)
+  );
+}
+
+/**
+ * Whether a decision is the refusal of a marked turn (Security's Must 2), which is told to the
+ * caller in its own words. A turn below Full keeps the refusal it always had.
+ *
+ * @param decision - The decision.
+ */
+export function isMarkedRefusal(
+  decision: CrossAgentDecision
+): decision is { kind: 'refused'; refusal: CrossAgentRefusal } {
+  return decision.kind === 'refused' && decision.refusal.code === 'cross_agent_marked_turn';
+}
+
+/**
+ * " for <agent>" when the task was made for another agent, for the Activity line; else empty.
+ *
+ * @param deps - The tool dependencies, for Mesh.
+ * @param decision - The decision.
+ * @param task - The task made.
+ */
+export function forWhomOf(
+  deps: AgentToolDeps,
+  decision: CrossAgentDecision,
+  task: Pick<Task, 'agentId'>
+): string {
+  return decision.kind === 'allowed' ? ` for ${agentNameOf(deps.meshCore, task.agentId)}` : '';
+}
+
+/**
+ * Hold an edit for another agent at that agent's own level (Security's Must 4): the patch's mode,
+ * or the task's current one, capped, and set on the patch only when the cap lowers it.
+ *
+ * @param deps - The tool dependencies, for Mesh.
+ * @param decision - The decision.
+ * @param existing - The task as it stands.
+ * @param patch - The edit, changed in place.
+ */
+export async function capPatch(
+  deps: AgentToolDeps,
+  decision: CrossAgentDecision,
+  existing: Task,
+  patch: UpdateTaskRequest
+): Promise<void> {
+  if (decision.kind !== 'allowed') return;
+  // A switch-off only takes power away, and anyone may make one: it is never refused for the cap.
+  const keys = Object.keys(patch);
+  if (keys.length === 1 && keys[0] === 'enabled' && patch.enabled === false) return;
+  const asked = patch.permissionMode ?? existing.permissionMode;
+  // Against the runtime the task will run on after this edit, not the one it ran on before.
+  const runtime = patch.runtime !== undefined ? patch.runtime : existing.runtime;
+  const capped = (await capEditMode(
+    deps,
+    { agentId: existing.agentId, runtime },
+    asked
+  )) as PermissionMode;
+  if (capped !== asked) patch.permissionMode = capped;
+}
+
+/**
+ * Record an edit made for another agent: the editor, its chat and its turn's marks on the task, so
+ * the next run starts with them as it would with a creator's (Security's add), and the audit row.
+ *
+ * @param deps - The tool dependencies.
+ * @param decision - The decision.
+ * @param updated - The task after the edit.
+ */
+export function recordOtherEdit(
+  deps: AgentToolDeps,
+  decision: CrossAgentDecision,
+  updated: Task
+): void {
+  if (decision.kind !== 'allowed') return;
+  deps.taskStore!.approvals.recordCrossAgentWriter(updated.id, {
+    agentPath: decision.callerAgentPath,
+    sessionId: decision.sessionId,
+    marks: decision.marks,
+  });
+  auditCrossAgentTask(updated, 'modify', decision.callerAgentPath, deps.meshCore);
+}
+
+/**
+ * Keep a marked turn's marks on a task an agent just edited, so the edit parks for a person and
+ * its card says why (DOR-3036). A write a person's card already allowed keeps nothing.
+ *
+ * @param deps - The tool dependencies.
+ * @param taskId - The task the agent edited.
+ * @param marks - The calling turn's marks.
+ * @param viaCard - Whether a person's card allowed this write.
+ * @returns Whether the marks were kept, so the edit parks.
+ */
+export function markedEditParks(
+  deps: AgentToolDeps,
+  taskId: string,
+  marks: TurnMarks,
+  viaCard: boolean
+): boolean {
+  return (
+    !viaCard &&
+    reachOf(deps).marksHold(marks) &&
+    deps.taskStore!.approvals.markOrigin(taskId, marks)
+  );
+}

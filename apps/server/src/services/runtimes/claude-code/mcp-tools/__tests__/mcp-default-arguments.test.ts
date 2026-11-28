@@ -4,6 +4,7 @@
  * Full objects retain defaults, refinements and strict top-level validation.
  * @vitest-environment node
  */
+import { createTaskToolReach } from '../../../../../startup/task-tool-reach.js';
 import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -51,6 +52,7 @@ function createFullDeps(): AgentToolDeps {
     defaultCwd: '/tmp/dor-2053-defaults',
     dorkHome: '/tmp/dorkos-test-home',
     taskStore: stub,
+    tasksReach: createTaskToolReach(),
     relayCore: stub,
     adapterManager: stub,
     traceStore: stub,

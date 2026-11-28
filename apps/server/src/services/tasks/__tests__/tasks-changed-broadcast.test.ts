@@ -27,6 +27,7 @@
  * The two writers that do not broadcast — `upsertFromFile` and the reconciler —
  * are deliberately left out (see `task-sse-events.ts`).
  */
+import { createTaskToolReach } from '../../../startup/task-tool-reach.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -108,7 +109,7 @@ import { honoGroupListener } from '../../../http/__tests__/hono-group-listener.j
 import { TaskRegistrar } from '../task-registrar.js';
 import { TaskStore } from '../task-store.js';
 import type { TaskSchedulerService } from '../task-scheduler-service.js';
-import { getTasksTools } from '../../runtimes/claude-code/mcp-tools/tasks/task-tools.js';
+import { getTasksTools } from '../agent-tools/task-tool-definitions.js';
 import type { AgentToolDeps } from '../../core/agent-tool-kit/agent-tool-kit.js';
 import { ActivityService } from '../../activity/activity-service.js';
 import { activityEvents } from '@dorkos/db';
@@ -168,6 +169,7 @@ describe('a task write tells the world it happened', () => {
 
     const deps = {
       taskStore: store,
+      tasksReach: createTaskToolReach(),
       defaultCwd: '/tmp/test',
       // The MCP create writes a real SKILL.md now (DOR-1568), and `fs` is mocked
       // in this suite, so the path only has to be the one the mock recognises.

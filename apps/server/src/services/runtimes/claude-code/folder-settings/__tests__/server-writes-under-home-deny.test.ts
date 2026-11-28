@@ -12,6 +12,7 @@
  *
  * @module services/runtimes/claude-code/folder-settings/__tests__/server-writes-under-home-deny
  */
+import { createTaskToolReach } from '../../../../../startup/task-tool-reach.js';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
@@ -19,7 +20,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { TaskStore } from '../../../../tasks/task-store.js';
 import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
-import { getTasksTools } from '../../mcp-tools/tasks/task-tools.js';
+import { getTasksTools } from '../../../../tasks/agent-tools/task-tool-definitions.js';
 import { homeWriteDenyRules } from '../launch-folder-config.js';
 import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
 
@@ -48,6 +49,7 @@ beforeEach(async () => {
   store = new TaskStore(createTestDb());
   const deps = {
     taskStore: store,
+    tasksReach: createTaskToolReach(),
     defaultCwd: home,
     dorkHome: path.join(root, 'dork'),
     meshCore: {

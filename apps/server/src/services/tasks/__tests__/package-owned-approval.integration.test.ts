@@ -7,6 +7,7 @@
  *
  * @module services/tasks/__tests__/package-owned-approval.integration
  */
+import { createTaskToolReach } from '../../../startup/task-tool-reach.js';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
@@ -22,7 +23,7 @@ import { agentSkillsRoot } from '../skills-roots.js';
 import { skillsRoot } from './task-root-fixtures.js';
 import { applyTaskFileUpdate } from '../lifecycle/update-task-file.js';
 import { deleteOrDeclineTask, removeScheduledTaskFile } from '../lifecycle/delete-task.js';
-import { createDeleteScheduleHandler } from '../../runtimes/claude-code/mcp-tools/tasks/task-delete-tool.js';
+import { createDeleteScheduleHandler } from '../agent-tools/task-delete-tool.js';
 import { needsScheduleApprovalAttention } from '../schedule-permission-clamp.js';
 
 /** The id the project's agent is registered under. */
@@ -172,6 +173,7 @@ describe('declining a schedule that came with an installed package (DOR-2097)', 
 
     const reply = await createDeleteScheduleHandler({
       taskStore: store,
+      tasksReach: createTaskToolReach(),
       meshCore,
     } as never)({ id: task.id });
 

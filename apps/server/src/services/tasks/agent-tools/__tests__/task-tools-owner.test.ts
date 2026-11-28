@@ -1,0 +1,259 @@
+/**
+ * Whose schedule an agent may make or change through `tasks_create` and
+ * `tasks_update` (DOR-3640 R1), on the in-session server and over the external
+ * `/mcp` server: only its own, or a global one; never another agent's. Every
+ * change leaves an audit row naming what it changed.
+ */
+import { createTaskToolReach } from '../../../../startup/task-tool-reach.js';
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs/promises';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import type { MeshCore } from '@dorkos/mesh';
+import { createTestDb } from '@dorkos/test-utils/db';
+
+vi.mock('../../../audit/audit-trail.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../audit/audit-trail.js')>()),
+  recordAudit: vi.fn(),
+}));
+
+import { TaskStore } from '../../task-store.js';
+import { getTasksTools } from '../task-tool-definitions.js';
+import { externalCallerAgent as revokedCaller } from '../task-agent-capabilities.js';
+import { gatedTaskTools } from './gated-task-tools.js';
+import type { AgentIdentity } from '../../../core/agent-identity/agent-identity-service.js';
+import type { AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
+import { recordAudit } from '../../../audit/audit-trail.js';
+import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
+
+interface SessionTool {
+  name: string;
+  handler: (
+    args: Record<string, unknown>,
+    extra: unknown
+  ) => Promise<{ isError?: boolean; content: { text: string }[] }>;
+}
+
+let store: TaskStore;
+let scratch: string;
+let homeA: string;
+let homeB: string;
+let deps: AgentToolDeps;
+
+beforeEach(async () => {
+  vi.mocked(recordAudit).mockClear();
+  store = new TaskStore(createTestDb());
+  scratch = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'task-tools-owner-')));
+  homeA = path.join(scratch, 'a');
+  homeB = path.join(scratch, 'b');
+  await fs.mkdir(homeA, { recursive: true });
+  await fs.mkdir(homeB, { recursive: true });
+  const agents = [
+    { id: 'agent-a', projectPath: homeA },
+    { id: 'agent-b', projectPath: homeB },
+  ];
+  deps = {
+    taskStore: store,
+    tasksReach: createTaskToolReach(),
+    defaultCwd: scratch,
+    dorkHome: scratch,
+    meshCore: {
+      listWithPaths: () => agents,
+      getProjectPath: (id: string) => agents.find((a) => a.id === id)?.projectPath,
+    } as unknown as MeshCore,
+  } as unknown as AgentToolDeps;
+});
+
+afterEach(async () => {
+  store.close();
+  await fs.rm(scratch, { recursive: true, force: true });
+});
+
+/** A's tools, in session or over the external server. */
+function toolsOfA(surface: 'in-session' | 'external'): Record<string, SessionTool> {
+  const tools =
+    surface === 'in-session'
+      ? getTasksTools(deps, () => ({ sessionId: 'ses-a', agentPath: homeA }))
+      : getTasksTools(
+          deps,
+          undefined,
+          () => ({}),
+          () => homeA
+        );
+  return Object.fromEntries((tools as unknown as SessionTool[]).map((t) => [t.name, t] as const));
+}
+
+async function call(tools: Record<string, SessionTool>, name: string, args: object) {
+  const result = await tools[name]!.handler(args as Record<string, unknown>, undefined);
+  return {
+    isError: result.isError === true,
+    payload: JSON.parse(result.content[0]!.text) as Record<string, unknown>,
+  };
+}
+
+const ARGS = {
+  name: 'sweep',
+  prompt: 'Sweep.',
+  cron: '0 3 * * *',
+  reason: 'The backlog needs it.',
+};
+
+describe.each(['in-session', 'external'] as const)('over the %s server', (surface) => {
+  it('refuses tasks_create filed under another agent', async () => {
+    const { isError, payload } = await call(toolsOfA(surface), 'tasks_create', {
+      ...ARGS,
+      target: 'agent-b',
+    });
+    expect(isError).toBe(true);
+    expect(payload.code).toBe('not_your_agent');
+    expect(store.getTasks()).toEqual([]);
+  });
+
+  it('lets tasks_create file one under itself, or a global one', async () => {
+    const tools = toolsOfA(surface);
+    expect((await call(tools, 'tasks_create', { ...ARGS, target: 'agent-a' })).isError).toBe(false);
+    expect(
+      (await call(tools, 'tasks_create', { ...ARGS, name: 'sweep-2', target: 'global' })).isError
+    ).toBe(false);
+  });
+
+  it("refuses tasks_update on another agent's schedule, and changes nothing", async () => {
+    const theirs = store.createTask({
+      name: 'b-nightly',
+      description: 'b',
+      prompt: 'B’s work.',
+      cron: '0 2 * * *',
+      agentId: 'agent-b',
+      filePath: path.join(scratch, 'none', 'SKILL.md'),
+    });
+    const { isError, payload } = await call(toolsOfA(surface), 'tasks_update', {
+      id: theirs.id,
+      prompt: 'Something else.',
+    });
+    expect(isError).toBe(true);
+    expect(payload.code).toBe('not_your_schedule');
+    expect(store.getTask(theirs.id)!.prompt).toBe('B’s work.');
+  });
+
+  it('lets tasks_update change its own, and records which fields changed', async () => {
+    const mine = store.createTask({
+      name: 'a-nightly',
+      description: 'a',
+      prompt: 'A’s work.',
+      cron: '0 2 * * *',
+      agentId: 'agent-a',
+      filePath: path.join(scratch, 'none', 'SKILL.md'),
+    });
+    const { isError } = await call(toolsOfA(surface), 'tasks_update', {
+      id: mine.id,
+      enabled: false,
+    });
+    expect(isError).toBe(false);
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'tasks.update',
+        change: [{ field: 'enabled', before: true, after: false }],
+      })
+    );
+  });
+});
+
+describe('an in-session chat DorkOS cannot name', () => {
+  it("may not change an agent's schedule, but may pause it", async () => {
+    const theirs = store.createTask({
+      name: 'b-nightly',
+      description: 'b',
+      prompt: 'B’s work.',
+      cron: '0 2 * * *',
+      agentId: 'agent-b',
+      filePath: path.join(scratch, 'none', 'SKILL.md'),
+    });
+    const tools = Object.fromEntries(
+      (getTasksTools(deps, () => ({ sessionId: 'ses-x' })) as unknown as SessionTool[]).map(
+        (t) => [t.name, t] as const
+      )
+    );
+    const edit = await call(tools, 'tasks_update', { id: theirs.id, prompt: 'Run as B.' });
+    expect(edit.isError).toBe(true);
+    expect(edit.payload.code).toBe('not_your_schedule');
+    const pause = await call(tools, 'tasks_update', { id: theirs.id, enabled: false });
+    expect(pause.isError).toBe(false);
+  });
+});
+
+describe('the external server, with a revoked token (DOR-3666)', () => {
+  it("doesn't let it act as its agent: it can't change that agent's schedule", async () => {
+    const mine = store.createTask({
+      name: 'a-nightly',
+      description: 'a',
+      prompt: 'A’s work.',
+      cron: '0 2 * * *',
+      agentId: 'agent-a',
+      filePath: path.join(scratch, 'none', 'SKILL.md'),
+    });
+    const revoked = Object.fromEntries(
+      (
+        getTasksTools(
+          deps,
+          undefined,
+          () => ({ outsider: true }),
+          revokedCaller({ agentPath: homeA, inactive: 'revoked' })
+        ) as unknown as SessionTool[]
+      ).map((t) => [t.name, t] as const)
+    );
+    const edit = await call(revoked, 'tasks_update', { id: mine.id, prompt: 'Run anyway.' });
+    expect(edit.isError).toBe(true);
+    expect(edit.payload.code).toBe('not_your_schedule');
+  });
+});
+
+describe('the external server, through its real registration (DOR-3666)', () => {
+  /** The tools the external server lists for one token, through the registry's gate (C9a). */
+  function registered(identity: AgentIdentity | undefined): Record<string, SessionTool> {
+    return gatedTaskTools(deps, {
+      ...(identity ? { identity } : {}),
+      mcpServer: 'external',
+    }) as unknown as Record<string, SessionTool>;
+  }
+
+  const tokenOf = (agentPath: string, inactive?: 'revoked' | 'expired'): AgentIdentity => ({
+    agentPath,
+    displayName: 'A',
+    createdAt: '2026-11-01T00:00:00.000Z',
+    ...(inactive ? { inactive } : {}),
+  });
+
+  it("names a live token's agent: it may file under itself, never under another agent", async () => {
+    const tools = registered(tokenOf(homeA));
+    const theirs = await call(tools, 'tasks_create', { ...ARGS, target: 'agent-b' });
+    expect(theirs.isError).toBe(true);
+    expect(theirs.payload.code).toBe('not_your_agent');
+    expect((await call(tools, 'tasks_create', { ...ARGS, target: 'agent-a' })).isError).toBe(false);
+  });
+
+  it.each(['revoked', 'expired'] as const)(
+    'names nobody for a %s token: it may not change its agent`s schedule',
+    async (inactive) => {
+      const mine = store.createTask({
+        name: 'a-nightly',
+        description: 'a',
+        prompt: 'A’s work.',
+        cron: '0 2 * * *',
+        agentId: 'agent-a',
+        filePath: path.join(scratch, 'none', 'SKILL.md'),
+      });
+      const edit = await call(registered(tokenOf(homeA, inactive)), 'tasks_update', {
+        id: mine.id,
+        prompt: 'Run anyway.',
+      });
+      // The gate refuses a token that names nobody before the tool runs, as the hand gate did;
+      // the tool's own refusal for it is the ungated case above.
+      expect(edit.payload).toMatchObject({ capabilityId: 'tasks_update' });
+      expect(store.getTask(mine.id)!.prompt).toBe('A’s work.');
+    }
+  );
+});

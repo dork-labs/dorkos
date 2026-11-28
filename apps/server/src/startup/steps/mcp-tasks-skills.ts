@@ -47,6 +47,7 @@ import {
 } from '../../services/runtimes/claude-code/mcp-server-config.js';
 import { homeOf, resolveAgentHome } from '../../services/core/agent-identity/index.js';
 import { createDorkOsToolServer } from '../../services/runtimes/claude-code/mcp-tools/index.js';
+import { createTaskToolReach } from '../task-tool-reach.js';
 import { configManager } from '../../services/core/config-manager.js';
 import type { McpServerFactory } from '../../routes/mcp.js';
 import { broadcastExtensionReloaded } from '../../routes/extensions.js';
@@ -302,6 +303,8 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
       // destructive capability call holds inline and resumes on the operator's yes.
       approvals: approvalService,
       ...(refs.taskStore && { taskStore: refs.taskStore }),
+      // What the tasks tools reach in other domains, handed in (C9a).
+      ...(refs.taskStore && { tasksReach: createTaskToolReach() }),
       // A getter, not the registrar: these deps are assembled ~120 lines before
       // `TaskRegistrar` is constructed, so the value read here would be
       // `undefined` for the life of the process — which is exactly why the task

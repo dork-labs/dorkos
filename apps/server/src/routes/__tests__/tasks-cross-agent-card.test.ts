@@ -10,7 +10,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
@@ -25,10 +24,9 @@ import {
 import { AGENT_IDENTITY_HEADER } from '../../lib/http/agent-identity-header.js';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
-import { gateHandRegisteredMcpTools, type SdkMcpTool } from '../../services/core/mcp-tool-gate.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
-import { registerAgentModeEscalators } from '../../services/tasks/agent-mode/agent-mode-escalation.js';
+import { probeUpdate } from '../../services/tasks/agent-tools/__tests__/probe-update-capability.js';
 import type { AgentModeSources } from '../../services/tasks/agent-mode/agent-mode-decision.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../services/runtimes/claude-code/runtime-constants.js';
 import { permissionGateSources } from '../../services/core/capabilities/permission-enforcement.js';
@@ -44,7 +42,6 @@ describe('agent A setting the mode of agent B’s task', () => {
   let db: Db;
   let approvals: ApprovalService;
   let store: TaskStore;
-  let unregister: () => void;
   const reached: unknown[] = [];
 
   const sources: AgentModeSources = {
@@ -68,15 +65,6 @@ describe('agent A setting the mode of agent B’s task', () => {
     initCapabilityTierGate({ approvals });
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
     store = new TaskStore(db);
-    unregister = registerAgentModeEscalators(
-      {
-        store,
-        meshCore: {
-          getProjectPath: (id: string) => sources.agentPathOf(id),
-        } as unknown as MeshCore,
-      },
-      sources
-    );
     fixtureTarget.mount(
       composedListener(new MainRequestAdmission(), {
         approvals: { service: approvals, options: {} },
@@ -85,7 +73,6 @@ describe('agent A setting the mode of agent B’s task', () => {
   });
 
   afterAll(() => {
-    unregister();
     resetCapabilityTierGate();
     vi.restoreAllMocks();
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -101,24 +88,20 @@ describe('agent A setting the mode of agent B’s task', () => {
       permissionMode: 'acceptEdits',
       filePath: '',
     });
-    const probe: SdkMcpTool = {
-      name: 'tasks_update',
-      description: 'probe',
-      inputSchema: {},
-      handler: async (args): Promise<CallToolResult> => {
-        reached.push(args);
-        return { content: [{ type: 'text', text: '{}' }] };
-      },
-    };
-    const [tool] = gateHandRegisteredMcpTools(
-      [probe],
-      async () => ({
+    const callProbe = probeUpdate({
+      store,
+      meshCore: { getProjectPath: (id: string) => sources.agentPathOf(id) } as unknown as MeshCore,
+      sources,
+      reached,
+    });
+    const result = await callProbe(
+      {
         identity: { agentPath: A, displayName: 'A', createdAt: new Date().toISOString() },
-      }),
-      undefined,
-      () => ({ sessionId: 'ses-a' })
+        sessionId: 'ses-a',
+        mcpServer: 'in-session',
+      },
+      { id: task.id, permissionMode: 'plan' }
     );
-    const result = await tool!.handler({ id: task.id, permissionMode: 'plan' }, {});
     const card = JSON.parse((result.content[0] as { text: string }).text) as { approvalId: string };
     expect(card).toMatchObject({ status: 'approval_required', capabilityId: 'tasks.set_mode' });
     expect(reached).toEqual([]);

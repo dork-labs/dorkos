@@ -23,11 +23,13 @@ const { composeCapabilityRegistryForDocs } =
   await import('../../self-description/dorkos-registry.js');
 const { CapabilityGateRefusal } = await import('../../capabilities/tier-enforcement.js');
 const { gateHandRegisteredMcpTools } = await import('../../mcp-tool-gate.js');
+const { gateViewOf } = await import('../../capabilities/declarations/gate-action.js');
 
 /** Every action that exists: registry capabilities, then hand-registered tools. */
 function everyAction() {
+  // By the id the gate decides each as: a moved tool keeps its old name (C9a).
   const capabilities = composeCapabilityRegistryForDocs().capabilities.map((c) => ({
-    id: c.id,
+    id: gateViewOf(c).id,
     title: c.title,
     tier: c.tier,
   }));
@@ -109,7 +111,7 @@ describe('the gates that run actions', () => {
   it('refuses a hub-owned hand-registered tool at once, without its handler', async () => {
     const handler = vi.fn(async () => ({ content: [{ type: 'text' as const, text: '{}' }] }));
     const [tool] = gateHandRegisteredMcpTools([
-      { name: 'tasks_create', description: 'Create', inputSchema: {}, handler },
+      { name: 'create_agent', description: 'Create', inputSchema: {}, handler },
     ] as never[]);
     const result = (await (tool as { handler: (a: never, e: unknown) => Promise<unknown> }).handler(
       {} as never,
@@ -118,8 +120,26 @@ describe('the gates that run actions', () => {
     expect(handler).not.toHaveBeenCalled();
     expect(JSON.parse(result.content[0]!.text)).toMatchObject({
       status: 'denied',
-      capabilityId: 'tasks_create',
+      capabilityId: 'create_agent',
       approvable: false,
+    });
+  });
+
+  // The tasks tools moved onto the registry gated by their old names (C9a): the hub still owns
+  // all three writes, refused by those names before any handler runs.
+  it.each([
+    ['tasks.create_task', 'tasks_create'],
+    ['tasks.update_task', 'tasks_update'],
+    ['tasks.delete_task', 'tasks_delete'],
+  ])('refuses %s as %s, before it runs', async (id, gateId) => {
+    const registry = composeCapabilityRegistryForDocs();
+    const refusal: unknown = await registry.invoke(id, {}).catch((err) => err);
+    expect(refusal).toBeInstanceOf(CapabilityGateRefusal);
+    expect((refusal as InstanceType<typeof CapabilityGateRefusal>).decision.payload).toMatchObject({
+      status: 'denied',
+      capabilityId: gateId,
+      approvable: false,
+      message: 'This is an agent computer. Only its hub changes its schedules.',
     });
   });
 });
