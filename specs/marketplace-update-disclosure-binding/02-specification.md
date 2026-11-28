@@ -76,7 +76,7 @@ The existing tier gate (`authorize(..., 'marketplace.install', ...)` per package
 
 After the gate, `applyPlan` holds each reinstall to the approved disclosure, and the installer's stage-once update refuses a `DisclosureChangedError` before uninstalling. So there are two checks and no gap: check→apply at the gate, apply→install in the installer.
 
-`POST /api/marketplace/packages/:name/update` becomes advisory only: its body schema is strict, so `apply` is refused with a 400. `UpdateFlow.run`'s `apply` path, `UpdateFlow.checkInstallations` (whose only apply was unbound) and `applyInstalledUpdates` are deleted (superseded), and `UpdateFlow.applyPlan` requires the approved disclosures: no code path can reinstall without one.
+`POST /api/marketplace/packages/:name/update-checks` becomes advisory only: its body schema is strict, so `apply` is refused with a 400. `UpdateFlow.run`'s `apply` path, `UpdateFlow.checkInstallations` (whose only apply was unbound) and `applyInstalledUpdates` are deleted (superseded), and `UpdateFlow.applyPlan` requires the approved disclosures: no code path can reinstall without one.
 
 ### D3. Global activation consent
 
@@ -132,7 +132,7 @@ Exploit regressions (each must fail on the current code):
 
 1. `POST /updates` from an agent with valid-looking targets: never reinstalls without a granted card (route test with a real `TokenConfirmationProvider` over a fake approvals store).
 2. `POST /updates` from the person with a stale `disclosed` (source added a hook after the check): 409, the installer's `update` never called.
-3. `POST /packages/:name/update { apply: true }`: 400, nothing reinstalled.
+3. `POST /packages/:name/update-checks { apply: true }`: 400, nothing reinstalled.
 4. Global activation: a plugin installed with a hook / `.mcp.json` and no consent is not in the SDK plugins array; after consent it is; after a file edit that adds a hook it is withheld again; a skill-pack that runs nothing activates with no consent; an unreadable declaration withholds; unreadable config withholds.
 5. Parity: real installer + fixtures, the consent recorded from the approved disclosure matches what activation reads from the installed tree.
 6. MCP: an approved update/install card records consent; a `preApproved` one does not.
