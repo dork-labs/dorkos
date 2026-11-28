@@ -13,7 +13,7 @@ import { env } from '../env.js';
 import { childEnvironment } from '../services/runtimes/shared/runtime-environment-config.js';
 import { loadProjectEnv } from '../../../../packages/cli/src/lib/project-env.js';
 
-afterEach(() => handProjectSettings({ settings: {}, authSecretFromFile: false }));
+afterEach(() => handProjectSettings({ settings: {} }));
 
 describe('the project .env, read after the server modules loaded', () => {
   it.skipIf(env.DO_NOT_TRACK !== undefined)(

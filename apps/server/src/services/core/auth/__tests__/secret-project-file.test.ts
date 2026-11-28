@@ -2,13 +2,14 @@
  * @vitest-environment node
  *
  * The project `.env` file can no longer change how DorkOS signs you in
- * (DOR-5481): its `BETTER_AUTH_SECRET` never reaches Better Auth, and when
- * DorkOS signed sessions with it before this release, the stored secret is
- * rotated once, on the first boot after the upgrade.
+ * (DOR-5481): its `BETTER_AUTH_SECRET` never reaches Better Auth, so anything
+ * signed with it stops verifying; a stored secret equal to it is replaced
+ * once; any other stored secret is left alone.
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { makeSignature } from 'better-auth/crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const SENTINEL = 'fixture-project-session-secret-5481';
@@ -28,14 +29,15 @@ beforeEach(() => {
 });
 afterEach(async () => {
   const { handProjectSettings } = await import('@dorkos/shared/project-environment');
-  handProjectSettings({ settings: {}, authSecretFromFile: false });
+  handProjectSettings({ settings: {} });
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
+  fs.chmodSync(home, 0o700);
   fs.rmSync(home, { recursive: true, force: true });
   fs.rmSync(project, { recursive: true, force: true });
 });
 
-/** Boot the way the CLI does: read the project `.env`, then resolve the secret fresh. */
+/** Boot the way the CLI does: read the project `.env`, then load the resolver fresh. */
 async function boot(projectEnv: string) {
   fs.writeFileSync(path.join(project, '.env'), projectEnv);
   const { loadProjectEnv } = (await import(CLI_LOADER)) as {
@@ -48,44 +50,78 @@ async function boot(projectEnv: string) {
   return { ...secret, warn };
 }
 
+/** Store a secret the way the server does. */
+function store(value: string): void {
+  fs.writeFileSync(path.join(home, 'better-auth-secret'), value, { mode: 0o600 });
+}
+
 describe('a session secret in the project .env', () => {
-  it('never reaches Better Auth', async () => {
+  it('never reaches Better Auth, so a session signed with it no longer verifies', async () => {
     const { resolveBetterAuthSecret } = await boot(`BETTER_AUTH_SECRET=${SENTINEL}\n`);
-    expect(resolveBetterAuthSecret(home)).not.toContain(SENTINEL);
+    const secret = resolveBetterAuthSecret(home);
+    expect(secret).not.toContain(SENTINEL);
     expect(process.env.BETTER_AUTH_SECRET).toBeUndefined();
+    const signedWithFile = await makeSignature('fixture-session-token', SENTINEL);
+    expect(await makeSignature('fixture-session-token', secret)).not.toBe(signedWithFile);
   });
 
-  it('rotates the stored secret once, says so in plain words, and never logs a value', async () => {
-    fs.writeFileSync(path.join(home, 'better-auth-secret'), 'old-stored-secret', { mode: 0o600 });
-    const { resolveBetterAuthSecret, PROJECT_FILE_ROTATION_MARK, warn } = await boot(
-      `BETTER_AUTH_SECRET=${SENTINEL}\n`
-    );
+  it('replaces a stored copy of it once, and a second boot keeps the new one', async () => {
+    store(SENTINEL);
+    const { resolveBetterAuthSecret, warn } = await boot(`BETTER_AUTH_SECRET=${SENTINEL}\n`);
     const first = resolveBetterAuthSecret(home);
-    expect(first).not.toBe('old-stored-secret');
+    expect(first).not.toBe(SENTINEL);
     expect(first).toMatch(/^[0-9a-f]{64}$/);
-    expect(fs.existsSync(path.join(home, PROJECT_FILE_ROTATION_MARK))).toBe(true);
+    expect(fs.readFileSync(path.join(home, 'better-auth-secret'), 'utf8')).toBe(first);
     expect(warn).toHaveBeenCalledOnce();
     const logged = JSON.stringify(warn.mock.calls);
-    expect(logged).toMatch(/signed out once/);
     expect(logged).not.toContain(SENTINEL);
     expect(logged).not.toContain(first);
-    // Once only: the next boot keeps the new secret.
     expect(resolveBetterAuthSecret(home)).toBe(first);
     expect(warn).toHaveBeenCalledOnce();
+    expect(fs.existsSync(path.join(home, 'better-auth-secret.lock'))).toBe(false);
   });
 
-  it('rotates nothing when the file never named it', async () => {
-    fs.writeFileSync(path.join(home, 'better-auth-secret'), 'old-stored-secret', { mode: 0o600 });
-    const { resolveBetterAuthSecret } = await boot('MY_TOOL_URL=http://localhost:9000\n');
-    expect(resolveBetterAuthSecret(home)).toBe('old-stored-secret');
+  it('never touches a different stored secret', async () => {
+    store('a-different-stored-secret');
+    const { resolveBetterAuthSecret, warn } = await boot(`BETTER_AUTH_SECRET=${SENTINEL}\n`);
+    expect(resolveBetterAuthSecret(home)).toBe('a-different-stored-secret');
+    expect(warn).not.toHaveBeenCalled();
   });
 
-  it('rotates nothing when the real environment sets the secret', async () => {
+  it('stops the boot with a clear error and no value when the replacement cannot be written', async () => {
+    store(SENTINEL);
+    const { resolveBetterAuthSecret } = await boot(`BETTER_AUTH_SECRET=${SENTINEL}\n`);
+    // A folder where the replacement's temp file goes: the write fails.
+    fs.mkdirSync(path.join(home, `better-auth-secret.${process.pid}.tmp`));
+    let message = '';
+    try {
+      resolveBetterAuthSecret(home);
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).toMatch(/could not replace its sign-in key at .*better-auth-secret/);
+    expect(message).not.toContain(SENTINEL);
+    // The stored value is not handed out as if nothing happened.
+    expect(fs.existsSync(path.join(home, 'better-auth-secret.lock'))).toBe(false);
+  });
+
+  it('says once that people were signed out, only when someone had signed in', async () => {
+    const { noticeProjectSecretRetired, warn } = await boot(`BETTER_AUTH_SECRET=${SENTINEL}\n`);
+    noticeProjectSecretRetired(home, false);
+    expect(warn).not.toHaveBeenCalled();
+    noticeProjectSecretRetired(home, true);
+    noticeProjectSecretRetired(home, true);
+    expect(warn).toHaveBeenCalledOnce();
+    expect(JSON.stringify(warn.mock.calls)).toMatch(/signed out/);
+  });
+
+  it('says nothing when the real environment sets the secret', async () => {
     vi.stubEnv('BETTER_AUTH_SECRET', 'real-environment-secret');
-    const { resolveBetterAuthSecret, PROJECT_FILE_ROTATION_MARK } = await boot(
+    const { resolveBetterAuthSecret, noticeProjectSecretRetired, warn } = await boot(
       `BETTER_AUTH_SECRET=${SENTINEL}\n`
     );
     expect(resolveBetterAuthSecret(home)).toBe('real-environment-secret');
-    expect(fs.existsSync(path.join(home, PROJECT_FILE_ROTATION_MARK))).toBe(false);
+    noticeProjectSecretRetired(home, true);
+    expect(warn).not.toHaveBeenCalled();
   });
 });

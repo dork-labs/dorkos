@@ -109,10 +109,12 @@ export interface ProjectHandoff {
   /** The allowed settings the file gave, frozen. */
   readonly settings: ProjectSettings;
   /**
-   * Whether the file named `BETTER_AUTH_SECRET` while the real environment did
-   * not: before this release DorkOS signed sessions with that value. Name only.
+   * When the file named `BETTER_AUTH_SECRET` and the real environment did not
+   * (before this release DorkOS signed sign-ins with that value): the value's
+   * SHA-256, hex, so the server can tell a stored secret that equals it
+   * without ever holding the value. Absent otherwise.
    */
-  readonly authSecretFromFile: boolean;
+  readonly authSecretDigest?: string;
 }
 
 /** Where the CLI leaves the hand-off for the server it imports into the same process. */
@@ -124,18 +126,18 @@ type HandoffHolder = { [HANDOFF]?: ProjectHandoff };
  * Leave the project `.env` hand-off for the server, in memory. Never through
  * `process.env`.
  *
- * @param handoff - The allowed settings, and whether the file named the session secret.
+ * @param handoff - The allowed settings, and the session secret's digest when the file gave the one in use.
  */
 export function handProjectSettings(handoff: ProjectHandoff): void {
   (globalThis as HandoffHolder)[HANDOFF] = Object.freeze({
     settings: Object.freeze({ ...handoff.settings }),
-    authSecretFromFile: handoff.authSecretFromFile,
+    ...(handoff.authSecretDigest ? { authSecretDigest: handoff.authSecretDigest } : {}),
   });
 }
 
 /**
  * Read the hand-off {@link handProjectSettings} left. It holds no secret (two
- * settings and a yes or no), so it stays put: the CLI's bundle and the
+ * settings and at most a digest), so it stays put: the CLI's bundle and the
  * server's may each carry a copy of this module, and one reading it must not
  * hide it from the other. `undefined` while none has been left (yet), and
  * always when the CLI did not start the server (the desktop app, `pnpm dev`).

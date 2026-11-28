@@ -11,6 +11,7 @@
  *
  * @module lib/project-env
  */
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { parse } from 'dotenv';
@@ -41,16 +42,17 @@ export function loadProjectEnv(
   const envPath = path.join(dir, '.env');
   const settings: Partial<Record<ProjectSettingName, string>> = {};
   const ignored: string[] = [];
-  let authSecretFromFile = false;
+  let authSecretDigest: string | undefined;
   if (fs.existsSync(envPath)) {
     for (const [key, value] of Object.entries(parse(fs.readFileSync(envPath)))) {
       if (isProjectSettingName(key)) {
         if (realEnv[key] === undefined) settings[key] = value;
       } else if (isDorkosOwnedEnvName(key) || SYSTEM_NAMES_DORKOS_READS.has(key)) {
         ignored.push(key);
-        // Before this release a session secret here signed sign-ins; the server rotates it once.
+        // Before this release a session secret here signed sign-ins. The server
+        // gets its digest, never the value, to retire a stored copy of it.
         if (key === 'BETTER_AUTH_SECRET' && value.trim() && !realEnv[key]?.trim())
-          authSecretFromFile = true;
+          authSecretDigest = createHash('sha256').update(value.trim()).digest('hex');
       }
     }
   }
@@ -62,6 +64,6 @@ export function loadProjectEnv(
     );
   }
   const frozen = Object.freeze(settings);
-  handProjectSettings({ settings: frozen, authSecretFromFile });
+  handProjectSettings({ settings: frozen, ...(authSecretDigest ? { authSecretDigest } : {}) });
   return frozen;
 }

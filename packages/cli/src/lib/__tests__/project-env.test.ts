@@ -4,6 +4,7 @@
  * project value enters `process.env`.
  */
 /* eslint-disable no-restricted-syntax -- this test reads process.env itself, to show the loader never writes it */
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -16,7 +17,7 @@ beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-project-env-'));
 });
 afterEach(() => {
-  handProjectSettings({ settings: {}, authSecretFromFile: false });
+  handProjectSettings({ settings: {} });
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -39,10 +40,10 @@ describe('loadProjectEnv', () => {
     const settings = loadProjectEnv(dir, () => undefined, {});
     expect(settings).toEqual({ LOG_LEVEL: 'debug', DO_NOT_TRACK: '1' });
     expect(Object.isFrozen(settings)).toBe(true);
-    expect(readProjectSettings()).toEqual({ settings, authSecretFromFile: false });
+    expect(readProjectSettings()).toEqual({ settings });
   });
 
-  it('names BETTER_AUTH_SECRET once, never hands its value on, and says it signed sign-ins', () => {
+  it('names BETTER_AUTH_SECRET once, and hands on only its digest, never its value', () => {
     envFile('BETTER_AUTH_SECRET=fixture-secret-value\n');
     const warn = vi.fn();
     expect(loadProjectEnv(dir, warn, {})).toEqual({});
@@ -50,13 +51,15 @@ describe('loadProjectEnv', () => {
     expect(warn.mock.calls[0]![0]).toContain('BETTER_AUTH_SECRET');
     expect(warn.mock.calls[0]![0]).not.toContain('fixture-secret-value');
     expect(JSON.stringify(readProjectSettings())).not.toContain('fixture-secret-value');
-    expect(readProjectSettings()?.authSecretFromFile).toBe(true);
+    expect(readProjectSettings()?.authSecretDigest).toBe(
+      createHash('sha256').update('fixture-secret-value').digest('hex')
+    );
   });
 
   it('does not count a session secret the real environment also sets as the file’s', () => {
     envFile('BETTER_AUTH_SECRET=fixture-secret-value\n');
     loadProjectEnv(dir, () => undefined, { BETTER_AUTH_SECRET: 'real' });
-    expect(readProjectSettings()?.authSecretFromFile).toBe(false);
+    expect(readProjectSettings()?.authSecretDigest).toBeUndefined();
   });
 
   it('lets a setting the real environment has win', () => {

@@ -33,10 +33,11 @@ export function projectSetting(name: ProjectSettingName): string | undefined {
 }
 
 /**
- * Whether the project `.env` named `BETTER_AUTH_SECRET` while the real
- * environment did not, so sessions were signed with the file's value before
- * this release. Read by the one-time rotation (`services/core/auth/secret.ts`).
+ * The SHA-256 (hex) of the session secret the project `.env` gave when the
+ * real environment had none, so sign-ins were signed with it before this
+ * release; `undefined` otherwise. Never the value. Read by
+ * `services/core/auth/secret.ts`.
  */
-export function authSecretCameFromProjectFile(): boolean {
-  return handoff()?.authSecretFromFile ?? false;
+export function projectAuthSecretDigest(): string | undefined {
+  return handoff()?.authSecretDigest;
 }

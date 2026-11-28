@@ -28,15 +28,12 @@
  *
  * @module services/core/auth/secret
  */
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import {
-  claimSecretText,
-  publishSecretFile,
-  quarantineSecretFile,
-} from '../../../lib/secret-store/secret-file.js';
-import { authSecretCameFromProjectFile } from '../../../lib/process/project-env-store.js';
+import { claimSecretText } from '../../../lib/secret-store/secret-file.js';
+import { withSecretFileLock } from '../../../lib/secret-store/secret-lock.js';
+import { projectAuthSecretDigest } from '../../../lib/process/project-env-store.js';
 import { logger } from '../../../lib/logger.js';
 
 /**
@@ -49,10 +46,10 @@ import { logger } from '../../../lib/logger.js';
 export const SECRET_FILE_NAME = 'better-auth-secret';
 
 /**
- * Marks that the one-time rotation for a session secret that came from the
- * project `.env` file has been done (DOR-5481). Its presence is the record.
+ * Records that the one-time notice about a session secret that came from the
+ * project `.env` file has been given (DOR-5481). Its presence is the record.
  */
-export const PROJECT_FILE_ROTATION_MARK = 'better-auth-secret.project-env-rotated';
+export const PROJECT_SECRET_NOTICE_MARK = 'better-auth-secret.project-env-noticed';
 
 /** Owner-only file mode for the persisted secret (`rw-------`). */
 const SECRET_FILE_MODE = 0o600;
@@ -98,14 +95,16 @@ export function resolveBetterAuthSecret(dorkHome: string): string {
   if (fromEnv) return fromEnv;
 
   const secretPath = path.join(dorkHome, SECRET_FILE_NAME);
-  rotateProjectFileSecretOnce(dorkHome, secretPath);
+  // The same lock `dorkos auth` takes (it resolves through here), so a check
+  // and a replacement never interleave with another process's.
+  return withSecretFileLock(secretPath, () => resolvePersisted(secretPath));
+}
 
+function resolvePersisted(secretPath: string): string {
+  let persisted = '';
   try {
-    const persisted = fs.readFileSync(secretPath, 'utf8').trim();
-    if (persisted) {
-      repairSecretPermissions(secretPath);
-      return persisted;
-    }
+    persisted = fs.readFileSync(secretPath, 'utf8').trim();
+    if (persisted) repairSecretPermissions(secretPath);
   } catch (err) {
     // ENOENT is the expected first-boot case; anything else (e.g. EACCES) is
     // worth surfacing before we overwrite, but is still recoverable by
@@ -116,6 +115,11 @@ export function resolveBetterAuthSecret(dorkHome: string): string {
         error: (err as Error).message,
       });
     }
+  }
+  if (persisted) {
+    // Outside the read's catch: a failed replacement must stop the boot, never
+    // fall back to the stored value.
+    return equalsProjectSecret(persisted) ? replaceStoredSecret(secretPath) : persisted;
   }
 
   // Claim the file rather than just writing it. Two processes reaching a fresh
@@ -135,25 +139,71 @@ export function resolveBetterAuthSecret(dorkHome: string): string {
 }
 
 /**
- * Before this release a `BETTER_AUTH_SECRET` in the project `.env` file signed
- * sign-ins. That file can't change how DorkOS signs you in any more, and its
- * value may have been shared with the project, so the first boot that finds
- * it there (and not in the real environment) sets the stored secret aside and
- * lets a fresh one be made. Once only: the mark file records it, and claiming
- * the mark is atomic, so two boots at once rotate once. Never logs the value.
+ * Whether a stored secret is byte-equal to the session secret the project
+ * `.env` file gave (copied in, or kept by an older boot). Compares digests in
+ * constant time; neither value is held or logged.
+ */
+function equalsProjectSecret(stored: string): boolean {
+  const digest = projectAuthSecretDigest();
+  if (!digest) return false;
+  const expected = Buffer.from(digest, 'hex');
+  const actual = createHash('sha256').update(stored).digest();
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
+}
+
+/**
+ * Replace a stored secret equal to the project `.env` file's: that value may
+ * be shared with the project, and the file can no longer change how DorkOS
+ * signs you in. Runs under the secret's lock, and only while the stored value
+ * still equals it, so it happens once. A failed write stops the boot with a
+ * message naming the file, never a value.
+ *
+ * @param secretPath - The persisted secret's path.
+ * @returns The new secret.
+ */
+function replaceStoredSecret(secretPath: string): string {
+  const fresh = randomBytes(SECRET_BYTES).toString('hex');
+  const temp = `${secretPath}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(temp, fresh, { mode: SECRET_FILE_MODE });
+    fs.renameSync(temp, secretPath);
+  } catch (err) {
+    try {
+      fs.rmSync(temp, { force: true });
+    } catch {
+      // Not ours to clear (a folder in the way): the error below still names the file.
+    }
+    throw new Error(
+      `DorkOS could not replace its sign-in key at ${secretPath} ` +
+        `(${(err as NodeJS.ErrnoException).code ?? 'write failed'}). Check that the folder is writable, then start DorkOS again.`,
+      { cause: err }
+    );
+  }
+  logger.warn(
+    '[Auth] Made a new sign-in key: the stored one matched the project .env file, which can no ' +
+      'longer change how DorkOS signs you in. Everyone signed in before must sign in again.'
+  );
+  return fresh;
+}
+
+/**
+ * Say once, plainly, that everyone signed in before is signed out, when the
+ * session secret in use came from the project `.env` file (named there and
+ * not in the real environment) and people had signed in with it. A fresh
+ * install, with no sessions yet, hears only the CLI's line that the name was
+ * ignored. The mark file records that the notice was given.
  *
  * @param dorkHome - The DorkOS data directory.
- * @param secretPath - The persisted secret's path.
+ * @param hadSessions - Whether anyone had signed in before this boot.
  */
-function rotateProjectFileSecretOnce(dorkHome: string, secretPath: string): void {
-  if (!authSecretCameFromProjectFile()) return;
-  const mark = path.join(dorkHome, PROJECT_FILE_ROTATION_MARK);
+export function noticeProjectSecretRetired(dorkHome: string, hadSessions: boolean): void {
+  if (!projectAuthSecretDigest() || !hadSessions) return;
+  const mark = path.join(dorkHome, PROJECT_SECRET_NOTICE_MARK);
   if (fs.existsSync(mark)) return;
-  if (!publishSecretFile(mark, `${new Date().toISOString()}\n`, SECRET_FILE_MODE)) return;
-  quarantineSecretFile(secretPath);
+  fs.writeFileSync(mark, `${new Date().toISOString()}\n`, { mode: SECRET_FILE_MODE });
   logger.warn(
-    '[Auth] Everyone was signed out once: the project .env file can no longer change how ' +
-      'DorkOS signs you in, so DorkOS made a new sign-in key. Sign in again.'
+    '[Auth] Everyone signed in before is signed out: the project .env file can no longer ' +
+      'change how DorkOS signs you in. Sign in again.'
   );
 }
 
