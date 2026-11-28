@@ -954,28 +954,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/hub/computers/{computerId}/sessions/{sessionId}/stream": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Stream a chat on a linked computer
-         * @description **Preview.** This operation may change in any release.
-         *
-         *     Server-Sent Events relayed from the computer's own chat stream: each event keeps its name, JSON data and resume id. Send the last id back as `Last-Event-ID` (or `?resume=`) to continue after it. An `error` event carries the reason when the computer ends the stream with one.
-         */
-        get: operations["hub.streamComputersSessions"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/hub/computers/{computerId}/sessions/{sessionId}/messages": {
         parameters: {
             query?: never;
@@ -6395,6 +6373,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub/computers/{computerId}/sessions/{sessionId}/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream a chat on a linked computer
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     Server-Sent Events relayed from the computer's own chat stream: each event keeps its name, JSON data and resume id. Send the last id back as `Last-Event-ID` (or `?resume=`) to continue after it. An `error` event carries the reason when the computer ends the stream with one.
+         */
+        get: operations["hub.streamComputersSessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tunnel/start": {
         parameters: {
             query?: never;
@@ -9488,6 +9488,131 @@ export interface paths {
         get: operations["extensions.getMedia"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/communities/{ref}/rooms/{roomId}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream a room in a remote space (SSE)
+         * @description The owner's own view of one remote room: a `snapshot` frame, then each new entry, each message changed in place, and the state of the owner's own deliveries, until the room closes or the reader leaves. Each frame's `event:` is its `type`; a `: keepalive` comment keeps a quiet stream open.
+         */
+        get: operations["communities.getRoomsEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/extensions/{id}/rooms/{roomId}/threads/{entryId}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream new replies in a room thread, for a mini app's page (SSE)
+         * @description Each new reply in the thread, as a `reply` frame whose `id:` is the reply's `seq`. Send the last one back as `Last-Event-ID` (or `?after=`) to resume after it. The stream ends when the person takes the room away from the mini app or turns the mini app off.
+         */
+        get: operations["extensions.getRoomsThreadsEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runtimes/claude-code/provision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Install Claude Code on this computer (SSE) */
+        post: operations["runtimes.createClaudeCodeProvision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runtimes/codex/provision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Install Codex on this computer (SSE) */
+        post: operations["runtimes.createCodexProvision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runtimes/opencode/provision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Install OpenCode on this computer (SSE) */
+        post: operations["runtimes.createOpencodeProvision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runtimes/opencode/ollama/provision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Install Ollama on this computer (SSE) */
+        post: operations["runtimes.createOpencodeOllamaProvision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runtimes/opencode/ollama/pull": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Download an Ollama model (SSE) */
+        post: operations["runtimes.createOpencodeOllamaPull"];
         delete?: never;
         options?: never;
         head?: never;
@@ -19960,131 +20085,6 @@ export interface operations {
             };
             /** @description Not a hub, no such linked computer, or no such chat or agent on it */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The computer could not do that right now (`conflict`) */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The request is too large to relay (`request_too_large`) */
-            413: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Too many requests to the computer, or at once (`rate_limited`) */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The computer needs an update for this; `feature` names it (`needs_update`) */
-            501: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The computer turned the request away (`computer_refused`), failed it, or sent an answer that could not be read (`upstream_unavailable`) */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The computer is not connected. It is being woken; try again after `Retry-After` seconds (`computer_waking`). Or its connection ended before it answered (`computer_offline`). */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The computer did not answer in time (`computer_timed_out`) */
-            504: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    "hub.streamComputersSessions": {
-        parameters: {
-            query?: {
-                resume?: string;
-            };
-            header?: never;
-            path: {
-                computerId: string;
-                /** @description The chat, a lowercase UUID */
-                sessionId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The event stream */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": string;
-                };
-            };
-            /** @description Not a request the relay carries (`invalid_request`) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Not the person's own browser sign-in (`person_only`): an agent or an API key never reaches these routes. Or the computer refused it (`forbidden`) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description Not a hub, no such linked computer, or no such chat or agent on it */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Problem"];
-                };
-            };
-            /** @description The request does not accept `text/event-stream` (`not_acceptable`) */
-            406: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -52505,6 +52505,632 @@ export interface operations {
             };
         };
     };
+    "hub.streamComputersSessions": {
+        parameters: {
+            query?: {
+                resume?: string;
+            };
+            header?: never;
+            path: {
+                computerId: string;
+                /** @description The chat, a lowercase UUID */
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The event stream: each frame's `data:` as the chat's own stream sends it */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["SessionSnapshot"] | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "text_delta";
+                        text: string;
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "thinking_delta";
+                        text: string;
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "tool_call";
+                        toolCallId: string;
+                        toolName: string;
+                        input?: string;
+                        result?: string;
+                        startedAt?: number;
+                        endedAt?: number;
+                        /** @enum {string} */
+                        status: "pending" | "running" | "complete" | "error";
+                        ui?: components["schemas"]["McpAppRef"];
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "model_request";
+                        requestId?: string;
+                        /** @enum {string} */
+                        phase: "start" | "first_token" | "end" | "usage";
+                        startedAt?: number;
+                        endedAt?: number;
+                        firstTokenAt?: number;
+                        inputTokens?: number;
+                        outputTokens?: number;
+                        model?: string;
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "tool_result";
+                        toolCallId: string;
+                        toolName: string;
+                        input?: string;
+                        result?: string;
+                        startedAt?: number;
+                        endedAt?: number;
+                        /** @enum {string} */
+                        status: "pending" | "running" | "complete" | "error";
+                        ui?: components["schemas"]["McpAppRef"];
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "tool_progress";
+                        toolCallId: string;
+                        content: string;
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "approval_required";
+                        startedAt: number;
+                        remainingMs: number;
+                        timeoutMs?: number;
+                        id: string;
+                        toolName: string;
+                        input: string;
+                        requestCode?: string;
+                        title?: string;
+                        displayName?: string;
+                        description?: string;
+                        blockedPath?: string;
+                        decisionReason?: string;
+                        hasSuggestions: boolean;
+                        alwaysAllowScope?: components["schemas"]["AlwaysAllowScope"];
+                        alwaysAllowBreadth?: components["schemas"]["AlwaysAllowBreadth"];
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "question_prompt";
+                        startedAt: number;
+                        remainingMs: number;
+                        timeoutMs?: number;
+                        id: string;
+                        questions: components["schemas"]["QuestionItem"][];
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "elicitation_prompt";
+                        startedAt: number;
+                        remainingMs: number;
+                        timeoutMs?: number;
+                        id: string;
+                        serverName: string;
+                        message: string;
+                        mode?: components["schemas"]["ElicitationMode"];
+                        url?: string;
+                        elicitationId?: string;
+                        requestedSchema?: {
+                            [key: string]: unknown;
+                        };
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "status_change";
+                        status: {
+                            contextUsage?: {
+                                totalTokens?: number;
+                                maxTokens?: number;
+                                outputTokens?: number;
+                                cacheReadTokens?: number;
+                                cacheCreationTokens?: number;
+                                observedAt?: string;
+                            } | null;
+                            cost?: number | null;
+                            usage?: components["schemas"]["UsageStatus"];
+                            cacheStats?: components["schemas"]["SessionCacheStats"];
+                            model?: string | null;
+                            permissionMode?: components["schemas"]["PermissionModeId"];
+                            todoCounts?: components["schemas"]["SessionTodoCounts"];
+                            /** @default 0 */
+                            runningSubagentCount: number;
+                            lifecycle?: components["schemas"]["SessionLifecycle"];
+                            lastError?: components["schemas"]["ErrorEvent"];
+                            limit?: components["schemas"]["SessionLimit"];
+                            steerable?: boolean;
+                        };
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "todo_update";
+                        /** @enum {string} */
+                        action: "create" | "update" | "snapshot" | "id_assigned" | "remove";
+                        task: components["schemas"]["TaskItem"];
+                        tasks?: components["schemas"]["TaskItem"][];
+                        previousId?: string;
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "subagent_update";
+                        taskId: string;
+                        status: components["schemas"]["BackgroundTaskStatus"];
+                        description?: string;
+                        toolUses?: number;
+                        lastToolName?: string;
+                        summary?: string;
+                        ambient?: boolean;
+                        taskType?: components["schemas"]["BackgroundTaskType"];
+                        command?: string;
+                        startedAt?: number;
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "hook_update";
+                        hookId: string;
+                        /** @enum {string} */
+                        status: "running" | "success" | "error" | "cancelled";
+                        hookName?: string;
+                        hookEvent?: string;
+                        toolCallId?: string | null;
+                        stdout?: string;
+                        stderr?: string;
+                        exitCode?: number;
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "memory_recall";
+                        /** @enum {string} */
+                        mode: "select" | "synthesize";
+                        memories: {
+                            path: string;
+                            /** @enum {string} */
+                            scope: "personal" | "team";
+                            content?: string;
+                        }[];
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "image_attachment";
+                        attachmentId: string;
+                        url: string;
+                        mediaType: string;
+                        size: number;
+                        alt?: string;
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "compact_boundary";
+                        startedAt?: number;
+                        endedAt?: number;
+                        /** @enum {string} */
+                        trigger?: "manual" | "auto";
+                        preTokens?: number;
+                        postTokens?: number;
+                        durationMs?: number;
+                        /** @enum {string} */
+                        requestedBy?: "agent";
+                        contextPercent?: number;
+                        requestedAt?: string;
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "permission_denied";
+                        toolCallId: string;
+                        toolName: string;
+                        reasonType?: string;
+                        reason?: string;
+                        /** @enum {string} */
+                        askKind?: "tool" | "question" | "elicitation";
+                        message: string;
+                        agentId?: string;
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "model_substituted";
+                        from: string;
+                        fromName: string;
+                        to: string;
+                        toName: string;
+                        /** @enum {string} */
+                        reason: "credits-not-covered" | "account-not-available";
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "project_addons_off";
+                        plugins: number;
+                        tools: number;
+                        mcpServers: number;
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "work_left_running";
+                        tasks: components["schemas"]["WorkLeftTask"][];
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "work_left_ended";
+                        taskId: string;
+                        status: components["schemas"]["WorkLeftEndStatus"];
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "system_status";
+                        message: string;
+                        status?: string;
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "operation_progress";
+                        operation: components["schemas"]["OperationKind"];
+                        state: components["schemas"]["OperationState"];
+                        determinate: boolean;
+                        percent?: number;
+                        message?: string;
+                        error?: string;
+                        /** @enum {string} */
+                        requestedBy?: "agent";
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "error";
+                        message: string;
+                        code?: string;
+                        category?: components["schemas"]["ErrorCategory"];
+                        details?: string;
+                        reason?: string;
+                        sourceDispatchId?: string;
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "interaction_resolved";
+                        id: string;
+                        /** @enum {string} */
+                        resolution?: "approved" | "denied" | "answered" | "expired" | "cancelled";
+                        /** @enum {string} */
+                        kind?: "approval" | "question" | "elicitation";
+                        at?: number;
+                        startedAt?: number;
+                        reasonGiven?: boolean;
+                        resolvedBy?: string;
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "capability_approval_required";
+                        startedAt: number;
+                        capMs: number;
+                        approval: components["schemas"]["PendingApproval"];
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "capability_approval_resolved";
+                        approvalId: string;
+                        /** @enum {string} */
+                        outcome: "granted" | "denied" | "expired" | "timeout";
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "mcp_signin_required";
+                        serverName: string;
+                        agentId: string;
+                        flowId: string;
+                        authorizeUrl: string;
+                        disclosure: string;
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "mcp_signin_resolved";
+                        flowId: string;
+                        /** @enum {string} */
+                        outcome: "connected" | "failed";
+                        toolCount?: number;
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "turn_start";
+                        userMessage?: string;
+                        /** @enum {string} */
+                        origin?: "user" | "runtime";
+                        chatMessages?: components["schemas"]["ChatMessageStamp"][];
+                        roomMessage?: components["schemas"]["RoomMessageStamp"];
+                        at?: number;
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "turn_end";
+                        terminalReason?: components["schemas"]["TerminalReason"];
+                        stopWasRequested?: boolean;
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "turn_input";
+                        content: string;
+                        /** @enum {string} */
+                        disposition: "steer";
+                        messageId: string;
+                        chatMessages?: components["schemas"]["ChatMessageStamp"][];
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "ui_command";
+                        command: components["schemas"]["UiCommand"];
+                        applied?: {
+                            documentId: string;
+                            rev: number;
+                        };
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "canvas";
+                        documentId: string;
+                        document?: components["schemas"]["CanvasDocument"];
+                        closed?: boolean;
+                        /** @enum {string} */
+                        change?: "opened" | "updated" | "activated" | "pinned";
+                    } | {
+                        seq: number;
+                        bridgeGeneration?: string;
+                        /** @enum {string} */
+                        type: "devtools_capture_request";
+                        requestId: string;
+                        targetClientId?: string;
+                        documentId?: string;
+                    } | {
+                        seq: number;
+                        bridgeGeneration?: string;
+                        /** @enum {string} */
+                        type: "devtools_action_request";
+                        requestId: string;
+                        targetClientId: string;
+                        documentId: string;
+                        command: components["schemas"]["BrowserActCommand"];
+                        capture?: boolean;
+                    } | {
+                        seq: number;
+                        bridgeGeneration?: string;
+                        /** @enum {string} */
+                        type: "devtools_recording_request";
+                        requestId: string;
+                        targetClientId: string;
+                        documentId: string;
+                        /** @enum {string} */
+                        action: "start" | "stop" | "confirm-start" | "cancel-start";
+                        reservationTimeoutMs?: number;
+                        recordingId: string;
+                        bounds: {
+                            longEdgePx: number;
+                            frameMs: number;
+                            maxBytes: number;
+                        };
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "queue_update";
+                        queue: components["schemas"]["QueuedMessage"][];
+                        outcome?: components["schemas"]["MessageDeliveryOutcome"];
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "context_staged";
+                        content: string;
+                        messageId: string;
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "chat_activity";
+                    } | {
+                        seq: number;
+                        /** @enum {string} */
+                        type: "run_update";
+                        runs: components["schemas"]["ChatRun"][];
+                    } | {
+                        /** @enum {string} */
+                        type: "canvas_event";
+                        scope: string;
+                        documentId: string;
+                        docSeq: number;
+                        incarnation?: {
+                            /** @enum {number} */
+                            v: 1;
+                            documentId: string;
+                            /** Format: date-time */
+                            physicalOpenedAt: string;
+                            /** Format: date-time */
+                            channelCreatedAt: string;
+                            generation: string;
+                        };
+                        event: {
+                            id: string;
+                            type: string;
+                            /** @description Finite plain JSON, maximum depth 32; bounded by the document channel envelope limit. */
+                            payload?: unknown;
+                            /** @enum {string} */
+                            direction: "upstream" | "downstream" | "system";
+                            /** Format: date-time */
+                            receivedAt: string;
+                        };
+                    } | {
+                        /** @enum {string} */
+                        type: "canvas_channel_snapshot";
+                        scope: string;
+                        documentId: string;
+                        snapshot: {
+                            routing?: {
+                                enabled: boolean;
+                                approvedEventTypes: string[];
+                                destinationLabel: string;
+                            };
+                            incarnation?: {
+                                /** @enum {number} */
+                                v: 1;
+                                documentId: string;
+                                /** Format: date-time */
+                                physicalOpenedAt: string;
+                                /** Format: date-time */
+                                channelCreatedAt: string;
+                                generation: string;
+                            };
+                            /** @description Finite plain JSON state, maximum depth 32 and 256 KiB; separate from document content. */
+                            state: {
+                                [key: string]: unknown;
+                            };
+                            stateRev: number;
+                            highWatermark: number;
+                            retentionFloor: number;
+                            receiptRetentionFloor: number;
+                            resetRequired: boolean;
+                            health: {
+                                /** @enum {string} */
+                                status: "ready" | "warning" | "closed" | "in_doubt";
+                                reasons: string[];
+                            };
+                            receipts: {
+                                receipt: {
+                                    id: string;
+                                    /** @enum {string} */
+                                    status: "recorded" | "duplicate";
+                                    docSeq: number;
+                                };
+                                deliveries: {
+                                    eventId: string;
+                                    routeId: string;
+                                    batchId: string | null;
+                                    /** @enum {string} */
+                                    status: "saved" | "pending" | "routed" | "waiting" | "accepted" | "turn_started" | "turn_done" | "failed" | "in_doubt" | "expired" | "superseded" | "cancelled" | "handled" | "rejected" | "unavailable";
+                                    turnId: string | null;
+                                    reason: string | null;
+                                    /** Format: date-time */
+                                    nextEligibleAt?: string;
+                                    /** Format: date-time */
+                                    updatedAt: string;
+                                    /** @enum {string|null} */
+                                    ackOutcome?: "handled" | "rejected" | null;
+                                    /** Format: date-time */
+                                    acknowledgedAt?: string | null;
+                                }[];
+                                payloadAvailable?: boolean;
+                            }[];
+                        };
+                    } | {
+                        /** @description Why the computer ended the stream. */
+                        code: string;
+                        /** @description The same, in words. */
+                        message: string;
+                    };
+                };
+            };
+            /** @description Not a request the relay carries (`invalid_request`) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not the person's own browser sign-in (`person_only`): an agent or an API key never reaches these routes. Or the computer refused it (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Not a hub, no such linked computer, or no such chat or agent on it */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request does not accept `text/event-stream` (`not_acceptable`) */
+            406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The computer could not do that right now (`conflict`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request is too large to relay (`request_too_large`) */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Too many requests to the computer, or at once (`rate_limited`) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The computer needs an update for this; `feature` names it (`needs_update`) */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The computer turned the request away (`computer_refused`), failed it, or sent an answer that could not be read (`upstream_unavailable`) */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The computer is not connected. It is being woken; try again after `Retry-After` seconds (`computer_waking`). Or its connection ended before it answered (`computer_offline`). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The computer did not answer in time (`computer_timed_out`) */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     "tunnel.start": {
         parameters: {
             query?: never;
@@ -64089,6 +64715,534 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    "communities.getRoomsEvents": {
+        parameters: {
+            query?: {
+                /** @description The last `redactionCursor` you were given, so changes made while you were away still reach you. */
+                redactions?: string;
+            };
+            header?: never;
+            path: {
+                ref: string;
+                roomId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description An SSE stream; each frame's `data:` is one event. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": {
+                        /** @enum {string} */
+                        type: "snapshot";
+                        room: {
+                            community: string;
+                            roomId: string;
+                            kind: components["schemas"]["RoomKind"];
+                            title: string;
+                            slug: string | null;
+                            topic: string | null;
+                            archived: boolean;
+                            createdAt: string;
+                            lastActivityAt: string;
+                            unreadCount: number | null;
+                            remoteCommunityId: string;
+                            /** @enum {string} */
+                            visibility: "public" | "private";
+                            readable: boolean;
+                            writable: boolean;
+                            joined: boolean;
+                            stale: boolean;
+                            cacheCursor: string | null;
+                            lastRemoteSeq: number;
+                            access: {
+                                /** @enum {string} */
+                                state: "verified" | "unverified" | "reconnect-required";
+                                effective: {
+                                    read: boolean;
+                                    post: boolean;
+                                    enrollAgent: boolean;
+                                    stream: boolean;
+                                };
+                                lastKnown: {
+                                    /** @enum {string} */
+                                    lifecycle: "active" | "archived" | "suspended" | "deletion_pending" | "deleted" | "taken_down";
+                                    capabilities: {
+                                        read: boolean;
+                                        post: boolean;
+                                        enrollAgent: boolean;
+                                        stream: boolean;
+                                    };
+                                    /** Format: date-time */
+                                    verifiedAt: string;
+                                } | null;
+                            };
+                        };
+                        entries: {
+                            community: string;
+                            roomId: string;
+                            id: string;
+                            authorId: string;
+                            text: string;
+                            mentions: string[];
+                            parentEntryId: string | null;
+                            threadRootEntryId: string | null;
+                            depth: number;
+                            thread?: {
+                                replyCount: number;
+                                lastReplyAt: string;
+                            };
+                            cursor: string;
+                            createdAt: string;
+                            attachments: {
+                                id: string;
+                                name: string;
+                                contentType: string;
+                                byteSize: number;
+                                checksum: string;
+                            }[];
+                            remoteSeq: number;
+                            authorDisplayName: string;
+                            /** @enum {string} */
+                            authorKind: "human" | "agent";
+                            originIdempotencyKey?: string;
+                            threadLastReplySeq?: number;
+                        }[];
+                        cursor: string | null;
+                        lastRemoteSeq: number;
+                        stale: boolean;
+                        redactionCursor?: string;
+                    } | {
+                        /** @enum {string} */
+                        type: "entry";
+                        entry: {
+                            community: string;
+                            roomId: string;
+                            id: string;
+                            authorId: string;
+                            text: string;
+                            mentions: string[];
+                            parentEntryId: string | null;
+                            threadRootEntryId: string | null;
+                            depth: number;
+                            thread?: {
+                                replyCount: number;
+                                lastReplyAt: string;
+                            };
+                            cursor: string;
+                            createdAt: string;
+                            attachments: {
+                                id: string;
+                                name: string;
+                                contentType: string;
+                                byteSize: number;
+                                checksum: string;
+                            }[];
+                            remoteSeq: number;
+                            authorDisplayName: string;
+                            /** @enum {string} */
+                            authorKind: "human" | "agent";
+                            originIdempotencyKey?: string;
+                            threadLastReplySeq?: number;
+                        };
+                    } | {
+                        /** @enum {string} */
+                        type: "revision";
+                        entry: {
+                            community: string;
+                            roomId: string;
+                            id: string;
+                            authorId: string;
+                            text: string;
+                            mentions: string[];
+                            parentEntryId: string | null;
+                            threadRootEntryId: string | null;
+                            depth: number;
+                            thread?: {
+                                replyCount: number;
+                                lastReplyAt: string;
+                            };
+                            cursor: string;
+                            createdAt: string;
+                            attachments: {
+                                id: string;
+                                name: string;
+                                contentType: string;
+                                byteSize: number;
+                                checksum: string;
+                            }[];
+                            remoteSeq: number;
+                            authorDisplayName: string;
+                            /** @enum {string} */
+                            authorKind: "human" | "agent";
+                            originIdempotencyKey?: string;
+                            threadLastReplySeq?: number;
+                        };
+                        redactionCursor?: string;
+                    } | {
+                        community: string;
+                        roomId: string;
+                        deliveries: ({
+                            idempotencyKey: string;
+                            author: {
+                                /** @enum {string} */
+                                kind: "agent";
+                                displayName: string;
+                            };
+                            text: string;
+                            parentEntryId: string | null;
+                            attachments: {
+                                name: string;
+                                contentType: string;
+                                byteSize: number;
+                            }[];
+                            /** @enum {string} */
+                            state: "pending";
+                            failure: null;
+                            retryable: boolean;
+                        } | {
+                            idempotencyKey: string;
+                            author: {
+                                /** @enum {string} */
+                                kind: "agent";
+                                displayName: string;
+                            };
+                            text: string;
+                            parentEntryId: string | null;
+                            attachments: {
+                                name: string;
+                                contentType: string;
+                                byteSize: number;
+                            }[];
+                            /** @enum {string} */
+                            state: "failed";
+                            /** @enum {string} */
+                            failure: "expired" | "not-confirmed";
+                        })[];
+                        /** @enum {string} */
+                        type: "deliveries";
+                    } | {
+                        community: string;
+                        roomId: string;
+                        /** @enum {string} */
+                        type: "closed";
+                        /** @enum {string} */
+                        reason: "removed" | "revoked" | "unavailable";
+                    };
+                };
+            };
+            /** @description `forbidden`: your access to this space does not allow reading it. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No space connection by that reference.; or `spaces_disabled`: the spaces experiment is off on this computer (Settings → Advanced → Experiments). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `reconnect_required`: reconnect this space to continue. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `upstream_unavailable`: the space cannot be reached right now. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "extensions.getRoomsThreadsEvents": {
+        parameters: {
+            query?: {
+                /** @description Resume after this `seq`. */
+                after?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+                roomId: string;
+                entryId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description An SSE stream; each `reply` frame's `data:` is one reply. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": {
+                        id: string;
+                        seq: number;
+                        author: {
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            kind: "person" | "agent" | "system";
+                            isYou: boolean;
+                        };
+                        createdAt: string;
+                        text: string;
+                    };
+                };
+            };
+            /** @description Not a valid mini app id. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The mini app may not use that room, or the caller is not the person signed in. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No such mini app, room or thread, or the person cannot read it. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "runtimes.createClaudeCodeProvision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description An SSE stream: `progress` frames while it runs, then one `result` frame with the outcome. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": {
+                        /** @enum {string} */
+                        stage: "starting" | "installing" | "done" | "error";
+                        message: string;
+                    } | {
+                        ok: boolean;
+                        binaryPath?: string;
+                        error?: string;
+                    };
+                };
+            };
+            /** @description `operator_only`: only the person at this computer can install or download here. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "runtimes.createCodexProvision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description An SSE stream: `progress` frames while it runs, then one `result` frame with the outcome. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": {
+                        /** @enum {string} */
+                        stage: "starting" | "installing" | "done" | "error";
+                        message: string;
+                    } | {
+                        ok: boolean;
+                        binaryPath?: string;
+                        error?: string;
+                    };
+                };
+            };
+            /** @description `operator_only`: only the person at this computer can install or download here. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "runtimes.createOpencodeProvision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description An SSE stream: `progress` frames while it runs, then one `result` frame with the outcome. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": {
+                        /** @enum {string} */
+                        stage: "starting" | "installing" | "done" | "error";
+                        message: string;
+                    } | {
+                        ok: boolean;
+                        binaryPath?: string;
+                        error?: string;
+                    };
+                };
+            };
+            /** @description `operator_only`: only the person at this computer can install or download here. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "runtimes.createOpencodeOllamaProvision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description An SSE stream: `progress` frames while it runs, then one `result` frame with the outcome. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": {
+                        /** @enum {string} */
+                        stage: "starting" | "installing" | "done" | "error";
+                        message: string;
+                    } | {
+                        ok: boolean;
+                        /** @enum {string} */
+                        installMethod: "brew" | "winget" | "manual";
+                        error?: string;
+                        /** @description A fresh check of Ollama after the install, as `GET /api/runtimes/opencode/ollama` answers. */
+                        status?: unknown;
+                    };
+                };
+            };
+            /** @description `operator_only`: only the person at this computer can install or download here. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "runtimes.createOpencodeOllamaPull": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    model?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description An SSE stream: `progress` frames while it runs, then one `result` frame with the outcome. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": {
+                        status: string;
+                        completed?: number;
+                        total?: number;
+                        percent?: number;
+                    } | {
+                        ok: boolean;
+                        model: string;
+                        error?: string;
+                    };
+                };
+            };
+            /** @description That is not a valid Ollama model name. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `operator_only`: only the person at this computer can install or download here. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
             };
         };
     };

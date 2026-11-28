@@ -456,7 +456,6 @@
     "POST /api/runtimes/claude-code/signins/folders",
     "POST /api/runtimes/claude-code/signins/organizations",
     "POST /api/runtimes/doe/credential",
-    "POST /api/runtimes/opencode/ollama/pull",
     "POST /api/runtimes/opencode/openrouter/key",
     "POST /api/runtimes/opencode/openrouter/oauth/start",
     "POST /api/runtimes/opencode/provider/credential",

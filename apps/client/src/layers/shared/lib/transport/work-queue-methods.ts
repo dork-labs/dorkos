@@ -1,5 +1,6 @@
 /**
- * Work queue Transport method factory (DOR-3462).
+ * Work queue Transport method factory (DOR-3462), through the generated API
+ * client (DOR-5473).
  *
  * @module shared/lib/transport/work-queue-methods
  */
@@ -10,7 +11,8 @@ import type {
   WorkItem,
   WorkQueue,
 } from '@dorkos/shared/work-queue-schemas';
-import { fetchJSON, fetchNoContent } from './http-client';
+import { createTransportApiClient } from './api-client';
+import { fetchJSON } from './http-client';
 
 /**
  * Create the work queue methods bound to a base URL.
@@ -18,48 +20,49 @@ import { fetchJSON, fetchNoContent } from './http-client';
  * @param baseUrl - Server base URL (already includes `/api`).
  */
 export function createWorkQueueMethods(baseUrl: string) {
-  const queuePath = (agentId: string) => `/agents/${encodeURIComponent(agentId)}/work-queue`;
-  const itemPath = (agentId: string, itemId: string) =>
-    `${queuePath(agentId)}/items/${encodeURIComponent(itemId)}`;
+  const api = createTransportApiClient(baseUrl);
+  // The document also lists each capability's 202 approval answer, which a
+  // person's own call never gets; the casts keep today's types.
   return {
-    getWorkQueue(agentId: string): Promise<WorkQueue> {
-      return fetchJSON(baseUrl, queuePath(agentId));
+    async getWorkQueue(agentId: string): Promise<WorkQueue> {
+      return (await api.call('work-queue.view_queue', { path: { agentId } })) as WorkQueue;
     },
 
-    updateWorkQueue(agentId: string, body: UpdateWorkQueueRequest): Promise<WorkQueue> {
-      return fetchJSON(baseUrl, queuePath(agentId), {
-        method: 'PATCH',
-        body: JSON.stringify(body),
-      });
+    async updateWorkQueue(agentId: string, body: UpdateWorkQueueRequest): Promise<WorkQueue> {
+      return (await api.call('work-queue.change_settings', {
+        path: { agentId },
+        body,
+      })) as WorkQueue;
     },
 
-    setWorkQueuesStopped(stopped: boolean): Promise<SetWorkQueuesStoppedRequest> {
-      return fetchJSON(baseUrl, '/work-queues/stop', {
-        method: 'PUT',
-        body: JSON.stringify({ stopped }),
-      });
+    async setWorkQueuesStopped(stopped: boolean): Promise<SetWorkQueuesStoppedRequest> {
+      return (await api.call('work-queue.stop_all', {
+        body: { stopped },
+      })) as SetWorkQueuesStoppedRequest;
     },
 
-    reorderWorkQueue(agentId: string, itemIds: string[]): Promise<WorkQueue> {
-      return fetchJSON(baseUrl, `${queuePath(agentId)}/order`, {
-        method: 'PUT',
-        body: JSON.stringify({ itemIds }),
-      });
+    async reorderWorkQueue(agentId: string, itemIds: string[]): Promise<WorkQueue> {
+      return (await api.call('work-queue.set_order', {
+        path: { agentId },
+        body: { itemIds },
+      })) as WorkQueue;
     },
 
-    addWorkItem(agentId: string, body: AddWorkItemRequest): Promise<WorkItem> {
-      return fetchJSON(baseUrl, `${queuePath(agentId)}/items`, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
+    async addWorkItem(agentId: string, body: AddWorkItemRequest): Promise<WorkItem> {
+      return (await api.call('work-queue.add_item', { path: { agentId }, body })) as WorkItem;
     },
 
-    removeWorkItem(agentId: string, itemId: string): Promise<void> {
-      return fetchNoContent(baseUrl, itemPath(agentId, itemId), { method: 'DELETE' });
+    async removeWorkItem(agentId: string, itemId: string): Promise<void> {
+      await api.call('work-queue.remove_item', { path: { agentId, itemId } });
     },
 
+    // Stays hand-written: sends no body; waits for batch 3's no-body client (DOR-5473).
     requeueWorkItem(agentId: string, itemId: string): Promise<WorkItem> {
-      return fetchJSON(baseUrl, `${itemPath(agentId, itemId)}/requeue`, { method: 'POST' });
+      return fetchJSON(
+        baseUrl,
+        `/agents/${encodeURIComponent(agentId)}/work-queue/items/${encodeURIComponent(itemId)}/requeue`,
+        { method: 'POST' }
+      );
     },
   };
 }
