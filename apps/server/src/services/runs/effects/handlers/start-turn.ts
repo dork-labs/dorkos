@@ -71,7 +71,7 @@ export interface StartTurnDeps {
   admission: Omit<AdmissionDeps, 'runs'>;
   /** Admission itself; tests stand in for a chat turning busy right after it. */
   admit?: typeof admit;
-  /** The scheduler's cap: a task's run takes its slot the moment admission lets it go. */
+  /** The caps a run takes a slot under the moment admission lets it go (the scheduler's, the web's). */
   scheduleCap?: Pick<ScheduleCap, 'claim' | 'release'>;
 }
 
@@ -197,8 +197,18 @@ function waitFor(
   return { kind: 'wait', retryAt, outcome };
 }
 
-/** The computer face's request: the run's identity, its words inline, and what admission decided. */
-function requestOf(
+/**
+ * The computer face's request: the run's identity, its words inline, and what
+ * admission decided. Also what a caller handing its run over now sends
+ * (`hand-over-now.ts`), so both hand-overs ask for the same turn.
+ *
+ * @param run - The run, `queued`.
+ * @param origin - Its origin.
+ * @param words - Its words.
+ * @param start - Its `start_turn` payload.
+ * @param verdict - Admission's go.
+ */
+export function requestOf(
   run: TurnRun,
   origin: NonNullable<TurnRun['origin']>,
   words: string,
@@ -212,6 +222,7 @@ function requestOf(
     ...(run.continuesRunId !== null ? { continuesRunId: run.continuesRunId } : {}),
     sessionId: run.sessionId,
     ...(run.agentId !== null ? { agentId: run.agentId } : {}),
+    ...(run.askedByRef !== null ? { askedByRef: run.askedByRef } : {}),
     content: words,
     origin,
     wireOrigin: wireOriginOf(origin),

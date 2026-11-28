@@ -136,16 +136,13 @@ function harness(opts: HarnessOptions = {}) {
     listAgentSessions: async () => [],
     resolveStreamPlan: vi.fn(),
     deliverSessionStream: vi.fn(),
-    dispatchSessionMessage: vi.fn(),
-    meshCore: () => undefined,
-    roomSessionPlace: () => undefined,
+    handOverTurn: vi.fn(),
     resolveRuntime: vi.fn(),
     clearQueuedMessages: vi.fn(),
     recordAudit: (input) => {
       audits.push(input);
     },
     owner: () => ({ accountId: 'acct-owner', kind: 'person', name: 'Dorian' }),
-    mintClientId: () => 'relay:test',
     approvalKeys: opts.keys ?? (() => readApprovalKeys(home)),
     approvalPin: () => PIN,
     pendingApproval: (sessionId, toolCallId) => {

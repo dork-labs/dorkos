@@ -495,6 +495,7 @@ export class RunStore {
           queueMessageId: input.queueMessageId ?? null,
           sourceRef: input.sourceRef ?? null,
           notAfter: input.notAfter ?? null,
+          askedByRef: input.askedByRef ?? null,
           runtime: input.runtime ?? null,
           runtimeTurnRef: input.runtimeTurnRef ?? null,
           ...(live ? this.lease() : {}),

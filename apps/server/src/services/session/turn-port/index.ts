@@ -33,6 +33,9 @@ export {
   getComputerTurnPort,
   setComputerTurnPort,
   type ComputerTurnPort,
+  type HandOverReceipt,
+  type HandOverRefusal,
+  type HandOverResult,
 } from './computer-face.js';
 export { queueKeyOf as chatKeyOf } from '../resolution/session-key-registry.js';
 export { watchRunEvents } from './run-events.js';

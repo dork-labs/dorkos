@@ -28,6 +28,7 @@ import {
   type SessionRelayWiring,
 } from '../services/core/session-relay/index.js';
 import { remoteAccessOn } from '../middleware/remote-access-switch.js';
+import { handOverTurn } from '../services/runs/index.js';
 
 /**
  * Hand the session-list stream who may hear about each session, and which
@@ -74,13 +75,14 @@ export function wireScheduledChatMoves(): void {
  * side hands it the session stream and who may hear its presence. Switching
  * Chat from the web off closes a live relay at once.
  *
- * @param pieces - Mesh, the origin lookups and the room port.
+ * @param pieces - Mesh and the origin lookups.
  */
 export function wireSessionRelayStep(
-  pieces: Pick<SessionRelayWiring, 'meshCore' | 'origins' | 'roomSessionPlace'>
+  pieces: Pick<SessionRelayWiring, 'meshCore' | 'origins'>
 ): void {
   wireSessionRelay({
     ...pieces,
+    handOverTurn,
     remoteAccessOn,
     deliverSessionStream,
     ownerAudience: operatorAudience,
