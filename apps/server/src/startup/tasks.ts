@@ -194,8 +194,9 @@ export async function startTasks(deps: TasksStartupDeps): Promise<StartedTasks> 
       // A paused agent's runs are skipped, never started (spec `audit-trail` PR5).
       agentPauses,
       // A run's turn starts through the turn port, and a timer's fire at the cap
-      // waits there for a slot (spec `turns-survive-restarts`, T12).
-      turns: portTaskTurns(turnPort),
+      // waits there for a slot (spec `turns-survive-restarts`, T12). A run whose
+      // turn a restart cut is closed by the run record, in this store (DOR-5496).
+      turns: portTaskTurns(turnPort, taskStore),
       scheduleCap: setScheduleCap,
     });
     // The ONE registration seam, shared by every writer that can change what a

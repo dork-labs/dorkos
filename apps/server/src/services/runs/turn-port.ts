@@ -53,7 +53,7 @@ import { chatKeyOf, type ComputerTurnPort } from '../session/turn-port/index.js'
 import type { StartTurns } from './effects/start-turns.js';
 import type { EffectStore } from './effects/effect-store.js';
 import { StartPayloadSchema, startPayloadOf, type StartPayload } from './effects/start-payload.js';
-import type { RunStore, TurnRun } from './run-store.js';
+import { isUndecided, type RunStore, type TurnRun } from './run-store.js';
 import { writeStopReceipt, writeStopRequest } from './run-stops.js';
 import { RUN_ENDS, runTurnEvents, stopRun, type RunTurnReading } from './run-turn-stream.js';
 
@@ -109,6 +109,18 @@ export interface WordSource {
    * @param run - The run, by the chat it is kept under now.
    */
   forget?(id: string, run: Pick<TurnRun, 'sessionId'>): void;
+  /**
+   * The run ended with nobody in this process reading it for its caller: a
+   * restart cut its turn, or lost its start (§7.3, steps 4 and 5). The
+   * source ends its caller's own record with the run's ending, which is how
+   * whoever asked is told, once. Called inside the transaction that retires,
+   * decides or cancels the run; once per run.
+   *
+   * @param id - The source's own id.
+   * @param run - The run, `ended` or `cancelled`.
+   * @param told - False past the age bound (§7.3): the ending is recorded and nothing wakes.
+   */
+  ended?(id: string, run: TurnRun, told: boolean): void;
 }
 
 /** Which runs a watcher hears. */
@@ -490,6 +502,38 @@ export class SpaceTurnPort {
     if (run.sourceRef === null) return;
     const colon = run.sourceRef.indexOf(':');
     this.sources.get(run.sourceRef.slice(0, colon))?.forget?.(run.sourceRef.slice(colon + 1), run);
+  }
+
+  /**
+   * Hand a run a restart ended to its source, when the source keeps its
+   * caller's record of it (`WordSource.ended`): the caller's own path is then
+   * the one that tells whoever asked, so no person's notice is written for it.
+   *
+   * @param run - The run, `ended` or `cancelled`, of a boot that is gone.
+   * @param told - False past the age bound.
+   * @returns Whether the source took it.
+   */
+  endedUnwatched(run: TurnRun, told: boolean): boolean {
+    if (run.sourceRef === null) return false;
+    const colon = run.sourceRef.indexOf(':');
+    const source = this.sources.get(run.sourceRef.slice(0, colon));
+    if (!source?.ended) return false;
+    source.ended(run.sourceRef.slice(colon + 1), run, told);
+    return true;
+  }
+
+  /**
+   * Whether the run record still owes the caller whose words wait at this
+   * source the run's ending: its run is live or waiting, or ended by a
+   * restart and not decided yet (§7.3). Such a run's ending reaches its
+   * caller through {@link endedUnwatched}, so nothing else ends it.
+   *
+   * @param sourceRef - Where the caller keeps the words (`<kind>:<id>`).
+   */
+  owesEnding(sourceRef: string): boolean {
+    const run = this.deps.runs.findBySource(sourceRef);
+    if (!run) return false;
+    return !RUN_ENDS.has(run.status) || (run.status === 'ended' && isUndecided(run));
   }
 
   /**

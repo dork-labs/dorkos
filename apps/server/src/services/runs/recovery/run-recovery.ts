@@ -32,6 +32,15 @@
  * chat is told. A person's own words still come back as a draft, and a mini
  * app still gets its failed answer, since that starts nothing.
  *
+ * **A task's run** (§7.3, steps 4 and 6; DOR-5496): its words wait at the
+ * scheduler's source (`task-run:<id>`), and the scheduler that read its turn
+ * died with the boot. So the record ends the task's run itself, through that
+ * source (`WordSource.ended`), with the run's ending, in the transaction that
+ * decides the run or retires it with an ending its `turn_end` recorded: the
+ * task run's ending is what tells whoever is watching the schedule, once, and
+ * no person's notice is written beside it. Past the age bound it is recorded
+ * and nothing wakes. The task run has then settled, so nothing continues.
+ *
  * **Lost background work, unchanged** (§6.2): each record the boot found
  * becomes a `lost_work_wake`, for a runtime that declares
  * `wakesForLostBackgroundWork`, with today's skips; a chat that is also
@@ -98,9 +107,9 @@ export interface RunRecoveryDeps {
   runtimeOf?: (sessionId: string) => string | undefined;
   /**
    * Whether what follows a run is somebody else's: a task's run or a room's
-   * claim (§7.3). Until tasks and rooms are on the turn port, their own
-   * recovery owns their turns, so by default a room's or a schedule's run is
-   * never continued here.
+   * claim (§7.3). By default a room's or a schedule's run is never continued
+   * here: a room's claim is its own domain's until rooms are on the turn port,
+   * and a task's run is settled by recovery itself before it decides.
    */
   settledElsewhere?: (run: TurnRun) => boolean;
   /** The bound a continuation carries, as `continue-after-restart.ts` reads it. */
@@ -135,7 +144,10 @@ const NOTICE: Partial<Record<RestartDecision, RestartNoticeCase>> = {
 
 const LIVE: ReadonlySet<TurnRun['status']> = new Set(['starting', 'started', 'running']);
 
-/** By default, a room's or a schedule's run is its own domain's to recover. */
+/**
+ * By default, a room's or a schedule's run is never continued: a room's is its
+ * own domain's to recover, and a schedule's task run is settled with its end.
+ */
 const roomOrSchedule = (run: TurnRun): boolean =>
   run.origin?.kind === 'room' || run.origin?.kind === 'schedule';
 
@@ -323,13 +335,31 @@ export class RunRecovery {
     });
     if (fromStarted) this.handBackWords(run, stale, now);
     if (decision === 'continued') effects.insert(continueAfterRestartEffect(run, now));
+    // A run a gone boot owned: its caller's own record ends with it, if its
+    // source keeps one (a task's run), and that tells whoever asked instead.
+    const heard = run.ownerEpoch !== store.epoch && this.deps.port.endedUnwatched(run, !stale);
     const notice = NOTICE[decision];
-    if (notice !== undefined && !stale) effects.insert(restartNotice(run, notice, now));
+    if (notice !== undefined && !stale && !heard) effects.insert(restartNotice(run, notice, now));
     // A run owing nothing more settles on the worker's next pass.
     effects.announceWork();
     const chatKey = run.sessionId;
     // Decided: the gate no longer holds the chat for it (§7.5).
     queueMicrotask(() => this.deps.chat.wake(chatKey));
+  }
+
+  /**
+   * A run moved, inside its transaction: a gone boot's run retired with the
+   * ending its `turn_end` recorded is never decided (§7.1), so its caller's
+   * own record ends here instead, with that ending (§7.3, step 4). A run this
+   * boot owns is read by its caller in this process, which ends its record.
+   *
+   * @param run - The run, as stored after the move.
+   * @param from - The status it left.
+   */
+  onRunMoved(run: TurnRun, from: TurnRun['status']): void {
+    if (run.status !== 'ended' || from === 'ended' || isUndecided(run)) return;
+    if (run.ownerEpoch === null || run.ownerEpoch === this.deps.store.epoch) return;
+    this.deps.port.endedUnwatched(run, !pastAgeBound(run, this.deps.now()));
   }
 
   /**

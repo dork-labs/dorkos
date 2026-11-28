@@ -51,6 +51,20 @@
  * A follower sweeps nothing at all. It is not entitled to fire, and it is not
  * entitled to end other processes' work either.
  *
+ * ## Runs the run record ends are never swept
+ *
+ * A task's run whose turn started through the turn port has a run in the run
+ * record, which knows its owner: a lease that ran out is a process that is
+ * gone. The record ends such a task run itself, with its turn's ending, when it
+ * retires, decides or cancels that run (spec `turns-survive-restarts` §7.3,
+ * step 6; DOR-5496), and that ending is the one that tells. So the sweep leaves
+ * alone every run the record still owes its ending ({@link TaskTurns.owesEnding}),
+ * whoever leads, and one writer ends each run. That closes the residual above
+ * for those runs too: a manual run a crash orphaned ends once its turn's lease
+ * runs out. The sweep is left the runs the record does not hold: one whose
+ * turn never reached the port, one the relay carried, and one whose turn ended
+ * before the crash and whose own ending was never written.
+ *
  * ## Runs this process is executing are never swept, by any rule
  *
  * The rules above reason about a run's PROBABLE owner. For one set of runs
@@ -71,6 +85,7 @@ import type { TaskStore } from './task-store.js';
 import { SCHEDULER_LOCK_STALE_TTL_MS, type LeaderLock } from './scheduler-lock.js';
 import { RUN_START_WAIT_MS } from './timing/wake-settle.js';
 import type { RunAccounting } from './run-accounting.js';
+import type { TaskTurns } from './execution/task-turns.js';
 import { createTaggedLogger } from '../../lib/logger.js';
 
 const logger = createTaggedLogger('Tasks');
@@ -96,13 +111,15 @@ export interface InterruptedRunSweep {
  * @param liveHere - Runs this process is executing right now; never swept,
  *   whatever the rules below would otherwise say about them.
  * @param clock - Sees the computer sleep, so rule 3 counts awake time.
+ * @param turns - Answers which runs the run record still owes their ending; never swept.
  * @returns How many runs were ended and how many were left alone.
  */
 export function sweepInterruptedRuns(
   store: TaskStore,
   leaderLock: LeaderLock | null,
   liveHere: ReadonlySet<string> = new Set(),
-  clock: AwakeClock = getAwakeClock()
+  clock: AwakeClock = getAwakeClock(),
+  turns: Pick<TaskTurns, 'owesEnding'> = {}
 ): InterruptedRunSweep {
   // A follower ends nothing. Its own runs, if any, are covered by rule 3 on the
   // leader's next boot or by its own boot once it is promoted.
@@ -112,7 +129,10 @@ export function sweepInterruptedRuns(
 
   // Whatever else is true below, a run THIS process is executing is not an
   // orphan — see the note above about promotion.
-  const running = store.getRunningRuns().filter((run) => !liveHere.has(run.id));
+  // Nor one the run record ends itself, with its turn's ending (see above).
+  const running = store
+    .getRunningRuns()
+    .filter((run) => !liveHere.has(run.id) && turns.owesEnding?.(run.id) !== true);
   if (running.length === 0) return { swept: 0, left: 0 };
 
   // Rule 1: nobody else can own these rows.
@@ -160,14 +180,16 @@ export function sweepInterruptedRuns(
  * @param leaderLock - The scheduler's leader lock, or null when it has none.
  * @param runs - The runs the scheduler is accountable for; never swept.
  * @param clock - Sees the computer sleep, so rule 3 counts awake time.
+ * @param turns - Answers which runs the run record still owes their ending.
  */
 export function endInterruptedRuns(
   store: TaskStore,
   leaderLock: LeaderLock | null,
   runs: Pick<RunAccounting, 'heldRunIds'>,
-  clock: AwakeClock
+  clock: AwakeClock,
+  turns?: Pick<TaskTurns, 'owesEnding'>
 ): void {
-  const { swept, left } = sweepInterruptedRuns(store, leaderLock, runs.heldRunIds(), clock);
+  const { swept, left } = sweepInterruptedRuns(store, leaderLock, runs.heldRunIds(), clock, turns);
   if (swept > 0) logger.info(`marked ${swept} interrupted run(s) as failed`);
   if (left > 0) {
     logger.debug(

@@ -396,6 +396,21 @@ export class RunStore {
   }
 
   /**
+   * The newest run whose words wait at this source (`<kind>:<id>`), whatever its status.
+   *
+   * @param sourceRef - Where its caller keeps its words.
+   */
+  findBySource(sourceRef: string): TurnRun | undefined {
+    const row = this.db
+      .select()
+      .from(turnRuns)
+      .where(eq(turnRuns.sourceRef, sourceRef))
+      .orderBy(desc(turnRuns.chatSeq))
+      .get();
+    return row ? toRun(row) : undefined;
+  }
+
+  /**
    * Runs whose ending waits on recovery (§7.1): `process_died` or `shutdown`
    * and not decided yet, of one chat or every chat, oldest first.
    *

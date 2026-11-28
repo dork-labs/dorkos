@@ -1,5 +1,10 @@
 import { RunNoticeObserver } from './notices/run-notice-observer.js';
-import { updateRunRow, type RunUpdate } from './history/update-run-row.js';
+import {
+  INTERRUPTED_BY_RESTART,
+  updateRunRow,
+  type RunEndingFields,
+  type RunUpdate,
+} from './history/update-run-row.js';
 import { eq, ne, desc, and, count, inArray, notInArray, lt, isNull, sql } from 'drizzle-orm';
 import {
   pulseSchedules,
@@ -18,7 +23,6 @@ import type {
   UpdateTaskRequest,
 } from '@dorkos/shared/types';
 import { parseDuration } from '@dorkos/skills/duration';
-import { RUN_LINE } from '@dorkos/shared/schedule-notice-copy';
 import { logger } from '../../lib/logger.js';
 import { TaskApprovals } from './approvals/task-approvals.js';
 import { TaskRunControls } from './store/task-run-controls.js';
@@ -509,14 +513,18 @@ export class TaskStore {
     updateRunRow(this.db, id, existing, update);
 
     const updated = this.getRun(id);
+    // Told only once the write committed: a caller's transaction that rolled
+    // it back (the run record's, DOR-5496) leaves the run as it was, and tells nobody.
+    const committed = (): boolean => this.getRun(id)?.status !== existing.status;
     if (update.status && isTerminalRunStatus(update.status))
-      this.runNotices.emit('terminal', updated);
+      this.runNotices.emit('terminal', updated, committed);
 
     // Terminal consumers observe only genuine transitions, after the write.
     if (this.onRunTerminal && updated && update.status && isTerminalRunStatus(update.status)) {
       const listener = this.onRunTerminal;
       const task = this.getTask(updated.scheduleId);
       queueMicrotask(() => {
+        if (!committed()) return;
         try {
           listener(updated, task);
         } catch (err) {
@@ -837,20 +845,20 @@ export class TaskStore {
    * existing `finishedAt`: that timestamp is the only record of when the run
    * actually finished.
    *
+   * Quiet: no terminal consumer hears it. The run record also ends a task
+   * run here, with its turn's ending, when it is past the restart age bound
+   * and nothing may wake (DOR-5496).
+   *
    * @param runIds - The runs to end. An empty list writes nothing.
+   * @param ending - The status and line they end with; a restart's, by default.
    * @returns How many rows were changed.
    */
-  markRunsInterrupted(runIds: string[]): number {
+  markRunsInterrupted(runIds: string[], ending: RunEndingFields = INTERRUPTED_BY_RESTART): number {
     if (runIds.length === 0) return 0;
     const now = new Date().toISOString();
     const result = this.db
       .update(pulseRuns)
-      .set({
-        status: 'failed',
-        finishedAt: now,
-        // The notice reads this opening back as "DorkOS restarted" (DOR-4121).
-        error: RUN_LINE.serverRestart,
-      })
+      .set({ status: ending.status, finishedAt: now, error: ending.error })
       .where(
         and(
           inArray(pulseRuns.id, runIds),

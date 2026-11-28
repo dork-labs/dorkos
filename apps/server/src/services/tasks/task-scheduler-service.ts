@@ -457,7 +457,7 @@ export class TaskSchedulerService {
     // The runs this process is executing go in as an exclusion set. At boot
     // there are none; on a PROMOTION there may well be, and ending one of those
     // would be this bug's own mistake made against ourselves.
-    endInterruptedRuns(this.store, this.leaderLock, this.runs, this.wakeSettle.clock);
+    endInterruptedRuns(this.store, this.leaderLock, this.runs, this.wakeSettle.clock, this.turns);
   }
 
   /**

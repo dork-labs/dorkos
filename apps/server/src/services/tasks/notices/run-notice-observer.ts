@@ -10,11 +10,18 @@ export class RunNoticeObserver {
   scheduled: ((run: TaskRun) => void) | undefined;
   terminal: ((run: TaskRun) => void) | undefined;
 
-  /** Queue a committed observation; a failed notice must not corrupt run history. */
-  emit(kind: 'scheduled' | 'terminal', run: TaskRun | null): void {
+  /**
+   * Queue a committed observation; a failed notice must not corrupt run history.
+   *
+   * @param kind - Which observation.
+   * @param run - The run, as written.
+   * @param committed - Whether the write is still there when the notice goes.
+   */
+  emit(kind: 'scheduled' | 'terminal', run: TaskRun | null, committed = () => true): void {
     if (!run || !this[kind]) return;
     const listener = this[kind]!;
     queueMicrotask(() => {
+      if (!committed()) return;
       try {
         listener(run);
       } catch (error) {
