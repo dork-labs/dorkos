@@ -5,6 +5,7 @@
  * `/mcp` server. The resolution runs the real resolver over the real composed
  * registry; only the two sources (config, the agent's overrides) move.
  */
+import { createTaskToolReach } from '../../../../startup/task-tool-reach.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -154,6 +155,7 @@ describe('the builders', () => {
       defaultCwd: '/tmp/permission-filter',
       dorkHome: '/tmp/permission-filter-home',
       taskStore: stub,
+      tasksReach: createTaskToolReach(),
       relayCore: stub,
       adapterManager: stub,
       traceStore: stub,

@@ -41,6 +41,7 @@
  *
  * @vitest-environment node
  */
+import { gateViewOf } from '../capabilities/declarations/gate-action.js';
 import { describe, it, expect } from 'vitest';
 import { OPERATING_SKILLS_PACK } from '@dorkos/operating-skills';
 import { noopLogger } from '@dorkos/shared/logger';
@@ -95,8 +96,8 @@ const destructiveCapabilities: DestructiveAction[] = composeDorkOsCapabilityRegi
 })
   .capabilities.filter((c) => c.tier === 'destructive')
   .map((c) => ({
-    label: c.id,
-    names: [c.id, c.surfaces.mcp?.toolName].filter((n): n is string => Boolean(n)),
+    label: gateViewOf(c).id,
+    names: [gateViewOf(c).id, c.surfaces.mcp?.toolName].filter((n): n is string => Boolean(n)),
     source: 'capability-registry' as const,
   }));
 

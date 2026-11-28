@@ -13,6 +13,7 @@
  * Flag-gated domains are counted too: the census turns their flags on, so a tool hidden behind
  * one cannot land without an area and ship that way when the flag flips (DOR-3953).
  */
+import { gateViewOf } from '../declarations/gate-action.js';
 import { afterAll, describe, it, expect } from 'vitest';
 import { env } from '../../../../env.js';
 import { PERMISSION_AREA_IDS, isFloorArea } from '@dorkos/shared/permissions';
@@ -34,7 +35,7 @@ interface CensusEntry {
 function everyAction(): CensusEntry[] {
   const registry = composeCapabilityRegistryForDocs();
   const capabilities: CensusEntry[] = registry.capabilities.map((cap) => ({
-    id: cap.id,
+    id: gateViewOf(cap).id,
     tier: cap.tier,
     area: cap.area,
     ...(cap.areaNote !== undefined ? { areaNote: cap.areaNote } : {}),

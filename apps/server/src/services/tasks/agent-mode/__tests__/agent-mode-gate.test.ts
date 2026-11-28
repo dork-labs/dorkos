@@ -16,7 +16,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { MeshCore } from '@dorkos/mesh';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { PermissionConfigInput } from '@dorkos/shared/permissions';
@@ -47,11 +46,6 @@ import {
   resetPermissionGate,
 } from '../../../core/capabilities/permission-enforcement.js';
 import { escalatedGrantFor } from '../../../core/capabilities/tool-call-escalation.js';
-import {
-  gateHandRegisteredMcpTools,
-  gatedToolRegistrar,
-  type SdkMcpTool,
-} from '../../../core/mcp-tool-gate.js';
 import { eventFanOut } from '../../../core/event-fan-out.js';
 import { runWithAuditActor } from '../../../audit/audit-context.js';
 import type { AgentIdentity } from '../../../core/agent-identity/index.js';
@@ -60,7 +54,7 @@ import { composeCapabilityRegistryForDocs } from '../../../core/self-description
 import { TaskStore } from '../../task-store.js';
 import { setAgentHomeRegistry } from '../../../core/agent-identity/agent-home.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
-import { registerAgentModeEscalators } from '../agent-mode-escalation.js';
+import { probeUpdate } from '../../agent-tools/__tests__/probe-update-capability.js';
 import type { AgentModeSources } from '../agent-mode-decision.js';
 
 const A = '/tmp/dor3703-gate/agent-a';
@@ -74,7 +68,6 @@ const AGENT_A: AgentIdentity = {
 let config: PermissionConfigInput;
 let store: TaskStore;
 let approvals: ApprovalService;
-let unregister: () => void;
 let reached: Record<string, unknown>[];
 /** Agent homes a test adds, by Mesh id. */
 let extraHomes: Record<string, string> = {};
@@ -90,41 +83,19 @@ const sources: AgentModeSources = {
   turnLevelOf: () => ({ asks: 'never', reach: 'everything' }),
 };
 
-/** A probe `tasks_update`: the real gate in front, a recorder behind. */
-const probe: SdkMcpTool = {
-  name: 'tasks_update',
-  description: 'probe',
-  inputSchema: {},
-  handler: async (args: Record<string, unknown>): Promise<CallToolResult> => {
-    reached.push(args);
-    return { content: [{ type: 'text', text: JSON.stringify({ ok: true }) }] };
-  },
-};
+/** The probe `tasks_update`: the real capability's gate in front, a recorder behind (C9a). */
+let callProbe: ReturnType<typeof probeUpdate>;
 
 /** The probe on the in-session server, as agent A's own chat. */
 function inSession(sessionId = 'ses-a', as: AgentIdentity = AGENT_A, cwd?: string) {
-  const [tool] = gateHandRegisteredMcpTools(
-    [probe],
-    async () => ({ identity: as }),
-    undefined,
-    () => ({ sessionId, ...(cwd ? { cwd } : {}) })
-  );
-  return (args: Record<string, unknown>) => tool!.handler(args, {});
+  return (args: Record<string, unknown>) =>
+    callProbe({ identity: as, sessionId, ...(cwd ? { cwd } : {}), mcpServer: 'in-session' }, args);
 }
 
 /** The probe on the external `/mcp` server, for a caller with or without a token. */
 function external(identity?: AgentIdentity) {
-  let callback: ((args: unknown, extra: unknown) => Promise<CallToolResult>) | undefined;
-  const server = {
-    registerTool: (_name: string, _config: unknown, cb: typeof callback) => {
-      callback = cb;
-    },
-  } as unknown as McpServer;
-  const registrar = gatedToolRegistrar(server, identity);
-  registrar.registerTool('tasks_update', { description: 'probe', inputSchema: {} }, (async (
-    args: Record<string, unknown>
-  ) => probe.handler(args, {})) as never);
-  return (args: Record<string, unknown>) => callback!(args, {});
+  return (args: Record<string, unknown>) =>
+    callProbe({ ...(identity ? { identity } : {}), mcpServer: 'external' }, args);
 }
 
 function payloadOf(result: CallToolResult): Record<string, unknown> {
@@ -157,17 +128,15 @@ beforeEach(() => {
   vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
   initCapabilityTierGate({ approvals });
   initPermissionGate({ readConfig: () => config });
-  unregister = registerAgentModeEscalators(
-    {
-      store,
-      meshCore: { getProjectPath: (id: string) => sources.agentPathOf(id) } as unknown as MeshCore,
-    },
-    sources
-  );
+  callProbe = probeUpdate({
+    store,
+    meshCore: { getProjectPath: (id: string) => sources.agentPathOf(id) } as unknown as MeshCore,
+    sources,
+    reached,
+  });
 });
 
 afterEach(() => {
-  unregister();
   resetCapabilityTierGate();
   resetPermissionGate();
   store.close();
@@ -300,13 +269,7 @@ describe('a call the decision refuses', () => {
   it('reaches the tool with no card, so the tool refuses it whole', async () => {
     const id = waitingTask();
     // Agent B approving its own proposal: refused, never carded.
-    const [tool] = gateHandRegisteredMcpTools(
-      [probe],
-      async () => ({ identity: { ...AGENT_A, agentPath: B } }),
-      undefined,
-      () => ({ sessionId: 'ses-b' })
-    );
-    await tool!.handler({ id, status: 'active' }, {});
+    await inSession('ses-b', { ...AGENT_A, agentPath: B })({ id, status: 'active' });
     expect(approvals.listPending()).toEqual([]);
     expect(reached).toHaveLength(1);
     expect(escalatedGrantFor(reached[0])?.via).toBe('allowed');

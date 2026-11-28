@@ -60,6 +60,7 @@ import { workGraphDomain } from '../../work-graph/work-graph-capabilities.js';
 import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
 import { runsDomain } from '../../runs/run-capabilities.js';
 import { taskViewDomain } from '../../tasks/view/task-view-capabilities.js';
+import { tasksAgentToolsDomain } from '../../tasks/agent-tools/task-agent-capabilities.js';
 import { createSessionReadsDomain } from '../../session/reads/session-read-capabilities.js';
 import { auditTrail } from '../../audit/audit-trail.js';
 import { runtimeRegistry } from '../runtime-registry.js';
@@ -86,6 +87,13 @@ import { workspacesDomain } from '../../workspace/workspace-capabilities.js';
 import { templatesDomain } from '../agent-templates/template-catalog.js';
 import { sessionRelayDomain } from '../session-relay-doors/session-relay-capabilities.js';
 
+/**
+ * Two of the domains this root registers, for the tokenless read list (`tool-security.ts`).
+ * A stopgap, not a pattern: a composition root re-exports no domain. C9b (DOR-5483) moves the
+ * tokenless mark onto each capability's own declaration, `tool-security.ts` reads it from the
+ * registry it is handed at boot, and this export goes.
+ */
+export { capabilitiesDomain, tasksAgentToolsDomain };
 /**
  * The work graph's reads (DOR-4970), handed what they take from other domains
  * here, at the composition root: the audit read side's reader rule, a chat's
@@ -208,6 +216,9 @@ export function composeDorkOsCapabilityRegistry(
   domains.push(runsDomain);
   // The app's task reads (DOR-4978); they say so themselves when Tasks is not running.
   domains.push(taskViewDomain);
+  // Unconditional, as their hand rows were (C9a): the settings list them, and with no tool
+  // deps every call answers that Tasks is off.
+  domains.push(tasksAgentToolsDomain);
   // The app's simplest chat reads (DOR-4978); each folds in the session read guard.
   domains.push(sessionReadsDomain);
   // The app's runtime setup reads (DOR-4978); they say so themselves before the runtimes start.
@@ -261,6 +272,7 @@ export function composeDorkOsCapabilityRegistry(
 export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
   const domains: CapabilityDomain[] = [
     operatorDomain,
+    tasksAgentToolsDomain,
     marketplaceDomain,
     marketplaceReadsDomain,
     connectorDomain,

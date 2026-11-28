@@ -1,0 +1,491 @@
+/**
+ * `tasks_update` rewrites the SKILL.md, so an agent's edit survives the next
+ * reconciler sweep (DOR-1625).
+ *
+ * The bug this pins was a lie-on-success, not a crash. A scheduled task is a
+ * SKILL.md with a derived row, and the reconciler re-reads every skills root
+ * every five minutes and upserts what it finds. This handler wrote the ROW ALONE
+ * and answered with the updated schedule — so `prompt`, `cron`, `name`,
+ * `timezone` and the runtime/model/effort trio all went back to their old values
+ * within five minutes, after the agent had been told the change landed.
+ *
+ * So the headline case does not assert the response, and does not assert the row
+ * straight after the write either: both were true the whole time it was broken.
+ * It runs a REAL {@link TaskReconciler} over a real temp directory and asks what
+ * the row holds afterwards, which is the only question the bug ever answered
+ * wrong.
+ *
+ * @module services/tasks/agent-tools/__tests__/task-tools-update-file
+ */
+import { createTaskToolReach } from '../../../../startup/task-tool-reach.js';
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs/promises';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { createTestDb } from '@dorkos/test-utils/db';
+import type { Db } from '@dorkos/db';
+import type { Task } from '@dorkos/shared/schemas';
+import { TaskStore } from '../../task-store.js';
+import { TaskRegistrar } from '../../task-registrar.js';
+import { TaskReconciler } from '../../task-reconciler.js';
+import { ScheduleIdentityRegistry } from '../../schedule-identity.js';
+import { FakeScheduler } from '../../__tests__/fake-scheduler.js';
+import { skillsRoot } from '../../__tests__/task-root-fixtures.js';
+import type { AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
+import { getTasksTools } from '../task-tool-definitions.js';
+import { REAPPROVAL_NOTE } from '../task-tool-copy.js';
+import {
+  AGENT_CONTENT_CHANGE_REASON,
+  AGENT_SETTINGS_CHANGE_REASON,
+} from '../../timing/effective-timing.js';
+import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+
+// What the server's startup registers (DOR-4928): unregistered, the protected-path policy
+// refuses every path and turn code knows no Claude transcript.
+registerClaudeCodeFacts();
+
+/** The shape `tool()` returns, narrowed to what this test drives. */
+interface SessionTool {
+  name: string;
+  handler: (
+    args: Record<string, unknown>,
+    extra: unknown
+  ) => Promise<{ content: { type: string; text: string }[]; isError?: boolean }>;
+}
+
+describe('tasks_update writes the SKILL.md, not just the row', () => {
+  let db: Db;
+  let store: TaskStore;
+  let tools: Record<string, SessionTool>;
+  let root: string;
+  let dorkHome: string;
+  let skillsDir: string;
+  /** What mesh answers for a task's agent — the agent's own directory, or none. */
+  let agentDir: string | null;
+
+  beforeEach(async () => {
+    db = createTestDb();
+    store = new TaskStore(db);
+    // Resolved, because the create path stores each row's REAL path and the
+    // reconciler below scans the root it is handed: on macOS every temp
+    // directory is a symlink, and an unresolved root would key a SECOND row for
+    // the same file rather than updating the one under test.
+    root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-update-file-')));
+    dorkHome = path.join(root, 'dork');
+    agentDir = path.join(root, 'agent');
+    skillsDir = path.join(agentDir, '.agents', 'skills');
+    await fs.mkdir(dorkHome, { recursive: true });
+    await fs.mkdir(skillsDir, { recursive: true });
+
+    const deps = {
+      taskStore: store,
+      tasksReach: createTaskToolReach(),
+      defaultCwd: '/tmp/test',
+      dorkHome,
+      // Production's `getProjectPath` returns the agent's OWN directory, and the
+      // package-ownership check asks about exactly that — so a case about an
+      // agent has to move this, not hand-build roots around it (DOR-1789 review).
+      meshCore: {
+        getProjectPath: () => agentDir,
+        listWithPaths: () => (agentDir ? [{ id: 'agent-1', projectPath: agentDir }] : []),
+      },
+    } as unknown as AgentToolDeps;
+    // Called as the agent whose schedule it is: only its owner may edit an
+    // agent's schedule (DOR-3640 R1).
+    tools = Object.fromEntries(
+      (
+        getTasksTools(
+          deps,
+          undefined,
+          undefined,
+          () => agentDir ?? undefined
+        ) as unknown as SessionTool[]
+      ).map((t) => [t.name, t])
+    );
+  });
+
+  afterEach(async () => {
+    store.close();
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  /** Call a tool and parse its single JSON content block. */
+  async function call(name: string, args: Record<string, unknown>) {
+    const result = await tools[name]!.handler(args, undefined);
+    return {
+      isError: result.isError === true,
+      payload: JSON.parse(result.content[0]!.text) as Record<string, unknown>,
+    };
+  }
+
+  const BASE = {
+    name: 'nightly-sweep',
+    prompt: 'sweep the backlog',
+    cron: '0 3 * * *',
+    target: 'global',
+    reason: 'The overnight backlog needs sweeping before you start.',
+  };
+
+  /** The SKILL.md under the calling agent, with the base name. */
+  const skillPath = () => path.join(skillsDir, 'nightly-sweep', 'SKILL.md');
+
+  /** Create the base task through the tool and hand back its id. */
+  async function createTask(extra: Record<string, unknown> = {}): Promise<string> {
+    const { isError, payload } = await call('tasks_create', { ...BASE, ...extra });
+    expect(isError).toBe(false);
+    return (payload.schedule as Task).id;
+  }
+
+  /** One real reconciler pass over the calling agent’s skills root. */
+  async function reconcile(): Promise<{ upserted: number; orphaned: number }> {
+    const reconciler = new TaskReconciler(
+      store,
+      new TaskRegistrar({ store, scheduler: new FakeScheduler() }),
+      new ScheduleIdentityRegistry()
+    );
+    reconciler.addRoot(skillsRoot(skillsDir, 'project', agentDir!, 'agent-1'));
+    try {
+      return await reconciler.reconcile();
+    } finally {
+      reconciler.stop();
+    }
+  }
+
+  it('an edited prompt and cron survive a real reconciler sweep', async () => {
+    // THE bug. Before this, the row held the new values for up to five minutes
+    // and then the sweep read the untouched file and put the old ones back.
+    const id = await createTask();
+
+    const updated = await call('tasks_update', {
+      id,
+      prompt: 'sweep the backlog and file what is left',
+      cron: '0 5 * * *',
+    });
+    expect(updated.isError).toBe(false);
+
+    await reconcile();
+
+    const row = store.getTask(id)!;
+    expect(row.prompt).toBe('sweep the backlog and file what is left');
+    expect(row.cron).toBe('0 5 * * *');
+  });
+
+  /** Create the base task and put it through the person's approval. */
+  async function createApprovedTask(): Promise<string> {
+    const id = await createTask();
+    // The transition IS the approval, and it stamps the content key the arm gate
+    // reads later (`TaskApprovals.recordApproval`).
+    store.updateTask(id, { status: 'active' });
+    return id;
+  }
+
+  it('SAYS an edit costs the schedule its approval, and it really does', async () => {
+    // Writing the file is what makes the arm gate see new content, so the fix
+    // above brought this consequence with it: the person approved a prompt, this
+    // is a different one, and the next sync parks the task until they read it.
+    // Correct, and silent until now — the reply handed back a row still saying
+    // `active`, so an agent reported a live schedule that was about to stop.
+    const id = await createApprovedTask();
+
+    const { isError, payload } = await call('tasks_update', { id, prompt: 'do something else' });
+
+    expect(isError).toBe(false);
+    expect(payload.needsReapproval).toBe(true);
+    expect(payload.note).toBe(REAPPROVAL_NOTE);
+    // Parked in this same call (DOR-2313), so the row the reply carries already
+    // says so, in DorkOS's words about what the agent changed.
+    expect(payload.schedule as Task).toMatchObject({
+      status: 'pending_approval',
+      reason: AGENT_CONTENT_CHANGE_REASON,
+    });
+
+    // And the sweep keeps it that way, sentence and all.
+    await reconcile();
+    expect(store.getTask(id)).toMatchObject({
+      status: 'pending_approval',
+      reason: AGENT_CONTENT_CHANGE_REASON,
+    });
+  });
+
+  it('stops an approved schedule when the agent changes how it runs (DOR-2323)', async () => {
+    // Parity with the REST route: the model is part of the approval now, and
+    // the reply says what it cost.
+    const id = await createApprovedTask();
+
+    const { isError, payload } = await call('tasks_update', { id, model: 'claude-opus-4' });
+
+    expect(isError).toBe(false);
+    expect(payload).toMatchObject({ needsReapproval: true, note: REAPPROVAL_NOTE });
+    expect(payload.schedule as Task).toMatchObject({
+      status: 'pending_approval',
+      reason: AGENT_SETTINGS_CHANGE_REASON,
+      approvalChanges: [{ field: 'model', from: null, to: 'claude-opus-4', via: 'schedule' }],
+    });
+    await reconcile();
+    expect(store.getTask(id)).toMatchObject({
+      status: 'pending_approval',
+      reason: AGENT_SETTINGS_CHANGE_REASON,
+    });
+  });
+
+  it('stops an approved schedule when the agent changes its account (DOR-2384)', async () => {
+    // The account decides whose subscription pays; an agent changing it is new
+    // work, written into the file's schedule block so the next sweep keeps it.
+    const id = await createApprovedTask();
+
+    const { isError, payload } = await call('tasks_update', { id, account: 'work' });
+
+    expect(isError).toBe(false);
+    expect(payload.schedule as Task).toMatchObject({
+      status: 'pending_approval',
+      account: 'work',
+      approvalChanges: [{ field: 'account', from: null, to: 'work', via: 'schedule' }],
+    });
+    expect(await fs.readFile(skillPath(), 'utf-8')).toMatch(/^ {2}account: work$/m);
+    await reconcile();
+    expect(store.getTask(id)).toMatchObject({ status: 'pending_approval', account: 'work' });
+  });
+
+  it('refuses to move a started sticky conversation to another account (DOR-2384)', async () => {
+    const id = await createTask({ sticky: true });
+    const run = store.createRun(id, 'scheduled');
+    store.updateRun(run.id, { sessionId: '0f6c1d7e-7d0e-4c55-9f55-000000000002' });
+
+    const { isError, payload } = await call('tasks_update', { id, account: 'work' });
+
+    expect(isError).toBe(true);
+    expect(payload).toEqual({
+      code: 'STICKY_ACCOUNT_LOCKED',
+      error:
+        "This schedule picks up where its last run left off, so it stays on the account it started on. Turn off 'Remember the last run' to change it.",
+    });
+    expect(store.getTask(id)!.account).toBeNull();
+    expect(await fs.readFile(skillPath(), 'utf-8')).not.toContain('account');
+  });
+
+  it('creates a schedule on the account it names (DOR-2384)', async () => {
+    const id = await createTask({ account: 'work' });
+
+    expect(store.getTask(id)!.account).toBe('work');
+    expect(await fs.readFile(skillPath(), 'utf-8')).toMatch(/^ {2}account: work$/m);
+  });
+
+  it('says nothing of the sort for an edit that keeps the approved work', async () => {
+    // The negative control, and it is the half that makes the disclosure worth
+    // anything: a note on every update is a note nobody reads. The description
+    // is written to the file but is not part of the approval key, so the grant
+    // holds. (`maxRuntime` was the example until DOR-2323 made it part of it.)
+    const id = await createApprovedTask();
+
+    const { isError, payload } = await call('tasks_update', { id, description: 'Tidier words' });
+
+    expect(isError).toBe(false);
+    expect(payload.needsReapproval).toBeUndefined();
+    expect(payload.note).toBeUndefined();
+
+    await reconcile();
+    expect(store.getTask(id)!.status).toBe('active');
+  });
+
+  it('writes the prompt into the body and the cron into the schedule block', async () => {
+    const id = await createTask();
+    await call('tasks_update', { id, prompt: 'a different job', cron: '30 4 * * 1' });
+
+    const content = await fs.readFile(skillPath(), 'utf-8');
+    expect(content).toContain('a different job');
+    expect(content).not.toContain('sweep the backlog');
+    // Inside the block, never at the top level — a top-level `cron:` is the
+    // legacy shape DOR-1486 retired, and it would shadow nothing.
+    expect(content).toMatch(/^ {2}cron: 30 4 \* \* 1$/m);
+  });
+
+  it('an edited timezone survives the sweep too, and the file stays readable', async () => {
+    // The other half of a cron. A file the frontmatter schema cannot read stops
+    // syncing for good, so the rewrite is also asked not to leave a literal
+    // `null` behind — the shape that breaks it.
+    const id = await createTask({ timezone: 'America/New_York' });
+
+    const updated = await call('tasks_update', { id, timezone: 'Europe/Berlin' });
+    expect(updated.isError).toBe(false);
+
+    const content = await fs.readFile(skillPath(), 'utf-8');
+    expect(content).toMatch(/^ {2}timezone: Europe\/Berlin$/m);
+    // Anchored on the field rather than on the word: `null` anywhere in a body a
+    // person wrote is none of this test's business, and a merge that wrote
+    // `timezone: null` is the shape that makes the file unreadable for good.
+    expect(content).not.toMatch(/^\s*timezone:\s*(null|~)\s*$/m);
+
+    await reconcile();
+    expect(store.getTask(id)!.timezone).toBe('Europe/Berlin');
+  });
+
+  it('refuses a cron nothing can read, and writes neither the file nor the row', async () => {
+    const id = await createTask();
+
+    const { isError, payload } = await call('tasks_update', { id, cron: 'every other tuesday' });
+
+    expect(isError).toBe(true);
+    // Pinned on the wording, not on "some error": the agent reads this sentence
+    // and either writes a real cron next or asks the person.
+    expect(String(payload.error)).toContain('is not a schedule DorkOS can read');
+    expect(String(payload.error)).toContain('every other tuesday');
+    expect(store.getTask(id)!.cron).toBe('0 3 * * *');
+    expect(await fs.readFile(skillPath(), 'utf-8')).not.toContain('every other tuesday');
+  });
+
+  it('refuses a file it cannot read, and changes NOTHING — not even the row', async () => {
+    // The silent-success shape one branch over: a file that reads but does not
+    // parse used to be skipped, the row updated, and the caller told it worked.
+    const id = await createTask();
+    await fs.writeFile(skillPath(), '---\nname: nightly-sweep\n---\nBody', 'utf-8');
+
+    const { isError, payload } = await call('tasks_update', { id, prompt: 'a different job' });
+
+    expect(isError).toBe(true);
+    expect(String(payload.error)).toContain('could not make sense of');
+    expect(store.getTask(id)!.prompt).toBe('sweep the backlog');
+  });
+
+  it('refuses to rewrite a file an installed package owns', async () => {
+    // Editing through the symlink writes into the package's own checkout: the
+    // change is shared by every agent that installed it and the next package
+    // update overwrites it.
+    const packageDir = path.join(dorkHome, 'plugins', 'nightly-pack', 'skills', 'nightly-sweep');
+    await fs.mkdir(packageDir, { recursive: true });
+    const filePath = path.join(packageDir, 'SKILL.md');
+    await fs.writeFile(
+      filePath,
+      "---\nname: nightly-sweep\ndescription: packaged\nschedule:\n  cron: '0 3 * * *'\n---\npackaged prompt",
+      'utf-8'
+    );
+    const task = store.createTask({
+      name: 'nightly-sweep',
+      description: 'packaged',
+      prompt: 'packaged prompt',
+      cron: '0 3 * * *',
+      filePath,
+    });
+
+    const { isError, payload } = await call('tasks_update', {
+      id: task.id,
+      prompt: 'a different job',
+    });
+
+    expect(isError).toBe(true);
+    expect(payload.code).toBe('schedule_package_owned');
+    // No record in this install, so the answer is the legacy one, and the
+    // agent is told which (DOR-2272).
+    expect(payload.ownedBy).toBe('legacy');
+    expect(store.getTask(task.id)!.prompt).toBe('packaged prompt');
+    expect(await fs.readFile(filePath, 'utf-8')).toContain('packaged prompt');
+  });
+
+  /**
+   * Stand up an agent directory holding one schedule, and point mesh at it the
+   * way the registry does.
+   *
+   * @param dir - The agent's own directory.
+   * @param installed - Whether it is a marketplace install rather than an agent
+   *   the person made.
+   * @returns The task whose file lives inside it.
+   */
+  async function agentWithSchedule(dir: string, installed: boolean): Promise<Task> {
+    await fs.mkdir(path.join(dir, '.dork'), { recursive: true });
+    await fs.writeFile(path.join(dir, '.dork', 'agent.json'), '{}', 'utf-8');
+    if (installed) {
+      await fs.writeFile(
+        path.join(dir, '.dork', 'manifest.json'),
+        JSON.stringify({ name: 'researcher', version: '1.0.0', type: 'agent' }),
+        'utf-8'
+      );
+    }
+    const filePath = path.join(dir, '.agents', 'skills', 'nightly-sweep', 'SKILL.md');
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(
+      filePath,
+      "---\nname: nightly-sweep\ndescription: packaged\nschedule:\n  cron: '0 3 * * *'\n---\npackaged prompt",
+      'utf-8'
+    );
+    agentDir = dir;
+    return store.createTask({
+      name: 'nightly-sweep',
+      description: 'packaged',
+      prompt: 'packaged prompt',
+      cron: '0 3 * * *',
+      filePath,
+      agentId: 'agent-1',
+    });
+  }
+
+  it('refuses to rewrite a file a PROJECT-scoped agent package owns', async () => {
+    // The shape the first DOR-1789 fix still got wrong. A project-scoped agent
+    // package lives at `<repo>/.dork/agents/<name>`, and all the route has is
+    // that directory — the `<repo>/.dork/agents` root above it was never
+    // derivable, so a root walk could not reach this case at all.
+    const task = await agentWithSchedule(
+      path.join(root, 'repo', '.dork', 'agents', 'helper'),
+      true
+    );
+
+    const { isError, payload } = await call('tasks_update', {
+      id: task.id,
+      prompt: 'a different job',
+    });
+
+    expect(isError).toBe(true);
+    expect(payload.code).toBe('schedule_package_owned');
+    expect(store.getTask(task.id)!.prompt).toBe('packaged prompt');
+    expect(await fs.readFile(task.filePath!, 'utf-8')).toContain('packaged prompt');
+  });
+
+  it('refuses to rewrite a file a GLOBAL agent package owns', async () => {
+    const task = await agentWithSchedule(path.join(dorkHome, 'agents', 'researcher'), true);
+
+    const { isError, payload } = await call('tasks_update', {
+      id: task.id,
+      prompt: 'a different job',
+    });
+
+    expect(isError).toBe(true);
+    expect(payload.code).toBe('schedule_package_owned');
+  });
+
+  it('still edits the schedule of an agent the person made', async () => {
+    // The other direction of the same rule: an agent a person made sits at the
+    // same depth as a package and must not be mistaken for one. Only the install
+    // marker tells them apart.
+    const task = await agentWithSchedule(path.join(root, 'repo', '.dork', 'agents', 'mine'), false);
+
+    const { isError } = await call('tasks_update', { id: task.id, prompt: 'a different job' });
+
+    expect(isError).toBe(false);
+    expect(await fs.readFile(task.filePath!, 'utf-8')).toContain('a different job');
+  });
+
+  it('still edits the row of a task whose file was deleted outside DorkOS', async () => {
+    // The one error that means "there is no file, edit the row alone". Every
+    // other read failure is a real failure and is reported as one.
+    const id = await createTask();
+    await fs.rm(path.dirname(skillPath()), { recursive: true, force: true });
+
+    const { isError } = await call('tasks_update', { id, prompt: 'a different job' });
+
+    expect(isError).toBe(false);
+    expect(store.getTask(id)!.prompt).toBe('a different job');
+  });
+
+  it('does not open the file for an edit that changes nothing in it', async () => {
+    // `enabled` lives in the file, so a request that MENTIONS it looks
+    // file-worthy; re-sent at its current value it is not a change, and a
+    // read-merge-write of somebody's SKILL.md is not free of risk.
+    const id = await createTask();
+    const before = await fs.readFile(skillPath(), 'utf-8');
+    const beforeStat = await fs.stat(skillPath());
+
+    const { isError } = await call('tasks_update', { id, enabled: store.getTask(id)!.enabled });
+    expect(isError).toBe(false);
+
+    expect(await fs.readFile(skillPath(), 'utf-8')).toBe(before);
+    expect((await fs.stat(skillPath())).mtimeMs).toBe(beforeStat.mtimeMs);
+  });
+});

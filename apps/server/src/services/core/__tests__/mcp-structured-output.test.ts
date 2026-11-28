@@ -33,6 +33,7 @@ import type {
 } from '@dorkos/shared/mesh-schemas';
 import type { Task } from '@dorkos/shared/schemas';
 import type { DeliveryMetrics } from '@dorkos/shared/relay-schemas';
+import { createTaskToolReach } from '../../../startup/task-tool-reach.js';
 import { createExternalMcpServer } from '../mcp-server.js';
 import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import {
@@ -168,6 +169,7 @@ describe('external MCP structured-output tools (real tools/call pipeline)', () =
         getTasks: () => [TASK],
         runHistory: () => () => ({ lastRunAt: null }),
       } as unknown as AgentToolDeps['taskStore'],
+      tasksReach: createTaskToolReach(),
       traceStore: {
         getMetrics: () => METRICS,
       } as unknown as AgentToolDeps['traceStore'],

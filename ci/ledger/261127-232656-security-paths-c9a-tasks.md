@@ -25,3 +25,14 @@ The same change names both files as ports of the services import boundary
 (`eslint-rules/import-boundary.js`): every domain imports them, and they import
 no domain except for types. Hypothesis: no pair is added and the counts only
 fall. Revert only with the move itself.
+
+The tasks tools then move into `services/tasks/agent-tools/`, already on both
+of Security's lists (`services/tasks/`), and reach the helpers they used in
+other domains through `AgentToolDeps.tasksReach`, wired by
+`startup/task-tool-reach.ts`: that file joins the main list (with a parity row
+and a look-alike), since what it wires is their audit rows, marks and notices.
+`core/turn-power/marked-turn-copy.ts` becomes a third port: the tool
+descriptions read it when they load, so it cannot be handed in, and it imports
+no domain. The old `runtimes/claude-code/mcp-tools/tasks/` entries on both lists
+stay: they still cover `tasks-tools-context.ts`, Claude Code's prompt block for
+the tasks tools, which did not move.

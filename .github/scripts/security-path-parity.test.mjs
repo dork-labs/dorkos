@@ -369,6 +369,8 @@ for (const [match, miss] of [
   ],
   ['apps/server/src/lib/http/own-origin-write.ts', 'apps/server/src/lib/http/own-origin-writes.ts'],
   ['apps/server/src/lib/http/person-bar.ts', 'apps/server/src/lib/http/person-bars.ts'],
+  // C9a (DOR-5482): what the tasks tools reach, wired at boot.
+  ['apps/server/src/startup/task-tool-reach.ts', 'apps/server/src/startup/task-tool-reaches.ts'],
   // Owner-scoped session locations and person draft settings, moved out of routes/ (DOR-4923).
   [
     'apps/server/src/services/core/runtime-seam/session-location-store.ts',

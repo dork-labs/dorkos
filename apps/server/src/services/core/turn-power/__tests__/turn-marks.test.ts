@@ -4,6 +4,8 @@
  *
  * @vitest-environment node
  */
+import { gateViewOf } from '../../capabilities/declarations/gate-action.js';
+import { tasksAgentToolsDomain } from '../../../tasks/agent-tools/task-agent-capabilities.js';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -36,7 +38,6 @@ import {
 } from '../turn-marks.js';
 import { markedBoundOf, marksOf, recordTurnLevels, unknownLevelMarks } from '../turn-levels.js';
 import { countWhileRunning, resetLiveOutsiderTurns } from '../live-outsider-turns.js';
-import { gatedActionForMcpTool } from '../../mcp-tool-tiers.js';
 import { composeCapabilityRegistryForDocs } from '../../self-description/dorkos-registry.js';
 import {
   initPermissionGate,
@@ -198,7 +199,10 @@ describe('the readers', () => {
       displayName: 'Scout',
       createdAt: new Date().toISOString(),
     };
-    const action = gatedActionForMcpTool('tasks_delete');
+    // `tasks_delete`, as the registry gates it since C9a.
+    const action = gateViewOf(
+      tasksAgentToolsDomain.capabilities.find((c) => c.gateActionId === 'tasks_delete')!
+    );
     const plain = fresh();
     const marked = fresh();
     const markedAtFull = fresh();

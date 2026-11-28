@@ -66,6 +66,8 @@
 import { isAlwaysAskingExtensionTool } from './extension-contribution.js';
 import { fullPersonSettingRefusal } from './person-setting-refusal.js';
 export { fullPersonSettingRefusal, FULL_PERSON_SETTING_REFUSAL } from './person-setting-refusal.js';
+// The id a stored permission is keyed by, for a capability gated by an old one (C9a).
+export { gateViewOf } from './declarations/gate-action.js';
 import type { CapabilitySource } from '@dorkos/shared/capabilities';
 import fs from 'node:fs/promises';
 import path from 'node:path';

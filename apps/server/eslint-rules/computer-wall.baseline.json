@@ -296,61 +296,6 @@
       "frontDoor": 4,
       "tables": 0
     },
-    "src/services/runtimes/claude-code/mcp-tools/tasks/task-create-deps.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/mcp-tools/tasks/task-delete-tool.ts": {
-      "space": 3,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/mcp-tools/tasks/task-tool-allow-list.ts": {
-      "space": 13,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/mcp-tools/tasks/task-tool-copy.ts": {
-      "space": 1,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/mcp-tools/tasks/task-tool-cross-agent.ts": {
-      "space": 3,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/mcp-tools/tasks/task-tool-file-cap.ts": {
-      "space": 12,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/mcp-tools/tasks/task-tool-mode.ts": {
-      "space": 15,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/mcp-tools/tasks/task-tool-narrow-bypass.ts": {
-      "space": 8,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/mcp-tools/tasks/task-tool-parts.ts": {
-      "space": 10,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/mcp-tools/tasks/task-tool-run-refusals.ts": {
-      "space": 3,
-      "frontDoor": 0,
-      "tables": 0
-    },
-    "src/services/runtimes/claude-code/mcp-tools/tasks/task-tools.ts": {
-      "space": 20,
-      "frontDoor": 0,
-      "tables": 0
-    },
     "src/services/runtimes/claude-code/mcp-tools/tasks/tasks-tools-context.ts": {
       "space": 1,
       "frontDoor": 0,

@@ -16,6 +16,7 @@
  *
  * @vitest-environment node
  */
+import { createTaskToolReach } from '../../../../startup/task-tool-reach.js';
 import { mkdtempSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -48,7 +49,7 @@ import { TaskStore } from '../../../tasks/task-store.js';
 import {
   createCreateScheduleHandler,
   createUpdateScheduleHandler,
-} from '../../../runtimes/claude-code/mcp-tools/tasks/task-tools.js';
+} from '../../../tasks/agent-tools/task-tools.js';
 import type { AgentToolDeps } from '../../agent-tool-kit/agent-tool-kit.js';
 import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
 
@@ -68,6 +69,7 @@ function scheduleDeps(store: TaskStore): AgentToolDeps {
     defaultCwd: tasksHome,
     dorkHome: tasksHome,
     taskStore: store,
+    tasksReach: createTaskToolReach(),
   } as unknown as AgentToolDeps;
 }
 

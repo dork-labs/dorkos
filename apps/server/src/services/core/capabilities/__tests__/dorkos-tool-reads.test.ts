@@ -9,6 +9,7 @@
  *
  * @vitest-environment node
  */
+import { gateViewOf } from '../declarations/gate-action.js';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { env } from '../../../../env.js';
 import { z } from 'zod';
@@ -71,7 +72,9 @@ describe('the census: every DorkOS tool is classed', () => {
   });
 
   it('counts the flag-gated to-do tools', () => {
-    const ids = composeCapabilityRegistryForDocs().capabilities.map((capability) => capability.id);
+    const ids = composeCapabilityRegistryForDocs().capabilities.map(
+      (capability) => gateViewOf(capability).id
+    );
     expect(ids).toEqual(expect.arrayContaining(['todos.add', 'todos.update', 'todos.list']));
   });
 
@@ -80,7 +83,7 @@ describe('the census: every DorkOS tool is classed', () => {
     // (`todos/todo-word-marks.ts`) before it returns. `local` would skip it; `outside` marks the
     // team's own to-dos too.
     const todoTools = composeCapabilityRegistryForDocs()
-      .capabilities.map((capability) => capability.id)
+      .capabilities.map((capability) => gateViewOf(capability).id)
       .filter((id) => /^todo/.test(id));
     expect(todoTools.length).toBeGreaterThanOrEqual(6);
     expect(
@@ -90,7 +93,9 @@ describe('the census: every DorkOS tool is classed', () => {
   });
 
   const reachable = () => [
-    ...composeCapabilityRegistryForDocs().capabilities.map((capability) => capability.id),
+    ...composeCapabilityRegistryForDocs().capabilities.map(
+      (capability) => gateViewOf(capability).id
+    ),
     ...Object.keys(MCP_TOOL_TIERS),
   ];
 

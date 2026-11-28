@@ -63,6 +63,12 @@ export const PORTS = [
     record:
       'spec computer-side-starts-alone §5.1 (C9a: kernel homes, so no tool file imports runtimes/)',
   },
+  {
+    path: 'core/turn-power/marked-turn-copy',
+    reason:
+      "The words for a marked and an unmarked turn: the copy of every door that names a turn's marks is built from it when its module loads, and it imports no domain.",
+    record: 'spec computer-side-starts-alone §5.1 (C9a: the tasks tools text names marked turns)',
+  },
 ];
 
 /**

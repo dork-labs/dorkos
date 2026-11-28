@@ -1,0 +1,71 @@
+/**
+ * The refusals `tasks_update` gives an edit that points a schedule's runs at
+ * an account or a model they may not use, or proposes rules they cannot honour. Moved out of `task-tools.ts` so the
+ * handler stays under the file-length limit; the rules are unchanged.
+ *
+ * @module services/tasks/agent-tools/task-tool-run-refusals
+ */
+import type { Task } from '@dorkos/shared/types';
+import type { AgentToolDeps } from '../../core/agent-tool-kit/agent-tool-kit.js';
+import { jsonContent } from '../../core/agent-tool-kit/agent-tool-kit.js';
+import { taskPermissionRulesRefusal } from '../task-permission-rules.js';
+import {
+  scheduleAccountRefusal,
+  scheduleRunFolder,
+} from '../lifecycle/schedule-account-eligibility.js';
+import { scheduleCreditsModelRefusal } from '../lifecycle/schedule-credits-model.js';
+
+/** The fields of an update these refusals read. */
+interface RunFields {
+  account?: string | null;
+  runtime?: string | null;
+  model?: string | null;
+  requestedAllow?: string[];
+}
+
+/**
+ * The refusal for an update whose runs would start on an account that may not
+ * work in their folder (spec `flow-multiproject` §8.4, the create path's
+ * sentence), or on DorkOS credits with a model credits do not serve (DOR-2636,
+ * the update route's sentence). `null` when neither applies.
+ *
+ * @param deps - The tool dependencies.
+ * @param existing - The schedule before the edit.
+ * @param args - The update's arguments.
+ */
+export async function updateRunRefusal(
+  deps: AgentToolDeps,
+  existing: Task,
+  args: RunFields
+): Promise<ReturnType<typeof jsonContent> | null> {
+  const folder = () =>
+    scheduleRunFolder(existing.agentId ? deps.meshCore?.getProjectPath(existing.agentId) : null);
+  if (typeof args.account === 'string') {
+    const refusal = await scheduleAccountRefusal({
+      account: args.account,
+      runtime: args.runtime ?? existing.runtime,
+      folder: folder(),
+    });
+    if (refusal) return jsonContent({ error: refusal.message, code: refusal.code }, true);
+  }
+  if (args.model !== undefined || args.account !== undefined || args.runtime !== undefined) {
+    const modelRefusal = await scheduleCreditsModelRefusal({
+      model: args.model !== undefined ? args.model : existing.model,
+      account: args.account !== undefined ? args.account : existing.account,
+      runtime: args.runtime !== undefined ? args.runtime : existing.runtime,
+      folder: folder(),
+    });
+    if (modelRefusal) return jsonContent({ error: modelRefusal, code: 'UNSUPPORTED_MODEL' }, true);
+  }
+  // Rules the task's runs could not honour are refused up front (#3794).
+  if (args.requestedAllow !== undefined || args.runtime !== undefined) {
+    const rules = await taskPermissionRulesRefusal({
+      runtime: args.runtime !== undefined ? args.runtime : existing.runtime,
+      agentPath: existing.agentId ? deps.meshCore?.getProjectPath(existing.agentId) : null,
+      rules:
+        (args.requestedAllow !== undefined ? args.requestedAllow : existing.requestedAllow) ?? [],
+    });
+    if (rules) return jsonContent(rules, true);
+  }
+  return null;
+}

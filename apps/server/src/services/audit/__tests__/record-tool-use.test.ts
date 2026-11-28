@@ -92,10 +92,11 @@ describe('recordToolUse', () => {
   });
 
   it.each([
-    ['claude-code', 'mcp__dorkos__tasks_list', 'dorkos_tasks_list'],
-    ['codex', 'mcp__dorkos__tasks_list', 'dorkos_tasks_list'],
-    ['opencode', 'dorkos_tasks_list', 'mcp__dorkos__tasks_list'],
-    ['doe', 'tasks_list', 'dorkos_tasks_list'],
+    // A hand tool Doe is offered: the tasks tools wait for C12d there (C9a).
+    ['claude-code', 'mcp__dorkos__mesh_list', 'dorkos_mesh_list'],
+    ['codex', 'mcp__dorkos__mesh_list', 'dorkos_mesh_list'],
+    ['opencode', 'dorkos_mesh_list', 'mcp__dorkos__mesh_list'],
+    ['doe', 'mesh_list', 'dorkos_mesh_list'],
   ])(
     "skips DorkOS's own tools as %s spells them, and only that spelling",
     async (runtime, own, other) => {

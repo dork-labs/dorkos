@@ -19,11 +19,13 @@ import {
 } from '../accounts/account-probe.js';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
-import type { AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
+import type {
+  AgentToolDeps,
+  TaskProvenanceResolver,
+} from '../../../core/agent-tool-kit/agent-tool-kit.js';
 import { jsonContent, structuredJsonContent } from '../../../core/agent-tool-kit/agent-tool-kit.js';
 import { turnReadOutsideWords } from '../../../core/turn-power/outsider-turn.js';
 import { markedTurnRunsAtFull } from '../../../core/turn-power/full-autonomy.js';
-import type { TaskProvenanceResolver } from './tasks/task-tools.js';
 
 /**
  * Refused in a turn that read words DorkOS cannot vouch for (a Wi-Fi sign-in's

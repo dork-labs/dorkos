@@ -6,7 +6,7 @@
  *
  * @module startup/steps/connector-events-approvals
  */
-import { describeAgentRaiseCapability } from '../../services/core/approvals/agent-raise/agent-raise-cards.js';
+import { describeApprovalCapability } from '../describe-approval-capability.js';
 import { ConnectorSubscriptionStore } from '../../services/connectors/events/subscription-store.js';
 import { ConnectorEventInboxStore } from '../../services/connectors/event-inbox-store.js';
 import { ConnectorEventSettingsService } from '../../services/connectors/events/settings-service.js';
@@ -29,14 +29,8 @@ import { setShouldAskActivity } from '../../services/core/prompts/should-ask.js'
 import { projectRegistry } from '../../services/projects/project-registry.js';
 import {
   createComputerAsks,
-  describeComputerAskCapability,
   setAskApprovals,
 } from '../../services/core/approvals/computer-asks/index.js';
-import { describeGlobalActivationCapability } from '../../services/marketplace/consent/ask-withheld-global-plugins.js';
-import {
-  describeTemplateCreationCapability,
-  describeWorkspaceCreationCapability,
-} from '../../services/marketplace-mcp/confirmation-provider.js';
 import { DocChannelMetrics } from '../../services/observability/doc-channel-metrics.js';
 import { createDocChannelHttpComposition } from '../../services/canvas/doc-channel/http-composition.js';
 import { resolveCaller } from '../../routes/room-caller.js';
@@ -170,29 +164,9 @@ export async function wireConnectorEventsAndApprovals(
     // The project the asking session's folder belongs to, when the registry
     // already knows it (spec `flow-multiproject` §6.2); a card never waits on git.
     projectForFolder: (cwd) => projectRegistry.peek(cwd),
-    describeCapability: (capabilityId) => {
-      const capability = refs.capabilityRegistry?.get(capabilityId);
-      if (capability) {
-        return {
-          title: capability.title,
-          tier: capability.tier,
-          // An extension's tool names its extension, so its card can say so.
-          ...(capability.source ? { source: capability.source } : {}),
-        };
-      }
-      // Two ids that are not capabilities anyone can invoke: the card raised when
-      // an installed package wants to write shell commands into a coding agent's
-      // hook files (DOR-522), and the one a global package raises before its
-      // programs load into every session (DOR-2306). Without these the card
-      // would show the raw id.
-      return (
-        describeComputerAskCapability(capabilityId) ??
-        describeGlobalActivationCapability(capabilityId) ??
-        describeTemplateCreationCapability(capabilityId) ??
-        describeWorkspaceCreationCapability(capabilityId) ??
-        describeAgentRaiseCapability(capabilityId)
-      );
-    },
+    // Found by its own id or the old tool name it is gated by (C9a), so a card says its title.
+    describeCapability: (capabilityId) =>
+      describeApprovalCapability(refs.capabilityRegistry, capabilityId),
   });
   const docChannelMetrics = new DocChannelMetrics(db);
   const docChannelHttp = createDocChannelHttpComposition({

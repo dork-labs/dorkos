@@ -18,6 +18,7 @@ import type { ToolSurfaceEntry } from './tool-surface.js';
 import type { McpServerId } from '@dorkos/shared/capabilities';
 
 import type {
+  CapabilityDefinition,
   CapabilityInvocationContext,
   CapabilityRegistry,
 } from '../../../core/capabilities/index.js';
@@ -55,6 +56,20 @@ export interface InSessionCapabilityHold {
    * (spec `agent-permissions` D6). Handed on to the hold, which then does not.
    */
   unattended?: () => boolean;
+}
+
+/**
+ * What a capability's search hint is derived from: its title, or, for a tool
+ * that moved off the hand gate, its description, as its hint always was (C9a).
+ *
+ * @param capability - The capability being listed.
+ */
+export function searchHintSourceOf(
+  capability: Pick<CapabilityDefinition, 'title' | 'description' | 'surfaces'>
+): string {
+  return capability.surfaces.mcp?.searchHintFrom === 'description'
+    ? capability.description
+    : capability.title;
 }
 
 /**
@@ -110,7 +125,7 @@ export function registerClaudeCapabilityTools(
       capability.description,
       {},
       async () => ({ content: [] }),
-      toolExposure(name, capability.title, alwaysLoaded)
+      toolExposure(name, searchHintSourceOf(capability), alwaysLoaded)
     );
     server.registerTool(
       name,

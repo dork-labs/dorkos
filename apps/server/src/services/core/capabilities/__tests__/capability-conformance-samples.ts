@@ -28,6 +28,12 @@ export function conformanceSampleInputs(
 ): Record<string, Record<string, unknown>> {
   return {
     'operator.update_agent': { cwd: fixture.sandboxCwd, displayName: 'Conformance' },
+    // The tasks tools (C9a): the smallest valid call of each; the registry composes no task
+    // store here, so each answers that Tasks is off, or its gate refuses it first.
+    'tasks.create_task': { name: 'Conformance', prompt: 'x', reason: 'conformance' },
+    'tasks.update_task': { id: 'conformance-task' },
+    'tasks.delete_task': { id: 'conformance-task' },
+    'tasks.get_run_history': { schedule_id: 'conformance-task' },
     // Destructive, and `nopeContent` is REQUIRED — a fixture without it fails the
     // Zod parse before the gate ever runs, which would read as "the gate did not
     // refuse this" (DOR-1698).

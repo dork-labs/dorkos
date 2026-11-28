@@ -28,6 +28,7 @@
  *
  * @vitest-environment node
  */
+import { createTaskToolReach } from '../../../../../startup/task-tool-reach.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -54,6 +55,7 @@ import {
   searchHintFrom,
   toolExposure,
 } from '../tool-exposure.js';
+import { searchHintSourceOf } from '../capability-mcp-tools.js';
 import {
   IN_SESSION_TOOL_PREFIX,
   inSessionToolName,
@@ -95,6 +97,7 @@ function createFullDeps(): AgentToolDeps {
     defaultCwd: '/tmp/dor-1292-exposure',
     dorkHome: '/tmp/dorkos-test-home',
     taskStore: stub,
+    tasksReach: createTaskToolReach(),
     relayCore: stub,
     adapterManager: stub,
     traceStore: stub,
@@ -599,7 +602,7 @@ describe('complete full-object wire surface', () => {
             cap.description,
             {},
             async () => ({ content: [] }),
-            toolExposure(name, cap.title, alwaysLoadedToolsFor(kind !== 'plain'))
+            toolExposure(name, searchHintSourceOf(cap), alwaysLoadedToolsFor(kind !== 'plain'))
           );
           expect(byName.get(name)?._meta, name).toEqual(descriptor._meta);
           expect(byName.get(name)?.annotations, name).toBeUndefined();

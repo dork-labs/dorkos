@@ -11,6 +11,7 @@
  *
  * @vitest-environment node
  */
+import { createTaskToolReach } from '../../../../startup/task-tool-reach.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -109,6 +110,7 @@ describe('tasks_* operator-only field guard (external /mcp server)', () => {
       // file step. Present because `AgentToolDeps` requires it (DOR-1568).
       dorkHome: '/tmp/dorkos-external-mcp-test',
       taskStore: store,
+      tasksReach: createTaskToolReach(),
     } as unknown as AgentToolDeps;
 
     // The production `/mcp` mount: the `/api` chain, then the endpoint's own

@@ -129,6 +129,24 @@ export interface McpSurface {
    * idempotent both `false`). See {@link McpToolHints}.
    */
   annotations?: McpToolHints;
+  /**
+   * `'drop'` lists and parses the input without `.strict()`, so an argument the
+   * tool does not know is dropped rather than refused. Only the tools that moved
+   * off the hand gate declare it (spec `computer-side-starts-alone` §5.1): their
+   * hand form dropped unknown arguments, and no call that works may fail.
+   */
+  unknownArguments?: 'drop';
+  /**
+   * `'description'` derives the tool's search hint from its description, as the
+   * hand-registered tools' hints were, instead of from its title. Kept so a
+   * moved tool's hint, which the model reads, stays the same.
+   */
+  searchHintFrom?: 'description';
+  /**
+   * The tool's result carries `structuredContent` and the external server lists
+   * the capability's `output` as its `outputSchema`, as the hand tool did.
+   */
+  structuredOutput?: true;
 }
 
 /**

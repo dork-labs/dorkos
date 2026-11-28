@@ -398,7 +398,7 @@ describe('the PostToolUse hook', () => {
 
   it('counts every assertion, by tier', async () => {
     await call(postToolUse(inSessionToolName('mesh_list'), {}));
-    await call(postToolUse(inSessionToolName('tasks_delete'), { id: 'x' }));
+    await call(postToolUse(inSessionToolName('mesh_unregister'), { agentId: 'x' }));
 
     const stats = autoModeStopStats();
     expect(stats.assertions).toBe(2);

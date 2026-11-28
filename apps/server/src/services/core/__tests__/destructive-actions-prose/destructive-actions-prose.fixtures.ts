@@ -1,4 +1,5 @@
 import { readdir, readFile } from 'node:fs/promises';
+import { gateViewOf } from '../../capabilities/declarations/gate-action.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { noopLogger } from '@dorkos/shared/logger';
@@ -139,7 +140,8 @@ export function destructiveCapabilities(): { id: string; toolName?: string }[] {
   })
     .capabilities.filter((capability) => capability.tier === 'destructive')
     .map((capability) => ({
-      id: capability.id,
+      // The id people know it by: a moved tool keeps its old name (C9a).
+      id: gateViewOf(capability).id,
       ...(capability.surfaces.mcp ? { toolName: capability.surfaces.mcp.toolName } : {}),
     }));
 }

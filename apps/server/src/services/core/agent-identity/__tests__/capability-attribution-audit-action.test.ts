@@ -41,18 +41,18 @@ const IDENTITY: AgentIdentity = {
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
-/** A capability standing in for `tasks_delete` once it moves, keeping its audit name. */
+/** A capability standing in for `mesh_unregister` once it moves, keeping its audit name. */
 function deleteTask(fail = false) {
   return defineCapability({
     id: 'probe.delete_task',
-    title: 'Delete a scheduled task',
+    title: 'Remove an agent and its setup file, and turn off its scheduled tasks',
     description: 'A probe for a hand tool that moved onto the registry.',
     tier: 'destructive',
-    area: 'tasks',
-    approvalDisplayFields: ['id'],
-    approvalSubject: { field: 'id', kind: 'task' },
-    auditAction: 'mcp.tasks_delete',
-    input: z.object({ id: z.string() }),
+    area: 'agents',
+    approvalDisplayFields: ['agentId'],
+    approvalSubject: { field: 'agentId', kind: 'agent' },
+    auditAction: 'mcp.mesh_unregister',
+    input: z.object({ agentId: z.string() }),
     output: z.object({ ok: z.boolean() }),
     surfaces: {},
     invoke: async () => {
@@ -87,12 +87,15 @@ const plainChange = defineCapability({
   invoke: async () => ({ ok: true }),
 });
 
-/** A fresh audit trail, a registry on it, and the hand tool `tasks_delete` behind its gate. */
+/** A fresh audit trail, a registry on it, and the hand tool `mesh_unregister` behind its gate. */
 function world(opts: { fail?: boolean } = {}) {
   const db = createTestDb();
   const activity = new ActivityService(db);
   wireAuditTrail({ db, activity, installId: 'inst-1', readOwnerAccount: () => null });
-  initApprovalSubjectResolvers({ task: (id) => (id === 't1' ? 'Morning digest' : undefined) });
+  initApprovalSubjectResolvers({
+    task: (id) => (id === 't1' ? 'Morning digest' : undefined),
+    agent: (id) => (id === 't1' ? 'Morning digest' : undefined),
+  });
   vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
   initCapabilityTierGate({ approvals: new ApprovalService(db) });
   initPermissionGate({
@@ -104,7 +107,7 @@ function world(opts: { fail?: boolean } = {}) {
     createCapabilityAttributionObserver(activity)
   );
   const handTool: SdkMcpTool = {
-    name: 'tasks_delete',
+    name: 'mesh_unregister',
     description: 'probe',
     inputSchema: {},
     handler: (async () => {
@@ -172,12 +175,12 @@ afterEach(() => {
 describe('a capability with an auditAction', () => {
   it('records its call exactly as the hand gate records the tool it replaces', async () => {
     const before = world();
-    await before.hand({ id: 't1' });
+    await before.hand({ agentId: 't1' });
     await flush();
-    const handRow = auditRows(before.db).find((row) => row.action === 'mcp.tasks_delete');
+    const handRow = auditRows(before.db).find((row) => row.action === 'mcp.mesh_unregister');
 
     const after = world();
-    await after.registry.invoke('probe.delete_task', { id: 't1' }, inSession());
+    await after.registry.invoke('probe.delete_task', { agentId: 't1' }, inSession());
     await flush();
     const rows = auditRows(after.db);
 
@@ -187,23 +190,24 @@ describe('a capability with an auditAction', () => {
       sessionId,
       targetName: 'Morning digest',
       outcome: 'ok',
-      summary: 'Ran Delete a scheduled task on Morning digest',
+      summary:
+        'Ran Remove an agent and its setup file, and turn off its scheduled tasks on Morning digest',
     });
-    expect(rows.find((row) => row.action === 'mcp.tasks_delete')).toEqual(handRow);
+    expect(rows.find((row) => row.action === 'mcp.mesh_unregister')).toEqual(handRow);
     // Recorded once, under its own name: no `capability.invoked` row beside it.
     expect(rows.map((row) => row.action)).not.toContain('capability.invoked');
   });
 
   it('records a failed call under the same name, as the hand gate does', async () => {
     const before = world({ fail: true });
-    await expect(before.hand({ id: 't1' })).rejects.toThrow('the task store is closed');
+    await expect(before.hand({ agentId: 't1' })).rejects.toThrow('the task store is closed');
     const after = world({ fail: true });
     await expect(
-      after.registry.invoke('probe.delete_task', { id: 't1' }, inSession())
+      after.registry.invoke('probe.delete_task', { agentId: 't1' }, inSession())
     ).rejects.toThrow('the task store is closed');
     await flush();
 
-    const failed = (db: Db) => auditRows(db).find((row) => row.action === 'mcp.tasks_delete');
+    const failed = (db: Db) => auditRows(db).find((row) => row.action === 'mcp.mesh_unregister');
     expect(failed(after.db)).toMatchObject({ outcome: 'failed' });
     expect(failed(after.db)).toEqual(failed(before.db));
   });

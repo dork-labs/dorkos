@@ -39,7 +39,6 @@ import { setTaskViewReader } from '../services/tasks/view/task-view-capabilities
 import { taskViewReader } from '../routes/task-view-reader.js';
 import type { TaskStore } from '../services/tasks/task-store.js';
 import { ensureDefaultTemplates } from '../services/tasks/task-templates.js';
-import { registerAgentModeEscalators } from '../services/tasks/agent-mode/agent-mode-escalation.js';
 import { readOperatorTimeZone } from '../services/core/config/operator-time-zone.js';
 
 /** What starting Tasks needs from the startup that came before it. */
@@ -208,8 +207,6 @@ export async function startTasks(deps: TasksStartupDeps): Promise<StartedTasks> 
     setTaskViewReader(taskViewReader(honoDeps.tasks));
     setTasksEnabled(true);
     mountedRouters.push('tasks');
-    // A task's mode or approval, named by an agent, is decided as its own action (DOR-3703).
-    registerAgentModeEscalators({ store: taskStore, ...(meshCore && { meshCore }) });
 
     // Cascade-pause: when an agent is unregistered from Mesh, pause its linked task schedules.
     // The callback receives the project path captured before registry removal —

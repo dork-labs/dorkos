@@ -117,10 +117,13 @@ export function capabilitiesForMcpServer(
  * invocation wrapper removes it before registry parsing and approval binding.
  *
  * @param capability - The capability whose advertised input to project.
- * @returns A strict full object for ordinary MCP registration.
+ * @returns A strict full object for ordinary MCP registration, or a
+ *   key-dropping one for a capability whose MCP surface says `unknownArguments: 'drop'`.
  */
 export function capabilityMcpInputObject(capability: CapabilityDefinition): z.ZodObject {
-  const input = capabilityInputObject(capability).strict();
+  // A tool moved off the hand gate drops an unknown argument, as it always did (C9a).
+  const object = capabilityInputObject(capability);
+  const input = capability.surfaces.mcp?.unknownArguments === 'drop' ? object : object.strict();
   return canRaiseApproval(capability) ? input.safeExtend(approvalTokenArgument()) : input;
 }
 
@@ -205,9 +208,11 @@ export function readOnlyCarveOutToolNames(
  *
  * @param payload - What the handler returned.
  * @param isError - Whether this is the handler's failure path.
+ * @param structured - Whether a success also carries the payload as
+ *   `structuredContent`, for a tool that lists an `outputSchema`.
  * @returns The MCP result.
  */
-function textResult(payload: unknown, isError = false): CallToolResult {
+function textResult(payload: unknown, isError = false, structured = false): CallToolResult {
   if (payload instanceof CapabilityImageResult) {
     return {
       content: [
@@ -220,7 +225,13 @@ function textResult(payload: unknown, isError = false): CallToolResult {
   return {
     content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
     ...(isError ? { isError: true } : {}),
+    ...(structured && !isError ? { structuredContent: payload as Record<string, unknown> } : {}),
   };
+}
+
+/** Whether a capability's successful result also carries `structuredContent`. */
+function structuredOf(capability: CapabilityDefinition | undefined): boolean {
+  return capability?.surfaces.mcp?.structuredOutput === true;
 }
 
 /**
@@ -294,7 +305,7 @@ export async function invokeCapabilityAsMcpResult(
         projectInSessionCard(capability.inSessionCard, surface.session, input, plain)
       );
     }
-    return textResult(plain);
+    return textResult(plain, false, structuredOf(capability));
   } catch (err) {
     if (err instanceof CapabilityGateRefusal) {
       const decision = err.decision;
@@ -319,7 +330,15 @@ export async function invokeCapabilityAsMcpResult(
           ...(surface.capMs !== undefined ? { capMs: surface.capMs } : {}),
           ...(surface.unattended ? { unattended: surface.unattended } : {}),
         };
-        return holdAndResume(registry, id, input, context, decision.payload, hold);
+        return holdAndResume(
+          registry,
+          id,
+          input,
+          context,
+          decision.payload,
+          hold,
+          structuredOf(capability)
+        );
       }
       // A gated or refused call returns the gate's structured payload as an
       // ordinary result (not `isError`): needing an approval is a step in a
@@ -368,6 +387,7 @@ function invokeThroughRegistry(
     ...(context?.sessionId ? { sessionId: context.sessionId } : {}),
     ...(context?.cwd ? { cwd: context.cwd } : {}),
     ...(context?.narrowedReads ? { narrowedReads: true as const } : {}),
+    ...(context?.turnSessionIds ? { turnSessionIds: context.turnSessionIds } : {}),
     ...(context?.serverPrincipal ? { serverPrincipal: context.serverPrincipal } : {}),
     ...(context?.mcpServer ? { mcpServer: context.mcpServer } : {}),
     ...((signal ?? context?.signal) ? { signal: signal ?? context?.signal } : {}),
@@ -394,7 +414,8 @@ async function holdAndResume(
   input: unknown,
   context: CapabilityInvocationContext | undefined,
   payload: ApprovalRequiredPayload,
-  hold: CapabilityApprovalHold
+  hold: CapabilityApprovalHold,
+  structured = false
 ): Promise<CallToolResult> {
   const outcome = await awaitCapabilityApproval(hold, payload);
   // The window closed (or the token was spent elsewhere) while this call waited,
@@ -407,7 +428,9 @@ async function holdAndResume(
   if (outcome !== 'granted' && outcome !== 'denied') return textResult(payload);
   try {
     return textResult(
-      await invokeThroughRegistry(registry, id, input, context, payload.approvalToken, hold.signal)
+      await invokeThroughRegistry(registry, id, input, context, payload.approvalToken, hold.signal),
+      false,
+      structured
     );
   } catch (err) {
     if (err instanceof CapabilityGateRefusal) return textResult(err.decision.payload);

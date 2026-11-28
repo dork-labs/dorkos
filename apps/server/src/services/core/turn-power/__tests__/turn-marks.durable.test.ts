@@ -20,10 +20,14 @@ import {
   createRoomHarness,
   type RoomHarness,
 } from '../../../rooms/__tests__/room-test-harness.js';
-import { registerTaskTools } from '../../external-mcp/task-tools.js';
+import { getTasksTools } from '../../../tasks/agent-tools/task-tool-definitions.js';
+import {
+  externalCallerAgent,
+  externalCallerMarks,
+} from '../../../tasks/agent-tools/task-agent-capabilities.js';
+import { createTaskToolReach } from '../../../../startup/task-tool-reach.js';
 import { TaskStore } from '../../../tasks/task-store.js';
 import type { AgentToolDeps } from '../../agent-tool-kit/agent-tool-kit.js';
-import type { ToolRegistrar } from '../../mcp-tool-gate.js';
 import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
@@ -108,29 +112,26 @@ describe('the external /mcp task tools', () => {
   const agentHome = mkdtempSync(path.join(os.tmpdir(), 'dorkos-external-agent-'));
   const agents = [{ id: 'nobody-running', projectPath: agentHome }];
 
-  /** The `tasks_create` handler the external server registers for this caller. */
+  /** The `tasks_create` handler the external server runs for this caller (C9a: its capability). */
   function externalCreate(store: TaskStore, identity?: { agentPath: string }) {
-    const handlers = new Map<string, (args: unknown) => Promise<{ content: { text: string }[] }>>();
-    const registrar = {
-      registerTool: (name: string, _config: unknown, handler: never) => {
-        handlers.set(name, handler);
+    const deps = {
+      transcriptReader: {},
+      defaultCwd: home,
+      dorkHome: home,
+      taskStore: store,
+      tasksReach: createTaskToolReach(),
+      meshCore: {
+        listWithPaths: () => agents,
+        getProjectPath: (id: string) => agents.find((a) => a.id === id)?.projectPath,
       },
-    } as unknown as ToolRegistrar;
-    registerTaskTools(
-      registrar,
-      {
-        transcriptReader: {},
-        defaultCwd: home,
-        dorkHome: home,
-        taskStore: store,
-        meshCore: {
-          listWithPaths: () => agents,
-          getProjectPath: (id: string) => agents.find((a) => a.id === id)?.projectPath,
-        },
-      } as unknown as AgentToolDeps,
-      identity as never
-    );
-    return handlers.get('tasks_create')!;
+    } as unknown as AgentToolDeps;
+    const tool = getTasksTools(
+      deps,
+      undefined,
+      () => externalCallerMarks(deps, identity as never),
+      externalCallerAgent(identity as never)
+    ).find((t) => t.name === 'tasks_create')!;
+    return (args: unknown) => tool.handler(args as never);
   }
 
   it('mark a schedule from a caller DorkOS cannot identify, so its card says so', async () => {

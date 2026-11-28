@@ -7,6 +7,7 @@
  *
  * @module startup/steps/capabilities
  */
+import { TASKS_AGENT_TOOL_NAMES } from '../../services/tasks/agent-tools/task-agent-capabilities.js';
 import { initAgentRaiseCards } from '../../services/core/approvals/agent-raise/agent-raise-cards.js';
 import type { McpCapabilityDeps } from '../../services/mesh/mcp-capability-deps.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
@@ -466,9 +467,13 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
                 .find((runtime) => runtime.type === claims.runtime)
                 ?.getCapabilities()
             : undefined;
-        const hidden = runtimeCaps
-          ? new Set([...visibility.hiddenToolNames, ...compactionToolsHiddenFor(runtimeCaps)])
-          : visibility.hiddenToolNames;
+        // The tasks tools stay with Claude Code and the external server until C12d shows
+        // them here, whatever runtime is asking (C9a).
+        const hidden = new Set([
+          ...visibility.hiddenToolNames,
+          ...TASKS_AGENT_TOOL_NAMES,
+          ...(runtimeCaps ? compactionToolsHiddenFor(runtimeCaps) : []),
+        ]);
         return createAgentRuntimeMcpServer(refs.capabilityRegistry!, principal, identity, hidden);
       },
     });

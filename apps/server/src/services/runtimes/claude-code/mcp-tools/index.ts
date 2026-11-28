@@ -24,7 +24,6 @@ import {
   neverAsks,
 } from '../turn-permission.js';
 import { STATUS_READ_MODES } from '../tool-gate/never-ask-status-reads.js';
-import { getTasksTools } from './tasks/task-tools.js';
 import { getRelayTools } from './relay-tools.js';
 import { resolveSenderIdentity } from './relay-helpers.js';
 import { getAdapterTools } from './adapter-tools.js';
@@ -76,13 +75,6 @@ export {
   createGetAgentHandler,
   resolveAgentCwd,
 } from './core-tools.js';
-export {
-  createListSchedulesHandler,
-  createCreateScheduleHandler,
-  createUpdateScheduleHandler,
-  createGetRunHistoryHandler,
-} from './tasks/task-tools.js';
-export { createDeleteScheduleHandler } from './tasks/task-delete-tool.js';
 export { createRelayListEndpointsHandler } from './relay-tools.js';
 export { createRelayNotifyUserHandler } from './relay-notify-tools.js';
 export {
@@ -285,7 +277,6 @@ export function handRegisteredInSessionToolSet(
         ...(isPersonOnlyMode(session?.permissionMode) ? { neverAsks: true } : {}),
       };
     }),
-    ...getTasksTools(deps, resolveTaskProvenance),
     // The calling chat rides along so a note from a running beat is counted.
     ...getRelayTools(deps, {
       ...relayIdentity,
@@ -438,6 +429,8 @@ export function createDorkOsToolServer(
       ...(base ?? {}),
       ...(invokingSessionId ? { sessionId: invokingSessionId } : {}),
       ...(session?.cwd ? { cwd: session.cwd } : {}),
+      // Every id the chat's turn levels may be kept under, read live, for the tasks tools (C9a).
+      turnSessionIds: [session?.sdkSessionId, sessionId].filter((id): id is string => !!id),
       // Read live: an unasked read leaves out words a stranger may have chosen (DOR-4601).
       ...(turnNarrowsReads(session) ? { narrowedReads: true as const } : {}),
       ...(signal ? { signal } : {}),

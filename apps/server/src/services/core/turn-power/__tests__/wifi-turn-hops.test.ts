@@ -16,6 +16,7 @@
  *
  * @vitest-environment node
  */
+import { createTaskToolReach } from '../../../../startup/task-tool-reach.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -51,7 +52,7 @@ vi.mock('../../../tasks/lifecycle/create-task.js', () => ({
   }),
 }));
 
-import { createCreateScheduleHandler } from '../../../runtimes/claude-code/mcp-tools/tasks/task-tools.js';
+import { createCreateScheduleHandler } from '../../../tasks/agent-tools/task-tools.js';
 
 const MODES = CLAUDE_CODE_CAPABILITIES.permissionModes;
 const WIFI: MessageOpts = { permissionCeiling: WIFI_TURN_CEILING };
@@ -156,7 +157,10 @@ describe('a turn started from Wi-Fi', () => {
     const { runtime } = seam({ [ana]: 'bypassPermissions' });
     await run(runtime, ana, WIFI);
     const handler = createCreateScheduleHandler(
-      { taskStore: { resolveTaskOrigins: () => new Map() } } as never,
+      {
+        taskStore: { resolveTaskOrigins: () => new Map() },
+        tasksReach: createTaskToolReach(),
+      } as never,
       () => ({
         sessionId: ana,
         agentPath: '/agents/ana',
@@ -177,7 +181,10 @@ describe('a turn started from Wi-Fi', () => {
     const { runtime } = seam({ [ana]: 'bypassPermissions' });
     await run(runtime, ana);
     const handler = createCreateScheduleHandler(
-      { taskStore: { resolveTaskOrigins: () => new Map() } } as never,
+      {
+        taskStore: { resolveTaskOrigins: () => new Map() },
+        tasksReach: createTaskToolReach(),
+      } as never,
       () => ({
         sessionId: ana,
         agentPath: '/agents/ana',

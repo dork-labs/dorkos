@@ -17,6 +17,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 
 import { composeCapabilityRegistryForDocs } from '../../self-description/dorkos-registry.js';
 import { MCP_TOOL_TIERS, gatedActionForMcpTool } from '../../mcp-tool-tiers.js';
+import { gateViewOf } from '../declarations/gate-action.js';
 import { APPLY_SHAPE_ACTION } from '../../../../routes/shapes.js';
 import { ApprovalService } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
@@ -61,9 +62,10 @@ const RUNS = ['marketplace.uninstall', 'mcp.import', 'tasks_delete', 'mesh_unreg
 
 /** Every destructive action DorkOS declares, as the gate receives it. */
 function destructiveActions(): (GatedAction & PermissionGatedAction)[] {
-  const capabilities = composeCapabilityRegistryForDocs().capabilities.filter(
-    (cap) => cap.tier === 'destructive'
-  );
+  // As the gate decides each: a moved tool by its old name (C9a).
+  const capabilities = composeCapabilityRegistryForDocs()
+    .capabilities.filter((cap) => cap.tier === 'destructive')
+    .map((cap) => gateViewOf(cap));
   const tools = Object.entries(MCP_TOOL_TIERS)
     .filter(([, tool]) => tool.tier === 'destructive')
     .map(([name]) => gatedActionForMcpTool(name));

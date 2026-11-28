@@ -46,6 +46,7 @@ import type { ApprovalSubjectDeclaration } from '../approvals/approval-subject.j
 import type { GrantedApproval } from './tier-enforcement.js';
 import type { CapabilityConfirmFirst } from './declarations/confirm-first.js';
 import type { ToolCallEscalation, ToolCallEscalatorCall } from './tool-call-escalation.js';
+import type { LegacyGateActionId } from './declarations/gate-action.js';
 
 /**
  * The service-dependency bag threaded into every capability's `invoke` at boot,
@@ -357,6 +358,14 @@ export interface CapabilityDefinition<
    */
   auditAction?: `mcp.${string}`;
   /**
+   * The hand-registered tool name this capability is gated by: its stored
+   * permissions, approvals, card and refusals keep that id (C9a). Only a name on
+   * the frozen list in `declarations/gate-action.ts`, and only the capability's
+   * own MCP tool name; `registry.invoke` decides every call through
+   * `gateViewOf`, never the capability's own id.
+   */
+  gateActionId?: LegacyGateActionId;
+  /**
    * Draw an inline CARD in the conversation this capability was called from
    * (DOR-1004) — a surface the person acts on, in the chat, instead of a link
    * pasted into the agent's reply.
@@ -534,6 +543,33 @@ export class CapabilityToolError extends Error {
     super('Capability invocation returned an error result.');
     this.name = 'CapabilityToolError';
   }
+}
+
+/**
+ * The MCP text-content envelope a hand-written tool handler returns: one or
+ * more text blocks carrying the JSON-encoded payload, flagged on failure.
+ */
+export interface McpTextEnvelope {
+  /** One or more text blocks carrying the JSON-encoded payload. */
+  content: { type: 'text'; text: string }[];
+  /** Set by the handler on failure paths. */
+  isError?: boolean;
+}
+
+/**
+ * Unwrap a handler's MCP text envelope to its plain JSON payload: the first
+ * text block, parsed. A flagged envelope throws a {@link CapabilityToolError}
+ * carrying that payload, so the transport reproduces the `isError` envelope.
+ * Here, in the port, so any domain's capability can wrap its own handlers.
+ *
+ * @param envelope - The handler's MCP text-content result.
+ * @returns The plain JSON payload (success path).
+ * @throws {CapabilityToolError} When the envelope is flagged `isError`.
+ */
+export function unwrapMcpEnvelope(envelope: McpTextEnvelope): unknown {
+  const payload = JSON.parse(envelope.content[0].text) as unknown;
+  if (envelope.isError) throw new CapabilityToolError(payload);
+  return payload;
 }
 
 /**

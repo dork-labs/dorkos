@@ -21,23 +21,10 @@
  * @module services/core/capabilities/mcp-envelope
  */
 
-/**
- * The MCP text-content envelope a phase-1 descriptor handler returns: one or
- * more text blocks carrying the JSON-encoded payload, plus an optional
- * `isError` flag set on failure paths.
- */
-import { CapabilityToolError } from './capability-definition.js';
-
-export interface McpTextEnvelope {
-  /** One or more text blocks carrying the JSON-encoded payload. */
-  content: { type: 'text'; text: string }[];
-  /** Set by the handler on failure paths. */
-  isError?: boolean;
-}
-
 // The refusal half of the capability contract lives in the port file (capability-definition.ts),
 // so a domain takes it from there; this plain re-export keeps existing callers working.
-export { CapabilityToolError } from './capability-definition.js';
+export { CapabilityToolError, unwrapMcpEnvelope } from './capability-definition.js';
+export type { McpTextEnvelope } from './capability-definition.js';
 
 /**
  * A capability result that carries PIXELS beside its JSON.
@@ -64,25 +51,4 @@ export class CapabilityImageResult {
     readonly image: { readonly data: string; readonly mimeType: string },
     readonly payload: unknown
   ) {}
-}
-
-/**
- * Unwrap a phase-1 handler's MCP text envelope to its plain JSON payload.
- *
- * Parses the first text block back to the value the handler serialized. When
- * the envelope is flagged `isError`, throws a {@link CapabilityToolError}
- * carrying that payload so the transport adapter reproduces the `isError`
- * envelope; otherwise returns the payload for the capability's `invoke` to hand
- * back as plain data.
- *
- * @param envelope - The handler's MCP text-content result.
- * @returns The plain JSON payload (success path).
- * @throws {CapabilityToolError} When the envelope is flagged `isError`.
- */
-export function unwrapMcpEnvelope(envelope: McpTextEnvelope): unknown {
-  const payload = JSON.parse(envelope.content[0].text) as unknown;
-  if (envelope.isError) {
-    throw new CapabilityToolError(payload);
-  }
-  return payload;
 }

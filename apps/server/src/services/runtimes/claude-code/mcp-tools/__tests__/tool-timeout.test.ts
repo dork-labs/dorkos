@@ -10,6 +10,7 @@
  *
  * @vitest-environment node
  */
+import { createTaskToolReach } from '../../../../../startup/task-tool-reach.js';
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../../../../../env.js', () => ({
@@ -38,6 +39,7 @@ function createDeps(): AgentToolDeps {
     defaultCwd: '/tmp/dorkos-tool-timeout',
     dorkHome: '/tmp/dorkos-test-home',
     taskStore: stub,
+    tasksReach: createTaskToolReach(),
     relayCore: stub,
     adapterManager: stub,
     traceStore: stub,

@@ -379,8 +379,9 @@ describe('list_capabilities surface', () => {
       // "stays true" guarantee the derivation exists for is kept by pinning the
       // SET — a third destructive hand-registered tool fails here and forces
       // whoever added it to update the sentence.
-      expect(destructiveHandRegistered.sort()).toEqual(['mesh_unregister', 'tasks_delete']);
-      expect(text).toContain('deleting a schedule and unregistering an agent');
+      // `tasks_delete` is a capability now (C9a): in the catalog, with its tier.
+      expect(destructiveHandRegistered.sort()).toEqual(['mesh_unregister']);
+      expect(text).toContain('unregistering an agent is destructive');
       for (const tool of destructiveHandRegistered) expect(text).not.toContain(tool);
     });
 

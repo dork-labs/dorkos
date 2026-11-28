@@ -7,6 +7,7 @@
  */
 import type { CapabilityDefinition, CapabilityWifiMode } from '../capability-definition.js';
 import type { ConfirmFirstBar } from './confirm-first.js';
+import { assertGateActionId } from './gate-action.js';
 
 /**
  * The only capabilities that may declare `cancelWindow`, the 60-second hold
@@ -72,11 +73,12 @@ export const CONFIRM_FIRST_CAPABILITY_IDS: ReadonlyMap<string, ConfirmFirstBar> 
 export function assertNarrowDeclarations(
   capability: Pick<
     CapabilityDefinition,
-    'id' | 'cancelWindow' | 'wifi' | 'confirmFirst' | 'surfaces'
+    'id' | 'cancelWindow' | 'wifi' | 'confirmFirst' | 'surfaces' | 'gateActionId'
   >
 ): void {
   const { id } = capability;
   assertCallerBar(capability);
+  assertGateActionId(capability);
   if (capability.cancelWindow && !CANCEL_WINDOW_CAPABILITY_IDS.has(id)) {
     throw new Error(`Capability registry: "${id}" may not declare a cancel window.`);
   }

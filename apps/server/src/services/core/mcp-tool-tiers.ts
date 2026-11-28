@@ -208,45 +208,8 @@ export const MCP_TOOL_TIERS = {
   },
 
   // ── Tasks ───────────────────────────────────────────────────────────────
-  tasks_list: {
-    tier: 'observe',
-    area: 'tasks',
-    title: 'List scheduled tasks',
-  },
-  // Creates the schedule already parked at `pending_approval`, so a person has to
-  // approve it before it ever runs. A second card here would ask the same question
-  // twice.
-  tasks_create: {
-    tier: 'act',
-    area: 'tasks',
-    approvalDisplayFields: ['name', 'cron', 'target'],
-    title: 'Create a scheduled task',
-  },
-  // Can overwrite a schedule's prompt and cron with no history, which is real. The
-  // answer to "no history" is an audit trail, not a card on every edit.
-  tasks_update: {
-    tier: 'act',
-    area: 'tasks',
-    approvalDisplayFields: ['id', 'name', 'cron', 'enabled'],
-    approvalSubject: { field: 'id', kind: 'task' },
-    title: 'Change a scheduled task',
-  },
-  // `deleteTask` is a bare DELETE with no trash and no undo (`tasks/task-store.ts`).
-  // The person rebuilds the prompt, the schedule, and the timezone from memory.
-  tasks_delete: {
-    tier: 'destructive',
-    area: 'tasks',
-    title: 'Delete a scheduled task',
-    approvalDisplayFields: ['id'],
-    // Without this the card said `id: "01K…"`, which names nothing a person
-    // recognizes — the same defect `mesh_unregister` was reported for.
-    approvalSubject: { field: 'id', kind: 'task' },
-  },
-  tasks_get_run_history: {
-    tier: 'observe',
-    area: 'tasks',
-    title: "Read a scheduled task's run history",
-  },
+  // The five `tasks_*` tools are capabilities now, gated by these same names
+  // (`tasks/agent-tools/task-agent-capabilities.ts`, C9a).
 
   // ── Relay: messaging ────────────────────────────────────────────────────
   // Agent-to-agent sends are the chat tools now (`chat_send`, `chat_read`,

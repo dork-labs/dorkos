@@ -74,6 +74,7 @@
  *
  * @vitest-environment node
  */
+import { createTaskToolReach } from '../../../../../startup/task-tool-reach.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readdir, readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
@@ -167,6 +168,7 @@ function createFullDeps(): AgentToolDeps {
     defaultCwd: CWD,
     dorkHome: '/tmp/dorkos-test-home',
     taskStore: stub,
+    tasksReach: createTaskToolReach(),
     relayCore: stub,
     adapterManager: stub,
     traceStore: stub,

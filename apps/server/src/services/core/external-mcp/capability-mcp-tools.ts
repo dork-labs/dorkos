@@ -60,6 +60,8 @@ export function registerCapabilitiesAsMcpTools(
         description: capability.description,
         inputSchema: capabilityMcpInputObject(capability),
         annotations: deriveMcpAnnotations(capability),
+        // A tool whose result is exact lists it, as its hand form did (C9a).
+        ...(mcp.structuredOutput ? { outputSchema: capability.output } : {}),
       },
       async (args: Record<string, unknown>, extra: unknown) =>
         invokeCapabilityAsMcpResult(

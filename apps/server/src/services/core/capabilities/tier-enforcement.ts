@@ -155,6 +155,7 @@ import {
 } from './approval-wording.js';
 import type { SpendAsk } from './spend-permission.js';
 import { describeGatedAttempt } from './approval-card/gated-attempt-sentence.js';
+import { approvalBindingInput, gateViewOf } from './declarations/gate-action.js';
 
 export { describeGatedAttempt };
 
@@ -189,6 +190,11 @@ export interface GatedAction {
   id: string;
   /** Human-facing title, as the operator's approval card shows it. */
   title: string;
+  /**
+   * The capability's own id, when it is gated by an older one
+   * (`declarations/gate-action.ts`): bound into the approval beside {@link id}.
+   */
+  boundCapabilityId?: string;
   /**
    * Where the action came from, when a running extension contributed it
    * (DOR-2685). Its title is then the extension author's text, and the card
@@ -820,7 +826,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
       capabilityId: action.id,
       // A described change is part of what is approved: the same input against
       // different state is a different change, and must not spend this token.
-      inputHash: hashApprovalInput(change === undefined ? input : { input, change }),
+      inputHash: hashApprovalInput(approvalBindingInput(action, input, change)),
       ...(connectorAuthority ? { authorityBindingDigest: connectorAuthority.digest } : {}),
     };
   } catch (err) {
@@ -1078,7 +1084,8 @@ export async function authorizeCapability(
   context: CapabilityInvocationContext,
   options: { change?: string } = {}
 ): Promise<TierEnforcementDecision> {
-  const capability = registry.get(id);
+  // Decided as the gate decides it: a moved tool by its old name (C9a).
+  const capability = gateViewOf(registry.get(id));
   if (!capability) {
     throw new Error(`Capability registry: no capability registered for id "${id}".`);
   }
