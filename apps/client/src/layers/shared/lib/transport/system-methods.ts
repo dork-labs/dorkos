@@ -317,16 +317,14 @@ export function createSystemMethods(baseUrl: string) {
       });
     },
 
-    rotateMcpLocalToken(): Promise<{ localToken: string }> {
-      return fetchJSON<{ localToken: string }>(baseUrl, '/config/mcp/rotate-token', {
-        method: 'POST',
-      });
+    async rotateMcpLocalToken(): Promise<{ localToken: string }> {
+      const answer = await api.call('config.createMcpRotateToken', {});
+      return answer as { localToken: string };
     },
 
-    revealMcpLocalToken(): Promise<{ localToken: string }> {
-      return fetchJSON<{ localToken: string }>(baseUrl, '/config/mcp/reveal-token', {
-        method: 'POST',
-      });
+    async revealMcpLocalToken(): Promise<{ localToken: string }> {
+      const answer = await api.call('config.createMcpRevealToken', {});
+      return answer as { localToken: string };
     },
 
     async reportError(report: ClientErrorReport): Promise<void> {

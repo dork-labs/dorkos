@@ -56,12 +56,10 @@ export function createGlobalMcpMethods(baseUrl: string) {
       await api.call('mcp.remove_global_server', { path: { name } });
     },
 
-    // Stays hand-written: a bodyless write, waits for batch 3's no-body client (DOR-5473).
-    checkGlobalMcpServerTools(name: string): Promise<GlobalMcpToolsCheck> {
-      // A POST: it may start the server, so no cross-site GET can (DOR-4118).
-      return fetchJSON(baseUrl, `/mcp-servers/${encodeURIComponent(name)}/tools`, {
-        method: 'POST',
-      });
+    async checkGlobalMcpServerTools(name: string): Promise<GlobalMcpToolsCheck> {
+      // A bodyless POST: it may start the server, so no cross-site GET can (DOR-4118).
+      const answer = await api.call('mcp.check_global_tools', { path: { name } });
+      return answer as GlobalMcpToolsCheck;
     },
 
     // Stays hand-written: `GET /api/mcp-servers/{name}/allows` has no operationId (DOR-5473).
