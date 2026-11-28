@@ -159,7 +159,8 @@ export function registerHubComputerStreamOpenApi(
 ): void {
   registry.registerPath({
     method: 'get',
-    path: '/api/hub/computers/{computerId}/sessions/{sessionId}/stream',
+    path: '/api/hub/computers/{computerId}/sessions/{sessionId}/events',
+    operationId: 'hub.stream_session_events',
     tags: TAGS,
     summary: 'Stream a chat on a linked computer',
     description:

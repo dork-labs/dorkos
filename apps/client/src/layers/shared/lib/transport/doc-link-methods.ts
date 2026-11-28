@@ -16,7 +16,7 @@ export function createDocLinkMethods(baseUrl: string) {
     },
 
     resolveDocLink(cwd: string, target: string, from: string | null): Promise<DocResolve> {
-      return api.call('documents.resolve', {
+      return api.call('documents.find_doc', {
         query: { cwd, target, ...(from ? { from } : {}) },
       });
     },

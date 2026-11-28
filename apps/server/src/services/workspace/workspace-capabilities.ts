@@ -71,7 +71,7 @@ export const workspacesScanCapability = defineCapability({
   areaNote: 'reading',
   input: z.object({}),
   output: WorktreeScanResultSchema,
-  surfaces: { http: { method: 'get', path: '/api/workspaces/scan' } },
+  surfaces: { http: { method: 'get', path: '/api/workspaces/disk-checkouts' } },
   invoke: async () => scanWorktrees(getWorkspaceRoot()),
 });
 

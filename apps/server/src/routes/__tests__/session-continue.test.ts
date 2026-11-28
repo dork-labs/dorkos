@@ -259,7 +259,7 @@ describe('the out-of-usage routes', () => {
     expect(waitForReset).toHaveBeenCalledWith(SESSION, { autoResume: true });
 
     vi.mocked(cancelAutoContinue).mockResolvedValue({ mode: 'ask' });
-    const cancelled = await request(testServer).post(`${base}/continue/cancel`);
+    const cancelled = await request(testServer).delete(`${base}/continue`);
     expect(cancelled.status).toBe(200);
     expect(cancelled.body).toEqual({ plan: { mode: 'ask' } });
   });
@@ -292,7 +292,7 @@ describe('the out-of-usage routes', () => {
         .set('X-DorkOS-Agent', token)
         .send({ account: 'spare' }),
       request(testServer).post(`${base}/wait`).set('X-DorkOS-Agent', token).send({}),
-      request(testServer).post(`${base}/continue/cancel`).set('X-DorkOS-Agent', token),
+      request(testServer).delete(`${base}/continue`).set('X-DorkOS-Agent', token),
     ]);
     for (const res of answers) {
       expect(res.status).toBe(403);

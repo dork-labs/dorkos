@@ -576,9 +576,9 @@ contractSuite('mesh, agent and discovery groups', [
     },
   },
   {
-    name: 'PUT /api/work-queues/stop refuses an agent',
+    name: 'PUT /api/work-queues/stopped refuses an agent',
     method: 'PUT',
-    path: '/api/work-queues/stop',
+    path: '/api/work-queues/stopped',
     headers: AGENT,
     body: { stopped: false },
     expect: {

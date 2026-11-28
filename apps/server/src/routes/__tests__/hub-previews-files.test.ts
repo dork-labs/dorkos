@@ -114,7 +114,7 @@ describe('previews on a hub', () => {
   });
 
   it('does not say which of its own ports are in use', async () => {
-    const res = await request(server).post('/api/workbench/probe').send({ port: 5173 });
+    const res = await request(server).post('/api/workbench/port-checks').send({ port: 5173 });
     expect(res.status).toBe(409);
     expect(res.body.listening).toBeUndefined();
   });

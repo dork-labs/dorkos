@@ -138,35 +138,32 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     expect: { status: 200, body: { notifications: [], nextCursor: null, unreadCount: 0 } },
   },
   {
-    name: 'PATCH /api/notifications/:id/read marks nothing for an unknown id',
+    name: 'PATCH /api/notifications/:id marks nothing for an unknown id',
     method: 'PATCH',
-    path: '/api/notifications/no-such-notification/read',
+    path: '/api/notifications/no-such-notification',
+    body: { read: true },
     expect: { status: 200, body: { ok: true, marked: 0, unreadCount: 0 } },
   },
   {
-    name: 'PATCH /api/notifications/:id/read refuses an agent',
+    name: 'PATCH /api/notifications/:id refuses an agent',
     method: 'PATCH',
-    path: '/api/notifications/no-such-notification/read',
+    path: '/api/notifications/no-such-notification',
     headers: AGENT,
     expect: { status: 403, body: NOTIFICATIONS_OPERATOR_ONLY },
   },
   {
-    name: 'POST /api/notifications/read-all marks nothing in an empty Inbox',
-    method: 'POST',
-    path: '/api/notifications/read-all',
+    name: 'PATCH /api/notifications marks nothing in an empty Inbox',
+    method: 'PATCH',
+    path: '/api/notifications',
+    body: { read: true },
     expect: { status: 200, body: { ok: true, marked: 0, unreadCount: 0 } },
   },
   {
-    name: 'POST /api/notifications/read-all refuses an agent',
-    method: 'POST',
-    path: '/api/notifications/read-all',
+    name: 'PATCH /api/notifications refuses an agent',
+    method: 'PATCH',
+    path: '/api/notifications',
     headers: AGENT,
     expect: { status: 403, body: NOTIFICATIONS_OPERATOR_ONLY },
-  },
-  {
-    name: 'GET /api/notifications/read-all is the /api 404',
-    path: '/api/notifications/read-all',
-    expect: { status: 404, body: NOT_FOUND },
   },
 
   // push
@@ -1014,8 +1011,8 @@ describe('contract: the same groups with login on', () => {
       expect: { status: 200, schema: ListNotificationsResponseSchema },
     });
     await check(server, {
-      method: 'POST',
-      path: '/api/notifications/read-all',
+      method: 'PATCH',
+      path: '/api/notifications',
       headers: apiKey,
       expect: { status: 403, body: NOTIFICATIONS_OPERATOR_ONLY },
     });
@@ -1025,8 +1022,9 @@ describe('contract: the same groups with login on', () => {
       expect: { status: 403, body: PUSH_OPERATOR_ONLY },
     });
     await check(server, {
-      method: 'POST',
-      path: '/api/notifications/read-all',
+      method: 'PATCH',
+      path: '/api/notifications',
+      body: { read: true },
       headers: cookie,
       expect: { status: 200, body: { ok: true, marked: 0, unreadCount: 0 } },
     });

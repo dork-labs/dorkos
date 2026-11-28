@@ -254,7 +254,6 @@ describe('export-openapi', () => {
     const paths = generateOpenAPISpec().paths ?? {};
     expect(paths['/api/sessions']?.get?.operationId).toBe('sessions.list');
     expect(paths['/api/health']?.get?.operationId).toBe('health.get');
-    expect(paths['/api/notifications/read-all']?.post?.operationId).toBe('notifications.readAll');
     expect(paths['/api/auth/revoke-session']?.post?.operationId).toBe('auth.revokeSession');
     expect(paths['/api/health/deep']?.get?.operationId).toBe('health.getDeep');
   });

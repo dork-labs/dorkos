@@ -205,11 +205,6 @@ contractSuite(
       path: `/api/tasks/${UNKNOWN_ID}`,
       expect: { status: 404, body: NOT_FOUND },
     },
-    {
-      name: 'GET /api/tasks/runs/:id/cancel is the /api 404',
-      path: `/api/tasks/runs/${UNKNOWN_ID}/cancel`,
-      expect: { status: 404, body: NOT_FOUND },
-    },
 
     // tasks: writes refused
     {
@@ -315,9 +310,10 @@ contractSuite(
       expect: { status: 404, body: TASK_NOT_FOUND },
     },
     {
-      name: 'POST /api/tasks/runs/:id/cancel answers 404 for an unknown run',
-      method: 'POST',
-      path: `/api/tasks/runs/${UNKNOWN_ID}/cancel`,
+      name: 'PATCH /api/tasks/runs/:id answers 404 for an unknown run',
+      method: 'PATCH',
+      path: `/api/tasks/runs/${UNKNOWN_ID}`,
+      body: { status: 'cancelled' },
       expect: { status: 404, body: RUN_NOT_FOUND },
     },
     {
@@ -927,8 +923,9 @@ describe('contract: tasks, account rules and model setup, driven by hand (login 
       },
     });
     await check(server, {
-      method: 'POST',
-      path: `/api/tasks/runs/${runId}/cancel`,
+      method: 'PATCH',
+      path: `/api/tasks/runs/${runId}`,
+      body: { status: 'cancelled' },
       expect: {
         status: 200,
         schema: z
@@ -1226,8 +1223,8 @@ describe('contract: the same groups with login on', () => {
       },
     });
     await check(server, {
-      method: 'POST',
-      path: `/api/tasks/runs/${UNKNOWN_ID}/cancel`,
+      method: 'PATCH',
+      path: `/api/tasks/runs/${UNKNOWN_ID}`,
       headers: apiKey,
       expect: {
         status: 403,

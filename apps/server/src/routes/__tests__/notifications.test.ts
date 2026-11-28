@@ -398,9 +398,9 @@ describe('GET /api/notifications', () => {
 describe('marking notifications read', () => {
   it('marks one read and reports the new count', async () => {
     const ids = await seed(2);
-    const res = await request(fixtureTarget.mount(buildApp())).patch(
-      `/api/notifications/${ids[0]}/read`
-    );
+    const res = await request(fixtureTarget.mount(buildApp()))
+      .patch(`/api/notifications/${ids[0]}`)
+      .send({ read: true });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, marked: 1, unreadCount: 1 });
@@ -408,26 +408,30 @@ describe('marking notifications read', () => {
 
   it('marks everything read', async () => {
     await seed(3);
-    const res = await request(fixtureTarget.mount(buildApp())).post('/api/notifications/read-all');
+    const res = await request(fixtureTarget.mount(buildApp()))
+      .patch('/api/notifications')
+      .send({ read: true });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, marked: 3, unreadCount: 0 });
   });
 
-  it('answers 200 with nothing marked for an id that does not exist', async () => {
-    const res = await request(fixtureTarget.mount(buildApp())).patch(
-      '/api/notifications/nope/read'
-    );
+  it('answers 200 with nothing marked for an unknown id, and 400 for any body but read: true', async () => {
+    const target = fixtureTarget.mount(buildApp());
+    const res = await request(target).patch('/api/notifications/nope').send({ read: true });
     expect(res.status).toBe(200);
     expect(res.body.marked).toBe(0);
+    expect((await request(target).patch('/api/notifications').send({ read: false })).status).toBe(
+      400
+    );
   });
 
   it('refuses an agent outright, and changes nothing', async () => {
     const ids = await seed(1);
     const app = buildApp({ agentIdentity: { agentId: 'agent-x' } });
 
-    const one = await request(fixtureTarget.mount(app)).patch(`/api/notifications/${ids[0]}/read`);
-    const all = await request(fixtureServer).post('/api/notifications/read-all');
+    const one = await request(fixtureTarget.mount(app)).patch(`/api/notifications/${ids[0]}`);
+    const all = await request(fixtureServer).patch('/api/notifications').send({ read: true });
 
     expect(one.status).toBe(403);
     expect(one.type).toBe('application/problem+json');
@@ -442,7 +446,7 @@ describe('marking notifications read', () => {
       user: { userId: 'user_program', credential: 'api-key' } as RequestUser,
     });
 
-    const res = await request(fixtureTarget.mount(app)).patch(`/api/notifications/${ids[0]}/read`);
+    const res = await request(fixtureTarget.mount(app)).patch(`/api/notifications/${ids[0]}`);
     expect(res.status).toBe(403);
     expect(service.list({ limit: 25, unread: false }).unreadCount).toBe(1);
   });

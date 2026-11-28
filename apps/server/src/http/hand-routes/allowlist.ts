@@ -85,7 +85,7 @@ export const HAND_ROUTE_ALLOWLIST: readonly HandRouteAllowlistEntry[] = [
   },
   {
     method: 'GET',
-    path: '/api/hub/computers/:computerId/sessions/:sessionId/stream',
+    path: '/api/hub/computers/:computerId/sessions/:sessionId/events',
     category: 'stream',
     reason: "A linked computer's chat stream, relayed by the hub (SSE).",
   },
@@ -411,8 +411,8 @@ export const HAND_ROUTE_ALLOWLIST: readonly HandRouteAllowlistEntry[] = [
     reason: TASK_WRITE_HELD,
   },
   {
-    method: 'POST',
-    path: '/api/tasks/runs/:id/cancel',
+    method: 'PATCH',
+    path: '/api/tasks/runs/:id',
     category: 'network-reachable',
     reason: TASK_WRITE_HELD,
   },

@@ -65,7 +65,7 @@ const EXCEPTIONS: Record<string, string> = {
   'tasks DELETE /:id': 'Removes a scheduled task.',
   'tasks POST /:id/trigger':
     'Runs once under its existing owner bar without changing any lasting credits choice.',
-  'tasks POST /runs/:id/cancel': 'Stops a run.',
+  'tasks PATCH /runs/:id': 'Stops a run.',
   'remote-access POST /close': 'Only closes access.',
   'remote-access POST /withdraw': 'Withdraws access.',
   'tunnel POST /stop': 'Only closes access.',

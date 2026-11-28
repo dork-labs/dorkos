@@ -409,7 +409,7 @@ const registry = composeDorkOsCapabilityRegistry({
       maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
     }),
   },
-  // The audit domain serves `GET /api/audit/verify`, so the boot registry must
+  // The audit domain serves `GET /api/audit/integrity`, so the boot registry must
   // carry it for the docs/boot parity check (spec `audit-trail`).
   auditDeps: {
     log: {
@@ -429,7 +429,7 @@ const registry = composeDorkOsCapabilityRegistry({
     },
   },
   // The person's work queue domain serves its doors (`/api/agents/{agentId}/work-queue/*`,
-  // `/api/work-queues/stop`, DOR-4978); no agent is on this team.
+  // `/api/work-queues/stopped`, DOR-4978); no agent is on this team.
   // The agents' own work queue tools (`work-queue.*`, DOR-3462), checked
   // beside the person's doors. The prober is the one agent on this team, with
   // an empty queue and one ended item, so its destructive calls reach the gate

@@ -584,7 +584,20 @@ export const ListNotificationsResponseSchema = z
 /** Response body of `GET /api/notifications`. */
 export type ListNotificationsResponse = z.infer<typeof ListNotificationsResponseSchema>;
 
-/** Response body of `PATCH /api/notifications/:id/read` and `POST /api/notifications/read-all`. */
+/**
+ * Request body of `PATCH /api/notifications/:id` (one notification) and
+ * `PATCH /api/notifications` (every unread one). Read state only moves one
+ * way here, so `read` is always `true`.
+ */
+export const MarkNotificationsReadRequestSchema = z
+  .object({ read: z.literal(true) })
+  .strict()
+  .openapi('MarkNotificationsReadRequest');
+
+/** Request body of the read endpoints. */
+export type MarkNotificationsReadRequest = z.infer<typeof MarkNotificationsReadRequestSchema>;
+
+/** Response body of `PATCH /api/notifications/:id` and `PATCH /api/notifications`. */
 export const MarkNotificationsReadResponseSchema = z
   .object({
     ok: z.literal(true),

@@ -178,7 +178,7 @@ export function createSystemMethods(baseUrl: string) {
     /** Ask whether a loopback port has a dev server on it, before framing it. */
     async probeLoopbackPort(port: number): Promise<WorkbenchProbeResponse | null> {
       const body: WorkbenchProbeRequest = { port };
-      return fetchJSON<WorkbenchProbeResponse>(baseUrl, '/workbench/probe', {
+      return fetchJSON<WorkbenchProbeResponse>(baseUrl, '/workbench/port-checks', {
         method: 'POST',
         body: JSON.stringify(body),
       });

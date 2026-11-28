@@ -17,7 +17,7 @@ import { MAX_LOOKUP_ROOTS } from './project-registry.js';
 const error = problemResponse;
 
 /**
- * Register `GET /api/projects` and `GET /api/projects/resolve` on the OpenAPI registry.
+ * Register `GET /api/projects` and `GET /api/projects/lookup` on the OpenAPI registry.
  *
  * @param registry - The server's OpenAPI registry.
  */
@@ -46,7 +46,8 @@ export function registerProjectsOpenApi(registry: OpenAPIRegistry): void {
 
   registry.registerPath({
     method: 'get',
-    path: '/api/projects/resolve',
+    path: '/api/projects/lookup',
+    operationId: 'projects.find_project',
     tags: ['Projects'],
     summary: 'Name the project a folder belongs to',
     description:

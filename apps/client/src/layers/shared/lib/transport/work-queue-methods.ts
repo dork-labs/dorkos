@@ -58,6 +58,7 @@ export function createWorkQueueMethods(baseUrl: string) {
     async requeueWorkItem(agentId: string, itemId: string): Promise<WorkItem> {
       return (await api.call('work-queue.requeue_item', {
         path: { agentId, itemId },
+        body: { status: 'queued' },
       })) as WorkItem;
     },
   };

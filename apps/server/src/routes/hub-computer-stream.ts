@@ -1,5 +1,5 @@
 /**
- * `GET /api/hub/computers/:computerId/sessions/:sessionId/stream`: one chat on
+ * `GET /api/hub/computers/:computerId/sessions/:sessionId/events`: one chat on
  * a linked computer as Server-Sent Events, relayed frame by frame from the
  * computer's own durable stream (`session.stream`).
  *

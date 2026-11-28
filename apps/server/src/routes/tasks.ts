@@ -21,14 +21,14 @@ import { TASK_ON_CREDITS } from './task-credits-wording.js';
  *   The feed entry was written either way.
  * - `PATCH /:id` refuses only the operator-only FIELDS; an agent pausing a
  *   schedule (`enabled: false`) went through and was recorded as the person.
- * - `DELETE /:id` and `POST /runs/:id/cancel` run
+ * - `DELETE /:id` and `PATCH /runs/:id` run
  *   `requireOperatorCookieUnderLogin`, which is a deliberate no-op in the shipped
  *   login-off posture (the documented DOR-505 residual).
  *
  * @module routes/tasks
  */
 import { Hono } from 'hono';
-import { TriggerTaskRequestSchema } from '@dorkos/shared/schemas';
+import { CancelTaskRunRequestSchema, TriggerTaskRequestSchema } from '@dorkos/shared/schemas';
 import type { Task } from '@dorkos/shared/schemas';
 import { wifiRunNowRefusal } from './task-wifi-guard.js';
 import {
@@ -221,7 +221,9 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     return c.json({ runId: run.id }, 201);
   });
 
-  router.post('/runs/:id/cancel', async (c) => {
+  // A run's only writable field is its status, and the only status a caller may set is
+  // `cancelled`.
+  router.patch('/runs/:id', async (c) => {
     const caller = honoRequestFacts(c);
     const id = c.req.param('id');
     // Cancelling a run is never a power-grant either, so — like DELETE above —
@@ -235,6 +237,8 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
         detail: 'Only a person signed in to DorkOS can cancel a scheduled run.',
       });
     }
+    const body = CancelTaskRunRequestSchema.safeParse(readJsonBody(c));
+    if (!body.success) return validationProblem(c, body.error);
 
     const run = store.getRun(id);
     const outcome = await scheduler.cancelRun(id);

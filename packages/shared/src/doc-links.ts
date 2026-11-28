@@ -59,7 +59,7 @@ export const DocIndexSchema = z.object({
   /**
    * True when the walk stopped at a limit (docs, folders, depth or time), so
    * some docs are not listed. A target that matches nothing listed is then
-   * not missing until `GET /api/documents/resolve` says so.
+   * not missing until `GET /api/documents/lookup` says so.
    */
   truncated: z.boolean(),
 });
@@ -72,7 +72,7 @@ export const DocIndexQuerySchema = z.object({
   cwd: z.string().min(1),
 });
 
-/** `GET /api/documents/resolve` query: one target, looked for beyond the index's limits. */
+/** `GET /api/documents/lookup` query: one target, looked for beyond the index's limits. */
 export const DocResolveQuerySchema = z.object({
   cwd: z.string().min(1),
   /** What the author typed before `#` and `|`. */
@@ -81,7 +81,7 @@ export const DocResolveQuerySchema = z.object({
   from: z.string().min(1).optional(),
 });
 
-/** `GET /api/documents/resolve`: the doc a target names, if one was found. */
+/** `GET /api/documents/lookup`: the doc a target names, if one was found. */
 export const DocResolveSchema = z.object({
   /** The doc, or `null` when none was found. */
   doc: DocIndexEntrySchema.nullable(),

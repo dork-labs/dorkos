@@ -250,16 +250,16 @@ Workspaces are configured under `workspace` in `~/.dork/config.json`:
 
 All endpoints are under `/api/workspaces`:
 
-| Method & path                  | Purpose                                                                                  |
-| ------------------------------ | ---------------------------------------------------------------------------------------- |
-| `GET /api/workspaces/scan`     | Read-only scan of the workspace root: every checkout on disk. Backs the Workspaces page. |
-| `GET /api/workspaces`          | List workspaces (optionally `?projectKey=`), each with attached chats and dirty state.   |
-| `GET /api/workspaces/resolve`  | Resolve a workspace from an absolute `?path=`: powers the chat status-bar indicator.     |
-| `POST /api/workspaces/ports`   | Preview the port block a given checkout `path` would receive.                            |
-| `POST /api/workspaces`         | Ensure a workspace (`{ projectKey, key, source, provider? }`). A new one is shown first. |
-| `GET /api/workspaces/:id`      | Fetch a single workspace.                                                                |
-| `POST /api/workspaces/:id/pin` | Pin or unpin (`{ pinned: boolean }`).                                                    |
-| `DELETE /api/workspaces/:id`   | Remove (`?force=true` to override a dirty refusal).                                      |
+| Method & path                        | Purpose                                                                                  |
+| ------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `GET /api/workspaces/disk-checkouts` | Read-only scan of the workspace root: every checkout on disk. Backs the Workspaces page. |
+| `GET /api/workspaces`                | List workspaces (optionally `?projectKey=`), each with attached chats and dirty state.   |
+| `GET /api/workspaces/resolve`        | Resolve a workspace from an absolute `?path=`: powers the chat status-bar indicator.     |
+| `POST /api/workspaces/ports`         | Preview the port block a given checkout `path` would receive.                            |
+| `POST /api/workspaces`               | Ensure a workspace (`{ projectKey, key, source, provider? }`). A new one is shown first. |
+| `GET /api/workspaces/:id`            | Fetch a single workspace.                                                                |
+| `POST /api/workspaces/:id/pin`       | Pin or unpin (`{ pinned: boolean }`).                                                    |
+| `DELETE /api/workspaces/:id`         | Remove (`?force=true` to override a dirty refusal).                                      |
 
 <Callout type="warn">
   A new workspace is shown to you before anything runs there. A copy can bring its own settings,

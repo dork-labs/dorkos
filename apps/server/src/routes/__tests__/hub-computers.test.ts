@@ -221,7 +221,7 @@ describe('only the person`s own browser sign-in', () => {
 
   it('refuses the stream to an API key before opening anything', async () => {
     caller.credential = 'api-key';
-    const res = await request(server).get(`${BASE}/sessions/${SESSION}/stream`).set(SSE_ACCEPT);
+    const res = await request(server).get(`${BASE}/sessions/${SESSION}/events`).set(SSE_ACCEPT);
     expect(res.status).toBe(403);
     expect(deps.viewers.open).not.toHaveBeenCalled();
   });
@@ -491,7 +491,7 @@ describe('which browser asked', () => {
     );
     expect(JSON.stringify(fake.computer.request.mock.calls)).not.toContain(SESSION_TOKEN);
 
-    const sse = openSse(`${BASE}/sessions/${SESSION}/stream`, {
+    const sse = openSse(`${BASE}/sessions/${SESSION}/events`, {
       Cookie: `better-auth.session_token=${SESSION_TOKEN}; dorkos-device=browser-id-0001`,
       'User-Agent': IPHONE_SAFARI,
     });
@@ -501,7 +501,7 @@ describe('which browser asked', () => {
   });
 
   it('gives a browser its device cookie on the chat stream too, which writes its own head', async () => {
-    const sse = openSse(`${BASE}/sessions/${SESSION}/stream`);
+    const sse = openSse(`${BASE}/sessions/${SESSION}/events`);
     await until(() => fake.streams.length === 1);
     await until(() => sse.headers() !== undefined);
     const cookie = String(sse.headers()?.['set-cookie']);
@@ -527,7 +527,7 @@ describe('which browser asked', () => {
 
 describe('the chat stream', () => {
   it('relays frames as SSE, resuming from Last-Event-ID, and counts a viewer', async () => {
-    const sse = openSse(`${BASE}/sessions/${SESSION}/stream`, { 'Last-Event-ID': CURSOR });
+    const sse = openSse(`${BASE}/sessions/${SESSION}/events`, { 'Last-Event-ID': CURSOR });
     await until(() => fake.streams.length === 1);
     expect(fake.streams[0]).toMatchObject({ sessionId: SESSION, resume: CURSOR });
     expect(deps.viewers.open).toHaveBeenCalledWith(COMPUTER);
@@ -550,19 +550,19 @@ describe('the chat stream', () => {
   });
 
   it('takes ?resume= when there is no Last-Event-ID, and refuses a bad cursor', async () => {
-    const sse = openSse(`${BASE}/sessions/${SESSION}/stream?resume=${CURSOR}`);
+    const sse = openSse(`${BASE}/sessions/${SESSION}/events?resume=${CURSOR}`);
     await until(() => fake.streams.length === 1);
     expect(fake.streams[0]!.resume).toBe(CURSOR);
     sse.destroy();
     const bad = await request(server)
-      .get(`${BASE}/sessions/${SESSION}/stream`)
+      .get(`${BASE}/sessions/${SESSION}/events`)
       .set(SSE_ACCEPT)
       .set('Last-Event-ID', '../../etc?x=1');
     expect(bad.status).toBe(400);
   });
 
   it('ends with an error event when the computer ends the stream with a reason', async () => {
-    const sse = openSse(`${BASE}/sessions/${SESSION}/stream`);
+    const sse = openSse(`${BASE}/sessions/${SESSION}/events`);
     await until(() => fake.streams.length === 1);
     fake.streams[0]!.onEnd({ status: 404, code: 'not_found', message: 'No such chat.' });
     await sse.ended;
@@ -574,7 +574,7 @@ describe('the chat stream', () => {
   });
 
   it('drops a frame whose event name would split the stream', async () => {
-    const sse = openSse(`${BASE}/sessions/${SESSION}/stream`);
+    const sse = openSse(`${BASE}/sessions/${SESSION}/events`);
     await until(() => fake.streams.length === 1);
     fake.streams[0]!.onFrame({ event: 'x\ndata: injected', data: 1 });
     fake.streams[0]!.onEnd();
@@ -584,14 +584,14 @@ describe('the chat stream', () => {
 
   it('wakes a computer that is not connected instead of opening a stream', async () => {
     deps.connection.mockReturnValue(null);
-    const res = await request(server).get(`${BASE}/sessions/${SESSION}/stream`).set(SSE_ACCEPT);
+    const res = await request(server).get(`${BASE}/sessions/${SESSION}/events`).set(SSE_ACCEPT);
     expect(res.status).toBe(503);
     expect(deps.wake).toHaveBeenCalledWith(COMPUTER);
     expect(deps.viewers.open).not.toHaveBeenCalled();
   });
 
   it('refuses a request that does not accept an event stream', async () => {
-    const res = await request(server).get(`${BASE}/sessions/${SESSION}/stream`);
+    const res = await request(server).get(`${BASE}/sessions/${SESSION}/events`);
     expect(res.status).toBe(406);
     expect(fake.computer.openStream).not.toHaveBeenCalled();
     expect(deps.viewers.open).not.toHaveBeenCalled();
@@ -601,7 +601,7 @@ describe('the chat stream', () => {
     fake.computer.openStream.mockImplementationOnce(() => {
       throw new Error('could not start');
     });
-    const sse = openSse(`${BASE}/sessions/${SESSION}/stream`);
+    const sse = openSse(`${BASE}/sessions/${SESSION}/events`);
     await sse.ended;
     expect(deps.viewers.open).toHaveBeenCalledTimes(1);
     expect(release).toHaveBeenCalledTimes(1);
@@ -609,7 +609,7 @@ describe('the chat stream', () => {
 
   it('answers 501 before opening when the computer cannot stream', async () => {
     fake.computer.features = ['chats.list'];
-    const res = await request(server).get(`${BASE}/sessions/${SESSION}/stream`).set(SSE_ACCEPT);
+    const res = await request(server).get(`${BASE}/sessions/${SESSION}/events`).set(SSE_ACCEPT);
     expect(res.status).toBe(501);
     expect(fake.computer.openStream).not.toHaveBeenCalled();
   });

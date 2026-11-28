@@ -79,6 +79,7 @@ import {
   HistoryReadSchema,
   TaskItemSchema,
   TaskSchema,
+  CancelTaskRunRequestSchema,
   CancelTaskRunResponseSchema,
   CreateTaskRequestSchema,
   UpdateTaskRequestSchema,
@@ -214,6 +215,7 @@ import {
 import {
   ListNotificationsQuerySchema,
   ListNotificationsResponseSchema,
+  MarkNotificationsReadRequestSchema,
   MarkNotificationsReadResponseSchema,
 } from '@dorkos/shared/notification-schemas';
 import { registerCapabilitiesInOpenApi } from './capabilities/index.js';
@@ -1584,7 +1586,8 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'post',
-  path: '/api/workbench/probe',
+  path: '/api/workbench/port-checks',
+  operationId: 'workbench.check_port',
   tags: ['Workbench'],
   summary: 'Probe a loopback port before framing it',
   description:
@@ -1830,18 +1833,21 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: 'post',
-  path: '/api/tasks/runs/{id}/cancel',
+  method: 'patch',
+  path: '/api/tasks/runs/{id}',
+  operationId: 'tasks.cancel_run',
   tags: ['Tasks'],
   summary: 'Stop a running job',
   request: {
     params: z.object({ id: z.string() }),
+    body: { content: { 'application/json': { schema: CancelTaskRunRequestSchema } } },
   },
   responses: {
     200: {
       description: 'A runner has the stop request, or the run had already finished',
       content: { 'application/json': { schema: CancelTaskRunResponseSchema } },
     },
+    400: problemResponse('The body is not `{ "status": "cancelled" }`'),
     404: problemResponse('Run not found'),
     502: problemResponse(
       '`upstream_unavailable`: the stop request could not be sent, was refused, or nothing ' +
@@ -6495,29 +6501,39 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'patch',
-  path: '/api/notifications/{id}/read',
+  path: '/api/notifications/{id}',
+  operationId: 'notifications.mark_read',
   tags: ['Notifications'],
   summary: 'Mark one notification read',
-  request: { params: z.object({ id: z.string() }) },
+  request: {
+    params: z.object({ id: z.string() }),
+    body: { content: { 'application/json': { schema: MarkNotificationsReadRequestSchema } } },
+  },
   responses: {
     200: {
       description: 'How many rows moved, and the unread count after',
       content: { 'application/json': { schema: MarkNotificationsReadResponseSchema } },
     },
+    400: problemResponse('The body is not `{ "read": true }`'),
     403: problemResponse('Only the operator may move read state'),
   },
 });
 
 registry.registerPath({
-  method: 'post',
-  path: '/api/notifications/read-all',
+  method: 'patch',
+  path: '/api/notifications',
+  operationId: 'notifications.mark_all_read',
   tags: ['Notifications'],
   summary: 'Mark every unread notification read',
+  request: {
+    body: { content: { 'application/json': { schema: MarkNotificationsReadRequestSchema } } },
+  },
   responses: {
     200: {
       description: 'How many rows moved, and the unread count after',
       content: { 'application/json': { schema: MarkNotificationsReadResponseSchema } },
     },
+    400: problemResponse('The body is not `{ "read": true }`'),
     403: problemResponse('Only the operator may move read state'),
   },
 });

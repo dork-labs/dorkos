@@ -376,8 +376,8 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     },
   },
   {
-    name: 'GET /api/workspaces/scan scans the workspace root',
-    path: '/api/workspaces/scan',
+    name: 'GET /api/workspaces/disk-checkouts scans the workspace root',
+    path: '/api/workspaces/disk-checkouts',
     expect: { status: 200, headers: JSON_TYPE, schema: WorktreeScanResultSchema },
   },
   {
@@ -501,8 +501,8 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     expect: { status: 200, headers: JSON_TYPE, body: '' },
   },
   {
-    name: 'GET /api/projects/resolve names the project a folder belongs to',
-    path: `/api/projects/resolve?cwd=${q(path.join(NESTED_REPO, 'src'))}`,
+    name: 'GET /api/projects/lookup names the project a folder belongs to',
+    path: `/api/projects/lookup?cwd=${q(path.join(NESTED_REPO, 'src'))}`,
     expect: {
       status: 200,
       headers: JSON_TYPE,
@@ -512,28 +512,28 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     },
   },
   {
-    name: 'GET /api/projects/resolve/ answers with a trailing slash',
-    path: `/api/projects/resolve/?cwd=${q(NESTED_REPO)}`,
+    name: 'GET /api/projects/lookup/ answers with a trailing slash',
+    path: `/api/projects/lookup/?cwd=${q(NESTED_REPO)}`,
     expect: { status: 200, schema: ProjectResolveResponseSchema },
   },
   {
-    name: 'GET /api/projects/resolve refuses a folder outside the boundary',
-    path: '/api/projects/resolve?cwd=/etc',
+    name: 'GET /api/projects/lookup refuses a folder outside the boundary',
+    path: '/api/projects/lookup?cwd=/etc',
     expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
-    name: 'GET /api/projects/resolve refuses a walk out of the boundary',
-    path: `/api/projects/resolve?cwd=${q(`${REPO_ROOT}/../..`)}`,
+    name: 'GET /api/projects/lookup refuses a walk out of the boundary',
+    path: `/api/projects/lookup?cwd=${q(`${REPO_ROOT}/../..`)}`,
     expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
-    name: 'GET /api/projects/resolve refuses a NUL byte with a 400',
-    path: `/api/projects/resolve?cwd=${q(`${REPO_ROOT}\0`)}`,
+    name: 'GET /api/projects/lookup refuses a NUL byte with a 400',
+    path: `/api/projects/lookup?cwd=${q(`${REPO_ROOT}\0`)}`,
     expect: { status: 400, body: GIT_NULL_BYTE },
   },
   {
-    name: 'GET /api/projects/resolve refuses a missing cwd',
-    path: '/api/projects/resolve',
+    name: 'GET /api/projects/lookup refuses a missing cwd',
+    path: '/api/projects/lookup',
     expect: {
       status: 400,
       body: validationProblemBody({
@@ -546,16 +546,16 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     // A page on another site names itself in `Referer`, which makes the request
     // another device (ADR 261015-125850 rule 1): the session gate asks it for a
     // person session, with login off, before the route reads anything.
-    name: 'GET /api/projects/resolve refuses a cross-site request at the session gate before reading anything',
-    path: `/api/projects/resolve?cwd=${q(REPO_ROOT)}`,
+    name: 'GET /api/projects/lookup refuses a cross-site request at the session gate before reading anything',
+    path: `/api/projects/lookup?cwd=${q(REPO_ROOT)}`,
     headers: { ...CROSS_SITE, Referer: 'https://elsewhere.example/page' },
     expect: { status: 401, body: { error: 'Unauthorized', code: 'AUTH_REQUIRED' } },
   },
   {
     // The route's own refusal still stands for a cross-site request the gate
     // cannot tell apart from this computer: one that names no page.
-    name: 'GET /api/projects/resolve refuses a cross-site request that names no page before reading anything',
-    path: `/api/projects/resolve?cwd=${q(REPO_ROOT)}`,
+    name: 'GET /api/projects/lookup refuses a cross-site request that names no page before reading anything',
+    path: `/api/projects/lookup?cwd=${q(REPO_ROOT)}`,
     headers: CROSS_SITE,
     expect: {
       status: 403,
@@ -563,8 +563,8 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     },
   },
   {
-    name: 'GET /api/projects/resolve refuses an agent',
-    path: `/api/projects/resolve?cwd=${q(REPO_ROOT)}`,
+    name: 'GET /api/projects/lookup refuses an agent',
+    path: `/api/projects/lookup?cwd=${q(REPO_ROOT)}`,
     headers: AGENT,
     expect: {
       status: 403,

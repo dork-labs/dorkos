@@ -201,7 +201,7 @@
     "terminal-methods.ts#closeTerminal": "its own fetch, outside the shared request path, and never throws"
   },
   "waits-to-move": {
-    "account-methods.ts#cancelAutoContinue": "sessions.cancelContinue",
+    "account-methods.ts#cancelAutoContinue": "sessions.cancel_continue",
     "account-methods.ts#continueSession": "sessions.createContinue",
     "account-methods.ts#dismissFoundClaudeFolder": "runtimes.createClaudeCodeAccountsFoundDismiss",
     "account-methods.ts#getAccountEligibility": "runtimes.account_eligibility",
@@ -350,7 +350,7 @@
     "system-methods.ts#getOpenCodeDirectSetup": "runtimes.opencode_key_setup",
     "system-methods.ts#getRuntimeKeyStatus": "runtimes.key_status",
     "system-methods.ts#listActivityEvents": "operator.activity_list",
-    "system-methods.ts#probeLoopbackPort": "workbench.probe",
+    "system-methods.ts#probeLoopbackPort": "workbench.check_port",
     "system-methods.ts#revealMcpLocalToken": "config.createMcpRevealToken",
     "system-methods.ts#rotateMcpLocalToken": "config.createMcpRotateToken",
     "system-methods.ts#startOpenRouterOAuth": "runtimes.startOpencodeOpenrouterOauth",

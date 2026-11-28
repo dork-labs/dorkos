@@ -85,7 +85,10 @@ export function createTasksMethods(baseUrl: string) {
     },
 
     async cancelTaskRun(id: string): Promise<CancelTaskRunResponse> {
-      return (await api.call('tasks.cancelRuns', { path: { id } })) as CancelTaskRunResponse;
+      return (await api.call('tasks.cancel_run', {
+        path: { id },
+        body: { status: 'cancelled' },
+      })) as CancelTaskRunResponse;
     },
 
     // Stays hand-written: `GET /api/tasks/templates` has no operationId (DOR-5473).

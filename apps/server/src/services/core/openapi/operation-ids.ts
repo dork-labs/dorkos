@@ -30,8 +30,8 @@
  * - **verb**, in this order:
  *   1. the last segment is a command word ({@link COMMAND_WORDS}, or any word
  *      ending in `-all`): that word in camelCase, and it leaves the Resource
- *      (`/pause` → `pause`, `/read-all` → `readAll`, `/continue/cancel` →
- *      `cancelContinue`);
+ *      (`/pause` → `pause`, `/sign-out-all` → `signOutAll`, `/handoff/stop` →
+ *      `stopHandoff`);
  *   2. on any method but `GET`, the last segment is hyphenated and its first
  *      word is a command word: the whole segment in camelCase, and it leaves
  *      the Resource (`/revoke-session` → `revokeSession`, `/start-work` →
@@ -57,14 +57,14 @@
  * | `POST`   | `/api/sessions`                                         | `sessions.create`                                 |
  * | `POST`   | `/api/sessions/{id}/messages`                           | `sessions.createMessages`                         |
  * | `POST`   | `/api/connectors/connections/{id}/events/subscriptions` | `connectors.createConnectionsEventsSubscriptions` |
- * | `POST`   | `/api/sessions/{id}/continue/cancel`                    | `sessions.cancelContinue`                         |
+ * | `POST`   | `/api/local-browser/handoff/stop`                       | `localBrowser.stopHandoff`                        |
  * | `POST`   | `/api/agents/{agentId}/pause`                           | `agents.pause`                                    |
- * | `POST`   | `/api/notifications/read-all`                           | `notifications.readAll`                           |
+ * | `POST`   | `/api/devices/sign-out-all`                             | `devices.signOutAll`                              |
  * | `POST`   | `/api/auth/revoke-session`                              | `auth.revokeSession`                              |
  * | `POST`   | `/api/hub/computers/link-code` (a named segment)        | `hub.createComputersLinkCode`                     |
- * | `PUT`    | `/api/work-queues/stop`                                 | `workQueues.stop`                                 |
+ * | `POST`   | `/api/tunnel/start`                                     | `tunnel.start`                                    |
  * | `PATCH`  | `/api/config`                                           | `config.update`                                   |
- * | `DELETE` | `/api/work-queues/{id}/items/{itemId}`                  | `workQueues.deleteItems`                          |
+ * | `DELETE` | `/api/config/backups/{name}`                            | `config.deleteBackups`                            |
  *
  * ## Every id is pinned
  *

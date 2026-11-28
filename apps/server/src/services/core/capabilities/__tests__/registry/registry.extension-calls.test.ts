@@ -199,7 +199,13 @@ describe('only a reviewed list runs from Wi-Fi, each in its one mode (ADR 261125
       ['todos.add_as_person', 'person-held', 'post', '/api/todos', 'person'],
       ['todos.change_as_person', 'person-held', 'patch', '/api/todos/{id}', 'person'],
       ['todos.change_promise', 'person-held', 'patch', '/api/todo-promises/{id}', 'person'],
-      ['todos.confirm_promise', 'person-held', 'post', '/api/todo-promises/{id}/confirm', 'person'],
+      [
+        'todos.confirm_promise',
+        'person-held',
+        'put',
+        '/api/todo-promises/{id}/confirmation',
+        'person',
+      ],
     ]);
   });
 });

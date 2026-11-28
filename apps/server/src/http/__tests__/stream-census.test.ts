@@ -74,7 +74,7 @@ const SOURCES: Readonly<Record<string, Source>> = {
   },
   'routes/hub-computer-stream.ts': {
     markers: 2,
-    serves: ['GET /api/hub/computers/:computerId/sessions/:sessionId/stream'],
+    serves: ['GET /api/hub/computers/:computerId/sessions/:sessionId/events'],
   },
   'routes/hub-computers.ts': {
     markers: 2,

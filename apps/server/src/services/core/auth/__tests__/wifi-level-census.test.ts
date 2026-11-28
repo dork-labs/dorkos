@@ -25,7 +25,7 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/sessions/:id/interrupt',
     'POST /api/sessions/:id/wait',
     'POST /api/sessions/:id/fork',
-    'POST /api/sessions/:id/continue/cancel',
+    'DELETE /api/sessions/:id/continue',
     // Moving a room agent to another account (re-seat): the room twin of
     // continuing a chat on another account, two lines up, so the same level.
     'POST /api/rooms/:id/members/:authorId/reseat',
@@ -130,14 +130,14 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
   'Read-ish marks: read cursors, dismissals, views and previews that change no power': [
     'PUT /api/read-cursors/:kind/:id',
     'PUT /api/extensions/:id/rooms/:roomId/threads/:entryId/read',
-    'PATCH /api/notifications/:id/read',
-    'POST /api/notifications/read-all',
+    'PATCH /api/notifications/:id',
+    'PATCH /api/notifications',
     'POST /api/diff/baseline/advance',
     'POST /api/discovery/scan',
     'POST /api/agents/resolve',
     'POST /api/workspaces/ports',
     'POST /api/workspaces/:id/pin',
-    'POST /api/workbench/probe',
+    'POST /api/workbench/port-checks',
     'POST /api/workbench/bridge',
     'POST /api/workbench/sign',
     'POST /api/marketplace/packages/:name/preview',
@@ -194,7 +194,7 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
       'POST /api/todos',
       'PATCH /api/todos/:id',
       'PATCH /api/todo-promises/:id',
-      'POST /api/todo-promises/:id/confirm',
+      'PUT /api/todo-promises/:id/confirmation',
       'POST /api/agents/:agentId/resume',
       'POST /api/agents/:agentId/mcp-servers',
       'PATCH /api/agents/:agentId/mcp-servers/:name',
@@ -207,7 +207,7 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     ],
   'Work and agents at the chat level: tasks, to-dos, agent settings': [
     'DELETE /api/tasks/:id',
-    'POST /api/tasks/runs/:id/cancel',
+    'PATCH /api/tasks/runs/:id',
     'PATCH /api/agents/current',
     'PUT /api/config/agents/defaultAgent',
   ],
@@ -325,7 +325,7 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/local-browser/handoff/stop',
     // Settings → Backups: the route's own person bar refuses plain-http Wi-Fi (DOR-4253).
     'DELETE /api/config/backups/:name',
-    'POST /api/config/backups/:name/move',
+    'PATCH /api/config/backups/:name',
   ],
   'Inbound and signed: a provider’s webhook, never a person on Wi-Fi': [
     'POST /api/connectors/webhooks/:providerInstanceId',

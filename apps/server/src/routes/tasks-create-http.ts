@@ -20,7 +20,7 @@ import { TASK_ON_CREDITS } from './task-credits-wording.js';
  *   The feed entry was written either way.
  * - `PATCH /:id` refuses only the operator-only FIELDS; an agent pausing a
  *   schedule (`enabled: false`) went through and was recorded as the person.
- * - `DELETE /:id` and `POST /runs/:id/cancel` run
+ * - `DELETE /:id` and `PATCH /runs/:id` run
  *   `requireOperatorCookieUnderLogin`, which is a deliberate no-op in the shipped
  *   login-off posture (the documented DOR-505 residual).
  *

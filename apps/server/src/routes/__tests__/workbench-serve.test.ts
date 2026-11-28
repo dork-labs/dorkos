@@ -115,7 +115,7 @@ describe('POST /api/workbench/sign', () => {
   });
 });
 
-describe('POST /api/workbench/probe', () => {
+describe('POST /api/workbench/port-checks', () => {
   let upstream: http.Server;
   let upstreamPort: number;
 
@@ -130,7 +130,9 @@ describe('POST /api/workbench/probe', () => {
   });
 
   it('reports a port with a server on it as listening', async () => {
-    const res = await request(testServer).post('/api/workbench/probe').send({ port: upstreamPort });
+    const res = await request(testServer)
+      .post('/api/workbench/port-checks')
+      .send({ port: upstreamPort });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ listening: true });
   });
@@ -143,7 +145,9 @@ describe('POST /api/workbench/probe', () => {
     const deadPort = (probe.address() as AddressInfo).port;
     await new Promise<void>((resolve) => probe.close(() => resolve()));
 
-    const res = await request(testServer).post('/api/workbench/probe').send({ port: deadPort });
+    const res = await request(testServer)
+      .post('/api/workbench/port-checks')
+      .send({ port: deadPort });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ listening: false });
   });
@@ -165,7 +169,7 @@ describe('POST /api/workbench/probe', () => {
     }
     try {
       const port = (v6.address() as AddressInfo).port;
-      const res = await request(testServer).post('/api/workbench/probe').send({ port });
+      const res = await request(testServer).post('/api/workbench/port-checks').send({ port });
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ listening: true });
     } finally {
@@ -175,12 +179,14 @@ describe('POST /api/workbench/probe', () => {
 
   it('rejects a port outside the valid range (400)', async () => {
     expect(
-      (await request(testServer).post('/api/workbench/probe').send({ port: 70000 })).status
+      (await request(testServer).post('/api/workbench/port-checks').send({ port: 70000 })).status
     ).toBe(400);
-    expect((await request(testServer).post('/api/workbench/probe').send({ port: 0 })).status).toBe(
+    expect(
+      (await request(testServer).post('/api/workbench/port-checks').send({ port: 0 })).status
+    ).toBe(400);
+    expect((await request(testServer).post('/api/workbench/port-checks').send({})).status).toBe(
       400
     );
-    expect((await request(testServer).post('/api/workbench/probe').send({})).status).toBe(400);
   });
 });
 

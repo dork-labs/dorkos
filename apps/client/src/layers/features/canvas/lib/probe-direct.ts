@@ -1,7 +1,7 @@
 /**
  * Can the BROWSER reach this dev server?
  *
- * The server has its own port probe (`POST /api/workbench/probe`), and it answers
+ * The server has its own port probe (`POST /api/workbench/port-checks`), and it answers
  * a different question: whether something is listening on the machine running
  * DorkOS. Those two answers part company the moment a port is forwarded — a
  * cockpit reached through `docker run -p 4242:4242` or `ssh -L 4242:localhost:4242`

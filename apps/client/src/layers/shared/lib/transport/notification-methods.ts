@@ -43,11 +43,11 @@ export function createNotificationMethods(baseUrl: string) {
     },
 
     markNotificationRead(id: string): Promise<MarkNotificationsReadResponse> {
-      return api.call('notifications.read', { path: { id } });
+      return api.call('notifications.mark_read', { path: { id }, body: { read: true } });
     },
 
     markAllNotificationsRead(): Promise<MarkNotificationsReadResponse> {
-      return api.call('notifications.readAll', {});
+      return api.call('notifications.mark_all_read', { body: { read: true } });
     },
   };
 }

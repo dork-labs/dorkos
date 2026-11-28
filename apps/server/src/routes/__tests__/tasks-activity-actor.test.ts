@@ -11,7 +11,7 @@
  *   than refusing it, and writes the feed entry either way.
  * - `PATCH /:id` refuses only operator-only FIELDS; `enabled` is agent-writable,
  *   so an agent can pause somebody's schedule.
- * - `DELETE /:id` and `POST /runs/:id/cancel` run
+ * - `DELETE /:id` and `PATCH /runs/:id` run
  *   `requireOperatorCookieUnderLogin`, a deliberate no-op in the shipped
  *   login-off posture.
  *
@@ -82,6 +82,8 @@ vi.mock('../../services/tasks/lifecycle/create-task.js', () => ({
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
+/** The body that stops a run. */
+const CANCEL = { status: 'cancelled' } as const;
 
 /** Every actor field an emitted event carried. */
 interface EmittedActor {
@@ -150,9 +152,10 @@ const ROUTES: Array<{ name: string; drive: Drive; expectStatus: number }> = [
     drive: (headers) => request(fixtureServer).delete(`/api/tasks/${schedule.id}`).set(headers),
   },
   {
-    name: 'POST /api/tasks/runs/:id/cancel',
+    name: 'PATCH /api/tasks/runs/:id',
     expectStatus: 200,
-    drive: (headers) => request(fixtureServer).post(`/api/tasks/runs/${runId}/cancel`).set(headers),
+    drive: (headers) =>
+      request(fixtureServer).patch(`/api/tasks/runs/${runId}`).send(CANCEL).set(headers),
   },
 ];
 

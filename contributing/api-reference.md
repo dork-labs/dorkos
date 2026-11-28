@@ -77,7 +77,7 @@ Every operation in the document has an `operationId`. It is the name a generated
 
 - **A capability-projected path** uses its capability id (`audit.get`). The REST path and `POST /api/capabilities/:id/invoke` are two documented doors onto one capability definition, so they share its name. Capability ids keep their own style: snake_case words, and sometimes a group other than the path's (`audit.running_chats` on `GET /api/sessions/running`).
 - **A hand-set id wins.** Pass `operationId` to `registerPath` and the generator keeps it.
-- **Every other operation gets a derived id**, `${group}.${verb}${Resource}`, from its method, the document's paths and the operation's query parameters, never from a response schema, so adding a field to a body renames nothing. The rule and a table of examples are in the module doc of `services/core/openapi/operation-ids.ts`. In short: a last segment that is a command word is the verb (`POST /api/notifications/read-all` is `notifications.readAll`), and so is a hyphenated last segment led by one on any method but `GET` (`POST /api/auth/revoke-session` is `auth.revokeSession`); a `GET` is `list` on a collection path, one the document also has with a `{param}` added (`GET /api/sessions` beside `/api/sessions/{id}` is `sessions.list`), and also when it pages, declaring a `limit` or `cursor` query parameter (`GET /api/rooms/{id}/entries` is `rooms.listEntries`); every list pages by cursor, so every list ends up `list`. Otherwise a `GET` is `get` (`sessions.get`, `health.getDeep`); `POST`, `PUT`/`PATCH` and `DELETE` are `create`, `update` and `delete` (`sessions.createMessages`).
+- **Every other operation gets a derived id**, `${group}.${verb}${Resource}`, from its method, the document's paths and the operation's query parameters, never from a response schema, so adding a field to a body renames nothing. The rule and a table of examples are in the module doc of `services/core/openapi/operation-ids.ts`. In short: a last segment that is a command word is the verb (`POST /api/devices/sign-out-all` is `devices.signOutAll`), and so is a hyphenated last segment led by one on any method but `GET` (`POST /api/auth/revoke-session` is `auth.revokeSession`); a `GET` is `list` on a collection path, one the document also has with a `{param}` added (`GET /api/sessions` beside `/api/sessions/{id}` is `sessions.list`), and also when it pages, declaring a `limit` or `cursor` query parameter (`GET /api/rooms/{id}/entries` is `rooms.listEntries`); every list pages by cursor, so every list ends up `list`. Otherwise a `GET` is `get` (`sessions.get`, `health.getDeep`); `POST`, `PUT`/`PATCH` and `DELETE` are `create`, `update` and `delete` (`sessions.createMessages`).
 
 **Every id is pinned.** `services/core/openapi/__tests__/operation-ids.snapshot.json` maps every `METHOD path` to its id, and `operation-ids-snapshot.test.ts` beside it fails with a line diff when any id changes, appears or goes. A new route changes it too, so commit the snapshot with the route. To accept a change on purpose:
 
@@ -760,16 +760,16 @@ The `warnings` field is only present when the patch includes keys listed in `SEN
 
 Mounted at `/api/tasks` when the scheduler is on (`scheduler.enabled`, default `true`, or the `DORKOS_TASKS_ENABLED` override; see [Feature Flags](#feature-flags)).
 
-| Method | Path                         | Description               |
-| ------ | ---------------------------- | ------------------------- |
-| GET    | `/api/tasks`                 | List all task definitions |
-| POST   | `/api/tasks`                 | Create a task definition  |
-| PATCH  | `/api/tasks/:id`             | Update a task definition  |
-| DELETE | `/api/tasks/:id`             | Delete a task definition  |
-| POST   | `/api/tasks/:id/trigger`     | Trigger a task run        |
-| GET    | `/api/tasks/runs`            | Get run history           |
-| GET    | `/api/tasks/runs/:id`        | Get a specific run        |
-| POST   | `/api/tasks/runs/:id/cancel` | Cancel an active run      |
+| Method | Path                     | Description                                        |
+| ------ | ------------------------ | -------------------------------------------------- |
+| GET    | `/api/tasks`             | List all task definitions                          |
+| POST   | `/api/tasks`             | Create a task definition                           |
+| PATCH  | `/api/tasks/:id`         | Update a task definition                           |
+| DELETE | `/api/tasks/:id`         | Delete a task definition                           |
+| POST   | `/api/tasks/:id/trigger` | Trigger a task run                                 |
+| GET    | `/api/tasks/runs`        | Get run history                                    |
+| GET    | `/api/tasks/runs/:id`    | Get a specific run                                 |
+| PATCH  | `/api/tasks/runs/:id`    | Cancel an active run (`{ "status": "cancelled" }`) |
 
 Schedules support an optional `agentId` field for agent-linked scheduling. When `agentId` is set, the schedule's CWD is resolved from the agent's registered project path via MeshCore.
 
@@ -782,8 +782,8 @@ Always mounted, no feature flag: `/api/notifications` and `/api/push` (spec `not
 | Method | Path                          | Description                                                    |
 | ------ | ----------------------------- | -------------------------------------------------------------- |
 | GET    | `/api/notifications`          | List notification history, a page at a time, with unread count |
-| PATCH  | `/api/notifications/:id/read` | Mark one notification read                                     |
-| POST   | `/api/notifications/read-all` | Mark every notification read                                   |
+| PATCH  | `/api/notifications/:id`      | Mark one notification read (`{ "read": true }`)                |
+| PATCH  | `/api/notifications`          | Mark every notification read (`{ "read": true }`)              |
 | GET    | `/api/push/vapid-public-key`  | The server's VAPID public key, for subscribing                 |
 | GET    | `/api/push/subscriptions`     | List the push subscriptions, a page at a time                  |
 | POST   | `/api/push/subscriptions`     | Register a push subscription                                   |

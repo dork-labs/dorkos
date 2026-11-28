@@ -123,7 +123,7 @@ describe("an agent's promise from a held Wi-Fi device", () => {
     expect(confirm.ask(kept.id)).toBe(true);
     for (const answer of ['not-yet', 'yes']) {
       const res = await request(fixtureServer)
-        .post(`/api/todo-promises/${kept.id}/confirm`)
+        .put(`/api/todo-promises/${kept.id}/confirmation`)
         .send({ answer });
       expect(res.status, answer).toBe(403);
       expect(res.body).toMatchObject({ code: 'person_only', detail: HELD });

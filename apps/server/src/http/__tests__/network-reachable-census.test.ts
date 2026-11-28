@@ -93,7 +93,7 @@ describe('network-reachable hand routes', () => {
         'POST /api/tasks/:id/approve-file',
         'POST /api/tasks/:id/trigger',
         'POST /api/tasks/:id/undo-agent-mode',
-        'POST /api/tasks/runs/:id/cancel',
+        'PATCH /api/tasks/runs/:id',
         // A person's review of a document's routes and unfinished work (Security, t1j).
         'POST /api/canvas/docs/:id/routes/:routeId/review',
         'POST /api/canvas/docs/:id/routes/:routeId/revoke',

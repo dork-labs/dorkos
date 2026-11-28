@@ -1,6 +1,6 @@
 /**
  * OpenAPI entries for the out-of-usage routes (spec `claude-account-fleet` D9):
- * `continue-options`, `continue`, `wait` and `continue/cancel`, plus the
+ * `continue-options`, `continue` (POST and DELETE) and `wait`, plus the
  * `limit-history` read (spec `claude-account-ui` §7.1), projected from the same
  * schemas the routes parse and answer with.
  *
@@ -101,8 +101,9 @@ export function registerSessionContinueOpenApi(registry: OpenAPIRegistry): void 
     },
   });
   registry.registerPath({
-    method: 'post',
-    path: '/api/sessions/{id}/continue/cancel',
+    method: 'delete',
+    path: '/api/sessions/{id}/continue',
+    operationId: 'sessions.cancel_continue',
     tags: ['Sessions'],
     summary: 'Cancel a pending handoff to another account',
     description:

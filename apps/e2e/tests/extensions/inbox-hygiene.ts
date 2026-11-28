@@ -21,7 +21,9 @@ export async function leaveNoUnreadRows(
   mine: (row: InboxRow) => boolean
 ): Promise<void> {
   for (const row of (await unreadRows(request)).filter(mine)) {
-    const read = await request.patch(`/api/notifications/${encodeURIComponent(row.id)}/read`);
+    const read = await request.patch(`/api/notifications/${encodeURIComponent(row.id)}`, {
+      data: { read: true },
+    });
     expect(read.ok(), `mark ${row.title} read: ${await read.text()}`).toBe(true);
   }
   expect(

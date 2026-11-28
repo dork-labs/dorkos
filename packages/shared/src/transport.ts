@@ -3530,8 +3530,8 @@ export interface Transport extends TransportSlices {
   waitForReset(sessionId: string, body: { autoResume?: boolean }): Promise<void>;
 
   /**
-   * Stop a scheduled automatic carry-over (`POST
-   * /api/sessions/:id/continue/cancel`). Rejects with the server's `message`
+   * Stop a scheduled automatic carry-over (`DELETE
+   * /api/sessions/:id/continue`). Rejects with the server's `message`
    * and `status`.
    *
    * @param sessionId - The limited session.

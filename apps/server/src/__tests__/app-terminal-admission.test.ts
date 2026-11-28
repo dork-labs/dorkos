@@ -356,7 +356,7 @@ describe('main HTTP admission through the real app', () => {
       '/api/audit',
       '/api/sessions/running',
       '/api/agents/admission-fixture/work-queue',
-      '/api/work-queues/stop',
+      '/api/work-queues/stopped',
       '/api/heartbeats/wakers-off',
       '/api/agents/admission-fixture/todo-promises',
       '/api/todos',

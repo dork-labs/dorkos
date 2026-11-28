@@ -155,10 +155,10 @@ describe('workspaces routes', () => {
 
 /**
  * The adoption scan (DOR-1056). Driven against a real temp root, because the
- * route's job is to hand back what is genuinely on disk — and because `/scan`
+ * route's job is to hand back what is genuinely on disk — and because `/disk-checkouts`
  * has to beat the `/:id` parameter route, which a mocked service could not show.
  */
-describe('GET /api/workspaces/scan', () => {
+describe('GET /api/workspaces/disk-checkouts', () => {
   let base: string;
   let root: string;
 
@@ -189,7 +189,7 @@ describe('GET /api/workspaces/scan', () => {
     setWorkspaceRoot(root);
     const app = mountWith({});
 
-    const res = await request(fixtureTarget.mount(app)).get('/api/workspaces/scan');
+    const res = await request(fixtureTarget.mount(app)).get('/api/workspaces/disk-checkouts');
 
     expect(res.status).toBe(200);
     expect(res.body.root).toBe(root);
@@ -204,12 +204,12 @@ describe('GET /api/workspaces/scan', () => {
 
   it('is not swallowed by the /:id route', async () => {
     setWorkspaceRoot(root);
-    // `get` is what `/:id` would call. If `/scan` were declared after it, the
+    // `get` is what `/:id` would call. If `/disk-checkouts` were declared after it, the
     // literal path would be read as an id and this spy would fire.
     const get = vi.fn().mockResolvedValue(null);
     const app = mountWith({ get });
 
-    const res = await request(fixtureTarget.mount(app)).get('/api/workspaces/scan');
+    const res = await request(fixtureTarget.mount(app)).get('/api/workspaces/disk-checkouts');
 
     expect(res.status).toBe(200);
     expect(get).not.toHaveBeenCalled();

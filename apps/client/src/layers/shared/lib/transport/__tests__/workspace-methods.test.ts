@@ -14,7 +14,7 @@ describe('createWorkspaceMethods', () => {
       worktrees: [],
     });
     expect(firstRequest(fetchMock)).toEqual({
-      url: '/api/workspaces/scan',
+      url: '/api/workspaces/disk-checkouts',
       method: 'GET',
       body: undefined,
     });

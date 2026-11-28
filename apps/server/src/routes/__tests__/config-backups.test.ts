@@ -81,7 +81,7 @@ describe('refuses every caller that is not a person', () => {
       .delete(`/api/config/backups/${OLDER}`)
       .set(headers);
     const moved = await request(server.server)
-      .post(`/api/config/backups/${OLDER}/move`)
+      .patch(`/api/config/backups/${OLDER}`)
       .set(headers)
       .send({ destination: inside });
     expect(removed.status).toBe(403);
@@ -149,7 +149,7 @@ describe('a person at this computer', () => {
 
   it('moves an older copy into a folder inside the boundary, checked, original gone', async () => {
     const res = await request(server.server)
-      .post(`/api/config/backups/${OLDER_PRE}/move`)
+      .patch(`/api/config/backups/${OLDER_PRE}`)
       .send({ destination: inside });
     expect(res.status).toBe(200);
     expect(res.body.destinationPath).toBe(path.join(inside, OLDER_PRE));
@@ -159,7 +159,7 @@ describe('a person at this computer', () => {
 
   it('refuses a destination outside the boundary, and keeps the original', async () => {
     const res = await request(server.server)
-      .post(`/api/config/backups/${OLDER}/move`)
+      .patch(`/api/config/backups/${OLDER}`)
       .send({ destination: outside });
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('invalid_request');
@@ -171,7 +171,7 @@ describe('a person at this computer', () => {
     const link = path.join(inside, 'link-out');
     fs.symlinkSync(outside, link);
     const res = await request(server.server)
-      .post(`/api/config/backups/${OLDER}/move`)
+      .patch(`/api/config/backups/${OLDER}`)
       .send({ destination: link });
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('invalid_request');
@@ -181,7 +181,7 @@ describe('a person at this computer', () => {
 
   it('cannot move a copy DorkOS manages', async () => {
     const res = await request(server.server)
-      .post(`/api/config/backups/${MANAGED}/move`)
+      .patch(`/api/config/backups/${MANAGED}`)
       .send({ destination: inside });
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('conflict');
@@ -197,7 +197,7 @@ describe('a person at this computer', () => {
     expect(listed.body.copies).toEqual([]);
     expect((await request(server.server).delete(`/api/config/backups/${OLDER}`)).status).toBe(404);
     const moved = await request(server.server)
-      .post(`/api/config/backups/${OLDER}/move`)
+      .patch(`/api/config/backups/${OLDER}`)
       .send({ destination: inside });
     expect(moved.status).toBe(404);
     expect(fs.existsSync(path.join(real, OLDER))).toBe(true);
@@ -209,7 +209,7 @@ describe('a person at this computer', () => {
     fs.mkdirSync(inData);
     for (const destination of [home, inData]) {
       const res = await request(server.server)
-        .post(`/api/config/backups/${OLDER}/move`)
+        .patch(`/api/config/backups/${OLDER}`)
         .send({ destination });
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('invalid_request');
@@ -222,7 +222,7 @@ describe('a person at this computer', () => {
     const link = path.join(root, 'boundary', 'link-to-saved');
     fs.symlinkSync(inside, link);
     const res = await request(server.server)
-      .post(`/api/config/backups/${OLDER}/move`)
+      .patch(`/api/config/backups/${OLDER}`)
       .send({ destination: link });
     expect(res.status).toBe(200);
     expect(res.body.destinationPath).toBe(path.join(inside, OLDER));
@@ -236,7 +236,7 @@ describe('a person at this computer', () => {
     const link = path.join(root, 'boundary', 'link-into-data');
     fs.symlinkSync(inData, link);
     const res = await request(server.server)
-      .post(`/api/config/backups/${OLDER}/move`)
+      .patch(`/api/config/backups/${OLDER}`)
       .send({ destination: link });
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('invalid_request');
@@ -248,7 +248,7 @@ describe('a person at this computer', () => {
     const drive = path.join(volumes, 'Backup Drive', 'dorkos');
     fs.mkdirSync(drive, { recursive: true });
     const res = await request(server.server)
-      .post(`/api/config/backups/${OLDER}/move`)
+      .patch(`/api/config/backups/${OLDER}`)
       .send({ destination: drive });
     expect(res.status).toBe(200);
     expect(fs.existsSync(path.join(drive, OLDER))).toBe(true);
@@ -258,7 +258,7 @@ describe('a person at this computer', () => {
   it('refuses the volumes folder itself, the filesystem root and system folders', async () => {
     for (const destination of [volumes, '/', '/etc']) {
       const res = await request(server.server)
-        .post(`/api/config/backups/${OLDER}/move`)
+        .patch(`/api/config/backups/${OLDER}`)
         .send({ destination });
       expect(res.status, destination).toBe(400);
       expect(res.body.code, destination).toBe('invalid_request');
@@ -270,7 +270,7 @@ describe('a person at this computer', () => {
     // macOS lists the start-up disk under /Volumes as a link to `/`.
     fs.symlinkSync('/', path.join(volumes, 'Macintosh HD'));
     const res = await request(server.server)
-      .post(`/api/config/backups/${OLDER}/move`)
+      .patch(`/api/config/backups/${OLDER}`)
       .send({ destination: path.join(volumes, 'Macintosh HD') });
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('invalid_request');
@@ -280,7 +280,7 @@ describe('a person at this computer', () => {
   it('keeps the original when the copy fails its check', async () => {
     fs.writeFileSync(path.join(backups, 'dork-20260904-daily.db'), 'not a database at all');
     const res = await request(server.server)
-      .post('/api/config/backups/dork-20260904-daily.db/move')
+      .patch('/api/config/backups/dork-20260904-daily.db')
       .send({ destination: inside });
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('conflict');

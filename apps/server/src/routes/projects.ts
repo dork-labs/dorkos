@@ -5,7 +5,7 @@
  * - `GET /api/projects` lists every known project whose folder exists. It
  *   answers the person, so it is not scoped the way `ctx.projects.list()` is
  *   for an extension.
- * - `GET /api/projects/resolve?cwd=` names the project a folder belongs to.
+ * - `GET /api/projects/lookup?cwd=` names the project a folder belongs to.
  *   The folder AND the root git answers with must pass the directory boundary
  *   (`403` otherwise), so a worktree or a `.git` file pointing outside cannot
  *   reveal a folder the boundary keeps out. A lookup never marks a project as
@@ -39,7 +39,7 @@ import { readQuery } from '../http/request-query.js';
 import { assessPerson, PERSON_BAR_CROSS_SITE, type PersonBarCopy } from '../lib/http/person-bar.js';
 import { problem, sendProblem, validationProblem } from '@dorkos/http-kit';
 
-/** What `GET /api/projects/resolve` says when the caller is not a person. */
+/** What `GET /api/projects/lookup` says when the caller is not a person. */
 const PROJECT_LOOKUP_BAR: PersonBarCopy = {
   code: 'person_only',
   subject: 'the projects DorkOS remembers',
@@ -57,7 +57,7 @@ router.get('/', async (c) => {
   }
 });
 
-router.get('/resolve', async (c) => {
+router.get('/lookup', async (c) => {
   const facts = honoRequestFacts(c);
   if (facts.headers['sec-fetch-site'] === 'cross-site') {
     return problem(c, PROJECT_LOOKUP_BAR.code, { detail: PERSON_BAR_CROSS_SITE });

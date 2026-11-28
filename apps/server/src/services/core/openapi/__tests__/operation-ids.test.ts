@@ -5,9 +5,9 @@ describe('deriveOperationId', () => {
   it.each([
     // A command word at the end is the verb, and leaves the Resource.
     ['post', '/api/agents/{id}/pause', false, 'agents.pause'],
-    ['post', '/api/sessions/{id}/continue/cancel', false, 'sessions.cancelContinue'],
-    ['post', '/api/notifications/read-all', false, 'notifications.readAll'],
-    ['put', '/api/work-queues/stop', false, 'workQueues.stop'],
+    ['post', '/api/local-browser/handoff/stop', false, 'localBrowser.stopHandoff'],
+    ['post', '/api/devices/sign-out-all', false, 'devices.signOutAll'],
+    ['post', '/api/tunnel/start', false, 'tunnel.start'],
     ['post', '/api/local-browser/sign-in', false, 'localBrowser.signIn'],
     ['post', '/api/workbench/sign', false, 'workbench.sign'],
     // A hyphenated last segment led by a command word is the verb too...
