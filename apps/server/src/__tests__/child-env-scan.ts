@@ -14,10 +14,11 @@
  * @module __tests__/child-env-scan
  */
 import ts from 'typescript';
+import { lexWithoutComments } from '../../../../scripts/lib/code-only.mjs';
 
 /** Source text without its comments, so a comment naming `process.env` is not a read. */
 function withoutComments(text: string): string {
-  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  return lexWithoutComments(text).code;
 }
 
 const CHILD_PROCESS_STARTS = new Set([
