@@ -42,6 +42,7 @@ import type {
   StartLinkResult,
 } from '@dorkos/shared/cloud-schemas';
 import { isProblem } from '@dorkos/shared/problem';
+import { createTransportApiClient } from './api-client';
 import { buildQueryString, fetchJSON } from './http-client';
 import { startHostedCommunityMoveOverHttp } from './community-move-methods';
 
@@ -77,29 +78,35 @@ async function refusalOrAnswer<T>(
  * @param baseUrl - Server base URL (already includes `/api`).
  */
 export function createCloudMethods(baseUrl: string) {
+  // The calls with an operationId go through the generated client (DOR-5473).
+  // The rest have none yet; `hand-written-census.json` names each one. The
+  // document types some answers looser than the contract (a refusal's `code` as
+  // any string) or not at all (`{}`); the casts keep today's types.
+  const api = createTransportApiClient(baseUrl);
   return {
+    // The bodyless writes send no body, as they always have; their routes read none.
     startCloudLink(): Promise<StartLinkResult> {
-      return fetchJSON<StartLinkResult>(baseUrl, '/cloud/link/start', { method: 'POST' });
+      return api.call('cloud.startLink', {});
     },
 
     getCloudLinkStatus(): Promise<CloudLinkStatus> {
-      return fetchJSON<CloudLinkStatus>(baseUrl, '/cloud/link/status');
+      return api.call('cloud.getLinkStatus', {});
     },
 
     cancelCloudLink(): Promise<CloudLinkStatus> {
-      return fetchJSON<CloudLinkStatus>(baseUrl, '/cloud/link/cancel', { method: 'POST' });
+      return api.call('cloud.cancelLink', {});
     },
 
     unlinkCloud(): Promise<{ ok: boolean }> {
-      return fetchJSON<{ ok: boolean }>(baseUrl, '/cloud/unlink', { method: 'POST' });
+      return api.call('cloud.unlink', {});
     },
 
     getCloudStatus(): Promise<CloudLinkSummary> {
-      return fetchJSON<CloudLinkSummary>(baseUrl, '/cloud/status');
+      return api.call('cloud.getStatus', {});
     },
 
     checkCloudLink(): Promise<CloudLinkSummary> {
-      return fetchJSON<CloudLinkSummary>(baseUrl, '/cloud/link/check', { method: 'POST' });
+      return api.call('cloud.checkLink', {});
     },
 
     getCloudPlan(): Promise<CloudPlanResponse> {
@@ -136,12 +143,12 @@ export function createCloudMethods(baseUrl: string) {
       seatId: string,
       subject: { kind: 'agent' | 'user'; id: string }
     ): Promise<CloudSeatActionResponse> {
-      return refusalOrAnswer(() =>
-        fetchJSON<CloudSeatActionResponse>(
-          baseUrl,
-          `/cloud/seats/${encodeURIComponent(seatId)}/assign`,
-          { method: 'POST', body: JSON.stringify({ subject }) }
-        )
+      return refusalOrAnswer(
+        async () =>
+          (await api.call('cloud.createSeatsAssign', {
+            path: { seatId },
+            body: { subject },
+          })) as CloudSeatActionResponse
       );
     },
 
@@ -155,36 +162,33 @@ export function createCloudMethods(baseUrl: string) {
       );
     },
 
-    getCloudOffers(): Promise<CloudOffersResponse> {
-      return fetchJSON<CloudOffersResponse>(baseUrl, '/cloud/offers');
+    async getCloudOffers(): Promise<CloudOffersResponse> {
+      return (await api.call('cloud.getOffers', {})) as CloudOffersResponse;
     },
 
     createCloudBillingSession(
       page: CloudBillingPage,
       skuId?: string
     ): Promise<CloudBillingSessionResponse> {
-      return refusalOrAnswer(() =>
-        fetchJSON<CloudBillingSessionResponse>(
-          baseUrl,
-          `/cloud/billing/${encodeURIComponent(page)}`,
-          { method: 'POST', body: JSON.stringify(skuId === undefined ? {} : { skuId }) }
-        )
+      return refusalOrAnswer(
+        async () =>
+          (await api.call('cloud.createBilling', {
+            path: { page },
+            body: skuId === undefined ? {} : { skuId },
+          })) as CloudBillingSessionResponse
       );
     },
 
     requestCloudAccountExport(): Promise<CloudAccountExportResponse> {
-      return refusalOrAnswer(() =>
-        fetchJSON<CloudAccountExportResponse>(baseUrl, '/cloud/account/export', {
-          method: 'POST',
-        })
+      return refusalOrAnswer(
+        async () => (await api.call('cloud.exportAccount', {})) as CloudAccountExportResponse
       );
     },
 
     requestCloudAccountDeletion(): Promise<CloudAccountDeletionResponse> {
-      return refusalOrAnswer(() =>
-        fetchJSON<CloudAccountDeletionResponse>(baseUrl, '/cloud/account/deletion', {
-          method: 'POST',
-        })
+      return refusalOrAnswer(
+        async () =>
+          (await api.call('cloud.createAccountDeletion', {})) as CloudAccountDeletionResponse
       );
     },
 
@@ -192,11 +196,12 @@ export function createCloudMethods(baseUrl: string) {
       return fetchJSON<CloudCreditsStatus>(baseUrl, '/cloud/credits');
     },
 
-    setCloudCreditsDefault(runtime: string, useCredits: boolean): Promise<CloudCreditsStatus> {
-      return fetchJSON<CloudCreditsStatus>(baseUrl, '/cloud/credits/default', {
-        method: 'PUT',
-        body: JSON.stringify({ runtime, useCredits }),
-      });
+    async setCloudCreditsDefault(
+      runtime: string,
+      useCredits: boolean
+    ): Promise<CloudCreditsStatus> {
+      const body = { runtime, useCredits };
+      return (await api.call('cloud.updateCreditsDefault', { body })) as CloudCreditsStatus;
     },
 
     undoFilledCloudCredits(): Promise<CloudCreditsStatus> {
@@ -234,11 +239,11 @@ export function createCloudMethods(baseUrl: string) {
       name: string;
       shortName?: string;
     }): Promise<CloudCommunityStartResponse> {
-      return refusalOrAnswer(() =>
-        fetchJSON<CloudCommunityStartResponse>(baseUrl, '/cloud/communities', {
-          method: 'POST',
-          body: JSON.stringify(input),
-        })
+      return refusalOrAnswer(
+        async () =>
+          (await api.call('cloud.createCommunities', {
+            body: input,
+          })) as CloudCommunityStartResponse
       );
     },
 
@@ -256,22 +261,20 @@ export function createCloudMethods(baseUrl: string) {
       communityId: string,
       expectedHeldCommunityIds: string[]
     ): Promise<CloudCommunityKeepResponse> {
-      return refusalOrAnswer(() =>
-        fetchJSON<CloudCommunityKeepResponse>(
-          baseUrl,
-          `/cloud/communities/${encodeURIComponent(communityId)}/keep`,
-          { method: 'POST', body: JSON.stringify({ expectedHeldCommunityIds }) }
-        )
+      return refusalOrAnswer(
+        async () =>
+          (await api.call('cloud.createCommunitiesKeep', {
+            path: { communityId },
+            body: { expectedHeldCommunityIds },
+          })) as CloudCommunityKeepResponse
       );
     },
 
     restoreHostedCommunity(communityId: string): Promise<CloudCommunityRestoreResponse> {
-      return refusalOrAnswer(() =>
-        fetchJSON<CloudCommunityRestoreResponse>(
-          baseUrl,
-          `/cloud/communities/${encodeURIComponent(communityId)}/restore`,
-          { method: 'POST' }
-        )
+      const path = { communityId };
+      return refusalOrAnswer(
+        async () =>
+          (await api.call('cloud.restoreCommunities', { path })) as CloudCommunityRestoreResponse
       );
     },
 
@@ -313,12 +316,10 @@ export function createCloudMethods(baseUrl: string) {
     },
 
     retryHostedCommunityMoveUpload(moveId: string): Promise<CloudCommunityMoveResponse> {
-      return refusalOrAnswer(() =>
-        fetchJSON<CloudCommunityMoveResponse>(
-          baseUrl,
-          `/cloud/communities/moves/${encodeURIComponent(moveId)}/upload`,
-          { method: 'POST' }
-        )
+      const path = { moveId };
+      return refusalOrAnswer(
+        async () =>
+          (await api.call('cloud.uploadCommunitiesMoves', { path })) as CloudCommunityMoveResponse
       );
     },
   };

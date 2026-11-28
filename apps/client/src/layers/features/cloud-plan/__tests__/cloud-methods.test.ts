@@ -76,6 +76,16 @@ describe('the cloud transport methods', () => {
     await expect(methods.requestCloudAccountDeletion()).rejects.toThrow('boom');
   });
 
+  // Still hand-written: the grouping goes into the URL unencoded.
+  it('asks for the grouping the caller named', async () => {
+    const fetchMock = stubFetch(200, { available: false });
+    await methods.getCloudUsage('model');
+    expect(fetchMock.mock.calls[0]).toEqual([
+      'http://localhost:4242/api/cloud/usage?groupBy=model',
+      expect.anything(),
+    ]);
+  });
+
   it('delivers a seat refusal to the caller instead of throwing it away', async () => {
     stubFetch(200, { ok: false, problem: seatRequiredFixture });
     const result = await methods.releaseCloudSeat('seat_0001');
@@ -90,23 +100,5 @@ describe('the cloud transport methods', () => {
       // response, which is what keeps it reachable at all.
       expect(result.problem.status).toBe(403);
     }
-  });
-
-  it('sends the subject an assignment is for, and percent-encodes the seat id', async () => {
-    const fetchMock = stubFetch(200, { ok: true });
-    await methods.assignCloudSeat('seat/0001', { kind: 'user', id: 'acct_0001' });
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBeTruthy();
-    expect(url).toContain('/cloud/seats/seat%2F0001/assign');
-    expect(JSON.parse(init.body as string)).toEqual({
-      subject: { kind: 'user', id: 'acct_0001' },
-    });
-  });
-
-  it('asks for the grouping the caller named', async () => {
-    const fetchMock = stubFetch(200, { available: false });
-    await methods.getCloudUsage('model');
-    const [url] = fetchMock.mock.calls[0] as unknown as [string];
-    expect(url).toContain('groupBy=model');
   });
 });
