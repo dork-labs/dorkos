@@ -34,16 +34,16 @@
  * - `computer.status`: busy or idle, and the turns it is running.
  *
  * Both sides advertise these. The computer names the ones it may ask in
- * `hello`; the hub answers, only when the computer named at least one, with
- * one sealed `features` frame naming the ones it serves
- * ({@link hubFeaturesFrameFor}). The computer asks only what both named
- * ({@link negotiatedRelayCallFeatures}, {@link missingRelayCallFeature}), and
- * treats the hub as serving none until that frame arrives; the hub refuses any
- * other call with `needs_update`.
+ * `hello`; the hub answers, only when the computer named at least one
+ * agent-computer feature, with one sealed `features` frame naming the ones it
+ * serves (`homeFeaturesFrameFor` in `wire/features.ts`). The computer asks only
+ * what both named (`agreedAgentComputerFeatures`, {@link missingRelayCallFeature}),
+ * and treats the hub as serving none until that frame arrives; the hub refuses
+ * any other call with `needs_update`.
  *
  * **What the computer is comes from the hub's records, never from `hello`.**
  * The hub decodes a connection's frames with {@link AgentComputerFrameSchema},
- * and sends it {@link hubFeaturesFrameFor} at all, only when its own proven
+ * and sends it a `features` frame at all, only when its own proven
  * record of that computer (made when it was linked, and checked by the
  * computer's `finish` signature) says it is an agent computer. Features in
  * `hello` only narrow what a known agent computer is asked: a linked Mac that
@@ -673,27 +673,10 @@ export function missingAgentComputerFeature(
 }
 
 /**
- * The calls both sides advertised: the only ones a computer may send and a
- * hub may serve. On the hub, `computer` is the `hello`; on the computer,
- * `hub` is the `features` frame, and an empty list until it arrives.
- *
- * @param computer - The features the computer advertised in `hello`.
- * @param hub - The features the hub advertised in its `features` frame.
- */
-export function negotiatedRelayCallFeatures(
-  computer: readonly string[],
-  hub: readonly string[]
-): RelayCallFeature[] {
-  return RELAY_CALL_FEATURES.filter(
-    (feature) => computer.includes(feature) && hub.includes(feature)
-  );
-}
-
-/**
  * The feature a call needs that was not negotiated, or `null` when both sides
  * advertised it.
  *
- * @param negotiated - From {@link negotiatedRelayCallFeatures}.
+ * @param negotiated - From `agreedAgentComputerFeatures` (`wire/features.ts`).
  * @param call - The call about to be sent, or just received.
  */
 export function missingRelayCallFeature(
@@ -708,7 +691,7 @@ export function missingRelayCallFeature(
  * or `null` when it was. A newer computer reads it as "the hub needs an
  * update for" that feature.
  *
- * @param negotiated - From {@link negotiatedRelayCallFeatures}.
+ * @param negotiated - From `agreedAgentComputerFeatures` (`wire/features.ts`).
  * @param call - The call the computer sent.
  */
 export function relayCallFeatureRefusal(
@@ -723,22 +706,4 @@ export function relayCallFeatureRefusal(
     message: 'This DorkOS does not serve that call yet.',
     feature,
   };
-}
-
-/**
- * The `features` frame a hub sends after a computer proves itself, or `null`
- * when the computer named no call feature, so a computer that would not
- * understand the frame never receives it. Called only for a connection the
- * hub's own records say is an agent computer, never on the strength of
- * `hello` (see the module comment).
- *
- * @param computer - The features the computer advertised in `hello`.
- * @param hub - The calls this hub serves.
- */
-export function hubFeaturesFrameFor(
-  computer: readonly string[],
-  hub: readonly RelayCallFeature[]
-): RelayFeaturesFrame | null {
-  if (!RELAY_CALL_FEATURES.some((feature) => computer.includes(feature))) return null;
-  return { type: 'features', features: [...hub] };
 }
