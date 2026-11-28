@@ -52,9 +52,8 @@ export function createDeviceMethods(baseUrl: string) {
     async signOutDevice(id: string): Promise<void> {
       await api.call('devices.deleteSessions', { path: { id } });
     },
-    // Stays hand-written: waits for batch 3's no-body client (DOR-5473).
-    signOutEverywhereElse(): Promise<SignOutEverywhereElseResult> {
-      return fetchJSON(baseUrl, '/devices/sign-out-all', { method: 'POST' });
+    async signOutEverywhereElse(): Promise<SignOutEverywhereElseResult> {
+      return (await api.call('devices.signOutAll', {})) as SignOutEverywhereElseResult;
     },
     async setDeviceRunsAgents(
       id: string,

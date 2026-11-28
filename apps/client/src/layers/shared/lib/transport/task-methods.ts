@@ -65,13 +65,12 @@ export function createTasksMethods(baseUrl: string) {
       })) as Task;
     },
 
-    // Stays hand-written: a run with no permission mode sends no body, where the
-    // client sends `{}`; waits for batch 3's no-body client (DOR-5473).
-    triggerTask(id: string, opts?: TriggerTaskRequest): Promise<{ runId: string }> {
-      return fetchJSON<{ runId: string }>(baseUrl, `/tasks/${id}/trigger`, {
-        method: 'POST',
-        ...(opts?.permissionMode ? { body: JSON.stringify(opts) } : {}),
-      });
+    // A run with no permission mode sends no body.
+    async triggerTask(id: string, opts?: TriggerTaskRequest): Promise<{ runId: string }> {
+      return (await api.call('tasks.trigger', {
+        path: { id },
+        ...(opts?.permissionMode ? { body: opts } : {}),
+      })) as { runId: string };
     },
 
     async listTaskRuns(opts?: Partial<ListTaskRunsQuery>): Promise<TaskRun[]> {
@@ -89,11 +88,8 @@ export function createTasksMethods(baseUrl: string) {
       return (await api.call('tasks.view_run', { path: { id } })) as TaskRun;
     },
 
-    // Stays hand-written: waits for batch 3's no-body client (DOR-5473).
-    cancelTaskRun(id: string): Promise<CancelTaskRunResponse> {
-      return fetchJSON<CancelTaskRunResponse>(baseUrl, `/tasks/runs/${id}/cancel`, {
-        method: 'POST',
-      });
+    async cancelTaskRun(id: string): Promise<CancelTaskRunResponse> {
+      return (await api.call('tasks.cancelRuns', { path: { id } })) as CancelTaskRunResponse;
     },
 
     // Stays hand-written: `GET /api/tasks/templates` has no operationId (DOR-5473).

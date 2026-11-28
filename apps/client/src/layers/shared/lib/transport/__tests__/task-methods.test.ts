@@ -14,7 +14,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe('createTasksMethods', () => {
   const methods = createTasksMethods('/api');
 
-  it('reads and removes schedules, approves a file and reads runs at the same paths and bodies', async () => {
+  it('reads, removes and runs schedules, approves a file and reads and cancels runs at the same paths and bodies', async () => {
     const calls: Array<[() => Promise<unknown>, ReturnType<typeof sent>]> = [
       [() => methods.listTasks(), { url: '/api/tasks', method: 'GET', body: undefined }],
       [() => methods.deleteTask('t1'), { url: '/api/tasks/t1', method: 'DELETE', body: undefined }],
@@ -42,6 +42,22 @@ describe('createTasksMethods', () => {
       [
         () => methods.getTaskRun('r1'),
         { url: '/api/tasks/runs/r1', method: 'GET', body: undefined },
+      ],
+      [
+        () => methods.triggerTask('t1'),
+        { url: '/api/tasks/t1/trigger', method: 'POST', body: undefined },
+      ],
+      [
+        () => methods.triggerTask('t1', {}),
+        { url: '/api/tasks/t1/trigger', method: 'POST', body: undefined },
+      ],
+      [
+        () => methods.triggerTask('t1', { permissionMode: 'acceptEdits' }),
+        { url: '/api/tasks/t1/trigger', method: 'POST', body: '{"permissionMode":"acceptEdits"}' },
+      ],
+      [
+        () => methods.cancelTaskRun('r1'),
+        { url: '/api/tasks/runs/r1/cancel', method: 'POST', body: undefined },
       ],
     ];
     for (const [call, expected] of calls) {

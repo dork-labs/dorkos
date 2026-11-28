@@ -40,6 +40,14 @@ describe('createRelayMethods', () => {
           body: '{"agentId":"agent-2","label":"Ops","bridge":true}',
         },
       ],
+      [
+        () => methods.ignoreUnclaimedChat('c/1'),
+        { url: '/api/relay/unclaimed-chats/c%2F1/ignore', method: 'POST', body: undefined },
+      ],
+      [
+        () => methods.blockUnclaimedChat('c/1'),
+        { url: '/api/relay/unclaimed-chats/c%2F1/block', method: 'POST', body: undefined },
+      ],
     ];
     for (const [call, expected] of calls) {
       const fetchMock = answer({ binding: {}, chats: [] });
@@ -54,5 +62,10 @@ describe('createRelayMethods', () => {
     await expect(methods.moveBinding('b1', 'a2')).resolves.toEqual({ id: 'b1' });
     answer({ chats: [{ id: 'c1' }] });
     await expect(methods.listUnclaimedChats()).resolves.toEqual([{ id: 'c1' }]);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status: 204 }))
+    );
+    await expect(methods.ignoreUnclaimedChat('c1')).resolves.toBeUndefined();
   });
 });

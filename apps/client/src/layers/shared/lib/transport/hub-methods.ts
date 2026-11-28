@@ -19,7 +19,6 @@ import type {
   SessionRelayStatus,
 } from '@dorkos/shared/session-relay-link';
 import { createTransportApiClient } from './api-client';
-import { fetchJSON } from './http-client';
 
 /**
  * Create the hub methods bound to a base URL.
@@ -34,9 +33,8 @@ export function createHubMethods(baseUrl: string) {
     async listHubComputers(): Promise<HubComputerList> {
       return (await api.call('hub.listComputers', {})) as HubComputerList;
     },
-    // Stays hand-written: waits for batch 3's no-body client (DOR-5473).
-    createHubLinkCode(): Promise<HubLinkCode> {
-      return fetchJSON(baseUrl, '/hub/computers/link-code', { method: 'POST' });
+    async createHubLinkCode(): Promise<HubLinkCode> {
+      return (await api.call('hub.createComputersLinkCode', {})) as HubLinkCode;
     },
     async removeHubComputer(computerId: string): Promise<void> {
       await api.call('hub.deleteComputers', { path: { computerId } });
@@ -53,15 +51,11 @@ export function createHubMethods(baseUrl: string) {
         body: { level },
       })) as SessionRelayStatus;
     },
-    // Stays hand-written: waits for batch 3's no-body client (DOR-5473).
-    pauseSessionRelay(): Promise<SessionRelayStatus> {
-      return fetchJSON(baseUrl, '/session-relay/pause', { method: 'POST' });
+    async pauseSessionRelay(): Promise<SessionRelayStatus> {
+      return (await api.call('session-relay.pause', {})) as SessionRelayStatus;
     },
-    // Stays hand-written: waits for batch 3's no-body client (DOR-5473).
-    resumeSessionRelay(): Promise<SessionRelayStatus> {
-      return fetchJSON(baseUrl, '/session-relay/resume', {
-        method: 'POST',
-      });
+    async resumeSessionRelay(): Promise<SessionRelayStatus> {
+      return (await api.call('sessionRelay.resume', {})) as SessionRelayStatus;
     },
     async unlinkSessionRelay(): Promise<SessionRelayStatus> {
       return (await api.call('session-relay.unlink', {})) as SessionRelayStatus;
@@ -69,9 +63,8 @@ export function createHubMethods(baseUrl: string) {
     async getSessionRelayPresence(): Promise<SessionRelayPresence> {
       return (await api.call('session-relay.presence', {})) as SessionRelayPresence;
     },
-    // Stays hand-written: waits for batch 3's no-body client (DOR-5473).
-    endSessionRelayPresence(): Promise<SessionRelayPresence> {
-      return fetchJSON(baseUrl, '/session-relay/presence/end', { method: 'POST' });
+    async endSessionRelayPresence(): Promise<SessionRelayPresence> {
+      return (await api.call('session-relay.end_presence', {})) as SessionRelayPresence;
     },
     async listSessionRelayDevices(): Promise<SessionRelayDeviceList> {
       return (await api.call('session-relay.devices', {})) as SessionRelayDeviceList;
