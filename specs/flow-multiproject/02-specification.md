@@ -381,7 +381,7 @@ export function groupByProject<T>(
 
 ### 6.4 `currentProject` (client seam)
 
-- New entity slice `apps/client/src/layers/entities/project/` with `useProjectForCwd(cwd)` (TanStack Query, `GET /api/projects/resolve`, `staleTime: Infinity` per cwd) and `useProjects()`.
+- New entity slice `apps/client/src/layers/entities/project/` with `useProjectForCwd(cwd)` (TanStack Query, `GET /api/projects/lookup`, `staleTime: Infinity` per cwd) and `useProjects()`.
 - App store gains `currentProject: ProjectRef | null` (`apps/client/src/layers/shared/model/app-store/app-store-types.ts`), written by `useCurrentProjectSync()` mounted in `features/extensions/model/extension-context.tsx` from `selectedCwd`.
 - `projectState()` in `extension-api-factory.ts` adds `currentProject`, so `api.getState()` and `api.subscribe(s => s.currentProject, ...)` work like `currentCwd`. It is `null` while resolving and for no project.
 
