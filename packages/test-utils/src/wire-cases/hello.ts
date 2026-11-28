@@ -71,6 +71,13 @@ export const HELLO_CASES: readonly WireCase[] = [
     name: 'H1: a call outside the overlap that reaches the home is refused, and the connection stays up',
     async run(runner) {
       const ends = await runner.startUnchecked(PARTIAL);
+      // The home's first frame names everything it serves, not the overlap.
+      expect(ends.received()[0]).toEqual({
+        type: 'features',
+        features: ['tools.list', 'computer.status'],
+      });
+      // Named by the computer but not served, then served but not named.
+      await expect(ends.send(CALL)).resolves.toEqual(needsUpdate('tools.call'));
       await expect(ends.send(STATUS)).resolves.toEqual(needsUpdate('computer.status'));
       await expect(ends.send(LIST)).resolves.toEqual({ ok: true, body: { tools: [] } });
       expect(ends.home.served).toEqual([LIST]);
@@ -78,7 +85,7 @@ export const HELLO_CASES: readonly WireCase[] = [
     },
   },
   {
-    name: 'a drop fails the call in flight, and both ends see the link gone',
+    name: 'a drop fails a call the home is still serving, and both ends see the link gone',
     async run(runner) {
       const ends = await runner.start({ ...PARTIAL, hold: ['tools.list'] });
       const outcome = ends.computer.call(LIST);
@@ -88,6 +95,17 @@ export const HELLO_CASES: readonly WireCase[] = [
       await expect(outcome).resolves.toMatchObject({ ok: false, error: { status: 503 } });
       expect(ends.computer.connected()).toBe(false);
       expect(ends.home.connected()).toBe(false);
+    },
+  },
+  {
+    name: 'a drop with the call still in flight loses it: it fails, and the home never serves it',
+    async run(runner) {
+      const ends = await runner.start(PARTIAL);
+      const outcome = ends.computer.call(LIST);
+      ends.drop();
+      await expect(outcome).resolves.toMatchObject({ ok: false, error: { status: 503 } });
+      await ends.settle();
+      expect(ends.home.served).toEqual([]);
     },
   },
   {

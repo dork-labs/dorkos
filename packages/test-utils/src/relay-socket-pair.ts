@@ -44,9 +44,10 @@ export class Wire {
    * and both ends hear `close` now, with nothing more delivered after it.
    */
   drop(): void {
-    this.queue.length = 0;
     this.computer.lose();
     this.hub.lose();
+    // After both ends close, so nothing their close listeners queued survives.
+    this.queue.length = 0;
   }
 }
 
@@ -79,7 +80,11 @@ export class End implements WireSocket {
     if (this.closed) return;
     this.sent.push(text);
     if (this.side === 'computer' && this.wire.computerMuted) return;
-    this.wire.queue.push(() => this.peer.fire('message', text, false));
+    const peer = this.peer;
+    // A closed end hears nothing more, as a real socket would.
+    this.wire.queue.push(() => {
+      if (!peer.closed) peer.fire('message', text, false);
+    });
   }
 
   /** Close this end; the other end hears it at the next pump. */

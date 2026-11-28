@@ -10,21 +10,10 @@
  */
 import { generateKeyPairSync, randomBytes, sign, type KeyObject } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  RelaySealedFrameSchema,
-  SESSION_RELAY_FEATURES,
-  decodeRelayFrame,
-  encodeRelayFrame,
-  type RelayWebFrame,
-} from '@dorkos/shared/session-relay';
+import { SESSION_RELAY_FEATURES, type RelayWebFrame } from '@dorkos/shared/session-relay';
 import type { RelayCall } from '@dorkos/shared/session-relay-agent-computer';
 import { logger } from '../../../../lib/logger.js';
-import {
-  finishComputerHandshake,
-  pinnableKey,
-  startComputerHandshake,
-  type RelayChannel,
-} from '../../session-relay/channel.js';
+import { pinnableKey } from '../../session-relay/channel.js';
 import { RelayDialer, type RelayRequestServer } from '../../session-relay/relay-dialer.js';
 import type { RelayPin } from '../../session-relay/pin-store.js';
 import {
@@ -37,6 +26,7 @@ import {
   type HubComputerConnectionOptions,
 } from '../computer-connection.js';
 import { Wire } from '@dorkos/test-utils/relay-socket-pair';
+import { rawComputerOn } from './raw-computer.js';
 
 const ORIGIN = 'https://home.example.test';
 const LATER = '2099-01-01T00:00:00.000Z';
@@ -133,30 +123,13 @@ function dial(features: readonly string[], options: HomeOptions = {}) {
 function rawComputer(features: readonly string[], options: HomeOptions) {
   const wire = new Wire();
   const hub = home(wire, options);
-  const handshake = startComputerHandshake('computer-1', features, '0.143.0');
-  let channel: RelayChannel | null = null;
-  const received: { type: string; [key: string]: unknown }[] = [];
-  wire.computer.on('message', (data: unknown) => {
-    const text = String(data);
-    if (!channel) {
-      const finished = finishComputerHandshake(handshake, text, {
-        hubOrigin: ORIGIN,
-        hubKey: pinnableKey(hubKey),
-        computerKey,
-      });
-      if (!finished.ok) throw new Error('the handshake failed');
-      channel = finished.channel;
-      wire.computer.send(encodeRelayFrame(finished.finish)!);
-      return;
-    }
-    const inner = channel.open(decodeRelayFrame(text, RelaySealedFrameSchema)!);
-    received.push(JSON.parse(inner!));
+  const { received, send } = rawComputerOn(wire.computer, features, {
+    computerId: 'computer-1',
+    hubOrigin: ORIGIN,
+    hubKey: pinnableKey(hubKey),
+    computerKey,
   });
-  wire.computer.send(handshake.helloText);
   wire.pump();
-  const send = (frame: unknown) => {
-    wire.computer.send(encodeRelayFrame(channel!.seal(JSON.stringify(frame))!)!);
-  };
   const results = () => received.filter((frame) => frame.type === 'call.result');
   return { wire, hub, received, send, results };
 }
