@@ -8,6 +8,7 @@ import { honoRequestFacts } from '../http/request-facts.js';
 import { refuseFrontDoorChange } from '../lib/caller-authority.js';
 import { env } from '../env.js';
 import { ResetTokenStore, RESET_TOKEN_TTL_DESCRIPTION } from '../services/core/auth/reset-token.js';
+import { childEnvironment } from '@dorkos/shared/child-environment';
 
 /**
  * A reset wipes the data folder, sign-ins and keys included, so it is a
@@ -115,8 +116,9 @@ function triggerRestart(): void {
     const child = spawn(process.argv[0], process.argv.slice(1), {
       detached: true,
       stdio: 'inherit',
-      // eslint-disable-next-line no-restricted-syntax -- passing full env to spawned child process
-      env: process.env,
+      // The real environment: the project .env never enters it, and the new
+      // process reads that file again for itself.
+      env: childEnvironment('self-restart'),
     });
     child.unref();
     process.exit(0);

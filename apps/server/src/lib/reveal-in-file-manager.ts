@@ -12,6 +12,7 @@
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { childEnvironment } from '@dorkos/shared/child-environment';
 
 const execFileAsync = promisify(execFile);
 
@@ -28,7 +29,7 @@ const execFileAsync = promisify(execFile);
  */
 export async function revealInFileManager(target: string): Promise<void> {
   if (process.platform === 'darwin') {
-    await execFileAsync('open', ['-R', target]);
+    await execFileAsync('open', ['-R', target], { env: childEnvironment('os-helper') });
     return;
   }
   if (process.platform === 'win32') {
@@ -38,6 +39,7 @@ export async function revealInFileManager(target: string): Promise<void> {
       // Node's default quoting would produce for a path containing spaces.
       await execFileAsync('explorer.exe', [`/select,"${target}"`], {
         windowsVerbatimArguments: true,
+        env: childEnvironment('os-helper'),
       });
     } catch (err) {
       // Explorer exits non-zero even when it opened the window, so a numeric
@@ -50,5 +52,7 @@ export async function revealInFileManager(target: string): Promise<void> {
   }
   // Linux/BSD desktops have no portable file-selection call — open the folder
   // that contains the entry, which every xdg-compliant file manager handles.
-  await execFileAsync('xdg-open', [path.dirname(target)]);
+  await execFileAsync('xdg-open', [path.dirname(target)], {
+    env: childEnvironment('os-helper'),
+  });
 }

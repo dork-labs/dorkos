@@ -43,7 +43,7 @@ import {
   type ConsentedHookPackage,
 } from '../../../harness/project-with-consent.js';
 import type { HookDecisions } from '../../../harness/hook-consent.js';
-import { runtimeEnvironment } from '../runtime-environment-config.js';
+import { childEnvironment } from '../runtime-environment-config.js';
 import type { EnvironmentRuntime } from '../runtime-environment.js';
 
 /** How long one guard may run before the command is blocked, matching Claude Code's default. */
@@ -227,7 +227,7 @@ function runGuard(
         ['-c', hookEnvPrefix(check.cwd, guard.installRoot) + guard.command],
         {
           cwd: check.cwd,
-          env: runtimeEnvironment(check.runtime, 'process-inspection'),
+          env: childEnvironment(check.runtime, 'process-inspection'),
           detached: POSIX,
           stdio: ['pipe', 'pipe', 'pipe'],
         }

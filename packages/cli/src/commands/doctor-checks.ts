@@ -8,6 +8,7 @@
  *
  * @module commands/doctor-checks
  */
+import { childEnvironment } from '@dorkos/shared/child-environment';
 import { execFileSync } from 'node:child_process';
 import net from 'node:net';
 import fs from 'node:fs';
@@ -138,7 +139,12 @@ export function checkGitProtection(readVersion: () => string = readGitVersion): 
 
 /** `git --version`, as printed. */
 function readGitVersion(): string {
-  return execFileSync('git', ['--version'], { encoding: 'utf-8', stdio: 'pipe', timeout: 10_000 });
+  return execFileSync('git', ['--version'], {
+    encoding: 'utf-8',
+    stdio: 'pipe',
+    timeout: 10_000,
+    env: childEnvironment('git-local'),
+  });
 }
 
 /**

@@ -1,3 +1,4 @@
+import { childEnvironment } from '@dorkos/shared/child-environment';
 import { execFileSync } from 'node:child_process';
 import { resolveClaudeCliPath } from '../server/services/runtimes/claude-code/sdk/sdk-utils.js';
 
@@ -35,7 +36,7 @@ export function claudeCliLaunches(): boolean {
   const binary = findClaudeBinary();
   if (!binary) return false;
   try {
-    execFileSync(binary, ['--version'], { stdio: 'pipe' });
+    execFileSync(binary, ['--version'], { stdio: 'pipe', env: childEnvironment('os-helper') });
     return true;
   } catch {
     return false;

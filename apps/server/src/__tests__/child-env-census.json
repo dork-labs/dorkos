@@ -1,0 +1,163 @@
+{
+  "$comment": "Child starts whose environment is not a childEnvironment(...) call at the call site (child-env-census.test.ts). Each row lists the file's such starts, each as its callee and the env it passes exactly as the scanner reads it (or the start's name and where it is passed as a value), and why each is safe; changing what a start passes fails until its row changes. 'forwarded': the env was built by childEnvironment upstream and passed through. 'owned': a fixed, caller-built env that inherits nothing broadly. A row may not hold a start that inherits process.env. A start passing a plain name also pins every value that name is given in the file; a row's handsProcessEnvTo pins each call that is handed process.env whole.",
+  "wrappers": {
+    "hardenedGitEnv": "apps/server/src/lib/git-safety.ts",
+    "gitEnv": "apps/server/src/services/rooms/repo/room-repo-git.ts"
+  },
+  "sites": {
+    "apps/server/src/services/computers/backend/subprocess.ts": {
+      "kind": "owned",
+      "reason": "Lima's limactl, with the env its caller builds for the agent computer; the seam injects nothing ambient.",
+      "starts": ["spawn env: options.env"]
+    },
+    "apps/server/src/services/core/load-gate/holder-identity.ts": {
+      "kind": "owned",
+      "reason": "ps with PS_ENV: PATH and the C locale only.",
+      "starts": [
+        "execFileSync env: PS_ENV | PS_ENV = { PATH: '/bin:/usr/bin:/usr/sbin:/sbin', LC_ALL: 'C', TZ: 'UTC' }"
+      ]
+    },
+    "apps/server/src/services/extensions/isolation/isolated-host.ts": {
+      "kind": "owned",
+      "reason": "The extension host: buildChildEnv reads process.env only for NODE_ENV, TZ, LANG, LC_* and the two Windows folder names, plus its own names.",
+      "starts": [
+        "fork env: env | env = buildChildEnv( this.options.extensionId, filesReal, process.env, this.options.electronRunAsNode )"
+      ],
+      "handsProcessEnvTo": [
+        "buildChildEnv( this.options.extensionId, filesReal, process.env, this.options.electronRunAsNode )"
+      ]
+    },
+    "apps/server/src/services/extensions/isolation/run-broker.ts": {
+      "kind": "owned",
+      "reason": "A program an extension was granted: its own requested env (no loader names) plus the host PATH.",
+      "starts": ["spawn env: this.programEnv(message.env)"]
+    },
+    "apps/server/src/services/mcp-apps/mcp-app-resource-service.ts": {
+      "kind": "owned",
+      "reason": "A stdio MCP server: the SDK's six defaults (HOME, PATH, SHELL, TERM, USER, LOGNAME) plus the env its config names.",
+      "starts": ["StdioClientTransport env: connection.env"]
+    },
+    "apps/server/src/services/mesh/agent-mcp-probe.ts": {
+      "kind": "owned",
+      "reason": "A stdio MCP server probe: the SDK's six defaults plus the env its config names.",
+      "starts": ["StdioClientTransport env: connection.env"]
+    },
+    "apps/server/src/services/rooms/repo/room-git-args.ts": {
+      "kind": "forwarded",
+      "reason": "Its caller passes gitEnv(), which builds on childEnvironment('git').",
+      "starts": ["execFileAsync env: env"]
+    },
+    "apps/server/src/services/rooms/repo/room-repo-git.ts": {
+      "kind": "forwarded",
+      "reason": "env is gitEnv(), which builds on childEnvironment('git').",
+      "starts": [
+        "execFileAsync env: env | env = childEnvironment('git-local') | env = gitEnv(ceilingDir, cwd)"
+      ]
+    },
+    "apps/server/src/services/runtimes/claude-code/sessions/tracked-spawn.ts": {
+      "kind": "forwarded",
+      "reason": "The Agent SDK's spawn hook: the env the launch resolver built with childEnvironment('claude-code').",
+      "starts": ["spawn env: env"]
+    },
+    "apps/server/src/services/runtimes/claude-code/shell-guard/guard-host.ts": {
+      "kind": "owned",
+      "reason": "The shell guard: an empty env, or only ELECTRON_RUN_AS_NODE.",
+      "starts": [
+        "fork env: (this.options.electronRunAsNode ?? Boolean(process.versions.electron)) ? { ELECTRON_RUN_AS_NODE: '1' } : {}"
+      ]
+    },
+    "apps/server/src/services/runtimes/codex/app-server/process-pool.ts": {
+      "kind": "forwarded",
+      "reason": "The app-server pool: the spec's env, built by childEnvironment('codex') in acquire-codex-process.ts.",
+      "starts": ["nodeSpawn env: options.env"]
+    },
+    "apps/server/src/services/runtimes/codex/app-server/protocol/snapshot.ts": {
+      "kind": "owned",
+      "reason": "The protocol-snapshot generator: a scratch HOME and CODEX_HOME and a fixed PATH, nothing inherited.",
+      "starts": ["execFileSync env: env", "execFileSync env: env"]
+    },
+    "apps/server/src/services/runtimes/codex/model-catalog.ts": {
+      "kind": "forwarded",
+      "reason": "The model probe: childEnvironment('codex', 'auth-probe') unless a test passes its own.",
+      "starts": [
+        "nodeSpawn env: environment | environment = options.environment ?? childEnvironment('codex', 'auth-probe') | environment = this.resolveEnvironment()"
+      ]
+    },
+    "apps/server/src/services/runtimes/connect/delegated-login.ts": {
+      "kind": "forwarded",
+      "reason": "The default spawner, used with the command's env from childEnvironment('runtime-login', runtime).",
+      "starts": [
+        "nodeSpawn as a value: deps.spawn ?? nodeSpawn",
+        "nodeSpawn as a value: deps.spawn ?? nodeSpawn"
+      ]
+    },
+    "apps/server/src/services/runtimes/opencode/server-manager.ts": {
+      "kind": "forwarded",
+      "reason": "The sidecar: buildSidecarSpawnEnv, which builds on childEnvironment('opencode').",
+      "starts": [
+        "spawn env: env | env = buildSidecarSpawnEnv( plan, password, providerEnv, grant, this.sessionEnvironment.plugin() )"
+      ]
+    },
+    "apps/server/src/services/terminal/terminal-manager.ts": {
+      "kind": "forwarded",
+      "reason": "node-pty's spawn, given buildTerminalEnv(): childEnvironment('project-work').",
+      "starts": ["pty.spawn env: env"]
+    },
+    "packages/browser/src/runtime/darwin-journal-worker.ts": {
+      "kind": "owned",
+      "reason": "A fixed PATH and the C locale.",
+      "starts": ["spawn env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' }"]
+    },
+    "packages/browser/src/runtime/darwin-owned-child.ts": {
+      "kind": "owned",
+      "reason": "The browser's own child, with the env its command names.",
+      "starts": ["spawn env: { ...command.env }"]
+    },
+    "packages/browser/src/runtime/darwin-process-observer.ts": {
+      "kind": "owned",
+      "reason": "A fixed PATH and the C locale.",
+      "starts": ["spawn env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' }"]
+    },
+    "packages/browser/src/runtime/darwin-supervisor-client.ts": {
+      "kind": "owned",
+      "reason": "A fixed PATH, its own profile HOME and the C locale.",
+      "starts": [
+        "spawn env: { PATH: '/usr/bin:/bin', HOME: options.profileDir, LANG: 'C', LC_ALL: 'C' }"
+      ]
+    },
+    "packages/browser/src/runtime/host-identity.ts": {
+      "kind": "owned",
+      "reason": "ps with psEnvironment(): the real PATH and TZ only, and the C locale; a missing ps stays unavailable observation.",
+      "starts": ["execFileSync env: psEnvironment()"]
+    },
+    "packages/browser/src/runtime/installation/jobs.ts": {
+      "kind": "owned",
+      "reason": "An installer job, with the env its caller names.",
+      "starts": ["spawn env: { ...env }"]
+    },
+    "packages/cli/src/commands/community-deploy/provider-process.ts": {
+      "kind": "owned",
+      "reason": "dorkos community deploy's provider CLIs: the env the command builds, with the person's own provider tokens. That command loads no project .env.",
+      "starts": ["spawn env: { ...options.env }"]
+    },
+    "packages/doe/src/builder.ts": {
+      "kind": "forwarded",
+      "reason": "Doe's builder shell: the policy env, childEnvironment('doe') in execute-turn.ts.",
+      "starts": ["spawn env: environment | environment = { ...policy.environment }"]
+    },
+    "packages/keep-awake/src/keep-awake.ts": {
+      "kind": "forwarded",
+      "reason": "The default spawner, given the env option: the server passes childEnvironment('os-helper').",
+      "starts": ["nodeSpawn as a value: nodeSpawn as unknown"]
+    },
+    "packages/shared/src/safe-git.ts": {
+      "kind": "owned",
+      "reason": "minimalGitEnv(): twelve fixed names git needs to start, nothing of DorkOS's.",
+      "starts": [
+        "execFile env: minimalGitEnv()",
+        "execFile env: minimalGitEnv()",
+        "execFile env: minimalGitEnv(options.env)"
+      ]
+    }
+  }
+}

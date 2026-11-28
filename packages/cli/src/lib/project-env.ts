@@ -1,112 +1,69 @@
 /**
  * The optional `.env` file in the folder DorkOS starts in.
  *
- * It carries a project's own variables for its own tools, filling in what the
- * real environment left unset and never overriding a value already set. It
- * can't change how DorkOS runs: a setting DorkOS itself reads loads from it
- * only when {@link PROJECT_ENV_ALLOWED} names it. Anything else DorkOS reads is
- * dropped, and its name logged once.
+ * The project `.env` file can't change how DorkOS or its agents run: set what
+ * they need in the environment DorkOS starts in. Only the settings
+ * `PROJECT_ENV_ALLOWED` names (`@dorkos/shared/project-environment`) are read
+ * from it, and only when the real environment left them unset. They are held
+ * in memory and handed to the server; no project value enters `process.env`,
+ * so no child process DorkOS starts ever sees one. A name DorkOS itself reads
+ * is named once, without its value, so a person who meant to set it knows.
  *
  * @module lib/project-env
  */
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import path from 'node:path';
 import { parse } from 'dotenv';
-
-/** The settings DorkOS reads that a project `.env` may still set. Reviewed one by one. */
-export const PROJECT_ENV_ALLOWED: ReadonlySet<string> = new Set(['LOG_LEVEL', 'DO_NOT_TRACK']);
-
-/** Every `DORKOS_*` and `DORK_*` name is DorkOS's own, whether it exists yet or not. */
-const DORKOS_PREFIX = /^DORK(OS)?_/;
-
-/**
- * The names DorkOS reads without its prefix: the server's environment schema
- * (`apps/server/src/env.ts`) and the CLI's (`env.ts`). A census test reads
- * both schemas, so a new name fails until it is listed here or allowed.
- */
-export const DORKOS_READS_UNPREFIXED: ReadonlySet<string> = new Set([
-  // apps/server/src/env.ts
-  'HOME',
-  'GITHUB_TOKEN',
-  'NODE_ENV',
-  'CLIENT_DIST_PATH',
-  'MCP_API_KEY',
-  'DO_NOT_TRACK',
-  'OTEL_EXPORTER_OTLP_ENDPOINT',
-  'OTEL_SERVICE_NAME',
-  'OTEL_SDK_DISABLED',
-  'TUNNEL_ENABLED',
-  'TUNNEL_PORT',
-  'TUNNEL_AUTH',
-  'TUNNEL_DOMAIN',
-  'NGROK_AUTHTOKEN',
-  'NANGO_BASE_URL',
-  'NANGO_ENCRYPTION_KEY',
-  // packages/cli/src/env.ts
-  'LOG_LEVEL',
-  'PATH',
-  'USERPROFILE',
-  'APPDATA',
-  'XDG_CONFIG_HOME',
-  'FLY_CONFIG_DIR',
-  'GH_CONFIG_DIR',
-  'LOCALAPPDATA',
-  'PROGRAMFILES',
-  'PROGRAMFILES(X86)',
-  // Node's own: they change what code every node process DorkOS starts loads.
-  'NODE_OPTIONS',
-  'NODE_PATH',
-]);
+import {
+  SYSTEM_NAMES_DORKOS_READS,
+  handProjectSettings,
+  isDorkosOwnedEnvName,
+  isProjectSettingName,
+  type ProjectSettingName,
+  type ProjectSettings,
+} from '@dorkos/shared/project-environment';
 
 /**
- * Whether a project `.env` may set this name.
+ * Read a project's `.env`, keep its allowed settings, and hand them to the
+ * server this process is about to import. Reads `realEnv`, never writes it.
  *
- * @param key - The variable's name.
- */
-export function projectEnvMaySet(key: string): boolean {
-  if (PROJECT_ENV_ALLOWED.has(key)) return true;
-  return !DORKOS_PREFIX.test(key) && !DORKOS_READS_UNPREFIXED.has(key);
-}
-
-/** What loading a project `.env` did. */
-export interface ProjectEnvResult {
-  /** Keys it set, because the environment had none. */
-  readonly applied: readonly string[];
-  /** Keys DorkOS reads that it held, dropped. Names only. */
-  readonly ignored: readonly string[];
-}
-
-/**
- * Load a project `.env` into `target` without overriding anything already set,
- * and without any name {@link projectEnvMaySet} refuses.
- *
- * @param envPath - The file; a missing one loads nothing.
- * @param target - The environment to fill, `process.env` in the CLI.
- * @param warn - Told once, by name only, when keys were dropped.
- * @returns What was applied and what was dropped.
+ * @param dir - The folder DorkOS starts in; its `.env` is read, and a missing one gives nothing.
+ * @param warn - Told once, by name only, about names DorkOS reads that the file can't set.
+ * @param realEnv - The environment DorkOS started in; a setting it already has wins.
+ * @returns The allowed settings the file gave, frozen.
  */
 export function loadProjectEnv(
-  envPath: string,
-  target: NodeJS.ProcessEnv,
-  warn: (message: string) => void
-): ProjectEnvResult {
-  if (!fs.existsSync(envPath)) return { applied: [], ignored: [] };
-  const parsed = parse(fs.readFileSync(envPath));
-  const applied: string[] = [];
+  dir: string,
+  warn: (message: string) => void,
+  // eslint-disable-next-line no-restricted-syntax -- read only: a setting the real environment already has wins
+  realEnv: Readonly<Record<string, string | undefined>> = process.env
+): ProjectSettings {
+  const envPath = path.join(dir, '.env');
+  const settings: Partial<Record<ProjectSettingName, string>> = {};
   const ignored: string[] = [];
-  for (const [key, value] of Object.entries(parsed)) {
-    if (!projectEnvMaySet(key)) {
-      ignored.push(key);
-      continue;
+  let authSecretDigest: string | undefined;
+  if (fs.existsSync(envPath)) {
+    for (const [key, value] of Object.entries(parse(fs.readFileSync(envPath)))) {
+      if (isProjectSettingName(key)) {
+        if (realEnv[key] === undefined) settings[key] = value;
+      } else if (isDorkosOwnedEnvName(key) || SYSTEM_NAMES_DORKOS_READS.has(key)) {
+        ignored.push(key);
+        // Before this release a session secret here signed sign-ins. The server
+        // gets its digest, never the value, to retire a stored copy of it.
+        if (key === 'BETTER_AUTH_SECRET' && value.trim() && !realEnv[key]?.trim())
+          authSecretDigest = createHash('sha256').update(value.trim()).digest('hex');
+      }
     }
-    if (target[key] !== undefined) continue;
-    target[key] = value;
-    applied.push(key);
   }
   if (ignored.length > 0) {
     warn(
       `[DorkOS] Ignored ${ignored.join(', ')} in the project .env: the project .env file ` +
-        "can't change how DorkOS runs. Set these in the environment DorkOS starts in."
+        "can't change how DorkOS or its agents run. Set what they need in the environment " +
+        'DorkOS starts in.'
     );
   }
-  return { applied, ignored };
+  const frozen = Object.freeze(settings);
+  handProjectSettings({ settings: frozen, ...(authSecretDigest ? { authSecretDigest } : {}) });
+  return frozen;
 }

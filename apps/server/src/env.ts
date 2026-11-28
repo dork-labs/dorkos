@@ -1,5 +1,6 @@
 import { links } from '@dorkos/shared/links';
 import { z } from 'zod';
+import { projectSetting } from './lib/process/project-env-store.js';
 
 /** Reusable Zod type for 'true'/'false' env flags → boolean. */
 const boolFlag = z
@@ -557,6 +558,18 @@ if (!result.success) {
 }
 
 export const env = result.data;
+
+// The project .env may turn telemetry off. Its value arrives in memory, never
+// through process.env (so no child inherits it), and possibly after this
+// module loads: read it when asked.
+// (A refused parse has no env: the process is already exiting.)
+if (result.success) {
+  const realDoNotTrack = env.DO_NOT_TRACK;
+  Object.defineProperty(env, 'DO_NOT_TRACK', {
+    enumerable: true,
+    get: () => realDoNotTrack ?? projectSetting('DO_NOT_TRACK'),
+  });
+}
 
 // Read once, above; nothing a child process inherits may carry it.
 delete process.env.DORKOS_HUB_INSTANCE_KEY;

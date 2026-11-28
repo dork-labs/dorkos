@@ -13,7 +13,7 @@
  *
  * @module services/runtimes/codex/codex-options
  */
-import { runtimeEnvironment } from '../../../shared/runtime-environment-config.js';
+import { childEnvironment } from '../../../shared/runtime-environment-config.js';
 import type { CodexOptions } from '@openai/codex-sdk';
 import { DORKOS_MCP_SERVER_NAME } from '../../../../core/tool-names/tool-names.js';
 import { type DorkosMcpInjection } from '../../../shared/dorkos-mcp-injection.js';
@@ -96,7 +96,7 @@ export function buildCodexOptions(
     }
   }
   const env = {
-    ...runtimeEnvironment('codex', 'turn', extraEnv),
+    ...childEnvironment('codex', 'turn', extraEnv),
     ...(managed?.env ?? {}),
     ...dorkosHeaderEnv(dorkosTools),
     ...connectorHeaderEnv(connectorTools),

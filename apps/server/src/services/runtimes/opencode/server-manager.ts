@@ -21,7 +21,7 @@
  */
 import { OpenCodeSessionEnvironment } from './session-environment.js';
 import { SidecarCustodyAttempt, type SidecarSpawnPort } from './sidecar-custody.js';
-import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
+import { childEnvironment } from '../shared/runtime-environment-config.js';
 import { turnReferenceEnv } from '../shared/references/turn-reference-env.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -130,7 +130,7 @@ export function buildSidecarSpawnEnv(
 ): Record<string, string> {
   const sessionConfig = sessionPlugin ? { plugin: [sessionPlugin] } : {};
   if (plan.mode === 'own') {
-    return runtimeEnvironment('opencode', 'turn', {
+    return childEnvironment('opencode', 'turn', {
       ...providerEnv,
       OPENCODE_SERVER_PASSWORD: password,
       OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...OPENCODE_SIDECAR_CONFIG, ...sessionConfig }),
@@ -143,7 +143,7 @@ export function buildSidecarSpawnEnv(
     ...sessionConfig,
   };
   return openCodeCreditsEnv(
-    runtimeEnvironment('opencode', 'turn', {
+    childEnvironment('opencode', 'turn', {
       OPENCODE_SERVER_PASSWORD: password,
       OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
       ...NO_PROJECT_CODE,

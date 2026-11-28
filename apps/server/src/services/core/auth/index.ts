@@ -60,7 +60,7 @@ import { env } from '../../../env.js';
 import { logger } from '../../../lib/logger.js';
 import { resolveAuthTrustedOrigins } from '../../../lib/trusted-origins.js';
 import { findOwnerAccount, type Account } from './accounts.js';
-import { resolveBetterAuthSecret } from './secret.js';
+import { noticeProjectSecretRetired, resolveBetterAuthSecret } from './secret.js';
 import {
   currentRegistrationCaller,
   decideRegistration,
@@ -160,6 +160,10 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
     port === 4242
       ? 'better-auth'
       : `better-auth-${createHash('sha256').update(realpathSync(dorkHome)).digest('hex').slice(0, 32)}`;
+  noticeProjectSecretRetired(
+    dorkHome,
+    db.select({ id: session.id }).from(session).limit(1).get() !== undefined
+  );
   return {
     appName: 'DorkOS',
     // Resolve the signing secret up front: env override → persisted file →

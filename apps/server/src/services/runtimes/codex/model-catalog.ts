@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { EFFORT_LEVELS } from '@dorkos/shared/constants';
 import type { EffortLevel, ModelOption } from '@dorkos/shared/types';
 import { logger, logError } from '../../../lib/logger.js';
-import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
+import { childEnvironment } from '../shared/runtime-environment-config.js';
 import { resolveCodexHome } from './codex-home.js';
 import { readCodexModelContextWindows } from './model-context-windows.js';
 import { CodexJsonRpcClient } from './app-server/json-rpc-client.js';
@@ -138,7 +138,7 @@ export async function queryCodexModels(
   binary: string,
   options: QueryCodexModelsOptions = {}
 ): Promise<ModelOption[]> {
-  const environment = options.environment ?? runtimeEnvironment('codex', 'auth-probe');
+  const environment = options.environment ?? childEnvironment('codex', 'auth-probe');
   const timeoutMs = options.timeoutMs ?? MODEL_QUERY_TIMEOUT_MS;
   const contextMetadataTimeoutMs = options.contextMetadataTimeoutMs ?? CONTEXT_METADATA_TIMEOUT_MS;
   const deadlineAt = Date.now() + timeoutMs;
@@ -291,7 +291,7 @@ async function withContextWindows(
  * @returns Codex home plus auth-file metadata, without reading credential contents.
  */
 export async function resolveCodexAuthContext(
-  env: NodeJS.ProcessEnv = runtimeEnvironment('codex', 'auth-probe'),
+  env: NodeJS.ProcessEnv = childEnvironment('codex', 'auth-probe'),
   readMetadata: ReadAuthMetadata = stat
 ): Promise<string> {
   const home = resolveCodexHome(env);
@@ -333,7 +333,7 @@ export class CodexModelCatalog {
   constructor(options: CodexModelCatalogOptions) {
     this.resolveBinary = options.resolveBinary;
     this.resolveEnvironment =
-      options.resolveEnvironment ?? (() => runtimeEnvironment('codex', 'auth-probe'));
+      options.resolveEnvironment ?? (() => childEnvironment('codex', 'auth-probe'));
     this.resolveAuthContext = options.resolveAuthContext ?? resolveCodexAuthContext;
     this.query =
       options.query ?? ((binary, environment) => queryCodexModels(binary, { environment }));

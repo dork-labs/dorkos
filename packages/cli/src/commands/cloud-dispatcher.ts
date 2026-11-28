@@ -15,6 +15,7 @@
  *
  * @module commands/cloud-dispatcher
  */
+import { childEnvironment } from '@dorkos/shared/child-environment';
 import { execFile } from 'node:child_process';
 import type { ConfigStore } from '../config-commands.js';
 import {
@@ -78,9 +79,11 @@ const client: CloudFlowClient = {
 function defaultOpenUrl(url: string): void {
   if (!/^https?:\/\//i.test(url)) return;
   try {
-    if (process.platform === 'darwin') execFile('open', [url], () => {});
-    else if (process.platform === 'win32') execFile('cmd', ['/c', 'start', '', url], () => {});
-    else execFile('xdg-open', [url], () => {});
+    if (process.platform === 'darwin')
+      execFile('open', [url], { env: childEnvironment('os-helper') }, () => {});
+    else if (process.platform === 'win32')
+      execFile('cmd', ['/c', 'start', '', url], { env: childEnvironment('os-helper') }, () => {});
+    else execFile('xdg-open', [url], { env: childEnvironment('os-helper') }, () => {});
   } catch {
     // Best-effort — the URL is always printed, so a failed open is harmless.
   }

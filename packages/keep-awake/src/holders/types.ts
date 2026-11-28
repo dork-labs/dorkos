@@ -49,6 +49,8 @@ export interface HolderSpawnOptions {
   detached: false;
   /** No console window flashes on Windows. */
   windowsHide: true;
+  /** The holder's environment, from the `env` option; unset inherits the parent's. */
+  env?: Readonly<Record<string, string>>;
 }
 
 /** A `child_process.spawn` look-alike: program, argument vector, options. */

@@ -14,6 +14,7 @@
  *
  * @module commands/feedback
  */
+import { childEnvironment } from '@dorkos/shared/child-environment';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import {
@@ -90,9 +91,11 @@ function parseArgs(args: string[]): { kind: FeedbackKind; print: boolean } {
 function defaultOpenUrl(url: string): boolean {
   if (!/^https?:\/\//i.test(url)) return false;
   try {
-    if (process.platform === 'darwin') execFile('open', [url], () => {});
-    else if (process.platform === 'win32') execFile('cmd', ['/c', 'start', '', url], () => {});
-    else execFile('xdg-open', [url], () => {});
+    if (process.platform === 'darwin')
+      execFile('open', [url], { env: childEnvironment('os-helper') }, () => {});
+    else if (process.platform === 'win32')
+      execFile('cmd', ['/c', 'start', '', url], { env: childEnvironment('os-helper') }, () => {});
+    else execFile('xdg-open', [url], { env: childEnvironment('os-helper') }, () => {});
     return true;
   } catch {
     return false;

@@ -8,7 +8,7 @@ import { credentialReadHealth, resetCredentialReadHealth } from '../credential-r
 // an argument observed by this stub. Never run the real command on a developer Mac.
 vi.mock('node:child_process', () => ({ execFile: vi.fn() }));
 vi.mock('../../../shared/runtime-environment-config.js', () => ({
-  runtimeEnvironment: () => ({}),
+  childEnvironment: () => ({}),
 }));
 vi.mock('../../sdk/sdk-utils.js', () => ({ resolveClaudeBinaryBeforePath: () => '/fake/claude' }));
 vi.mock('../../claude-config-dir.js', () => ({

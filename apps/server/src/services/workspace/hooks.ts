@@ -19,6 +19,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { logger } from '../../lib/logger.js';
+import { childEnvironment } from '@dorkos/shared/child-environment';
 
 const execFileAsync = promisify(execFile);
 
@@ -91,7 +92,8 @@ export async function runHooks(
     try {
       await execFileAsync('sh', ['-lc', command], {
         cwd: opts.cwd,
-        env: { ...process.env, ...opts.env },
+        // Project work: the real environment without DorkOS's own names, and the ports.
+        env: childEnvironment('project-work', { set: opts.env }),
         timeout: HOOK_TIMEOUT_MS,
       });
     } catch (err) {

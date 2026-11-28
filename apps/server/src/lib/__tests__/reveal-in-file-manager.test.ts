@@ -56,7 +56,7 @@ describe('revealInFileManager', () => {
 
     expect(execFileMock.mock.calls[0][0]).toBe('explorer.exe');
     expect(execFileMock.mock.calls[0][1]).toEqual(['/select,"C:\\work dir\\todo.md"']);
-    expect(execFileMock.mock.calls[0][2]).toEqual({ windowsVerbatimArguments: true });
+    expect(execFileMock.mock.calls[0][2]).toMatchObject({ windowsVerbatimArguments: true });
   });
 
   /** Make the next execFile call fail with `code` on its callback. */

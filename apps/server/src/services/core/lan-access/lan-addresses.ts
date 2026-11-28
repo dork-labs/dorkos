@@ -9,6 +9,7 @@
 import { execFile } from 'node:child_process';
 import { BlockList, isIPv4, isIPv6 } from 'node:net';
 import os from 'node:os';
+import { childEnvironment } from '@dorkos/shared/child-environment';
 
 /** The shared range Tailscale hands its IPv4 addresses out of, one per device. */
 const TAILNET_V4_START = '100.64.0.0';
@@ -96,9 +97,14 @@ export function toLocalName(name: string): string | null {
 /** Run a command and resolve its trimmed output, or `null` when it fails. */
 function runForOutput(command: string, args: string[]): Promise<string | null> {
   return new Promise((resolve) => {
-    execFile(command, args, { timeout: 2000 }, (error, stdout) => {
-      resolve(error ? null : stdout.trim() || null);
-    });
+    execFile(
+      command,
+      args,
+      { timeout: 2000, env: childEnvironment('os-helper') },
+      (error, stdout) => {
+        resolve(error ? null : stdout.trim() || null);
+      }
+    );
   });
 }
 
