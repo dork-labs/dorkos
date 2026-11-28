@@ -5,7 +5,8 @@ import { closeSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs'
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, test, type APIRequestContext } from '@playwright/test';
+import type { APIRequestContext } from '@playwright/test';
+import { expect, test } from '../../fixtures';
 import type { ChatRun } from '@dorkos/shared/run-schemas';
 import type { HistoryMessage } from '@dorkos/shared/types';
 import { makeThrowawayHome, serverEnvOnThrowawayHome } from '../../throwaway-home';
