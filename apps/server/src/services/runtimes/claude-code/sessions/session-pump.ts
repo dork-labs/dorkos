@@ -888,6 +888,9 @@ export class SessionPump {
    */
   private noteProcessGone(error: unknown): void {
     this.clearInitTimer();
+    // Before the state change below: its listeners release held messages, and
+    // must not find a dead process still holding for a segment it opened.
+    this.quiet.noteProcessGone();
     this.query = undefined;
     this.held = undefined;
     if (this.currentState === 'reaped' || this.currentState === 'cold') return;

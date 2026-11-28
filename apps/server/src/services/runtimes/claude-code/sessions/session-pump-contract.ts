@@ -87,6 +87,18 @@ export type Quietness =
       busySince: number;
     };
 
+/**
+ * Whether a quietness answer says a segment is on its way: a delivery still
+ * owed, or a segment that has opened and not yet spoken (DOR-5490). What
+ * `PersistentDispatch.isSegmentPending` holds the queue on.
+ *
+ * @param quietness - The pump's answer
+ */
+export function isSegmentOnItsWay(quietness: Quietness): boolean {
+  if (quietness.quiet) return false;
+  return quietness.because === 'delivery-owed' || quietness.because === 'segment-starting';
+}
+
 /** The reasons a warm process is not quiet, most specific first. */
 export type QuietnessBlocker =
   /** A dispatched turn is open: the pump is RUNNING. */
@@ -100,13 +112,14 @@ export type QuietnessBlocker =
   | 'runtime-turn-open'
   /** A helper agent, Monitor or unknown background task is still working. */
   | 'background-work'
-  /**
-   * A settled notification has not been delivered yet, bounded by the
-   * owed-delivery clock. Also a segment that has opened and not yet spoken
-   * (DOR-5490): its init cleared the debt, but the report is still on its way,
-   * bounded by the segment-start clock (`messaging/segment-start-hold.ts`).
-   */
+  /** A settled notification has not been delivered yet, bounded by the owed-delivery clock. */
   | 'delivery-owed'
+  /**
+   * A segment has opened (its `system/init` arrived) and not yet spoken: a
+   * helper's report, a timer's wake or the agent's next step is on its way
+   * (DOR-5490). Bounded by the segment-start clock (`messaging/segment-start-hold.ts`).
+   */
+  | 'segment-starting'
   /** A session timer the agent set (CronCreate, ScheduleWakeup, /loop) has not fired yet (DOR-2717). */
   | 'timer-pending'
   /** Somebody was asked a question and has not answered it. */

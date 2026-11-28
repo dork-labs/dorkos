@@ -6,7 +6,7 @@
  * The init clears the owed delivery and no window opens until the model's
  * first frame, so the process used to read as quiet for the whole time to
  * first token. A person's message launched into that gap (the queue asks
- * `isSegmentPending`, which reads `delivery-owed`), and a reap, a slot reclaim
+ * `isSegmentPending`, which read only `delivery-owed`), and a reap, a slot reclaim
  * or a relaunch for new settings (all of which ask `quietness()`) could end
  * the process mid-request.
  */
@@ -56,7 +56,7 @@ describe('a report segment that has opened but not yet spoken (DOR-5490)', () =>
     expect(s.windows.openWindow).toBeUndefined();
 
     // What the queue, the reaper, the slot reclaim and a relaunch all ask.
-    expect(s.pump.quietness()).toMatchObject({ quiet: false, because: 'delivery-owed' });
+    expect(s.pump.quietness()).toMatchObject({ quiet: false, because: 'segment-starting' });
     expect(await s.pump.reap()).toBe(false);
     expect(s.pump.state).toBe('warm');
 

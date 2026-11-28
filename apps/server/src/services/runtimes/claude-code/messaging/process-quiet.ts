@@ -389,6 +389,15 @@ export class ProcessQuiet {
     this.noteHoldingWork();
   }
 
+  /**
+   * The process died. A segment it had opened will never speak, so that hold
+   * goes now; the owed-delivery clock stays, because it is what clears the
+   * debt left on this tracker (DOR-5490 review).
+   */
+  noteProcessGone(): void {
+    this.segmentStart.dispose();
+  }
+
   /** Stop both delivery clocks, because the process they belonged to is going. */
   dispose(): void {
     this.clearOwedClock();
@@ -449,9 +458,11 @@ export class ProcessQuiet {
     // watcher was never heard from again. The spec's Non-Goal reasoned from the
     // resume path, where stdin does close and the CLI ends its shells itself.
     if (counts.agents + counts.other + counts.shells > 0) return 'background-work';
-    // A segment that has opened and not yet spoken is the delivery still on its
-    // way (DOR-5490): its init cleared the debt, and no window is open yet.
-    if (this.opts.liveness().owedCount() > 0 || this.segmentStart.holding) return 'delivery-owed';
+    if (this.opts.liveness().owedCount() > 0) return 'delivery-owed';
+    // A segment has opened and not yet spoken (DOR-5490): a helper's report, a
+    // timer's wake or the agent's next step is on its way, and no window is
+    // open to say so yet.
+    if (this.segmentStart.holding) return 'segment-starting';
     // A timer the agent set fires inside this process, so ending the process
     // loses it, exactly like a shell (DOR-2717). Bounded by the same ceiling,
     // which is what ends a `/loop` that would otherwise hold it forever.

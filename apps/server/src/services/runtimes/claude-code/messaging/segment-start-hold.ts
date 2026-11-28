@@ -3,7 +3,9 @@
  *
  * When a background helper finishes, the CLI opens a new segment to hand its
  * report over: a `system/init` after a `result`, then a request to the model,
- * then the model's first frame. `TurnLiveness` clears the owed delivery at that
+ * then the model's first frame. A timer the agent set and a person's later
+ * turns open a segment the same way; the hold covers every one, which is why
+ * its reason is `segment-starting` rather than `delivery-owed`. `TurnLiveness` clears the owed delivery at that
  * init, and the windower opens no window until the first model frame, so for
  * the whole time to first token (seconds on a big context, longer through API
  * retries) the process read as quiet: no turn, no runtime turn, nothing owed.
@@ -17,16 +19,22 @@
  * it). Every init captured so far is followed by a `result` in the same
  * segment, so the hold ends on its own; the clock is the bound for a segment
  * that never says anything, the same two minutes a dispatched turn gets for its
- * first event ({@link SESSIONS.TURN_FIRST_EVENT_TIMEOUT_MS}). Any frame from
- * the process restarts it, because a frame (an `api_retry`, a status line) is
- * proof the segment is still on its way.
+ * first event ({@link SESSIONS.TURN_FIRST_EVENT_TIMEOUT_MS}). A frame of the
+ * agent's own (an `api_retry`, a status line) restarts it, as proof the segment
+ * is still on its way. A helper's frame does not: a helper talking says nothing
+ * about the agent's segment, and counting it let a chatty helper hold the
+ * queue for as long as it went on.
+ *
+ * A process that dies in the gap drops the hold at once
+ * ({@link SegmentStartHold.dispose}, from the pump's crash path): a dead
+ * process cannot speak, so waiting on it buys nothing.
  *
  * @module services/runtimes/claude-code/messaging/segment-start-hold
  */
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
 import { SESSIONS } from '../../../../config/constants.js';
-import { beginsATurn } from '../sessions/frames/frame-kinds.js';
+import { beginsATurn, isHelperFrame } from '../sessions/frames/frame-kinds.js';
 import type { LivenessChange } from './turn-liveness.js';
 
 /** Holds a process busy from a segment's `system/init` to its first word. */
@@ -61,10 +69,10 @@ export class SegmentStartHold {
     // A post-`result` init is the only init `TurnLiveness` reports as a
     // segment running; the one a process opens with is not.
     const opens = change.segmentRunning && message.type === 'system' && isInit(message);
-    if (opens || this.holding) this.arm();
+    if (opens || (this.holding && !isHelperFrame(message))) this.arm();
   }
 
-  /** Drop the hold without calling back: the process it belonged to is going. */
+  /** Drop the hold without calling back: the process it belonged to is gone or going. */
   dispose(): void {
     if (this.timer !== undefined) clearTimeout(this.timer);
     this.timer = undefined;

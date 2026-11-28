@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(runtimes): a helper's report is no longer cut off before the agent's first word (DOR-5490)"
+  - 'fix(runtimes): a message no longer waits on an agent that died before its first word (DOR-5490)'
 ---
 
 ### Fixed

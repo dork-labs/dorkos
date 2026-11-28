@@ -191,7 +191,7 @@ import {
 import { streamTurnWindow } from './pump-turn-stream.js';
 import { SessionCrashRecovery } from './session-crash-recovery.js';
 import { isWaitingOnPerson } from './session-store.js';
-import { PumpRefusedError, type Quietness } from './session-pump-contract.js';
+import { isSegmentOnItsWay, PumpRefusedError, type Quietness } from './session-pump-contract.js';
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionPumpRegistry } from './session-pump-registry.js';
 import { SessionTurnWindows, type TurnWindow } from './session-turn-windows.js';
@@ -370,7 +370,7 @@ export class PersistentDispatch {
    * queued message launched into the gap before it would share a turn with it.
    * Bounded by the pump's owed-delivery clock, so a delivery that never arrives
    * releases the queue after thirty seconds rather than holding it forever. A
-   * segment that has opened but not spoken yet is still on its way, bounded by
+   * segment that has opened but not spoken yet is on its way too, bounded by
    * the segment-start clock (DOR-5490).
    *
    * @param sessionId - The session whose queue head is waiting, in any id it
@@ -380,8 +380,7 @@ export class PersistentDispatch {
     const key = this.sessionKeyOf(sessionId);
     const pump = this.registry.peek(key);
     if (pump === undefined) return false;
-    const quietness = pump.quietness();
-    return !quietness.quiet && quietness.because === 'delivery-owed';
+    return isSegmentOnItsWay(pump.quietness());
   }
 
   /**
