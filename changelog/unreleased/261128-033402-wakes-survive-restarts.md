@@ -4,6 +4,7 @@ covers:
   - "feat(runs): wake doors are handed in, and the click's id is minted by the transport (DOR-5215)"
   - 'feat(runs): a wake lets go of its words when its run ends, and has one reader (DOR-5215)'
   - "fix(runs): the eval server builds the run record a wake needs, and the outside-words test names the turn port's wake (DOR-5215)"
+  - "fix(runs): the lost-work wake's seam is wakeLostWork, so the origin census does not read it as a wake (DOR-5215)"
 ---
 
 ### Changed

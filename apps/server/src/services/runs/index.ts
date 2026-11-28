@@ -244,7 +244,7 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
         effects,
         ...(recoveryDeps?.ceilingOf ? { ceilingOf: recoveryDeps.ceilingOf } : {}),
         ...(recoveryDeps?.cwdOf ? { cwdOf: recoveryDeps.cwdOf } : {}),
-        wake: wakeChatForLostWork,
+        wakeLostWork: wakeChatForLostWork,
         release: (key) => recovery.releaseLostWork(key),
       }),
       start_turn: startTurnHandler({
