@@ -13,10 +13,37 @@
  * read as the first page: the caller passes the refusal to throw
  * (`invalidCursor` from the capability port), so this file needs no service.
  *
+ * A cursor's size is bounded whatever the list: a list name, reader key, time
+ * or id longer than {@link MAX_PART_BYTES} (a project folder in a list name, an
+ * agent's folder in a reader key) is held as its SHA-256 digest
+ * ({@link boundedPart}), so a sealed cursor always fits its fixed length and a
+ * plain one the query's limit. Rows are keyed the same way, so a long id still
+ * compares with itself.
+ *
  * @module lib/paging/keyset-page
  */
+import { createHash } from 'node:crypto';
 import type { PageQuery } from '@dorkos/shared/paging';
 import { openCursor, sealCursor } from './sealed-cursor.js';
+
+/** The most bytes (as JSON) one part of a cursor holds as itself; a longer one is digested. */
+const MAX_PART_BYTES = 100;
+
+/**
+ * A cursor part as the cursor holds it: itself when short, else `#` and its
+ * SHA-256 digest (44 bytes as JSON).
+ *
+ * @param part - A list name, reader key, time or id.
+ */
+function boundedPart(part: string): string {
+  if (Buffer.byteLength(JSON.stringify(part), 'utf8') <= MAX_PART_BYTES) return part;
+  return `#${createHash('sha256').update(part, 'utf8').digest('base64url')}`;
+}
+
+/** A row's key as a cursor holds it, each part bounded. */
+function boundedKey(key: PageKey): PageKey {
+  return [boundedPart(key[0]), boundedPart(key[1])];
+}
 
 /** A row's place in the order: a key that never changes (a time, as ISO 8601), then its id. */
 export type PageKey = readonly [at: string, id: string];
@@ -49,15 +76,15 @@ export function listPosition(index: number): string {
 }
 
 function encode(list: string, key: PageKey, sealedFor: string | undefined): string {
-  const position = [list, key[0], key[1]];
-  if (sealedFor !== undefined) return sealCursor(sealedFor, position);
+  const position = [boundedPart(list), key[0], key[1]];
+  if (sealedFor !== undefined) return sealCursor(boundedPart(sealedFor), position);
   return Buffer.from(JSON.stringify(position), 'utf8').toString('base64url');
 }
 
 function decode(list: string, cursor: string, sealedFor: string | undefined): PageKey | null {
   let parsed: unknown;
   if (sealedFor !== undefined) {
-    parsed = openCursor(sealedFor, cursor)?.position;
+    parsed = openCursor(boundedPart(sealedFor), cursor)?.position;
   } else {
     try {
       parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
@@ -68,7 +95,7 @@ function decode(list: string, cursor: string, sealedFor: string | undefined): Pa
   if (
     Array.isArray(parsed) &&
     parsed.length === 3 &&
-    parsed[0] === list &&
+    parsed[0] === boundedPart(list) &&
     typeof parsed[1] === 'string' &&
     typeof parsed[2] === 'string'
   ) {
@@ -114,13 +141,14 @@ export function openPageCursor(
  * The list name a sealed cursor was given for, or null for one this reader
  * can't open. For a list whose name carries what page one was read under (the
  * recent chats' `touchedSince` and when page one was read), so a later page
- * reads it back instead of trusting the caller.
+ * reads it back instead of trusting the caller. A name longer than
+ * {@link MAX_PART_BYTES} comes back as its digest, which never matches.
  *
  * @param cursor - The cursor as sent.
  * @param sealedFor - The reader's key.
  */
 export function sealedCursorList(cursor: string, sealedFor: string): string | null {
-  const position = openCursor(sealedFor, cursor)?.position;
+  const position = openCursor(boundedPart(sealedFor), cursor)?.position;
   return Array.isArray(position) && typeof position[0] === 'string' ? position[0] : null;
 }
 
@@ -164,7 +192,7 @@ export function keysetPage<T>(
   const after = query.cursor === undefined ? null : decode(list, query.cursor, sealedFor);
   if (query.cursor !== undefined && after === null) throw refuse();
   const keyed = rows
-    .map((row) => ({ row, key: keyOf(row) }))
+    .map((row) => ({ row, key: boundedKey(keyOf(row)) }))
     .filter(({ key }) => after === null || newestFirst(after, key) < 0)
     .sort((left, right) => newestFirst(left.key, right.key));
   const page = keyed.slice(0, query.limit);
@@ -173,4 +201,34 @@ export function keysetPage<T>(
     items: page.map(({ row }) => row),
     nextCursor: keyed.length > query.limit && last ? encode(list, last.key, sealedFor) : null,
   };
+}
+
+/**
+ * One page of `rows` kept in their own order (a file's, a scan's, a sort the
+ * list already made), keyed by {@link listPosition}: every page read in turn
+ * gives the array the list answered whole. A row added or removed between
+ * pages can repeat or be missed; say so where the list is described.
+ *
+ * @param list - The list's name, bound into its cursors.
+ * @param rows - Every row the reader may see, filtered, in the list's order.
+ * @param idOf - A row's id.
+ * @param query - The cursor, if any, and the page size.
+ * @param refuse - The error for a cursor this list did not give.
+ * @param sealedFor - The reader's key, when rows read differently by reader.
+ */
+export function pageInOwnOrder<T>(
+  list: string,
+  rows: readonly T[],
+  idOf: (row: T) => string,
+  query: PageQuery,
+  refuse: () => Error,
+  sealedFor?: string
+): KeysetPage<T> {
+  const placed = rows.map((row, index) => ({ row, index }));
+  const keyOf = ({ row, index }: (typeof placed)[number]): PageKey => [
+    listPosition(index),
+    idOf(row),
+  ];
+  const page = keysetPage(list, placed, keyOf, query, refuse, sealedFor);
+  return { items: page.items.map(({ row }) => row), nextCursor: page.nextCursor };
 }

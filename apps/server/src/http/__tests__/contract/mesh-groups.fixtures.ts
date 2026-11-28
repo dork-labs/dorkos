@@ -54,6 +54,13 @@ export const MALFORMED_JSON = z.object({ code: z.literal('malformed_request') })
 export const AGENT_LIST = z
   .object({ agents: z.array(z.object({ id: z.string() }).loose()) })
   .strict();
+/** `AGENT_PAGE`: one page of the roster (DOR-4982), as `GET /api/mesh/agents` answers. */
+export const AGENT_PAGE = z
+  .object({
+    agents: z.array(z.object({ id: z.string() }).loose()),
+    nextCursor: z.string().nullable(),
+  })
+  .strict();
 /** `EVENT_STREAM`: one expected answer the contract cases share. */
 export const EVENT_STREAM = {
   'content-type': 'text/event-stream',

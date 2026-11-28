@@ -256,10 +256,18 @@ export class TeamRoomApi {
 
   /** How many agents this install has registered, as the cockpit counts them. */
   async registeredAgentCount(): Promise<number> {
-    const res = await this.request.get('/api/mesh/agents');
-    if (!res.ok()) throw new Error(`Could not read the agent list: ${await res.text()}`);
-    const { agents } = (await res.json()) as { agents: unknown[] };
-    return agents.length;
+    // The roster pages (DOR-4982): count every page.
+    let count = 0;
+    let cursor: string | null = null;
+    do {
+      const query = `limit=200${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
+      const res = await this.request.get(`/api/mesh/agents?${query}`);
+      if (!res.ok()) throw new Error(`Could not read the agent list: ${await res.text()}`);
+      const page = (await res.json()) as { agents: unknown[]; nextCursor: string | null };
+      count += page.agents.length;
+      cursor = page.nextCursor;
+    } while (cursor);
+    return count;
   }
 
   /**

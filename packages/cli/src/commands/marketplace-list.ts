@@ -10,7 +10,8 @@
  */
 import { parseArgs } from 'node:util';
 import type { SourceLastFetch } from '@dorkos/shared/marketplace-schemas';
-import { ApiError, apiCall } from '../lib/api-client.js';
+import { ApiError } from '../lib/api-client.js';
+import { readAllPages } from '../lib/read-all-pages.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** Marketplace source as returned by the server `/sources` endpoints. */
@@ -26,6 +27,7 @@ interface MarketplaceSource {
 /** Response shape for `GET /api/marketplace/sources`. */
 interface ListSourcesResponseBody {
   sources: MarketplaceSource[];
+  nextCursor: string | null;
 }
 
 /** One-line usage string surfaced in error messages. */
@@ -165,7 +167,11 @@ export function renderSourcesTable(sources: MarketplaceSource[]): string {
  */
 export async function runMarketplaceList(): Promise<number> {
   try {
-    const { sources } = await apiCall<ListSourcesResponseBody>('GET', '/api/marketplace/sources');
+    const { rows: sources } = await readAllPages(
+      '/api/marketplace/sources',
+      {},
+      (p: ListSourcesResponseBody) => p.sources
+    );
 
     if (sources.length === 0) {
       console.log("No marketplaces configured. Run 'dorkos marketplace add <url>' to add one.");

@@ -162,6 +162,23 @@ describe('shapes router', () => {
     });
   });
 
+  // Purpose (DOR-4982): the list pages A to Z, as it always came, and refuses
+  // a cursor it did not give.
+  it('GET /api/shapes pages A to Z and refuses a made-up cursor', async () => {
+    const { app, dorkHome } = await buildApp();
+    for (const name of ['zen-desk', 'alpha-board']) await installShapeOnDisk(dorkHome, name);
+    const server = request(fixtureTarget.mount(app));
+
+    const first = await server.get('/api/shapes?limit=2');
+    const rest = await server.get(`/api/shapes?limit=2&cursor=${first.body.nextCursor}`);
+    const made = await server.get('/api/shapes?cursor=made-up');
+
+    const names = [...first.body.shapes, ...rest.body.shapes].map((s: { name: string }) => s.name);
+    expect(names).toEqual(['alpha-board', 'linear-ops', 'zen-desk']);
+    expect(rest.body.nextCursor).toBeNull();
+    expect(made.status).toBe(400);
+  });
+
   it('POST /api/shapes/:name/apply returns the §5 contract (applied chrome + warnings + offers)', async () => {
     const { app, setActiveShape } = await buildApp();
     const res = await request(fixtureTarget.mount(app))

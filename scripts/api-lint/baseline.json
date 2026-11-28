@@ -44,7 +44,7 @@
       "apps/server/src/services/session/resolution/session-locations-openapi.ts": 4
     },
     "list-paging": {
-      "agents": 4,
+      "agents": 3,
       "approvals": 2,
       "canvas": 3,
       "commands": 1,
@@ -60,8 +60,8 @@
       "heartbeats": 1,
       "hub": 2,
       "local-browser": 3,
-      "marketplace": 6,
-      "mesh": 2,
+      "marketplace": 1,
+      "mesh": 1,
       "models": 1,
       "owner-factors": 1,
       "permissions": 1,
@@ -72,7 +72,6 @@
       "search": 1,
       "session-relay": 3,
       "sessions": 9,
-      "shapes": 1,
       "tasks": 2,
       "team": 2,
       "todo-promises": 1,

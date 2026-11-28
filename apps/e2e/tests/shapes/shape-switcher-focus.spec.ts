@@ -22,12 +22,13 @@ import { openFromCommandPalette } from '../../pages/command-palette';
  * starts a turn, so it stays a fast `@smoke` spec.
  */
 
-/** A stubbed installed-Shapes list: one active Shape, so the footer renders. */
+/** A stubbed installed-Shapes list, one page (DOR-4982): one active Shape, so the footer renders. */
 const SHAPES = {
   shapes: [
     { name: 'flow-board', displayName: 'Flow Board', active: true },
     { name: 'writing-desk', displayName: 'Writing Desk', active: false },
   ],
+  nextCursor: null,
 };
 
 test.describe('Shapes — switcher keyboard focus @smoke', () => {

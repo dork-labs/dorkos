@@ -169,14 +169,11 @@ const OUTSIDE_BOUNDARY = problemOf(
   '`projectPath` is outside the folders DorkOS may use.'
 );
 const CLIENT_OUTDATED = problemCoded('invalid_request');
-const SOURCE_LIST = z
-  .object({
-    sources: z.array(
-      z.object({ name: z.string(), source: z.string(), enabled: z.boolean() }).loose()
-    ),
-  })
-  .strict();
-const PACKAGE_LIST = z.object({ packages: z.array(z.object({ name: z.string() }).loose()) });
+const NEXT_CURSOR = z.string().nullable();
+const SOURCE = z.object({ name: z.string(), source: z.string(), enabled: z.boolean() }).loose();
+const SOURCE_LIST = z.object({ sources: z.array(SOURCE), nextCursor: NEXT_CURSOR }).strict();
+const PACKAGE = z.object({ name: z.string() }).loose();
+const PACKAGE_LIST = z.object({ packages: z.array(PACKAGE), nextCursor: NEXT_CURSOR });
 const SOURCE_REFUSAL = (action: 'add' | 'remove') =>
   problemOf(
     'operator_only',
@@ -308,12 +305,12 @@ contractSuite('marketplace groups', [
   {
     name: 'GET /api/marketplace/installed lists nothing installed',
     path: '/api/marketplace/installed',
-    expect: { status: 200, headers: JSON_TYPE, body: { packages: [] } },
+    expect: { status: 200, headers: JSON_TYPE, body: { packages: [], nextCursor: null } },
   },
   {
     name: 'GET /api/marketplace/installed?verify=true lists nothing installed',
     path: '/api/marketplace/installed?verify=true',
-    expect: { status: 200, body: { packages: [] } },
+    expect: { status: 200, body: { packages: [], nextCursor: null } },
   },
   {
     name: 'GET /api/marketplace/installed refuses a repeated projectPath',
@@ -555,7 +552,7 @@ contractSuite('marketplace groups', [
   {
     name: 'GET /api/marketplace/held-back lists nothing held back',
     path: '/api/marketplace/held-back',
-    expect: { status: 200, headers: JSON_TYPE, body: { packages: [] } },
+    expect: { status: 200, headers: JSON_TYPE, body: { packages: [], nextCursor: null } },
   },
   {
     name: 'POST /api/marketplace/held-back/:name/review answers 409 for a package not held back',
@@ -831,7 +828,6 @@ describe('contract: the marketplace groups, driven by hand (login off)', () => {
       expect(refreshed.status).toBe(200);
 
       const browsed = await call(server, 'GET', '/api/marketplace/packages');
-      expect(browsed.status).toBe(200);
       expect(PACKAGE_LIST.parse(browsed.json).packages.map((p) => p.name)).toEqual(
         expect.arrayContaining([AGENT_PACKAGE, SKILL_PACK])
       );

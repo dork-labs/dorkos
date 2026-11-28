@@ -34,11 +34,14 @@ import {
   ManagedMcpServerSchema,
   ManagedMcpServerViewSchema,
 } from '@dorkos/shared/mesh-schemas';
+import { PageQuerySchema, nextCursorOutput } from '@dorkos/shared/paging';
 
 import {
   defineCapability,
+  invalidCursor,
   type CapabilityDomain,
 } from '../core/capabilities/capability-definition.js';
+import { assertPageCursor, pageInOwnOrder } from '../../lib/paging/keyset-page.js';
 import {
   AgentServerInput,
   agentIdField,
@@ -59,7 +62,10 @@ const ManagedServerListOutput = z.array(ManagedMcpServerSchema);
  * the read carries it — a mutating verb reports what it wrote, and `authStatus`
  * is never written.
  */
-const ManagedServerViewListOutput = z.array(ManagedMcpServerViewSchema);
+const ManagedServerViewListOutput = z.object({
+  servers: z.array(ManagedMcpServerViewSchema),
+  nextCursor: nextCursorOutput,
+});
 
 /**
  * The card an `add`/`update` approval shows: the transport plus whichever
@@ -96,11 +102,13 @@ export const mcpDomain: CapabilityDomain = {
         'for it (authStatus). A free read — use it before add/update/remove to see what is ' +
         'already configured. It lists only the agent’s own servers: servers a person added for ' +
         'every agent on the Connections page also reach the agent, but are not listed here and ' +
-        'only a person can change them.',
+        'only a person can change them. A page at a time, in the agent’s own order: pass ' +
+        'nextCursor back as cursor until it is null. One added or removed while paging can ' +
+        'repeat or be missed.',
       tier: 'observe',
       area: null,
       areaNote: 'reading',
-      input: z.object({ agentId: agentIdField }),
+      input: PageQuerySchema.extend({ agentId: agentIdField }),
       output: ManagedServerViewListOutput,
       surfaces: {
         mcp: {
@@ -111,13 +119,20 @@ export const mcpDomain: CapabilityDomain = {
         },
         http: { method: 'get', path: '/api/agents/{agentId}/mcp-servers' },
       },
-      invoke: async (deps, input) => {
+      invoke: async (deps, { agentId, ...query }) => {
         const { service } = requireMcpDeps(deps);
+        // Bound to the agent: one agent's cursor does not go on in another's list.
+        const list = `mcp-servers:${agentId}`;
+        assertPageCursor(list, query.cursor, invalidCursor);
+        let all: Awaited<ReturnType<typeof service.list>>;
         try {
-          return await service.list(input.agentId);
+          all = await service.list(agentId);
         } catch (err) {
           rethrowAsCapabilityError(err);
         }
+        // In the agent's own order, so every page read in turn keeps it.
+        const page = pageInOwnOrder(list, all, (server) => server.name, query, invalidCursor);
+        return { servers: page.items, nextCursor: page.nextCursor };
       },
     }),
     defineCapability({

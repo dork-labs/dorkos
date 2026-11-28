@@ -18,7 +18,7 @@ import type {
   UpdateAccessRuleRequest,
   CrossNamespaceRule,
 } from '@dorkos/shared/mesh-schemas';
-import { fetchAllPages, fetchJSON, buildQueryString } from './http-client';
+import { fetchAllPages, fetchJSON } from './http-client';
 
 /** Create all Mesh + Agent Identity methods bound to a base URL. */
 export function createMeshMethods(baseUrl: string) {
@@ -39,15 +39,15 @@ export function createMeshMethods(baseUrl: string) {
       });
     },
 
-    listMeshAgents(filters?: {
+    // The roster comes in pages, newest registered first (DOR-4982); the app reads it whole.
+    async listMeshAgents(filters?: {
       runtime?: string;
       capability?: string;
     }): Promise<{ agents: AgentManifest[] }> {
-      const qs = buildQueryString({
-        runtime: filters?.runtime,
-        capability: filters?.capability,
-      });
-      return fetchJSON(baseUrl, `/mesh/agents${qs}`);
+      type Page = { agents: AgentManifest[]; nextCursor: string | null };
+      const params = { runtime: filters?.runtime, capability: filters?.capability };
+      const { rows } = await fetchAllPages(baseUrl, '/mesh/agents', params, (p: Page) => p.agents);
+      return { agents: rows };
     },
 
     getMeshAgent(id: string): Promise<AgentManifest> {

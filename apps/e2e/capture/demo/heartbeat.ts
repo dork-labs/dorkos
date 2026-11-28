@@ -85,7 +85,10 @@ async function get<T>(pathname: string): Promise<T> {
 
 /** The agent's Mesh id, by its name. */
 async function agentId(name: string): Promise<string> {
-  const { agents } = await get<{ agents: { id: string; name: string }[] }>('/api/mesh/agents');
+  // One page of 200 holds every agent a capture registers (the roster pages, DOR-4982).
+  const { agents } = await get<{ agents: { id: string; name: string }[] }>(
+    '/api/mesh/agents?limit=200'
+  );
   const agent = agents.find((a) => a.name === name);
   if (!agent) throw new Error(`${name} is not registered`);
   return agent.id;

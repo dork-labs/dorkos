@@ -14,7 +14,7 @@
  */
 import { parseArgs } from 'node:util';
 import type { DevLinkState, InstalledPackage } from '@dorkos/shared/marketplace-schemas';
-import { apiCall } from '../lib/api-client.js';
+import { readAllPages } from '../lib/read-all-pages.js';
 import { placeOf } from '../lib/installation-label.js';
 import { printError, printJson, renderTable } from '../lib/operator-output.js';
 import { resolveProjectFlag, unlinkCommand } from '../lib/package-commands.js';
@@ -33,6 +33,7 @@ export interface MarketplaceInstalledArgs {
 /** Response shape for `GET /api/marketplace/installed`. */
 interface InstalledResponseBody {
   packages: InstalledPackage[];
+  nextCursor: string | null;
 }
 
 /** The `--json` document: an object, like `outdated`'s, so fields can be added later. */
@@ -170,14 +171,14 @@ export function renderInstalledTable(packages: InstalledPackage[]): string {
 export async function runMarketplaceInstalled(args: MarketplaceInstalledArgs): Promise<number> {
   let packages: InstalledPackage[];
   try {
-    const params = [
-      ...(args.projectPath ? [`projectPath=${encodeURIComponent(args.projectPath)}`] : []),
-      ...(args.verify ? ['verify=true'] : []),
-    ];
-    const query = params.length > 0 ? `?${params.join('&')}` : '';
-    ({ packages } = await apiCall<InstalledResponseBody>(
-      'GET',
-      `/api/marketplace/installed${query}`
+    const params = {
+      projectPath: args.projectPath || undefined,
+      verify: args.verify ? 'true' : undefined,
+    };
+    ({ rows: packages } = await readAllPages(
+      '/api/marketplace/installed',
+      params,
+      (p: InstalledResponseBody) => p.packages
     ));
   } catch (err) {
     printError(err);

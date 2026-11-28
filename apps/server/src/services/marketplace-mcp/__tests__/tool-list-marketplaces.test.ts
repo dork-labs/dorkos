@@ -107,9 +107,38 @@ function parseResult(result: { content: { type: 'text'; text: string }[] }): {
   return JSON.parse(block?.text ?? '');
 }
 
+/** The first page, at the default size. */
+const FIRST_PAGE = { limit: 50 };
+
 describe('createListMarketplacesHandler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  // Purpose (DOR-4982): the tool pages in the sources file's order, counts
+  // only the page's sources, and hands back the cursor for the rest.
+  it('lists a page at a time, in the order the sources are kept', async () => {
+    const { deps, fetchMarketplaceJson } = buildDeps({
+      list: ['zeta', 'alpha', 'mid'].map((name) => buildSource({ name })),
+      fetchImpl: async (s) => buildMarketplaceJson(s.name, 1),
+    });
+    const handler = createListMarketplacesHandler(deps);
+
+    const first = JSON.parse((await handler({ limit: 2 })).content[0]!.text);
+    const rest = JSON.parse(
+      (await handler({ limit: 2, cursor: first.nextCursor })).content[0]!.text
+    );
+
+    expect(fetchMarketplaceJson).toHaveBeenCalledTimes(3);
+    expect([...first.sources, ...rest.sources].map((s: { name: string }) => s.name)).toEqual([
+      'zeta',
+      'alpha',
+      'mid',
+    ]);
+    expect(rest.nextCursor).toBeNull();
+    await expect(handler({ limit: 2, cursor: 'made-up' })).rejects.toMatchObject({
+      payload: { code: 'INVALID_CURSOR' },
+    });
   });
 
   it('returns every configured source — enabled and disabled — with package counts', async () => {
@@ -132,7 +161,7 @@ describe('createListMarketplacesHandler', () => {
     });
     const handler = createListMarketplacesHandler(deps);
 
-    const result = await handler();
+    const result = await handler(FIRST_PAGE);
     const payload = parseResult(result);
 
     expect(fetchMarketplaceJson).toHaveBeenCalledTimes(3);
@@ -178,7 +207,7 @@ describe('createListMarketplacesHandler', () => {
     });
     const handler = createListMarketplacesHandler(deps);
 
-    const result = await handler();
+    const result = await handler(FIRST_PAGE);
     const payload = parseResult(result);
 
     expect(payload.sources).toEqual([
@@ -216,7 +245,7 @@ describe('createListMarketplacesHandler', () => {
       cache,
     });
 
-    const payload = parseResult(await createListMarketplacesHandler(deps)());
+    const payload = parseResult(await createListMarketplacesHandler(deps)(FIRST_PAGE));
 
     expect(payload.sources[0]).toEqual({
       name: 'broken',

@@ -39,7 +39,7 @@ from any runtime; \`dorkos capabilities\` lists the tiers). \`dorkos marketplace
 - \`dorkos marketplace outdated [--project <path>] [--json]\` lists only what has an
   update, and answers in its exit code: \`0\` all current, \`1\` something has an
   update, \`2\` could not tell (a package could not be checked, or DorkOS is down).
-- \`marketplace_list_marketplaces\` lists the configured sources.
+- \`marketplace_list_marketplaces\` lists the configured sources. Both list tools page: pass \`nextCursor\` back as \`cursor\` until it is \`null\`.
 
 ## Install a package (tier: act)
 

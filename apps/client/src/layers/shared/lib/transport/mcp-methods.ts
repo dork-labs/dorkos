@@ -25,7 +25,7 @@ import type {
 } from '@dorkos/shared/transport';
 import type { ManagedMcpServer, ManagedMcpServerView } from '@dorkos/shared/mesh-schemas';
 import type { AgentBrowserPreset } from '@dorkos/shared/agent-browser';
-import { fetchJSON } from './http-client';
+import { fetchAllPages, fetchJSON } from './http-client';
 
 /** The header a confirming retry carries its approval token in (matches the server). */
 const APPROVAL_TOKEN_HEADER = 'X-DorkOS-Approval';
@@ -100,10 +100,11 @@ export function createMcpMethods(baseUrl: string) {
   }
 
   return {
-    listAgentMcpServers(agentId: string): Promise<ManagedMcpServerView[]> {
-      return callCapability<ManagedMcpServerView[]>(serversPath(agentId), 'GET') as Promise<
-        ManagedMcpServerView[]
-      >;
+    // The list comes in pages, in the agent's own order (DOR-4982); the tab shows it whole.
+    async listAgentMcpServers(agentId: string): Promise<ManagedMcpServerView[]> {
+      type Page = { servers: ManagedMcpServerView[]; nextCursor: string | null };
+      const path = serversPath(agentId);
+      return (await fetchAllPages(baseUrl, path, {}, (page: Page) => page.servers)).rows;
     },
 
     getAgentBrowserPreset(): Promise<AgentBrowserPreset> {

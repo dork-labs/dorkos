@@ -202,13 +202,15 @@ The file copy is the restore for the same reason a prior run's key deletion did 
 
 ### 1b. Baseline
 
-Navigate to `TEST_URL`. Capture baseline console errors (the `linear-issues` extension 404 is benign). Confirm the two agents exist:
+Navigate to `TEST_URL`. Capture baseline console errors (the `linear-issues` extension 404 is benign). Confirm the two agents exist. The roster comes a page at a time; one page of 200 holds every agent a test install has, and the check below says so if there are more (`nextCursor` is set):
 
 ```bash
-curl -s "http://localhost:$API_PORT/api/mesh/agents" | python3 -c "
+curl -s "http://localhost:$API_PORT/api/mesh/agents?limit=200" | python3 -c "
 import sys, json
-for a in json.load(sys.stdin)['agents']:
+page = json.load(sys.stdin)
+for a in page['agents']:
     print(a.get('displayName') or a.get('name'), '|', a.get('path', ''))
+if page.get('nextCursor'): print('More agents on later pages: pass nextCursor back as cursor.')
 "
 ```
 

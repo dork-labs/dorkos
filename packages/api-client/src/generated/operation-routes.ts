@@ -485,7 +485,7 @@ export const OPERATION_ROUTES = {
   "sessions.updateQueue": { method: "PATCH", path: "/sessions/{id}/queue/{messageId}" },
   "shapes.apply": { method: "POST", path: "/shapes/{name}/apply" },
   "shapes.fork": { method: "POST", path: "/shapes/{name}/fork" },
-  "shapes.get": { method: "GET", path: "/shapes" },
+  "shapes.list": { method: "GET", path: "/shapes" },
   "stepUp.createChangePassword": { method: "POST", path: "/step-up/{heldActionId}/change-password" },
   "stepUp.createPassword": { method: "POST", path: "/step-up/{heldActionId}/password" },
   "stepUp.delete": { method: "DELETE", path: "/step-up/{heldActionId}" },

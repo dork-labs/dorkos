@@ -22,10 +22,22 @@ afterEach(() => vi.unstubAllGlobals());
 describe('createShapeMethods', () => {
   const methods = createShapeMethods('/api');
 
-  it('lists the installed shapes out of their envelope', async () => {
-    const fetchMock = answer({ shapes: [{ name: 'solo' }] });
-    await expect(methods.listShapes()).resolves.toEqual([{ name: 'solo' }]);
-    expect(sent(fetchMock)).toEqual({ url: '/api/shapes', method: 'GET', body: undefined });
+  // Purpose (DOR-4982): the list comes in pages; every page is read, A to Z as sent.
+  it('lists every page of installed shapes out of their envelope, in order', async () => {
+    const pages = [
+      { shapes: [{ name: 'alpha' }], nextCursor: 'c1' },
+      { shapes: [{ name: 'solo' }], nextCursor: null },
+    ];
+    const fetchMock = vi.fn(
+      async (_url: string, _init?: RequestInit) =>
+        new Response(JSON.stringify(pages.shift()), { status: 200 })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(methods.listShapes()).resolves.toEqual([{ name: 'alpha' }, { name: 'solo' }]);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/shapes?limit=200',
+      '/api/shapes?limit=200&cursor=c1',
+    ]);
   });
 
   it('applies and forks a shape at its encoded name', async () => {

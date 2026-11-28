@@ -42,6 +42,7 @@ import {
 import { skipRow, type UndoRowLabels } from './permission-undo-rows.js';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import { ApiError, apiCall } from '../lib/api-client.js';
+import { readAllRows } from '../lib/read-all-pages.js';
 import { printError, printJson, renderTable } from '../lib/operator-output.js';
 
 /** Help text for `dorkos permissions`. */
@@ -245,7 +246,7 @@ interface RosterAgent {
  * @throws {Error} When no agent, or more than one, matches.
  */
 async function resolveAgentRef(ref: string): Promise<{ id: string; name: string }> {
-  const { agents } = await apiCall<{ agents: RosterAgent[] }>('GET', '/api/mesh/agents');
+  const agents = await readAllRows<RosterAgent>('/api/mesh/agents', 'agents');
   const byId = agents.find((a) => a.id === ref);
   if (byId) return { id: byId.id, name: byId.displayName ?? byId.name };
   const wanted = ref.toLowerCase();
@@ -253,8 +254,7 @@ async function resolveAgentRef(ref: string): Promise<{ id: string; name: string 
     (a) => a.name.toLowerCase() === wanted || a.displayName?.toLowerCase() === wanted
   );
   if (matches.length === 1) {
-    const [only] = matches;
-    return { id: only!.id, name: only!.displayName ?? only!.name };
+    return { id: matches[0]!.id, name: matches[0]!.displayName ?? matches[0]!.name };
   }
   if (matches.length > 1) {
     throw new Error(

@@ -204,7 +204,7 @@ describe('mcp.* gate enforcement under Trusted (through registry.invoke)', () =>
     const { deps } = await setup();
     const registry = composeRegistry([mcpDomain], deps);
     const result = await registry.invoke('mcp.list', { agentId: AGENT_ID });
-    expect(result).toEqual([]);
+    expect(result).toEqual({ servers: [], nextCursor: null });
   });
 
   it('mcp.add without approval returns approval_required and writes NOTHING', async () => {

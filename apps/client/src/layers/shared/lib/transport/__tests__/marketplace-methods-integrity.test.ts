@@ -24,7 +24,7 @@ describe('createMarketplaceMethods().listInstalledPackages (DOR-2197)', () => {
   // Purpose: verification is opt-in (it reads every shipped file), so a plain
   // list never asks for it, and a verified one says so in the query.
   it('asks for verification only when told to', async () => {
-    const fetchMock = answerWith({ packages: [] });
+    const fetchMock = answerWith({ packages: [], nextCursor: null });
     const methods = createMarketplaceMethods('/api');
 
     await methods.listInstalledPackages();
@@ -32,9 +32,30 @@ describe('createMarketplaceMethods().listInstalledPackages (DOR-2197)', () => {
     await methods.listInstalledPackages('/Users/me/my repo', { verify: true });
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      '/api/marketplace/installed',
-      '/api/marketplace/installed?verify=true',
-      '/api/marketplace/installed?projectPath=%2FUsers%2Fme%2Fmy+repo&verify=true',
+      '/api/marketplace/installed?limit=200',
+      '/api/marketplace/installed?verify=true&limit=200',
+      '/api/marketplace/installed?projectPath=%2FUsers%2Fme%2Fmy+repo&verify=true&limit=200',
+    ]);
+  });
+
+  // Purpose: the list comes in pages (DOR-4982); the app reads every page and
+  // keeps the server's order, so the installs show as they did before paging.
+  it('reads every page, in the order the server sent them', async () => {
+    const pages = [
+      { packages: [{ name: 'zeta' }, { name: 'alpha' }], nextCursor: 'c1' },
+      { packages: [{ name: 'mid' }], nextCursor: null },
+    ];
+    const fetchMock = vi.fn(
+      async (_url: unknown) => new Response(JSON.stringify(pages.shift()), { status: 200 })
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const rows = await createMarketplaceMethods('/api').listInstalledPackages();
+
+    expect(rows.map((row) => row.name)).toEqual(['zeta', 'alpha', 'mid']);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/marketplace/installed?limit=200',
+      '/api/marketplace/installed?cursor=c1&limit=200',
     ]);
   });
 });
