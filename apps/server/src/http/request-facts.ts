@@ -18,6 +18,7 @@
  */
 import { nodeTransportFacts, type TransportFacts } from '@dorkos/http-kit';
 import type { Context } from 'hono';
+import type { IncomingMessage } from 'node:http';
 import type { HttpBindings } from '@hono/node-server';
 import type { AgentIdentity } from '../services/core/agent-identity/agent-identity-service.js';
 import type { RequestUser } from '../services/core/auth/session-gate.js';
@@ -79,5 +80,29 @@ export function honoRequestFacts(c: Context<RequestFactsEnv>): RequestFacts {
     ingress: ingressOf(incoming),
     user: c.get('user'),
     agentIdentity: c.get('agentIdentity'),
+  };
+}
+
+/**
+ * The facts of a WebSocket upgrade, which runs no chain: its transport facts
+ * and ingress, read off the raw request as {@link honoRequestFacts} reads them,
+ * plus the identity the upgrade's own credential gate resolved
+ * (`services/core/streams/stream-upgrade-auth.ts`). A policy then reads an
+ * upgrade exactly as it reads a request. The method is `GET`, the method every
+ * upgrade carries.
+ *
+ * @param incoming - The upgrade request.
+ * @param identity - What the upgrade's credential gate resolved.
+ * @returns The upgrade's facts.
+ */
+export function upgradeRequestFacts(
+  incoming: IncomingMessage,
+  identity: Partial<Pick<RequestFacts, 'user' | 'agentIdentity'>>
+): RequestFacts {
+  return {
+    ...nodeTransportFacts(incoming, 'GET'),
+    ingress: ingressOf(incoming),
+    user: identity.user,
+    agentIdentity: identity.agentIdentity,
   };
 }

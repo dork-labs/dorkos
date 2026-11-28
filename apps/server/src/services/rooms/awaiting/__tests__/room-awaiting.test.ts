@@ -130,11 +130,9 @@ describe('watchRoomAwaiting', () => {
     });
     const inside = client();
     const outside = client();
-    const agent = client();
     const disconnect = [
       eventFanOut.addClient(inside, { kind: 'program', userId: 'member' }),
       eventFanOut.addClient(outside, { kind: 'program', userId: 'non-member' }),
-      eventFanOut.addClient(agent, { kind: 'agent' }),
     ];
     const ops = new SessionStateProjector('ses-ops');
     let listener: (update: { sessionId: string }) => void = () => undefined;
@@ -161,7 +159,6 @@ describe('watchRoomAwaiting', () => {
         payload: { roomId: room.id, awaiting: 1 },
       });
       expect(outside.send).not.toHaveBeenCalled();
-      expect(agent.send).not.toHaveBeenCalled();
 
       service.removeMember(room.id, human, member.id);
       expect(JSON.parse(inside.send.mock.calls.at(-1)![0].json)).toMatchObject({
@@ -169,14 +166,12 @@ describe('watchRoomAwaiting', () => {
         payload: { roomId: room.id, authorId: member.id },
       });
       expect(outside.send).not.toHaveBeenCalled();
-      expect(agent.send).not.toHaveBeenCalled();
       // Ignore the separately addressed removal notice from the service.
-      for (const stream of [inside, outside, agent]) stream.send.mockClear();
+      for (const stream of [inside, outside]) stream.send.mockClear();
       ops.ingest({ type: 'interaction_resolved', id: 'tool-1' } as RawSessionEvent);
       listener({ sessionId: 'ses-ops' });
       expect(inside.send).not.toHaveBeenCalled();
       expect(outside.send).not.toHaveBeenCalled();
-      expect(agent.send).not.toHaveBeenCalled();
     } finally {
       stop();
       disconnect.forEach((off) => off());

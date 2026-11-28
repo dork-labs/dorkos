@@ -106,6 +106,8 @@ This one stream is also the cross-client sync mechanism: every client subscribed
 
 ## Chat Event Types
 
+{/* This list is written by hand; unlike the global stream's, it is not generated from a union yet. */}
+
 All events share `{ seq: number, type: string }`. Payloads below list the type-specific fields.
 
 ### Turn Events
@@ -368,7 +370,7 @@ For the chat list, relay activity, tunnel status, and extension events, subscrib
 GET /api/events
 ```
 
-This single persistent connection multiplexes all background events. Every frame carries one whole event:
+This single persistent connection multiplexes all background events. It is for people: the DorkOS app, the desktop app, and your own programs. An agent cannot open it (see [Who may open it](#who-may-open-it)). Every frame carries one whole event:
 
 ```
 id: events-1764201600000-g1-118
@@ -400,80 +402,107 @@ events.addEventListener('session_status', (message) => {
 });
 ```
 
-The types, and what each one's `payload` holds:
+Every type, the permission area it belongs to, what its `payload` holds, and what it means. The area is for a later filter by space member; it is not who receives the event today, which the sections after the table describe. The API reference's `GET /api/events` page gives the payloads it describes as schemas.
 
-| Event                           | Payload                                                                                                                     | Description                                                                                                                                                                                                       |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session_upserted`              | `{ session: Session }`                                                                                                      | A chat was created or its metadata changed                                                                                                                                                                        |
-| `session_removed`               | `{ sessionId: string }`                                                                                                     | A chat was deleted                                                                                                                                                                                                |
-| `session_status`                | `{ sessionId: string, cwd?: string, retiredSessionId?: string, status }`                                                    | A chat's status projection changed (lifecycle, tokens, cost). `retiredSessionId` announces a first-turn rekey: drop state held under the old id                                                                   |
-| `interaction_pending`           | `{ sessionId: string, cwd: string, interaction: PendingInteraction, roomId?: string, roomAuthorId?: string }`               | An agent anywhere on this machine has stopped and is waiting on a person. Addressed (see below)                                                                                                                   |
-| `interaction_resolved`          | `{ sessionId: string, interactionId: string, outcome, resolvedAt: string }`                                                 | That prompt is over: answered, cancelled, or timed out. Drop the card                                                                                                                                             |
-| `approval_pending`              | `{ approval: PendingApproval }`                                                                                             | Something needs your permission before it runs. Addressed (see below)                                                                                                                                             |
-| `notification`                  | `{ notification: Notification }`                                                                                            | An inbox row appeared, or an existing one changed. Addressed (see below)                                                                                                                                          |
-| `notification_read`             | `{ ids: string[], all: boolean, readAt: string, unreadCount: number }`                                                      | Notifications were marked read somewhere. Addressed (see below)                                                                                                                                                   |
-| `agents_changed`                | `{ kind: 'registered' \| 'updated' \| 'removed', agentId: string, name?: string, displayName?: string, changedAt: string }` | An agent was registered, renamed or removed, by any path. Names and ids only: no directory, no manifest; read the agent back for the rest. Sent only when the write changed something                             |
-| `config_changed`                | `{ sections: string[], changedAt: string }`                                                                                 | Settings were written. Section names only, never a value. Sent for every write, including one that stored the same value, except one that only saved where you last were in a space. Addressed (see below)        |
-| `community_connections_changed` | `{ changedAt: string }`                                                                                                     | A space connection was added, connected, needs reconnecting, or was removed, for example because you left the space. Nothing else: read `GET /api/community-connections` for your own list. Addressed (see below) |
-| `relay_*`                       | varies                                                                                                                      | Relay adapter activity, message delivery                                                                                                                                                                          |
-| `tunnel_status`                 | `TunnelStatus`                                                                                                              | Remote access opened, closed, dropped or changed address. A new connection gets the current one in its opening frames. Never sent to an agent                                                                     |
-| `extension_reloaded`            | `{ type: 'extension_reloaded', extensionIds: string[], timestamp: number }`                                                 | Extensions were rebuilt, turned on or approved. Reload what you show of them                                                                                                                                      |
-| `ext:{id}:*`                    | varies                                                                                                                      | Extension-emitted events (namespaced per extension ID)                                                                                                                                                            |
+{/* BEGIN generated: the global event types, from packages/shared/src/dorkos-event-types.ts. Edit the table there, then run pnpm docs:sse-events. */}
+
+| Event                              | Area          | Payload                                                                                                                     | Meaning                                                                                                                                                     |
+| ---------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `connected`                        | none          | `{ connectedAt: string, sessionListsResetAt?: string, resumed?: true }`                                                     | The first frame of every connect. `resumed: true` means it picked up from your cursor.                                                                      |
+| `heartbeat`                        | none          | `null`                                                                                                                      | A keepalive, every 15 seconds. Nothing to do.                                                                                                               |
+| `session_upserted`                 | none          | `{ session: Session }`                                                                                                      | A chat was created or its details changed.                                                                                                                  |
+| `session_removed`                  | none          | `{ sessionId: string }`                                                                                                     | A chat was deleted.                                                                                                                                         |
+| `session_status`                   | none          | `{ sessionId: string, cwd?: string, retiredSessionId?: string, status }`                                                    | A chat's status changed: working, waiting, tokens, cost. `retiredSessionId` means the chat got its lasting id, so drop state held under the old one.        |
+| `session_list_invalidated`         | none          | `{ changedAt: string }`                                                                                                     | The whole chat list may be different, for example after a switch of Claude account. Read it again.                                                          |
+| `account_usage`                    | `reach`       | `AccountUsage`                                                                                                              | How much of the model account's usage limits is spent changed.                                                                                              |
+| `interaction_pending`              | `permissions` | `{ sessionId: string, cwd: string, interaction: PendingInteraction, roomId?: string, roomAuthorId?: string }`               | An agent on this computer stopped and is waiting on a person.                                                                                               |
+| `interaction_resolved`             | `permissions` | `{ sessionId: string, interactionId: string, outcome, resolvedAt: string }`                                                 | That prompt is over: answered, cancelled, or timed out. Drop the card.                                                                                      |
+| `approval_pending`                 | `permissions` | `PendingApproval`                                                                                                           | Something needs your permission before it runs.                                                                                                             |
+| `approval_resolved`                | `permissions` | `{ approvalId: string, outcome, resolvedAt: string }`                                                                       | An approval is over: granted, denied, used up, or expired. Drop the card.                                                                                   |
+| `standing_pending`                 | `permissions` | not described yet                                                                                                           | Something will keep waiting on you until it is dealt with, such as a sign-in to renew.                                                                      |
+| `standing_resolved`                | `permissions` | not described yet                                                                                                           | That standing item was dealt with. Drop it.                                                                                                                 |
+| `notification`                     | none          | `{ notification: Notification }`                                                                                            | An inbox row appeared, or an existing one changed.                                                                                                          |
+| `notification_read`                | none          | `{ ids: string[], all: boolean, readAt: string, unreadCount: number }`                                                      | Notifications were marked read somewhere.                                                                                                                   |
+| `read_cursor`                      | none          | not described yet                                                                                                           | Your place in a chat or room moved, perhaps in another window.                                                                                              |
+| `room_created`                     | `rooms`       | `{ roomId: string, kind, title }`                                                                                           | A room or direct chat you can read was created.                                                                                                             |
+| `room_updated`                     | `rooms`       | `{ roomId: string }`                                                                                                        | A room's details changed. Read it again.                                                                                                                    |
+| `room_member_added`                | `rooms`       | `{ roomId: string, authorId: string }`                                                                                      | Someone joined a room.                                                                                                                                      |
+| `room_member_removed`              | `rooms`       | not described yet                                                                                                           | Someone left a room.                                                                                                                                        |
+| `room_activity`                    | `rooms`       | `{ roomId: string, seq: number, lastActivityAt: string }`                                                                   | A new message landed in a room.                                                                                                                             |
+| `room_presence`                    | `rooms`       | `{ roomId: string, working: number }`                                                                                       | How many agents are working in a room changed.                                                                                                              |
+| `room_awaiting`                    | `rooms`       | `{ roomId: string, awaiting: number }`                                                                                      | How many of a room's chats are waiting on a person changed.                                                                                                 |
+| `relay_connected`                  | `messages`    | `{ pattern: string, connectedAt: string }`                                                                                  | Relay is on, and this stream now carries its messages.                                                                                                      |
+| `relay_message`                    | `messages`    | not described yet                                                                                                           | A Relay message reached you.                                                                                                                                |
+| `relay_backpressure`               | `messages`    | not described yet                                                                                                           | A Relay mailbox is filling faster than it empties.                                                                                                          |
+| `relay_signal`                     | `messages`    | not described yet                                                                                                           | A passing Relay signal: typing, presence, a read or delivery receipt, progress.                                                                             |
+| `relay_flow`                       | `messages`    | not described yet                                                                                                           | A message travelled between a chat and the agent that answers it.                                                                                           |
+| `relay_dead_letter`                | `messages`    | not described yet                                                                                                           | A message could not be delivered and was set aside.                                                                                                         |
+| `relay_bindings_changed`           | `connections` | `{ changedAt: string }`                                                                                                     | Which agent answers which chat changed. Read that list again.                                                                                               |
+| `relay_adapters_changed`           | `connections` | `{ changedAt: string }`                                                                                                     | A chat connection was added, changed, connected or dropped. Read the list again.                                                                            |
+| `relay_chat_unclaimed`             | `connections` | not described yet                                                                                                           | A new chat wrote in that no agent answers yet. It names the sender, never the message.                                                                      |
+| `relay_chat_unclaimed_burst`       | `connections` | not described yet                                                                                                           | Too many unclaimed chats arrived to send one by one; this counts the rest.                                                                                  |
+| `connector_agent_requests_changed` | `connections` | `{ changedAt: string }`                                                                                                     | An agent asked to use a service, or such a request was answered.                                                                                            |
+| `tasks_changed`                    | `tasks`       | `{ changedAt: string }`                                                                                                     | A schedule was added, changed or removed. Read the list again.                                                                                              |
+| `task_run_failed`                  | `tasks`       | not described yet                                                                                                           | A scheduled run failed.                                                                                                                                     |
+| `task_run_finished`                | `tasks`       | not described yet                                                                                                           | A scheduled run finished.                                                                                                                                   |
+| `task_run_updated`                 | `tasks`       | `{ runId: string, scheduleId: string }`                                                                                     | A finished run's output grew, from work it left running. Read the run again.                                                                                |
+| `agents_changed`                   | `agents`      | `{ kind: 'registered' or 'updated' or 'removed', agentId: string, name?: string, displayName?: string, changedAt: string }` | An agent was registered, renamed or removed, by any path. Names and ids only: read the agent back for the rest. Sent only when the write changed something. |
+| `agent_pauses_changed`             | `agents`      | `{ changedAt: string }`                                                                                                     | An agent was paused or resumed.                                                                                                                             |
+| `mesh_liveness_changed`            | `agents`      | `{ unreachable, resurrected, changedAt: string }`                                                                           | Agents stopped answering, or came back.                                                                                                                     |
+| `extension_reloaded`               | `extensions`  | `{ type: 'extension_reloaded', extensionIds: string[], timestamp: number }`                                                 | Apps were rebuilt, turned on or approved. Reload what you show of them.                                                                                     |
+| `capabilities_changed`             | `extensions`  | `{ version: number }`                                                                                                       | An app's tools joined or left the list. Read the catalog again.                                                                                             |
+| `commands_changed`                 | `packages`    | `{ changedAt: string }`                                                                                                     | The slash commands changed. Read them again.                                                                                                                |
+| `marketplace_dev_link_reloaded`    | `packages`    | not described yet                                                                                                           | A package linked from a folder for development was rebuilt.                                                                                                 |
+| `config_changed`                   | `settings`    | `{ sections: string[], changedAt: string }`                                                                                 | Settings were written. Section names only, never a value. Sent for every write, except one that only saved where you last were in a space.                  |
+| `keep_awake_status`                | `settings`    | `KeepAwakeStatus`                                                                                                           | Whether this computer is being kept awake changed.                                                                                                          |
+| `tunnel_status`                    | `reach`       | `TunnelStatus`                                                                                                              | Remote access opened, closed, dropped or changed address. A new connection gets the current one in its opening frames. Never sent to an agent.              |
+| `session_relay_presence`           | `reach`       | not described yet                                                                                                           | Whether someone is using this computer from the web changed.                                                                                                |
+| `local_browser_changed`            | `reach`       | `{ changedAt: string }`                                                                                                     | The browser on this computer that agents use was handed over, or its sign-in moved.                                                                         |
+| `community_connections_changed`    | `reach`       | `{ changedAt: string }`                                                                                                     | A space connection was added, connected, needs reconnecting, or was removed. Read `GET /api/community-connections` for your own list.                       |
+| `ext:<extensionId>:<event>`        | `extensions`  | `varies`                                                                                                                    | An event an app sent, named by the app.                                                                                                                     |
+
+{/* END generated: the global event types */}
 
 These chat-list events keep sidebars and dashboards live without polling `GET /api/sessions`.
 
-### Seven events go only to whoever they are about
+### Who may open it
 
-Most events on this stream are written to every connection. Seven are not:
-`interaction_pending`, `approval_pending`, `notification`, `notification_read`,
-`config_changed`, `community_connections_changed` and `tunnel_status`. Each carries something about what your agents are doing, what is waiting on
-you, or what you have set up, so each goes only to a connection that could act on it.
+The stream answers `403 person_only` to:
 
-`interaction_pending` carries what an agent is waiting for: the tool it wants to run, the
-command or path it would run it against, and the chat's working directory.
-`approval_pending` carries the capability being asked for and a sentence describing what would
-happen. The two `notification` events carry the titles and bodies of your inbox.
-`config_changed` says which sections of your settings were just written. It never carries a
-value, because settings hold credentials, but which settings you are editing is still yours.
-`community_connections_changed` says only that a space connection changed. It names no
-space, no connection and no person, because this stream cannot tell which of this machine's
-owners a window belongs to. A window that hears it reads its own list back.
-`tunnel_status` carries this computer's public address when remote access is on, so it goes to
-you and to your API keys, never to an agent, the same as `GET /api/tunnel/status`.
+- a caller presenting an `X-DorkOS-Agent` header or an approval token, whatever the settings;
+- a page on another site, including an app's frame (`Origin: null`). A page served at a name in `DORKOS_TRUSTED_HOSTS` counts as DorkOS's own, over `https` (plain `http` only at 127.0.0.1, ::1 or a private network address (10.x, 172.16 to 172.31, 192.168.x, or an IPv6 address starting fc or fd), not a Tailscale or link-local one);
+- with login on, a caller with an API key who has not signed in through a browser.
 
-`agents_changed` is deliberately NOT filtered. An agent's own roster changing is legitimate news
-for agents as well as people, and that is only safe because the payload is names and ids. It does
-not carry the agent's directory, and it does not carry any of the manifest: whatever else you
-want, you go and ask for.
+With login off, a program with no agent header connects. Over a WebSocket the same refusals
+arrive as a close frame, code `4403`. An agent reads what it needs through its own tools.
 
-In practice that means one thing: **a connection presenting an `X-DorkOS-Agent` header never
-receives it.** The same connection also stops receiving `activity` on a `session_status` frame
-whose `lifecycle` is `blocked`. That field names the tool and the command a chat is parked
-on, which is the same detail by another route. The `lifecycle` itself is still sent, so a
-reader still knows the chat is waiting; it just does not learn what for. And on a chat's
-own stream (`GET /api/sessions/:id/events`) the snapshot's `pendingInteractions` comes back
-empty and the `approval_required` / `question_prompt` / `elicitation_prompt` frames are not
-sent. An agent could never answer a prompt (`POST /api/sessions/:id/approve` refuses
-every one of them), so it no longer sees them either. A connection holding one of your per-user
-API keys still receives them, because it can already read the same detail on that chat's own
-stream. `GET /api/sessions/pending-interactions`, which is what a page reads on load, filters
-the same way, and answers `200` with an empty list rather than an error, so a caller cannot
-tell "you may not see this" from "there is nothing waiting".
+### Some events go only to whoever they are about
 
-`interaction_resolved` is deliberately NOT filtered. It carries a chat ID, an interaction id
-and an outcome, and nothing about what was asked; a client that never received the `pending` has
-nothing to close. `approval_resolved` and `approval_grant_changed` are unfiltered for the same
-reason: one says a card is over, the other says only that the permission list moved.
+Not every event is written to every connection. The room events go only to people in that room,
+and `read_cursor` only to the person whose place moved. Settings, the inbox and remote access
+(`config_changed`, `notification`, `notification_read`, `tunnel_status` and the like) go to you
+and to programs holding your API keys.
 
-`GET /api/notifications` filters the same way the events do, and answers `200` with an empty
-list rather than an error. Marking something read is refused outright instead, because "I have
-seen this" is a claim only a person looking at a screen can make.
+Who may read an event is checked as each frame goes out, never once when you connect. Leave a
+room and its events stop at the next frame, on a live stream and on a replay alike.
+
+`community_connections_changed` says only that a space connection changed. It names no space, no
+connection and no person, because this stream cannot tell which of this machine's owners a window
+belongs to. A window that hears it reads its own list back.
+
+`agents_changed` carries names and ids only. It does not carry the agent's directory or any of its
+manifest: whatever else you want, you go and ask for.
+
+`interaction_resolved` and `approval_resolved` carry a chat or card id and an outcome, and nothing
+about what was asked; a client that never received the `pending` has nothing to close.
+
+`GET /api/notifications` filters the same way the events do. Marking something read is refused
+for a program, because "I have seen this" is a claim only a person looking at a screen can make.
 
 ### What you get when you connect
 
 Right after `connected` (and any events you missed) you receive one `tunnel_status` with remote
-access as it is now, unless the connection presents an agent. You never need a second call to
-learn it.
+access as it is now. You never need a second call to learn it.
 
 Shortly after connecting you also receive one `session_status` event for every chat the server
 currently sees as working, waiting on a person, or stopped with an error. Chats that are idle
@@ -497,6 +526,8 @@ is in its `data:`, so you never need to take the id apart. If
 the connection drops, reconnect with the last one as `Last-Event-ID` (browsers' `EventSource`
 does this for you). The server sends the events you missed, then live ones, and the `connected`
 frame says `resumed: true`. You get the missed events you may read now, when you reconnect.
+The id is only a place in the stream: one copied from someone else's stream sends you only what
+you may read.
 
 The server keeps the last 500 events (up to 512 KiB, so fewer when events are large) for this. If you were gone longer, or the
 server restarted, you get an ordinary fresh connect instead: `connected` without `resumed`, then

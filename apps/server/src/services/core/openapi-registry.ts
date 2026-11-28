@@ -31,7 +31,12 @@ import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
 import { RUNTIME_CREDITS_PROTOCOLS } from '@dorkos/shared/agent-runtime';
 import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-openapi';
 import { env } from '../../env.js';
-import { registerDomainOpenApi } from './openapi/domains.js';
+import {
+  registerDomainOpenApi,
+  registerStreamOpenApi,
+  RoomStreamFrameSchema,
+  SessionStreamFrameSchema,
+} from './openapi/domains.js';
 import { finishDocument } from './openapi/finish-document.js';
 import {
   API_DESCRIPTION,
@@ -129,7 +134,6 @@ import {
   RoomSessionsResponseSchema,
   PostToRoomResponseSchema,
   RoomEntryListResponseSchema,
-  RoomEventSchema,
   ListThreadsQuerySchema,
   RoomListResponseSchema,
   ThreadListResponseSchema,
@@ -145,7 +149,6 @@ import {
   PublishRoomViewResponseSchema,
   OpenCanvasDocumentRequestSchema,
   UpdateCanvasDocumentRequestSchema,
-  RoomSnapshotSchema,
   RoomWithRosterSchema,
   SetAuthorHandleRequestSchema,
   ToggleReactionRequestSchema,
@@ -200,7 +203,6 @@ import {
   SEARCH_MIN_QUERY_LENGTH,
 } from '@dorkos/shared/search-schemas';
 import { DeepHealthResponseSchema } from '@dorkos/shared/health-schemas';
-import { SessionSnapshotSchema, SessionEventSchema } from '@dorkos/shared/session-stream';
 import { registerApprovalsOpenApi } from './approvals/approval-openapi.js';
 import {
   ApproveExtensionRequestSchema,
@@ -265,51 +267,6 @@ import { DisclosedEffectsSchema } from '../marketplace/preview/disclosed-effects
 import { INTERNAL_ERROR_RESPONSE, problemResponse } from './openapi/problem-openapi.js';
 import { documentSpacesGate } from './openapi/spaces-gate-openapi.js';
 import { PROBLEM_CONTENT_TYPE, ProblemSchema } from '@dorkos/shared/problem';
-import {
-  CanvasChannelEventSchema,
-  CanvasChannelFrameSchema,
-  CanvasChannelSnapshotFrameSchema,
-} from '@dorkos/shared/canvas-channel-schemas';
-
-/**
- * Documentation-only mirrors: OpenAPI cannot expand recursive JSON or express
- * the own-property incarnation checks. Reuse every field schema without
- * extending refined objects; production parsing retains the original guards.
- */
-const LocalDocEventFrameSchema = z
-  .object({
-    ...CanvasChannelFrameSchema.shape,
-    event: CanvasChannelEventSchema.extend({
-      payload: z
-        .unknown()
-        .describe(
-          'Finite plain JSON, maximum depth 32; bounded by the document channel envelope limit.'
-        ),
-    }),
-  })
-  .strict();
-const LocalDocSnapshotFrameSchema = z
-  .object({
-    ...CanvasChannelSnapshotFrameSchema.shape,
-    snapshot: z
-      .object({
-        ...CanvasChannelSnapshotFrameSchema.shape.snapshot.shape,
-        state: z
-          .record(z.string(), z.unknown())
-          .describe(
-            'Finite plain JSON state, maximum depth 32 and 256 KiB; separate from document content.'
-          ),
-      })
-      .strict(),
-  })
-  .strict();
-const LocalRoomEventSchema = z.union([
-  ...RoomEventSchema.options.filter(
-    (option) => !['canvas_event', 'canvas_channel_snapshot'].includes(option.shape.type.value)
-  ),
-  LocalDocEventFrameSchema,
-  LocalDocSnapshotFrameSchema,
-]);
 
 /**
  * Simplified documentation mirror of `@dorkos/marketplace`'s
@@ -905,16 +862,7 @@ registry.registerPath({
         'sequence as JSON frames.',
       content: {
         'text/event-stream': {
-          schema: z
-            .union([
-              SessionSnapshotSchema,
-              SessionEventSchema,
-              LocalDocEventFrameSchema,
-              LocalDocSnapshotFrameSchema,
-            ])
-            .openapi({
-              description: 'A SessionSnapshot (cold connect) followed by SessionEvent frames.',
-            }),
+          schema: SessionStreamFrameSchema,
         },
       },
     },
@@ -5978,7 +5926,7 @@ registry.registerPath({
         'SSE stream: a RoomSnapshot frame on a cold connect, then RoomEvent frames. A ' +
         'WebSocket upgrade of the same path answers `101` with the identical sequence.',
       content: {
-        'text/event-stream': { schema: z.union([RoomSnapshotSchema, LocalRoomEventSchema]) },
+        'text/event-stream': { schema: RoomStreamFrameSchema },
       },
     },
     404: roomNotFound,
@@ -6576,6 +6524,7 @@ registerExtensionApprovalSetOpenApi(registry);
 registerExtensionListOpenApi(registry);
 registerExtensionMediaOpenApi(registry);
 registerConfigBackupsOpenApi(registry);
+registerStreamOpenApi(registry);
 
 documentFrontDoorStepUps(registry);
 documentSpacesGate(registry);

@@ -24,7 +24,7 @@
     "src/services/extensions/start-work-eligibility.ts": 1,
     "src/services/extensions/start-work.ts": 2,
     "src/services/heartbeats/accounts/beat-seat.ts": 1,
-    "src/services/heartbeats/beat-launch.ts": 2,
+    "src/services/heartbeats/beat-launch.ts": 1,
     "src/services/heartbeats/beat-turns.ts": 1,
     "src/services/heartbeats/gatherers/open-work-reader.ts": 1,
     "src/services/heartbeats/heartbeats-wiring.ts": 2,

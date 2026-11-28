@@ -1,6 +1,5 @@
 /** Every room event and read cursor is addressed; a new producer must not silently broadcast. */
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import type { DorkOsEventType } from '@dorkos/shared/dorkos-events';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,16 +38,12 @@ const producers = sources(sourceRoot).flatMap((path) => {
     if (
       ts.isCallExpression(node) &&
       ts.isPropertyAccessExpression(node.expression) &&
-      ['broadcast', 'broadcastRedacted'].includes(node.expression.name.text) &&
+      node.expression.name.text === 'broadcast' &&
       node.expression.expression.getText(source) === 'eventFanOut'
     ) {
       const name = node.arguments[0];
       if (name && ts.isStringLiteral(name) && requiresAudience(name.text)) {
-        found.push({
-          name: name.text,
-          path,
-          addressed: node.arguments.length === (node.expression.name.text === 'broadcast' ? 3 : 5),
-        });
+        found.push({ name: name.text, path, addressed: node.arguments.length === 3 });
       }
     }
     ts.forEachChild(node, visit);
@@ -90,47 +85,23 @@ describe('every room_* event and read_cursor', () => {
     );
   });
   for (const name of names) {
-    for (const method of ['broadcast', 'broadcastRedacted'] as const) {
-      it(`${method} ${name}: only addressed members receive either rendering`, () => {
-        for (const producer of producers.filter((p) => p.name === name)) {
-          expect(producer.addressed, producer.path).toBe(true);
-        }
-        const member = stream('member');
-        const outsider = stream('outsider');
-        const publish = (audience?: ReturnType<typeof roomAudience>) => {
-          // Deliberately bypass types to exercise untyped callers at the runtime boundary.
-          if (method === 'broadcast')
-            Reflect.apply(eventFanOut.broadcast, eventFanOut, [name, { roomId: 'room' }, audience]);
-          else
-            Reflect.apply(eventFanOut.broadcastRedacted, eventFanOut, [
-              name,
-              { roomId: 'room', full: true },
-              { roomId: 'room', full: false },
-              () => false,
-              audience,
-            ]);
-        };
-        publish(roomAudience('room', rooms));
-        expect(member).toHaveBeenCalledOnce();
-        expect(outsider).not.toHaveBeenCalled();
-        member.mockClear();
-        publish();
-        expect(member).not.toHaveBeenCalled();
-        expect(outsider).not.toHaveBeenCalled();
-        // The same audience restriction also applies to the full rendering.
-        if (method === 'broadcastRedacted') {
-          eventFanOut.broadcastRedacted(
-            name as DorkOsEventType,
-            {},
-            {},
-            () => true,
-            roomAudience('room', rooms)
-          );
-          expect(member).toHaveBeenCalledOnce();
-          expect(outsider).not.toHaveBeenCalled();
-        }
-      });
-    }
+    it(`broadcast ${name}: only addressed members receive it`, () => {
+      for (const producer of producers.filter((p) => p.name === name)) {
+        expect(producer.addressed, producer.path).toBe(true);
+      }
+      const member = stream('member');
+      const outsider = stream('outsider');
+      const publish = (audience?: ReturnType<typeof roomAudience>) =>
+        // Deliberately bypass types to exercise untyped callers at the runtime boundary.
+        Reflect.apply(eventFanOut.broadcast, eventFanOut, [name, { roomId: 'room' }, audience]);
+      publish(roomAudience('room', rooms));
+      expect(member).toHaveBeenCalledOnce();
+      expect(outsider).not.toHaveBeenCalled();
+      member.mockClear();
+      publish();
+      expect(member).not.toHaveBeenCalled();
+      expect(outsider).not.toHaveBeenCalled();
+    });
   }
   it('includes only the removed member alongside remaining members in a removal notice', () => {
     const member = stream('member');
@@ -227,18 +198,16 @@ it('requires room audiences and union names at compile time in both APIs', () =>
   const signatures = service.members
     .filter(
       (node): node is ts.MethodDeclaration =>
-        ts.isMethodDeclaration(node) &&
-        !node.body &&
-        ['broadcast', 'broadcastRedacted'].includes(node.name.getText(source))
+        ts.isMethodDeclaration(node) && !node.body && node.name.getText(source) === 'broadcast'
     )
     .map((node) => node.getText(source))
     .join('\n');
   const dir = mkdtempSync(join(tmpdir(), 'room-event-types-'));
   try {
     const fixture = join(dir, 'scope.ts');
-    const cases = ['broadcast', 'broadcastRedacted']
+    const cases = ['broadcast']
       .flatMap((method) => {
-        const payload = method === 'broadcast' ? '{}' : '{}, {}, () => true';
+        const payload = '{}';
         return [
           `fan.${method}('session_status', ${payload});`,
           `fan.${method}(nonRoom, ${payload});`,

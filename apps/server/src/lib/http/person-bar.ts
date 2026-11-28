@@ -23,6 +23,15 @@
  *    question from "which page may change what this server runs". The full
  *    reasoning is in `routes/extensions-person-bar.ts`.
  *
+ *    The one addition: a page served at a host the operator listed in
+ *    `DORKOS_TRUSTED_HOSTS`, matched exactly ({@link isTrustedHostOrigin}):
+ *    the same name, never a suffix or a wildcard, over `https`, or over `http`
+ *    only when the host is loopback or a private address. The list is read
+ *    only from the server's own environment, and the names it adds are logged
+ *    once at boot ({@link logPersonBarTrustedHosts}). It widens this bar only:
+ *    an agent, an approval token, `Origin: null` and, with login on, a caller
+ *    without the owner's cookie are refused from a listed host as anywhere.
+ *
  *    A request with no `Origin` (curl, the CLI, the desktop shell) passes: only
  *    browsers send the header, and browsers send it on every POST and DELETE.
  *    The refusal is one fixed sentence ({@link PERSON_BAR_CROSS_SITE}) that
@@ -40,6 +49,7 @@
  *
  * @module lib/http/person-bar
  */
+import { BlockList, isIP } from 'node:net';
 import { problemBody } from '@dorkos/http-kit';
 import { PERSON_BAR_CROSS_SITE, type PersonBarCopy } from '@dorkos/shared/capabilities';
 import type { Problem, ProblemCode } from '@dorkos/shared/problem';
@@ -47,7 +57,8 @@ import type { RequestFacts } from '../../http/request-facts.js';
 import { trustedCaller } from '../../services/core/capabilities/trusted-caller.js';
 import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../caller-authority.js';
 import { logger } from '../logger.js';
-import { resolveTrustedOrigins } from '../trusted-origins.js';
+import { env } from '../../env.js';
+import { isLoopbackHost, parseTrustedHosts, resolveTrustedOrigins } from '../trusted-origins.js';
 
 export { PERSON_BAR_CROSS_SITE, type PersonBarCopy };
 
@@ -66,6 +77,66 @@ function refusal(code: ProblemCode, detail: string): PersonRefusal {
   return { status: body.status, body };
 }
 
+/** Private addresses (RFC 1918, IPv6 ULA) and loopback, where plain `http` may serve a listed host. */
+const PRIVATE_ADDRESSES = new BlockList();
+for (const [address, prefix] of [
+  ['10.0.0.0', 8],
+  ['172.16.0.0', 12],
+  ['192.168.0.0', 16],
+  ['127.0.0.0', 8],
+] as const) {
+  PRIVATE_ADDRESSES.addSubnet(address, prefix, 'ipv4');
+}
+PRIVATE_ADDRESSES.addSubnet('fc00::', 7, 'ipv6');
+PRIVATE_ADDRESSES.addAddress('::1', 'ipv6');
+
+/**
+ * Whether an `Origin` is a page served at a host listed in
+ * `DORKOS_TRUSTED_HOSTS`: the exact name (no suffix, no wildcard), over
+ * `https`, or over `http` only at a loopback or private address.
+ *
+ * @param origin - The request's `Origin`, as sent.
+ * @param trustedHosts - The listed names, from `parseTrustedHosts`.
+ */
+export function isTrustedHostOrigin(origin: string, trustedHosts: readonly string[]): boolean {
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return false;
+  }
+  // An `Origin` is a bare scheme, host and port; anything else is not one.
+  if (url.origin !== origin) return false;
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  if (!trustedHosts.includes(host)) return false;
+  if (url.protocol === 'https:') return true;
+  if (url.protocol !== 'http:') return false;
+  if (isLoopbackHost(host)) return true;
+  const family = isIP(host);
+  return family !== 0 && PRIVATE_ADDRESSES.check(host, family === 4 ? 'ipv4' : 'ipv6');
+}
+
+let trustedHostsLogged = false;
+
+/**
+ * Say once, at boot, which listed hosts the person bar also accepts pages
+ * from: names only.
+ */
+export function logPersonBarTrustedHosts(): void {
+  if (trustedHostsLogged) return;
+  trustedHostsLogged = true;
+  const hosts = parseTrustedHosts(env.DORKOS_TRUSTED_HOSTS);
+  if (hosts.length > 0) {
+    logger.info('[person-bar] also accepts pages from DORKOS_TRUSTED_HOSTS', { hosts });
+  }
+  // A name with a port (`host:4242`, `[::1]:4242`) never equals an Origin's host.
+  for (const host of hosts.filter((entry) => /^(\[[^\]]*\]|[^:]+):\d+$/.test(entry))) {
+    logger.warn(
+      `[person-bar] DORKOS_TRUSTED_HOSTS lists "${host}": host:4242 never matches; list the name only`
+    );
+  }
+}
+
 /**
  * Run the three bars without answering: the verdict, for a caller that
  * writes it itself or carries it elsewhere. An isolated extension's router
@@ -80,7 +151,11 @@ function refusal(code: ProblemCode, detail: string): PersonRefusal {
  */
 export function assessPerson(facts: RequestFacts, copy: PersonBarCopy): PersonRefusal | null {
   const origin = facts.headers.origin;
-  if (origin && !resolveTrustedOrigins().includes(origin)) {
+  if (
+    origin &&
+    !resolveTrustedOrigins().includes(origin) &&
+    !isTrustedHostOrigin(origin, parseTrustedHosts(env.DORKOS_TRUSTED_HOSTS))
+  ) {
     return refusal(copy.code, PERSON_BAR_CROSS_SITE);
   }
 

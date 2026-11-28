@@ -15,14 +15,16 @@
  * one mattered most: every window opens it unconditionally, so it was two of
  * the six sockets a three-window cockpit spent before it stopped responding.
  *
+ * Only a person reads it, as on SSE: `admitEventsReader` runs the person bar
+ * before the socket opens, and an agent is refused with a close frame
+ * (DOR-4986).
+ *
  * @module routes/events-socket
  */
 import type { WebSocket } from 'ws';
-import { upgradeCaller } from '../services/core/streams/stream-upgrade-auth.js';
 import { STREAM_RESUME_PARAM } from '@dorkos/shared/stream-socket';
 import { encodeBroadcast, eventFanOut, type FanOutClient } from '../services/core/event-fan-out.js';
-import { readCallerPrincipal } from '../lib/caller-principal.js';
-import { openGlobalStream } from './global-events-connect.js';
+import { admitEventsReader, openGlobalStream } from './global-events-connect.js';
 import { DurableStreamSocket } from '../services/core/streams/stream-socket.js';
 import type {
   UpgradeAttempt,
@@ -63,7 +65,7 @@ export const globalEventsRoute: UpgradeRoute = {
   // The router runs the credential gate before this is called.
   credential: 'required',
 
-  authorize({ url, headers, locals }: UpgradeAttempt): UpgradeDecision {
+  authorize({ url, facts }: UpgradeAttempt): UpgradeDecision {
     // Refusals go out as a close frame rather than a failed handshake: a
     // browser cannot read the status of a failed one, and "you are signed out"
     // has to be distinguishable from "the server is briefly down".
@@ -74,6 +76,13 @@ export const globalEventsRoute: UpgradeRoute = {
       deliver: 'close-frame',
     });
 
+    // The person bar, the same function the SSE route runs, on the upgrade's
+    // own facts (the identity the router's credential gate resolved). The
+    // close frame carries the bar's fixed sentence.
+    const admission = admitEventsReader(facts);
+    if (!admission.ok) {
+      return refuse(admission.refusal.status, admission.refusal.body.detail ?? 'Forbidden');
+    }
     if (!eventFanOut.hasCapacity()) return refuse(503, 'Service Unavailable');
 
     return {
@@ -84,16 +93,12 @@ export const globalEventsRoute: UpgradeRoute = {
         // Its keepalive is a `heartbeat` envelope like every other frame here.
         const socket = new DurableStreamSocket(ws, () => encodeBroadcast('heartbeat', null).json);
         const client = fanOutClient(ws);
-        // `StreamUpgradeLocals` carries a request's identity fields precisely so
-        // this reads the same principal an HTTP request would, with no second
-        // notion of who a caller is (`stream-upgrade-auth.ts`).
-        const principal = readCallerPrincipal(upgradeCaller(headers, locals));
         // Registration, the preamble, any replay from `?resume=` and the
         // fleet's current lifecycles (DOR-1136), in one tick, so a live
         // transition cannot land ahead of the snapshot it supersedes.
         const unsubscribe = openGlobalStream(
           client,
-          principal,
+          admission.reader,
           url.searchParams.get(STREAM_RESUME_PARAM) ?? undefined
         );
         socket.signal.addEventListener('abort', unsubscribe, { once: true });

@@ -4,13 +4,19 @@ import type {
   ClaudeSigninPolicyChange,
   ClaudeSigninPolicyView,
 } from '@dorkos/shared/runtime-connect';
+import { createTransportApiClient } from './api-client';
 import { fetchJSON } from './http-client';
 
-/** All identity decisions stay on the server, addressed by registry ID. */
+/**
+ * All identity decisions stay on the server, addressed by registry ID. The
+ * sign-in policy goes through the generated API client (DOR-5473).
+ */
 export function createAccountSigninMethods(baseUrl: string) {
+  const api = createTransportApiClient(baseUrl);
   const base = '/runtimes/claude-code/signins';
   return {
-    // Stays hand-written: `POST /api/runtimes/{type}/login` has no operationId (DOR-5473).
+    // Stays hand-written: sends no body when nothing is pinned; waits for batch 3's
+    // no-body client (DOR-5473).
     delegateRuntimeLogin(
       type: string,
       options?: DelegateLoginOptions
@@ -23,30 +29,28 @@ export function createAccountSigninMethods(baseUrl: string) {
         ...(Object.keys(pin).length ? { body: JSON.stringify(pin) } : {}),
       });
     },
-    // Stays hand-written: `GET /api/runtimes/claude-code/signins` has no operationId (DOR-5473).
-    getClaudeSigninPolicy: () => fetchJSON<ClaudeSigninPolicyView>(baseUrl, base),
-    // Stays hand-written: the `/api/runtimes/claude-code/signins/*` writes have no operationId (DOR-5473).
+    getClaudeSigninPolicy: (): Promise<ClaudeSigninPolicyView> =>
+      api.call('runtimes.getClaudeCodeSignins', {}),
     changeClaudeSigninPolicy(input: ClaudeSigninPolicyChange): Promise<{ ok: boolean }> {
       switch (input.action) {
         case 'add-org':
-          return fetchJSON(baseUrl, `${base}/organizations`, {
-            method: 'POST',
-            body: JSON.stringify({ orgId: input.orgId, label: input.label }),
+          return api.call('runtimes.createClaudeCodeSigninsOrganizations', {
+            body: { orgId: input.orgId, label: input.label },
           });
         case 'remove-org':
-          return fetchJSON(baseUrl, `${base}/organizations/${encodeURIComponent(input.orgId)}`, {
-            method: 'DELETE',
+          return api.call('runtimes.deleteClaudeCodeSigninsOrganizations', {
+            path: { id: input.orgId },
           });
         case 'exclude-folder':
-          return fetchJSON(baseUrl, `${base}/folders`, {
-            method: 'POST',
-            body: JSON.stringify({ accountId: input.accountId }),
+          return api.call('runtimes.createClaudeCodeSigninsFolders', {
+            body: { accountId: input.accountId },
           });
         case 'allow-folder':
-          return fetchJSON(baseUrl, `${base}/folders/${encodeURIComponent(input.accountId)}`, {
-            method: 'DELETE',
+          return api.call('runtimes.deleteClaudeCodeSigninsFolders', {
+            path: { id: input.accountId },
           });
         case 'accept':
+          // Stays hand-written: sends no body; waits for batch 3's no-body client (DOR-5473).
           return fetchJSON(baseUrl, `${base}/${encodeURIComponent(input.accountId)}/accept`, {
             method: 'POST',
           });

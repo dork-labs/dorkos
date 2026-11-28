@@ -2922,7 +2922,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "The first frame of every connect. `resumed: true` means it picked up from your cursor."
           },
           {
             "type": "object",
@@ -2951,7 +2952,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "A keepalive, every 15 seconds. Nothing to do."
           },
           {
             "type": "object",
@@ -2998,7 +3000,8 @@
               "at",
               "type",
               "payload"
-            ]
+            ],
+            "description": "A chat was created or its details changed."
           },
           {
             "type": "object",
@@ -3045,7 +3048,8 @@
               "at",
               "type",
               "payload"
-            ]
+            ],
+            "description": "A chat was deleted."
           },
           {
             "type": "object",
@@ -3102,7 +3106,8 @@
               "at",
               "type",
               "payload"
-            ]
+            ],
+            "description": "A chat's status changed: working, waiting, tokens, cost. `retiredSessionId` means the chat got its lasting id, so drop state held under the old one."
           },
           {
             "type": "object",
@@ -3131,7 +3136,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "The whole chat list may be different, for example after a switch of Claude account. Read it again."
           },
           {
             "type": "object",
@@ -3163,7 +3169,8 @@
               "at",
               "type",
               "payload"
-            ]
+            ],
+            "description": "How much of the model account's usage limits is spent changed."
           },
           {
             "type": "object",
@@ -3195,7 +3202,8 @@
               "at",
               "type",
               "payload"
-            ]
+            ],
+            "description": "An agent on this computer stopped and is waiting on a person."
           },
           {
             "type": "object",
@@ -3227,7 +3235,8 @@
               "at",
               "type",
               "payload"
-            ]
+            ],
+            "description": "That prompt is over: answered, cancelled, or timed out. Drop the card."
           },
           {
             "type": "object",
@@ -3256,7 +3265,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "Something needs your permission before it runs."
           },
           {
             "type": "object",
@@ -3285,7 +3295,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "An approval is over: granted, denied, used up, or expired. Drop the card."
           },
           {
             "type": "object",
@@ -3314,7 +3325,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "Something will keep waiting on you until it is dealt with, such as a sign-in to renew."
           },
           {
             "type": "object",
@@ -3343,7 +3355,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "That standing item was dealt with. Drop it."
           },
           {
             "type": "object",
@@ -3372,7 +3385,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "An inbox row appeared, or an existing one changed."
           },
           {
             "type": "object",
@@ -3401,7 +3415,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "Notifications were marked read somewhere."
           },
           {
             "type": "object",
@@ -3430,7 +3445,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "Your place in a chat or room moved, perhaps in another window."
           },
           {
             "type": "object",
@@ -3459,7 +3475,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "A room or direct chat you can read was created."
           },
           {
             "type": "object",
@@ -3488,7 +3505,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "A room's details changed. Read it again."
           },
           {
             "type": "object",
@@ -3517,7 +3535,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "Someone joined a room."
           },
           {
             "type": "object",
@@ -3546,7 +3565,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "Someone left a room."
           },
           {
             "type": "object",
@@ -3575,7 +3595,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "A new message landed in a room."
           },
           {
             "type": "object",
@@ -3604,7 +3625,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "How many agents are working in a room changed."
           },
           {
             "type": "object",
@@ -3633,7 +3655,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "How many of a room's chats are waiting on a person changed."
           },
           {
             "type": "object",
@@ -3662,7 +3685,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "Relay is on, and this stream now carries its messages."
           },
           {
             "type": "object",
@@ -3691,7 +3715,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "A Relay message reached you."
           },
           {
             "type": "object",
@@ -3720,7 +3745,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "A Relay mailbox is filling faster than it empties."
           },
           {
             "type": "object",
@@ -3749,7 +3775,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "A passing Relay signal: typing, presence, a read or delivery receipt, progress."
           },
           {
             "type": "object",
@@ -3778,7 +3805,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "A message travelled between a chat and the agent that answers it."
           },
           {
             "type": "object",
@@ -3807,7 +3835,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "A message could not be delivered and was set aside."
           },
           {
             "type": "object",
@@ -3836,7 +3865,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "Which agent answers which chat changed. Read that list again."
           },
           {
             "type": "object",
@@ -3865,7 +3895,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "A chat connection was added, changed, connected or dropped. Read the list again."
           },
           {
             "type": "object",
@@ -3894,7 +3925,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "A new chat wrote in that no agent answers yet. It names the sender, never the message."
           },
           {
             "type": "object",
@@ -3923,7 +3955,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "Too many unclaimed chats arrived to send one by one; this counts the rest."
           },
           {
             "type": "object",
@@ -3952,7 +3985,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "An agent asked to use a service, or such a request was answered."
           },
           {
             "type": "object",
@@ -3981,7 +4015,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "A schedule was added, changed or removed. Read the list again."
           },
           {
             "type": "object",
@@ -4010,7 +4045,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "A scheduled run failed."
           },
           {
             "type": "object",
@@ -4039,7 +4075,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "A scheduled run finished."
           },
           {
             "type": "object",
@@ -4068,7 +4105,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "A finished run's output grew, from work it left running. Read the run again."
           },
           {
             "type": "object",
@@ -4097,7 +4135,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "An agent was registered, renamed or removed, by any path. Names and ids only: read the agent back for the rest. Sent only when the write changed something."
           },
           {
             "type": "object",
@@ -4126,7 +4165,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "An agent was paused or resumed."
           },
           {
             "type": "object",
@@ -4155,7 +4195,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "Agents stopped answering, or came back."
           },
           {
             "type": "object",
@@ -4184,7 +4225,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "Apps were rebuilt, turned on or approved. Reload what you show of them."
           },
           {
             "type": "object",
@@ -4213,7 +4255,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "An app's tools joined or left the list. Read the catalog again."
           },
           {
             "type": "object",
@@ -4242,7 +4285,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "The slash commands changed. Read them again."
           },
           {
             "type": "object",
@@ -4271,7 +4315,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "A package linked from a folder for development was rebuilt."
           },
           {
             "type": "object",
@@ -4300,7 +4345,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "Settings were written. Section names only, never a value. Sent for every write, except one that only saved where you last were in a space."
           },
           {
             "type": "object",
@@ -4332,7 +4378,8 @@
               "at",
               "type",
               "payload"
-            ]
+            ],
+            "description": "Whether this computer is being kept awake changed."
           },
           {
             "type": "object",
@@ -4364,7 +4411,8 @@
               "at",
               "type",
               "payload"
-            ]
+            ],
+            "description": "Remote access opened, closed, dropped or changed address. A new connection gets the current one in its opening frames. Never sent to an agent."
           },
           {
             "type": "object",
@@ -4393,7 +4441,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "Whether someone is using this computer from the web changed."
           },
           {
             "type": "object",
@@ -4422,7 +4471,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "The browser on this computer that agents use was handed over, or its sign-in moved."
           },
           {
             "type": "object",
@@ -4451,7 +4501,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "A space connection was added, connected, needs reconnecting, or was removed. Read `GET /api/community-connections` for your own list."
           },
           {
             "type": "object",
@@ -4479,7 +4530,8 @@
               "seq",
               "at",
               "type"
-            ]
+            ],
+            "description": "An event an app sent, named by the app."
           }
         ]
       },
@@ -29747,168 +29799,6 @@
         "description": "**Preview.** This operation may change in any release."
       }
     },
-    "/api/hub/computers/{computerId}/sessions/{sessionId}/stream": {
-      "get": {
-        "tags": [
-          "Hub"
-        ],
-        "summary": "Stream a chat on a linked computer",
-        "description": "**Preview.** This operation may change in any release.\n\nServer-Sent Events relayed from the computer's own chat stream: each event keeps its name, JSON data and resume id. Send the last id back as `Last-Event-ID` (or `?resume=`) to continue after it. An `error` event carries the reason when the computer ends the stream with one.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "computerId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "description": "The chat, a lowercase UUID"
-            },
-            "required": true,
-            "description": "The chat, a lowercase UUID",
-            "name": "sessionId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "resume",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The event stream",
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Not a request the relay carries (`invalid_request`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Not the person's own browser sign-in (`person_only`): an agent or an API key never reaches these routes. Or the computer refused it (`forbidden`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not a hub, no such linked computer, or no such chat or agent on it",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "406": {
-            "description": "The request does not accept `text/event-stream` (`not_acceptable`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "The computer could not do that right now (`conflict`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "The request is too large to relay (`request_too_large`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Too many requests to the computer, or at once (`rate_limited`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "501": {
-            "description": "The computer needs an update for this; `feature` names it (`needs_update`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "The computer turned the request away (`computer_refused`), failed it, or sent an answer that could not be read (`upstream_unavailable`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`computer_waking`). Or its connection ended before it answered (`computer_offline`).",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "504": {
-            "description": "The computer did not answer in time (`computer_timed_out`)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "hub.streamComputersSessions",
-        "x-stability": "preview"
-      }
-    },
     "/api/hub/computers/{computerId}/sessions/{sessionId}/messages": {
       "post": {
         "tags": [
@@ -31127,7 +31017,7 @@
           "Events"
         ],
         "summary": "The global event stream (SSE, or WebSocket at the same path)",
-        "description": "**Preview.** This operation may change in any release.\n\nOne stream for the chat list and everything else that changes: rooms, tasks, agents, settings, approvals, Relay, extensions. Each SSE frame's `data:` is one event, `{ seq, at, type, payload }` (described below): `seq` is its place in this stream (it only grows and may skip). `seq` is `null` on a frame outside the numbering (the opening frames, the cold-connect snapshot, the heartbeat): never store it as a position, and never use it to order or drop a frame. `at` is when the server emitted it, `type` the event type and `payload` its data. `event:` repeats the type and, on every event after the opening frames, `id:` is an opaque resume cursor (send it back whole; read `seq` from `data:`, never from the id). Every connect opens with `connected` (with `resumed: true` when it picked up from your cursor), then any missed events, then `tunnel_status` with remote access as it is now (never to an agent), then one `session_status` for each chat that is working, waiting on a person or stopped with an error; those opening frames have no `id:`. The server keeps the last 500 events (at most 512 KiB, so fewer when events are large) for replay, filtered with the rights you have when you reconnect; a replayed event keeps its first `at`. A `heartbeat` event arrives every 15 seconds. The same path answers a WebSocket upgrade, which is what the DorkOS app uses: each message is the same event, `{ seq, at, type, payload }`, with the cursor beside it as `id`, resuming from `?resume=`. An event addressed to a person (settings, the inbox, an ask's detail, remote access) never reaches a reader that presents an agent token.",
+        "description": "**Preview.** This operation may change in any release.\n\nOne stream for the chat list and everything else that changes: rooms, tasks, agents, settings, approvals, Relay, extensions. Each SSE frame's `data:` is one event, `{ seq, at, type, payload }` (described below): `seq` is its place in this stream (it only grows and may skip). `seq` is `null` on a frame outside the numbering (the opening frames, the cold-connect snapshot, the heartbeat): never store it as a position, and never use it to order or drop a frame. `at` is when the server emitted it, `type` the event type and `payload` its data. `event:` repeats the type and, on every event after the opening frames, `id:` is an opaque resume cursor (send it back whole; read `seq` from `data:`, never from the id). Every connect opens with `connected` (with `resumed: true` when it picked up from your cursor), then any missed events, then `tunnel_status` with remote access as it is now, then one `session_status` for each chat that is working, waiting on a person or stopped with an error; those opening frames have no `id:`. The server keeps the last 500 events (at most 512 KiB, so fewer when events are large) for replay, filtered with the rights you have when you reconnect; a replayed event keeps its first `at`. A `heartbeat` event arrives every 15 seconds. The same path answers a WebSocket upgrade, which is what the DorkOS app uses: each message is the same event, `{ seq, at, type, payload }`, with the cursor beside it as `id`, resuming from `?resume=`. Only a person reads it: an agent identity or an approval token, a page on another site and, with login on, an API key without a browser session are refused with `person_only` (a `4403` close frame on the socket). Who may read each event (a room, a read cursor) is checked as each frame is written, live or replayed; a cursor gives no rights of its own.",
         "parameters": [
           {
             "schema": {
@@ -31157,6 +31047,16 @@
               "text/event-stream": {
                 "schema": {
                   "$ref": "#/components/schemas/DorkOsEvent"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`person_only`: an agent, a page on another site, or (with login on) a key without a browser session.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -105479,6 +105379,2321 @@
           }
         },
         "operationId": "config.moveBackups",
+        "x-stability": "preview"
+      }
+    },
+    "/api/hub/computers/{computerId}/sessions/{sessionId}/stream": {
+      "get": {
+        "tags": [
+          "Hub"
+        ],
+        "summary": "Stream a chat on a linked computer",
+        "description": "**Preview.** This operation may change in any release.\n\nServer-Sent Events relayed from the computer's own chat stream: each event keeps its name, JSON data and resume id. Send the last id back as `Last-Event-ID` (or `?resume=`) to continue after it. An `error` event carries the reason when the computer ends the stream with one.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "computerId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The chat, a lowercase UUID"
+            },
+            "required": true,
+            "description": "The chat, a lowercase UUID",
+            "name": "sessionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "resume",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The event stream: each frame's `data:` as the chat's own stream sends it",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionSnapshot"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "text_delta"
+                          ]
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "text"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "thinking_delta"
+                          ]
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "text"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "tool_call"
+                          ]
+                        },
+                        "toolCallId": {
+                          "type": "string"
+                        },
+                        "toolName": {
+                          "type": "string"
+                        },
+                        "input": {
+                          "type": "string"
+                        },
+                        "result": {
+                          "type": "string"
+                        },
+                        "startedAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "endedAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "running",
+                            "complete",
+                            "error"
+                          ]
+                        },
+                        "ui": {
+                          "$ref": "#/components/schemas/McpAppRef"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "toolCallId",
+                        "toolName",
+                        "status"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "model_request"
+                          ]
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "phase": {
+                          "type": "string",
+                          "enum": [
+                            "start",
+                            "first_token",
+                            "end",
+                            "usage"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "endedAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "firstTokenAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "inputTokens": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "outputTokens": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "model": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "phase"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "tool_result"
+                          ]
+                        },
+                        "toolCallId": {
+                          "type": "string"
+                        },
+                        "toolName": {
+                          "type": "string"
+                        },
+                        "input": {
+                          "type": "string"
+                        },
+                        "result": {
+                          "type": "string"
+                        },
+                        "startedAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "endedAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "running",
+                            "complete",
+                            "error"
+                          ]
+                        },
+                        "ui": {
+                          "$ref": "#/components/schemas/McpAppRef"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "toolCallId",
+                        "toolName",
+                        "status"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "tool_progress"
+                          ]
+                        },
+                        "toolCallId": {
+                          "type": "string"
+                        },
+                        "content": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "toolCallId",
+                        "content"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "approval_required"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "number"
+                        },
+                        "remainingMs": {
+                          "type": "number"
+                        },
+                        "timeoutMs": {
+                          "type": "number"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "toolName": {
+                          "type": "string"
+                        },
+                        "input": {
+                          "type": "string"
+                        },
+                        "requestCode": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "type": "string"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "blockedPath": {
+                          "type": "string"
+                        },
+                        "decisionReason": {
+                          "type": "string"
+                        },
+                        "hasSuggestions": {
+                          "type": "boolean"
+                        },
+                        "alwaysAllowScope": {
+                          "$ref": "#/components/schemas/AlwaysAllowScope"
+                        },
+                        "alwaysAllowBreadth": {
+                          "$ref": "#/components/schemas/AlwaysAllowBreadth"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "startedAt",
+                        "remainingMs",
+                        "id",
+                        "toolName",
+                        "input",
+                        "hasSuggestions"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "question_prompt"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "number"
+                        },
+                        "remainingMs": {
+                          "type": "number"
+                        },
+                        "timeoutMs": {
+                          "type": "number"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "questions": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/QuestionItem"
+                          }
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "startedAt",
+                        "remainingMs",
+                        "id",
+                        "questions"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "elicitation_prompt"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "number"
+                        },
+                        "remainingMs": {
+                          "type": "number"
+                        },
+                        "timeoutMs": {
+                          "type": "number"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "serverName": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "mode": {
+                          "$ref": "#/components/schemas/ElicitationMode"
+                        },
+                        "url": {
+                          "type": "string"
+                        },
+                        "elicitationId": {
+                          "type": "string"
+                        },
+                        "requestedSchema": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "startedAt",
+                        "remainingMs",
+                        "id",
+                        "serverName",
+                        "message"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "status_change"
+                          ]
+                        },
+                        "status": {
+                          "type": "object",
+                          "properties": {
+                            "contextUsage": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "totalTokens": {
+                                  "type": "integer"
+                                },
+                                "maxTokens": {
+                                  "type": "integer"
+                                },
+                                "outputTokens": {
+                                  "type": "integer"
+                                },
+                                "cacheReadTokens": {
+                                  "type": "integer"
+                                },
+                                "cacheCreationTokens": {
+                                  "type": "integer"
+                                },
+                                "observedAt": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "cost": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "usage": {
+                              "$ref": "#/components/schemas/UsageStatus"
+                            },
+                            "cacheStats": {
+                              "$ref": "#/components/schemas/SessionCacheStats"
+                            },
+                            "model": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "permissionMode": {
+                              "$ref": "#/components/schemas/PermissionModeId"
+                            },
+                            "todoCounts": {
+                              "$ref": "#/components/schemas/SessionTodoCounts"
+                            },
+                            "runningSubagentCount": {
+                              "type": "integer",
+                              "default": 0
+                            },
+                            "lifecycle": {
+                              "$ref": "#/components/schemas/SessionLifecycle"
+                            },
+                            "lastError": {
+                              "$ref": "#/components/schemas/ErrorEvent"
+                            },
+                            "limit": {
+                              "$ref": "#/components/schemas/SessionLimit"
+                            },
+                            "steerable": {
+                              "type": "boolean"
+                            }
+                          }
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "status"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "todo_update"
+                          ]
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "create",
+                            "update",
+                            "snapshot",
+                            "id_assigned",
+                            "remove"
+                          ]
+                        },
+                        "task": {
+                          "$ref": "#/components/schemas/TaskItem"
+                        },
+                        "tasks": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/TaskItem"
+                          }
+                        },
+                        "previousId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "action",
+                        "task"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "subagent_update"
+                          ]
+                        },
+                        "taskId": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "$ref": "#/components/schemas/BackgroundTaskStatus"
+                        },
+                        "description": {
+                          "type": "string"
+                        },
+                        "toolUses": {
+                          "type": "integer"
+                        },
+                        "lastToolName": {
+                          "type": "string"
+                        },
+                        "summary": {
+                          "type": "string"
+                        },
+                        "ambient": {
+                          "type": "boolean"
+                        },
+                        "taskType": {
+                          "$ref": "#/components/schemas/BackgroundTaskType"
+                        },
+                        "command": {
+                          "type": "string"
+                        },
+                        "startedAt": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "taskId",
+                        "status"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "hook_update"
+                          ]
+                        },
+                        "hookId": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "success",
+                            "error",
+                            "cancelled"
+                          ]
+                        },
+                        "hookName": {
+                          "type": "string"
+                        },
+                        "hookEvent": {
+                          "type": "string"
+                        },
+                        "toolCallId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "stdout": {
+                          "type": "string"
+                        },
+                        "stderr": {
+                          "type": "string"
+                        },
+                        "exitCode": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "hookId",
+                        "status"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "memory_recall"
+                          ]
+                        },
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "select",
+                            "synthesize"
+                          ]
+                        },
+                        "memories": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "scope": {
+                                "type": "string",
+                                "enum": [
+                                  "personal",
+                                  "team"
+                                ]
+                              },
+                              "content": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "scope"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "mode",
+                        "memories"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "image_attachment"
+                          ]
+                        },
+                        "attachmentId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "url": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "mediaType": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "size": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "alt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "attachmentId",
+                        "url",
+                        "mediaType",
+                        "size"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "compact_boundary"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "endedAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "trigger": {
+                          "type": "string",
+                          "enum": [
+                            "manual",
+                            "auto"
+                          ]
+                        },
+                        "preTokens": {
+                          "type": "integer"
+                        },
+                        "postTokens": {
+                          "type": "integer"
+                        },
+                        "durationMs": {
+                          "type": "integer"
+                        },
+                        "requestedBy": {
+                          "type": "string",
+                          "enum": [
+                            "agent"
+                          ]
+                        },
+                        "contextPercent": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 100
+                        },
+                        "requestedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "permission_denied"
+                          ]
+                        },
+                        "toolCallId": {
+                          "type": "string"
+                        },
+                        "toolName": {
+                          "type": "string"
+                        },
+                        "reasonType": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "askKind": {
+                          "type": "string",
+                          "enum": [
+                            "tool",
+                            "question",
+                            "elicitation"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "toolCallId",
+                        "toolName",
+                        "message"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "model_substituted"
+                          ]
+                        },
+                        "from": {
+                          "type": "string"
+                        },
+                        "fromName": {
+                          "type": "string"
+                        },
+                        "to": {
+                          "type": "string"
+                        },
+                        "toName": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "credits-not-covered",
+                            "account-not-available"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "from",
+                        "fromName",
+                        "to",
+                        "toName",
+                        "reason"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "project_addons_off"
+                          ]
+                        },
+                        "plugins": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "tools": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "mcpServers": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "plugins",
+                        "tools",
+                        "mcpServers"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "work_left_running"
+                          ]
+                        },
+                        "tasks": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/WorkLeftTask"
+                          }
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "tasks"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "work_left_ended"
+                          ]
+                        },
+                        "taskId": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "$ref": "#/components/schemas/WorkLeftEndStatus"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "taskId",
+                        "status"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "system_status"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "message"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "operation_progress"
+                          ]
+                        },
+                        "operation": {
+                          "$ref": "#/components/schemas/OperationKind"
+                        },
+                        "state": {
+                          "$ref": "#/components/schemas/OperationState"
+                        },
+                        "determinate": {
+                          "type": "boolean"
+                        },
+                        "percent": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 100
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "error": {
+                          "type": "string"
+                        },
+                        "requestedBy": {
+                          "type": "string",
+                          "enum": [
+                            "agent"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "operation",
+                        "state",
+                        "determinate"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "error"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "category": {
+                          "$ref": "#/components/schemas/ErrorCategory"
+                        },
+                        "details": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "sourceDispatchId": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "message"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "interaction_resolved"
+                          ]
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "resolution": {
+                          "type": "string",
+                          "enum": [
+                            "approved",
+                            "denied",
+                            "answered",
+                            "expired",
+                            "cancelled"
+                          ]
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "approval",
+                            "question",
+                            "elicitation"
+                          ]
+                        },
+                        "at": {
+                          "type": "number"
+                        },
+                        "startedAt": {
+                          "type": "number"
+                        },
+                        "reasonGiven": {
+                          "type": "boolean"
+                        },
+                        "resolvedBy": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "id"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "capability_approval_required"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "number"
+                        },
+                        "capMs": {
+                          "type": "number"
+                        },
+                        "approval": {
+                          "$ref": "#/components/schemas/PendingApproval"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "startedAt",
+                        "capMs",
+                        "approval"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "capability_approval_resolved"
+                          ]
+                        },
+                        "approvalId": {
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": "string",
+                          "enum": [
+                            "granted",
+                            "denied",
+                            "expired",
+                            "timeout"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "approvalId",
+                        "outcome"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "mcp_signin_required"
+                          ]
+                        },
+                        "serverName": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": "string"
+                        },
+                        "flowId": {
+                          "type": "string"
+                        },
+                        "authorizeUrl": {
+                          "type": "string"
+                        },
+                        "disclosure": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "serverName",
+                        "agentId",
+                        "flowId",
+                        "authorizeUrl",
+                        "disclosure"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "mcp_signin_resolved"
+                          ]
+                        },
+                        "flowId": {
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": "string",
+                          "enum": [
+                            "connected",
+                            "failed"
+                          ]
+                        },
+                        "toolCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "flowId",
+                        "outcome"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "turn_start"
+                          ]
+                        },
+                        "userMessage": {
+                          "type": "string"
+                        },
+                        "origin": {
+                          "type": "string",
+                          "enum": [
+                            "user",
+                            "runtime"
+                          ]
+                        },
+                        "chatMessages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ChatMessageStamp"
+                          }
+                        },
+                        "roomMessage": {
+                          "$ref": "#/components/schemas/RoomMessageStamp"
+                        },
+                        "at": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "turn_end"
+                          ]
+                        },
+                        "terminalReason": {
+                          "$ref": "#/components/schemas/TerminalReason"
+                        },
+                        "stopWasRequested": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "turn_input"
+                          ]
+                        },
+                        "content": {
+                          "type": "string"
+                        },
+                        "disposition": {
+                          "type": "string",
+                          "enum": [
+                            "steer"
+                          ]
+                        },
+                        "messageId": {
+                          "type": "string"
+                        },
+                        "chatMessages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ChatMessageStamp"
+                          }
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "content",
+                        "disposition",
+                        "messageId"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "ui_command"
+                          ]
+                        },
+                        "command": {
+                          "$ref": "#/components/schemas/UiCommand"
+                        },
+                        "applied": {
+                          "type": "object",
+                          "properties": {
+                            "documentId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "rev": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "documentId",
+                            "rev"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "command"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "canvas"
+                          ]
+                        },
+                        "documentId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "document": {
+                          "$ref": "#/components/schemas/CanvasDocument"
+                        },
+                        "closed": {
+                          "type": "boolean"
+                        },
+                        "change": {
+                          "type": "string",
+                          "enum": [
+                            "opened",
+                            "updated",
+                            "activated",
+                            "pinned"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "documentId"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "bridgeGeneration": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "devtools_capture_request"
+                          ]
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "targetClientId": {
+                          "type": "string"
+                        },
+                        "documentId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "requestId"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "bridgeGeneration": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "devtools_action_request"
+                          ]
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "targetClientId": {
+                          "type": "string"
+                        },
+                        "documentId": {
+                          "type": "string"
+                        },
+                        "command": {
+                          "$ref": "#/components/schemas/BrowserActCommand"
+                        },
+                        "capture": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "requestId",
+                        "targetClientId",
+                        "documentId",
+                        "command"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "bridgeGeneration": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "devtools_recording_request"
+                          ]
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "targetClientId": {
+                          "type": "string"
+                        },
+                        "documentId": {
+                          "type": "string"
+                        },
+                        "action": {
+                          "type": "string",
+                          "enum": [
+                            "start",
+                            "stop",
+                            "confirm-start",
+                            "cancel-start"
+                          ]
+                        },
+                        "reservationTimeoutMs": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 8000
+                        },
+                        "recordingId": {
+                          "type": "string"
+                        },
+                        "bounds": {
+                          "type": "object",
+                          "properties": {
+                            "longEdgePx": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            },
+                            "frameMs": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            },
+                            "maxBytes": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            }
+                          },
+                          "required": [
+                            "longEdgePx",
+                            "frameMs",
+                            "maxBytes"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "requestId",
+                        "targetClientId",
+                        "documentId",
+                        "action",
+                        "recordingId",
+                        "bounds"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "queue_update"
+                          ]
+                        },
+                        "queue": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/QueuedMessage"
+                          }
+                        },
+                        "outcome": {
+                          "$ref": "#/components/schemas/MessageDeliveryOutcome"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "queue"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "context_staged"
+                          ]
+                        },
+                        "content": {
+                          "type": "string"
+                        },
+                        "messageId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "content",
+                        "messageId"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "chat_activity"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "run_update"
+                          ]
+                        },
+                        "runs": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ChatRun"
+                          }
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "runs"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "canvas_event"
+                          ]
+                        },
+                        "scope": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "documentId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "docSeq": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "incarnation": {
+                          "type": "object",
+                          "properties": {
+                            "v": {
+                              "type": "number",
+                              "enum": [
+                                1
+                              ]
+                            },
+                            "documentId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "physicalOpenedAt": {
+                              "type": "string",
+                              "maxLength": 64,
+                              "format": "date-time"
+                            },
+                            "channelCreatedAt": {
+                              "type": "string",
+                              "maxLength": 64,
+                              "format": "date-time"
+                            },
+                            "generation": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$/u"
+                            }
+                          },
+                          "required": [
+                            "v",
+                            "documentId",
+                            "physicalOpenedAt",
+                            "channelCreatedAt",
+                            "generation"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "event": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu"
+                            },
+                            "type": {
+                              "type": "string",
+                              "maxLength": 128,
+                              "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*$/u"
+                            },
+                            "payload": {
+                              "description": "Finite plain JSON, maximum depth 32; bounded by the document channel envelope limit."
+                            },
+                            "direction": {
+                              "type": "string",
+                              "enum": [
+                                "upstream",
+                                "downstream",
+                                "system"
+                              ]
+                            },
+                            "receivedAt": {
+                              "type": "string",
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "type",
+                            "direction",
+                            "receivedAt"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "scope",
+                        "documentId",
+                        "docSeq",
+                        "event"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "canvas_channel_snapshot"
+                          ]
+                        },
+                        "scope": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "documentId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "snapshot": {
+                          "type": "object",
+                          "properties": {
+                            "routing": {
+                              "type": "object",
+                              "properties": {
+                                "enabled": {
+                                  "type": "boolean"
+                                },
+                                "approvedEventTypes": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "maxLength": 128,
+                                    "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:\\.\\*)?$/u"
+                                  },
+                                  "maxItems": 2048
+                                },
+                                "destinationLabel": {
+                                  "type": "string",
+                                  "maxLength": 500
+                                }
+                              },
+                              "required": [
+                                "enabled",
+                                "approvedEventTypes",
+                                "destinationLabel"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "incarnation": {
+                              "type": "object",
+                              "properties": {
+                                "v": {
+                                  "type": "number",
+                                  "enum": [
+                                    1
+                                  ]
+                                },
+                                "documentId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "physicalOpenedAt": {
+                                  "type": "string",
+                                  "maxLength": 64,
+                                  "format": "date-time"
+                                },
+                                "channelCreatedAt": {
+                                  "type": "string",
+                                  "maxLength": 64,
+                                  "format": "date-time"
+                                },
+                                "generation": {
+                                  "type": "string",
+                                  "pattern": "^[a-f0-9]{64}$/u"
+                                }
+                              },
+                              "required": [
+                                "v",
+                                "documentId",
+                                "physicalOpenedAt",
+                                "channelCreatedAt",
+                                "generation"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "state": {
+                              "type": "object",
+                              "additionalProperties": {},
+                              "description": "Finite plain JSON state, maximum depth 32 and 256 KiB; separate from document content."
+                            },
+                            "stateRev": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "highWatermark": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "retentionFloor": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "receiptRetentionFloor": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "resetRequired": {
+                              "type": "boolean"
+                            },
+                            "health": {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "ready",
+                                    "warning",
+                                    "closed",
+                                    "in_doubt"
+                                  ]
+                                },
+                                "reasons": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 1000
+                                  },
+                                  "maxItems": 128
+                                }
+                              },
+                              "required": [
+                                "status",
+                                "reasons"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "receipts": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "receipt": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu"
+                                      },
+                                      "status": {
+                                        "type": "string",
+                                        "enum": [
+                                          "recorded",
+                                          "duplicate"
+                                        ]
+                                      },
+                                      "docSeq": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 9007199254740991
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "status",
+                                      "docSeq"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "deliveries": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "eventId": {
+                                          "type": "string",
+                                          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu"
+                                        },
+                                        "routeId": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 200
+                                        },
+                                        "batchId": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ],
+                                          "minLength": 1,
+                                          "maxLength": 200
+                                        },
+                                        "status": {
+                                          "type": "string",
+                                          "enum": [
+                                            "saved",
+                                            "pending",
+                                            "routed",
+                                            "waiting",
+                                            "accepted",
+                                            "turn_started",
+                                            "turn_done",
+                                            "failed",
+                                            "in_doubt",
+                                            "expired",
+                                            "superseded",
+                                            "cancelled",
+                                            "handled",
+                                            "rejected",
+                                            "unavailable"
+                                          ]
+                                        },
+                                        "turnId": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ],
+                                          "minLength": 1,
+                                          "maxLength": 200
+                                        },
+                                        "reason": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ],
+                                          "maxLength": 1000
+                                        },
+                                        "nextEligibleAt": {
+                                          "type": "string",
+                                          "format": "date-time"
+                                        },
+                                        "updatedAt": {
+                                          "type": "string",
+                                          "format": "date-time"
+                                        },
+                                        "ackOutcome": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ],
+                                          "enum": [
+                                            "handled",
+                                            "rejected",
+                                            null
+                                          ]
+                                        },
+                                        "acknowledgedAt": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ],
+                                          "format": "date-time"
+                                        }
+                                      },
+                                      "required": [
+                                        "eventId",
+                                        "routeId",
+                                        "batchId",
+                                        "status",
+                                        "turnId",
+                                        "reason",
+                                        "updatedAt"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "maxItems": 16
+                                  },
+                                  "payloadAvailable": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "receipt",
+                                  "deliveries"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "maxItems": 200
+                            }
+                          },
+                          "required": [
+                            "state",
+                            "stateRev",
+                            "highWatermark",
+                            "retentionFloor",
+                            "receiptRetentionFloor",
+                            "resetRequired",
+                            "health",
+                            "receipts"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "scope",
+                        "documentId",
+                        "snapshot"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "description": "Why the computer ended the stream."
+                        },
+                        "message": {
+                          "type": "string",
+                          "description": "The same, in words."
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "description": "The `error` event: the computer ended the stream, and why."
+                    }
+                  ],
+                  "description": "The linked computer's chat frames, as that chat's own stream sends them, or an `error` event."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a request the relay carries (`invalid_request`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the person's own browser sign-in (`person_only`): an agent or an API key never reaches these routes. Or the computer refused it (`forbidden`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a hub, no such linked computer, or no such chat or agent on it",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "406": {
+            "description": "The request does not accept `text/event-stream` (`not_acceptable`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The computer could not do that right now (`conflict`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request is too large to relay (`request_too_large`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests to the computer, or at once (`rate_limited`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "The computer needs an update for this; `feature` names it (`needs_update`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The computer turned the request away (`computer_refused`), failed it, or sent an answer that could not be read (`upstream_unavailable`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The computer is not connected. It is being woken; try again after `Retry-After` seconds (`computer_waking`). Or its connection ended before it answered (`computer_offline`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "The computer did not answer in time (`computer_timed_out`)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "hub.streamComputersSessions",
         "x-stability": "preview"
       }
     },

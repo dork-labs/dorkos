@@ -1,11 +1,14 @@
-/** HTTP transport for a private chat source and its acknowledged draft. */
+/**
+ * HTTP transport for a private chat source and its acknowledged draft, through
+ * the generated API client (DOR-5473).
+ */
 import type {
   SessionAllocationReceipt,
   SessionAllocationSource,
   Transport,
 } from '@dorkos/shared/transport';
 import { z } from 'zod';
-import { fetchJSON } from './http-client';
+import { createTransportApiClient } from './api-client';
 
 const allocationReceipt = z.object({ sessionId: z.uuid(), launchRef: z.uuid().optional() });
 
@@ -13,34 +16,27 @@ const allocationReceipt = z.object({ sessionId: z.uuid(), launchRef: z.uuid().op
 export function createSessionLocationMethods(
   baseUrl: string
 ): Pick<Transport, 'allocateSession' | 'createSessionLocation' | 'getSessionLocation'> {
+  const api = createTransportApiClient(baseUrl);
   return {
-    // Stays hand-written: `POST /api/session-locations` has no operationId (DOR-5473).
     createSessionLocation(cwd: string): Promise<{ id: string }> {
-      return fetchJSON(baseUrl, '/session-locations', {
-        method: 'POST',
-        body: JSON.stringify({ cwd }),
-      });
+      return api.call('sessionLocations.create', { body: { cwd } });
     },
 
-    // Stays hand-written: the `/api/session-locations/.../chats` paths have no
-    // operationId (DOR-5473).
     async allocateSession(source: SessionAllocationSource): Promise<SessionAllocationReceipt> {
-      const savedFolder = source.kind === 'location';
-      const path = savedFolder
-        ? `/session-locations/${encodeURIComponent(source.launchRef)}/chats`
-        : '/session-locations/chats';
-      const result = await fetchJSON<unknown>(baseUrl, path, {
-        method: 'POST',
-        body: JSON.stringify(
-          savedFolder ? {} : { kind: 'registered-agent', agentId: source.agentId }
-        ),
-      });
+      const result =
+        source.kind === 'location'
+          ? await api.call('sessionLocations.createChats', {
+              path: { id: source.launchRef },
+              body: {},
+            })
+          : await api.call('sessionLocations.createAgentChat', {
+              body: { kind: 'registered-agent', agentId: source.agentId },
+            });
       return allocationReceipt.parse(result);
     },
 
-    // Stays hand-written: `GET /api/session-locations/{id}` has no operationId (DOR-5473).
     getSessionLocation(id: string): Promise<{ cwd: string }> {
-      return fetchJSON(baseUrl, `/session-locations/${encodeURIComponent(id)}`);
+      return api.call('sessionLocations.get', { path: { id } });
     },
   };
 }

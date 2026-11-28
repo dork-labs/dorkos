@@ -3,12 +3,12 @@
  * real fan-out, wired by the production `createRoomSubsystem` (DOR-3269).
  *
  * Every cursor belongs to one person and goes only to that person's screens. A
- * room cursor also needs that person to still be in the room. No agent stream
- * hears one, including an agent seated in the room.
+ * room cursor also needs that person to still be in the room. Only people read
+ * the stream at all (DOR-4986).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
-import type { CallerPrincipal } from '../../../lib/caller-principal.js';
+import type { PersonPrincipal } from '../../../lib/caller-principal.js';
 import { logger } from '../../../lib/logger.js';
 import { eventFanOut, type FanOutClient } from '../event-fan-out.js';
 import { ReadCursorService } from '../read-cursor-service.js';
@@ -19,7 +19,7 @@ const disconnect: (() => void)[] = [];
 let rooms: ReturnType<typeof createRoomSubsystem>;
 
 /** Connect a recording stream as `principal`; the `read_cursor` payloads it was sent. */
-function stream(principal: CallerPrincipal): unknown[] {
+function stream(principal: PersonPrincipal): unknown[] {
   const cursors: unknown[] = [];
   const client: FanOutClient = {
     send: (frame) => {
@@ -57,9 +57,6 @@ describe('read_cursor audience', () => {
     const memberSecond = stream({ kind: 'program', userId: 'account-member' });
     const ownerStream = stream({ kind: 'operator' });
     const outsiderStream = stream({ kind: 'program', userId: 'account-outsider' });
-    const agentStream = stream({ kind: 'agent' });
-    const bridgedStream = stream({ kind: 'bridged', platform: 'telegram', platformUserId: 'x' });
-    const relayedStream = stream({ kind: 'relayed' });
 
     rooms.readCursors.advance(member.id, 'room', room.id, 7, { unreadCount: () => 3 });
 
@@ -73,7 +70,7 @@ describe('read_cursor audience', () => {
     expect(memberFirst).toEqual([frame]);
     expect(memberSecond).toEqual([frame]);
     // The owner is in the room too, but it is not the owner's cursor.
-    for (const left of [ownerStream, outsiderStream, agentStream, bridgedStream, relayedStream]) {
+    for (const left of [ownerStream, outsiderStream]) {
       expect(left).toEqual([]);
     }
   });
@@ -109,7 +106,6 @@ describe('read_cursor audience', () => {
       const second = stream({ kind: 'program', userId: 'account-member' });
       const otherPerson = stream({ kind: 'program', userId: 'account-other' });
       const operator = stream({ kind: 'operator' });
-      const agent = stream({ kind: 'agent' });
 
       rooms.readCursors.advance(person.id, kind, 'fixture-thread', 4);
 
@@ -117,20 +113,18 @@ describe('read_cursor audience', () => {
         { userId: person.id, threadKind: kind, threadId: 'fixture-thread', lastReadSeq: 4 },
       ]);
       expect(second).toEqual(first);
-      for (const left of [otherPerson, operator, agent]) expect(left).toEqual([]);
+      for (const left of [otherPerson, operator]) expect(left).toEqual([]);
     }
   );
 
   it('sends the operator’s own session cursor to the operator’s screen only', () => {
     const operator = stream({ kind: 'operator' });
     const other = stream({ kind: 'program', userId: 'account-other' });
-    const agent = stream({ kind: 'agent' });
 
     rooms.readCursors.advance(rooms.authors.localHuman().id, 'session', 'fixture-session', 1);
 
     expect(operator).toHaveLength(1);
     expect(other).toEqual([]);
-    expect(agent).toEqual([]);
   });
 
   it('sends nothing, and says so in the log, when the audience cannot be worked out', () => {

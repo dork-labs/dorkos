@@ -142,14 +142,15 @@ describe('GET /api/events (unified SSE stream)', () => {
     expect(vi.mocked(eventFanOut.addClient).mock.calls[0]?.[1]).toEqual({ kind: 'operator' });
   });
 
-  it('registers a caller presenting an agent header as an agent', async () => {
-    // The wiring, not the policy: a route that resolved the principal and then
-    // registered a different one would leak every Ask to this connection while
-    // the policy suite stayed green. An unresolvable token is used on purpose —
-    // a revoked agent is still a machine.
-    await collectConnectedEvent({ 'x-dorkos-agent': 'tok_revoked' });
+  it('refuses a caller presenting an agent header, before registering anything', async () => {
+    // An unresolvable token on purpose: a revoked agent is still a machine.
+    const res = await fetch(`${baseUrl}/api/events`, {
+      headers: { 'x-dorkos-agent': 'tok_revoked' },
+    });
 
-    expect(vi.mocked(eventFanOut.addClient).mock.calls[0]?.[1]).toEqual({ kind: 'agent' });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ code: 'person_only' });
+    expect(eventFanOut.addClient).not.toHaveBeenCalled();
   });
 
   it('unregisters from the fan-out when the client leaves', async () => {
