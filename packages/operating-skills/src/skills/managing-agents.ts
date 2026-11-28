@@ -21,7 +21,7 @@ including yourself.
 
 Never guess the roster. Read it:
 
-- Tool: \`mesh_list\`.
+- Tool: \`mesh_list\`; it pages, so pass \`nextCursor\` back as \`cursor\` until it is null.
 - CLI: \`dorkos agent list --json\`, or \`dorkos agent show <path-or-id> --json\` for one.
 
 \`mesh_*\` tools are registered straight onto the MCP server, so they do NOT appear

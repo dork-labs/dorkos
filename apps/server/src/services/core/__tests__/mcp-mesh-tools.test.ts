@@ -42,6 +42,10 @@ import {
 } from '../../../lib/boundary.js';
 import { setOnAgentCreated } from '../agent-created-hook.js';
 
+/** Registration times for listed agents: the roster pages newest first by them. */
+const AT = '2026-11-02T00:00:00.000Z';
+const EARLIER = '2026-11-01T00:00:00.000Z';
+
 function createMockDeps(meshEnabled = true): AgentToolDeps {
   const mockMeshCore = {
     discover: vi.fn(),
@@ -306,8 +310,8 @@ describe('Mesh MCP Tools', () => {
       const deps = createMockDeps(true);
       const meshCore = meshOf(deps);
       meshCore.list.mockReturnValue([
-        { id: 'a1', name: 'alpha' },
-        { id: 'b2', name: 'beta' },
+        { id: 'a1', name: 'alpha', registeredAt: AT },
+        { id: 'b2', name: 'beta', registeredAt: EARLIER },
       ]);
 
       const handler = createMeshListHandler(deps);
@@ -315,8 +319,14 @@ describe('Mesh MCP Tools', () => {
       const data = JSON.parse(result.content[0].text);
 
       expect(data.agents).toEqual([
-        { id: 'a1', name: 'alpha', ref: null, relaySubject: 'relay.agent.ns.a1' },
-        { id: 'b2', name: 'beta', ref: null, relaySubject: 'relay.agent.ns.b2' },
+        { id: 'a1', name: 'alpha', registeredAt: AT, ref: null, relaySubject: 'relay.agent.ns.a1' },
+        {
+          id: 'b2',
+          name: 'beta',
+          registeredAt: EARLIER,
+          ref: null,
+          relaySubject: 'relay.agent.ns.b2',
+        },
       ]);
       // Never rebuilt from the manifest: only the un-stripped registry lookup
       // knows the namespace the endpoint and its rules were registered under.
@@ -344,8 +354,8 @@ describe('Mesh MCP Tools', () => {
       const deps = createMockDeps(true);
       const meshCore = meshOf(deps);
       meshCore.list.mockReturnValue([
-        { id, name: 'lantern' },
-        { id: 'a1', name: 'alpha' },
+        { id, name: 'lantern', registeredAt: AT },
+        { id: 'a1', name: 'alpha', registeredAt: EARLIER },
       ]);
       const listed = JSON.parse((await createMeshListHandler(deps)({})).content[0].text);
       expect(listed.agents.map((agent: { ref: string | null }) => agent.ref)).toEqual([
@@ -408,7 +418,7 @@ describe('mesh_list and mesh_inspect name an agent installed from a package', ()
     try {
       const deps = createMockDeps();
       const mesh = meshOf(deps);
-      mesh.list!.mockReturnValue([{ id: 'a1', name: 'garden-helper' }]);
+      mesh.list!.mockReturnValue([{ id: 'a1', name: 'garden-helper', registeredAt: AT }]);
       mesh.getProjectPath!.mockReturnValue(home);
       mesh.inspect!.mockReturnValue({ agent: { id: 'a1', name: 'garden-helper' }, health: {} });
       const list = JSON.parse((await createMeshListHandler(deps)({})).content[0].text);
@@ -428,5 +438,48 @@ describe('mesh_list and mesh_inspect name an agent installed from a package', ()
   it("says nothing for one from the person's own marketplace, or one made here", async () => {
     expect(await listed('personal')).toEqual({ list: undefined, inspect: undefined });
     expect(await listed(null)).toEqual({ list: undefined, inspect: undefined });
+  });
+});
+
+describe('mesh_list, a page at a time like GET /api/mesh/agents (DOR-5480)', () => {
+  // Purpose: an agent that reads only the first page thinks the roster ends
+  // there, so the tool pages by the route's rule: newest registered first, the
+  // filters and the reader bound into the cursor.
+  const at = (day: number) => `2026-11-0${day}T00:00:00.000Z`;
+  const ROSTER = [
+    { id: 'agent-a', name: 'a', registeredAt: at(1) },
+    { id: 'agent-b', name: 'b', registeredAt: at(3) },
+    { id: 'agent-c', name: 'c', registeredAt: at(2) },
+  ];
+  const agentReader = () => ({ identity: { agentPath: '/agents/scout' } });
+
+  async function page(deps: AgentToolDeps, args: Record<string, unknown>, reader = agentReader) {
+    const result = await createMeshListHandler(deps, reader)(args);
+    return { isError: result.isError, data: JSON.parse(result.content[0].text) };
+  }
+
+  it('reads every agent once, newest registered first, by following nextCursor', async () => {
+    const deps = createMockDeps();
+    meshOf(deps).list.mockReturnValue(ROSTER);
+    const ids: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const { data } = await page(deps, { limit: 1, ...(cursor ? { cursor } : {}) });
+      ids.push(...data.agents.map((agent: { id: string }) => agent.id));
+      cursor = data.nextCursor;
+    } while (cursor);
+    expect(ids).toEqual(['agent-b', 'agent-c', 'agent-a']);
+  });
+
+  it('refuses a cursor given under other filters or to another reader, never as page one', async () => {
+    const deps = createMockDeps();
+    meshOf(deps).list.mockReturnValue(ROSTER);
+    const { data: first } = await page(deps, { limit: 1 });
+    const otherFilter = await page(deps, { limit: 1, cursor: first.nextCursor, capability: 'x' });
+    const otherReader = await page(deps, { limit: 1, cursor: first.nextCursor }, () => ({}));
+    for (const refused of [otherFilter, otherReader]) {
+      expect(refused.isError).toBe(true);
+      expect(refused.data).toMatchObject({ code: 'INVALID_CURSOR' });
+    }
   });
 });

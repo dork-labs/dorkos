@@ -140,7 +140,7 @@ when no server is reachable, the request fails, or a call is waiting on an appro
 ## Where live facts come from
 
 Skills teach procedure. They do NOT hold live state. Never guess the current
-agents, tasks, versions, or settings. Read them: \`mesh_list\` or
+agents, tasks, versions, or settings. Read them: \`mesh_list\` (every page) or
 \`dorkos agent list --json\`; \`dorkos task list|runs --json\`; \`config_get\` for
 settings; \`activity_list\` or \`dorkos activity --json\`; \`check_update\` or
 \`dorkos version --check\`, whose latest-version field reads as unknown in dev

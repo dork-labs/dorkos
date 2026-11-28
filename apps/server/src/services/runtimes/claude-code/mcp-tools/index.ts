@@ -294,7 +294,8 @@ export function handRegisteredInSessionToolSet(
     ...getAdapterTools(deps),
     ...getBindingTools(deps),
     ...getTraceTools(deps),
-    ...getMeshTools(deps),
+    // The roster's cursor is sealed to the agent this session speaks for (DOR-5480).
+    ...getMeshTools(deps, () => (identityPath ? { identity: { agentPath: identityPath } } : {})),
     ...getAgentTools(deps),
     // The same provenance the task tools read: present in a session, so a
     // Trusted install approves an extension an agent at Full creates (ADR 261006-225605,

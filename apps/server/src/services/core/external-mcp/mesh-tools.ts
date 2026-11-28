@@ -9,6 +9,7 @@
  * @module services/core/external-mcp/mesh-tools
  */
 import { z } from 'zod';
+import { nextCursorOutput } from '@dorkos/shared/paging';
 import {
   MeshStatusSchema,
   MeshInspectSchema,
@@ -16,6 +17,7 @@ import {
   AgentManifestSchema,
 } from '@dorkos/shared/mesh-schemas';
 import type { ToolRegistrar } from '../mcp-tool-gate.js';
+import type { PageCaller } from '../../../lib/paging/caller-reader-key.js';
 import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import { meshToolDefinitions } from '../../runtimes/claude-code/mcp-tools/mesh-tools.js';
 import { ToolAnnotationPresets } from '../mcp-tool-metadata.js';
@@ -50,7 +52,7 @@ const meshListOutputSchema = {
         .describe('Canonical relay endpoint, e.g. relay.agent.{namespace}.{agentId}'),
     })
   ),
-  count: z.number(),
+  nextCursor: nextCursorOutput,
 };
 
 /** `outputSchema` for `mesh_inspect`: the inspection, its agent with its reference. */
@@ -81,7 +83,13 @@ const MESH_EXTERNAL_CONFIGS: ExternalToolConfigs = {
  * @param registrar - The gated tool registrar from `mcp-server.ts`, which runs each
  *   tool's permission tier before its handler.
  * @param deps - Shared MCP tool dependencies.
+ * @param caller - Who this request is from, for `mesh_list`'s cursor seal (DOR-5480).
  */
-export function registerMeshTools(registrar: ToolRegistrar, deps: AgentToolDeps): void {
-  registerFromDefinitions(registrar, meshToolDefinitions(deps), MESH_EXTERNAL_CONFIGS);
+export function registerMeshTools(
+  registrar: ToolRegistrar,
+  deps: AgentToolDeps,
+  caller: PageCaller = {}
+): void {
+  const definitions = meshToolDefinitions(deps, () => caller);
+  registerFromDefinitions(registrar, definitions, MESH_EXTERNAL_CONFIGS);
 }

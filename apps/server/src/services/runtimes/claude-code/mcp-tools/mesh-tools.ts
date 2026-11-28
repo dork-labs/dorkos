@@ -4,6 +4,18 @@ import { dorkReferenceOrNull } from '@dorkos/shared/dork-ref';
 import { readManifest } from '@dorkos/shared/manifest';
 import { AgentRuntimeSchema } from '@dorkos/shared/mesh-schemas';
 import {
+  INVALID_CURSOR_DETAIL,
+  PAGE_LIMIT_DEFAULT,
+  PAGE_LIMIT_MAX,
+  pageCursorInput,
+} from '@dorkos/shared/paging';
+import {
+  agentRosterPage,
+  assertAgentRosterCursor,
+} from '../../../../lib/paging/agent-roster-page.js';
+import { callerReaderKey, type PageCaller } from '../../../../lib/paging/caller-reader-key.js';
+import type { KeysetPage } from '../../../../lib/paging/keyset-page.js';
+import {
   validateBoundary,
   validateBoundaryOrDorkHome,
   BoundaryError,
@@ -227,8 +239,15 @@ export function createMeshRegisterHandler(deps: AgentToolDeps) {
   };
 }
 
+/** The refusal for a cursor `mesh_list` did not give, answered as an error result. */
+class RosterCursorRefused extends Error {}
+
 /**
- * List registered agents with optional filters.
+ * List registered agents with optional filters, a page at a time (DOR-5480):
+ * newest registered first, by the same rule as `GET /api/mesh/agents`
+ * (`lib/paging/agent-roster-page.ts`), the filters bound into the cursor and the
+ * cursor sealed to the reader, so `{ agents, nextCursor }` reads the same on
+ * both doors.
  *
  * Each entry's `id` is what `chat_send` takes as its `to`: that is how one
  * agent messages another. The manifest itself is unchanged — `namespace` stays
@@ -243,38 +262,45 @@ export function createMeshRegisterHandler(deps: AgentToolDeps) {
  * a row that raced with an unregister has no address, and an invented one would
  * be worse than none.
  *
- * COST: one `AgentRegistry.get` per listed agent, on top of the list query.
- * Deliberately not folded into a single pass. A `listWithRelaySubjects` on
- * `MeshCore` could do it for the plain path, but the namespace-scoped path goes
- * through `TopologyManager` and gets back manifests with no registry entry
- * attached, so it would need the per-id lookup anyway — leaving a second public
- * list API, with its own filter semantics to keep in step, for one caller. The
- * read is an indexed lookup against a table holding one row per agent on this
- * machine, and this tool is not on any hot path; revisit if a mesh ever gets
- * large enough for that to stop being true.
+ * COST: one `AgentRegistry.get` per agent on the page, on top of the list
+ * query. The namespace-scoped path goes through `TopologyManager` and gets back
+ * manifests with no registry entry attached, so it needs the per-id lookup
+ * anyway; the read is an indexed lookup, and only the page's rows pay it.
+ *
+ * @param deps - Shared MCP tool dependencies.
+ * @param reader - Who is asking, for the cursor's seal; the person when absent.
  */
-export function createMeshListHandler(deps: AgentToolDeps) {
-  return async (args: { runtime?: string; capability?: string; callerNamespace?: string }) => {
+export function createMeshListHandler(deps: AgentToolDeps, reader: () => PageCaller = () => ({})) {
+  return async (args: {
+    runtime?: string;
+    capability?: string;
+    callerNamespace?: string;
+    cursor?: string;
+    limit?: number;
+  }) => {
     const err = requireMesh(deps);
     if (err) return err;
-    const hasFilters = args.runtime || args.capability || args.callerNamespace;
+    const { cursor, limit = PAGE_LIMIT_DEFAULT, ...filters } = args;
     const mesh = deps.meshCore!;
-    const agents = mesh
-      .list(
-        hasFilters
-          ? {
-              runtime: args.runtime as 'claude-code' | 'cursor' | 'codex' | 'other' | undefined,
-              capability: args.capability,
-              callerNamespace: args.callerNamespace,
-            }
-          : undefined
-      )
-      .map((agent) => {
+    const sealedFor = callerReaderKey(reader());
+    const refuse = () => new RosterCursorRefused();
+    let page: KeysetPage<ReturnType<typeof mesh.list>[number]>;
+    try {
+      assertAgentRosterCursor(filters, cursor, refuse, sealedFor);
+      const hasFilters = filters.runtime || filters.capability || filters.callerNamespace;
+      const rows = mesh.list(hasFilters ? (filters as Parameters<typeof mesh.list>[0]) : undefined);
+      page = agentRosterPage(rows, filters, { cursor, limit }, refuse, sealedFor);
+    } catch (e) {
+      if (!(e instanceof RosterCursorRefused)) throw e;
+      return jsonContent({ error: INVALID_CURSOR_DETAIL, code: 'INVALID_CURSOR' }, true);
+    }
+    const agents = await Promise.all(
+      page.items.map((agent) => {
         const relaySubject = mesh.getSubject(agent.id);
-        return { ...agent, ...(relaySubject ? { relaySubject } : {}) };
-      });
-    const listed = await Promise.all(agents.map((agent) => asListedAgent(mesh, agent)));
-    return structuredJsonContent({ agents: listed, count: listed.length });
+        return asListedAgent(mesh, { ...agent, ...(relaySubject ? { relaySubject } : {}) });
+      })
+    );
+    return structuredJsonContent({ agents, nextCursor: page.nextCursor });
   };
 }
 
@@ -374,8 +400,10 @@ export function createMeshQueryTopologyHandler(deps: AgentToolDeps) {
  * every tool regardless of feature flags.
  *
  * @param deps - Shared MCP tool dependencies.
+ * @param reader - Who is asking, for `mesh_list`'s cursor seal: fixed when this tool set is
+ *   built (once per session in session, once per request on `/mcp`); the person when absent.
  */
-export function meshToolDefinitions(deps: AgentToolDeps) {
+export function meshToolDefinitions(deps: AgentToolDeps, reader?: () => PageCaller) {
   return [
     tool(
       'mesh_discover',
@@ -437,14 +465,26 @@ export function meshToolDefinitions(deps: AgentToolDeps) {
     ),
     tool(
       'mesh_list',
-      'List all registered agents with optional filters. To message an agent, pass its id ' +
-        'as "to" to the chat send tool. The relaySubject field is only for message-bus and A2A integrations.',
+      'List registered agents with optional filters, newest registered first, a page at a ' +
+        'time: pass nextCursor back as cursor until it is null, or you see only the first ' +
+        'page. To message an agent, pass its id as "to" to the chat send tool. The ' +
+        'relaySubject field is only for message-bus and A2A integrations.',
       {
         runtime: z.string().optional().describe('Filter by runtime'),
         capability: z.string().optional().describe('Filter by capability'),
         callerNamespace: z.string().optional().describe('Filter by namespace visibility'),
+        cursor: pageCursorInput,
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(PAGE_LIMIT_MAX)
+          .optional()
+          .describe(
+            `How many this page holds, 1 to ${PAGE_LIMIT_MAX} (default ${PAGE_LIMIT_DEFAULT}).`
+          ),
       },
-      createMeshListHandler(deps)
+      createMeshListHandler(deps, reader)
     ),
     tool(
       'mesh_deny',
@@ -493,8 +533,10 @@ export function meshToolDefinitions(deps: AgentToolDeps) {
  * The mesh tools for the in-session server — only when meshCore is provided.
  *
  * @param deps - Shared MCP tool dependencies.
+ * @param reader - Who is asking, for `mesh_list`'s cursor seal: fixed when this tool set is
+ *   built (once per session in session, once per request on `/mcp`); the person when absent.
  */
-export function getMeshTools(deps: AgentToolDeps) {
+export function getMeshTools(deps: AgentToolDeps, reader?: () => PageCaller) {
   if (!deps.meshCore) return [];
-  return meshToolDefinitions(deps);
+  return meshToolDefinitions(deps, reader);
 }

@@ -27,7 +27,8 @@ import {
 
 import { type CapabilityHandlerContext } from '../../core/capabilities/index.js';
 import { defineCapability, invalidCursor } from '../../core/capabilities/capability-definition.js';
-import { assertPageCursor, keysetPage } from '../../../lib/paging/keyset-page.js';
+import { agentRosterPage, assertAgentRosterCursor } from '../../../lib/paging/agent-roster-page.js';
+import { keysetPage } from '../../../lib/paging/keyset-page.js';
 import { callerReaderKey } from '../../../lib/paging/caller-reader-key.js';
 import { agentIsAsking, meshOf, type MeshCapabilityDeps } from './mesh-capability-deps.js';
 
@@ -103,17 +104,14 @@ export const meshListAgentsCapability = defineCapability({
   surfaces: { http: { method: 'get', path: '/api/mesh/agents' } },
   invoke: async (deps, { cursor, limit, ...filters }, context) => {
     const mesh = meshOf(deps);
-    // The filters are bound into the cursor, and the cursor to its reader: what
-    // an agent reads of another agent differs from what the person reads.
-    const list = `agents:${JSON.stringify(filters)}`;
+    // The cursor is sealed to its reader: what an agent reads of another agent
+    // differs from what the person reads. The `mesh_list` tool pages by the same
+    // rule (`agent-roster-page.ts`), so the two never order the roster apart.
     const sealedFor = callerReaderKey(context);
-    assertPageCursor(list, cursor, invalidCursor, sealedFor);
-    // Newest registered first, as the registry lists them: a key that never
-    // moves, so an agent registered while paging is never repeated.
-    const page = keysetPage(
-      list,
+    assertAgentRosterCursor(filters, cursor, invalidCursor, sealedFor);
+    const page = agentRosterPage(
       mesh.meshCore.listWithHealth(filters),
-      (agent) => [agent.registeredAt, agent.id],
+      filters,
       { cursor, limit },
       invalidCursor,
       sealedFor
