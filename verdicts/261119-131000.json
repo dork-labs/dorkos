@@ -3,7 +3,7 @@
  "id": "261119-131000",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-12-04T22:46:43Z; the verdict is computed on 2026-12-05.",
- "computed_at": "2026-11-27T14:52:12.594Z",
+ "computed_at": "2026-11-28T14:00:50.620Z",
  "hypothesis_hash": "be36607beefbbba1",
  "metric": "tracked.green-to-armed",
  "anchor": "2026-11-20T22:46:43Z",
@@ -33,7 +33,7 @@
   "id": "lead-time",
   "stat": "p50",
   "before": 184.5,
-  "after": 75.7,
+  "after": 68.9,
   "movement": "better"
  }
 }

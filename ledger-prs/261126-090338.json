@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261126-090338",
+ "file": "ci/ledger/261126-090338-one-ratchet-command.md",
+ "pr": 4523,
+ "merged_at": "2026-11-26T10:12:41Z",
+ "sha": "35ec034713bde49e13bc5fe1590f41643e66c169",
+ "resolved_at": "2026-11-28T14:00:50.620Z"
+}

@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261126-062200",
+ "file": "ci/ledger/261126-062200-api-lint-list-paging-single-resource.md",
+ "pr": 4517,
+ "merged_at": "2026-11-26T07:09:38Z",
+ "sha": "214dd86fcc8e2ba81b8e62816c19d1fe4ec2daf9",
+ "resolved_at": "2026-11-28T14:00:50.620Z"
+}

@@ -3,7 +3,7 @@
  "id": "261115-173444",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-11-29T19:32:16Z; the verdict is computed on 2026-11-30.",
- "computed_at": "2026-11-27T14:52:12.594Z",
+ "computed_at": "2026-11-28T14:00:50.620Z",
  "hypothesis_hash": "a4be45881dcce88c",
  "metric": "tracked.first-try-pr-pass-rate",
  "anchor": "2026-11-15T19:32:16Z",
@@ -47,7 +47,9 @@
   "261125-233242",
   "261126-024020",
   "261126-032354",
-  "261126-033340"
+  "261126-033340",
+  "261126-045353",
+  "261126-090338"
  ],
  "slo": null
 }

@@ -1,7 +1,12 @@
 {
  "schema": 1,
- "updated_at": "2026-11-27T14:52:12.594Z",
+ "updated_at": "2026-11-28T14:00:50.620Z",
  "days": [
+  {
+   "date": "2026-11-27",
+   "light": "red",
+   "headline": "Collector unhealthy 3 of 3 days (2026-11-25, 2026-11-26, 2026-11-27): Ruleset 19893973 has drifted from ci/: required in ci/required-checks.json but not in the ruleset: policy. Either the ruleset was edited by hand (put it back) or ci/required-checks.json and ci/config.yaml need a ledgered PR that matches it."
+  },
   {
    "date": "2026-11-26",
    "light": "red",

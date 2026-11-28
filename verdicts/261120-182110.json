@@ -3,7 +3,7 @@
  "id": "261120-182110",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-12-07T22:44:38Z; the verdict is computed on 2026-12-08.",
- "computed_at": "2026-11-27T14:52:12.594Z",
+ "computed_at": "2026-11-28T14:00:50.620Z",
  "hypothesis_hash": "f8f681ad96b770d9",
  "metric": "gate.wf.windows-custody-witness.x64-producer.duration_p90@pull_request",
  "anchor": "2026-11-23T22:44:38Z",

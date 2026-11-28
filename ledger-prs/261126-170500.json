@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261126-170500",
+ "file": "ci/ledger/261126-170500-security-paths-session-reads.md",
+ "pr": 4534,
+ "merged_at": "2026-11-26T18:10:31Z",
+ "sha": "23a0cd655938ff2f4af47bb71d20c7db161348da",
+ "resolved_at": "2026-11-28T14:00:50.620Z"
+}

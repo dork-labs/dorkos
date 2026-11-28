@@ -3,7 +3,7 @@
  "id": "261122-032540",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-12-01T05:56:01Z; the verdict is computed on 2026-12-02.",
- "computed_at": "2026-11-27T14:52:12.594Z",
+ "computed_at": "2026-11-28T14:00:50.620Z",
  "hypothesis_hash": "1125816def142d10",
  "metric": "gate.wf.typecheck.typecheck.duration_p50@pull_request",
  "anchor": "2026-11-24T05:56:01Z",
@@ -25,8 +25,8 @@
  "after": {
   "from": "2026-11-24T05:56:01Z",
   "to": "2026-12-01T05:56:01Z",
-  "n": 387,
-  "value": 10
+  "n": 440,
+  "value": 9.8
  },
  "confounders": [
   "261123-220533",
@@ -40,7 +40,9 @@
   "261125-233242",
   "261126-024020",
   "261126-032354",
-  "261126-033340"
+  "261126-033340",
+  "261126-045353",
+  "261126-090338"
  ],
  "slo": null
 }
