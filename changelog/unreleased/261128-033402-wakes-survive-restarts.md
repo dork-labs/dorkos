@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(runs): wakes are saved with the change that causes them, one per event (DOR-5215)'
+  - "feat(runs): wake doors are handed in, and the click's id is minted by the transport (DOR-5215)"
 ---
 
 ### Changed

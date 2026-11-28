@@ -90,7 +90,6 @@ describe('BoardNode interaction latch', () => {
       actionId: 'm-0-0',
       payload: { glyph: 'X' },
       widgetTitle: 'Tic-Tac-Toe',
-      eventId: expect.any(String),
     });
   });
 
@@ -126,7 +125,6 @@ describe('BoardNode interaction latch', () => {
       actionId: 'move',
       payload: { glyph: 'X', cell: 0 },
       widgetTitle: 'Tic-Tac-Toe',
-      eventId: expect.any(String),
     });
   });
 

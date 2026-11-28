@@ -12,6 +12,7 @@ import { sessionMetadata, type Db } from '@dorkos/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { StreamEvent } from '@dorkos/shared/types';
+import { WakeRequestSchema, type WakeRequest } from '@dorkos/shared/turn-port';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import {
   clearTestHomes,
@@ -159,4 +160,21 @@ export function wakeHarness(opts: { db?: Db; epoch: string }): WakeHarness {
       clearTestHomes();
     },
   };
+}
+
+/**
+ * The wake one call saved, read from a run record built for that call alone:
+ * how a route's test reads what its source would have woken.
+ *
+ * @param call - The call, such as a request to a route.
+ */
+export async function wakeSavedBy(call: () => unknown): Promise<WakeRequest | undefined> {
+  installRunRecord(createTestDb(), { epoch: '01BOOTEPOCHWAKESAVEDBY0000' });
+  try {
+    await call();
+    const effect = getRunRecord()!.effects.leaseNext('reader', 1);
+    return effect ? WakeRequestSchema.parse(effect.payload) : undefined;
+  } finally {
+    uninstallRunRecord();
+  }
 }

@@ -53,7 +53,7 @@ import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 import { logger } from '../../lib/logger.js';
 import { peekProjector } from '../session/index.js';
-import { WAKE_NOT_LATE_MS, wakeChat } from '../runs/index.js';
+import { WAKE_NOT_LATE_MS, type WakeRequest } from '@dorkos/shared/turn-port';
 import { ceilingForContinuation } from '../core/turn-power/continuation-hold.js';
 
 /**
@@ -137,9 +137,14 @@ function settleCard(event: McpSigninConnectedEvent): void {
  * an error. Every way it can decline is a log line.
  *
  * @param event - The connected sign-in, naming its session and server.
+ * @param wake - Saves the wake: the run record's `wakeChat`, handed in at startup.
  * @param now - The clock, epoch ms; tests pin it.
  */
-export function resumeAfterMcpSignin(event: McpSigninConnectedEvent, now = Date.now()): void {
+export function resumeAfterMcpSignin(
+  event: McpSigninConnectedEvent,
+  wake: (request: WakeRequest) => boolean,
+  now = Date.now()
+): void {
   const { sessionId, serverName } = event;
   try {
     settleCard(event);
@@ -156,7 +161,7 @@ export function resumeAfterMcpSignin(event: McpSigninConnectedEvent, now = Date.
         instructions: RESUME_INSTRUCTIONS,
       },
     });
-    wakeChat({
+    wake({
       sourceKind: 'signin',
       eventId: event.flowId,
       start: {

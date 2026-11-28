@@ -19,20 +19,11 @@
  * @module services/runs/effects/wakes
  */
 import { WakeRequestSchema, wakeStartKey, type WakeRequest } from '@dorkos/shared/turn-port';
-import { SESSIONS } from '../../../config/constants.js';
 import type { WordSource } from '../turn-port.js';
 import type { EffectStore } from './effect-store.js';
 
 /** How long a wake whose source set no deadline may wait to make its run (§6.2). */
 export const WAKE_NOT_AFTER_MS = 24 * 60 * 60_000;
-
-/**
- * How long a wake that asked not to run late (a widget click, a finished
- * sign-in) waits for its chat before it is cancelled as `expired`: the bound
- * those callers waited when they refused a busy chat (`whenBusy: 'refuse'`,
- * the session lock's own timeout), now a `notAfter` (§3.2).
- */
-export const WAKE_NOT_LATE_MS = SESSIONS.LOCK_TTL_MS;
 
 /** The source kind a wake's run keeps its words under; its id is the wake effect's. */
 export const WAKE_SOURCE = 'wake';

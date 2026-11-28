@@ -44,7 +44,8 @@ import { invalidSessionId, sessionNotFound } from './session-route-replies.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
 import { peekProjector } from '../services/session/index.js';
-import { WAKE_NOT_LATE_MS, wakeChat } from '../services/runs/index.js';
+import { wakeChat } from '../services/runs/index.js';
+import { WAKE_NOT_LATE_MS } from '@dorkos/shared/turn-port';
 
 /** The ceiling a widget action's turn carries: see {@link personTurnBound}. */
 function uiActionCeiling(

@@ -269,7 +269,6 @@ describe('widget actions', () => {
       actionId: 'refresh',
       payload: undefined,
       widgetTitle: 'Weather',
-      eventId: expect.any(String),
     });
   });
 
@@ -318,7 +317,6 @@ describe('widget actions', () => {
       actionId: 'search',
       payload: { city: 'Berlin' },
       widgetTitle: 'Search',
-      eventId: expect.any(String),
     });
   });
 });
@@ -397,7 +395,6 @@ describe('Tier-1 utility nodes', () => {
       actionId: 'confirm-packing',
       payload: { checked: ['Passport', 'Tickets'], unchecked: [] },
       widgetTitle: 'Packing',
-      eventId: expect.any(String),
     });
   });
 
@@ -536,7 +533,6 @@ describe('Tier-2 delight nodes', () => {
       actionId: 'move-0-2',
       payload: undefined,
       widgetTitle: 'Tic-tac-toe',
-      eventId: expect.any(String),
     });
   });
 

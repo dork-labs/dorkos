@@ -52,7 +52,6 @@ export {
   type TurnRun,
 } from './run-store.js';
 export { createRunFactsSink } from './run-facts-sink.js';
-export { WAKE_NOT_LATE_MS } from './effects/wakes.js';
 export type { ScheduleCapSource } from './schedule-cap.js';
 export type { StopRequestRef } from './run-stops.js';
 export {

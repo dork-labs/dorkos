@@ -237,13 +237,7 @@ export function WidgetActionProvider({
           // authoritative one-dispatch-per-widget-instance guard.
           if (dispatchedRef.current) return;
           dispatchedRef.current = true;
-          // One id per click, so a retried request is still one turn on the server.
-          const request = {
-            actionId: action.id,
-            payload: action.payload,
-            widgetTitle,
-            eventId: crypto.randomUUID(),
-          };
+          const request = { actionId: action.id, payload: action.payload, widgetTitle };
           const streamStore = useSessionStreamStore.getState();
           // Render the interaction instantly and consistently: the optimistic
           // block matches what the server persists as the real user turn, so the

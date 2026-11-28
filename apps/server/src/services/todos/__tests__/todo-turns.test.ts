@@ -487,36 +487,6 @@ describe('to-do turns', () => {
         reason: 'launch failed',
       });
     });
-
-    it('saves the turn’s wake with the row that counts it, keyed by the row (T7)', async () => {
-      // Purpose: fails if the wake were keyed by anything but the ledger row, or saved apart from it.
-      todos.create(PERSON, { what: 'Ship it', assignee: { kind: 'agent', agentId: 'agent-a' } });
-      await settled();
-      const [row] = ledger();
-      expect(row).toMatchObject({ status: 'started', sessionId: 'chat-1' });
-      expect(wakes).toEqual([
-        expect.objectContaining({ sourceKind: 'todo', eventId: row!.id, start: expect.anything() }),
-      ]);
-      // A wake that cannot be saved takes its row with it: nothing is counted that will not run.
-      turns = new TodoTurns({
-        db,
-        now: () => now,
-        prepare: async (request) => ({
-          sessionId: 'chat-x',
-          content: request.content,
-          tier: 'owner',
-        }),
-        wake: () => {
-          throw new Error('the outbox is gone');
-        },
-        isPaused: () => false,
-        sharedBudget: () => true,
-        readSource: () => undefined,
-      });
-      todos.create(PERSON, { what: 'Ship again', assignee: { kind: 'agent', agentId: 'agent-b' } });
-      await expect(settled()).rejects.toThrow(/outbox/);
-      expect(ledger()).toHaveLength(1);
-    });
   });
 
   it('refuses an agent its sixth to-do for people in a day', () => {

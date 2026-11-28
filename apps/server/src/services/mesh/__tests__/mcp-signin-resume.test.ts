@@ -23,10 +23,10 @@ import { createHash } from 'node:crypto';
 import { resetKeyCache } from '../../../lib/secret-store/extension-secrets.js';
 
 import { eq, turnEffects, type Db } from '@dorkos/db';
-import { WakeRequestSchema, type WakeRequest } from '@dorkos/shared/turn-port';
+import { WAKE_NOT_LATE_MS, WakeRequestSchema, type WakeRequest } from '@dorkos/shared/turn-port';
 import { AgentMcpOAuthService } from '../agent-mcp-oauth-service.js';
 import { resumeAfterMcpSignin, type McpSigninConnectedEvent } from '../mcp-signin-resume.js';
-import { installRunRecord, uninstallRunRecord, WAKE_NOT_LATE_MS } from '../../runs/index.js';
+import { installRunRecord, uninstallRunRecord, wakeChat } from '../../runs/index.js';
 import { disposeProjector, getOrCreateProjector } from '../../session/index.js';
 import { noteTurnHold, setContinuationHoldDb } from '../../core/turn-power/continuation-hold.js';
 
@@ -219,8 +219,8 @@ describe('resumeAfterMcpSignin', () => {
   it('settles the session’s card, then saves one wake for the flow that must not run late', () => {
     const ingest = vi.spyOn(getOrCreateProjector(SESSION_ID, SESSION_CWD), 'ingest');
 
-    resumeAfterMcpSignin(EVENT, NOW);
-    resumeAfterMcpSignin(EVENT, NOW);
+    resumeAfterMcpSignin(EVENT, wakeChat, NOW);
+    resumeAfterMcpSignin(EVENT, wakeChat, NOW);
 
     expect(ingest.mock.calls[0]![0]).toEqual({
       type: 'mcp_signin_resolved',
@@ -249,9 +249,9 @@ describe('resumeAfterMcpSignin', () => {
   it('holds the nudge to the runtime default when the chat’s latest turn was held (DOR-3037)', () => {
     setContinuationHoldDb(createTestDb());
     noteTurnHold(SESSION_ID, true);
-    resumeAfterMcpSignin(EVENT, NOW);
+    resumeAfterMcpSignin(EVENT, wakeChat, NOW);
     noteTurnHold(SESSION_ID, false);
-    resumeAfterMcpSignin({ ...EVENT, flowId: 'flow-2' }, NOW);
+    resumeAfterMcpSignin({ ...EVENT, flowId: 'flow-2' }, wakeChat, NOW);
     const [held, free] = wakes().map(({ wake }) => wake.start);
     expect(held).toMatchObject({ permissionCeiling: 'runtime-default', continuationHold: true });
     expect(free!.permissionCeiling).toBeUndefined();

@@ -724,6 +724,14 @@ export const WakeRequestSchema = z.strictObject({
 export type WakeRequest = z.infer<typeof WakeRequestSchema>;
 
 /**
+ * How long a wake that asked not to run late (a widget click, a finished
+ * sign-in) waits for its chat before its run is cancelled as `expired`: five
+ * minutes, the session lock's own timeout, which is the bound those callers
+ * waited when they refused a busy chat (`whenBusy: 'refuse'`, spec §3.2).
+ */
+export const WAKE_NOT_LATE_MS = 5 * 60_000;
+
+/**
  * The key one event's wake and its run are saved under (spec §6.3):
  * `wake:<sourceKind>:<eventId>`.
  *

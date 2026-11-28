@@ -220,7 +220,6 @@ describe('LiveSessionWidget', () => {
         actionId: 'm-0-0',
         payload: { glyph: 'X' },
         widgetTitle: 'Tic-Tac-Toe',
-        eventId: expect.any(String),
       })
     );
     const optimistic = useSessionStreamStore.getState().getSession(SID).optimisticUserMessage;
