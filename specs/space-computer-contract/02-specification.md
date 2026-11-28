@@ -750,7 +750,7 @@ The gate note's §3 says what native calls do: those the copy allows keep runnin
 
 ## 12. The wire conformance suite (S11)
 
-- **Where:** `packages/test-utils/src/wire-conformance.ts` (`wireConformance`), with `fake-home.ts`, `fake-computer.ts` and `relay-socket-pair.ts`. The socket pair is lifted from `services/core/hub-relay/__tests__/computer-connection.test.ts` (`Wire`, `End`) so both that test and the suite use it.
+- **Where:** `packages/test-utils/src/wire-conformance.ts` (`wireConformance`, `runWireCase`), with `wire-runners.ts` (the in-process and over-the-wire runners), `wire-fakes.ts` (the fake home and the fake computer), `wire-cases/` (one file of cases per step) and `relay-socket-pair.ts`. The socket pair is lifted from `services/core/hub-relay/__tests__/computer-connection.test.ts` (`Wire`, `End`) so both that test and the suite use it. `@dorkos/test-utils` never imports the server, which depends on it, so the server's `hub-relay/__tests__/wire-conformance.test.ts` hands the suite its real pieces (W3).
 - **The fake computer** speaks the computer's side of every frame over the real channel code, with the test runtime (`FakeAgentRuntime`) behind its computer face and its own outbox. **The fake home** speaks the home's side, with the turn port's space face, admission, the queue and the run record behind it, on a throwaway SQLite file.
 - **Two runs of every case** (N1): once with the in-process ports (no channel), once over the channel. A case passes only when both do.
 - **What it covers:** every operation in §5 and its answer; every refusal and wait; a drop in the middle of each operation (§15.2); a restart of each side; a hello between unequal feature lists (§15.1).
