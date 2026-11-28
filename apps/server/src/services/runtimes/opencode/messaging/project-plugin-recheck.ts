@@ -115,9 +115,13 @@ export interface PluginTurnPass {
   beforeSend(stop: (err: Error) => void, onSend: () => void): () => void;
   /**
    * Wait for the turn's request, then check its folders once more: an event
-   * can arrive after arming but before OpenCode has loaded the folder.
+   * can arrive after arming but before OpenCode has loaded the folder. When an
+   * in-turn check already restarted the sidecar, the request may fail as the
+   * process dies; that failure is swallowed, since the turn ends with
+   * {@link PLUGIN_RESTART_MESSAGE}.
    *
    * @param request - The trigger's promise.
+   * @throws The request's own failure when no in-turn restart caused it.
    */
   sent(request: Promise<void>): Promise<void>;
   /**
@@ -216,7 +220,14 @@ export class ProjectPluginRecheck {
         };
       },
       sent: async (request) => {
-        await request;
+        try {
+          await request;
+        } catch (err) {
+          // An in-turn restart can cut the request off; the turn already ends
+          // with the restart message, so that failure is the restart's.
+          if (restartedEarly) return;
+          throw err;
+        }
         if (armed) check();
       },
       atEvent: (directory) => {
