@@ -983,6 +983,8 @@ export default defineConfig({
         // Unconditional rather than tied to INCLUDE_PRODUCTION — the wrong leg
         // is the wrong leg whether or not the right one was booted.
         '**/production/**',
+        // Runs in `restart` below: it starts and kills a server of its own.
+        '**/restart/**',
         ...(SITE.specs ? [] : SITE_SPECS),
       ],
       // Skips the specs that need real model credentials — see INCLUDE_INTEGRATION.
@@ -1218,6 +1220,16 @@ export default defineConfig({
         '**/extensions/extension-page-state.spec.ts',
         '**/extensions/app-navigate-gesture.spec.ts',
       ],
+    },
+    {
+      // A real `SIGKILL` of a server loses no accepted turn (spec
+      // `turns-survive-restarts` §8, Tier B; DOR-5224). The spec starts its own
+      // test-mode server on a throwaway home, kills it and starts it again, so it
+      // uses none of the legs above and no browser. Its own project keeps it off
+      // the cockpit leg and makes it one unit for the balanced shards. Untagged,
+      // so it runs with the full suite on main after merge, never in the smoke.
+      name: 'restart',
+      testMatch: ['**/restart/*.spec.ts'],
     },
     // The only project whose `baseURL` is an EXPRESS port rather than a Vite
     // one, because the production leg serves the built shell itself — which is
