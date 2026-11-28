@@ -11,9 +11,11 @@
  */
 import { useMemo } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { Square } from 'lucide-react';
 import type { ToolCallState } from '@/layers/shared/model/chat-message-types';
 import { ApprovalPrompt, AskStack, QuestionPrompt, useAnswerAsk } from '@/layers/features/ask';
 import { getToolLabel } from '@/layers/shared/lib';
+import { Button, Spinner } from '@/layers/shared/ui';
 import type { InteractiveToolHandle } from '@/layers/features/chat';
 
 /**
@@ -49,6 +51,15 @@ interface SessionAsksProps {
   allowsDenyReason?: boolean;
   /** The asking agent's name, when this session has one; the card's title names it (DOR-4117). */
   agentName?: string;
+  /**
+   * Stop the turn this card is holding (DOR-3202). The card replaces the
+   * composer, its Stop button included, so without this a person's only way
+   * out of a waiting turn was to answer it. Stop withdraws the card and ends
+   * the turn, through the composer's own Stop (its queue question included).
+   */
+  onStop?: () => void;
+  /** A Stop already sent has not settled yet; the button waits rather than re-arms. */
+  stopPending?: boolean;
 }
 
 /**
@@ -66,6 +77,8 @@ export function SessionAsks({
   queueDepth = 0,
   allowsDenyReason = true,
   agentName,
+  onStop,
+  stopPending = false,
 }: SessionAsksProps) {
   // Forward submitted question answers so they're persisted onto the tool-call
   // part immediately — otherwise the inline answered row briefly shows the
@@ -171,12 +184,29 @@ export function SessionAsks({
           ) : null}
         </motion.div>
       </AnimatePresence>
-      {queueDepth > 0 && (
-        <p className="text-muted-foreground px-1 pt-2 text-xs">
-          {queueDepth === 1
-            ? '1 message sends once you answer.'
-            : `${queueDepth} messages send once you answer.`}
-        </p>
+      {(queueDepth > 0 || onStop !== undefined) && (
+        <div className="flex items-center gap-2 px-1 pt-2">
+          {queueDepth > 0 && (
+            <p className="text-muted-foreground text-xs">
+              {queueDepth === 1
+                ? '1 message sends once you answer.'
+                : `${queueDepth} messages send once you answer.`}
+            </p>
+          )}
+          {onStop !== undefined && (
+            <Button
+              variant="ghost"
+              size="sm"
+              // Heard once: it waits for the turn to settle rather than re-arming.
+              onClick={stopPending ? undefined : onStop}
+              {...(stopPending ? { 'aria-disabled': true, 'aria-busy': true } : {})}
+              className="text-muted-foreground hover:text-foreground ml-auto"
+            >
+              {stopPending ? <Spinner size="xs" /> : <Square className="size-(--size-icon-xs)" />}
+              {stopPending ? 'Stopping…' : 'Stop'}
+            </Button>
+          )}
+        </div>
       )}
     </>
   );

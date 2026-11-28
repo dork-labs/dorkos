@@ -59,6 +59,7 @@ import {
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { AGENT_IDENTITY_LIMIT_MS, useWaitedPast } from '@/layers/shared/lib';
 import { useLoadingTooLong } from '../model/use-transcript-hold';
+import { getPlaceholder } from '../lib/composer-placeholder';
 import { useStopTask } from '../model/use-stop-task';
 import {
   useDirectoryState,
@@ -143,29 +144,6 @@ interface SessionComposerProps {
 }
 
 /**
- * The composer's label \u2014 its `aria-label`, and its visible placeholder whenever
- * the rotating overlay is not covering it.
- *
- * Editing a queued item used to return `''`, so in the one mode where the
- * field's behavior changes \u2014 Enter saves instead of sends \u2014 it announced
- * nothing at all. It carries the item's text, so no visible placeholder is lost
- * by naming it properly.
- */
-function getPlaceholder(
-  editingIndex: number | null,
-  isStreaming: boolean,
-  queueLength: number,
-  defaultText: string
-): string {
-  if (editingIndex !== null) {
-    return `Edit queued message ${editingIndex + 1} of ${queueLength}. Press Enter to save`;
-  }
-  if (isStreaming && queueLength > 0) return `Compose another (${queueLength} queued)`;
-  if (isStreaming) return 'Compose next. It sends when ready';
-  return defaultText;
-}
-
-/**
  * Draw the session's composer.
  *
  * @param props - The draft, the send funnel, and everything a session's field
@@ -220,6 +198,13 @@ export function SessionComposer({
   });
   const defaultPlaceholder = target?.placeholder ?? 'Send a message…';
   const awaitingDecision = useSessionAwaitingDecision(sessionId);
+  // A turn parked on a person is still open: the agent is waiting on an
+  // approval, a question or a sign-in, and the coarse status reads that as
+  // `idle`. Stop has to be there for it all the same, or the only way out of
+  // the turn is to answer the card (DOR-3202). The card on screen counts too,
+  // for the frames before the stream hydrates.
+  const waitingOnPerson = awaitingDecision || activeInteraction !== null;
+  const turnOpen = isStreaming || waitingOnPerson;
   // A quick lookup says nothing, so a chat that is set up doesn't flicker. Pressing
   // Check again starts the wait over, and says so at once.
   const [lookupChecks, setLookupChecks] = useState(0);
@@ -247,7 +232,9 @@ export function SessionComposer({
   // answer on the session's own status; `undefined` means it has none to give,
   // and the runtime's flag stands.
   const sessionSteerable = useSessionSteerable(sessionId);
-  const canSteer = (capabilities?.supportsSteer ?? false) && (sessionSteerable ?? true);
+  // A turn parked on a person is not producing, so there is nothing to cut into.
+  const canSteer =
+    isStreaming && (capabilities?.supportsSteer ?? false) && (sessionSteerable ?? true);
   const canAddContext = capabilities?.supportsContextStaging ?? false;
   // Whether a deny reason typed here reaches the agent at all. `true` while
   // capabilities are still loading and for every runtime that has not opted
@@ -381,7 +368,7 @@ export function SessionComposer({
   // window where the derived value is stale, because there is no effect
   // between the switch and the read.
   const [stopInFlightSessionId, setStopInFlightSessionId] = useState<string | null>(null);
-  const stopPending = stopInFlightSessionId === sessionId && isStreaming;
+  const stopPending = stopInFlightSessionId === sessionId && turnOpen;
   // The single-flight lock a click actually reads, mirroring the state above
   // rather than replacing it — keyed by session for the same B1 reason, but a
   // REF because a click has to read it WITHIN the current tick, before React
@@ -394,33 +381,33 @@ export function SessionComposer({
   // runs, so it is what actually makes this a single-flight guard rather than
   // a single-RENDER one (DOR-1300 B2).
   const stopLockSessionIdRef = useRef<string | null>(null);
-  // The turn settling — `isStreaming` flipping false — is what ends a pending
+  // The turn settling — `turnOpen` flipping false — is what ends a pending
   // Stop on the happy path, and clearing the flag here (rather than only
   // relying on the comparison above) matters for a case the comparison alone
   // cannot cover: the SAME session starting a SECOND turn later. Without this,
   // `stopInFlightSessionId` would still equal `sessionId` from the first
   // Stop, and the new turn would render "Stopping…" from its very first frame.
   // Keyed on `sessionId` too, so switching sessions cannot leave this reading
-  // a different session's `isStreaming` than the one it just wrote.
+  // a different session's `turnOpen` than the one it just wrote.
   const clearSettledStop = useCallback(() => {
     stopLockSessionIdRef.current = null;
     setStopInFlightSessionId(null);
   }, []);
-  /* eslint-disable react-hooks/set-state-in-effect -- sync local pending flag from the external isStreaming signal (turn_end) */
+  /* eslint-disable react-hooks/set-state-in-effect -- sync local pending flag from the external turn signal (turn_end) */
   useEffect(() => {
-    if (!isStreaming) clearSettledStop();
-  }, [isStreaming, sessionId, clearSettledStop]);
+    if (!turnOpen) clearSettledStop();
+  }, [turnOpen, sessionId, clearSettledStop]);
   /* eslint-enable react-hooks/set-state-in-effect */
-  // A fresh read of `isStreaming` at the moment the request settles, not the
+  // A fresh read of `turnOpen` at the moment the request settles, not the
   // value `performStop` closed over at click time — the promise can resolve
   // long after this component has re-rendered several times.
-  const isStreamingRef = useRef(isStreaming);
+  const turnOpenRef = useRef(turnOpen);
   useEffect(() => {
-    isStreamingRef.current = isStreaming;
-  }, [isStreaming]);
+    turnOpenRef.current = turnOpen;
+  }, [turnOpen]);
   const leaveQueueForStop = chatQueue.leaveQueueForStop;
   // A fresh read of the editing cursor at the moment Stop is pressed — for the
-  // same reason `isStreamingRef` above exists: `performStop` reads it inside a
+  // same reason `turnOpenRef` above exists: `performStop` reads it inside a
   // `useCallback` whose deps deliberately do not include `chatQueue` itself.
   //
   // The ID, never the POSITION. `editingIndex` is derived by looking the id up
@@ -468,7 +455,7 @@ export function SessionComposer({
         // is open (`not-running` while we still believe we are streaming) —
         // otherwise nothing would ever release a pending Stop and the person
         // would watch "Stopping…" forever.
-        if (shouldReofferStop(outcome.receipt, isStreamingRef.current)) clearSettledStop();
+        if (shouldReofferStop(outcome.receipt, turnOpenRef.current)) clearSettledStop();
         // Only the two endings DorkOS did NOT observe get said out loud here.
         // `acked` and `closed` belong in the transcript's own stop marker (spec
         // §3), not in a toast fired the instant the button was pressed — the
@@ -592,7 +579,7 @@ export function SessionComposer({
   // one feature may not import another's model.
   useEffect(() => registerComposerInsert(insertIntoComposer), [insertIntoComposer]);
 
-  const isIdle = !isStreaming && chatQueue.editingIndex === null;
+  const isIdle = !turnOpen && chatQueue.editingIndex === null;
   const rotatingPlaceholder = useRotatingPlaceholder({
     defaultText: defaultPlaceholder,
     hints: placeholderHints,
@@ -646,6 +633,9 @@ export function SessionComposer({
             queueDepth={chatQueue.queue.length}
             allowsDenyReason={allowsDenyReason}
             agentName={agentName}
+            // The card replaces the box and its Stop with it, so it carries one.
+            onStop={handleStop}
+            stopPending={stopPending}
           />
         ) : null
       }
@@ -740,7 +730,8 @@ export function SessionComposer({
         </Conversation.Footer>
       }
       input={{
-        isStreaming,
+        // Open, not streaming: a turn waiting on a person queues and offers Stop.
+        isStreaming: turnOpen,
         commandPending,
         ...(agentLookupPending || agentLookupError
           ? {
@@ -807,7 +798,7 @@ export function SessionComposer({
           limitComposer.placeholder ??
           getPlaceholder(
             chatQueue.editingIndex,
-            isStreaming,
+            turnOpen,
             chatQueue.queue.length,
             defaultPlaceholder
           ),

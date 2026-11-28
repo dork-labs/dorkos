@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The Steer row, end to end, in the DOM (DOR-1268).
+ * The Steer row and the Stop button, end to end, in the DOM (DOR-1268, DOR-3202).
  *
  * `SessionComposer.test.tsx` proves what the container DECIDES — it reads the
  * props handed to a stubbed `Composer.Input`. That is the right shape for a
@@ -19,8 +19,10 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, act, fireEvent } from '@testing-library/react';
 import type { ReactNode } from 'react';
+import type { SessionSnapshot } from '@dorkos/shared/session-stream';
+import type { ToolCallState } from '@/layers/shared/model/chat-message-types';
 
 // The menu's rows live behind a Radix portal that only mounts when opened.
 // Rendered inline instead — `importActual` keeps every other shared/ui export
@@ -264,5 +266,170 @@ describe('the Add context row stays offered on both paths (DOR-1307)', () => {
 
     expect(addContextRow()).toBeTruthy();
     expect(steerRow()).toBeTruthy();
+  });
+});
+
+/**
+ * The session as a page reload finds it while the agent waits on a person: a
+ * cold snapshot whose lifecycle is `blocked`, with nothing streaming.
+ */
+function hydrateWaiting(queue: string[] = []) {
+  const snapshot: SessionSnapshot = {
+    messages: [],
+    inProgressTurn: null,
+    status: {
+      contextUsage: null,
+      cost: null,
+      usage: null,
+      cacheStats: null,
+      model: null,
+      permissionMode: 'default',
+      todoCounts: null,
+      runningSubagentCount: 0,
+      lifecycle: 'blocked',
+      lastError: null,
+      limit: null,
+      accountUsage: null,
+    },
+    pendingInteractions: [],
+    queuedMessages: queue.map((content, i) => ({
+      id: `q${i}`,
+      content,
+      disposition: 'queue' as const,
+      enqueuedAt: 1_000,
+      enqueuedBy: 'window-a',
+    })),
+    canvas: [],
+    cursor: 5,
+  };
+  useSessionStreamStore.getState().applySnapshot('test-session', snapshot);
+}
+
+/** The server settling the stopped turn: the card withdrawn, the session idle. */
+function settleIdle() {
+  useSessionStreamStore.getState().applyEvent('test-session', {
+    seq: 9,
+    type: 'status_change',
+    status: { lifecycle: 'idle' },
+  });
+}
+
+const approvalCard: ToolCallState = {
+  toolCallId: 'tc-wait',
+  toolName: 'Bash',
+  input: '{}',
+  status: 'pending',
+  interactiveType: 'approval',
+};
+
+const acked = {
+  receipt: { outcome: 'acked' as const, runtime: 'claude-code' as const },
+  cancelled: [],
+};
+
+describe('a chat waiting on a person still offers Stop (DOR-3202)', () => {
+  it('shows Stop in the composer while the agent waits on a sign-in, and queues rather than sends', () => {
+    // The sign-in card sits in the transcript, so the box stays: it must read
+    // as an open turn, not an idle one.
+    hydrateWaiting();
+    const stop = vi.fn().mockResolvedValue(acked);
+    render(<SessionComposerBench {...baseProps} status="idle" stop={stop} />);
+
+    expect(screen.getByRole('button', { name: 'Queue message' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Send message' })).toBeNull();
+    // Nothing is producing, so there is nothing to cut into.
+    expect(steerRow()).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stop generating' }));
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('puts Stop on the approval card that replaced the box, hydrated from a reload', async () => {
+    hydrateWaiting();
+    const stop = vi.fn(() => new Promise<typeof acked>(() => {}));
+    render(
+      <SessionComposerBench
+        {...baseProps}
+        input=""
+        status="idle"
+        stop={stop}
+        interaction={{ ...baseProps.interaction, active: approvalCard }}
+      />
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    });
+    expect(stop).toHaveBeenCalledTimes(1);
+    // Heard once: the button waits for the turn to settle instead of re-arming.
+    const pending = screen.getByRole('button', { name: /Stopping/ });
+    expect(pending.getAttribute('aria-busy')).toBe('true');
+    fireEvent.click(pending);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks about the queue first, then gives the queued words back', async () => {
+    hydrateWaiting(['run the tests after']);
+    const setInput = vi.fn();
+    const stop = vi.fn().mockResolvedValue({
+      ...acked,
+      cancelled: [
+        {
+          id: 'q0',
+          content: 'run the tests after',
+          disposition: 'queue',
+          enqueuedAt: 1_000,
+          enqueuedBy: 'window-a',
+        },
+      ],
+    });
+    render(
+      <SessionComposerBench
+        {...baseProps}
+        input=""
+        status="idle"
+        stop={stop}
+        setInput={setInput}
+        interaction={{ ...baseProps.interaction, active: approvalCard }}
+      />
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    });
+    expect(stop).not.toHaveBeenCalled();
+    expect(screen.getByText('Stop, and put 1 queued message back?')).toBeTruthy();
+
+    const confirm = screen.getAllByRole('button', { name: 'Stop' }).at(-1)!;
+    await act(async () => {
+      fireEvent.click(confirm);
+    });
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(setInput).toHaveBeenCalledWith('run the tests after');
+  });
+
+  it('sends the next message as a fresh turn once the stopped turn settles', async () => {
+    hydrateWaiting();
+    const submit = vi.fn();
+    const stop = vi.fn().mockResolvedValue(acked);
+    const { rerender } = render(
+      <SessionComposerBench
+        {...baseProps}
+        status="idle"
+        stop={stop}
+        submit={submit}
+        interaction={{ ...baseProps.interaction, active: approvalCard }}
+      />
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    });
+
+    act(() => settleIdle());
+    rerender(<SessionComposerBench {...baseProps} status="idle" stop={stop} submit={submit} />);
+
+    expect(screen.queryByRole('button', { name: 'Stop generating' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+    expect(submit).toHaveBeenCalledWith('Also check the tests');
   });
 });

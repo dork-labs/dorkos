@@ -80,9 +80,16 @@ export function openCodeApprovalTurn(
     ...probes,
     afterTurn: async () => {
       await originalAfterTurn();
-      expect(vi.mocked(client.postSessionIdPermissionsPermissionId).mock.calls).toHaveLength(
-        stopped ? 0 : 1
-      );
+      const replies = vi.mocked(client.postSessionIdPermissionsPermissionId).mock.calls;
+      if (!stopped) {
+        expect(replies).toHaveLength(1);
+        return;
+      }
+      // A Stop withdraws the card; it never answers it on the person's behalf.
+      // The one reply a stopped turn may carry is a person's own answer that
+      // raced the Stop (DOR-3202), and that is never a refusal.
+      expect(replies.length).toBeLessThanOrEqual(1);
+      expect(replies.map(([request]) => request.body?.response)).not.toContain('reject');
     },
   };
   const release = () => {

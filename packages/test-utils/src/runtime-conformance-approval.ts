@@ -185,6 +185,43 @@ export function runtimeApprovalConformance(
         expect(runtime.approveTool(sessionId, id!, false)).toBe(false);
         expect(terminals(events)).toHaveLength(1);
       });
+
+      // A person presses Stop on a waiting chat while another window answers the
+      // same card (DOR-3202). Whichever lands first, the turn ends once and no
+      // answerable card is left behind. Both orders, in the same tick.
+      for (const order of ['answer, then Stop', 'Stop, then answer'] as const) {
+        it(`an answer and a Stop at the same moment (${order}) end the turn once, with no card left`, async () => {
+          const runtime = makeRuntime();
+          const sessionId = nextSessionId();
+          runtime.ensureSession(sessionId, sessionOpts(runtime));
+          let id: string | undefined;
+          const events = await approvalTurn(runtime, sessionId, messageContent, {
+            atApproval: async (approval) => {
+              id = approval.toolCallId;
+              let stopping: Promise<unknown>;
+              if (order === 'answer, then Stop') {
+                expect(runtime.approveTool(sessionId, approval.toolCallId, true)).toBe(true);
+                stopping = runtime.interruptQuery(sessionId);
+              } else {
+                stopping = runtime.interruptQuery(sessionId);
+                // Either answer is honest here: the card may already be gone.
+                runtime.approveTool(sessionId, approval.toolCallId, true);
+              }
+              InterruptReceiptSchema.parse(await stopping);
+            },
+            afterTurn: async () => {
+              const snapshot = await runtime.getSessionSnapshot(sessionOpts(runtime), sessionId);
+              expect(
+                snapshot.pendingInteractions.map((pending) => pending.id),
+                'a raced Stop leaves no answerable card behind'
+              ).not.toContain(id);
+            },
+          });
+          expect(id, 'the approvalTurn driver never opened a card').toBeDefined();
+          expect(runtime.approveTool(sessionId, id!, true)).toBe(false);
+          expect(terminals(events)).toHaveLength(1);
+        });
+      }
     } else {
       it('SKIPPED unless declared: approval cases need an approvalTurn driver', ({ skip }) => {
         if (declaresApproval(makeRuntime())) {
