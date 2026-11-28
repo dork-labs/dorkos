@@ -49,4 +49,10 @@ export const WORK_GRAPH_READ_ROWS: readonly WorkGraphReadRow[] = [
     path: '/api/sessions/{id}/work',
     list: 'items',
   },
+  {
+    id: 'work-graph.work_item_chats',
+    tool: 'work_item_chats',
+    path: '/api/work-items/chats',
+    list: 'spans',
+  },
 ];
