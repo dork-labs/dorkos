@@ -338,7 +338,8 @@ that server's single-use owner claim; it never owns one itself.
   included (`null` for no fixed number), whether one more person who holds no seat there would add
   a seat to what the payer is counted for (`addsSeat`, the service's own answer, with no rule
   tying it to `seatsIncluded`), and who pays, as numbers and the service's own words (`summary`,
-  `payer`). Show the words as given and never parse them; there is no price. It is a preview only:
+  `payer`, which names the payer by a display name or a role, never an email address or a billing
+  detail). Show the words as given and never parse them; there is no price. It is a preview only:
   it makes no invite, holds no seat and promises nothing, and the service checks for real when a
   person joins. It takes the space and nothing else. Only an owner or an admin of the space asks,
   signed in as themselves, never an agent, and another member is `forbidden`; a space the caller
@@ -547,9 +548,10 @@ pollAfterSeconds }`. The service deletes the code once the computer has read it 
 - **Wake passes.** A hub asks for a pass for one holder and one reason
   (`POST /v1/hubs/self/wake-passes`, `WakePassMintRequestSchema`; the hub's own key), and gets
   the pass back once (`WakePassMintResponseSchema`, marked `ONE_TIME_CREDENTIAL_META`) with when
-  it ends; the service may end it sooner than asked, never later. The holder is a tagged kind
-  (a `space` today) and the reason a closed list (`mention` today): a later use adds a member,
-  never a second mechanism. The holder presents the pass at `FRONT_DOOR_WAKE_PATH` on the hub's
+  it ends; the service may end it sooner than asked, never later, and never more than
+  `WAKE_PASS_MAX_LIFETIME_DAYS` (thirty) days after minting, asked or not. The service keeps only
+  a hash of the pass. The holder is a tagged kind (a `space` today) and the reason a closed list
+  (`mention` today): a later use adds a member, never a second mechanism. The holder presents the pass at `FRONT_DOOR_WAKE_PATH` on the hub's
   own address (`FrontDoorWakeRequestSchema`: the pass and the reason, and nothing else), and the
   front door answers `202` with no body for every well-formed request, whether or not anything woke (a body that does not parse is `400` `malformed_request`, decided before any pass is looked up). A `mention`
   pass wakes the hub at most once every `WAKE_PASS_MENTION_MIN_INTERVAL_SECONDS`. The service

@@ -19,6 +19,7 @@ import {
   HUB_NEXT_WAKE_MIN_INTERVAL_SECONDS,
   ONE_TIME_CREDENTIAL_META,
   V1_ROUTES,
+  WAKE_PASS_MAX_LIFETIME_DAYS,
   WAKE_PASS_MENTION_MIN_INTERVAL_SECONDS,
   WakePassHolderSchema,
   WakePassMintRequestSchema,
@@ -129,5 +130,11 @@ describe('the front door`s wake', () => {
   it('spaces a mention pass`s wakes as a hub`s own next-wake is spaced', () => {
     expect(WAKE_PASS_MENTION_MIN_INTERVAL_SECONDS).toBe(300);
     expect(WAKE_PASS_MENTION_MIN_INTERVAL_SECONDS).toBe(HUB_NEXT_WAKE_MIN_INTERVAL_SECONDS);
+  });
+
+  it('caps a pass`s life at thirty days, and says so where a hub reads expiresAt', () => {
+    expect(WAKE_PASS_MAX_LIFETIME_DAYS).toBe(30);
+    const described = WakePassMintRequestSchema.shape.expiresAt.description ?? '';
+    expect(described).toContain('WAKE_PASS_MAX_LIFETIME_DAYS');
   });
 });

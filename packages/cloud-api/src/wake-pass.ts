@@ -73,6 +73,13 @@ export type WakePassReason = z.infer<typeof WakePassReasonSchema>;
 export const WAKE_PASS_MENTION_MIN_INTERVAL_SECONDS = 300 as const;
 
 /**
+ * The longest a wake pass lives, in days from when it was minted. An
+ * `expiresAt` later than this, or none, gets a pass that ends at this limit or
+ * sooner, so a pass the hub forgets to revoke still stops working.
+ */
+export const WAKE_PASS_MAX_LIFETIME_DAYS = 30 as const;
+
+/**
  * Where a holder presents its pass: `POST` on the hub's own address, answered
  * by the hub's front door and never passed on to the hub. The reserved prefix
  * it sits under is the front door's own.
@@ -86,16 +93,18 @@ export const FRONT_DOOR_WAKE_PATH = '/_dorkos/front-door/wake' as const;
  *
  * `expiresAt` is when the hub wants the pass to stop working. The service may
  * set an earlier time, never a later one, and answers the time it set; left
- * out, the service picks it. A time that is not in the future is refused
- * with `malformed_request`. The hub mints a new pass before the old one
- * expires and revokes the old one, so a holder is never left without one.
+ * out, the service picks it. Either way a pass ends within
+ * {@link WAKE_PASS_MAX_LIFETIME_DAYS} days of being minted. A time that is
+ * not in the future is refused with `malformed_request`. The hub mints a new
+ * pass before the old one expires and revokes the old one, so a holder is
+ * never left without one.
  */
 export const WakePassMintRequestSchema = z
   .object({
     holder: WakePassHolderSchema,
     reason: WakePassReasonSchema,
     expiresAt: TimestampSchema.optional().describe(
-      'When the hub wants the pass to stop working. The service may set an earlier time, never a later one.'
+      'When the hub wants the pass to stop working. The service may set an earlier time, never a later one, and never more than WAKE_PASS_MAX_LIFETIME_DAYS days after minting.'
     ),
   })
   .describe('Ask for a wake pass for one holder and one reason. Hub instance key only.');
@@ -106,7 +115,8 @@ export type WakePassMintRequest = z.infer<typeof WakePassMintRequestSchema>;
 /**
  * A wake pass the service minted. `pass` is the credential, returned here
  * once and never again: the hub stores it only to hand it to its holder, never
- * logs it and never shows it to a browser.
+ * logs it and never shows it to a browser. The service keeps only a hash of it,
+ * so it cannot hand the pass out again, and a lost pass is revoked and replaced.
  */
 export const WakePassMintResponseSchema = z
   .object({
