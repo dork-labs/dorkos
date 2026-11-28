@@ -5,7 +5,7 @@
  * install from it failed with "no cached document" until someone ran a
  * refresh by hand. Adding now fetches once, right after saving, through
  * {@link PackageFetcher.fetchMarketplaceJson} — the call
- * `POST /sources/:name/refresh` makes — so it inherits the same URL policy,
+ * `POST /sources/refreshes` makes — so it inherits the same URL policy,
  * the same `MARKETPLACE_JSON_TIMEOUT_MS` deadline, the same in-place read for
  * a `file://` folder, the same plain-words failure reasons and the same cache
  * write.
@@ -78,7 +78,7 @@ export async function fetchNewSourceListing(
 }
 
 /**
- * Fetch a source's listing now, for `POST /sources/:name/refresh`.
+ * Fetch a source's listing now, for `POST /sources/refreshes`.
  *
  * A refresh is "check now", so it never quietly answers with the cached copy:
  * it fetches with no stale fallback. When that fails and a copy is cached, it

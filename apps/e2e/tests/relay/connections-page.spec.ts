@@ -119,7 +119,7 @@ test('browser discovery reads only on tap and forgets picker email @smoke', asyn
     await route.fulfill({ response, json: { ...config, yourBrowser: { enabled: true } } });
   });
   let scans = 0;
-  await page.route('**/api/your-browser/scan', async (route) => {
+  await page.route('**/api/your-browser/profile-scans', async (route) => {
     scans += 1;
     expect(route.request().method()).toBe('POST');
     await route.fulfill({

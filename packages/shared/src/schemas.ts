@@ -7448,7 +7448,7 @@ export type UiCommandReach = 'client-only' | 'reaches-the-machine';
  * auto-allows tools by NAME. So a single tool-level "safe" verdict had to cover
  * all 22 at once, and it did: the tool was auto-allowed under the comment "pure
  * client-side UI mutations, no system access". `apply_layout` is not that. The
- * client answers it by POSTing `/api/shapes/:name/apply`, and what that touches is
+ * client answers it by POSTing `/api/shapes/:name/applications`, and what that touches is
  * a person's disk and configuration, not just pixels: it writes a `SKILL.md` into
  * their skills root for each schedule the Shape declares, records a receipt under
  * the DorkOS home naming what it wrote, rewrites `ui.shapes.active` in

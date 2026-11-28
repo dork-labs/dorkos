@@ -2,7 +2,7 @@
  * Integration tests for the discovery SSE endpoint.
  *
  * These tests verify the SSE wire format, event sequencing, and error handling
- * of POST /api/discovery/scan by serving the routes behind the real `/api`
+ * of POST /api/discovery/scans by serving the routes behind the real `/api`
  * chain and using supertest to make requests.
  *
  * The scanner is mocked via a fake meshCore.discover() async generator —
@@ -53,14 +53,14 @@ function createTestApp() {
 }
 
 /**
- * Helper to send a POST to /api/discovery/scan and collect the raw SSE response.
+ * Helper to send a POST to /api/discovery/scans and collect the raw SSE response.
  *
  * Supertest's default parser doesn't handle SSE streams, so we use a custom
  * parser that collects all chunks into a single string.
  */
 async function postScan(app: ReturnType<typeof createTestApp>, body: Record<string, unknown> = {}) {
   return request(app)
-    .post('/api/discovery/scan')
+    .post('/api/discovery/scans')
     .send(body)
     .buffer(true)
     .parse((res, callback) => {
@@ -352,7 +352,7 @@ describe('Discovery SSE Integration', () => {
   describe('validation errors', () => {
     it('returns 400 for maxDepth below 1', async () => {
       const app = createTestApp();
-      const res = await request(app).post('/api/discovery/scan').send({ maxDepth: 0 });
+      const res = await request(app).post('/api/discovery/scans').send({ maxDepth: 0 });
 
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('invalid_request');
@@ -360,7 +360,7 @@ describe('Discovery SSE Integration', () => {
 
     it('returns 400 for maxDepth above 10', async () => {
       const app = createTestApp();
-      const res = await request(app).post('/api/discovery/scan').send({ maxDepth: 11 });
+      const res = await request(app).post('/api/discovery/scans').send({ maxDepth: 11 });
 
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('invalid_request');
@@ -368,7 +368,7 @@ describe('Discovery SSE Integration', () => {
 
     it('returns JSON error body with details', async () => {
       const app = createTestApp();
-      const res = await request(app).post('/api/discovery/scan').send({ maxDepth: -1 });
+      const res = await request(app).post('/api/discovery/scans').send({ maxDepth: -1 });
 
       expect(res.status).toBe(400);
       expect(res.body).toHaveProperty('code', 'invalid_request');
@@ -377,7 +377,7 @@ describe('Discovery SSE Integration', () => {
 
     it('does not call scanner when validation fails', async () => {
       const app = createTestApp();
-      await request(app).post('/api/discovery/scan').send({ maxDepth: 999 });
+      await request(app).post('/api/discovery/scans').send({ maxDepth: 999 });
 
       expect(mockDiscover).not.toHaveBeenCalled();
     });
@@ -392,7 +392,7 @@ describe('Discovery SSE Integration', () => {
       mockIsWithinBoundary.mockResolvedValue(false);
 
       const app = createTestApp();
-      const res = await request(app).post('/api/discovery/scan').send({ root: '/root/forbidden' });
+      const res = await request(app).post('/api/discovery/scans').send({ root: '/root/forbidden' });
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('outside_boundary');
@@ -402,7 +402,7 @@ describe('Discovery SSE Integration', () => {
       mockIsWithinBoundary.mockResolvedValue(false);
 
       const app = createTestApp();
-      await request(app).post('/api/discovery/scan').send({ root: '/root/forbidden' });
+      await request(app).post('/api/discovery/scans').send({ root: '/root/forbidden' });
 
       expect(mockDiscover).not.toHaveBeenCalled();
     });

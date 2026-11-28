@@ -112,7 +112,8 @@ export const COMMAND_WORDS: readonly string[] = (
   'toggle check fetch execute cancel approve deny reject register unregister refresh read write ' +
   'open close archive restore sync test validate rebuild reload resolve claim release submit ' +
   'clear move copy link unlink accept decline retry requeue reorder verify probe sign-in ' +
-  'sign-out sign-out-all invoke stream confirm revoke undo scan finish export apply upload preview'
+  'sign-out sign-out-all invoke stream confirm revoke undo scan finish export apply upload preview ' +
+  'discover'
 ).split(' ');
 
 /**

@@ -25,7 +25,7 @@
       "apps/server/src/services/core/hub-relay/hub-link-openapi.ts": 3,
       "apps/server/src/services/core/keep-awake/keep-awake-openapi.ts": 1,
       "apps/server/src/services/core/onboarding/onboarding-openapi.ts": 2,
-      "apps/server/src/services/core/openapi-registry.ts": 170,
+      "apps/server/src/services/core/openapi-registry.ts": 169,
       "apps/server/src/services/core/openapi/push-openapi.ts": 4,
       "apps/server/src/services/core/openapi/relay-adapters.ts": 2,
       "apps/server/src/services/core/session-relay/session-relay-openapi.ts": 2,
@@ -82,7 +82,6 @@
       "desktop": 1,
       "diff": 1,
       "directory": 1,
-      "discovery": 1,
       "errors": 1,
       "extension-frame": 2,
       "extensions": 31,
@@ -125,21 +124,16 @@
       "connectors": 5,
       "devices": 3,
       "extensions": 3,
-      "harness": 1,
       "hub": 1,
       "local-browser": 4,
-      "marketplace": 6,
-      "mesh": 1,
+      "marketplace": 1,
       "owner-factors": 3,
       "permissions": 1,
       "relay": 4,
-      "rooms": 4,
       "runtimes": 3,
       "session-relay": 3,
       "sessions": 2,
-      "shapes": 1,
-      "tunnel": 1,
-      "your-browser": 1
+      "tunnel": 1
     }
   }
 }

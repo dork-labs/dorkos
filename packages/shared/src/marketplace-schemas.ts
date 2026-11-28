@@ -1105,7 +1105,7 @@ export interface UpdateCheckResult {
 }
 
 /**
- * The result of a one-package update check (`POST /api/marketplace/packages/:name/update`).
+ * The result of a one-package update check (`POST /api/marketplace/packages/:name/update-checks`).
  * Advisory: updates are applied only through `POST /api/marketplace/updates`.
  *
  * Mirrors `UpdateResult` in `apps/server/src/services/marketplace/flows/update-types.ts`.
@@ -1496,7 +1496,7 @@ export interface AddSourceInput {
 /**
  * What happened when DorkOS fetched a just-added source's listing (its
  * `marketplace.json`) — the one fetch `POST /api/marketplace/sources` makes
- * right after saving, through the same path `POST /sources/:name/refresh` takes.
+ * right after saving, through the same path `POST /sources/refreshes` takes.
  *
  * A failed fetch never undoes the add: the source stays saved, and `reason`
  * says why the listing isn't there yet so a refresh can be tried later.
@@ -1516,7 +1516,7 @@ export type SourceListingOutcome =
     };
 
 /**
- * What `POST /api/marketplace/sources/:name/refresh` reports. A refresh is
+ * What `POST /api/marketplace/sources/refreshes` reports. A refresh is
  * "check now": when the source can't be reached but a copy is cached, the
  * answer is that copy with `stale: true`, the reason, and when the copy was
  * fetched — never the old copy passed off as new. Only the package count is
@@ -1717,7 +1717,7 @@ export interface AppliedShape {
   schedulesRemoved?: string[];
 }
 
-/** Response body for `POST /api/shapes/:name/apply`. */
+/** Response body for `POST /api/shapes/:name/applications`. */
 export interface ApplyShapeResult {
   /** Always true — the apply only throws for an uninstalled Shape (404). */
   ok: boolean;
@@ -1988,7 +1988,7 @@ export interface DevLinkReloadedEvent {
   errors?: string[];
 }
 
-/** What linking a folder would do, as `POST /api/marketplace/dev-links/preview` reports it. */
+/** What linking a folder would do, as `POST /api/marketplace/dev-links/previews` reports it. */
 export interface DevLinkPreview {
   /** Package name from the folder's manifest. */
   name: string;
@@ -2011,7 +2011,7 @@ export interface DevLinkPreview {
 }
 
 /**
- * What `POST /api/marketplace/dev-links/preview` answers: the preview plus the
+ * What `POST /api/marketplace/dev-links/previews` answers: the preview plus the
  * approval text a yes binds to.
  */
 export interface DevLinkPreviewResponse extends DevLinkPreview {
@@ -2032,7 +2032,7 @@ export interface DevLinkScopeInput {
   projectPath?: string;
 }
 
-/** The body of `POST /api/marketplace/dev-links/preview`. */
+/** The body of `POST /api/marketplace/dev-links/previews`. */
 export interface DevLinkPreviewInput extends DevLinkScopeInput {
   /** The folder's absolute real path. */
   path: string;
@@ -2059,7 +2059,7 @@ export interface DevLinkListing {
   registryUnreadable?: string;
 }
 
-/** What `POST /api/marketplace/dev-links/:name/unlink` answers. */
+/** What `DELETE /api/marketplace/dev-links/:name` answers. */
 export interface DevUnlinkResult {
   /** `installed` when the set-aside copy is back, `removed` when the package is gone. */
   restored: 'installed' | 'removed';

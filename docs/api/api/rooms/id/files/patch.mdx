@@ -4,7 +4,7 @@ full: true
 _openapi:
   preload:
     - ../../docs/api/openapi.json
-  method: POST
+  method: PATCH
   webhook: false
   toc: []
   structuredData:
@@ -35,7 +35,7 @@ export default function Layout(props) {
   return (
     <>
       {props.children}
-      <Comp document="../../docs/api/openapi.json" operations={[{"path":"/api/rooms/{id}/files/move","method":"post"}]} showDescription />
+      <Comp document="../../docs/api/openapi.json" operations={[{"path":"/api/rooms/{id}/files","method":"patch"}]} showDescription />
     </>
   );
 }

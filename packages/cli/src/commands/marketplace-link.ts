@@ -6,7 +6,7 @@
  * against the caller's working directory and then to its real path, so the
  * folder shown is the folder linked.
  *
- * It asks `POST /api/marketplace/dev-links/preview` what linking would do,
+ * It asks `POST /api/marketplace/dev-links/previews` what linking would do,
  * prints the package name, the folder, what it runs and what it replaces, and
  * asks before linking (`--yes` skips the question). Then `POST
  * /api/marketplace/dev-links` makes the link, sending back the preview's
@@ -191,7 +191,7 @@ export async function runMarketplaceLink(args: MarketplaceLinkArgs): Promise<num
   try {
     const preview = await apiCall<DevLinkPreviewResponse>(
       'POST',
-      '/api/marketplace/dev-links/preview',
+      '/api/marketplace/dev-links/previews',
       { path: folder, ...where, ...(args.replaceInstalled && { replaceInstalled: true }) }
     );
     if (!args.json) {

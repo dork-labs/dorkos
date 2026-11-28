@@ -20,7 +20,7 @@
  *
  * ## Two callers, one sequence, two re-projections
  *
- * `runAutoProjection` (a marketplace package changed) and `POST /api/harness/sync`
+ * `runAutoProjection` (a marketplace package changed) and `POST /api/harness/syncs`
  * (a person clicked Sync now) ask the same question in the same order, and each
  * has its own second pass to run afterwards: the trigger logs a package name and
  * an install/uninstall action, the route sweeps orphans and recomputes a status.

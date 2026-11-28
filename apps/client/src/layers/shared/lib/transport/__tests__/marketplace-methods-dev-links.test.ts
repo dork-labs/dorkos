@@ -58,15 +58,15 @@ describe('createMarketplaceMethods() dev links (DOR-2696)', () => {
     expect(result.status).toBe('approval_required');
   });
 
-  it('unlinks by encoded name with the scope in the body', async () => {
+  it('unlinks by encoded name with the scope in the query', async () => {
     const fetchMock = answerWith({ restored: 'removed' });
     await createMarketplaceMethods('/api').unlinkDevLink('flow', {
       scope: 'project',
       projectPath: '/work/app',
     });
     const [url, init] = fetchMock.mock.calls[0]!;
-    expect(url).toBe('/api/marketplace/dev-links/flow/unlink');
-    expect(JSON.parse(String(init?.body))).toEqual({ scope: 'project', projectPath: '/work/app' });
+    expect(init?.method).toBe('DELETE');
+    expect(url).toBe('/api/marketplace/dev-links/flow?scope=project&projectPath=%2Fwork%2Fapp');
   });
 
   it('carries the refusal from a preview the server refused', async () => {

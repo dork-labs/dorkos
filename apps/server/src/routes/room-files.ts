@@ -304,7 +304,7 @@ function fileConflict(c: Context, conflict: RoomFileConflict): Response {
 }
 
 /**
- * POST /:id/files/upload — a person uploading files into one folder of the
+ * POST /:id/files — a person uploading files into one folder of the
  * room's files (spec `agent-home-desk` §7.1).
  *
  * Multipart: `files` (at most {@link ROOM_UPLOAD_MAX_FILES}), plus `dir`,
@@ -321,7 +321,7 @@ function fileConflict(c: Context, conflict: RoomFileConflict): Response {
  * whatever happened. Uploads are bytes: binary files are fine, and nothing that
  * arrives this way can be a symlink.
  */
-router.post('/:id/files/upload', async (c) => {
+router.post('/:id/files', async (c) => {
   const roomId = c.req.param('id');
   let stagingDir: string | null = null;
   let caller: AuthorRecord | undefined;
@@ -385,7 +385,7 @@ router.post('/:id/files/upload', async (c) => {
       };
     } else {
       const settled = caller;
-      reply = () => roomErrorResponse(c, err, 'POST /:id/files/upload', settled);
+      reply = () => roomErrorResponse(c, err, 'POST /:id/files', settled);
     }
   }
   if (stagingDir) await getRoomFileEditor().discardUpload(stagingDir);
@@ -435,7 +435,7 @@ function uploadError(err: unknown, maxFileBytes: number): unknown {
 }
 
 /**
- * POST /:id/files/move — rename or move one file or folder (spec
+ * PATCH /:id/files — rename or move one file or folder (spec
  * `agent-home-desk` §7.1).
  *
  * One commit, `Rename <from> to <to>`, authored as the person. Every path under
@@ -444,8 +444,8 @@ function uploadError(err: unknown, maxFileBytes: number): unknown {
  * above `to` are created; a folder segment that differs only in capitals from
  * one the room has is refused, naming the real one.
  */
-router.post('/:id/files/move', (c) =>
-  roomRoute(c, 'POST /:id/files/move', async (caller) => {
+router.patch('/:id/files', (c) =>
+  roomRoute(c, 'PATCH /:id/files', async (caller) => {
     const actor = fileActor(c, caller());
     const body = parseOrRefuse(c, RoomFileMoveRequestSchema, readJsonBody(c));
     if (body instanceof Response) return body;
@@ -456,18 +456,18 @@ router.post('/:id/files/move', (c) =>
 );
 
 /**
- * POST /:id/files/delete — delete one file or folder (spec `agent-home-desk`
- * §7.1).
+ * DELETE /:id/files?path=&baseCommit= — delete one file or folder (spec
+ * `agent-home-desk` §7.1).
  *
- * POST rather than DELETE, because the request carries a body (the lock) and a
- * DELETE body is one proxies are free to drop. One commit, `Delete <path>`; every
+ * The path and the lock (`baseCommit`) ride in the query: a DELETE body is one
+ * proxies are free to drop. One commit, `Delete <path>`; every
  * path under `path` must be unchanged since `baseCommit`. The room's history
  * keeps what was deleted.
  */
-router.post('/:id/files/delete', (c) =>
-  roomRoute(c, 'POST /:id/files/delete', async (caller) => {
+router.delete('/:id/files', (c) =>
+  roomRoute(c, 'DELETE /:id/files', async (caller) => {
     const actor = fileActor(c, caller());
-    const body = parseOrRefuse(c, RoomFileDeleteRequestSchema, readJsonBody(c));
+    const body = parseOrRefuse(c, RoomFileDeleteRequestSchema, readQuery(c));
     if (body instanceof Response) return body;
     const outcome = await getRoomFileEditor().remove(c.req.param('id'), actor, body);
     if (outcome.status === 'conflict') return fileConflict(c, outcome.conflict);

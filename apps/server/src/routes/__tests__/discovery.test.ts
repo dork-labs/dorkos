@@ -47,12 +47,12 @@ describe('Discovery Route', () => {
     mockGetBoundary.mockReturnValue('/home/user');
   });
 
-  describe('POST /api/discovery/scan — validation', () => {
+  describe('POST /api/discovery/scans — validation', () => {
     it('returns 400 for maxDepth out of range', async () => {
       const app = createTestApp();
 
       const res = await request(fixtureTarget.mount(app))
-        .post('/api/discovery/scan')
+        .post('/api/discovery/scans')
         .send({ maxDepth: 100 });
 
       expect(res.status).toBe(400);
@@ -63,7 +63,7 @@ describe('Discovery Route', () => {
       const app = createTestApp();
 
       const res = await request(fixtureTarget.mount(app))
-        .post('/api/discovery/scan')
+        .post('/api/discovery/scans')
         .send({ timeout: 500 });
 
       expect(res.status).toBe(400);
@@ -74,7 +74,7 @@ describe('Discovery Route', () => {
       const app = createTestApp();
 
       const res = await request(fixtureTarget.mount(app))
-        .post('/api/discovery/scan')
+        .post('/api/discovery/scans')
         .send({ timeout: 200000 });
 
       expect(res.status).toBe(400);
@@ -85,7 +85,7 @@ describe('Discovery Route', () => {
       const app = createTestApp();
 
       const res = await request(fixtureTarget.mount(app))
-        .post('/api/discovery/scan')
+        .post('/api/discovery/scans')
         .send({ maxDepth: 3.5 });
 
       expect(res.status).toBe(400);
@@ -93,13 +93,13 @@ describe('Discovery Route', () => {
     });
   });
 
-  describe('POST /api/discovery/scan — boundary', () => {
+  describe('POST /api/discovery/scans — boundary', () => {
     it('returns 403 when root is outside boundary', async () => {
       mockIsWithinBoundary.mockResolvedValue(false);
       const app = createTestApp();
 
       const res = await request(fixtureTarget.mount(app))
-        .post('/api/discovery/scan')
+        .post('/api/discovery/scans')
         .send({ root: '/etc/secrets' });
 
       expect(res.status).toBe(403);
@@ -112,7 +112,7 @@ describe('Discovery Route', () => {
       const app = createTestApp();
 
       const res = await request(fixtureTarget.mount(app))
-        .post('/api/discovery/scan')
+        .post('/api/discovery/scans')
         .send({ roots: ['/home/user/ok', '/etc/secrets'] });
 
       expect(res.status).toBe(403);
@@ -126,7 +126,7 @@ describe('Discovery Route', () => {
       const app = createTestApp();
 
       await request(fixtureTarget.mount(app))
-        .post('/api/discovery/scan')
+        .post('/api/discovery/scans')
         .send({})
         .buffer(true)
         .parse((res, callback) => {
@@ -145,7 +145,7 @@ describe('Discovery Route', () => {
     });
   });
 
-  describe('POST /api/discovery/scan — streaming', () => {
+  describe('POST /api/discovery/scans — streaming', () => {
     it('calls meshCore.discover with correct options', async () => {
       mockDiscover.mockImplementation(async function* () {
         yield { type: 'complete', data: { scannedDirs: 0, foundAgents: 0, timedOut: false } };
@@ -154,7 +154,7 @@ describe('Discovery Route', () => {
       const app = createTestApp();
 
       await request(fixtureTarget.mount(app))
-        .post('/api/discovery/scan')
+        .post('/api/discovery/scans')
         .send({ root: '/home/user/projects', maxDepth: 3, timeout: 10000 })
         .buffer(true)
         .parse((res, callback) => {
@@ -181,7 +181,7 @@ describe('Discovery Route', () => {
       const app = createTestApp();
 
       await request(fixtureTarget.mount(app))
-        .post('/api/discovery/scan')
+        .post('/api/discovery/scans')
         .send({ roots: ['/home/user/a', '/home/user/b'] })
         .buffer(true)
         .parse((res, callback) => {
@@ -228,7 +228,7 @@ describe('Discovery Route', () => {
       const app = createTestApp();
 
       const res = await request(fixtureTarget.mount(app))
-        .post('/api/discovery/scan')
+        .post('/api/discovery/scans')
         .send({})
         .buffer(true)
         .parse((res, callback) => {
@@ -272,7 +272,7 @@ describe('Discovery Route', () => {
       const app = createTestApp();
 
       const res = await request(fixtureTarget.mount(app))
-        .post('/api/discovery/scan')
+        .post('/api/discovery/scans')
         .send({})
         .buffer(true)
         .parse((res, callback) => {
@@ -306,7 +306,7 @@ describe('Discovery Route', () => {
       const app = createTestApp();
 
       await request(fixtureTarget.mount(app))
-        .post('/api/discovery/scan')
+        .post('/api/discovery/scans')
         .send({})
         .buffer(true)
         .parse((res, callback) => {

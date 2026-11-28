@@ -126,19 +126,19 @@ export type MarketplaceRoutes = Hono<ApiEnv>;
  *
  * - `POST /sources` — add a new source and fetch its listing once (operator-only; agents are refused)
  * - `DELETE /sources/:name` — remove a source (operator-only; agents are refused)
- * - `POST /sources/:name/refresh` — force refetch of a source's marketplace.json
+ * - `POST /sources/refreshes` — force refetch of a source's marketplace.json (`{ name }`)
  * - `DELETE /cache` — clear cache
  * - `POST /cache/prune` — remove cached packages no install needs
  * - `GET /packages/:name` — fetch and validate a single package
  * - `POST /packages/:name/preview` — build a permission preview without installing
  * - `POST /packages/:name/install` — install a package
  * - `POST /packages/:name/uninstall` — uninstall a package
- * - `POST /packages/:name/update` — advisory update check of one package
+ * - `POST /packages/:name/update-checks` — advisory update check of one package
  * - `POST /updates` — reinstall exactly the installations a person was shown, held to what they saw
  * - `POST /held-back/:name/review`, `/decision` — raise a held-back package's card again; a person's decision
- * - `POST /dev-links/preview` — what linking a folder would do
+ * - `POST /dev-links/previews` — what linking a folder would do
  * - `POST /dev-links` — run a package from a folder (gated by `marketplace.link`)
- * - `POST /dev-links/:name/unlink` — switch back (the person only)
+ * - `DELETE /dev-links/:name` — switch back (the person only)
  *
  * @param deps - Injected dependencies (source manager, cache, fetcher,
  *   installer, uninstall flow, update flow, dorkHome).

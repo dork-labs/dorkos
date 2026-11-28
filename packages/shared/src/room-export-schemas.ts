@@ -1,5 +1,5 @@
 /**
- * The JSONL a room export is made of — `GET /api/rooms/:id/export` and
+ * The JSONL a room export is made of — `GET /api/rooms/:id/history` and
  * `dorkos room export` (DOR-1225).
  *
  * Rooms live only in SQLite, which is a deliberate architecture decision and

@@ -65,7 +65,7 @@ describe('Your browser metadata route', () => {
   it('refuses even the owner without reading metadata when the flag is off', async () => {
     enabled = false;
     const result = await request(server)
-      .post('/api/your-browser/scan')
+      .post('/api/your-browser/profile-scans')
       .set('Host', 'localhost')
       .send({});
     expect(result.status).toBe(404);
@@ -76,7 +76,7 @@ describe('Your browser metadata route', () => {
   it('reads on a person POST only and forbids caching', async () => {
     expect(scan).not.toHaveBeenCalled();
     const result = await request(server)
-      .post('/api/your-browser/scan')
+      .post('/api/your-browser/profile-scans')
       .set('Host', 'localhost')
       .send({});
     expect(result.status).toBe(200);
@@ -88,7 +88,7 @@ describe('Your browser metadata route', () => {
   it.each(['agent', 'bearer', 'api-key', 'approval', 'other-person', 'no-session'] as const)(
     'refuses %s before scanning',
     async (caller) => {
-      const call = request(server).post('/api/your-browser/scan').set('Host', 'localhost');
+      const call = request(server).post('/api/your-browser/profile-scans').set('Host', 'localhost');
       if (caller === 'agent') call.set('X-DorkOS-Agent', '');
       if (caller === 'bearer') call.set('Authorization', 'Bearer not-a-person');
       if (caller === 'api-key') user = { userId: 'user_owner', credential: 'api-key' };
@@ -109,7 +109,7 @@ describe('Your browser metadata route', () => {
       gate.owner = posture !== 'ownerless';
       user = undefined;
       const response = await request(server)
-        .post('/api/your-browser/scan')
+        .post('/api/your-browser/profile-scans')
         .set('Host', 'localhost')
         .send({});
       expect(response.status).toBe(403);
@@ -120,7 +120,7 @@ describe('Your browser metadata route', () => {
   it('still requires and accepts the owner session with Require login off', async () => {
     gate.login = false;
     const response = await request(server)
-      .post('/api/your-browser/scan')
+      .post('/api/your-browser/profile-scans')
       .set('Host', 'localhost')
       .send({});
     expect(response.status).toBe(200);
@@ -129,7 +129,7 @@ describe('Your browser metadata route', () => {
 
   it('refuses extension page code before scanning', async () => {
     const response = await request(server)
-      .post('/api/your-browser/scan')
+      .post('/api/your-browser/profile-scans')
       .set('Host', 'localhost')
       .set('Origin', 'chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
       .send({});
@@ -142,7 +142,7 @@ describe('Your browser metadata route', () => {
     async (kind) => {
       ingress = kind;
       const response = await request(server)
-        .post('/api/your-browser/scan')
+        .post('/api/your-browser/profile-scans')
         .set('Host', 'localhost')
         .send({});
       expect(response.status).toBe(403);
@@ -153,7 +153,7 @@ describe('Your browser metadata route', () => {
   it('accepts the signed-in owner over managed encrypted access, per the shared person bar', async () => {
     ingress = 'managed';
     const response = await request(server)
-      .post('/api/your-browser/scan')
+      .post('/api/your-browser/profile-scans')
       .set('Host', 'localhost')
       .send({});
     expect(response.status).toBe(200);
@@ -162,11 +162,11 @@ describe('Your browser metadata route', () => {
 
   it('does not scan through GET or accept client-chosen paths', async () => {
     expect(
-      (await request(server).get('/api/your-browser/scan').set('Host', 'localhost')).status
+      (await request(server).get('/api/your-browser/profile-scans').set('Host', 'localhost')).status
     ).toBe(404);
     expect(scan).not.toHaveBeenCalled();
     await request(server)
-      .post('/api/your-browser/scan')
+      .post('/api/your-browser/profile-scans')
       .set('Host', 'localhost')
       .send({ path: '/private/Cookies' });
     // The route hands no request data to the scanner; it only knows fixed paths.

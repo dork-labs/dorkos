@@ -106,7 +106,7 @@ describe('Shape apply confirmation', () => {
   beforeEach(() => setActiveShape.mockClear());
 
   it.each(['direct', 'own-tunnel'] as const)('holds a person’s apply from %s', async (via) => {
-    const held = await owner.call('post', `/api/shapes/${SHAPE}/apply`, via).send({});
+    const held = await owner.call('post', `/api/shapes/${SHAPE}/applications`, via).send({});
     expect(held.status).toBe(428);
     expect(setActiveShape).not.toHaveBeenCalled();
     expect((await owner.confirm(held.body.heldActionId, via, true)).body.code).toBe(
@@ -123,7 +123,7 @@ describe('Shape apply confirmation', () => {
 
   it('answers a Shape that is not installed before asking anyone', async () => {
     const res = await owner
-      .call('post', '/api/shapes/northwind-ghost/apply', 'own-tunnel')
+      .call('post', '/api/shapes/northwind-ghost/applications', 'own-tunnel')
       .send({});
     expect(res.status).toBe(404);
     expect(res.body).toMatchObject({

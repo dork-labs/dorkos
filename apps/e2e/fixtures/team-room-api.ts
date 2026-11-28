@@ -33,7 +33,7 @@ const TEAM_AGENT_ROOT = join(import.meta.dirname, '..', '.temp', 'team-fixtures'
  * The Shape id every seeded approval names.
  *
  * Seeding a pending approval needs a DESTRUCTIVE effect asked for by something
- * that is not the person in the cockpit, and `POST /api/shapes/:name/apply` is
+ * that is not the person in the cockpit, and `POST /api/shapes/:name/applications` is
  * the smallest one reachable over HTTP: it runs the tier gate BEFORE it resolves
  * the Shape, so a name nothing has installed still produces a real approval and
  * still cannot do anything (`routes/shapes.ts`, DOR-625).
@@ -393,7 +393,7 @@ export class TeamRoomApi {
    */
   async seedApproval(): Promise<string> {
     const name = `${APPROVAL_PROBE_SHAPE}-${this.runId}-${this.seededApprovalIds.length}`;
-    const res = await this.request.post(`/api/shapes/${name}/apply`, {
+    const res = await this.request.post(`/api/shapes/${name}/applications`, {
       // Presenting ANY agent identity is what makes this caller not the
       // operator; it never has to resolve. See APPROVAL_PROBE_SHAPE.
       headers: { 'X-DorkOS-Agent': `e2e-${this.runId}` },

@@ -159,7 +159,7 @@ export function createMarketplaceMethods(baseUrl: string) {
     },
 
     previewDevLink(input: DevLinkPreviewInput): Promise<DevLinkPreviewResponse> {
-      return fetchJSON<DevLinkPreviewResponse>(baseUrl, '/marketplace/dev-links/preview', {
+      return fetchJSON<DevLinkPreviewResponse>(baseUrl, '/marketplace/dev-links/previews', {
         method: 'POST',
         body: JSON.stringify(input),
       });
@@ -180,10 +180,11 @@ export function createMarketplaceMethods(baseUrl: string) {
     },
 
     unlinkDevLink(name: string, input: DevLinkScopeInput): Promise<DevUnlinkResult> {
+      const qs = buildQueryString({ scope: input.scope, projectPath: input.projectPath });
       return fetchJSON<DevUnlinkResult>(
         baseUrl,
-        `/marketplace/dev-links/${encodeURIComponent(name)}/unlink`,
-        { method: 'POST', body: JSON.stringify(input) }
+        `/marketplace/dev-links/${encodeURIComponent(name)}${qs}`,
+        { method: 'DELETE' }
       );
     },
 
@@ -247,16 +248,15 @@ export function createMarketplaceMethods(baseUrl: string) {
     },
 
     /**
-     * The name goes in the query string, never the path: a name saved by an
-     * older DorkOS may hold a `/`, and Remote Access refuses an encoded `/` in a
-     * URL path (DOR-4212). The same holds for {@link removeMarketplaceSource}.
+     * The name goes in the body, never the path: a name saved by an older
+     * DorkOS may hold a `/`, and Remote Access refuses an encoded `/` in a URL
+     * path (DOR-4212). {@link removeMarketplaceSource} sends it in the query.
      */
     refreshMarketplaceSource(name: string): Promise<RefreshedMarketplaceSource> {
-      return fetchJSON<RefreshedMarketplaceSource>(
-        baseUrl,
-        `/marketplace/sources/refresh?name=${encodeURIComponent(name)}`,
-        { method: 'POST' }
-      );
+      return fetchJSON<RefreshedMarketplaceSource>(baseUrl, '/marketplace/sources/refreshes', {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      });
     },
 
     /**

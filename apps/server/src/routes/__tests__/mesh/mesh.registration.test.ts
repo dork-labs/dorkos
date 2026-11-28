@@ -11,11 +11,7 @@ vi.mock('../../../lib/boundary.js', async (importOriginal) => ({
   validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
 }));
 
-import {
-  validateBoundary,
-  validateBoundaryOrDorkHome,
-  BoundaryError,
-} from '../../../lib/boundary.js';
+import { validateBoundaryOrDorkHome, BoundaryError } from '../../../lib/boundary.js';
 import type { ActivityService } from '../../../services/activity/activity-service.js';
 import { setOnAgentCreated } from '../../../services/core/agent-created-hook.js';
 import {
@@ -49,61 +45,6 @@ beforeEach(() => {
   meshCore = createMockMeshCore();
   meshCore.registerByPath.mockResolvedValue(MOCK_MANIFEST);
   mountMesh(meshCore);
-});
-
-describe('POST /api/mesh/discover', () => {
-  it('returns discovered candidates, passing maxDepth through', async () => {
-    const candidates = [
-      { projectPath: '/home/user/proj-a', suggestedName: 'proj-a', detectedRuntime: 'claude-code' },
-      { projectPath: '/home/user/proj-b', suggestedName: 'proj-b', detectedRuntime: 'cursor' },
-    ];
-    meshCore.discover.mockImplementation(async function* () {
-      for (const c of candidates) yield { type: 'candidate', data: c };
-    });
-
-    const res = await request(fixtureServer)
-      .post('/api/mesh/discover')
-      .send({ roots: ['/home/user'], maxDepth: 3 });
-
-    expect(res.status).toBe(200);
-    expect(res.body.candidates).toEqual(candidates);
-    expect(meshCore.discover).toHaveBeenCalledWith(['/home/user'], { maxDepth: 3 });
-  });
-
-  it('returns 400 when roots is empty array', async () => {
-    const res = await request(fixtureServer).post('/api/mesh/discover').send({ roots: [] });
-
-    expect(res.status).toBe(400);
-    expect(res.body.code).toBe('invalid_request');
-  });
-
-  it('returns 500 when discovery throws', async () => {
-    meshCore.discover.mockImplementation(async function* () {
-      throw new Error('Permission denied');
-    });
-
-    const res = await request(fixtureServer)
-      .post('/api/mesh/discover')
-      .send({ roots: ['/root/secret'] });
-
-    expect(res.status).toBe(500);
-    expect(res.type).toBe('application/problem+json');
-    expect(res.body.code).toBe('internal_error');
-  });
-
-  it('validates every root and refuses if any one is outside the boundary', async () => {
-    vi.mocked(validateBoundary)
-      .mockResolvedValueOnce('/home/user/good')
-      .mockRejectedValueOnce(outside());
-
-    const res = await request(fixtureServer)
-      .post('/api/mesh/discover')
-      .send({ roots: ['/home/user/good', '/outside/boundary'] });
-
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('outside_boundary');
-    expect(meshCore.discover).not.toHaveBeenCalled();
-  });
 });
 
 describe('POST /api/mesh/agents', () => {

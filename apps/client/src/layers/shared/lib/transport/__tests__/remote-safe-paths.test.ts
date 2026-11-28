@@ -51,11 +51,12 @@ describe('values holding / or \\ ride outside the URL path (DOR-4212)', () => {
     expect(url).toBe('/api/marketplace/sources?name=acme%2Fplugins');
   });
 
-  it('refreshing a source sends its name in the query string', async () => {
+  it('refreshing a source sends its name in the body', async () => {
     const fetchMock = answerWith({ marketplace: {}, fetchedAt: 'now', stale: false });
     await createMarketplaceMethods('/api').refreshMarketplaceSource('acme/plugins');
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(init?.method).toBe('POST');
-    expect(url).toBe('/api/marketplace/sources/refresh?name=acme%2Fplugins');
+    expect(url).toBe('/api/marketplace/sources/refreshes');
+    expect(JSON.parse(String(init?.body))).toEqual({ name: 'acme/plugins' });
   });
 });

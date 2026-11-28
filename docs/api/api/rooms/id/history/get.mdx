@@ -54,7 +54,7 @@ export default function Layout(props) {
   return (
     <>
       {props.children}
-      <Comp document="../../docs/api/openapi.json" operations={[{"path":"/api/rooms/{id}/export","method":"get"}]} showDescription />
+      <Comp document="../../docs/api/openapi.json" operations={[{"path":"/api/rooms/{id}/history","method":"get"}]} showDescription />
     </>
   );
 }

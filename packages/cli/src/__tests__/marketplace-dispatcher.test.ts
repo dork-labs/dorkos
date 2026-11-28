@@ -168,7 +168,7 @@ describe('runMarketplaceDispatcher', () => {
     expect(await runMarketplaceDispatcher('update', ['flow'])).toBe(0);
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toMatch(/\/api\/marketplace\/packages\/flow\/update$/);
+    expect(url).toMatch(/\/api\/marketplace\/packages\/flow\/update-checks$/);
     // A check only: the per-package door no longer applies (DOR-2306).
     expect(JSON.parse(String(init.body))).toEqual({});
   });
@@ -192,8 +192,8 @@ describe('runMarketplaceDispatcher', () => {
     expect(await runMarketplaceDispatcher('unlink', ['flow'])).toBe(0);
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toMatch(/\/api\/marketplace\/dev-links\/flow\/unlink$/);
-    expect(JSON.parse(String(init.body))).toEqual({ scope: 'global' });
+    expect(init.method).toBe('DELETE');
+    expect(url).toMatch(/\/api\/marketplace\/dev-links\/flow\?scope=global$/);
   });
 
   it('names the canonical command when a package verb gets a bad option', async () => {

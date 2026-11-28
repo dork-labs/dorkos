@@ -119,7 +119,7 @@ test.describe('Opening files from the tree @smoke', () => {
     const commit = await roomsApi.enableRepo(roomId, {
       'mark.svg': '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>\n',
     });
-    const upload = await request.post(`/api/rooms/${roomId}/files/upload`, {
+    const upload = await request.post(`/api/rooms/${roomId}/files`, {
       multipart: {
         dir: '',
         baseCommit: commit!,

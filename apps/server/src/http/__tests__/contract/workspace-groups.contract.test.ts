@@ -940,9 +940,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     },
   },
   {
-    name: 'POST /api/harness/sync refuses a folder with nothing set up',
+    name: 'POST /api/harness/syncs refuses a folder with nothing set up',
     method: 'POST',
-    path: '/api/harness/sync',
+    path: '/api/harness/syncs',
     body: { projectPath: NO_MANIFEST },
     expect: {
       status: 409,
@@ -952,9 +952,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     },
   },
   {
-    name: 'POST /api/harness/sync refuses a request with no body',
+    name: 'POST /api/harness/syncs refuses a request with no body',
     method: 'POST',
-    path: '/api/harness/sync',
+    path: '/api/harness/syncs',
     expect: {
       status: 400,
       body: validationProblemBody({
@@ -964,16 +964,16 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     },
   },
   {
-    name: 'POST /api/harness/sync refuses a folder outside the boundary',
+    name: 'POST /api/harness/syncs refuses a folder outside the boundary',
     method: 'POST',
-    path: '/api/harness/sync',
+    path: '/api/harness/syncs',
     body: { projectPath: '/etc' },
     expect: { status: 403, body: GIT_OUTSIDE },
   },
   {
-    name: 'POST /api/harness/sync refuses an agent before reading the body',
+    name: 'POST /api/harness/syncs refuses an agent before reading the body',
     method: 'POST',
-    path: '/api/harness/sync',
+    path: '/api/harness/syncs',
     headers: AGENT,
     expect: {
       status: 403,
@@ -1008,8 +1008,8 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     },
   },
   {
-    name: 'GET /api/harness/sync is not a route',
-    path: '/api/harness/sync',
+    name: 'GET /api/harness/syncs is not a route',
+    path: '/api/harness/syncs',
     expect: { status: 404, body: NOT_FOUND },
   },
 
@@ -1030,9 +1030,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     expect: { status: 200, headers: JSON_TYPE, body: '' },
   },
   {
-    name: 'POST /api/shapes/:name/apply refuses a name that decodes to a traversal',
+    name: 'POST /api/shapes/:name/applications refuses a name that decodes to a traversal',
     method: 'POST',
-    path: '/api/shapes/..%2F..%2Fsecret/apply',
+    path: '/api/shapes/..%2F..%2Fsecret/applications',
     expect: {
       status: 400,
       body: problemBody('invalid_request', {
@@ -1041,9 +1041,9 @@ contractSuite('workspace, project, git, directory, template, shape and harness g
     },
   },
   {
-    name: 'POST /api/shapes/:name/apply answers 404 for a Shape that is not installed',
+    name: 'POST /api/shapes/:name/applications answers 404 for a Shape that is not installed',
     method: 'POST',
-    path: '/api/shapes/ghost/apply',
+    path: '/api/shapes/ghost/applications',
     expect: {
       status: 404,
       body: problemBody('not_found', { detail: "No Shape called 'ghost' is installed." }),

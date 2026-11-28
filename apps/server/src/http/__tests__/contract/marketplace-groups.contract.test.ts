@@ -71,6 +71,8 @@ const AGENT_PACKAGE = 'contract-agent';
 const OTHER_AGENT_PACKAGE = 'contract-agent-two';
 const SKILL_PACK = 'contract-skills';
 const LINKED_PACK = 'contract-linked';
+const REFRESHES = '/api/marketplace/sources/refreshes';
+const UNLINK = `/api/marketplace/dev-links/${LINKED_PACK}?scope=global`;
 
 /** Write a skill pack named `name` into `dir`, from the shipped fixture. */
 function writeSkillPack(dir: string, name: string): void {
@@ -286,9 +288,10 @@ contractSuite('marketplace groups', [
     expect: { status: 403, body: SOURCE_REFUSAL('remove') },
   },
   {
-    name: 'POST /api/marketplace/sources/:name/refresh answers 404 for an unknown source',
+    name: 'POST /api/marketplace/sources/refreshes answers 404 for an unknown source',
     method: 'POST',
-    path: '/api/marketplace/sources/no-such-source/refresh',
+    path: REFRESHES,
+    body: { name: 'no-such-source' },
     expect: {
       status: 404,
       headers: PROBLEM_TYPE,
@@ -441,23 +444,23 @@ contractSuite('marketplace groups', [
     expect: { status: 202, schema: APPROVAL_REQUIRED.and(TOKEN_ASKED('unknown_token')) },
   },
   {
-    name: 'POST /api/marketplace/packages/:name/update answers a retired apply with a sentence',
+    name: 'POST /api/marketplace/packages/:name/update-checks answers a retired apply with a sentence',
     method: 'POST',
-    path: '/api/marketplace/packages/anything/update',
+    path: '/api/marketplace/packages/anything/update-checks',
     body: { apply: true },
     expect: { status: 400, schema: CLIENT_OUTDATED },
   },
   {
-    name: 'POST /api/marketplace/packages/:name/update refuses an unknown field',
+    name: 'POST /api/marketplace/packages/:name/update-checks refuses an unknown field',
     method: 'POST',
-    path: '/api/marketplace/packages/anything/update',
+    path: '/api/marketplace/packages/anything/update-checks',
     body: { force: true },
     expect: { status: 400, schema: VALIDATION_FAILED },
   },
   {
-    name: 'POST /api/marketplace/packages/:name/update answers 404 for a package nowhere installed',
+    name: 'POST /api/marketplace/packages/:name/update-checks answers 404 for a package nowhere installed',
     method: 'POST',
-    path: '/api/marketplace/packages/nothing-here/update',
+    path: '/api/marketplace/packages/nothing-here/update-checks',
     expect: {
       status: 404,
       schema: problemCoded('not_found').and(z.object({ packageNames: z.array(z.string()) })),
@@ -609,22 +612,22 @@ contractSuite('marketplace groups', [
     expect: { status: 200, headers: JSON_TYPE, schema: z.object({}).loose() },
   },
   {
-    name: 'POST /api/marketplace/dev-links/preview refuses an empty body',
+    name: 'POST /api/marketplace/dev-links/previews refuses an empty body',
     method: 'POST',
-    path: '/api/marketplace/dev-links/preview',
+    path: '/api/marketplace/dev-links/previews',
     expect: { status: 400, schema: VALIDATION_FAILED },
   },
   {
-    name: 'POST /api/marketplace/dev-links/preview refuses a project link with no project',
+    name: 'POST /api/marketplace/dev-links/previews refuses a project link with no project',
     method: 'POST',
-    path: '/api/marketplace/dev-links/preview',
+    path: '/api/marketplace/dev-links/previews',
     body: { path: LINKABLE, scope: 'project' },
     expect: { status: 400, schema: VALIDATION_FAILED },
   },
   {
-    name: 'POST /api/marketplace/dev-links/preview refuses a project outside the boundary',
+    name: 'POST /api/marketplace/dev-links/previews refuses a project outside the boundary',
     method: 'POST',
-    path: '/api/marketplace/dev-links/preview',
+    path: '/api/marketplace/dev-links/previews',
     body: { path: LINKABLE, scope: 'project', projectPath: '/' },
     expect: { status: 403, body: OUTSIDE_BOUNDARY },
   },
@@ -636,24 +639,22 @@ contractSuite('marketplace groups', [
     expect: { status: 400, schema: VALIDATION_FAILED },
   },
   {
-    name: 'POST /api/marketplace/dev-links/:name/unlink refuses an agent',
-    method: 'POST',
-    path: `/api/marketplace/dev-links/${LINKED_PACK}/unlink`,
+    name: 'DELETE /api/marketplace/dev-links/:name refuses an agent',
+    method: 'DELETE',
+    path: UNLINK,
     headers: AGENT,
-    body: { scope: 'global' },
     expect: { status: 403, body: OPERATOR_ONLY('Only you can unlink a dev link, not an agent.') },
   },
   {
-    name: 'POST /api/marketplace/dev-links/:name/unlink refuses a name that is not a package name',
-    method: 'POST',
-    path: '/api/marketplace/dev-links/Not%20A%20Name/unlink',
-    body: { scope: 'global' },
+    name: 'DELETE /api/marketplace/dev-links/:name refuses a name that is not a package name',
+    method: 'DELETE',
+    path: '/api/marketplace/dev-links/Not%20A%20Name?scope=global',
     expect: { status: 400, body: problemOf('invalid_request', 'That is not a package name.') },
   },
   {
-    name: 'POST /api/marketplace/dev-links/:name/unlink refuses a person’s empty body',
-    method: 'POST',
-    path: `/api/marketplace/dev-links/${LINKED_PACK}/unlink`,
+    name: 'DELETE /api/marketplace/dev-links/:name refuses a person’s request with no scope',
+    method: 'DELETE',
+    path: `/api/marketplace/dev-links/${LINKED_PACK}`,
     expect: { status: 400, schema: VALIDATION_FAILED },
   },
 
@@ -824,7 +825,7 @@ describe('contract: the marketplace groups, driven by hand (login off)', () => {
           schema: SOURCE_LIST.refine((body) => body.sources.some((s) => s.name === 'contract')),
         },
       });
-      const refreshed = await call(server, 'POST', '/api/marketplace/sources/contract/refresh');
+      const refreshed = await call(server, 'POST', REFRESHES, { name: 'contract' });
       expect(refreshed.status).toBe(200);
 
       const browsed = await call(server, 'GET', '/api/marketplace/packages');
@@ -892,7 +893,11 @@ describe('contract: the marketplace groups, driven by hand (login off)', () => {
       expect(one.status).toBe(200);
       expect(one.json).toMatchObject({ installations: [{ name: SKILL_PACK }] });
 
-      const checked = await call(server, 'POST', `/api/marketplace/packages/${SKILL_PACK}/update`);
+      const checked = await call(
+        server,
+        'POST',
+        `/api/marketplace/packages/${SKILL_PACK}/update-checks`
+      );
       expect(checked.status).toBe(200);
       const updates = await call(server, 'GET', '/api/marketplace/updates');
       expect(updates.status).toBe(200);
@@ -1054,7 +1059,7 @@ describe('contract: the marketplace groups, driven by hand (login off)', () => {
         expect: { status: 202, headers: JSON_TYPE, schema: APPROVAL_REQUIRED },
       });
 
-      const preview = await call(server, 'POST', '/api/marketplace/dev-links/preview', {
+      const preview = await call(server, 'POST', '/api/marketplace/dev-links/previews', {
         path: LINKABLE,
         scope: 'global',
       });
@@ -1091,12 +1096,7 @@ describe('contract: the marketplace groups, driven by hand (login off)', () => {
         name: LINKED_PACK,
       });
 
-      const unlinked = await call(
-        server,
-        'POST',
-        `/api/marketplace/dev-links/${LINKED_PACK}/unlink`,
-        { scope: 'global' }
-      );
+      const unlinked = await call(server, 'DELETE', UNLINK);
       expect(unlinked.status).toBe(200);
     },
     CASE_TIMEOUT_MS
@@ -1230,13 +1230,13 @@ describe('contract: the marketplace groups with login on', () => {
     'refuses an API key what only a signed-in person decides; the owner’s cookie may',
     async () => {
       const decision = { decision: 'refuse', effects: EMPTY_EFFECTS, bindsTo: 'x' };
-      for (const [url, body] of [
-        ['/api/marketplace/held-back/nothing-here/decision', decision],
-        ['/api/marketplace/packages/nothing-here/keep-files', { keepKey: 'k' }],
-        [`/api/marketplace/dev-links/${LINKED_PACK}/unlink`, { scope: 'global' }],
+      for (const [method, url, body] of [
+        ['POST', '/api/marketplace/held-back/nothing-here/decision', decision],
+        ['POST', '/api/marketplace/packages/nothing-here/keep-files', { keepKey: 'k' }],
+        ['DELETE', UNLINK, undefined],
       ] as const) {
         await check(server, {
-          method: 'POST',
+          method,
           path: url,
           headers: apiKey,
           body,

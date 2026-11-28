@@ -330,7 +330,7 @@ export const ROOM_UPLOAD_MAX_FILES = 20;
 export const ROOM_UPLOAD_FILES_FIELD = 'files';
 
 /**
- * `POST /api/rooms/{id}/files/upload` — the text fields beside the files.
+ * `POST /api/rooms/{id}/files` — the text fields beside the files.
  *
  * Multipart carries every field as a string, so each one is parsed from its
  * string form here: `baseCommit` empty (or absent) means "I read no commit",
@@ -379,7 +379,7 @@ export const RoomFileUploadFieldsSchema = z.object({
 /** The parsed upload fields. See {@link RoomFileUploadFieldsSchema}. */
 export type RoomFileUploadFields = z.infer<typeof RoomFileUploadFieldsSchema>;
 
-/** `POST /api/rooms/{id}/files/move` — rename or move one file or folder. */
+/** `PATCH /api/rooms/{id}/files` — rename or move one file or folder. */
 export const RoomFileMoveRequestSchema = z.object({
   /** The file or folder to move, as a listing named it. */
   from: z.string().min(1),
@@ -396,7 +396,7 @@ export const RoomFileMoveRequestSchema = z.object({
 /** What a move sends. See {@link RoomFileMoveRequestSchema}. */
 export type RoomFileMoveRequest = z.infer<typeof RoomFileMoveRequestSchema>;
 
-/** `POST /api/rooms/{id}/files/delete` — delete one file or folder. */
+/** `DELETE /api/rooms/{id}/files` — delete one file or folder. */
 export const RoomFileDeleteRequestSchema = z.object({
   /** The file or folder to delete, as a listing named it. */
   path: z.string().min(1),

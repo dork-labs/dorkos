@@ -295,8 +295,9 @@ describe('runMarketplaceRefresh', () => {
     expect(code).toBe(0);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toContain('/api/marketplace/sources/dorkos-community/refresh');
+    expect(url).toMatch(/\/api\/marketplace\/sources\/refreshes$/);
     expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ name: 'dorkos-community' });
 
     const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(allLogs).toContain('Refreshed dorkos-community: 47 packages.');

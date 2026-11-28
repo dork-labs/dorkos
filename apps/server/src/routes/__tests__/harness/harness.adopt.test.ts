@@ -128,7 +128,7 @@ describe('POST /api/harness/adopt', () => {
       .set('X-DorkOS-Agent', 'some-agent-token')
       .send({ projectPath: repo, name: 'release-notes' });
     const refusedSync = await request(servers.testServer)
-      .post('/api/harness/sync')
+      .post('/api/harness/syncs')
       .set('X-DorkOS-Agent', 'some-agent-token')
       .send({ projectPath: repo });
 

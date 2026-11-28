@@ -890,7 +890,7 @@ mark moving on another device) without needing a subscription to every room at o
 | `GET`    | `/api/rooms/:id`                                  | One room, with its member list.                  |
 | `PATCH`  | `/api/rooms/:id`                                  | Update a room's title, topic, or archived state. |
 | `GET`    | `/api/rooms/:id/entries`                          | Paginated message history.                       |
-| `GET`    | `/api/rooms/:id/export`                           | The whole room as JSONL, as a download.          |
+| `GET`    | `/api/rooms/:id/history`                          | The whole room as JSONL, as a download.          |
 | `POST`   | `/api/rooms/:id/entries`                          | Post a message.                                  |
 | `POST`   | `/api/rooms/:id/members`                          | Add a member.                                    |
 | `PATCH`  | `/api/rooms/:id/members/:authorId`                | Change a member's response mode.                 |
@@ -1129,19 +1129,19 @@ outside the room gets `404`, and an archived room answers `409 room_archived`. A
 the binding it already has. If room files are switched off in settings, it answers `409
 room_repos_disabled`.
 
-| Method | Path                                   | Purpose                                                         |
-| ------ | -------------------------------------- | --------------------------------------------------------------- |
-| `POST` | `/api/rooms/:id/repo`                  | Give a room files of its own. Any member.                       |
-| `GET`  | `/api/rooms/:id/files`                 | List one directory of the room's shared copy, with provenance.  |
-| `GET`  | `/api/rooms/:id/files/content`         | Read one file. Answers `text`, `binary`, or `too-large`.        |
-| `PUT`  | `/api/rooms/:id/files/content`         | Save one file. People only; agents merge instead.               |
-| `POST` | `/api/rooms/:id/files/upload`          | Upload files. People only.                                      |
-| `POST` | `/api/rooms/:id/files/move`            | Rename or move a file or folder. People only.                   |
-| `POST` | `/api/rooms/:id/files/delete`          | Delete a file or folder. People only.                           |
-| `POST` | `/api/rooms/:id/files/from-attachment` | Keep a chat attachment as one of the room's files. People only. |
-| `GET`  | `/api/rooms/:id/repo/status`           | Main's tip, and each member's unmerged and uncommitted work.    |
-| `POST` | `/api/rooms/:id/repo/merge`            | Merge a member's work into the room's shared copy.              |
-| `POST` | `/api/rooms/:id/repo/main/repair`      | Commit or discard changes made outside DorkOS. Owner-only.      |
+| Method   | Path                                   | Purpose                                                         |
+| -------- | -------------------------------------- | --------------------------------------------------------------- |
+| `POST`   | `/api/rooms/:id/repo`                  | Give a room files of its own. Any member.                       |
+| `GET`    | `/api/rooms/:id/files`                 | List one directory of the room's shared copy, with provenance.  |
+| `GET`    | `/api/rooms/:id/files/content`         | Read one file. Answers `text`, `binary`, or `too-large`.        |
+| `PUT`    | `/api/rooms/:id/files/content`         | Save one file. People only; agents merge instead.               |
+| `POST`   | `/api/rooms/:id/files`                 | Upload files. People only.                                      |
+| `PATCH`  | `/api/rooms/:id/files`                 | Rename or move a file or folder. People only.                   |
+| `DELETE` | `/api/rooms/:id/files`                 | Delete a file or folder (`?path=&baseCommit=`). People only.    |
+| `POST`   | `/api/rooms/:id/files/from-attachment` | Keep a chat attachment as one of the room's files. People only. |
+| `GET`    | `/api/rooms/:id/repo/status`           | Main's tip, and each member's unmerged and uncommitted work.    |
+| `POST`   | `/api/rooms/:id/repo/merge`            | Merge a member's work into the room's shared copy.              |
+| `POST`   | `/api/rooms/:id/repo/main/repair`      | Commit or discard changes made outside DorkOS. Owner-only.      |
 
 The read routes are gated exactly as reading a room's history is: a caller who is not a member gets
 the same `404` an unknown room gets, and membership is checked before the room is asked whether it

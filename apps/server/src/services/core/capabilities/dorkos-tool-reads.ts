@@ -172,9 +172,8 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   mesh_list: anyFromPackage('agents'),
   mesh_inspect: anyFromPackage('agent'),
   // The registry's doors on `/api/mesh/*` (DOR-4978): an agent a package brought marks, as
-  // `mesh_list` does. A scan reads folders anyone may have written.
+  // `mesh_list` does.
   'mesh.list_agents': anyFromPackage('agents'),
-  'mesh.discover': 'outside',
   list_extensions: anyFromPackage('extensions'),
   // ── Only what DorkOS, this computer or the team wrote ──────────────────────
   'operator.activity_list': 'local',

@@ -1,7 +1,7 @@
 /**
  * @vitest-environment node
  *
- * Checking for updates: `POST /packages/:name/update` (one package, advisory
+ * Checking for updates: `POST /packages/:name/update-checks` (one package, advisory
  * only) and `GET /updates` (every installation, scanned once).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -31,9 +31,9 @@ import {
 
 const h = useMarketplaceRoutes();
 
-describe('POST /packages/:name/update', () => {
+describe('POST /packages/:name/update-checks', () => {
   const update = (body: object = {}, name = 'sample-plugin') =>
-    h.post(`/packages/${name}/update`, body);
+    h.post(`/packages/${name}/update-checks`, body);
 
   // The route answers 404 for a name installed in no scope before the flow
   // runs, so the package these cases update has to exist on disk.

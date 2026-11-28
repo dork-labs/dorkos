@@ -33,6 +33,9 @@ export const AddSourceBodySchema = z.object({
   enabled: z.boolean().optional(),
 });
 
+/** Body schema for `POST /api/marketplace/sources/refreshes`: the one source to check now. */
+const RefreshSourceBodySchema = z.object({ name: z.string().min(1) }).strict();
+
 /**
  * Answer an add that was refused. An address DorkOS will not fetch from is
  * answered as the caller's input, naming the forms that do work; the address
@@ -129,10 +132,10 @@ export function mountSourceRoutes(
     });
   });
 
-  // A source name rides in the path or, from the app, in `?name=`. The query form
-  // exists because a name saved by an older DorkOS may hold a `/`, and Remote
-  // Access refuses an encoded `/` in a URL path (DOR-4212). Both forms run the
-  // same handler; the path form stays for the CLI and every name made today.
+  // A removed source's name rides in the path or, from the app, in `?name=`. The
+  // query form exists because a name saved by an older DorkOS may hold a `/`, and
+  // Remote Access refuses an encoded `/` in a URL path (DOR-4212). Both forms run
+  // the same handler; the path form stays for the CLI and every name made today.
   const sourceNameFromQuery = (c: MarketplaceContext): string | null => {
     const name = readQuery(c).name;
     return typeof name === 'string' && name !== '' ? name : null;
@@ -175,11 +178,13 @@ export function mountSourceRoutes(
   app.delete('/sources', (c) => removeSource(c, sourceNameFromQuery(c)));
   app.delete('/sources/:name', (c) => removeSource(c, c.req.param('name')));
 
-  // POST /sources/:name/refresh, POST /sources/refresh?name= -- force refetch of
-  // a source's marketplace.json
-  const refreshSource = async (c: MarketplaceContext, name: string | null) => {
-    if (name === null)
-      return problem(c, 'invalid_request', { detail: 'Name the source to refresh.' });
+  // POST /sources/refreshes { name } -- force refetch of a source's
+  // marketplace.json. The name rides in the body, so a name saved by an older
+  // DorkOS that holds a `/` needs no second spelling (DOR-4212).
+  app.post('/sources/refreshes', async (c) => {
+    const parsed = RefreshSourceBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    if (!parsed.success) return validationFailed(c, parsed.error);
+    const { name } = parsed.data;
     try {
       const source = await sourceManager.get(name);
       if (!source) {
@@ -199,7 +204,5 @@ export function mountSourceRoutes(
         detail: "Couldn't fetch that source's listing, and none is saved. Try again.",
       });
     }
-  };
-  app.post('/sources/refresh', (c) => refreshSource(c, sourceNameFromQuery(c)));
-  app.post('/sources/:name/refresh', (c) => refreshSource(c, c.req.param('name')));
+  });
 }

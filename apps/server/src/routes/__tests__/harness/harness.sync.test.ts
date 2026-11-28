@@ -1,5 +1,5 @@
 /**
- * `POST /api/harness/sync` over HTTP, plus the adopt's login-on case: the pieces
+ * `POST /api/harness/syncs` over HTTP, plus the adopt's login-on case: the pieces
  * that turn login on or read the shipped decisions reader, so the config store
  * and the session gate are stood in for from `harnessState`. Setup and why the
  * rest is real: `harness.fixtures.ts`.
@@ -59,7 +59,7 @@ vi.mock('../../../services/core/config-manager.js', () => ({
 
 const servers = useHarnessRoutes();
 
-describe('POST /api/harness/sync', () => {
+describe('POST /api/harness/syncs', () => {
   it('answers 409 conflict on a project with no manifest, and writes nothing', async () => {
     // Seeded defect: let `loadManifest` throw out of the seam and this reds with
     // a 500 and a stack in the log — for a project in a state the status model
@@ -86,7 +86,7 @@ describe('POST /api/harness/sync', () => {
     const repo = stageSyncProject('sync-agent');
 
     const refused = await request(servers.testServer)
-      .post('/api/harness/sync')
+      .post('/api/harness/syncs')
       .set('X-DorkOS-Agent', 'some-agent-token')
       .send({ projectPath: repo });
 
@@ -95,7 +95,7 @@ describe('POST /api/harness/sync', () => {
     // The refusal is ahead of validation, so it is the same answer whatever was
     // sent: a caller that may not do this at all does not get to probe a schema.
     const probed = await request(servers.testServer)
-      .post('/api/harness/sync')
+      .post('/api/harness/syncs')
       .set('X-DorkOS-Agent', 'some-agent-token')
       .send({ projectPath: 42 });
     expect(probed.status).toBe(403);
@@ -113,7 +113,7 @@ describe('POST /api/harness/sync', () => {
     const repo = stageSyncProject('sync-token');
 
     const refused = await request(servers.testServer)
-      .post('/api/harness/sync')
+      .post('/api/harness/syncs')
       .set('x-dorkos-approval', 'some-approval-token')
       .send({ projectPath: repo });
 
@@ -139,7 +139,7 @@ describe('POST /api/harness/sync', () => {
     // And the bar is still a bar in that posture: an agent holding the same
     // key is refused, so this is not "login-on allows everybody".
     const asAgent = await request(servers.testServer)
-      .post('/api/harness/sync')
+      .post('/api/harness/syncs')
       .set('X-DorkOS-Agent', 'some-agent-token')
       .send({ projectPath: repo });
     expect(asAgent.status).toBe(403);
@@ -159,7 +159,7 @@ describe('POST /api/harness/sync', () => {
     // Seeded defect: drop the body schema and the `isAbsolute` refinement, and a
     // bare POST resolves `undefined` against the server's cwd — a sync, with a
     // sweep, into whatever repository the operator happened to start it in.
-    expect((await request(servers.testServer).post('/api/harness/sync')).status).toBe(400);
+    expect((await request(servers.testServer).post('/api/harness/syncs')).status).toBe(400);
     expect((await syncProject('   ')).status).toBe(400);
 
     const relative = await syncProject('some/relative/project');
@@ -452,7 +452,7 @@ describe('POST /api/harness/sync', () => {
       harnessState.storedPreset = preset;
 
       const res = await request(servers.shippedReaderServer)
-        .post('/api/harness/sync')
+        .post('/api/harness/syncs')
         .send({ projectPath: repo })
         .then((r) => r);
 

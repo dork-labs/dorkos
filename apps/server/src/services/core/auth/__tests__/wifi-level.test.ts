@@ -16,7 +16,7 @@ import type { RequestIngress } from '../../remote/ingress-mark.js';
 
 /** One request each refused route must refuse: its method and path. */
 const REFUSED: readonly [WifiRefusedSurface, string, string][] = [
-  ['host', 'POST', '/api/your-browser/scan'],
+  ['host', 'POST', '/api/your-browser/profile-scans'],
   ['terminal', 'POST', '/api/terminal'],
   ['terminal', 'DELETE', '/api/terminal/term-1'],
   ['terminal', 'GET', '/api/terminal/term-1/socket'],
@@ -27,9 +27,9 @@ const REFUSED: readonly [WifiRefusedSurface, string, string][] = [
   ['file-writes', 'POST', '/api/files/copy'],
   ['file-writes', 'POST', '/api/files/reveal'],
   ['file-writes', 'PUT', '/api/rooms/r1/files/content'],
-  ['file-writes', 'POST', '/api/rooms/r1/files/upload'],
-  ['file-writes', 'POST', '/api/rooms/r1/files/move'],
-  ['file-writes', 'POST', '/api/rooms/r1/files/delete'],
+  ['file-writes', 'POST', '/api/rooms/r1/files'],
+  ['file-writes', 'PATCH', '/api/rooms/r1/files'],
+  ['file-writes', 'DELETE', '/api/rooms/r1/files'],
   ['file-writes', 'POST', '/api/rooms/r1/files/from-attachment'],
   ['file-writes', 'POST', '/api/canvas/docs/d1/file-saves/e1/recover'],
   ['api-keys', 'POST', '/api/auth/api-key/create'],
@@ -67,7 +67,7 @@ const REFUSED: readonly [WifiRefusedSurface, string, string][] = [
   ['host', 'POST', '/api/admin/reset/prepare'],
   ['host', 'POST', '/api/admin/reset'],
   ['host', 'POST', '/api/admin/restart'],
-  ['host', 'POST', '/api/harness/sync'],
+  ['host', 'POST', '/api/harness/syncs'],
   ['host', 'POST', '/api/harness/adopt'],
   ['host', 'POST', '/api/workspaces'],
   ['host', 'POST', '/api/directory'],
@@ -90,7 +90,7 @@ const REFUSED: readonly [WifiRefusedSurface, string, string][] = [
   ['host', 'POST', '/api/marketplace/held-back/p1/decision'],
   ['host', 'POST', '/api/mcp-servers'],
   ['host', 'DELETE', '/api/mcp-servers/github'],
-  ['host', 'POST', '/api/shapes/s1/apply'],
+  ['host', 'POST', '/api/shapes/s1/applications'],
   ['host', 'DELETE', '/api/workspaces/w1'],
   ['host', 'POST', '/api/agents'],
   ['host', 'POST', '/api/agents/current/migrate-persona'],
@@ -312,6 +312,81 @@ describe('the Wi-Fi level', () => {
     };
     expect(match(before)?.surface).toBe(surface);
     expect(match(after)).toBe(match(before));
+  });
+
+  // DOR-4982 batch 2. Each renamed write answers Wi-Fi exactly as its old path did. The
+  // old paths are gone from the list, so each is read against its rule as it stood.
+  const BEFORE_BATCH_2: readonly [RegExp, WifiRefusedSurface][] = [
+    [/^\/api\/your-browser\/scan$/, 'host'],
+    [
+      /^\/api\/(?:harness\/(?:sync|adopt)|workspaces|directory|agents|agents\/create|agents\/current\/migrate-persona)$/,
+      'host',
+    ],
+    [
+      /^\/api\/marketplace\/(?:packages\/[^/]+\/(?:install|uninstall|update|keep-files)|held-back\/[^/]+\/decision|updates|dev-links)(?:\/|$)/,
+      'host',
+    ],
+    [/^\/api\/shapes\/[^/]+\/apply$/, 'host'],
+    [/^\/api\/(?:marketplace\/sources|extensions\/trusted-sources)(?:\/|$)/, 'front-door'],
+    [/^\/api\/(?:templates(?:\/|$)|mesh\/(?!agents\/[^/]+\/heartbeat$))/, 'host'],
+    [/^\/api\/rooms\/[^/]+\/files(?:\/|$)/, 'file-writes'],
+  ];
+  const beforeBatch2 = (method: string, path: string) =>
+    ['GET', 'HEAD', 'OPTIONS'].includes(method)
+      ? undefined
+      : BEFORE_BATCH_2.find(([pattern]) => pattern.test(path))?.[1];
+  it.each([
+    ['host', 'POST /api/harness/sync', 'POST /api/harness/syncs'],
+    ['host', 'POST /api/shapes/s/apply', 'POST /api/shapes/s/applications'],
+    ['host', 'POST /api/your-browser/scan', 'POST /api/your-browser/profile-scans'],
+    [
+      'host',
+      'POST /api/marketplace/packages/p/update',
+      'POST /api/marketplace/packages/p/update-checks',
+    ],
+    ['host', 'POST /api/marketplace/dev-links/preview', 'POST /api/marketplace/dev-links/previews'],
+    ['host', 'POST /api/marketplace/dev-links/p/unlink', 'DELETE /api/marketplace/dev-links/p'],
+    [
+      'front-door',
+      'POST /api/marketplace/sources/s/refresh',
+      'POST /api/marketplace/sources/refreshes',
+    ],
+    [
+      'front-door',
+      'POST /api/marketplace/sources/refresh',
+      'POST /api/marketplace/sources/refreshes',
+    ],
+    ['host', 'POST /api/mesh/deny', 'POST /api/mesh/denied'],
+    ['host', 'POST /api/mesh/discover', 'POST /api/discovery/scans'],
+    [undefined, 'POST /api/discovery/scan', 'POST /api/discovery/scans'],
+    [undefined, 'GET /api/rooms/r/export', 'GET /api/rooms/r/history'],
+    ['file-writes', 'POST /api/rooms/r/files/upload', 'POST /api/rooms/r/files'],
+    ['file-writes', 'POST /api/rooms/r/files/move', 'PATCH /api/rooms/r/files'],
+    ['file-writes', 'POST /api/rooms/r/files/delete', 'DELETE /api/rooms/r/files'],
+  ])('answered Wi-Fi with %s for %s, as its rename %s answers', (surface, before, after) => {
+    const [oldMethod, oldPath] = before.split(' ') as [string, string];
+    const [newMethod, newPath] = after.split(' ') as [string, string];
+    expect(beforeBatch2(oldMethod, oldPath)).toBe(surface);
+    // Folded into the discovery stream, the old Mesh scan's door is the one place a
+    // path's answer moves: it is the same scan the stream already ran from Wi-Fi.
+    const now = matchWifiRefusedRoute(newMethod, [newPath], false)?.surface;
+    expect(now).toBe(before === 'POST /api/mesh/discover' ? undefined : surface);
+  });
+
+  it('refuses nothing new after the batch 2 edits', () => {
+    for (const [method, path] of [
+      ['POST', '/api/harness/adopt'],
+      ['POST', '/api/agents'],
+      ['POST', '/api/agents/create'],
+      ['POST', '/api/marketplace/packages/p/install'],
+      ['POST', '/api/marketplace/packages/p/keep-files'],
+      ['POST', '/api/shapes/s/fork'],
+      ['GET', '/api/harness/status'],
+    ] as const) {
+      expect(matchWifiRefusedRoute(method, [path], false)?.surface).toBe(
+        beforeBatch2(method, path)
+      );
+    }
   });
 
   it('writes every reason as one short plain sentence', () => {

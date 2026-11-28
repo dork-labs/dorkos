@@ -33,7 +33,7 @@ import {
  * that is true.
  *
  * `apply_layout` is the exception. The client answers it by POSTing
- * `/api/shapes/:name/apply`, and applying a Shape writes a `SKILL.md` into the
+ * `/api/shapes/:name/applications`, and applying a Shape writes a `SKILL.md` into the
  * person's own skills root for every schedule the Shape declares, records a
  * receipt naming what it wrote, rewrites `ui.shapes.active` in
  * `~/.dork/config.json`, creates, rebinds and deletes scheduled tasks, and turns

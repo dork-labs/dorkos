@@ -1034,7 +1034,6 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getObservedChats: vi.fn().mockResolvedValue([]),
     // Mesh
     listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: [] }),
-    discoverMeshAgents: vi.fn().mockResolvedValue({ candidates: [] }),
     listMeshAgents: vi.fn().mockResolvedValue({ agents: [] }),
     getMeshAgent: vi.fn(),
     registerMeshAgent: vi.fn(),

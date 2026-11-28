@@ -133,7 +133,7 @@ describe('POST /updates', () => {
       expect(res.body.code).toBe('invalid_request');
       expect(res.body.detail).toContain('npm install -g dorkos');
     }
-    const perPackage = await h.post('/packages/sample-plugin/update', { apply: true });
+    const perPackage = await h.post('/packages/sample-plugin/update-checks', { apply: true });
     expect(perPackage.status).toBe(400);
     expect(perPackage.body.code).toBe('invalid_request');
     expect(h.updateFlow.run).not.toHaveBeenCalled();

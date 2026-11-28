@@ -6,7 +6,8 @@ import { problemResponse } from '../core/openapi/problem-openapi.js';
 export function registerBrowserScanOpenApi(registry: OpenAPIRegistry): void {
   registry.registerPath({
     method: 'post',
-    path: '/api/your-browser/scan',
+    path: '/api/your-browser/profile-scans',
+    operationId: 'yourBrowser.create_profile_scan',
     tags: ['Local browser'],
     summary: 'Find browser profiles on this computer',
     description:

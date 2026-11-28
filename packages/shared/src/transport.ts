@@ -72,7 +72,6 @@ import type {
   AgentManifestUpdate,
   AgentPathEntry,
   CreateAgentRequestBody,
-  DiscoveryCandidate,
   DenialRecord,
   AgentHealth,
   MeshStatus,
@@ -2027,11 +2026,6 @@ export interface Transport extends TransportSlices {
 
   /** List registered agents with their project paths (lightweight, for onboarding). */
   listMeshAgentPaths(): Promise<{ agents: AgentPathEntry[] }>;
-  /** Discover agent candidates by scanning filesystem roots. */
-  discoverMeshAgents(
-    roots: string[],
-    maxDepth?: number
-  ): Promise<{ candidates: DiscoveryCandidate[] }>;
   /** List registered mesh agents with optional filters. */
   listMeshAgents(filters?: {
     runtime?: string;
@@ -2463,7 +2457,7 @@ export interface Transport extends TransportSlices {
 
   /**
    * Say what linking a folder would do, changing nothing
-   * (`POST /api/marketplace/dev-links/preview`). Rejects with the refusal's
+   * (`POST /api/marketplace/dev-links/previews`). Rejects with the refusal's
    * `code` and sentence when the folder can't be linked.
    *
    * @param input - The folder, where it goes, and the explicit switch.
@@ -2482,7 +2476,7 @@ export interface Transport extends TransportSlices {
 
   /**
    * Stop running a package from a folder
-   * (`POST /api/marketplace/dev-links/:name/unlink`): put the installed copy
+   * (`DELETE /api/marketplace/dev-links/:name`): put the installed copy
    * back, or remove the package. The person's folder is never touched.
    *
    * @param name - The package name. Will be URL-encoded.

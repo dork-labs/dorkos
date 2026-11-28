@@ -75,7 +75,7 @@ Transport
   getBindings / createBinding / deleteBinding / updateBinding
 
   -- Mesh Agent Discovery --
-  discoverMeshAgents / listMeshAgents / getMeshAgent
+  listMeshAgents / getMeshAgent
   registerMeshAgent / updateMeshAgent / unregisterMeshAgent
   denyMeshAgent / listDeniedMeshAgents / clearMeshDenial
 

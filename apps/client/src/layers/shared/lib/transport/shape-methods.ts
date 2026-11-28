@@ -27,7 +27,7 @@ export function createShapeMethods(baseUrl: string) {
     },
 
     applyShape(name: string): Promise<ApplyShapeResult> {
-      return api.call('shapes.apply', { path: { name } });
+      return api.call('shapes.create_application', { path: { name } });
     },
 
     forkShape(name: string, request: ForkShapeRequest = {}): Promise<ForkShapeResult> {

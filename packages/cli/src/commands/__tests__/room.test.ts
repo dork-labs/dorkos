@@ -132,7 +132,7 @@ describe('runRoomExport', () => {
     expect(fs.readFileSync(out, 'utf-8')).toBe(WHOLE_EXPORT);
     // A room id goes straight to the export call: there is nothing to look up.
     expect(apiCallMock).not.toHaveBeenCalled();
-    expect(apiRequestMock).toHaveBeenCalledWith('GET', `/api/rooms/${ROOM_ID}/export`);
+    expect(apiRequestMock).toHaveBeenCalledWith('GET', `/api/rooms/${ROOM_ID}/history`);
     expect(vi.mocked(console.error).mock.calls.flat().join(' ')).toContain('Saved 1 message');
   });
 
@@ -152,7 +152,7 @@ describe('runRoomExport', () => {
     });
 
     expect(code).toBe(0);
-    expect(apiRequestMock).toHaveBeenCalledWith('GET', `/api/rooms/${ROOM_ID}/export`);
+    expect(apiRequestMock).toHaveBeenCalledWith('GET', `/api/rooms/${ROOM_ID}/history`);
   });
 
   it('says so when no room goes by that name', async () => {

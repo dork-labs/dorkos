@@ -481,7 +481,7 @@ Which makes those strings **product copy that happens to live in a package**, an
 
 **The route is `GET /api/harness/status?projectPath=…` ([`apps/server/src/routes/harness.ts`](../apps/server/src/routes/harness.ts)), and it never writes** — no scaffold, no manifest edit, no settings store opened (DOR-678, contract AP-03), pinned by a whole-tree snapshot taken before and after the call. It uses `validateBoundaryOrDorkHome`, because every DorkOS-managed agent lives at `{dorkHome}/agents/<slug>` and the narrow validator would 403 the surface this is built for; the response carries names, paths and reasons and never file bytes, which is the listing side of `boundary.ts`'s own line. Three of the four states reach an HTTP caller — `ready`, `not-set-up` (a `200`, because a project with no manifest is a state the page draws) and `unreadable`; `unavailable` belongs to a build with no harness service and is the in-process transport's answer. The one thing the model cannot decide, it hands to the route: a `projectPath` that leads nowhere reads `ENOENT` exactly as an empty project does, and the boundary validator does not settle it either — it canonicalizes a not-yet-existing path through its deepest existing ancestor and RETURNS it. One `stat` separates them, `404` for absent and `400` for something that is not a directory, the same two answers `GET /api/directory` already gives.
 
-**The write is `POST /api/harness/sync`, in the same file**, and it is the Sync now button. Five things about it are decisions rather than details:
+**The write is `POST /api/harness/syncs`, in the same file**, and it is the Sync now button. Five things about it are decisions rather than details:
 
 - **It goes through the consent seam, never `project()`** — the line `__tests__/project-seam-guard.test.ts` holds — and it **sweeps** (`sweepOrphans: true`). A button is the full-plan case, and half of what the banner reports is orphaned links, so a sync that did not sweep would leave the banner up after the click. It is safe because the engine only removes what it can prove it wrote (the `.dorkos-generated` sidecar, DOR-1842), and honest because `sweepPreview` names every path before the click and `swept` names them after, each with its reason.
 - **A person, not an agent**: `resolveDecisionAuthority(readCallerAuthority(req, res))`, the shape `routes/marketplace/context.ts` uses. Read through that rather than `trustedCaller` deliberately — this wants the agent bar, not the cookie requirement DOR-474 put inside `trustedCaller`, which would lock out a person's own terminal (DOR-502).
@@ -695,7 +695,7 @@ There is **no staging directory and no backup**, unlike the marketplace transact
 
 The same engine, reached from the page instead of a terminal (DOR-1946). The route lives beside the
 other two in [`apps/server/src/routes/harness.ts`](../apps/server/src/routes/harness.ts) and mirrors
-`POST /api/harness/sync` clause for clause: **a person, not an agent** —
+`POST /api/harness/syncs` clause for clause: **a person, not an agent** —
 `resolveDecisionAuthority(readCallerAuthority(req, res))` before the body is even parsed, so a caller
 that may not do this at all gets one answer whatever it sent, with `code: operator_only_harness_adopt`
 and the sentence saying why; a **relative `projectPath` is `400`** from the route module's own

@@ -13,6 +13,7 @@ import { registerKeepAwakeOpenApi } from '../keep-awake/keep-awake-openapi.js';
 import { registerOnboardingOpenApi } from '../onboarding/onboarding-openapi.js';
 import { registerComputerOpenApi } from '../../computers/computer-openapi.js';
 import { registerBrowserScanOpenApi } from '../../browser/profile-scan-openapi.js';
+import { registerDiscoveryScanOpenApi } from './discovery-scan-openapi.js';
 import { registerLocalBrowserOpenApi } from '../../session/local-browser/openapi.js';
 import { registerConnectorHoldsOpenApi } from '../../connectors/execution/holds-openapi.js';
 import { registerRelayAdapterListOpenApi, registerRelayAdapterOpenApi } from './relay-adapters.js';
@@ -59,6 +60,7 @@ export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
   registerMiniAppAccessOpenApi(registry);
   registerLocalBrowserOpenApi(registry);
   registerBrowserScanOpenApi(registry);
+  registerDiscoveryScanOpenApi(registry);
   registerHubComputersOpenApi(registry);
   registerHubLinkOpenApi(registry);
   registerSessionRelayOpenApi(registry);

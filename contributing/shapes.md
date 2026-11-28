@@ -40,14 +40,14 @@ Five seams move a Shape from "files on disk" to "a running place" and back. Each
 | Seam                      | Trigger                               | What runs                                                                                             |
 | ------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | **Install**               | `dorkos install <shape>`              | Stage files, compile bundled inline extensions. **No** extension enable — staging is not activation.  |
-| **Apply**                 | `POST /api/shapes/:name/apply`        | Swap extensions, create/re-bind schedules, reconcile dropped ones, offer agents, record active.       |
+| **Apply**                 | `POST /api/shapes/:name/applications` | Swap extensions, create/re-bind schedules, reconcile dropped ones, offer agents, record active.       |
 | **Agent-created re-bind** | An agent is created/registered        | `rebindShapeSchedulesForAgent` flips any waiting global schedule to that agent — no re-apply needed.  |
 | **Update**                | `dorkos update --apply <shape>`       | Uninstall-without-teardown → reinstall. Schedules survive; dropped ones are reconciled at next apply. |
 | **Uninstall teardown**    | `POST /api/marketplace/.../uninstall` | Delete the Shape's schedules always; if active, disable its extensions and clear the active pointer.  |
 
 ### Apply asks a person when an agent asks for it
 
-Apply is the seam that writes things, so it is the seam with a permission gate (DOR-625). `POST /api/shapes/:name/apply` runs the tier gate before it resolves anything, as tier `destructive`. The reason is **creation, not deletion**: apply writes a `SKILL.md` into the person's own skills root for every schedule the manifest declares, records a write receipt naming what it wrote, rewrites `ui.shapes.active` in `~/.dork/config.json`, and turns extensions on and off. Each of those outlives the call. That is the same ground `gate-bypass-scan.test.ts` already protects `createTask(` on. Step 4b's deletion is provenance-gated and confined to this Shape's own schedules, which is the shape of thing `memory_write` is allowed to do at tier `act` (it removes the caller's own notes) — so it is what the tier costs, not why it is right.
+Apply is the seam that writes things, so it is the seam with a permission gate (DOR-625). `POST /api/shapes/:name/applications` runs the tier gate before it resolves anything, as tier `destructive`. The reason is **creation, not deletion**: apply writes a `SKILL.md` into the person's own skills root for every schedule the manifest declares, records a write receipt naming what it wrote, rewrites `ui.shapes.active` in `~/.dork/config.json`, and turns extensions on and off. Each of those outlives the call. That is the same ground `gate-bypass-scan.test.ts` already protects `createTask(` on. Step 4b's deletion is provenance-gated and confined to this Shape's own schedules, which is the shape of thing `memory_write` is allowed to do at tier `act` (it removes the caller's own notes) — so it is what the tier costs, not why it is right.
 
 The reason is **not** that one apply arms unattended execution with the prompts off, and this guide said so until DOR-1713. It cannot: `clampSchedulePermissionMode` downgrades a manifest's `bypassPermissions` to `acceptEdits` before the row is written and warns the operator (DOR-607); a schedule is created enabled only when the manifest set `startEnabled` **and** its agent already exists (`startEnabled` defaults to `false`); and the row lands through `upsertFromFile({ source: 'discovery' })`, which `resolveFileArmStatus` parks at `pending_approval` on first sighting, so nothing runs on a clock until a person approves it (DOR-1486).
 
@@ -65,7 +65,7 @@ The agent-facing route to apply is `control_ui { action: 'apply_layout' }`, whic
 
 `applyShape(name, deps)` (`apply-shape.ts`) is pure and fully injected — every collaborator is a structural interface, so it runs against lightweight fakes (no disk, no config singleton, no scheduler). The concrete wiring lives in the routes layer; the production adapters are in `shape-services.ts`.
 
-The **only fatal case** is "Shape not installed" (`ShapeNotInstalledError` → 404). Every other missing piece degrades to a `warnings[]` entry and a still-`ok` result, mirroring ADR-0310. The return value is the exact `POST /api/shapes/:name/apply` body — `{ ok, applied, warnings, offeredAgents }` — so the client acts without a second fetch (`applied.layout` is the chrome to restore).
+The **only fatal case** is "Shape not installed" (`ShapeNotInstalledError` → 404). Every other missing piece degrades to a `warnings[]` entry and a still-`ok` result, mirroring ADR-0310. The return value is the exact `POST /api/shapes/:name/applications` body — `{ ok, applied, warnings, offeredAgents }` — so the client acts without a second fetch (`applied.layout` is the chrome to restore).
 
 Apply runs these steps in order:
 

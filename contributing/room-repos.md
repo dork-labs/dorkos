@@ -328,9 +328,9 @@ commit on `main`, through the same mutex merges use, after `assertMainCheckoutRe
 | Route                                       | Body                                                       | Commit subject               |
 | ------------------------------------------- | ---------------------------------------------------------- | ---------------------------- |
 | `PUT /api/rooms/:id/files/content`          | `{ path, baseCommit, text }` (text only)                   | `Edit <path>` / `Add <path>` |
-| `POST /api/rooms/:id/files/upload`          | multipart `files[]` (≤ 20), `dir`, `baseCommit`, `replace` | `Upload N files to <dir>/`¹  |
-| `POST /api/rooms/:id/files/move`            | `{ from, to, baseCommit }`, file or folder                 | `Rename <from> to <to>`      |
-| `POST /api/rooms/:id/files/delete`          | `{ path, baseCommit }`, file or folder                     | `Delete <path>`              |
+| `POST /api/rooms/:id/files`                 | multipart `files[]` (≤ 20), `dir`, `baseCommit`, `replace` | `Upload N files to <dir>/`¹  |
+| `PATCH /api/rooms/:id/files`                | `{ from, to, baseCommit }`, file or folder                 | `Rename <from> to <to>`      |
+| `DELETE /api/rooms/:id/files`               | `{ path, baseCommit }`, file or folder                     | `Delete <path>`              |
 | `POST /api/rooms/:id/files/from-attachment` | `{ attachmentId, dir, name?, baseCommit }`                 | `Add <path> from the chat`   |
 
 ¹ `Upload N files to the top folder` for the root; the room entry says "the top folder" too.

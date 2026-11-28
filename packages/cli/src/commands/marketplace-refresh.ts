@@ -21,7 +21,7 @@ export interface MarketplaceRefreshArgs {
 }
 
 /**
- * Response shape for `POST /api/marketplace/sources/:name/refresh`. The
+ * Response shape for `POST /api/marketplace/sources/refreshes`. The
  * server returns the parsed marketplace.json plus a server-generated
  * fetched-at timestamp. We pluck `plugins.length` for the success line —
  * the marketplace.json schema uses `plugins` as the entry array, but we
@@ -122,10 +122,9 @@ function countPackages(marketplace: RefreshResponseBody['marketplace']): number 
  * @returns The package count reported by the server.
  */
 async function refreshOne(name: string): Promise<number> {
-  const result = await apiCall<RefreshResponseBody>(
-    'POST',
-    `/api/marketplace/sources/${encodeURIComponent(name)}/refresh`
-  );
+  const result = await apiCall<RefreshResponseBody>('POST', '/api/marketplace/sources/refreshes', {
+    name,
+  });
   const count = countPackages(result.marketplace);
   if (result.stale) {
     throw new StaleRefreshError(result.reason ?? 'unknown reason', result.fetchedAt, count);

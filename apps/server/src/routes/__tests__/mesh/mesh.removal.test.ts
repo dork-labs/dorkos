@@ -181,9 +181,9 @@ describe('DELETE /api/mesh/agents/:id/data', () => {
   });
 });
 
-describe('POST /api/mesh/deny', () => {
+describe('POST /api/mesh/denied', () => {
   it('denies a path and returns 201', async () => {
-    const res = await request(fixtureServer).post('/api/mesh/deny').send({
+    const res = await request(fixtureServer).post('/api/mesh/denied').send({
       path: '/home/user/bad-project',
       reason: 'Untrusted source',
       denier: 'admin',
@@ -201,7 +201,7 @@ describe('POST /api/mesh/deny', () => {
     meshCore.deny.mockRejectedValue(new Error('Already denied'));
 
     const res = await request(fixtureServer)
-      .post('/api/mesh/deny')
+      .post('/api/mesh/denied')
       .send({ path: '/home/user/bad-project' });
 
     expect(res.status).toBe(422);
