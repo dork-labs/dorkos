@@ -10,9 +10,12 @@
  * DorkOS's real runtime and real sidecar, a fake model on 127.0.0.1:
  *
  * 1. The plugin lands as the turn's prompt is sent, and the fake model waits
- *    until it has loaded, so its code is running during the turn. Once the
- *    turn ends, the process running it must be gone before the next chat's
- *    prompt reaches the model, and its heartbeat must stop.
+ *    until it has loaded, so its code is running during the turn. DorkOS's
+ *    in-turn checks are kept from seeing it until then: they look within
+ *    about a second and a half of the send, OpenCode imports it about half a
+ *    second in, and a slow machine can swap the two (DOR-5507). Once the turn
+ *    ends, the process running it must be gone before the next chat's prompt
+ *    reaches the model, and its heartbeat must stop.
  * 2. The plugin lands while the model is answering, as a `git clone` in the
  *    turn would. The sidecar is restarted, the folder's next turn is refused,
  *    and the marker stays unwritten.
@@ -30,7 +33,17 @@ import os from 'node:os';
 import * as childProcess from 'node:child_process';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+  vi,
+} from 'vitest';
 import type { OpencodeClient } from '@opencode-ai/sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { PROJECT_PLUGINS_CODE } from '../messaging/project-plugin-guard.js';
@@ -46,6 +59,13 @@ import { OFFLINE_PROXY_ENV, pinnedOpenCode, guardedOpenCodeSpawn } from './pinne
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
   return { ...actual, spawn: vi.fn(actual.spawn) };
+});
+
+// The real file system; row 1 hides one plugin folder from DorkOS for a while.
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  const readdirSync = vi.fn(actual.readdirSync);
+  return { ...actual, default: { ...actual, readdirSync }, readdirSync };
 });
 
 const BINARY = pinnedOpenCode();
@@ -158,6 +178,10 @@ describe.skipIf(BINARY === null)(
     let runtime: InstanceType<typeof import('../opencode-runtime.js').OpenCodeRuntime>;
     let dependencies: Awaited<ReturnType<typeof preparePluginDependencies>> | undefined;
     const lines: PluginRestartActivityEntry[] = [];
+    /** This attempt's own folder, so a retry never meets the last attempt's plugin. */
+    let attempt: string;
+    /** A chat id of this attempt's own, so a retry never reuses the last attempt's session. */
+    const chat = (name: string) => `${name}-${path.basename(attempt)}`;
     const integrityChecks: Promise<void>[] = [];
 
     beforeAll(async () => {
@@ -250,21 +274,43 @@ describe.skipIf(BINARY === null)(
       }
     });
 
+    beforeEach(() => {
+      attempt = fs.mkdtempSync(path.join(root, 'attempt-'));
+      lines.length = 0;
+    });
+
+    afterEach(() => {
+      fs.rmSync(attempt, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    });
+
     it('ends the process that imported it before the next chat is sent', async () => {
-      const race = project(root, 'northwind-race');
-      const marker = path.join(root, 'race-marker');
-      const beat = path.join(root, 'race-beat');
-      // The plugin lands once the model is asked, after the turn's first event
-      // (which finds none), and the reply waits until it has loaded: the path
-      // only the after-turn check covers.
+      const race = project(attempt, 'northwind-race');
+      const marker = path.join(attempt, 'race-marker');
+      const beat = path.join(attempt, 'race-beat');
+      // The plugin lands once the model is asked, and the reply waits until it
+      // has loaded: the path only the after-turn check covers. Until OpenCode
+      // has imported it, DorkOS's in-turn checks list its folder as empty;
+      // otherwise one could restart the sidecar first, and it never loads.
+      const pluginDir = path.join(race, '.opencode', 'plugin');
+      const realReaddir = vi.mocked(fs.readdirSync).getMockImplementation()!;
+      vi.mocked(fs.readdirSync).mockImplementation(((dir: fs.PathLike, ...rest: unknown[]) =>
+        String(dir) === pluginDir && !fs.existsSync(marker)
+          ? []
+          : (realReaddir as (...args: unknown[]) => unknown)(
+              dir,
+              ...rest
+            )) as typeof fs.readdirSync);
+      onTestFinished(() => {
+        vi.mocked(fs.readdirSync).mockImplementation(realReaddir);
+      });
       let dropped = false;
       beforeReply = async () => {
         if (!dropped) dropPlugin(race, marker, beat);
         dropped = true;
         await until(() => fs.existsSync(marker), 75_000);
       };
-      runtime.ensureSession('race', { permissionMode: 'default', cwd: race });
-      await drain(runtime.sendMessage('race', 'hello', { cwd: race }));
+      runtime.ensureSession(chat('race'), { permissionMode: 'default', cwd: race });
+      await drain(runtime.sendMessage(chat('race'), 'hello', { cwd: race }));
       beforeReply = undefined;
 
       // The row's premise: the plugin's code ran during the turn.
@@ -277,13 +323,13 @@ describe.skipIf(BINARY === null)(
 
       // Another chat in a clean folder. When its prompt reaches the model, the
       // process that imported the plugin must already be gone.
-      const clean = project(root, 'clean-after-race');
-      runtime.ensureSession('after', { permissionMode: 'default', cwd: clean });
+      const clean = project(attempt, 'clean-after-race');
+      runtime.ensureSession(chat('after'), { permissionMode: 'default', cwd: clean });
       let importerAliveAtNextTurn: boolean | undefined;
       beforeReply = async () => {
         importerAliveAtNextTurn ??= alive(importer);
       };
-      const second = await drain(runtime.sendMessage('after', 'hello', { cwd: clean }));
+      const second = await drain(runtime.sendMessage(chat('after'), 'hello', { cwd: clean }));
       beforeReply = undefined;
       const beatAfter = fs.readFileSync(beat, 'utf8');
       await new Promise((done) => setTimeout(done, 1_000));
@@ -305,9 +351,9 @@ describe.skipIf(BINARY === null)(
     }, 240_000);
 
     it('restarts and refuses the folder when the plugin lands while the model answers', async () => {
-      const cloned = project(root, 'northwind-clone');
-      const marker = path.join(root, 'clone-marker');
-      const beat = path.join(root, 'clone-beat');
+      const cloned = project(attempt, 'northwind-clone');
+      const marker = path.join(attempt, 'clone-marker');
+      const beat = path.join(attempt, 'clone-beat');
       let dropped = false;
       beforeReply = async (raw) => {
         // The turn's own request: the one that offers tools.
@@ -316,12 +362,12 @@ describe.skipIf(BINARY === null)(
           dropPlugin(cloned, marker, beat);
         }
       };
-      runtime.ensureSession('clone', { permissionMode: 'default', cwd: cloned });
-      await drain(runtime.sendMessage('clone', 'clone the repo', { cwd: cloned }));
+      runtime.ensureSession(chat('clone'), { permissionMode: 'default', cwd: cloned });
+      await drain(runtime.sendMessage(chat('clone'), 'clone the repo', { cwd: cloned }));
       beforeReply = undefined;
       expect(dropped).toBe(true);
 
-      const again = await drain(runtime.sendMessage('clone', 'again', { cwd: cloned }));
+      const again = await drain(runtime.sendMessage(chat('clone'), 'again', { cwd: cloned }));
       // Give a late import every chance before saying it never happened.
       await new Promise((done) => setTimeout(done, 5_000));
       expect({
@@ -335,9 +381,9 @@ describe.skipIf(BINARY === null)(
       });
     }, 240_000);
     it("restarts at the turn's first event, long before a slow model replies", async () => {
-      const early = project(root, 'northwind-early');
-      const marker = path.join(root, 'early-marker');
-      const beat = path.join(root, 'early-beat');
+      const early = project(attempt, 'northwind-early');
+      const marker = path.join(attempt, 'early-marker');
+      const beat = path.join(attempt, 'early-beat');
       const REPLY_MS = 30_000;
       const client = await manager.getClient(early);
       const send = client.session.promptAsync.bind(client.session);
@@ -364,8 +410,8 @@ describe.skipIf(BINARY === null)(
         lines.push(entry);
         restartedAt ||= Date.now();
       });
-      runtime.ensureSession('early', { permissionMode: 'default', cwd: early });
-      const events = await drain(runtime.sendMessage('early', 'hello', { cwd: early }));
+      runtime.ensureSession(chat('early'), { permissionMode: 'default', cwd: early });
+      const events = await drain(runtime.sendMessage(chat('early'), 'hello', { cwd: early }));
       const endedAt = Date.now();
       // Every process the plugin had, by the pids it wrote, a second later.
       await new Promise((done) => setTimeout(done, 1_000));
