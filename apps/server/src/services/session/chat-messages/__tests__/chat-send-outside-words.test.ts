@@ -64,6 +64,7 @@ import {
   clearTestHomes,
   registerTestHomes,
 } from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
+import { turnsOver } from './chat-turns.fixture.js';
 
 let counter = 0;
 let root: string;
@@ -104,7 +105,7 @@ function build(overrides: Partial<ChatMessageServiceDeps> = {}): ChatMessageServ
     sessionCwd: async () => undefined,
     isBusy: async () => false,
     // The service's launch, handed to the real dispatcher as `dispatchSessionMessage` hands it.
-    dispatch: async (opts) =>
+    turns: turnsOver(async (opts) =>
       dispatchMessage({
         origin: { kind: 'interactive' },
         sessionId: opts.sessionId,
@@ -113,7 +114,8 @@ function build(overrides: Partial<ChatMessageServiceDeps> = {}): ChatMessageServ
         ...(opts.messageId ? { messageId: opts.messageId } : {}),
         projector: getOrCreateProjector(opts.sessionId),
         runtime,
-      }),
+      })
+    ),
     interruptTurn: async () => false,
     steerInto: async () => false,
     canonicalId: async (id) => id,

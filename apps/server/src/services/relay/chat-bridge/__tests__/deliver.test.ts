@@ -29,6 +29,7 @@ import {
   subjectFor,
   useDeliveryFixture,
 } from './deliver.fixtures.js';
+import { turnsOver } from '../../../session/chat-messages/__tests__/chat-turns.fixture.js';
 
 describe('ChatBridgeDelivery routing (chats-as-channels §6)', () => {
   const t = useDeliveryFixture();
@@ -129,9 +130,9 @@ describe('ChatBridgeDelivery routing (chats-as-channels §6)', () => {
       chatTitle: async () => null,
       sessionCwd: async () => AGENT_PATH,
       isBusy: async () => false,
-      dispatch: async () => {
+      turns: turnsOver(async () => {
         throw new Error('No ordinary dispatch for a bridged-seat answer');
-      },
+      }),
       steerInto: async () => false,
       interruptTurn: async () => false,
       canonicalId: async (id) => id,

@@ -8,6 +8,7 @@ import {
   wireRoomSeatMessageLifetime,
 } from '../../session/chat-messages/chat-message-current.js';
 import { agentLookupFor, createRoomHarness, outcomeRunner } from './room-test-harness.js';
+import { turnsOver } from '../../session/chat-messages/__tests__/chat-turns.fixture.js';
 
 const agents = agentLookupFor({
   '/agents/bo': { name: 'bo', displayName: 'Bo', responseMode: 'mention-only' },
@@ -63,9 +64,9 @@ function messaging(f: ReturnType<typeof fixture>) {
     chatTitle: async () => null,
     sessionCwd: async () => '/agents/bo',
     isBusy: async () => false,
-    dispatch: async () => {
+    turns: turnsOver(async () => {
       throw new Error('No ordinary dispatch into seats.');
-    },
+    }),
     steerInto: async () => false,
     interruptTurn: async () => false,
     canonicalId: async (id) => id,

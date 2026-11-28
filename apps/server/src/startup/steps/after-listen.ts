@@ -20,7 +20,10 @@ import { sweepOrphanedMessageQueues } from '../../services/session/index.js';
 import { resumeStrandedChatQueues } from '../../services/extensions/agent-send/agent-send-defaults.js';
 import { agentPause } from '../../services/mesh/pause/agent-pause.js';
 import { recoverRuns, startRunEffects } from '../../services/runs/index.js';
-import { recoverChatReports } from '../../services/session/chat-messages/chat-message-current.js';
+import {
+  getChatMessageService,
+  recoverChatReports,
+} from '../../services/session/chat-messages/chat-message-current.js';
 import { sweepExpiredTurnContext } from '../../services/session/turn-context/record-turn-context.js';
 import { INTERVALS } from '../../config/constants.js';
 import { takeDailySnapshot } from '@dorkos/db';
@@ -143,6 +146,13 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
   // here on, whatever below throws, and before any chat's queue resumes. Until
   // it runs, the "finished" emitter tells every turn itself.
   startRunEffects();
+  // Chat messages' words for their waiting runs, and the messages an earlier
+  // version held for a launch slot, started through the turn port (T6b).
+  void getChatMessageService()
+    ?.startTurns()
+    .catch((error: unknown) => {
+      logger.warn('[chat_send] could not adopt held messages', logError(error));
+    });
 
   // Saved spin-off reports resume now, once the rooms link is wired (`mountCoreRoutes`): a report
   // into a room's old chat is refused before it (DOR-3753). The health tick asks again through

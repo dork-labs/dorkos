@@ -23,6 +23,7 @@ import type {
   DispatchSessionMessageResult,
 } from '../../../session/launch/launch-session.js';
 import { RoomSessionLedger } from '../../session-bindings/room-session-ledger.js';
+import { turnsOver } from '../../../session/chat-messages/__tests__/chat-turns.fixture.js';
 
 export const PATH = '/agents/river';
 export const JOINED = '2026-11-20T11:00:00.000Z';
@@ -170,7 +171,7 @@ export function chatServiceOn(
     chatTitle: async () => null,
     sessionCwd: async () => undefined,
     isBusy: async () => false,
-    dispatch: async (opts): Promise<DispatchSessionMessageResult> => {
+    turns: turnsOver(async (opts): Promise<DispatchSessionMessageResult> => {
       if (edges.launchFull?.()) return { refused: 'LAUNCH_CAP_FULL', message: 'Launch cap full.' };
       dispatched.push(opts);
       const messageId = opts.messageId ?? 'unset';
@@ -180,7 +181,7 @@ export function chatServiceOn(
         queuePosition: 1,
         outcome: { messageId, requested: 'queue', applied: 'queue' },
       } as DispatchSessionMessageResult;
-    },
+    }),
     steerInto: async () => false,
     canonicalId: async (sessionId) => sessionId,
     interruptTurn: async () => false,

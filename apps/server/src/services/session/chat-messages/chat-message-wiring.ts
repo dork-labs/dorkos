@@ -71,6 +71,7 @@ import { wireSpinOffStartup } from './startup/wire-spin-off-startup.js';
 import { readOperatorDisplayName } from '../../core/config/operator-display-name.js';
 import { setQueuedChatActionsDeps } from './queued/queued-chat-actions.js';
 import { chatUsagePauseOf } from './sending/chat-usage-pause.js';
+import type { ChatTurnPort } from './sending/chat-turn-hand-over.js';
 
 /**
  * An access bound, not a display one: how many levels down its chain of
@@ -239,6 +240,8 @@ export interface WireChatMessagingDeps {
   meshCore: () => MeshCore | undefined;
   /** The room binding port. */
   roomSessionPlace: () => RoomSessionPlacePort | undefined;
+  /** The turn port a message starts its turn through (T6b). */
+  turns?: ChatTurnPort;
 }
 
 /**
@@ -260,6 +263,7 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
     stopSeatMessages: seatMessages.stop,
     meshCore: deps.meshCore,
     roomSessionPlace: deps.roomSessionPlace,
+    ...(deps.turns ? { turns: deps.turns } : {}),
     describeSession: describeSessionFor(deps.roomSessionPlace),
     chatTitle: chatTitleOf,
     sessionCwd: liveSessionCwd,
@@ -289,7 +293,6 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
     emitActivity: emitChatActivity,
     operatorName: readOperatorDisplayName,
   });
-  service.startHeldRetries();
   wireChatReportBack(service, deps.store);
   setQueuedChatCeilingResolver((messageId) => service.ceilingForQueuedMessage(messageId));
   setQueuedChatHoldResolver((messageId) => rowsCarryHold(deps.store.listByQueueMessage(messageId)));

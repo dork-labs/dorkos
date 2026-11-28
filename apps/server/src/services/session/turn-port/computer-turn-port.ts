@@ -37,7 +37,10 @@
  * own clean send (DOR-4693). A chat message runs as the chat that sent it
  * (`askedByRef`), which is how the dispatcher holds it to that chat's level,
  * keeps it behind the person's words and joins it with its neighbours; one
- * that names no sending chat is refused before anything is queued (T6).
+ * that names no sending chat is refused before anything is queued (T6). A
+ * chat message that opens a new direct chat carries its birth record as plain
+ * data (`newDirectChat`), which the launch path certifies as it did when the
+ * sender called it itself (T6b).
  *
  * **What a waiting caller hears.** `handOver` answers what `start` answers,
  * plus what this Mac's launch path said: the receipt of an accepted run, or
@@ -54,6 +57,7 @@ import {
   wordsWaitInComposer,
   type RefusalReason,
   type TurnOrigin,
+  type TurnStartRequest,
 } from '@dorkos/shared/turn-port';
 import { EXTENSION_CLIENT_PREFIX } from '@dorkos/shared/extension-id';
 import { chatClientId } from '@dorkos/shared/chat-client-id';
@@ -128,13 +132,46 @@ function clientIdOf(runId: string, origin: TurnOrigin, askedByRef: string | unde
   if (origin.kind === 'extension-message' || origin.kind === 'extension-start') {
     return `${EXTENSION_CLIENT_PREFIX}${runId}`;
   }
-  if (origin.kind === 'chat-message') {
-    const sender = askedByRef === undefined ? undefined : parseDorkReference(askedByRef, 'chat');
-    if (!sender?.ok) throw new Error('A chat message names the chat that sent it');
-    return chatClientId(sender.value.id);
-  }
+  if (origin.kind === 'chat-message') return chatClientId(senderOf(askedByRef));
   if (origin.kind === 'session-relay') return relayClientId(runId);
   return `${origin.kind === 'heartbeat' ? HEARTBEAT_CLIENT_PREFIX : 'turn-port:'}${runId}`;
+}
+
+/** The chat a chat message names as its sender; refused when it names none. */
+function senderOf(askedByRef: string | undefined): string {
+  const sender = askedByRef === undefined ? undefined : parseDorkReference(askedByRef, 'chat');
+  if (!sender?.ok) throw new Error('A chat message names the chat that sent it');
+  return sender.value.id;
+}
+
+/**
+ * The birth record of a new direct chat a chat message opens (T6b), as the
+ * launch path certifies it: only a chat message's first attempt, and only from
+ * the chat that sent it. Its reservation's queue row is the run's own.
+ */
+function freshDmBirthOf(
+  request: TurnStartRequest
+): Pick<DispatchSessionMessageOpts, 'freshDmBirth'> {
+  const chat = request.newDirectChat;
+  if (!chat) return {};
+  if (request.origin.kind !== 'chat-message' || request.attempt !== 1) {
+    throw new Error('Only a chat message’s first attempt opens a direct chat');
+  }
+  if (senderOf(request.askedByRef) !== chat.fromSessionId) {
+    throw new Error('A direct chat is opened only by the chat that sent its message');
+  }
+  return {
+    freshDmBirth: {
+      kind: 'chat-message',
+      delivery: 'live-fresh',
+      allocationCreatedAt: chat.allocationCreatedAt,
+      receiptId: chat.receiptId,
+      queueMessageId: request.runId,
+      fromSessionId: chat.fromSessionId,
+      fromAgentPath: chat.fromAgentPath,
+      targetAgent: chat.targetAgent,
+    },
+  };
 }
 
 /**
@@ -175,6 +212,7 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
       if (agentPath === undefined) return { answer: { refused: 'invalid_agent_path' } };
     }
     const clientId = clientIdOf(request.runId, request.origin, request.askedByRef);
+    const birth = freshDmBirthOf(request);
     // Nothing awaits between admission's cap check and the launch path's own
     // claim of a slot, which it takes before its first await.
     inFlight.add(request.runId);
@@ -183,6 +221,7 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
       origin: request.origin,
       runId: request.runId,
       messageId: request.runId,
+      ...birth,
       ...(composer ? {} : { wordsAtSource: true as const }),
       request: {
         content: request.content,

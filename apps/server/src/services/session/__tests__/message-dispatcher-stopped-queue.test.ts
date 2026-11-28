@@ -21,6 +21,7 @@ import { ChatMessageStore } from '../chat-messages/chat-message-store.js';
 import { passedOnLevelOf } from '../../core/turn-power/turn-levels.js';
 import { MessageQueueStore, setMessageQueueStore } from '../message-queue-store.js';
 import { disposeProjector, getOrCreateProjector } from '../session-state-projector.js';
+import { turnsOver } from '../chat-messages/__tests__/chat-turns.fixture.js';
 
 let session: string;
 let runtime: FakeAgentRuntime;
@@ -48,7 +49,7 @@ beforeEach(() => {
     chatTitle: async () => 'Demo chat',
     sessionCwd: async () => undefined,
     isBusy: async () => getOrCreateProjector(session).getStatus().lifecycle === 'streaming',
-    dispatch: async (opts) =>
+    turns: turnsOver(async (opts) =>
       dispatchMessage({
         origin: { kind: 'interactive' },
         sessionId: opts.sessionId,
@@ -57,7 +58,8 @@ beforeEach(() => {
         messageId: opts.messageId,
         projector: getOrCreateProjector(opts.sessionId),
         runtime,
-      }),
+      })
+    ),
     interruptTurn: async (id) => {
       const receipt = await runtime.interruptQuery(id);
       return receipt.outcome === 'acked';

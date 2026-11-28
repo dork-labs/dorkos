@@ -27,6 +27,7 @@ import {
   rowsCeiling,
 } from '../chat-messages/chat-message-ceiling.js';
 import { CHAT_DRAIN_JOIN_MAX } from '../message-dispatcher/join-chat-rows.js';
+import { turnsOver } from '../chat-messages/__tests__/chat-turns.fixture.js';
 
 const TARGET = '00000000-0000-4000-8000-000000003060';
 const PERSON = 'window-a';
@@ -120,7 +121,7 @@ beforeEach(() => {
     chatTitle: async (id) => `Title of ${id}`,
     sessionCwd: async () => undefined,
     isBusy: async () => true,
-    dispatch: async (opts) =>
+    turns: turnsOver(async (opts) =>
       dispatchMessage({
         origin: { kind: 'interactive' },
         sessionId: opts.sessionId,
@@ -130,7 +131,8 @@ beforeEach(() => {
         disposition: opts.request.disposition,
         projector: getOrCreateProjector(opts.sessionId),
         runtime,
-      }),
+      })
+    ),
     steerInto: async () => false,
     canonicalId: async (id) => id,
     interruptTurn: async () => false,

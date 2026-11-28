@@ -138,17 +138,15 @@ describe('a seat’s old chat after the seat moved (DOR-3753)', () => {
     expect(dispatched).toHaveLength(0);
   });
 
-  it('gets a report the launch cap held once a slot frees, instead of failing it', async () => {
-    let full = true;
+  it('a report the machine is too full to start waits for a slot, instead of failing', async () => {
+    // The turn port holds it (T6b) and starts it when a slot frees (`runs/__tests__/hand-over-now-chat.test.ts`).
     service.stop();
-    ({ service, dispatched } = chatServiceOn(db, { launchFull: () => full }));
+    ({ service, dispatched } = chatServiceOn(db, { launchFull: () => true }));
     await expect(
       service.send(CHILD, { to: 'old-seat', message: 'Finished. The fix is in.' }, 'report')
     ).resolves.toMatchObject({ chatId: 'old-seat', status: 'queued' });
-    full = false;
-    await service.retryHeld();
 
-    expect(dispatched.map((d) => d.sessionId)).toEqual(['old-seat']);
+    expect(dispatched).toEqual([]);
     const [row] = db.select().from(chatMessages).all();
     expect(row).toMatchObject({ kind: 'report', toSessionId: 'old-seat' });
     expect(row!.status).not.toBe('failed');

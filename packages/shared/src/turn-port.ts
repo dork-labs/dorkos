@@ -492,6 +492,29 @@ const RelayTurnSchema = z.strictObject({
 });
 
 /**
+ * A new direct chat a chat message opens (T6b): the receipt and reservation its
+ * sender wrote before the start, so the launch path certifies the chat's birth
+ * as it did when the sender called it itself. The reservation's queue row id is
+ * the run's own id, never sent. Only a chat message sets it; the computer face
+ * refuses it on any other origin, and from any chat but the one that sent it.
+ */
+const NewDirectChatSchema = z.strictObject({
+  /** The sender's receipt (`chat_messages` id). */
+  receiptId: z.string().min(1),
+  /** The chat that sent the message. */
+  fromSessionId: z.string().min(1).max(200),
+  /** The sending agent's home. */
+  fromAgentPath: z.string().min(1),
+  /** When the reservation was written, as it was stored. */
+  allocationCreatedAt: z.string().min(1),
+  /** The agent the new chat is for, by Mesh id and home. */
+  targetAgent: z.strictObject({ id: RelayAgentIdSchema, path: z.string().min(1) }),
+});
+
+/** A new direct chat's birth record. See {@link NewDirectChatSchema}. */
+export type NewDirectChat = z.infer<typeof NewDirectChatSchema>;
+
+/**
  * Whether an origin is a message the relay delivered to an agent: from a chat
  * binding, from one of our agents, or from a sender outside DorkOS
  * (`relayTurnOrigin` in the server). Only these may carry a relay turn's level.
@@ -640,6 +663,8 @@ const callerTurnFields = {
   task: TaskTurnSchema.optional(),
   /** A relay delivery's own level. See {@link RelayTurnSchema}. */
   relay: RelayTurnSchema.optional(),
+  /** A new direct chat a chat message opens. See {@link NewDirectChatSchema}. */
+  newDirectChat: NewDirectChatSchema.optional(),
 };
 
 // === Space face ===

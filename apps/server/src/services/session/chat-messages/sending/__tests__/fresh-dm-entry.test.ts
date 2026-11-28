@@ -56,6 +56,7 @@ import {
   interruptChatTurn,
   steerChatTurn,
 } from '../../chat-message-wiring.js';
+import { installChatTurns } from '../../__tests__/chat-turns.fixture.js';
 
 const operator = { kind: 'person', accountId: 'fixture-owner', name: 'Fixture owner' } as const;
 let root: string;
@@ -66,6 +67,7 @@ let queue: MessageQueueStore;
 let store: ChatMessageStore;
 let service: ChatMessageService;
 let opened = false;
+let uninstallTurns: () => void;
 let pauses: AgentPauseService;
 let caller: ChatCaller;
 let senderAgentId: string;
@@ -122,7 +124,10 @@ function open(migrate: boolean) {
   queue = new MessageQueueStore(db);
   setMessageQueueStore(queue);
   store = new ChatMessageStore(db);
+  const port = installChatTurns(db, mesh);
+  uninstallTurns = port.uninstall;
   service = new ChatMessageService({
+    turns: port.turns,
     store,
     meshCore: () => mesh,
     describeSession: describeSessionFor(undefined),
@@ -149,6 +154,7 @@ function close() {
   setQueuedChatHoldResolver(undefined);
   setQueuedChatWordsResolver(undefined);
   resetMessageDispatcher();
+  uninstallTurns();
   setMessageQueueStore(undefined);
   for (const id of projectors) disposeProjector(id);
   projectors.clear();

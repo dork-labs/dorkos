@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { ChatMessageStore } from '../chat-message-store.js';
 import { ChatMessageService } from '../chat-message-service.js';
+import { turnsOver } from './chat-turns.fixture.js';
 
 const caller = { sessionId: 'chat-a', agentPath: '/agents/ana' };
 const agents = [{ id: 'agent-bo', name: 'bo', displayName: 'Bo', projectPath: '/agents/bo' }];
@@ -46,7 +47,9 @@ beforeEach(() => {
     sessionCwd: async () => '/work/demo',
     isBusy: async () => busy,
     usagePauseOf: async () => pause,
-    dispatch: dispatch as never,
+    turns: turnsOver(dispatch as never, {
+      getProjectPath: (id) => agents.find((a) => a.id === id)?.projectPath,
+    }),
     interruptTurn: async () => false,
     steerInto: async () => false,
     canonicalId: async (id) => id,

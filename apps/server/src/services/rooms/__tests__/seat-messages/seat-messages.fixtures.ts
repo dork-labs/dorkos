@@ -21,6 +21,10 @@ import {
   outcomeRunner,
   roomSpec,
 } from '../room-test-harness.js';
+import {
+  turnsOver,
+  type LaunchDouble,
+} from '../../../session/chat-messages/__tests__/chat-turns.fixture.js';
 
 export const agents = agentLookupFor({
   '/agents/ana': { name: 'ana', displayName: 'Ana', responseMode: 'mention-only' },
@@ -44,7 +48,7 @@ export let roomId: string;
 export let bo: string;
 export let turns: RoomTurnRequest[];
 export let unboundAliases: Set<string>;
-export let dispatch: ReturnType<typeof vi.fn<NonNullable<ChatMessageServiceDeps['dispatch']>>>;
+export let dispatch: ReturnType<typeof vi.fn<LaunchDouble>>;
 export let seatInbox: RoomSeatMessagesPort | undefined;
 export let deps: ChatMessageServiceDeps;
 export const deferredFinishes = new Set<() => void>();
@@ -85,7 +89,7 @@ export function useSeatMessageRoom(): void {
     runtimeRegistry.setDb(harness.db);
     receipts = new ChatMessageStore(harness.db);
     seatInbox = inboxOf(harness.service) as typeof seatInbox;
-    dispatch = vi.fn<NonNullable<ChatMessageServiceDeps['dispatch']>>(async () => {
+    dispatch = vi.fn<LaunchDouble>(async () => {
       throw new Error('a seat must never use ordinary dispatch');
     });
     deps = {
@@ -101,7 +105,7 @@ export function useSeatMessageRoom(): void {
       chatTitle: async () => 'Private title sentinel',
       sessionCwd: async () => '/agents/bo',
       isBusy: async () => false,
-      dispatch,
+      turns: turnsOver(dispatch),
       steerInto: vi.fn(async () => false),
       interruptTurn: vi.fn(async () => false),
       canonicalId: async (id) => id,

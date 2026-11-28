@@ -1,10 +1,7 @@
 /** Origin/ledger conflicts use real metadata, room authority and bridge adoption. */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
-import {
-  ChatMessageService,
-  type ChatMessageServiceDeps,
-} from '../../session/chat-messages/chat-message-service.js';
+import { ChatMessageService } from '../../session/chat-messages/chat-message-service.js';
 import { ChatMessageStore } from '../../session/chat-messages/chat-message-store.js';
 import { describeSessionFor } from '../../extensions/agent-send/agent-send-defaults.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
@@ -12,6 +9,10 @@ import { BridgeSessionAdopter } from '../../relay/chat-bridge/adopt-session.js';
 import { roomSessionPlace } from '../repo/room-turn-place.js';
 import { agentLookupFor, createRoomHarness, outcomeRunner } from './room-test-harness.js';
 import type { RoomTurnRequest } from '../room-turn-port.js';
+import {
+  turnsOver,
+  type LaunchDouble,
+} from '../../session/chat-messages/__tests__/chat-turns.fixture.js';
 
 const home = '/agents/origin-seat';
 const caller = { sessionId: 'origin-peer', agentPath: '/agents/peer' };
@@ -20,7 +21,7 @@ let store: ChatMessageStore;
 let inbox: ReturnType<typeof harness.service.createSeatMessages>;
 let chats: ChatMessageService;
 let turns: RoomTurnRequest[];
-let dispatch: ReturnType<typeof vi.fn<NonNullable<ChatMessageServiceDeps['dispatch']>>>;
+let dispatch: ReturnType<typeof vi.fn<LaunchDouble>>;
 let describeSession: ReturnType<typeof describeSessionFor>;
 
 beforeEach(() => {
@@ -44,7 +45,7 @@ beforeEach(() => {
     worktrees: () => null,
   });
   describeSession = describeSessionFor(() => placement);
-  dispatch = vi.fn<NonNullable<ChatMessageServiceDeps['dispatch']>>(async () => {
+  dispatch = vi.fn<LaunchDouble>(async () => {
     throw new Error('Private seats never use ordinary dispatch');
   });
   chats = new ChatMessageService({
@@ -54,7 +55,7 @@ beforeEach(() => {
     chatTitle: async () => null,
     sessionCwd: async () => home,
     isBusy: async () => false,
-    dispatch,
+    turns: turnsOver(dispatch),
     steerInto: async () => false,
     interruptTurn: async () => false,
     canonicalId: async (id) => id,
