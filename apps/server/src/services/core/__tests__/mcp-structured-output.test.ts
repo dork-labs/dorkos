@@ -305,15 +305,15 @@ describe('mesh_list on /mcp seals its cursor to the request’s caller (DOR-5480
     registeredAt: '2026-11-01T00:00:00.000Z',
   };
   const deps = {
-    transcriptReader: {} as McpToolDeps['transcriptReader'],
+    transcriptReader: {} as AgentToolDeps['transcriptReader'],
     defaultCwd: tmpdir(),
     dorkHome: '/tmp/dorkos-test-home',
     meshCore: {
       list: () => [MANIFEST, OLDER],
       getSubject: () => null,
       getProjectPath: () => undefined,
-    } as unknown as McpToolDeps['meshCore'],
-  } satisfies McpToolDeps;
+    } as unknown as AgentToolDeps['meshCore'],
+  } satisfies AgentToolDeps;
 
   async function callAs(identity: AgentIdentity | undefined, args: Record<string, unknown>) {
     const server = createExternalMcpServer(deps, undefined, undefined, identity);

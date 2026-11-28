@@ -453,7 +453,7 @@ describe('mesh_list, a page at a time like GET /api/mesh/agents (DOR-5480)', () 
   ];
   const agentReader = () => ({ identity: { agentPath: '/agents/scout' } });
 
-  async function page(deps: McpToolDeps, args: Record<string, unknown>, reader = agentReader) {
+  async function page(deps: AgentToolDeps, args: Record<string, unknown>, reader = agentReader) {
     const result = await createMeshListHandler(deps, reader)(args);
     return { isError: result.isError, data: JSON.parse(result.content[0].text) };
   }

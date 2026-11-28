@@ -28,6 +28,7 @@ import {
 import { type CapabilityHandlerContext } from '../../core/capabilities/index.js';
 import { defineCapability, invalidCursor } from '../../core/capabilities/capability-definition.js';
 import { agentRosterPage, assertAgentRosterCursor } from '../../../lib/paging/agent-roster-page.js';
+import { keysetPage } from '../../../lib/paging/keyset-page.js';
 import { callerReaderKey } from '../../../lib/paging/caller-reader-key.js';
 import { agentIsAsking, meshOf, type MeshCapabilityDeps } from './mesh-capability-deps.js';
 
