@@ -127,9 +127,9 @@ export async function handOverChatMessage(
 ): Promise<ChatHandOver> {
   const runId = input.row.queueMessageId;
   if (!runId) throw new ChatMessageError('UNAVAILABLE', 'DorkOS could not resolve this chat.');
-  let pending: Promise<HandOverNowAnswer> | undefined;
+  let answer: HandOverNowAnswer | undefined;
   try {
-    pending = turns?.handOver(chatTurnInput(input), { runId });
+    answer = await turns?.handOver(chatTurnInput(input), { runId });
   } catch (err) {
     // The space face refused it before saving anything, with its own sentence.
     if (err instanceof Error && err.name === 'TurnStartRefusedError') {
@@ -137,10 +137,9 @@ export async function handOverChatMessage(
     }
     throw err;
   }
-  if (!pending) {
+  if (!answer) {
     throw new ChatMessageError('UNAVAILABLE', 'DorkOS is still starting. Try again in a moment.');
   }
-  const answer = await pending;
   if (answer.kind === 'refused') {
     throw new ChatMessageError(
       'NOT_ALLOWED',
