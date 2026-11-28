@@ -4164,7 +4164,7 @@ export interface paths {
          * List notification history
          * @description **Preview.** This operation may change in any release.
          *
-         *     Newest first, cursor-paged. Filters are lenses, not a search. A caller that is not entitled to the operator view reads an empty list rather than a refusal, so a response never says that notifications exist.
+         *     Newest first (by id, which never changes), a page at a time: pass `nextCursor` back as `cursor` for the next page; it is null on the last one, and a cursor this list did not give is refused. Filters are lenses, not a search. A caller that is not entitled to the operator view reads an empty list rather than a refusal, so a response never says that notifications exist.
          */
         get: operations["notifications.list"];
         put?: never;
@@ -5468,7 +5468,7 @@ export interface paths {
          * Read the audit log
          * @description **Preview.** This operation may change in any release.
          *
-         *     Read the DorkOS audit log: every action anyone took, person or agent, newest first. Filter by actorId (who did it), targetId (what it was done to), action (a prefix such as "config." or "runtime.tool_used"), operation, sessionId, and a since/until time window. Page backwards by passing nextBeforeSeq as beforeSeq. You see every action and every agent's work; a person's private chat and sign-in details are not shown to agents.
+         *     Read the DorkOS audit log: every action anyone took, person or agent, newest first. Filter by actorId (who did it), targetId (what it was done to), action (a prefix such as "config." or "runtime.tool_used"), operation, sessionId, and a since/until time window. It comes a page at a time (limit, at most 200): pass nextCursor back as cursor for the next page; nextCursor is null on the last one. You see every action and every agent's work; a person's private chat and sign-in details are not shown to agents.
          */
         get: operations["audit.query"];
         put?: never;
@@ -5512,7 +5512,7 @@ export interface paths {
          * Read one account’s history
          * @description **Preview.** This operation may change in any release.
          *
-         *     Everything one account did, had done to it, or had done on its behalf, newest first: the per-account timeline of the audit log. accountId is an agent id, a person’s account id, or the install id the owner had before making an account (the two are read as one). The same filters and paging as reading the whole log.
+         *     Everything one account did, had done to it, or had done on its behalf, newest first: the per-account timeline of the audit log. accountId is an agent id, a person’s account id, or the install id the owner had before making an account (the two are read as one). The same filters as reading the whole log, and it comes a page at a time the same way: pass nextCursor back as cursor; null on the last page.
          */
         get: operations["audit.account_timeline"];
         put?: never;
@@ -8658,26 +8658,6 @@ export interface paths {
         patch: operations["permissions.updateDefaults"];
         trace?: never;
     };
-    "/api/permissions/history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Read the permission history
-         * @description Every permission change, newest first, with who made it. With `agentId`, the changes that touched that agent, bulk changes included.
-         */
-        get: operations["permissions.listHistory"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/permissions/history/{eventId}/undo": {
         parameters: {
             query?: never;
@@ -9060,6 +9040,26 @@ export interface paths {
          * @description End all use of this computer from the web now: pause the link and close the live relay, as Pause does. A person’s only.
          */
         post: operations["session-relay.end_presence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/permissions/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the permission history
+         * @description Every permission change, newest first, with who made it and whether it has an Undo. With agentId, the changes that touched that agent, bulk changes included. It comes a page at a time (limit, at most 200): pass nextCursor back as cursor for the next page; nextCursor is null on the last one.
+         */
+        get: operations["permissions.view_history"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -13985,6 +13985,7 @@ export interface components {
         };
         ListNotificationsResponse: {
             notifications: components["schemas"]["Notification"][];
+            /** @description Pass as `cursor` for the next page; null on the last one. */
             nextCursor: string | null;
             unreadCount: number;
         };
@@ -14413,7 +14414,8 @@ export interface components {
         };
         AuditQueryResult: {
             events: components["schemas"]["AuditEvent"][];
-            nextBeforeSeq?: number;
+            /** @description Pass as `cursor` for the next page; null on the last one. */
+            nextCursor: string | null;
         };
         AuditEvent: {
             seq: number;
@@ -15328,74 +15330,6 @@ export interface components {
             applyToAgents?: string[];
             surface: components["schemas"]["PermissionSurface"];
         };
-        PermissionHistoryResponse: {
-            items: components["schemas"]["PermissionHistoryEntry"][];
-            nextCursor: string | null;
-        };
-        PermissionHistoryEntry: {
-            id: string;
-            occurredAt: string;
-            actorLabel: string;
-            actorDetail: string | null;
-            summary: string;
-            metadata: {
-                changes: {
-                    target: {
-                        /** @enum {string} */
-                        kind: "default";
-                    } | {
-                        /** @enum {string} */
-                        kind: "agent";
-                        agentId: string;
-                        agentPath: string;
-                        agentName: string;
-                    };
-                    key: {
-                        /** @enum {string} */
-                        kind: "preset";
-                    } | {
-                        /** @enum {string} */
-                        kind: "area";
-                        area: components["schemas"]["PermissionAreaId"];
-                    } | {
-                        /** @enum {string} */
-                        kind: "action";
-                        action: string;
-                        area: components["schemas"]["PermissionAreaId"];
-                    } | {
-                        /** @enum {string} */
-                        kind: "files";
-                        runtime?: string;
-                    } | {
-                        /** @enum {string} */
-                        kind: "chat";
-                        sessionId: string;
-                    } | {
-                        /** @enum {string} */
-                        kind: "account";
-                        accountId: string;
-                        accountName: string;
-                    };
-                    before: string | null;
-                    after: string | null;
-                }[];
-                surface: components["schemas"]["PermissionSurface"];
-                attribution: components["schemas"]["PermissionAttribution"];
-                approvalId?: string;
-                undoOf?: string;
-                /** @enum {string} */
-                origin?: "arrival-screen" | "extension-removed";
-                note?: string;
-                roseChats?: string[];
-                presetSnapshot?: {
-                    preset: string | null;
-                    defaults: components["schemas"]["PermissionOverrides"];
-                    trustStop: string | null;
-                };
-            };
-            undoable: boolean;
-            undone: boolean;
-        };
         UndoPermissionChangeResponse: {
             changes: {
                 target: {
@@ -15568,6 +15502,75 @@ export interface components {
         };
         ProfileAvatarResponse: {
             imageUrl: string;
+        };
+        PermissionHistoryResponse: {
+            entries: components["schemas"]["PermissionHistoryEntry"][];
+            /** @description Pass as `cursor` for the next page; null on the last one. */
+            nextCursor: string | null;
+        };
+        PermissionHistoryEntry: {
+            id: string;
+            occurredAt: string;
+            actorLabel: string;
+            actorDetail: string | null;
+            summary: string;
+            metadata: {
+                changes: {
+                    target: {
+                        /** @enum {string} */
+                        kind: "default";
+                    } | {
+                        /** @enum {string} */
+                        kind: "agent";
+                        agentId: string;
+                        agentPath: string;
+                        agentName: string;
+                    };
+                    key: {
+                        /** @enum {string} */
+                        kind: "preset";
+                    } | {
+                        /** @enum {string} */
+                        kind: "area";
+                        area: components["schemas"]["PermissionAreaId"];
+                    } | {
+                        /** @enum {string} */
+                        kind: "action";
+                        action: string;
+                        area: components["schemas"]["PermissionAreaId"];
+                    } | {
+                        /** @enum {string} */
+                        kind: "files";
+                        runtime?: string;
+                    } | {
+                        /** @enum {string} */
+                        kind: "chat";
+                        sessionId: string;
+                    } | {
+                        /** @enum {string} */
+                        kind: "account";
+                        accountId: string;
+                        accountName: string;
+                    };
+                    before: string | null;
+                    after: string | null;
+                }[];
+                surface: components["schemas"]["PermissionSurface"];
+                attribution: components["schemas"]["PermissionAttribution"];
+                approvalId?: string;
+                undoOf?: string;
+                /** @enum {string} */
+                origin?: "arrival-screen" | "extension-removed";
+                note?: string;
+                roseChats?: string[];
+                presetSnapshot?: {
+                    preset: string | null;
+                    defaults: components["schemas"]["PermissionOverrides"];
+                    trustStop: string | null;
+                };
+            };
+            undoable: boolean;
+            undone: boolean;
         };
         FoundClaudeFolder: {
             path: string;
@@ -36992,7 +36995,11 @@ export interface operations {
     "notifications.list": {
         parameters: {
             query?: {
+                /** @description How many this page holds, 1 to 200. */
                 limit?: number;
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description Refused: `before` was removed; page with `cursor`. */
                 before?: string;
                 agentId?: string;
                 sessionId?: string;
@@ -46754,7 +46761,11 @@ export interface operations {
                 sessionId?: string;
                 since?: string;
                 until?: string;
-                beforeSeq?: number;
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description Refused: `beforeSeq` was removed; page with `cursor`. */
+                beforeSeq?: string;
+                /** @description How many this page holds, 1 to 200. */
                 limit?: number;
             };
             header?: never;
@@ -46985,7 +46996,11 @@ export interface operations {
                 sessionId?: string;
                 since?: string;
                 until?: string;
-                beforeSeq?: number;
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description Refused: `beforeSeq` was removed; page with `cursor`. */
+                beforeSeq?: string;
+                /** @description How many this page holds, 1 to 200. */
                 limit?: number;
             };
             header?: never;
@@ -59673,31 +59688,6 @@ export interface operations {
             };
         };
     };
-    "permissions.listHistory": {
-        parameters: {
-            query?: {
-                agentId?: string;
-                before?: string;
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Permission changes */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PermissionHistoryResponse"];
-                };
-            };
-            500: components["responses"]["InternalErrorProblem"];
-        };
-    };
     "permissions.undoHistory": {
         parameters: {
             query?: never;
@@ -61626,6 +61616,125 @@ export interface operations {
                             lastSeenAt: string;
                         }[];
                     };
+                };
+            };
+            /** @description A person must allow the call first; nothing ran */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilityApprovalRequired"];
+                };
+            };
+            /** @description `invalid_request`: the input failed the capability’s schema (`issues` lists each field), or the capability refused it */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `agent_identity_unverified`: the agent token could not be confirmed; `person_session_required`: a person must confirm it’s them */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Refused: `forbidden`, `declined` or `needs_approval` from the permission check (with `capabilityId`, `tier`, `approvable` and any `approvalId`), `not_from_wifi` for an action from a network sign-in, or the capability’s own refusal */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `unknown_capability`: not available on this computer; `not_found`: the thing it names */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The capability refused because of the state it met, such as `conflict` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `precondition_failed`: something changed since the caller looked */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `internal_error`: something went wrong running it */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `signin_unreachable`: the remote server did not answer */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description `temporarily_unavailable`: the server is still starting, or the tool’s extension is stopped */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    "permissions.view_history": {
+        parameters: {
+            query?: {
+                /** @description Only the changes that touched this agent, bulk changes included. */
+                agentId?: string;
+                /** @description The `nextCursor` of the page before; leave it out for the first page. */
+                cursor?: string;
+                /** @description Refused: `before` was removed; page with `cursor`. */
+                before?: string;
+                /** @description How many this page holds, 1 to 200. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Read the permission history result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PermissionHistoryResponse"];
                 };
             };
             /** @description A person must allow the call first; nothing ran */
