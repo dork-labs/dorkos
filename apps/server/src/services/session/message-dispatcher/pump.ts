@@ -150,14 +150,35 @@ export function pumpLocked(sessionKey: string): void {
  * holder — and overwriting the claim would tell this module the person's turn
  * had ended.
  *
+ * Every turn the agent starts is COUNTED, whoever holds the slot (DOR-2829).
+ * Several helpers finishing at once open several of them within milliseconds —
+ * the CLI gives each report a segment, and all but the last end empty — and
+ * only the first took the slot, so its end handed the session back while the
+ * agent was still writing its answer. A message launched then took the
+ * write-lock ahead of that answer's projection, and the turn it opened settled
+ * the answer as a failure.
+ *
  * @param sessionId - The session the agent started talking on, in any id it
  *   answers to
  */
 export function noteRuntimeTurnOpen(sessionId: string): void {
   const sessionKey = primaryOf(sessionId);
-  if (inFlight.has(sessionKey)) return;
+  const turns = runtimeTurns.get(sessionKey) ?? { open: 0 };
+  turns.open += 1;
+  runtimeTurns.set(sessionKey, turns);
+  claimForRuntimeTurns(sessionKey);
+}
+
+/**
+ * Take the slot for the agent's open turns, if nothing holds it.
+ *
+ * @param sessionKey - The resolved session id
+ */
+function claimForRuntimeTurns(sessionKey: string): void {
+  const turns = runtimeTurns.get(sessionKey);
+  if (turns === undefined || inFlight.has(sessionKey)) return;
   const token = Symbol('dispatcher-runtime-turn');
-  runtimeTurns.set(sessionKey, token);
+  turns.token = token;
   inFlight.set(sessionKey, {
     clientId: runtimeLockHolder(sessionKey),
     token,
@@ -171,21 +192,28 @@ export function noteRuntimeTurnOpen(sessionId: string): void {
 }
 
 /**
- * That turn has ended: give the session back and let the queue move.
+ * That turn has ended: once it was the last one open, give the session back and
+ * let the queue move.
  *
  * Only clears a slot this module's own runtime-turn claim owns — a dispatched
  * turn that was already running when the agent started talking holds the slot
  * on its own token, and a runtime turn ending must not hand away a person's
- * turn.
+ * turn. While others are still open the claim stays, and is taken if that
+ * person's turn has since let the slot go.
  *
  * @param sessionId - The session whose agent-initiated turn ended
  */
 export function noteRuntimeTurnClosed(sessionId: string): void {
   const sessionKey = primaryOf(sessionId);
-  const token = runtimeTurns.get(sessionKey);
-  runtimeTurns.delete(sessionKey);
-  if (token !== undefined && inFlight.get(sessionKey)?.token === token) {
-    inFlight.delete(sessionKey);
+  const turns = runtimeTurns.get(sessionKey);
+  if (turns !== undefined && turns.open > 1) {
+    turns.open -= 1;
+    claimForRuntimeTurns(sessionKey);
+  } else {
+    runtimeTurns.delete(sessionKey);
+    if (turns?.token !== undefined && inFlight.get(sessionKey)?.token === turns.token) {
+      inFlight.delete(sessionKey);
+    }
   }
   // A turn ending is a turn boundary, whoever ran it: it re-arms every message
   // the write-lock refused and gives the queue its chance to move.

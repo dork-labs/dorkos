@@ -363,7 +363,7 @@ export function launchDispatchInner(
         // A turn the agent started keeps its claim, as it does against every
         // other claimant ({@link noteRuntimeTurnOpen}).
         const held = inFlight.get(sessionKey);
-        if (opts.budgetExhausted && (!held || held.token !== runtimeTurns.get(sessionKey)))
+        if (opts.budgetExhausted && (!held || held.token !== runtimeTurns.get(sessionKey)?.token))
           inFlight.set(sessionKey, claim);
         // The turn is on the projector now, so the projector — not this slot —
         // becomes the authority on whether it is still producing

@@ -33,13 +33,16 @@ export const releases = new Map<string, number>();
 /** Turns open right now, keyed by resolved session id. */
 export const inFlight = new Map<string, InFlightTurn>();
 /**
- * The {@link inFlight} token of each session's open AGENT-started turn.
+ * Each session's open AGENT-started turns: how many are open, and the
+ * {@link inFlight} token they claimed the slot under, if they hold it.
  *
  * Kept apart from the slot so {@link noteRuntimeTurnClosed} can tell its own
  * claim from a dispatched turn's — the two race by construction, since a
  * runtime turn opens exactly when the process talks with nothing dispatched.
+ * Counted because several can be open at once (DOR-2829), and the slot is
+ * theirs until the last one ends.
  */
-export const runtimeTurns = new Map<string, symbol>();
+export const runtimeTurns = new Map<string, { open: number; token?: symbol }>();
 /** Accepted messages waiting to launch, keyed by message id. */
 export const pending = new Map<string, PendingDispatch>();
 /** Signal-owned preparations must drain before their host disposes its database. */
