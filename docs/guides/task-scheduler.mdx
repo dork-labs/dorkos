@@ -472,7 +472,8 @@ Running one on demand is yours to decide, so this call answers 403 for a caller 
 Cancel an active run:
 
 ```bash
-curl -X POST http://localhost:4242/api/tasks/runs/{runId}/cancel
+curl -X PATCH http://localhost:4242/api/tasks/runs/{runId} \
+  -H 'content-type: application/json' -d '{"status":"cancelled"}'
 ```
 
 List available templates:

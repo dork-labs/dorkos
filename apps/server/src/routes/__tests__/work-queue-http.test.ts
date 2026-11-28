@@ -202,12 +202,11 @@ describe('work queue doors', () => {
     expect(started.body.detail).toBe('That item has already started.');
   });
 
-  it('requeues an ended item; any other status is a 400 and an unknown one a 404', async () => {
+  it('requeues an ended item, and an unknown one is a 404', async () => {
     const server = serve();
     const res = await request(server).patch(`${ITEMS}/item-1`).send(REQUEUE);
     expect(res.status).toBe(200);
     expect(res.body).toEqual(ITEM);
-    expect((await request(server).patch(`${ITEMS}/item-1`).send({ status: 'x' })).status).toBe(400);
 
     service.requeue.mockImplementation(() => {
       throw new WorkQueueError('NOT_FOUND', 'No item in a work queue has that id.');
@@ -215,5 +214,11 @@ describe('work queue doors', () => {
     const missing = await request(server).patch(`${ITEMS}/x`).send(REQUEUE);
     expect(missing.status).toBe(404);
     expect(missing.body.detail).toBe('No item in a work queue has that id.');
+  });
+
+  it('refuses any status but queued, and requeues nothing', async () => {
+    const res = await request(serve()).patch(`${ITEMS}/item-1`).send({ status: 'running' });
+    expect(res.status).toBe(400);
+    expect(service.requeue).not.toHaveBeenCalled();
   });
 });

@@ -83,6 +83,9 @@ describe('the audit fallback, in the chain', () => {
     });
     app.get('/api/rooms', (c) => c.json([]));
     app.patch('/api/rooms/:id/read', (c) => c.json({ ok: true }));
+    app.on(['PATCH', 'DELETE'], ['/api/notifications', '/api/notifications/:id'], (c) =>
+      c.json({ ok: true })
+    );
     app.post('/api/browser-viewers/:id/frame', (c) => c.body(null, 204));
     for (const path of CONVERSATION_PATHS) app.post(path, (c) => c.json({ ok: true }));
     fixtureTarget.mount(frontDoorListener(app));
@@ -137,6 +140,16 @@ describe('the audit fallback, in the chain', () => {
     await request(server).get('/api/rooms');
     await request(server).patch('/api/rooms/01J9Z3K8M2Q4R6S7T8V9W0X1Y2/read');
     expect(await rows()).toEqual([]);
+  });
+
+  it('leaves only PATCH out under /api/notifications, so any other write there is audited', async () => {
+    await request(server).patch('/api/notifications').send({ read: true });
+    await request(server)
+      .patch('/api/notifications/01J9Z3K8M2Q4R6S7T8V9W0X1Y2')
+      .send({ read: true });
+    expect(await rows()).toEqual([]);
+    await request(server).delete('/api/notifications/01J9Z3K8M2Q4R6S7T8V9W0X1Y2');
+    expect(await rows()).toMatchObject([{ action: 'http.delete' }]);
   });
 
   it('keeps read-only frame polls out of the action ledger', async () => {

@@ -70,8 +70,16 @@ const NOT_ACTIONS: readonly RegExp[] = [
   /\/port-checks$/,
   /\/heartbeat$/,
   /\/read$/,
-  /^\/api\/notifications(?:\/[^/]+)?$/,
   /\/read-cursor$/,
+];
+
+/**
+ * Markers of what a person has seen that share a path with real actions, so
+ * only the one method is left out: `PATCH /api/notifications(/:id)` marks read,
+ * and anything else on those paths is still audited.
+ */
+const NOT_ACTIONS_BY_METHOD: readonly { method: string; path: RegExp }[] = [
+  { method: 'PATCH', path: /^\/api\/notifications(?:\/[^/]+)?$/ },
 ];
 
 /** A path segment that names one thing rather than a kind of thing. */
@@ -128,7 +136,8 @@ export function auditFallbackFor(
     !scope ||
     !path.startsWith('/api/') ||
     CONVERSATION.some((re) => re.test(path)) ||
-    NOT_ACTIONS.some((re) => re.test(path))
+    NOT_ACTIONS.some((re) => re.test(path)) ||
+    NOT_ACTIONS_BY_METHOD.some((rule) => rule.method === method && rule.path.test(path))
   ) {
     return undefined;
   }

@@ -281,6 +281,39 @@ describe('the Wi-Fi level', () => {
     }
   });
 
+  // DOR-4982 batch 1 renamed these paths: each new one answers Wi-Fi exactly as the old one did.
+  it.each([
+    [undefined, 'GET /api/audit/verify', 'GET /api/audit/integrity'],
+    [undefined, 'GET /api/documents/resolve', 'GET /api/documents/lookup'],
+    [undefined, 'GET /api/projects/resolve', 'GET /api/projects/lookup'],
+    [undefined, 'GET /api/workspaces/scan', 'GET /api/workspaces/disk-checkouts'],
+    [
+      undefined,
+      'GET /api/hub/computers/c/sessions/s/stream',
+      'GET /api/hub/computers/c/sessions/s/events',
+    ],
+    [undefined, 'PATCH /api/notifications/n/read', 'PATCH /api/notifications/n'],
+    [undefined, 'POST /api/notifications/read-all', 'PATCH /api/notifications'],
+    [undefined, 'POST /api/config/backups/b.db/move', 'PATCH /api/config/backups/b.db'],
+    [undefined, 'POST /api/tasks/runs/r/cancel', 'PATCH /api/tasks/runs/r'],
+    [undefined, 'POST /api/sessions/s/continue/cancel', 'DELETE /api/sessions/s/continue'],
+    [undefined, 'POST /api/todo-promises/p/confirm', 'PUT /api/todo-promises/p/confirmation'],
+    [undefined, 'POST /api/workbench/probe', 'POST /api/workbench/port-checks'],
+    [
+      'work-queue',
+      'POST /api/agents/a/work-queue/items/i/requeue',
+      'PATCH /api/agents/a/work-queue/items/i',
+    ],
+    ['work-queue', 'PUT /api/work-queues/stop', 'PUT /api/work-queues/stopped'],
+  ])('answers Wi-Fi with %s for %s and its rename %s', (surface, before, after) => {
+    const match = (line: string) => {
+      const [method, path] = line.split(' ') as [string, string];
+      return matchWifiRefusedRoute(method, [path], false);
+    };
+    expect(match(before)?.surface).toBe(surface);
+    expect(match(after)).toBe(match(before));
+  });
+
   it('writes every reason as one short plain sentence', () => {
     for (const route of WIFI_REFUSED_ROUTES) {
       expect(route.reason).toMatch(/^[A-Z].*\.$/);
