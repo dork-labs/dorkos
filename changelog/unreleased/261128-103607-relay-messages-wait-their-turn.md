@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(relay): relay deliveries start turns through the turn port (DOR-5220)'
+  - "fix(relay): a relay turn's agent is the registry's answer, and the spec says who owns a cut relay delivery (DOR-5220)"
 ---
 
 ### Changed

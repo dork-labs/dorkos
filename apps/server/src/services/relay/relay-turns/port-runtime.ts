@@ -36,10 +36,7 @@ import { isTurnContentEvent, type AgentRuntimeLike, type TurnStartNote } from '@
 import { TASK_SCHEDULER_PRINCIPAL } from '@dorkos/shared/relay-schemas';
 import type { InterruptReceipt, PermissionMode, StreamEvent } from '@dorkos/shared/types';
 import type { StartTurnInput, TurnOrigin } from '@dorkos/shared/turn-port';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import { canonicalDir } from '@dorkos/shared/agent-facts';
-import { MANIFEST_DIR, MANIFEST_FILE } from '@dorkos/shared/manifest';
 import type { SpaceTurnPort, TurnRun } from '../../runs/index.js';
 import { logger } from '../../../lib/logger.js';
 
@@ -73,6 +70,20 @@ let spaceFace: () => SpaceTurnPort | undefined = () => undefined;
  */
 export function setRelayTurnPort(port: () => SpaceTurnPort | undefined): void {
   spaceFace = port;
+}
+
+/** Which agent lives in a folder, by the registry; none until startup wires it. */
+let agentAt: (folder: string) => string | undefined = () => undefined;
+
+/**
+ * Wire the registry's answer to "which agent lives in this folder". Startup
+ * calls it with Mesh's lookup (`resolveAgentIdForPath`); until then every relay
+ * turn's agent is unknown, so the turn is refused.
+ *
+ * @param lookup - The registry's answer for a folder.
+ */
+export function setRelayAgentLookup(lookup: (folder: string) => string | undefined): void {
+  agentAt = lookup;
 }
 
 /** The space face relay turns start on, or `undefined` before startup wired it. */
@@ -336,9 +347,11 @@ export function portBackedRuntimes(
 }
 
 /**
- * The Mesh id of the registered agent whose home a folder is: the id its
- * manifest names, kept only when Mesh says that id's home is this very folder,
- * so a copy of a manifest, or one that names another agent, names nobody.
+ * The Mesh id of the registered agent whose home a folder is: the registry's
+ * answer for the folder ({@link setRelayAgentLookup}), kept only when Mesh says that id's home is this very
+ * folder, so a worktree or a subfolder of an agent's repo names nobody. Read
+ * from the registry, never the folder's own manifest: the space side does not
+ * read an agent's folder, which for an agent computer is not on this disk.
  *
  * @param home - The folder a turn names as its agent's home.
  * @param face - The space face, which asks Mesh.
@@ -347,14 +360,8 @@ export async function registeredAgentIdOf(
   home: string,
   face: SpaceTurnPort
 ): Promise<string | undefined> {
-  let id: unknown;
-  try {
-    const raw = await readFile(path.join(home, MANIFEST_DIR, MANIFEST_FILE), 'utf8');
-    id = (JSON.parse(raw) as { id?: unknown }).id;
-  } catch {
-    return undefined;
-  }
-  if (typeof id !== 'string') return undefined;
+  const id = agentAt(home);
+  if (id === undefined) return undefined;
   const registered = face.agentHomeOf(id);
   return registered !== undefined && canonicalDir(registered) === canonicalDir(home)
     ? id

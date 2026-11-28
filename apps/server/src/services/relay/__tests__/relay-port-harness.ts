@@ -29,7 +29,7 @@ import {
   uninstallRunRecord,
   type TurnRun,
 } from '../../runs/index.js';
-import { setRelayTurnPort } from '../relay-turns/port-runtime.js';
+import { setRelayAgentLookup, setRelayTurnPort } from '../relay-turns/port-runtime.js';
 import { initBoundary } from '../../../lib/boundary.js';
 import { registerClaudeCodeFacts } from '../../../startup/register-claude-code-facts.js';
 
@@ -67,6 +67,8 @@ export async function installRelayPort(opts: { boundary?: string } = {}): Promis
     getProjectPath: (id: string) => agents.get(id),
     listWithPaths: () => [...agents].map(([id, projectPath]) => ({ id, projectPath })),
   } as unknown as Pick<MeshCore, 'getProjectPath' | 'listWithPaths'>;
+  // The registry's answer for a folder, as startup wires Mesh's (`relay-adapters.ts`).
+  setRelayAgentLookup((folder) => [...agents].find(([, home]) => samePath(home, folder))?.[0]);
   const computer = createComputerTurnPort({
     meshCore: () => meshCore,
     roomSessionPlace: () => undefined,
@@ -108,4 +110,11 @@ export function uninstallRelayPort(): void {
   resetMessageDispatcher();
   setMessageQueueStore(undefined);
   clearTestHomes();
+  setRelayAgentLookup(() => undefined);
+}
+
+/** Whether two folders are the same, links resolved where they exist. */
+function samePath(a: string, b: string): boolean {
+  const real = (p: string) => (fs.existsSync(p) ? fs.realpathSync(p) : path.resolve(p));
+  return real(a) === real(b);
 }
