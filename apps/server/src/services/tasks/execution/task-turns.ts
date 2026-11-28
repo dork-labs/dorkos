@@ -16,7 +16,8 @@
  *
  * **Where its words wait.** With the scheduler's watch of the run, in this
  * process (`task-run:<id>`): a restart before the turn starts cancels the
- * turn's run (`start_lost`).
+ * turn's run (`start_lost`). A run the relay carries keeps its words here too
+ * ({@link TaskTurns.holdWords}, DOR-5508), so it ends after a restart the same way.
  *
  * **After a restart** (§7.3, DOR-5496). The scheduler that read a turn dies
  * with its boot, so the run record hands the turn's run back through this
@@ -97,6 +98,17 @@ export interface TaskTurns {
    * @param taskRunId - The task's run (`pulse_runs.id`).
    */
   owesEnding?(taskRunId: string): boolean;
+  /**
+   * Keep the words of a task's run another path starts (the relay carries
+   * it, DOR-5508) at this source until its turn is over, so its run names
+   * `task-run:<id>` and a restart ends the task's run from the run record,
+   * as for a fire started here.
+   *
+   * @param taskRunId - The task's run (`pulse_runs.id`).
+   * @param words - The words its turn starts with.
+   * @returns The run's `sourceRef`, and the release to call once its turn is over.
+   */
+  holdWords?(taskRunId: string, words: string): { sourceRef: string; release: () => void };
 }
 
 /**
@@ -130,6 +142,14 @@ export function portTaskTurns(
   return {
     owesEnding: (taskRunId) =>
       store !== undefined && port()?.owesEnding(`${TASK_RUN_SOURCE}:${taskRunId}`) === true,
+    holdWords(taskRunId, held) {
+      door();
+      words.set(taskRunId, held);
+      return {
+        sourceRef: `${TASK_RUN_SOURCE}:${taskRunId}`,
+        release: () => words.delete(taskRunId),
+      };
+    },
     open(request) {
       const face = door();
       words.set(request.runId, request.prompt);

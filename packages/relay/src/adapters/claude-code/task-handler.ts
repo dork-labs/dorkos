@@ -474,8 +474,9 @@ export async function handleTasksMessage(
     });
 
     // Before the turn runs, so the host knows the scheduler started it. The
-    // host's note must not throw (`TurnStartNote`).
-    deps.noteTurnStart?.({ sessionId, from: envelope.from });
+    // host's note must not throw (`TurnStartNote`). It names the task's run, so
+    // the host keeps the turn's words where the scheduler's own fire keeps them.
+    deps.noteTurnStart?.({ sessionId, from: envelope.from, taskRunId: runId });
     const eventStream = deps.agentManager.sendMessage(sessionId, prompt, {
       permissionMode,
       cwd: effectiveCwd,

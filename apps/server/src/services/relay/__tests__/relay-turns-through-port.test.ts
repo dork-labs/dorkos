@@ -29,7 +29,12 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { getRunRecord } from '../../runs/index.js';
 import { createAdapter } from '../adapter-factory.js';
-import { portBackedRuntime, RelayTurnNotes } from '../relay-turns/port-runtime.js';
+import { portTaskTurns } from '../../tasks/execution/task-turns.js';
+import {
+  portBackedRuntime,
+  RelayTurnNotes,
+  setRelayTaskRunWords,
+} from '../relay-turns/port-runtime.js';
 import { installRelayPort, uninstallRelayPort, type RelayPort } from './relay-port-harness.js';
 
 const AGENT_ID = '01JRZ7AGENTRAYP0RT00000000';
@@ -124,6 +129,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   for (const adapter of adapters) await adapter.stop();
+  setRelayTaskRunWords(undefined);
   uninstallRelayPort();
   fs.rmSync(home, { recursive: true, force: true });
   vi.restoreAllMocks();
@@ -288,8 +294,10 @@ describe('a relay turn goes through the turn port', () => {
 });
 
 describe('a scheduled run the scheduler handed the relay', () => {
-  it('starts through the port as a schedule run at its task’s level', async () => {
-    // Purpose: fails if the relay's task handler reaches a runtime, or its run loses its level.
+  it('starts through the port as a schedule run at its task’s level, its words at the scheduler’s source', async () => {
+    // Purpose: fails if the relay's task handler reaches a runtime, its run loses its level, or names no task run.
+    // The scheduler's door, as startup wires it (DOR-5508).
+    setRelayTaskRunWords(portTaskTurns(() => getRunRecord()?.port));
     const handed = tripwire();
     const adapter = await portAdapter(handed);
     const chat = '00000000-0000-4000-8000-0000000074a5';
@@ -333,6 +341,7 @@ describe('a scheduled run the scheduler handed the relay', () => {
       origin: { kind: 'schedule' },
       agentId: AGENT_ID,
       ending: 'completed',
+      sourceRef: 'task-run:01TASKRUN00000000000000000',
     });
   });
 });

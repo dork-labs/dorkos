@@ -15,6 +15,13 @@
  * with the level its binding grants. A send nobody noted is refused, never
  * guessed at.
  *
+ * **Where a task's words wait.** The task handler's note names the task's run,
+ * so its words wait at the scheduler's own source (`task-run:<id>`,
+ * {@link TaskRunWords}) until its turn is over, as a fire the scheduler starts
+ * itself keeps them (DOR-5508). The run names that source, so a restart that
+ * cuts it ends the task's run from the run record. A delivery's words stay in
+ * this process.
+ *
  * **Trust.** Everything the relay sent the runtime about power crosses the port
  * as plain data and reaches the runtime unchanged: the binding's level (the
  * port's `relay` field), the ceiling a sender that may not shape the turn is
@@ -37,6 +44,7 @@ import { TASK_SCHEDULER_PRINCIPAL } from '@dorkos/shared/relay-schemas';
 import type { InterruptReceipt, PermissionMode, StreamEvent } from '@dorkos/shared/types';
 import type { StartTurnInput, TurnOrigin } from '@dorkos/shared/turn-port';
 import { canonicalDir } from '@dorkos/shared/agent-facts';
+import { dorkReferenceOrNull } from '@dorkos/shared/dork-ref';
 import type { SpaceTurnPort, TurnRun } from '../../runs/index.js';
 import { logger } from '../../../lib/logger.js';
 
@@ -86,29 +94,70 @@ export function setRelayAgentLookup(lookup: (folder: string) => string | undefin
   agentAt = lookup;
 }
 
+/**
+ * The scheduler's source for a task run's words (`TaskTurns.holdWords` in
+ * `services/tasks`), handed in by startup so this domain does not import it.
+ */
+export interface TaskRunWords {
+  /**
+   * Keep a task run's words at the scheduler's source until its turn is over.
+   *
+   * @param taskRunId - The task's run (`pulse_runs.id`).
+   * @param words - The words its turn starts with.
+   * @returns The run's `sourceRef`, and the release to call once its turn is over.
+   */
+  holdWords?(taskRunId: string, words: string): { sourceRef: string; release: () => void };
+}
+
+let taskRunWords: TaskRunWords | undefined;
+
+/**
+ * Wire the scheduler's source a relay-carried task's words wait at. Startup
+ * calls it once Tasks has built its door; until then, and with Tasks off, a
+ * task's words stay in this process, as a delivery's do.
+ *
+ * @param source - The scheduler's door, or `undefined` to take it back.
+ */
+export function setRelayTaskRunWords(source: TaskRunWords | undefined): void {
+  taskRunWords = source;
+}
+
+/** The scheduler's source for a task's words, or `undefined` before startup wired it. */
+export function relayTaskRunWords(): TaskRunWords | undefined {
+  return taskRunWords;
+}
+
 /** The space face relay turns start on, or `undefined` before startup wired it. */
 export function relayTurnPort(): SpaceTurnPort | undefined {
   return spaceFace();
 }
 
+/** What the adapter noted about a session's next turn: its sender, and a task's run. */
+export interface RelayTurnNote {
+  /** Who sent the message, as the server stamped it on the envelope. */
+  from: string;
+  /** The task's run, when the task handler started the turn. */
+  taskRunId?: string;
+}
+
 /** Who sent the message each session's next turn answers, as the adapter noted it. */
 export class RelayTurnNotes {
-  private readonly senders = new Map<string, string>();
+  private readonly senders = new Map<string, RelayTurnNote>();
 
   /** The adapter's note, handed to it as `noteTurnStart`. */
-  readonly note: TurnStartNote = ({ sessionId, from }) => {
-    this.senders.set(sessionId, from);
+  readonly note: TurnStartNote = ({ sessionId, from, taskRunId }) => {
+    this.senders.set(sessionId, { from, ...(taskRunId !== undefined ? { taskRunId } : {}) });
   };
 
   /**
-   * The sender of the turn about to start on a session, read once.
+   * The note for the turn about to start on a session, read once.
    *
    * @param sessionId - The session key the turn runs under.
    */
-  take(sessionId: string): string | undefined {
-    const from = this.senders.get(sessionId);
+  take(sessionId: string): RelayTurnNote | undefined {
+    const note = this.senders.get(sessionId);
     this.senders.delete(sessionId);
-    return from;
+    return note;
   }
 }
 
@@ -124,6 +173,8 @@ export interface PortRuntimeDeps {
   agentIdOf: (home: string, face: SpaceTurnPort) => Promise<string | undefined>;
   /** Which runtime a chat is bound to, and taking back a binding no turn used. */
   chats: ChatBindings;
+  /** The scheduler's source a task's words wait at; absent, they stay in this process. */
+  taskRunWords?: () => TaskRunWords | undefined;
 }
 
 /**
@@ -146,6 +197,35 @@ interface StartedRun {
   face: SpaceTurnPort;
   runId: string;
   wasBound: boolean;
+  /** Let a task's words go from the scheduler's source, once its turn is over. */
+  release?: () => void;
+}
+
+/** Where a task's words wait, as the start names it. */
+interface HeldWords {
+  sourceRef: string;
+  originRef: string;
+  release: () => void;
+}
+
+/**
+ * Keep a task's words at the scheduler's source, when the note names its run
+ * by an id a reference can carry and Tasks wired the source.
+ *
+ * @param taskRunId - The task's run, as the note named it.
+ * @param words - The words the turn starts with.
+ * @param deps - Where the scheduler's source is.
+ */
+function holdTaskWords(
+  taskRunId: string | undefined,
+  words: string,
+  deps: PortRuntimeDeps
+): HeldWords | undefined {
+  if (taskRunId === undefined) return undefined;
+  const originRef = dorkReferenceOrNull('run', taskRunId);
+  const source = deps.taskRunWords?.();
+  if (originRef === null || !source?.holdWords) return undefined;
+  return { ...source.holdWords(taskRunId, words), originRef };
 }
 
 /** The receipt for a stop that found no turn running. */
@@ -169,7 +249,8 @@ async function startInputOf(
   session: EnsuredSession | undefined,
   opts: SendOptions,
   deps: PortRuntimeDeps,
-  face: SpaceTurnPort
+  face: SpaceTurnPort,
+  held: HeldWords | undefined
 ): Promise<StartTurnInput> {
   const task = turn.from === TASK_SCHEDULER_PRINCIPAL;
   let agentId: string | undefined;
@@ -195,6 +276,7 @@ async function startInputOf(
     ...(cwd !== undefined ? { cwd } : {}),
     content: turn.content,
     origin: task ? { kind: 'schedule' } : deps.originOf(turn.from),
+    ...(held ? { originRef: held.originRef, sourceRef: held.sourceRef } : {}),
     tier: 'owner',
     runtime: turn.runtime,
     ...(opts.systemPromptAppend !== undefined
@@ -248,18 +330,32 @@ export function portBackedRuntime(
     content: string,
     opts: SendOptions
   ): Promise<StartedRun> => {
-    const from = deps.notes.take(sessionId);
+    const note = deps.notes.take(sessionId);
     const session = sessions.get(sessionId);
     sessions.delete(sessionId);
-    if (from === undefined) {
+    if (note === undefined) {
       throw new Error('This relay turn did not say who sent it, so it was not started.');
     }
+    const { from } = note;
     const face = deps.port();
     if (!face) throw new Error('DorkOS is still starting. Send the message again in a moment.');
     const turn = { sessionId, content, from, runtime };
-    const input = await startInputOf(turn, session, opts, deps, face);
-    const wasBound = await deps.chats.isBound(sessionId);
-    return { face, runId: face.start(input).runId, wasBound };
+    // Only the scheduler's own sends name a task's run.
+    const held =
+      from === TASK_SCHEDULER_PRINCIPAL ? holdTaskWords(note.taskRunId, content, deps) : undefined;
+    try {
+      const input = await startInputOf(turn, session, opts, deps, face, held);
+      const wasBound = await deps.chats.isBound(sessionId);
+      return {
+        face,
+        runId: face.start(input).runId,
+        wasBound,
+        ...(held ? { release: held.release } : {}),
+      };
+    } catch (err) {
+      held?.release();
+      throw err;
+    }
   };
 
   async function* stream(
@@ -286,6 +382,7 @@ export function portBackedRuntime(
       }
       over = true;
     } finally {
+      started?.release?.();
       if (starts.get(sessionId) === starting) starts.delete(sessionId);
       if (started && over && !started.wasBound && !said) {
         await deps.chats.forgetUnstarted(sessionId).catch((err: unknown) => {
