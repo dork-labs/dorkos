@@ -247,11 +247,75 @@ describe('several reports at once (DOR-2829)', () => {
     finish(turn, session);
     await vi.waitFor(() =>
       expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('the runtime still has one open'),
+        expect.stringContaining('a turn is still open on the runtime'),
         expect.objectContaining({ sessionId: session, resetTo: 0 })
       )
     );
     await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(1));
     warn.mockRestore();
+  });
+
+  it('holds a fresh message sent the moment a person’s turn lets go, before the answer takes the lock', async () => {
+    const reply = pushable();
+    runtime.withScenarios([
+      async function* (): AsyncGenerator<StreamEvent> {
+        yield* reply.stream;
+      },
+      quickTurn,
+    ]);
+    void send('start the helpers');
+    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(1));
+    reply.push({ type: 'text_delta', data: { text: 'on it' } } as StreamEvent);
+    const empty = pushable();
+    const answer = pushable();
+    runtime.emitRuntimeTurn(session, empty.stream);
+    runtime.emitRuntimeTurn(session, answer.stream);
+    finish(empty, session);
+    reply.push({ type: 'done', data: { sessionId: session } } as StreamEvent);
+    reply.end();
+    // The person's turn has ended on the stream; the agent's projection is
+    // still between lock retries.
+    await vi.waitFor(
+      () =>
+        expect(
+          getOrCreateProjector(session)
+            .replayFrom(0)
+            .filter((event) => event.type === 'turn_end')
+        ).toHaveLength(1),
+      { interval: 1 }
+    );
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    // Every reader that asks whether the session is busy is told yes, not only
+    // the queue.
+    expect(isTurnInFlight(session, runtime)).toBe(true);
+    const fresh = await send('right now?');
+    await settle();
+    expect(fresh.queued).toBe(true);
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    finish(answer, session, 'all done');
+    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(2));
+  });
+
+  it('holds a fresh message the agent’s turns have not claimed the slot for yet', async () => {
+    runtime.withScenarios([quickTurn]);
+    // A person's turn held the slot as two of the agent's turns opened, and
+    // has let it go; the queue has not run since.
+    const personal = Symbol('a person’s turn');
+    inFlight.set(session, {
+      clientId: 'person',
+      token: personal,
+      startedAt: 0,
+      sawTurnStart: true,
+    });
+    noteRuntimeTurnOpen(session);
+    noteRuntimeTurnOpen(session);
+    inFlight.delete(session);
+    const fresh = await send('right now?');
+    await settle();
+    expect(fresh.queued).toBe(true);
+    expect(runtime.sendMessage).not.toHaveBeenCalled();
+    noteRuntimeTurnClosed(session, runtime);
+    noteRuntimeTurnClosed(session, runtime);
+    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(1));
   });
 });

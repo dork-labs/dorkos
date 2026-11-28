@@ -661,8 +661,9 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
   // A session with a turn open takes the message and holds it — whoever sent it.
   // Racing a second stream into one session is what left a live session showing
   // an idle composer (DOR-1088), and refusing the second window instead is what
-  // task 2.4 retires.
-  if (inFlight.has(sessionKey)) {
+  // task 2.4 retires. Turns the agent started count, even before the pump hands
+  // them the slot (DOR-2829).
+  if (inFlight.has(sessionKey) || (runtimeTurns.get(sessionKey)?.open ?? 0) > 0) {
     // Told it was accepted, so it can no longer be quietly dropped — including
     // for the refusing caller that reaches here, which is a `'refuse-foreign'`
     // waiting out its own turn. See {@link DispatchPlan.answered}.

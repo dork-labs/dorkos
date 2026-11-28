@@ -209,10 +209,11 @@ function claimForRuntimeTurns(sessionKey: string): void {
  * turn. While others are still open the claim stays, and is taken if that
  * person's turn has since let the slot go.
  *
- * At the last one, the runtime is asked whether it still has a turn open. It
- * should not: every turn the agent starts is announced here as it opens. If it
- * does, the count and the runtime disagree, which is said at `warn`, and the
- * count is reset all the same, so a miscount can never hold the queue for good.
+ * At the last one, the runtime is asked whether it still has a turn open. An
+ * agent-started one should not be: each is announced here as it opens. The
+ * open turn may also be one a caller started without the queue (a forced
+ * launch, a direct delivery), so the `warn` names no owner, and the count is
+ * reset all the same, so a miscount can never hold the queue for good.
  *
  * @param sessionId - The session whose agent-initiated turn ended
  * @param runtime - The runtime the turn ran on, asked at the last close
@@ -229,7 +230,7 @@ export function noteRuntimeTurnClosed(
   } else {
     if (turns !== undefined && runtime?.isTurnOpen?.(sessionId) === true) {
       logger.warn(
-        '[MessageDispatcher] the last agent-started turn ended, but the runtime still has one open',
+        '[MessageDispatcher] the last agent-started turn ended while a turn is still open on the runtime',
         { sessionId: sessionKey, resetTo: 0 }
       );
     }
