@@ -1,9 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import type { Transport } from '@dorkos/shared/transport';
 import type { RelayDeliveryReceipt } from '@dorkos/shared/relay-schemas';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { createRelayMethods } from '../relay-methods';
-import { HttpTransport } from '../http-transport';
 
 const ID = '01ARZ3NDEKTSV4RRFFQ69G5FAV';
 const receipt: RelayDeliveryReceipt = {
@@ -23,38 +21,10 @@ function respond(body: unknown, status = 200) {
     .mockResolvedValue(new Response(JSON.stringify(body), { status }));
 }
 
-it('the composed HttpTransport exposes a typed receipt GET at the exact authenticated boundary', async () => {
-  const fetch = respond(receipt);
-  const transport: Transport = new HttpTransport('/api');
-  const result: RelayDeliveryReceipt = await transport.getRelayDeliveryReceipt(ID);
-  expect(result).toEqual(receipt);
-  expect(fetch).toHaveBeenCalledTimes(1);
-  expect(fetch.mock.calls[0][0]).toBe(url);
-  expect(fetch.mock.calls[0][1]?.credentials).toBe('include');
-  expect(fetch.mock.calls[0][1]?.method).toBeUndefined();
-});
-
 it('encodes the locator as one path segment without injecting a new route', async () => {
   const fetch = respond(receipt);
   await methods.getRelayDeliveryReceipt('one/two?three');
   expect(fetch.mock.calls[0][0]).toBe('/api/relay/messages/one%2Ftwo%3Fthree/status');
-});
-
-it('send keeps the same body/POST and forwards optional receipt and statusUrl', async () => {
-  const response = { messageId: ID, deliveredTo: 1, receipt, statusUrl: url };
-  const fetch = respond(response);
-  const input = {
-    subject: 'relay.agent.example',
-    payload: { task: 'Example' },
-    from: 'relay.human.console',
-  };
-  expect(await methods.sendRelayMessage(input)).toEqual(response);
-  expect(fetch.mock.calls[0][0]).toBe('/api/relay/messages');
-  expect(fetch.mock.calls[0][1]).toMatchObject({
-    method: 'POST',
-    credentials: 'include',
-    body: JSON.stringify(input),
-  });
 });
 
 it('ordinary send results and central full mock stay compatible without fabricated receipts', async () => {

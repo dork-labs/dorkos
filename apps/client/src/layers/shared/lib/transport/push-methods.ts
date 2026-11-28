@@ -15,8 +15,8 @@ import type {
   RegisterPushSubscriptionResponse,
   VapidPublicKeyResponse,
 } from '@dorkos/shared/notification-schemas';
+import { LIST_PAGE_LIMIT, readAllPages } from '../read-all-pages';
 import { createTransportApiClient } from './api-client';
-import { fetchAllPages } from './http-client';
 
 /**
  * Create the web push methods bound to a base URL.
@@ -36,14 +36,13 @@ export function createPushMethods(baseUrl: string) {
       return api.call('push.createSubscriptions', { body: subscription });
     },
 
-    // Stays on fetchAllPages: the list pages (DOR-4982), and the read-all loop owns the cursor.
-    // It comes in pages, newest first; Settings shows it whole, in that order.
+    // The list pages (DOR-4982), newest first; Settings shows it whole, in that order.
     async listPushSubscriptions(): Promise<Pick<ListPushSubscriptionsResponse, 'subscriptions'>> {
-      const { rows } = await fetchAllPages(
-        baseUrl,
-        '/push/subscriptions',
-        {},
-        (page: ListPushSubscriptionsResponse) => page.subscriptions
+      const { rows } = await readAllPages(
+        (cursor) =>
+          api.call('push.listSubscriptions', { query: { cursor, limit: LIST_PAGE_LIMIT } }),
+        (page) => page.subscriptions,
+        '/push/subscriptions'
       );
       return { subscriptions: rows };
     },

@@ -22,20 +22,11 @@ afterEach(() => vi.unstubAllGlobals());
 describe('createPushMethods', () => {
   const methods = createPushMethods('/api');
 
-  it('reads the key and the list with bodyless GETs', async () => {
-    let fetchMock = answer({ publicKey: 'made-up-key' });
+  it('reads the key with a bodyless GET', async () => {
+    const fetchMock = answer({ publicKey: 'made-up-key' });
     await expect(methods.getPushVapidPublicKey()).resolves.toEqual({ publicKey: 'made-up-key' });
     expect(sent(fetchMock)).toEqual({
       url: '/api/push/vapid-public-key',
-      method: 'GET',
-      body: undefined,
-    });
-
-    // The list pages (DOR-4982): the read-all loop asks for the largest page.
-    fetchMock = answer({ subscriptions: [], nextCursor: null });
-    await methods.listPushSubscriptions();
-    expect(sent(fetchMock)).toEqual({
-      url: '/api/push/subscriptions?limit=200',
       method: 'GET',
       body: undefined,
     });

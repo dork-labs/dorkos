@@ -31,6 +31,7 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
   return {
     // --- Relay Message Bus ---
 
+    // Stays hand-written: the API document names the page's cursor `cursor`; the route sends `nextCursor` (DOR-5473).
     listRelayMessages(filters?: {
       subject?: string;
       status?: string;
@@ -48,11 +49,11 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
       return fetchJSON(baseUrl, `/relay/messages${qs}`);
     },
 
-    getRelayMessage(id: string): Promise<unknown> {
-      return fetchJSON(baseUrl, `/relay/messages/${id}`);
+    async getRelayMessage(id: string): Promise<unknown> {
+      return await api.call('relay.getMessages', { path: { id } });
     },
 
-    sendRelayMessage(opts: {
+    async sendRelayMessage(opts: {
       subject: string;
       payload: unknown;
       from: string;
@@ -63,21 +64,18 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
       receipt?: RelayDeliveryReceipt;
       statusUrl?: string;
     }> {
-      return fetchJSON(baseUrl, '/relay/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(opts),
-      });
+      return await api.call('relay.createMessages', { body: opts });
     },
 
-    getRelayDeliveryReceipt(messageId: string): Promise<RelayDeliveryReceipt> {
-      return fetchJSON(baseUrl, `/relay/messages/${encodeURIComponent(messageId)}/status`);
+    async getRelayDeliveryReceipt(messageId: string): Promise<RelayDeliveryReceipt> {
+      return await api.call('relay.getMessagesStatus', { path: { messageId } });
     },
 
-    listRelayEndpoints(): Promise<unknown[]> {
-      return fetchJSON(baseUrl, '/relay/endpoints');
+    async listRelayEndpoints(): Promise<unknown[]> {
+      return await api.call('relay.listEndpoints', {});
     },
 
+    // Stays hand-written: the API document says the route answers `{ subject, created }`; it sends the whole endpoint, with no `created` (DOR-5473).
     registerRelayEndpoint(subject: string): Promise<unknown> {
       return fetchJSON(baseUrl, '/relay/endpoints', {
         method: 'POST',
@@ -86,26 +84,28 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
       });
     },
 
-    unregisterRelayEndpoint(subject: string): Promise<{ success: boolean }> {
-      return fetchJSON(baseUrl, `/relay/endpoints/${subject}`, { method: 'DELETE' });
+    async unregisterRelayEndpoint(subject: string): Promise<{ success: boolean }> {
+      return await api.call('relay.deleteEndpoints', { path: { subject } });
     },
 
-    readRelayInbox(
+    async readRelayInbox(
       subject: string,
       opts?: { status?: string; cursor?: string; limit?: number }
     ): Promise<{ messages: unknown[]; nextCursor?: string }> {
-      const qs = buildQueryString({
-        status: opts?.status,
-        cursor: opts?.cursor,
-        limit: opts?.limit,
+      // The document lists the four statuses the route takes; the caller's own type is a string.
+      const status = opts?.status as 'pending' | 'delivered' | 'failed' | 'all' | undefined;
+      return await api.call('relay.listEndpointsInbox', {
+        path: { subject },
+        query: { status, cursor: opts?.cursor, limit: opts?.limit },
       });
-      return fetchJSON(baseUrl, `/relay/endpoints/${subject}/inbox${qs}`);
     },
 
+    // Stays hand-written: the API document gives the answer as three counts the route does not send (DOR-5473).
     getRelayMetrics(): Promise<unknown> {
       return fetchJSON(baseUrl, '/relay/metrics');
     },
 
+    // Stays hand-written: the API document says the route answers `{ messages }`; it sends a bare list (DOR-5473).
     listRelayDeadLetters(filters?: { endpointHash?: string }): Promise<unknown[]> {
       const qs = buildQueryString({ endpointHash: filters?.endpointHash });
       return fetchJSON(baseUrl, `/relay/dead-letters${qs}`);

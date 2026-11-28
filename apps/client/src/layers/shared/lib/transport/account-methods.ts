@@ -23,6 +23,7 @@ import type {
   NoAutoMove,
   OnlyProjectsResponse,
 } from '@dorkos/shared/project-schemas';
+import { createTransportApiClient } from './api-client';
 import { fetchJSON, fetchNoContent } from './http-client';
 
 /** The path of one session's account routes. */
@@ -32,12 +33,13 @@ function sessionPath(sessionId: string): string {
 
 /** Create the account methods bound to a base URL. */
 export function createAccountMethods(baseUrl: string) {
+  const api = createTransportApiClient(baseUrl);
   return {
-    getAccountUsage(runtime: string): Promise<{ accounts: AccountUsage[] }> {
-      return fetchJSON<{ accounts: AccountUsage[] }>(
-        baseUrl,
-        `/runtimes/${encodeURIComponent(runtime)}/accounts/usage`
-      );
+    // The document's `type` is the four runtimes; the server refuses any other.
+    async getAccountUsage(runtime: string): Promise<{ accounts: AccountUsage[] }> {
+      return (await api.call('runtimes.account_usage', {
+        path: { type: runtime as 'claude-code' | 'codex' | 'opencode' | 'doe' },
+      })) as { accounts: AccountUsage[] };
     },
 
     getContinueOptions(sessionId: string): Promise<ContinueOptionsResponse> {
@@ -77,72 +79,60 @@ export function createAccountMethods(baseUrl: string) {
       );
     },
 
-    getFoundClaudeFolders(): Promise<{ folders: FoundClaudeFolder[] }> {
-      return fetchJSON<{ folders: FoundClaudeFolder[] }>(
-        baseUrl,
-        '/runtimes/claude-code/accounts/found'
-      );
+    async getFoundClaudeFolders(): Promise<{ folders: FoundClaudeFolder[] }> {
+      return (await api.call('runtimes.found_accounts', {})) as { folders: FoundClaudeFolder[] };
     },
 
-    dismissFoundClaudeFolder(path: string): Promise<void> {
-      return fetchNoContent(baseUrl, '/runtimes/claude-code/accounts/found/dismiss', {
-        method: 'POST',
-        body: JSON.stringify({ path }),
-      });
+    async dismissFoundClaudeFolder(path: string): Promise<void> {
+      await api.call('runtimes.createClaudeCodeAccountsFoundDismiss', { body: { path } });
     },
 
-    getAccountEligibility(folder?: string): Promise<AccountEligibilityResponse> {
-      const query = folder ? `?project=${encodeURIComponent(folder)}` : '';
-      return fetchJSON<AccountEligibilityResponse>(
-        baseUrl,
-        `/runtimes/claude-code/account-eligibility${query}`
-      );
+    async getAccountEligibility(folder?: string): Promise<AccountEligibilityResponse> {
+      return (await api.call('runtimes.account_eligibility', {
+        query: { project: folder || undefined },
+      })) as AccountEligibilityResponse;
     },
 
-    setProjectAccounts(
+    async setProjectAccounts(
       project: string,
       allow: string[] | null
     ): Promise<AccountEligibilityResponse> {
-      return fetchJSON<AccountEligibilityResponse>(
-        baseUrl,
-        '/runtimes/claude-code/project-accounts',
-        { method: 'PUT', body: JSON.stringify({ project, allow }) }
-      );
+      return await api.call('runtimes.updateClaudeCodeProjectAccounts', {
+        body: { project, allow },
+      });
     },
 
-    keepCreditsOutOfProject(sessionId: string): Promise<AccountEligibilityResponse> {
-      return fetchJSON<AccountEligibilityResponse>(
-        baseUrl,
-        '/runtimes/claude-code/project-accounts/without-credits',
-        { method: 'POST', body: JSON.stringify({ sessionId }) }
-      );
+    async keepCreditsOutOfProject(sessionId: string): Promise<AccountEligibilityResponse> {
+      return await api.call('runtimes.createClaudeCodeProjectAccountsWithoutCredits', {
+        body: { sessionId },
+      });
     },
 
-    setAccountOnlyProjects(
+    async setAccountOnlyProjects(
       accountId: string,
       projects: string[] | null
     ): Promise<OnlyProjectsResponse> {
-      return fetchJSON<OnlyProjectsResponse>(
-        baseUrl,
-        `/runtimes/claude-code/accounts/${encodeURIComponent(accountId)}/only-projects`,
-        { method: 'PUT', body: JSON.stringify({ projects }) }
-      );
+      return await api.call('runtimes.updateClaudeCodeAccountsOnlyProjects', {
+        path: { id: accountId },
+        body: { projects },
+      });
     },
 
-    setAccountNoAutoMove(accountId: string, noAutoMove: boolean): Promise<NoAutoMove> {
-      return fetchJSON<NoAutoMove>(
-        baseUrl,
-        `/runtimes/claude-code/accounts/${encodeURIComponent(accountId)}/no-auto-move`,
-        { method: 'PUT', body: JSON.stringify({ noAutoMove }) }
-      );
+    async setAccountNoAutoMove(accountId: string, noAutoMove: boolean): Promise<NoAutoMove> {
+      return await api.call('runtimes.updateClaudeCodeAccountsNoAutoMove', {
+        path: { id: accountId },
+        body: { noAutoMove },
+      });
     },
 
-    setAccountAgentsMayPick(accountId: string, agentsMayPick: boolean): Promise<AgentsMayPick> {
-      return fetchJSON<AgentsMayPick>(
-        baseUrl,
-        `/runtimes/claude-code/accounts/${encodeURIComponent(accountId)}/agents-may-pick`,
-        { method: 'PUT', body: JSON.stringify({ agentsMayPick }) }
-      );
+    async setAccountAgentsMayPick(
+      accountId: string,
+      agentsMayPick: boolean
+    ): Promise<AgentsMayPick> {
+      return await api.call('runtimes.updateClaudeCodeAccountsAgentsMayPick', {
+        path: { id: accountId },
+        body: { agentsMayPick },
+      });
     },
   };
 }
