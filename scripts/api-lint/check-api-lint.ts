@@ -66,6 +66,8 @@
  * permanent hand-route allowlist (`apps/server/src/http/hand-routes/allowlist.ts`).
  * It flips to blocking when the pending list (`pending.json` beside
  * it) is empty: from then every other route is a capability `http` surface.
+ * `list-paging` never counts the lists in `list-paging-exemptions.ts`, each
+ * with a reason (small or fixed views, or ones a later item reshapes).
  *
  * Exit 2 means it could not run (an unreadable input, a bad or empty `--base`,
  * a flag with no value): a gate that cannot measure must not pass.
@@ -98,6 +100,7 @@ import {
 } from './baseline-file.ts';
 import { HAND_ROUTE_ALLOWLIST } from '../../apps/server/src/http/hand-routes/allowlist.ts';
 import { ApiLintError, operations, parseCensus, parseSpec } from './document.ts';
+import { withoutExemptLists } from './list-paging-exemptions.ts';
 import {
   duplicateOperationIds,
   errorMissingItems,
@@ -266,7 +269,7 @@ export function measure(root: string, inputs: Inputs = {}): Measurement {
     'param-name': paramNameItems(doc),
     'error-missing': errorMissingItems(doc),
     'error-shape': errorShapeItems(doc),
-    'list-paging': listPagingItems(doc),
+    'list-paging': withoutExemptLists(listPagingItems(doc)),
     'undocumented-route': undocumentedRouteItems(doc, routes),
     'unserved-operation': unservedOperationItems(doc, routes),
     'hand-registered-path': handRegistryItems(root),
