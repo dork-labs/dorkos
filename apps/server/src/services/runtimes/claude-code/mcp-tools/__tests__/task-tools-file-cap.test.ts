@@ -521,8 +521,6 @@ describe('tasks_update and a SKILL file changed outside the tools (M4)', () => {
         }),
         interruptQuery: vi.fn().mockResolvedValue(true),
         getInternalSessionId: vi.fn(() => undefined),
-        acquireLock: vi.fn(() => true),
-        releaseLock: vi.fn(),
       } as unknown as RuntimeDouble;
       const service = new TaskSchedulerService({
         store,
