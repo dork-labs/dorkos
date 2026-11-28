@@ -311,11 +311,12 @@ export interface EnqueueInput {
   /** See {@link QueuedMessageRecord.carriedLimits}. Absent or `undefined` means none. */
   carriedLimits?: QueuedCarriedLimits | undefined;
   /**
-   * What starts the row's turn. When given, the row's run is written in the
-   * same transaction as the row (a protected source's acceptance); absent, the
-   * caller writes it (the dispatcher) or nobody does.
+   * What starts the row's turn: named, the row's run is written in the same
+   * transaction (a protected source's acceptance); absent, its caller writes it.
    */
   origin?: TurnOrigin;
+  /** Where the words really are, as the run's `source_ref`; only beside `origin`. */
+  sourceRef?: string;
 }
 
 /**
@@ -392,17 +393,16 @@ export class MessageQueueStore {
       carriedLimitsJson: serializeQueuedLimits(input.carriedLimits),
       state: 'waiting',
     };
-    const origin = input.origin;
+    const { origin, sourceRef } = input;
     if (origin === undefined) {
       executor.insert(sessionMessageQueue).values(row).run();
       return toRecord(row);
     }
-    // A caller that names an origin gets the row's run in the same
-    // transaction (spec `turns-survive-restarts` §4.7, transition 1).
+    // Named, its run is written in the same transaction (§4.7, transition 1).
     const write = (own: Db | DbTransaction): void => {
       own.insert(sessionMessageQueue).values(row).run();
       reportToRuns('accept', (feed) => {
-        feed.accept({ chatKey: row.sessionId, origin, queueMessageId: row.id });
+        feed.accept({ chatKey: row.sessionId, origin, sourceRef, queueMessageId: row.id });
       });
     };
     if (tx) write(tx);

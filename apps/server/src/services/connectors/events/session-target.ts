@@ -8,7 +8,7 @@ import type {
   ConnectorEventSessionOrigin,
   ConnectorEventSessionTargetPort,
 } from './session-source-adapter.js';
-import type { TurnOrigin } from '../../session/index.js';
+import type { TurnOrigin } from '@dorkos/shared/turn-port';
 
 /** Exact persisted agent snapshot; a changed registration cannot inherit an old notification. */
 export function readConnectorEventSessionOrigin(

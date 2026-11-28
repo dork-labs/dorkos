@@ -47,7 +47,8 @@ import type {
 } from './source-types.js';
 export { PrivateSessionMessageRefusalError } from './refusal.js';
 import { PrivateSessionMessageRefusalError } from './refusal.js';
-import { privateQueueRowOf, privateSourceIdOf } from './source-types.js';
+import { privateSourceIdOf } from './source-types.js';
+import { privateQueueRowOf, quarantinePrivateRow } from './private-runs.js';
 
 /** Durable private-source acceptance and exactly-once dispatch coordinator. */
 export class PrivateSessionMessageAcceptanceService {
@@ -112,7 +113,7 @@ export class PrivateSessionMessageAcceptanceService {
           id: queueMessageId,
           sessionId: draft.sessionId,
           content: draft.queuePlaceholder,
-          ...privateQueueRowOf(draft.sourceKind),
+          ...privateQueueRowOf({ ...draft, receiptId }),
           disposition: 'queue',
         },
         tx
@@ -405,7 +406,7 @@ export class PrivateSessionMessageAcceptanceService {
         .where(eq(sessionMessageAcceptanceReceipts.id, receiptId))
         .get();
       if (!receipt || receipt.state !== 'dispatching') return;
-      this.queue.remove(receipt.queueMessageId, tx, 'outcome_unknown');
+      quarantinePrivateRow(this.queue, receipt.queueMessageId, tx);
       requireSynchronous(
         this.adapterFor(receipt.sourceKind).onOutcomeUnknown?.(
           tx,
@@ -415,11 +416,7 @@ export class PrivateSessionMessageAcceptanceService {
         )
       );
       tx.update(sessionMessageAcceptanceReceipts)
-        .set({
-          state: 'outcome_unknown',
-          cancellationCode,
-          settledAt: this.now().toISOString(),
-        })
+        .set({ state: 'outcome_unknown', cancellationCode, settledAt: this.now().toISOString() })
         .where(
           and(
             eq(sessionMessageAcceptanceReceipts.id, receiptId),
@@ -471,10 +468,9 @@ export class PrivateSessionMessageAcceptanceService {
     return documentTransaction(this.db, (tx) => {
       let changed = 0;
       for (const row of rows) {
-        this.queue.remove(row.queueMessageId, tx, 'outcome_unknown');
+        quarantinePrivateRow(this.queue, row.queueMessageId, tx);
         requireSynchronous(
-          // A degraded boot may omit a fixed source. Quarantine its durable
-          // dispatch evidence without fabricating source authority or blocking boot.
+          // A degraded boot may omit a fixed source: quarantine, never fabricating its authority.
           this.adapters
             .get(row.sourceKind)
             ?.onOutcomeUnknown?.(
