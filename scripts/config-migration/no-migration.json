@@ -1,4 +1,10 @@
 {
   "$comment": "Read by scripts/config-migration/check-config-migration.ts. When a PR changes the user config's shape in a way that would need a conf migration (a new member inside an existing section, a removal, a narrowed type) but none is needed, add one entry here in that PR: the path and change exactly as the check names them, and the reason a reviewer can verify. Only entries the PR itself adds count, so an old entry never covers a later change; an added entry that matches no change fails. Old entries may be deleted at any time.",
-  "waivers": []
+  "waivers": [
+    {
+      "path": "runtimes.environment.pathPrepend",
+      "change": "added",
+      "reason": "An opt-in list that starts empty, and absence means empty: its one reader, runtimePathPrepend() in apps/server/src/services/runtimes/shared/runtime-environment-config.ts, reads `?.pathPrepend ?? []`, so a stored file without the leaf behaves exactly like the default and nothing needs writing."
+    }
+  ]
 }

@@ -402,7 +402,10 @@ export type LoadGateSettings = z.infer<typeof LoadGateSettingsSchema>;
 /** The `runtimes` section of `UserConfigSchema`; its documentation sits on the field there. */
 export const RuntimesConfigSchema = z
   .object({
-    /** Names the owner deliberately passes to runtime subprocesses. */
+    /**
+     * Names the owner deliberately passes to runtime subprocesses, and
+     * directories put first on `PATH` in every runtime's turn.
+     */
     environment: RuntimeEnvironmentSchema,
     /** Runtime id the registry selects as its default at boot. */
     default: z.string().default('claude-code'),
@@ -527,7 +530,10 @@ export const RuntimesConfigSchema = z
       })),
   })
   .default(() => ({
-    environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
+    environment: {
+      inherit: { claudeCode: [], codex: [], opencode: [], doe: [] },
+      pathPrepend: [],
+    },
     default: 'claude-code',
     defaultTrustStop: 'autonomy' as const,
     maxAgentChats: 8,

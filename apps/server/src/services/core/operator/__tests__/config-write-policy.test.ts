@@ -257,6 +257,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'runtimes.environment.inherit.codex',
       'runtimes.environment.inherit.doe',
       'runtimes.environment.inherit.opencode',
+      'runtimes.environment.pathPrepend',
       // The load gate agents' heavy shell jobs wait behind: an agent that could
       // loosen any of it would be letting its own job past the wait (DOR-4209).
       'runtimes.loadGate.enabled',

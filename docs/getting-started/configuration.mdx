@@ -1018,6 +1018,25 @@ Removing a name does not erase a value already received by a process.
 This protects against accidental inheritance, not access by another process running as your operating system user.
 Allowed proxy, SSH, and model settings can themselves carry credentials. An allowed variable is available to that runtime's tools.
 
+#### Putting your own folders first on PATH
+
+`runtimes.environment.pathPrepend` lists folders that come first on `PATH` when an agent runs commands, on every runtime.
+It is empty, and so off, until you add a folder. Use it to put your own wrapper commands ahead of the real ones, for example a `pnpm` that waits its turn when your computer is busy.
+
+```json
+{
+  "environment": {
+    "pathPrepend": ["/Users/you/tools/wrappers"]
+  }
+}
+```
+
+Each entry must be a full path, such as `/Users/you/tools/wrappers`, and can't contain `:` or `;`. You can list up to 16.
+A folder that doesn't exist is skipped. The setup commands DorkOS runs itself, such as finding or installing a runtime, keep their usual `PATH`.
+Agents can't change this list through DorkOS tools.
+New agent processes use the change; a running OpenCode background process keeps its old `PATH` until it restarts.
+If your shell profile rebuilds `PATH` (on a Mac, a login shell runs `path_helper`), another folder can still come first. Ask an agent to run `command -v pnpm` to see which one wins.
+
 ### Harness Sync
 
 Harness Sync projects your `.agents/` definitions and installed marketplace plugins out to every agent harness. By default, installing or uninstalling a marketplace plugin re-runs this projection automatically.

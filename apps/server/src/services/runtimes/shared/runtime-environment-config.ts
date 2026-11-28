@@ -1,4 +1,5 @@
 /** Configuration boundary for the pure runtime environment projection. */
+import { statSync } from 'node:fs';
 import { SESSION_GIT_CONFIG, withGitConfigEnv } from '@dorkos/shared/git-hardening';
 import { configManager } from '../../core/config-manager.js';
 import {
@@ -23,7 +24,9 @@ const CONFIG_RUNTIME = {
  * run a program when an agent runs git in it. A person's own hooks are left
  * alone; `@dorkos/shared/git-hardening` says why. A turn also says which
  * runtime it is and that DorkOS hosts it ({@link flowIdentityEnv}), over anything
- * of the same name the owner chose to inherit (DOR-2405).
+ * of the same name the owner chose to inherit (DOR-2405). A turn's `PATH` starts
+ * with the owner's `runtimes.environment.pathPrepend` directories
+ * ({@link runtimePathPrepend}); helper processes keep `PATH` as it is.
  */
 export function runtimeEnvironment(
   runtime: EnvironmentRuntime,
@@ -39,6 +42,7 @@ export function runtimeEnvironment(
       purpose,
       inherit,
       overrides: { ...overrides, ...flowIdentityEnv(runtime, purpose) },
+      ...(purpose === 'turn' ? { pathPrepend: runtimePathPrepend() } : {}),
     }),
     SESSION_GIT_CONFIG
   );
@@ -47,4 +51,21 @@ export function runtimeEnvironment(
 /** Names-only policy identity also invalidates clients that capture env at construction. */
 export function runtimeInheritedNames(runtime: EnvironmentRuntime): string[] {
   return configManager?.get('runtimes')?.environment?.inherit[CONFIG_RUNTIME[runtime]] ?? [];
+}
+
+/**
+ * The owner's `runtimes.environment.pathPrepend` directories that exist right
+ * now. Read on every call, so a change applies to the next process a runtime
+ * starts; a directory that is missing (or not a directory) is left out rather
+ * than failing the turn.
+ */
+export function runtimePathPrepend(): string[] {
+  const configured = configManager?.get('runtimes')?.environment?.pathPrepend ?? [];
+  return configured.filter((dir) => {
+    try {
+      return statSync(dir).isDirectory();
+    } catch {
+      return false;
+    }
+  });
 }
