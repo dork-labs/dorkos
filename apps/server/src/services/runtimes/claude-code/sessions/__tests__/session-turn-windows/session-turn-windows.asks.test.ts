@@ -8,7 +8,7 @@ import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { LOAD_WAIT_STATUS } from '@dorkos/shared/schemas';
 import { turnCostReader } from '../../../../../observability/ai-metadata.js';
-import { CWD, groupWindows, settledOrPending } from './session-turn-windows.fixtures.js';
+import { CWD, groupWindows, settlesWithin } from './session-turn-windows.fixtures.js';
 import { capturedHelperRun, helperProgress } from './helper-frames.fixtures.js';
 import { SESSION_ID, warmSession } from './asks.fixtures.js';
 
@@ -168,7 +168,7 @@ describe("a helper's ask after the reply ends (DOR-2698)", () => {
     expect(w.opened).toHaveLength(1);
 
     const next = w.windows.dispatch([{ content: 'something else', messageId: 'm2' }], CWD);
-    expect(await settledOrPending(next)).toBe('settled');
+    expect(await settlesWithin(next)).toBe('settled');
     expect((await next).origin).toBe('user');
   });
 
@@ -182,7 +182,7 @@ describe("a helper's ask after the reply ends (DOR-2698)", () => {
     await vi.waitFor(() => expect(w.opened).toHaveLength(2));
 
     const next = w.windows.dispatch([{ content: 'something else', messageId: 'm2' }], CWD);
-    expect(await settledOrPending(next)).toBe('settled');
+    expect(await settlesWithin(next)).toBe('settled');
     expect((await next).origin).toBe('user');
     // The card is still open, and still answerable.
     expect(w.session.pendingInteractions.has(toolUseId)).toBe(true);
