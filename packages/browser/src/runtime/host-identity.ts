@@ -5,6 +5,17 @@ import { join } from 'node:path';
 import type { ProcessIdentity } from '../configuration.js';
 import { BrowserLifecycleError } from '../lifecycle/errors.js';
 
+/**
+ * `ps` finds itself on the real `PATH` (so a missing `ps` stays unavailable
+ * observation), with a fixed locale and the server's time zone, and nothing
+ * else of the environment.
+ */
+function psEnvironment(): Record<string, string> {
+  // eslint-disable-next-line no-restricted-syntax -- the real PATH and time zone only, for one ps call
+  const { PATH, TZ } = process.env;
+  return { ...(PATH ? { PATH } : {}), ...(TZ ? { TZ } : {}), LANG: 'C', LC_ALL: 'C' };
+}
+
 /** Issue a host birth identity; unavailable observation is never observed death. */
 export function hostIdentity(pid: number): ProcessIdentity | null {
   if (!Number.isSafeInteger(pid) || pid < 1 || process.platform === 'win32')
@@ -13,7 +24,7 @@ export function hostIdentity(pid: number): ProcessIdentity | null {
     const text = execFileSync('ps', ['-p', String(pid), '-o', 'lstart=', '-o', 'stat='], {
       encoding: 'utf8',
       timeout: 1000,
-      env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' },
+      env: psEnvironment(),
     }).trim();
     const match = /^(.*?)\s+(\S+)$/.exec(text);
     if (!match) throw new Error();

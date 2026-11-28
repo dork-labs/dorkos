@@ -127,8 +127,8 @@
     },
     "packages/browser/src/runtime/host-identity.ts": {
       "kind": "owned",
-      "reason": "ps with a fixed PATH and the C locale.",
-      "starts": ["execFileSync env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' }"]
+      "reason": "ps with psEnvironment(): the real PATH and TZ only, and the C locale; a missing ps stays unavailable observation.",
+      "starts": ["execFileSync env: psEnvironment()"]
     },
     "packages/browser/src/runtime/installation/jobs.ts": {
       "kind": "owned",

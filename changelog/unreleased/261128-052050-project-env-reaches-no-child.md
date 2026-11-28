@@ -4,6 +4,7 @@ covers:
   - 'fix(server): the project .env file can no longer change how DorkOS signs you in (DOR-5481)'
   - 'fix(server): git that keeps the token runs in a folder DorkOS just made (DOR-5481)'
   - "fix(server): retire only a stored sign-in key equal to the project .env's (DOR-5481)"
+  - 'fix(browser): ps finds itself on the real PATH, so a missing ps stays unavailable observation (DOR-5481)'
 ---
 
 ### Changed
