@@ -18,7 +18,6 @@
     "src/services/connectors/agent-request-service.ts": 1,
     "src/services/connectors/events/delivery-service.ts": 1,
     "src/services/connectors/events/session-source-adapter.ts": 1,
-    "src/services/connectors/events/session-target.ts": 1,
     "src/services/extensions/agent-send/agent-send-defaults.ts": 6,
     "src/services/extensions/pin/extension-scaffold-approval.ts": 1,
     "src/services/extensions/pin/path-trust-edits.ts": 2,

@@ -242,13 +242,14 @@ function dispatcherFeed(
   starts: HandedStarts | undefined
 ): DispatcherRunFeed {
   return {
-    accept: ({ chatKey, origin, queueMessageId }) =>
+    accept: ({ chatKey, origin, queueMessageId, sourceRef }) =>
       store.create({
         chatKey,
         status: 'queued',
         openedBy: 'caller',
         origin,
         ...(queueMessageId !== undefined ? { queueMessageId } : {}),
+        ...(sourceRef !== undefined ? { sourceRef } : {}),
       }).id,
 
     queueRowTaken: (runId, queueMessageId) =>
@@ -433,14 +434,32 @@ function rowLeaving(store: RunStore, queueMessageId: string, why: QueueRowExit):
     cancelRun(store, run, why, why === 'outcome_unknown' ? { outcomeUnknown: true } : {});
   } else if (run.status === 'starting' && (why === 'cancelled' || why === 'outcome_unknown')) {
     cancelRun(store, run, why, why === 'outcome_unknown' ? { outcomeUnknown: true } : {});
-  } else if (run.status === 'started' && why === 'outcome_unknown') {
-    // An earlier boot's private message reached `turn_start` and nobody saw
-    // more (§4.7): it ended with its process, and is never replayed.
-    store.endTurn(run, 'process_died', { outcomeUnknown: true });
+  } else if (why === 'outcome_unknown') {
+    outcomeUnknownAfterStart(store, run);
   }
   // `removed` or `session_gone` while a launch is under way: that launch ends
   // the run, as 7 or 9 (§4.7). A `started` or `running` run's row leaves by
   // `delivered` or at settle, which wrote the run first.
+}
+
+/**
+ * A private message's attempt reached `turn_start` in a boot that is gone,
+ * and nobody saw more (§4.7): its run ended with that process, its words are
+ * never replayed, and it is never carried on after the restart (§7.3), since
+ * its source keeps its own rule (a page's events stay `in_doubt` for their
+ * person). A run its lease already retired is only marked.
+ */
+function outcomeUnknownAfterStart(store: RunStore, run: TurnRun): void {
+  // `started` is always an earlier boot's here: this boot's own claims end before it.
+  if (run.status === 'started' || (run.status === 'running' && run.ownerEpoch !== store.epoch)) {
+    store.endTurn(run, 'process_died', { outcomeUnknown: true });
+  } else if (
+    (run.status === 'ended' || run.status === 'settled') &&
+    run.ownerEpoch !== store.epoch &&
+    run.recoveryDecidedAt === null
+  ) {
+    store.annotate(run.id, { endingDetail: { ...run.endingDetail, outcomeUnknown: true } });
+  }
 }
 
 /**

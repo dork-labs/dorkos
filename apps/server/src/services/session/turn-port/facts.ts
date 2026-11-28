@@ -62,8 +62,10 @@ export type LaunchVerdict =
  *   after a failed start). A `queued` or `starting` run is cancelled.
  * - `outcome_unknown`: a private message's attempt may have reached the
  *   runtime and nobody can tell (§4.7, the private-message row). A `starting`
- *   run is cancelled; one an earlier boot left `started` ends `process_died`.
- *   Its words are never replayed either way.
+ *   run is cancelled; one an earlier boot left `started` or `running` ends
+ *   `process_died` (a `running` one is reached by its row's id, though
+ *   `delivered` deleted the row), and one already retired is marked. Its
+ *   words are never replayed or carried on, whichever it was.
  */
 export type QueueRowExit = 'removed' | 'session_gone' | 'cancelled' | 'outcome_unknown';
 
@@ -87,9 +89,16 @@ export interface DispatcherRunFeed {
    * @param input.chatKey - The chat, by the id its queue rows are kept under.
    * @param input.origin - What started it; `null` when nobody recorded it.
    * @param input.queueMessageId - Its queue row, when it has one.
+   * @param input.sourceRef - Where its words really are (`source_ref`, §4.1), when the row
+   *   holds only a placeholder: a protected source's message.
    * @returns The new run's id.
    */
-  accept(input: { chatKey: string; origin: TurnOrigin | null; queueMessageId?: string }): string;
+  accept(input: {
+    chatKey: string;
+    origin: TurnOrigin | null;
+    queueMessageId?: string;
+    sourceRef?: string;
+  }): string;
   /**
    * A run the turn port handed over took its words into the queue: the row
    * is recorded on the run (§4.7, write 1). Called inside the transaction
