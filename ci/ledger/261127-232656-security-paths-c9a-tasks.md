@@ -34,4 +34,5 @@ and a look-alike), since what it wires is their audit rows, marks and notices.
 `core/turn-power/marked-turn-copy.ts` becomes a third port: the tool
 descriptions read it when they load, so it cannot be handed in, and it imports
 no domain. The old `runtimes/claude-code/mcp-tools/tasks/` entries on both lists
-now match nothing; they are left for Security to prune.
+stay: they still cover `tasks-tools-context.ts`, Claude Code's prompt block for
+the tasks tools, which did not move.

@@ -115,9 +115,9 @@ type CallerResolvers = [TaskProvenanceResolver?, CallerMarksResolver?, CallerAge
 /**
  * The caller the handlers read, from what the registry verified. On the
  * in-session server it is the chat (its id, its first id, its folder and its
- * agent); without a chat, nobody, as the introspection path always was. On any
- * other surface it is the token's agent and its marks, as on the external
- * server: never more than the token proves.
+ * agent); a chat with no agent identity DorkOS can name is marked an
+ * outsider's. On any other surface it is the token's agent and its marks, as
+ * on the external server: never more than the token proves.
  *
  * @param tools - The tool deps.
  * @param context - What the registry verified about this call.
@@ -125,16 +125,18 @@ type CallerResolvers = [TaskProvenanceResolver?, CallerMarksResolver?, CallerAge
 function callerOf(tools: AgentToolDeps, context: CapabilityHandlerContext): CallerResolvers {
   if (context.mcpServer === 'in-session') {
     const { sessionId, identity, cwd, turnSessionIds, narrowedReads } = context;
-    if (!sessionId) return [];
-    return [
-      () => ({
-        sessionId,
-        ...(identity ? { agentPath: identity.agentPath } : {}),
-        ...(cwd ? { cwd } : {}),
-        turnSessionIds: [...(turnSessionIds ?? [sessionId])],
-        ...(narrowedReads ? { narrowedReads: true } : {}),
-      }),
-    ];
+    const provenance: TaskProvenanceResolver | undefined = sessionId
+      ? () => ({
+          sessionId,
+          ...(identity ? { agentPath: identity.agentPath } : {}),
+          ...(cwd ? { cwd } : {}),
+          turnSessionIds: [...(turnSessionIds ?? [sessionId])],
+          ...(narrowedReads ? { narrowedReads: true } : {}),
+        })
+      : undefined;
+    // A chat whose agent DorkOS cannot name carries the outsider mark, as a caller the external
+    // server cannot name does: nothing vouches for it (Security on C9a).
+    return identity ? [provenance] : [provenance, () => ({ outsider: true })];
   }
   const { identity } = context;
   return [undefined, () => externalCallerMarks(tools, identity), externalCallerAgent(identity)];

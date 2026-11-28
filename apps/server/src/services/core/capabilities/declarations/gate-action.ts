@@ -28,6 +28,7 @@
  * @module services/core/capabilities/declarations/gate-action
  */
 import type { CapabilityDefinition } from '../capability-definition.js';
+import type { CapabilityRegistry } from '../registry.js';
 
 /** The hand tools' names a converted capability may be gated by. Frozen: C9b adds its own. */
 export const LEGACY_GATE_ACTION_IDS = Object.freeze([
@@ -115,4 +116,19 @@ export function approvalBindingInput(
   return action.boundCapabilityId === undefined
     ? base
     : { capability: action.boundCapabilityId, binding: base };
+}
+
+/**
+ * The capability an action id names: by its own id, or by the old tool name it
+ * is gated by. For a reader holding an approval's or a setting's action id,
+ * which is the gate id for a moved tool, so `registry.get` alone misses it.
+ *
+ * @param registry - The composed registry.
+ * @param actionId - A capability id, or a moved tool's old name.
+ */
+export function capabilityByActionId(
+  registry: Pick<CapabilityRegistry, 'get' | 'capabilities'>,
+  actionId: string
+): CapabilityDefinition | undefined {
+  return registry.get(actionId) ?? registry.capabilities.find((c) => c.gateActionId === actionId);
 }

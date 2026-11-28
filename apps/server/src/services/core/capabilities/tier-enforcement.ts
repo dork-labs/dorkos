@@ -155,7 +155,7 @@ import {
 } from './approval-wording.js';
 import type { SpendAsk } from './spend-permission.js';
 import { describeGatedAttempt } from './approval-card/gated-attempt-sentence.js';
-import { approvalBindingInput } from './declarations/gate-action.js';
+import { approvalBindingInput, gateViewOf } from './declarations/gate-action.js';
 
 export { describeGatedAttempt };
 
@@ -1084,7 +1084,8 @@ export async function authorizeCapability(
   context: CapabilityInvocationContext,
   options: { change?: string } = {}
 ): Promise<TierEnforcementDecision> {
-  const capability = registry.get(id);
+  // Decided as the gate decides it: a moved tool by its old name (C9a).
+  const capability = gateViewOf(registry.get(id));
   if (!capability) {
     throw new Error(`Capability registry: no capability registered for id "${id}".`);
   }
