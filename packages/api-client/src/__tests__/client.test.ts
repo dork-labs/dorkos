@@ -41,6 +41,36 @@ describe('createApiClient', () => {
     expect(init?.body).toBeUndefined();
   });
 
+  it('passes an allowed header through, and refuses every other one in any shape', async () => {
+    const fetch = answering(200, {});
+    const api = createApiClient({ baseUrl: '/api', fetch });
+
+    await api.call('computers.deleteControl', {
+      body: { leaseId: 'l1' },
+      headers: { 'X-Client-Id': 'window-1' },
+    });
+
+    const headers = new Headers(fetch.mock.calls[0]![1]?.headers);
+    expect(headers.get('X-Client-Id')).toBe('window-1');
+    expect(headers.get('Content-Type')).toBe('application/json');
+    const refused = ['Content-Type', 'Authorization', 'X-DorkOS-Community-Owner', 'X-DorkOS-Agent'];
+    for (const name of refused) {
+      // A record, a Headers instance and an entries array cast past the type.
+      for (const shape of [
+        { [name]: 'secret' },
+        new Headers({ [name]: 'secret' }),
+        [[name, 'secret']],
+      ]) {
+        const call = api.call('computers.get', { headers: shape as Record<string, string> });
+        const error = await call.catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(TypeError);
+        expect((error as Error).message).toContain(name.toLowerCase());
+        expect((error as Error).message).not.toContain('secret');
+      }
+    }
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects a problem document as an ApiProblemError that carries the Problem', async () => {
     const problem = {
       type: 'urn:dorkos:problem:needs_approval',

@@ -5,33 +5,32 @@ import {
   ComputerControlLeaseSchema,
   ComputerFrameSchema,
 } from '@dorkos/shared/computer-schemas';
-import { fetchJSON } from './http-client';
+import { createTransportApiClient } from './api-client';
 
 /** Bind computer operations to the current authenticated DorkOS server. */
 export function createComputerMethods(baseUrl: string, clientId: () => string): ComputerTransport {
-  // Stays hand-written: every call sends its own `X-Client-Id` header (DOR-5473).
-  const request = <T>(path: string, method = 'GET', body?: unknown): Promise<T> =>
-    fetchJSON<T>(baseUrl, `/computers${path}`, {
-      method,
-      headers: { 'X-Client-Id': clientId() },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
+  const api = createTransportApiClient(baseUrl);
+  // Every computer call names this window in its own `X-Client-Id` header.
+  const own = () => ({ headers: { 'X-Client-Id': clientId() } });
   return {
-    getComputer: async () => ComputerStatusSchema.parse(await request('')),
-    createComputer: async () => ComputerStatusSchema.parse(await request('', 'POST')),
-    startComputer: async () => ComputerStatusSchema.parse(await request('/start', 'POST')),
-    stopComputer: async () => ComputerStatusSchema.parse(await request('/stop', 'POST')),
-    signInComputer: async () => ComputerStatusSchema.parse(await request('/sign-in', 'POST')),
+    getComputer: async () => ComputerStatusSchema.parse(await api.call('computers.get', own())),
+    createComputer: async () =>
+      ComputerStatusSchema.parse(await api.call('computers.create', own())),
+    startComputer: async () => ComputerStatusSchema.parse(await api.call('computers.start', own())),
+    stopComputer: async () => ComputerStatusSchema.parse(await api.call('computers.stop', own())),
+    signInComputer: async () =>
+      ComputerStatusSchema.parse(await api.call('computers.signIn', own())),
     createComputerSession: async () =>
-      ComputerSessionSchema.parse(await request('/sessions', 'POST')),
+      ComputerSessionSchema.parse(await api.call('computers.createSessions', own())),
     acquireComputerControl: async () =>
-      ComputerControlLeaseSchema.parse(await request('/control', 'POST')),
+      ComputerControlLeaseSchema.parse(await api.call('computers.createControl', own())),
     releaseComputerControl: async (leaseId) => {
-      await request('/control', 'DELETE', { leaseId });
+      await api.call('computers.deleteControl', { ...own(), body: { leaseId } });
     },
     sendComputerInput: async (input) => {
-      await request('/input', 'POST', input);
+      await api.call('computers.createInput', { ...own(), body: input });
     },
-    getComputerFrame: async () => ComputerFrameSchema.parse(await request('/frame')),
+    getComputerFrame: async () =>
+      ComputerFrameSchema.parse(await api.call('computers.getFrame', own())),
   };
 }

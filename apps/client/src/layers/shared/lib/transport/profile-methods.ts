@@ -11,7 +11,7 @@
  */
 import type { ProfileAvatarResponse, ProfileUpdateResponse } from '@dorkos/shared/team-schemas';
 import { createTransportApiClient } from './api-client';
-import { fetchJSON, fetchNoContent } from './http-client';
+import { fetchJSON } from './http-client';
 
 /** The multipart field the avatar route reads. Wrong name, and the route answers `avatar_missing`. */
 const AVATAR_FIELD = 'avatar';
@@ -42,12 +42,12 @@ export function createProfileMethods(baseUrl: string) {
       await api.call('profile.deleteAvatar', {});
     },
 
-    // Stays hand-written: the link sends no body; waits for batch 3's no-body client (DOR-5473).
     /** Both directions answer 204; the roster is what the caller re-reads. */
-    setIdentityLinkedToMe(memberId: string, linked: boolean): Promise<void> {
-      return fetchNoContent(baseUrl, `/profile/identities/${encodeURIComponent(memberId)}`, {
-        method: linked ? 'POST' : 'DELETE',
-      });
+    async setIdentityLinkedToMe(memberId: string, linked: boolean): Promise<void> {
+      const path = { authorId: memberId };
+      await (linked
+        ? api.call('profile.createIdentities', { path })
+        : api.call('profile.deleteIdentities', { path }));
     },
   };
 }

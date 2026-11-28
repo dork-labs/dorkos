@@ -155,7 +155,9 @@ To add a call:
 
 Outside the app (a script, a test, another package), `createApiClient({ baseUrl, fetch })` sends with the `fetch` you give it and rejects a non-2xx answer with `ApiProblemError`, whose `problem` is the shared `Problem` type (`@dorkos/shared/problem`).
 
-Keep these hand-written for now: calls that stream (SSE, WebSocket), upload files (multipart or octet-stream bodies), send their own request headers, or read `ETag`/`304`. The client sends JSON bodies and query values only.
+A call that needs a header of its own passes it in the input: `api.call('computers.get', { headers: { 'X-Client-Id': id } })`. Only headers on `ALLOWED_CALL_HEADERS` in `packages/api-client/src/client.ts` may pass (today just `X-Client-Id`); the client throws before sending anything else, since the request path owns the rest.
+
+Keep these hand-written for now: calls that stream (SSE, WebSocket), upload files (multipart or octet-stream bodies), ask for no cache, or read `ETag`/`304`. Each hand-written method is listed, with its reason, in `transport/__tests__/hand-written-census.json`; the census test fails when one is missing or its reason no longer holds, and `waits-to-move-count` may only fall.
 
 When a route or schema changes, `pnpm docs:export-api` rewrites the API document and then the client (`pnpm api-client:generate`). Commit `packages/api-client/src/generated/` with `docs/api/`: the `openapi-fresh` check fails when either is stale. Never edit the generated files by hand.
 

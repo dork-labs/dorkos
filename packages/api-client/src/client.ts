@@ -12,9 +12,11 @@
  *
  * Small on purpose: it builds the URL and the body, hands both to the `fetch`
  * it was given, and reads the answer. Anything else a caller needs on every
- * request (credentials, timeouts, headers, how a refusal becomes an error)
- * belongs in that `fetch`, which is how the app's `HttpTransport` keeps one
- * request path for hand-written and generated calls alike.
+ * request (credentials, timeouts, shared headers, how a refusal becomes an
+ * error) belongs in that `fetch`, which is how the app's `HttpTransport` keeps
+ * one request path for hand-written and generated calls alike. A header one
+ * call needs and others don't (a window's `X-Client-Id`) rides in its input's
+ * `headers`.
  *
  * @module api-client/client
  */
@@ -60,10 +62,21 @@ type JsonBody<Id extends OperationId> =
       ? B | undefined
       : undefined;
 
-/** What a call to an operation takes: its path and query parameters and its JSON body. */
+/**
+ * The only headers a call may add of its own, lowercased. Everything else (the
+ * body's type, the cookie, credentials, the community-owner header) belongs to
+ * the request path, so a call that names anything not listed here is refused.
+ */
+export const ALLOWED_CALL_HEADERS: readonly string[] = ['x-client-id'];
+
+/**
+ * What a call to an operation takes: its path and query parameters, its JSON
+ * body, and any headers this one call adds (only those in
+ * {@link ALLOWED_CALL_HEADERS}).
+ */
 export type OperationInput<Id extends OperationId> = Field<'path', ParameterIn<Id, 'path'>> &
   Field<'query', ParameterIn<Id, 'query'>> &
-  Field<'body', JsonBody<Id>>;
+  Field<'body', JsonBody<Id>> & { headers?: Record<string, string> };
 
 type SuccessStatus = 200 | 201 | 202 | 203 | 204 | 206;
 type Responses<Id extends OperationId> = Operation<Id> extends { responses: infer R } ? R : never;
@@ -75,7 +88,7 @@ export type OperationResult<Id extends OperationId> = {
 }[keyof Responses<Id> & SuccessStatus];
 
 /** Per-call settings that ride along to `fetch`. */
-export type CallOptions = Pick<RequestInit, 'signal' | 'headers'>;
+export type CallOptions = Pick<RequestInit, 'signal'>;
 
 /**
  * A non-2xx answer. Every DorkOS error is an RFC 9457 problem document, so
@@ -117,11 +130,13 @@ export interface ApiClient {
    * Call one operation by its operationId.
    *
    * @param operationId - The operation, as `docs/api/openapi.json` names it.
-   * @param input - Its path and query parameters and its JSON body.
-   * @param options - A signal or extra headers for this call.
+   * @param input - Its path and query parameters, its JSON body and its own headers.
+   * @param options - A signal for this call.
    * @returns The answer's JSON body, or `undefined` for an empty answer.
    * @throws {ApiProblemError} When the answer is not 2xx (unless the `fetch`
    *   the client was given throws first).
+   * @throws {TypeError} When `input.headers` names a header not in
+   *   {@link ALLOWED_CALL_HEADERS}, before anything is sent.
    */
   call<Id extends OperationId>(
     operationId: Id,
@@ -139,6 +154,22 @@ function fillPath(operationId: string, template: string, values: Record<string, 
     }
     return encodeURIComponent(String(value));
   });
+}
+
+/**
+ * The call's own headers, refusing any not on the allow list. The names are
+ * read back from `Headers`, which lowercases them, so a `Headers` instance or
+ * an entries array cast past the type is checked the same way. The error names
+ * the header, never its value.
+ */
+function callHeaders(operationId: string, values?: HeadersInit): Headers {
+  const headers = new Headers(values);
+  for (const name of headers.keys()) {
+    if (!ALLOWED_CALL_HEADERS.includes(name)) {
+      throw new TypeError(`${operationId} may not set the "${name}" header itself.`);
+    }
+  }
+  return headers;
 }
 
 /** Serialize query parameters, leaving out `undefined` and repeating arrays. */
@@ -175,10 +206,11 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
         path?: Record<string, unknown>;
         query?: Record<string, unknown>;
         body?: unknown;
+        headers?: Record<string, string>;
       };
       const url = `${options.baseUrl}${fillPath(operationId, route.path, loose.path)}${queryString(loose.query)}`;
       const body = loose.body === undefined ? undefined : JSON.stringify(loose.body);
-      const headers = new Headers(callOptions?.headers);
+      const headers = callHeaders(operationId, loose.headers);
       if (body !== undefined && !headers.has('Content-Type')) {
         headers.set('Content-Type', 'application/json');
       }
