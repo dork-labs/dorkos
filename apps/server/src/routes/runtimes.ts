@@ -32,7 +32,7 @@ import {
   storeOpenRouterKeyReference,
   OpenRouterError,
 } from '../services/runtimes/opencode/providers/openrouter.js';
-import { OLLAMA_TAG_PATTERN } from '@dorkos/shared/runtime-connect';
+import { OllamaPullRequestSchema } from '../services/core/openapi/served-streams-openapi.js';
 import { detectOllama, pullOllamaModel } from '../services/runtimes/opencode/providers/ollama.js';
 import {
   provisionOllama,
@@ -95,11 +95,6 @@ const CheckProviderBodySchema = z.object({
 });
 /** A runtime key to TRY: omitted means "try the key that is already saved". */
 const CheckSecretBodySchema = z.object({ secret: z.string().min(1).optional() });
-const OllamaPullBodySchema = z.object({
-  // Any syntactically valid Ollama tag — DorkOS pulls what you name, curated or
-  // not (spec §3). The regex only rejects malformed input, never uncurated tags.
-  model: z.string().min(1).regex(OLLAMA_TAG_PATTERN).optional(),
-});
 
 /** A runtime's on-demand provisioning function (streams progress, resolves to a result). */
 type ProvisionFn = (
@@ -340,7 +335,7 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
     const refused = refuseNonLoopback(c);
     if (refused) return refused;
 
-    const parsed = OllamaPullBodySchema.safeParse(readJsonBody(c));
+    const parsed = OllamaPullRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
       return validationProblem(c, parsed.error, {
         detail: 'That is not a valid Ollama model name.',

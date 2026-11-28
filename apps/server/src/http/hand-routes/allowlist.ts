@@ -119,6 +119,12 @@ export const HAND_ROUTE_ALLOWLIST: readonly HandRouteAllowlistEntry[] = [
     category: 'stream',
     reason: 'An install that streams its progress (SSE).',
   },
+  {
+    method: 'POST',
+    path: '/api/runtimes/opencode/ollama/pull',
+    category: 'stream',
+    reason: 'A model download that streams its progress (SSE).',
+  },
 
   // Bytes: a file's raw bytes out, or a multipart upload in.
   { method: 'GET', path: '/api/files/raw', category: 'bytes', reason: "A file's raw bytes." },
