@@ -1,8 +1,9 @@
 /**
  * The work graph's reads (W4, DOR-4970): an agent's chats, ended ones too; a
- * chat's tree of chats that started each other; and the pull requests and
+ * chat's tree of chats that started each other; the pull requests and
  * tickets an agent, or a chat and the chats below it, opened, claimed or
- * works on. One shape for the REST paths and the agent tools.
+ * works on; and the chats that claimed one ticket or pull request, and when
+ * (DOR-4972). One shape for the REST paths and the agent tools.
  *
  * What a reader sees follows the audit read side (spec `audit-trail` §3.4):
  * the owner reads everything; an agent never sees a person's own chat. Each
@@ -20,6 +21,9 @@ export const WORK_PAGE_LIMIT = 200;
 
 /** The most chats below the asked one that one page of a tree holds. */
 export const CHAT_TREE_PAGE_LIMIT = 500;
+
+/** The most spans one page of a work item's chats holds. */
+export const WORK_ITEM_CHATS_PAGE_LIMIT = 200;
 
 /** One chat of an agent. */
 export const AgentChatSchema = z.object({
@@ -205,3 +209,74 @@ export const WorkPageSchema = z.object({
 
 /** One page of work. */
 export type WorkPage = z.infer<typeof WorkPageSchema>;
+
+/**
+ * How a claim's span ended: the chat released it, it lapsed when the chat went
+ * idle, it was handed to another chat, or a second claim began before any end
+ * was recorded (`unknown`).
+ */
+export const ClaimSpanEndSchema = z.enum(['released', 'lapsed', 'handed-over', 'unknown']);
+
+/** How a claim's span ended. */
+export type ClaimSpanEnd = z.infer<typeof ClaimSpanEndSchema>;
+
+/** One span of time a chat held a claim on a ticket or pull request (DOR-4972). */
+export const WorkItemSpanSchema = z.union([
+  z.object({
+    /** Always `claims`: the span of a claim. */
+    relation: z.literal('claims'),
+    /** The chat, by the id it has now. */
+    chatId: z.string(),
+    /**
+     * When the chat claimed it, an exact time (ISO 8601). A hand-over's time is
+     * visible to the space; the chat that gave it is never named.
+     */
+    claimedAt: z.string(),
+    /** The day it began (`YYYY-MM-DD`). */
+    startDay: z.string(),
+    /**
+     * When the claim ended, an exact time (ISO 8601) and nothing else. Null
+     * while the chat holds it, and when it was handed over to a chat the
+     * reader may not read: then only `endDay` says when.
+     */
+    endedAt: z.string().nullable(),
+    /** The day it ended (`YYYY-MM-DD`), or null while the chat holds it. */
+    endDay: z.string().nullable(),
+    /** How it ended, or null while the chat holds it. Never names another chat. */
+    endedBy: ClaimSpanEndSchema.nullable(),
+  }),
+  z
+    .object({
+      /** Always `claims`: a span of a chat the reader may not read. */
+      relation: z.literal('claims'),
+      /** The day it began (`YYYY-MM-DD`), never finer. */
+      startDay: z.string(),
+      /** The day it ended (`YYYY-MM-DD`), or null while it is held. */
+      endDay: z.string().nullable(),
+    })
+    .strict(),
+]);
+
+/** One span of a claim. */
+export type WorkItemSpan = z.infer<typeof WorkItemSpanSchema>;
+
+/**
+ * One page of the chats that claimed a ticket or pull request, and when.
+ * Spans list by the day they began, oldest first. Within a day: the spans of
+ * chats the reader may read, by `claimedAt` then `chatId`; then the spans of
+ * chats the reader may not read, by the day they ended, open last.
+ * Those private spans carry days only, and two with the same days read as
+ * one, so their place says no finer time. Spans start and end between pages,
+ * so a span can repeat or be missed while paging.
+ */
+export const WorkItemChatsPageSchema = z.object({
+  /** The item asked about, in its canonical spelling. */
+  ref: z.object({ kind: WorkKindSchema, id: z.string() }),
+  /** The spans. */
+  spans: z.array(WorkItemSpanSchema),
+  /** Pass as `cursor` for the next page; null on the last one. */
+  nextCursor: z.string().nullable(),
+});
+
+/** One page of a work item's chats. */
+export type WorkItemChatsPage = z.infer<typeof WorkItemChatsPageSchema>;

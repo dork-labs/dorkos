@@ -158,7 +158,7 @@ contractSuite('mesh, agent and discovery groups', [
   {
     name: 'GET /api/mesh/denied lists no denied folders',
     path: '/api/mesh/denied',
-    expect: { status: 200, body: { denied: [] } },
+    expect: { status: 200, body: { denied: [], nextCursor: null } },
   },
   {
     name: 'GET /api/mesh/nothing is the /api 404',
@@ -1031,7 +1031,7 @@ describe('contract: mesh, agents and discovery, driven by hand (login off)', () 
     });
     await check(server, {
       path: '/api/mesh/denied',
-      expect: { status: 200, body: { denied: [] } },
+      expect: { status: 200, body: { denied: [], nextCursor: null } },
     });
   });
 

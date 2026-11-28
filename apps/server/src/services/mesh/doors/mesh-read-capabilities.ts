@@ -23,9 +23,11 @@ import {
   TopologyViewSchema,
   type TopologyView,
 } from '@dorkos/shared/mesh-schemas';
+import { PageQuerySchema, nextCursorOutput } from '@dorkos/shared/paging';
 
 import { type CapabilityHandlerContext } from '../../core/capabilities/index.js';
-import { defineCapability } from '../../core/capabilities/capability-definition.js';
+import { defineCapability, invalidCursor } from '../../core/capabilities/capability-definition.js';
+import { keysetPage } from '../../../lib/paging/keyset-page.js';
 import { agentIsAsking, meshOf, type MeshCapabilityDeps } from './mesh-capability-deps.js';
 
 /**
@@ -163,14 +165,27 @@ export const meshTopologyCapability = defineCapability({
 export const meshListDeniedCapability = defineCapability({
   id: 'mesh.list_denied',
   title: 'List the folders hidden from discovery',
-  description: 'The folders a person hid from agent discovery, with why and when.',
+  description:
+    'The folders a person hid from agent discovery, with why and when. Newest first, the folder ' +
+    'breaking a tie, a page at a time: pass `nextCursor` back as `cursor` for the next. A ' +
+    'folder hidden, hidden again or shown while paging can repeat or be missed.',
   tier: 'observe',
   area: null,
   areaNote: PERSON_READ_NOTE,
-  input: z.object({}),
-  output: z.object({ denied: z.array(DenialRecordSchema) }),
+  input: PageQuerySchema,
+  output: z.object({ denied: z.array(DenialRecordSchema), nextCursor: nextCursorOutput }),
   surfaces: { http: { method: 'get', path: '/api/mesh/denied', audience: 'person' } },
-  invoke: async (deps) => ({ denied: meshOf(deps).meshCore.listDenied() }),
+  invoke: async (deps, query) => {
+    const denied = meshOf(deps).meshCore.listDenied();
+    const page = keysetPage(
+      'mesh-denied',
+      denied,
+      (row) => [row.deniedAt, row.path],
+      query,
+      invalidCursor
+    );
+    return { denied: page.items, nextCursor: page.nextCursor };
+  },
 });
 
 /** The registry's reads, in the mesh domain. */

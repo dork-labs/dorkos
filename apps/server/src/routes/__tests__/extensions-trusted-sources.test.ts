@@ -163,6 +163,21 @@ describe('trusted sources', () => {
     expect(list.body.sources).toEqual([{ source: SOURCE, trustedAt: 'now' }]);
   });
 
+  it('lists the sources a page at a time, in the order they were trusted', async () => {
+    const sources = ['a/one', 'b/two', 'c/three'];
+    state.extensions.trustedSources = sources.map((source) => ({ source, trustedAt: 'then' }));
+    const first = await request(fixtureServer).get('/api/extensions/trusted-sources?limit=2');
+    const next = encodeURIComponent(first.body.nextCursor);
+    const second = await request(fixtureServer).get(
+      `/api/extensions/trusted-sources?limit=2&cursor=${next}`
+    );
+    const paged = [...first.body.sources, ...second.body.sources];
+    expect(paged.map((row: { source: string }) => row.source)).toEqual(sources);
+    expect(second.body.nextCursor).toBeNull();
+    const refused = await request(fixtureServer).get('/api/extensions/trusted-sources?cursor=x');
+    expect(refused.status).toBe(400);
+  });
+
   it('refuses a source nothing installed provably comes from, and one that is not a repo', async () => {
     const unproven = await request(fixtureServer)
       .post('/api/extensions/trusted-sources')

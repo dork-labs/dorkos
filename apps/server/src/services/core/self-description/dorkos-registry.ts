@@ -24,6 +24,7 @@ import { noopLogger } from '@dorkos/shared/logger';
 
 import {
   composeRegistry,
+  isTrustedCaller,
   type CapabilityDeps,
   type CapabilityDomain,
   type CapabilityInvocationObserver,
@@ -88,7 +89,8 @@ import { sessionRelayDomain } from '../session-relay-doors/session-relay-capabil
 /**
  * The work graph's reads (DOR-4970), handed what they take from other domains
  * here, at the composition root: the audit read side's reader rule, a chat's
- * title and whether it holds outside words, and the turn mark. Each is read
+ * title and whether it holds outside words, the turn mark, and whether a call
+ * names a person (DOR-4972's read reads a caller nobody named as no owner). Each is read
  * when a call runs, never when this module loads.
  */
 export const workGraphReadDomain = createWorkGraphReadDomain({
@@ -97,6 +99,10 @@ export const workGraphReadDomain = createWorkGraphReadDomain({
   titleOf: (chatId) => chatTitleOf(chatId),
   holdsOutsideText: (chatId) => chatHoldsOutsideText(chatId),
   markOutside: (context) => markCallerTurnOutsider(context, { kind: 'chat' }),
+  // A userId is not proof of the person: a program key resolves to one, and so do `/mcp`
+  // calls and an agent's tool call in a chat (Security, DOR-4972).
+  namesPerson: (context) =>
+    context?.request?.personOnRestPath === true || isTrustedCaller(context?.trusted),
 });
 
 /**

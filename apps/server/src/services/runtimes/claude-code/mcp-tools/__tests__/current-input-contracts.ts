@@ -54,15 +54,17 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
         topDefaultCapabilities: topDefaults.filter(Boolean).length,
       }).toEqual({
         // +4 relevant/ordinary/inSession/external for the work graph's reads (DOR-4970);
-        // +4 defaultNodes/topDefaultFields/topDefaultCapabilities for their page sizes.
-        relevant: 136,
-        ordinary: 124,
-        inSession: 123,
-        external: 91,
+        // +4 defaultNodes/topDefaultFields/topDefaultCapabilities for their page sizes;
+        // +1 each for `list_paused_agents`' page size (DOR-4982);
+        // +1 each for `work_item_chats` (DOR-4972), and +1 for its page size.
+        relevant: 137,
+        ordinary: 125,
+        inSession: 124,
+        external: 92,
         private: 12,
-        defaultNodes: 33,
-        topDefaultFields: 19,
-        topDefaultCapabilities: 18,
+        defaultNodes: 35,
+        topDefaultFields: 21,
+        topDefaultCapabilities: 20,
       });
       expect(
         relevant
@@ -89,8 +91,8 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
       for (const id of CONNECTOR_RUNTIME_CAPABILITY_IDS) expect(actual.get(id), id).toBeDefined();
     });
 
-    it('preserves omitted and explicit values for all 33 current default nodes through SDK and registry', async () => {
-      expect(defaults).toHaveLength(33);
+    it('preserves omitted and explicit values for all 35 current default nodes through SDK and registry', async () => {
+      expect(defaults).toHaveLength(35);
       const received = new Map<string, unknown[]>();
       const probes = defaults.map((node, index) =>
         defineCapability({
@@ -115,7 +117,7 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
       });
       const { client } = await createCapabilityMcpClient(registry);
       const listed = (await client.listTools()).tools;
-      expect(listed).toHaveLength(33);
+      expect(listed).toHaveLength(35);
       for (const [index, node] of defaults.entries()) {
         const name = `default_node_${index}`;
         const value = node.schema.parse(undefined);
@@ -143,7 +145,7 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
         ).toEqual({ value: expected });
         expect(received.get(node.id + node.path)).toEqual([{ value }, { value: expected }]);
       }
-      expect(received.size).toBe(33);
+      expect(received.size).toBe(35);
     });
 
     it('preserves every current numeric coercion and rejects invalid values before the same handler', async () => {
@@ -156,8 +158,9 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
           )
           .map((node) => ({ id: cap.id, ...node }))
       );
-      // +5 for the work graph reads' page sizes and tree depth (DOR-4970).
-      expect(nodes).toHaveLength(16);
+      // +5 for the work graph reads' page sizes and tree depth (DOR-4970), +1 for
+      // `list_paused_agents`' page size (DOR-4982), +1 for `work_item_chats`' (DOR-4972).
+      expect(nodes).toHaveLength(18);
       const handlers = nodes.map(() => vi.fn(async (_deps, input) => input));
       const probes = nodes.map((node, index) =>
         defineCapability({

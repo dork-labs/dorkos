@@ -4,8 +4,10 @@
  * names it. The set is an agent's chats, or one chat and the chats below it
  * (the lineage query's subtree, W3).
  *
- * Every relation in the store's own set is read (`WORK_LINK_RELATIONS`), and
- * each link comes back with its relation as stored, so a new relation is
+ * Every relation in the store's own set is read (`WORK_LINK_RELATIONS`) but
+ * `released`: a claim's end is history with a read of its own
+ * (`work-item-chats.ts`), and a claim lists here once, as `claims`. Each
+ * link comes back with its relation as stored, so a new relation is
  * listed on purpose, in the store, and never by a string here. Only links to a
  * pull request or a ticket are kept.
  *
@@ -18,7 +20,8 @@
  * may not read is still listed, but each such link carries only its relation
  * and the day it was recorded: no chat, no time finer than the day, no
  * source label and no turn marks, and two such links of one relation on one
- * day read as one, so nothing on the item counts or points back at the chat.
+ * day read as one, so nothing on the item counts or points back at the chat
+ * (`./private-rows.ts`, the one scrub both reads use).
  * An item lists its readable links in the order they were recorded, then
  * those private ones by day and relation, so their place says no finer time.
  * Nothing on an item is copied from a chat's words: an item is its reference.
@@ -29,8 +32,12 @@ import { formatEntityRef, type EntityRef } from '@dorkos/shared/entity-ref';
 import type { WorkItem, WorkItemLink, WorkKind, WorkPage } from '@dorkos/shared/work-graph-reads';
 import type { LineageReads } from '../lineage-reads.js';
 import { decodePageCursor, encodePageCursor, pairOf } from './page-cursor.js';
+import { PrivateRows } from './private-rows.js';
 import type { AuditReader } from '../../audit/visibility.js';
 import { WORK_LINK_RELATIONS, type WorkLink, type WorkLinkStore } from '../work-link-store.js';
+
+/** The relations an item's links list: every one but a claim's end (see the module header). */
+const LISTED_RELATIONS = WORK_LINK_RELATIONS.filter((relation) => relation !== 'released');
 
 /** The kinds of work listed when none is asked for. */
 const ALL_WORK_KINDS: readonly WorkKind[] = ['pr', 'ticket'];
@@ -85,13 +92,13 @@ export function readWork(
   const kinds = new Set<string>(query.kind ? [query.kind] : ALL_WORK_KINDS);
   const { of, owner } = sources.aliases.aliases(query.chatIds);
   const refs = [...of.values()].flat().map((id) => ({ kind: 'chat' as const, id }));
-  const found: WorkLink[] = WORK_LINK_RELATIONS.flatMap((relation) =>
+  const found: WorkLink[] = LISTED_RELATIONS.flatMap((relation) =>
     sources.links.fromMany(refs, relation)
   ).filter((link) => kinds.has(link.to.kind));
   found.sort((a, b) => compare(a.recordedAt, b.recordedAt) || compare(a.id, b.id));
 
   const items = new Map<string, Gathered>();
-  const privateSeen = new Set<string>();
+  const scrub = new PrivateRows();
   for (const link of found) {
     const ref = link.to as EntityRef<WorkKind>;
     const text = formatEntityRef(ref);
@@ -109,10 +116,8 @@ export function readWork(
       item.links.push({ relation: link.relation, chatId, recordedAt: link.recordedAt });
       continue;
     }
-    const key = `${text}\n${link.relation}\n${day}`;
-    if (privateSeen.has(key)) continue;
-    privateSeen.add(key);
-    item.hidden.push({ relation: link.relation, chatId: null, recordedOn: day });
+    const hidden = scrub.link(text, link.relation, link.recordedAt);
+    if (hidden) item.hidden.push(hidden);
   }
 
   const ordered = [...items.values()].sort(newestFirst);

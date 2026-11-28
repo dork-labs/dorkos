@@ -75,6 +75,7 @@ describe('context.request', () => {
       'heldWifiOwner',
       'ownerOrNoAccount',
       'ownerProven',
+      'personOnRestPath',
     ]);
     const everything = JSON.stringify(seen);
     expect(everything).not.toContain('cookie-secret-value');

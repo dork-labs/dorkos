@@ -151,6 +151,28 @@ describe('GET /api/push/subscriptions', () => {
       'fcm.googleapis.com',
     ]);
     expect(JSON.stringify(res.body)).not.toContain('newer');
+    expect(res.body.nextCursor).toBeNull();
+  });
+
+  it('comes a page at a time, and every page read in turn keeps the newest-first order', async () => {
+    for (const host of ['a.example', 'b.example', 'c.example']) {
+      subscriptions.upsert(subscribeBody(`https://${host}/device`));
+    }
+    const app = fixtureTarget.mount(buildApp());
+
+    const first = await request(app).get('/api/push/subscriptions?limit=2');
+    const second = await request(app).get(
+      `/api/push/subscriptions?limit=2&cursor=${encodeURIComponent(first.body.nextCursor)}`
+    );
+
+    const services = [...first.body.subscriptions, ...second.body.subscriptions].map(
+      (s: { service: string }) => s.service
+    );
+    expect(services).toEqual(subscriptions.list().map((s) => s.service));
+    expect(services).toEqual(['c.example', 'b.example', 'a.example']);
+    expect(second.body.nextCursor).toBeNull();
+    const refused = await request(app).get('/api/push/subscriptions?cursor=not-ours');
+    expect(refused.status).toBe(400);
   });
 
   it('refuses an agent — which devices can be buzzed is not a machine’s question', async () => {
