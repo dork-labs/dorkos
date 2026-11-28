@@ -58,7 +58,8 @@ import { MAX_CAPABILITY_LIMIT, type CapabilityCatalog } from '@dorkos/shared/cap
 import type { MemoryProviderStatus } from '@dorkos/shared/memory-provider';
 import type { KeepAwakeStatus } from '@dorkos/shared/schemas';
 import type { TransportScanOptions, TransportScanEvent } from '@dorkos/shared/mesh-schemas';
-import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
+import { createTransportApiClient } from './api-client';
+import { fetchJSON, buildQueryString } from './http-client';
 import { parseSSEStream } from './sse-parser';
 import { uploadFilesOverHttp } from './upload-methods';
 import { writeFileOverHttp } from './file-write-method';
@@ -113,13 +114,21 @@ async function postSseAction<TProgress, TResult>(
  * @param baseUrl - Server base URL
  */
 export function createSystemMethods(baseUrl: string) {
+  // The reads and file writes below that name an operationId go through the
+  // generated client (DOR-5473). The document also lists each capability's 202
+  // approval answer, which a person's own call never gets; the casts keep
+  // today's types. A flag goes out only when it is on, as it always has.
+  const api = createTransportApiClient(baseUrl);
   return {
     ...createAccountSigninMethods(baseUrl),
     // ── Filesystem ────────────────────────────────────────────────────────
 
-    browseDirectory(dirPath?: string, showHidden?: boolean): Promise<BrowseDirectoryResponse> {
-      const qs = buildQueryString({ path: dirPath, showHidden: showHidden || undefined });
-      return fetchJSON<BrowseDirectoryResponse>(baseUrl, `/directory${qs}`);
+    async browseDirectory(
+      dirPath?: string,
+      showHidden?: boolean
+    ): Promise<BrowseDirectoryResponse> {
+      const query = { path: dirPath, showHidden: showHidden || undefined };
+      return (await api.call('directory.browse', { query })) as BrowseDirectoryResponse;
     },
 
     createDirectory(parentPath: string, folderName: string): Promise<{ path: string }> {
@@ -129,8 +138,8 @@ export function createSystemMethods(baseUrl: string) {
       });
     },
 
-    getDefaultCwd(): Promise<{ path: string }> {
-      return fetchJSON<{ path: string }>(baseUrl, '/directory/default');
+    async getDefaultCwd(): Promise<{ path: string }> {
+      return (await api.call('directory.default', {})) as { path: string };
     },
 
     listFiles(cwd: string): Promise<FileListResponse> {
@@ -193,28 +202,25 @@ export function createSystemMethods(baseUrl: string) {
     },
 
     /** Read a text file's content plus its SHA-256 fingerprint. */
-    readFileContent(cwd: string, filePath: string): Promise<FileContentResponse> {
-      const qs = buildQueryString({ cwd, path: filePath });
-      return fetchJSON<FileContentResponse>(baseUrl, `/files/content${qs}`);
+    async readFileContent(cwd: string, filePath: string): Promise<FileContentResponse> {
+      const query = { cwd, path: filePath };
+      return (await api.call('files.read_text', { query })) as FileContentResponse;
     },
 
     /** Resolve a file's diff baseline + current content for the review surface (DOR-212). */
-    readDiffBaseline(
+    async readDiffBaseline(
       cwd: string,
       filePath: string,
       sessionId: string,
       mode?: 'session' | 'head'
     ): Promise<DiffBaselineResponse> {
-      const qs = buildQueryString({ cwd, path: filePath, sessionId, mode });
-      return fetchJSON<DiffBaselineResponse>(baseUrl, `/diff/baseline${qs}`);
+      const query = { cwd, path: filePath, sessionId, mode };
+      return (await api.call('diff.baseline', { query })) as DiffBaselineResponse;
     },
 
     /** Advance a file's diff baseline to current disk (finish-review; DOR-212). */
     async advanceDiffBaseline(cwd: string, filePath: string, sessionId: string): Promise<void> {
-      await fetchJSON<{ ok: true }>(baseUrl, '/diff/baseline/advance', {
-        method: 'POST',
-        body: JSON.stringify({ cwd, path: filePath, sessionId }),
-      });
+      await api.call('diff.advance_baseline', { body: { cwd, path: filePath, sessionId } });
     },
 
     /** Baseline image bytes URL for the image-diff "before" layer (DOR-212 Chunk B). */
@@ -225,45 +231,34 @@ export function createSystemMethods(baseUrl: string) {
 
     /** Restore a file's baseline bytes to disk, whole-file (image-diff reject; DOR-212 Chunk B). */
     async revertDiffBaseline(cwd: string, filePath: string, sessionId: string): Promise<void> {
-      await fetchJSON<{ ok: true }>(baseUrl, '/diff/revert', {
-        method: 'POST',
-        body: JSON.stringify({ cwd, path: filePath, sessionId }),
-      });
+      await api.call('diff.revert', { body: { cwd, path: filePath, sessionId } });
     },
 
     /** Create a file or directory; rejects (409) if the target already exists. */
-    createEntry(
+    async createEntry(
       cwd: string,
       filePath: string,
       type: 'file' | 'dir',
       content?: string
     ): Promise<CreateEntryResponse> {
-      return fetchJSON<CreateEntryResponse>(baseUrl, '/files', {
-        method: 'POST',
-        body: JSON.stringify({ cwd, path: filePath, type, content }),
-      });
+      const body = { cwd, path: filePath, type, content };
+      return (await api.call('files.create', { body })) as CreateEntryResponse;
     },
 
     /** Delete a file or directory; a non-empty directory needs `recursive`. */
-    deleteEntry(
+    async deleteEntry(
       cwd: string,
       filePath: string,
       options?: { recursive?: boolean }
     ): Promise<FileMutationResponse> {
-      const qs = buildQueryString({
-        cwd,
-        path: filePath,
-        recursive: options?.recursive || undefined,
-      });
-      return fetchJSON<FileMutationResponse>(baseUrl, `/files${qs}`, { method: 'DELETE' });
+      const recursive = options?.recursive ? ('true' as const) : undefined;
+      const query = { cwd, path: filePath, recursive };
+      return (await api.call('files.delete', { query })) as FileMutationResponse;
     },
 
     /** Move or rename an entry; rejects (409) if the target exists. */
-    renameEntry(cwd: string, from: string, to: string): Promise<FileMutationResponse> {
-      return fetchJSON<FileMutationResponse>(baseUrl, '/files/rename', {
-        method: 'POST',
-        body: JSON.stringify({ cwd, from, to }),
-      });
+    async renameEntry(cwd: string, from: string, to: string): Promise<FileMutationResponse> {
+      return (await api.call('files.rename', { body: { cwd, from, to } })) as FileMutationResponse;
     },
 
     /** Copy an entry (recursively for directories); rejects (409) if the target exists. */
@@ -277,16 +272,9 @@ export function createSystemMethods(baseUrl: string) {
     /** The server runs on a real desktop, so it can drive a file manager. */
     supportsReveal: true as const,
 
-    /**
-     * Show an entry in the server machine's file manager. The route answers
-     * `204 No Content`, so this goes through `fetchNoContent` — `fetchJSON`
-     * would try to parse an empty body and turn every success into an error.
-     */
+    /** Show an entry in the server machine's file manager. The route answers `204 No Content`. */
     async revealEntry(cwd: string, filePath: string): Promise<void> {
-      await fetchNoContent(baseUrl, '/files/reveal', {
-        method: 'POST',
-        body: JSON.stringify({ cwd, path: filePath }),
-      });
+      await api.call('files.reveal', { body: { cwd, path: filePath } });
     },
 
     writeFile: (...args: Parameters<Transport['writeFile']>) => writeFileOverHttp(baseUrl, ...args),
@@ -298,24 +286,24 @@ export function createSystemMethods(baseUrl: string) {
 
     // ── Commands ──────────────────────────────────────────────────────────
 
-    getCommands(
+    async getCommands(
       refresh = false,
       cwd?: string,
       opts?: { sessionId?: string; runtime?: string }
     ): Promise<CommandRegistry> {
-      const qs = buildQueryString({
-        refresh: refresh || undefined,
+      const query = {
+        refresh: refresh ? ('true' as const) : undefined,
         cwd,
         sessionId: opts?.sessionId,
         runtime: opts?.runtime,
-      });
-      return fetchJSON<CommandRegistry>(baseUrl, `/commands${qs}`);
+      };
+      return (await api.call('commands.get', { query })) as CommandRegistry;
     },
 
     // ── Config & Health ───────────────────────────────────────────────────
 
-    health(): Promise<HealthResponse> {
-      return fetchJSON<HealthResponse>(baseUrl, '/health');
+    async health(): Promise<HealthResponse> {
+      return (await api.call('health.get', {})) as HealthResponse;
     },
 
     getConfig(): Promise<ServerConfig> {
@@ -434,8 +422,8 @@ export function createSystemMethods(baseUrl: string) {
       return fetchJSON<SystemRequirements>(baseUrl, '/system/requirements');
     },
 
-    getKeepAwake(): Promise<KeepAwakeStatus> {
-      return fetchJSON<KeepAwakeStatus>(baseUrl, '/keep-awake');
+    async getKeepAwake(): Promise<KeepAwakeStatus> {
+      return (await api.call('keepAwake.get', {})) as KeepAwakeStatus;
     },
 
     getMemoryProviderStatus(): Promise<MemoryProviderStatus> {
@@ -669,10 +657,9 @@ export function createSystemMethods(baseUrl: string) {
 
     // ── Templates & MCP Config ────────────────────────────────────────────
 
-    getTemplates(): Promise<TemplateEntry[]> {
-      return fetchJSON<{ templates: TemplateEntry[] }>(baseUrl, '/templates').then(
-        (r) => r.templates
-      );
+    async getTemplates(): Promise<TemplateEntry[]> {
+      const answer = (await api.call('templates.list', {})) as { templates: TemplateEntry[] };
+      return answer.templates;
     },
 
     getMcpConfig(projectPath: string, opts?: { runtime?: string }): Promise<McpConfigResponse> {

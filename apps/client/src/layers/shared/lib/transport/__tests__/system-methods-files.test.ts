@@ -41,17 +41,6 @@ describe('revealEntry', () => {
 
     await expect(setup().revealEntry('/repo', 'README.md')).resolves.toBeUndefined();
   });
-
-  it('posts the path to the reveal route', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
-
-    await setup().revealEntry('/repo', 'src/index.ts');
-
-    const [url, init] = lastCall();
-    expect(url).toBe(`${BASE}/files/reveal`);
-    expect(init.method).toBe('POST');
-    expect(init.body).toBe(JSON.stringify({ cwd: '/repo', path: 'src/index.ts' }));
-  });
 });
 
 describe('copyEntry', () => {

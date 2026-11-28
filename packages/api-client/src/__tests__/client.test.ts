@@ -98,6 +98,19 @@ describe('createApiClient', () => {
     });
   });
 
+  it('throws on a 2xx body that is not JSON, without repeating it, and reads an empty one as undefined', async () => {
+    const html = vi.fn<FetchLike>(async () => new Response('<html>secret</html>', { status: 200 }));
+    const error = await createApiClient({ baseUrl: '/api', fetch: html })
+      .call('health.get', {})
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(SyntaxError);
+    expect((error as Error).message).not.toContain('secret');
+    for (const status of [200, 204]) {
+      const api = createApiClient({ baseUrl: '/api', fetch: answering(status) });
+      await expect(api.call('health.get', {})).resolves.toBeUndefined();
+    }
+  });
+
   it('reads a held answer that is not a problem by its code, with no Problem', async () => {
     const api = createApiClient({
       baseUrl: '/api',

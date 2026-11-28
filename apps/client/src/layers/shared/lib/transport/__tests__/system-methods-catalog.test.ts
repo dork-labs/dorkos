@@ -69,14 +69,6 @@ describe('getCapabilityCatalog', () => {
     expect(url.searchParams.get('area')).toBeNull();
   });
 
-  it('narrows to one area when asked, which is what keeps the page to one request', async () => {
-    servePage({ catalogVersion: 'v1', generatedAt: 'now', total: 0, capabilities: [] });
-
-    await createSystemMethods(BASE).getCapabilityCatalog({ area: 'rooms' });
-
-    expect(new URL(lastUrl()).searchParams.get('area')).toBe('rooms');
-  });
-
   it('unwraps the paging envelope to the catalog the port promises', async () => {
     // The route's envelope — `total`, `returned`, `offset`, `detail` — is its own
     // contract. Leaking it through this seam would make every caller learn a
@@ -95,6 +87,7 @@ describe('getCapabilityCatalog', () => {
       area: 'rooms',
     });
 
+    expect(new URL(lastUrl()).searchParams.get('area')).toBe('rooms');
     expect(catalog).toEqual({
       catalogVersion: 'v1',
       generatedAt: '2026-01-01T00:00:00.000Z',
