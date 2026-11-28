@@ -71,6 +71,8 @@ const AGENT_PACKAGE = 'contract-agent';
 const OTHER_AGENT_PACKAGE = 'contract-agent-two';
 const SKILL_PACK = 'contract-skills';
 const LINKED_PACK = 'contract-linked';
+const REFRESHES = '/api/marketplace/sources/refreshes';
+const UNLINK = `/api/marketplace/dev-links/${LINKED_PACK}?scope=global`;
 
 /** Write a skill pack named `name` into `dir`, from the shipped fixture. */
 function writeSkillPack(dir: string, name: string): void {
@@ -288,7 +290,7 @@ contractSuite('marketplace groups', [
   {
     name: 'POST /api/marketplace/sources/refreshes answers 404 for an unknown source',
     method: 'POST',
-    path: '/api/marketplace/sources/refreshes',
+    path: REFRESHES,
     body: { name: 'no-such-source' },
     expect: {
       status: 404,
@@ -639,7 +641,7 @@ contractSuite('marketplace groups', [
   {
     name: 'DELETE /api/marketplace/dev-links/:name refuses an agent',
     method: 'DELETE',
-    path: `/api/marketplace/dev-links/${LINKED_PACK}?scope=global`,
+    path: UNLINK,
     headers: AGENT,
     expect: { status: 403, body: OPERATOR_ONLY('Only you can unlink a dev link, not an agent.') },
   },
@@ -823,9 +825,7 @@ describe('contract: the marketplace groups, driven by hand (login off)', () => {
           schema: SOURCE_LIST.refine((body) => body.sources.some((s) => s.name === 'contract')),
         },
       });
-      const refreshed = await call(server, 'POST', '/api/marketplace/sources/refreshes', {
-        name: 'contract',
-      });
+      const refreshed = await call(server, 'POST', REFRESHES, { name: 'contract' });
       expect(refreshed.status).toBe(200);
 
       const browsed = await call(server, 'GET', '/api/marketplace/packages');
@@ -1096,11 +1096,7 @@ describe('contract: the marketplace groups, driven by hand (login off)', () => {
         name: LINKED_PACK,
       });
 
-      const unlinked = await call(
-        server,
-        'DELETE',
-        `/api/marketplace/dev-links/${LINKED_PACK}?scope=global`
-      );
+      const unlinked = await call(server, 'DELETE', UNLINK);
       expect(unlinked.status).toBe(200);
     },
     CASE_TIMEOUT_MS
@@ -1237,7 +1233,7 @@ describe('contract: the marketplace groups with login on', () => {
       for (const [method, url, body] of [
         ['POST', '/api/marketplace/held-back/nothing-here/decision', decision],
         ['POST', '/api/marketplace/packages/nothing-here/keep-files', { keepKey: 'k' }],
-        ['DELETE', `/api/marketplace/dev-links/${LINKED_PACK}?scope=global`, undefined],
+        ['DELETE', UNLINK, undefined],
       ] as const) {
         await check(server, {
           method,

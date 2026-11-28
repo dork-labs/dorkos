@@ -69,7 +69,10 @@ export function registerDiscoveryScanOpenApi(registry: OpenAPIRegistry): void {
   registry.registerPath({
     method: 'post',
     path: '/api/discovery/scans',
-    operationId: 'discovery.scan',
+    operationId: 'discovery.create_scan',
+    // The group is the app's own; this one stream is open to scripts, as the Mesh scan it
+    // took the place of was, and still being reshaped (DOR-4982).
+    'x-stability': 'preview',
     tags: ['Mesh'],
     summary: 'Scan folders for agents (SSE)',
     description:

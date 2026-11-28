@@ -286,7 +286,7 @@ export function createRoomMethods(baseUrl: string) {
 
     /** Rename or move one file or folder, as one commit. */
     async moveRoomFile(id: string, req: RoomFileMoveRequest): Promise<RoomFileChangeResponse> {
-      return (await api.call('rooms.move_file', {
+      return (await api.call('rooms.update_file', {
         path: { id },
         body: req,
       })) as RoomFileChangeResponse;

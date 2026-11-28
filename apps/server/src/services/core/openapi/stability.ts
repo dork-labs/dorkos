@@ -44,8 +44,6 @@ export const GROUP_STABILITY: Readonly<Record<string, ApiStability>> = {
   audit: 'stable',
   capabilities: 'stable',
   connectors: 'stable',
-  // The folder scan for agents took the place of the stable `POST /api/mesh/discover` (DOR-4982).
-  discovery: 'stable',
   files: 'stable',
   health: 'stable',
   heartbeats: 'stable',
@@ -87,6 +85,7 @@ export const GROUP_STABILITY: Readonly<Record<string, ApiStability>> = {
   auth: 'internal',
   devices: 'internal',
   directory: 'internal',
+  discovery: 'internal',
   'extension-decisions': 'internal',
   extensions: 'internal',
   harness: 'internal',

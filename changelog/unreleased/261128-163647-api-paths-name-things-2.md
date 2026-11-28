@@ -24,5 +24,5 @@ covers:
   | `POST /api/rooms/{id}/files/delete`                      | `DELETE /api/rooms/{id}/files?path=&baseCommit=`                             |
   | `POST /api/discovery/scan` and `POST /api/mesh/discover` | `POST /api/discovery/scans`                                                  |
 
-- Scanning folders for agents now has one address. `POST /api/discovery/scans` sends what it finds as it walks, as a stream of events. The old `POST /api/mesh/discover` answered once at the end; use the stream instead. Agents still scan with the `mesh_discover` tool.
+- Scanning folders for agents now has one address. `POST /api/discovery/scans` sends what it finds as it walks, as a stream of events. The old `POST /api/mesh/discover` answered once at the end; use the stream instead. Agents still scan with the `mesh_discover` tool. The old `POST /api/mesh/discover` answered only a signed-in person and refused devices on your Wi-Fi. The one scan address does neither, just as `POST /api/discovery/scan` never did.
 - Who may use each one, and what it does, has not changed. Some operation names in the API document changed with them, so a client built from the document needs rebuilding.

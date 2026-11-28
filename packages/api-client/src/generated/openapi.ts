@@ -907,9 +907,11 @@ export interface paths {
         put?: never;
         /**
          * Scan folders for agents (SSE)
-         * @description Walks the folders and streams what it finds as it goes. A folder that already holds an agent file is registered as it is found and sent as an `existing-agent` frame. Every root must sit inside the boundary, or the scan is refused before the stream opens.
+         * @description **Preview.** This operation may change in any release.
+         *
+         *     Walks the folders and streams what it finds as it goes. A folder that already holds an agent file is registered as it is found and sent as an `existing-agent` frame. Every root must sit inside the boundary, or the scan is refused before the stream opens.
          */
-        post: operations["discovery.scan"];
+        post: operations["discovery.create_scan"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1987,7 +1989,7 @@ export interface paths {
          * Force refetch of a source marketplace.json
          * @description Checks the source now. The name rides in the body, so a name saved by an older DorkOS that holds a `/` needs no special spelling. When the source cannot be reached but a copy is cached, answers 200 with that copy, `stale: true`, the `reason`, and `fetchedAt` set to when the copy was fetched. With nothing cached, answers 502.
          */
-        post: operations["marketplace.refresh_source"];
+        post: operations["marketplace.create_source_refresh"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2158,7 +2160,7 @@ export interface paths {
          * Check one package for an update
          * @description Advisory only: nothing is reinstalled. Updates are applied through `POST /api/marketplace/updates`, which shows what each new version runs first. A body with `apply` is refused (400).
          */
-        post: operations["marketplace.check_update"];
+        post: operations["marketplace.create_update_check"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2241,7 +2243,7 @@ export interface paths {
          * Preview running a package from a folder
          * @description Read-only. Names the package, the slot the link would take, an installed copy it would set aside, what the folder runs on its own, and the extensions it carries. A folder that cannot be linked answers with the reason.
          */
-        post: operations["marketplace.preview_dev_link"];
+        post: operations["marketplace.create_dev_link_preview"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2288,7 +2290,7 @@ export interface paths {
          * Unlink a dev link
          * @description The person only: the same bar as deciding an approval card. Takes the link out (never the folder) and puts a set-aside installed copy back with its approvals.
          */
-        delete: operations["marketplace.unlink_dev_link"];
+        delete: operations["marketplace.delete_dev_link"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2545,7 +2547,7 @@ export interface paths {
          *
          *     Enables the Shape’s extensions, resolves connections, stands up schedules, offers agents (never forces one), and records the active Shape. Only "Shape not installed" is fatal (404); every other missing piece degrades to a `warnings[]` entry. `applied.layout` carries the chrome the client restores without a second fetch (spec §5/§9).
          */
-        post: operations["shapes.apply"];
+        post: operations["shapes.create_application"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3268,7 +3270,7 @@ export interface paths {
          *
          *     Rooms live only in SQLite, so this is the projection that gives them what a file gives you for free: something you can grep, copy, and keep when you leave (DOR-1225). The body is `application/x-ndjson` — one JSON object per line, the same family a session transcript is in — served as a download. Three line types, always in this order: one `RoomExportHeader` (the room, its roster, who exported it and when), then one `RoomExportEntry` per entry in ascending `seq`, then one `RoomExportSummary`. Thread replies ride in the same stream as everything else, since a thread is a relation between entries rather than a room of its own; `threadRootEntryId` puts one back in its thread. **Every author id is resolved inline on the line that uses it** — the message author, everyone it mentioned, and everyone behind each reaction — so one line answers who said what to whom without a reader that holds the header. Attachments are carried by REFERENCE (id, name, size, type and URL), never as bytes. **The last line is the receipt**: a download that dies half-way is a valid JSONL file with nothing inside it saying so, so a reader checks that the final line is a `summary` and that its `entryCount` matches. **Membership gates it**, exactly as it gates `read_room_history` — "not a member" answers as "no such room", so a room id is never a capability. One deliberate difference from that tool: **the join-seq floor is not applied to the operator exporting their own room.** The floor stops a member retroactively reading what was said before they arrived, which is a rule about one participant's view; an export is the exit path, and an owner handed a copy of their own room with the first months missing has not been given their data. Everybody else exports strictly above their own `joinedSeq`, and `scope.joinFloorApplied` says which of the two this file is. Read-only: the database stays the truth and nothing reads one of these files back in.
          */
-        get: operations["rooms.export"];
+        get: operations["rooms.view_history"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3590,7 +3592,7 @@ export interface paths {
          *
          *     Multipart: up to 20 files in the `files` field, plus `dir` (the folder, relative to the repo root; empty for the root; missing folders are created), `baseCommit` (what the person's view was read at), and `replace` (a JSON list of the file NAMES this upload may overwrite). **One commit for the whole upload**, `Upload N files to <dir>/` (`to the top folder` for the root), authored as the person, and one quiet room entry (`body.fileChange`, `kind: 'upload'`) that wakes nobody. Each file must be new at `main`, or named in `replace` and unchanged since `baseCommit` — anything else already there is 409 `room_file_exists`, naming the path, so the app can ask whether to replace it. Uploads are bytes: binary files are fine. **Refused before a byte is read** when the caller may not change this room's files. Each file is capped at the room's own frozen file limit while it is still being read (409 `file_too_large`); more than 20 files is 400 `room_upload_too_many_files`. The files are staged on disk, never in memory, and the staging folder is gone before the response is sent. A failure part-way leaves the room's files exactly as they were.
          */
-        post: operations["rooms.upload_files"];
+        post: operations["rooms.create_files"];
         /**
          * Delete one of a room's files or folders
          * @description **Preview.** This operation may change in any release.
@@ -3606,7 +3608,7 @@ export interface paths {
          *
          *     One commit, `Rename <from> to <to>` (a folder is written with a trailing `/`), authored as the person, and one quiet room entry (`kind: 'rename'`). `baseCommit` is required: every file under `from` must be unchanged since it, or 409 `file_changed` with the conflict. `to` must not exist (409 `room_file_exists`); missing folders above it are created, and a folder segment that differs only in capitals from one the room has is refused, naming the real one. A file keeps its executable bit. A link or another repository inside a moved folder is refused rather than carried. A rename that only changes capitals is allowed.
          */
-        patch: operations["rooms.move_file"];
+        patch: operations["rooms.update_file"];
         trace?: never;
     };
     "/api/rooms/{id}/files/raw": {
@@ -7386,7 +7388,7 @@ export interface paths {
          * Find browser profiles on this computer
          * @description Off by default; enable DORKOS_YOUR_BROWSER_ENABLED=true in the server environment and restart. Reads profile names only when the person taps Find my browsers. Only the owner in the app can call it; agents, API keys and approval tokens are refused. The response must not be cached. Email is for the picker only and is discarded on selection or close.
          */
-        post: operations["yourBrowser.scan"];
+        post: operations["yourBrowser.create_profile_scan"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8673,7 +8675,7 @@ export interface paths {
          * Share this project’s agent files with every agent tool it has turned on
          * @description Writes what is missing and rewrites what is out of date, then answers with the status recomputed after the write — so the caller renders the tree this call left, not the one it found. **It also removes files.** Links whose skill is gone, a generated hooks file nothing projects hooks to any more, the command wrappers of a package that is no longer installed: each is removed only when DorkOS can prove it wrote it, and every path it takes comes back in `swept` — with the sentence saying why it went in `removals`. The exact same list is readable BEFORE the call, as `sweepPreview` and `removals` on `GET /api/harness/status`, and the two are equal rather than one being a sample of the other. One path in the list is not a deletion: `.claude/settings.local.json` keeps every key you own and loses only the hook entries DorkOS added, and its reason says so. **A person, not an agent.** A caller naming itself an agent, or holding an approval token, is refused: this writes into somebody’s project, so it is a decision a person makes. **A package whose hooks nobody has allowed does not hold up the answer.** Its commands are left out, an approval card goes up, and the package is named in `askedAbout`; the status carries the same packages under `pendingApproval`. When somebody allows one, the projection runs again on its own. `projectPath` must be absolute, and inside the configured directory boundary or under `{dorkHome}/agents`.
          */
-        post: operations["harness.sync"];
+        post: operations["harness.create_sync"];
         delete?: never;
         options?: never;
         head?: never;
@@ -19833,7 +19835,7 @@ export interface operations {
             };
         };
     };
-    "discovery.scan": {
+    "discovery.create_scan": {
         parameters: {
             query?: never;
             header?: never;
@@ -23984,7 +23986,7 @@ export interface operations {
             };
         };
     };
-    "marketplace.refresh_source": {
+    "marketplace.create_source_refresh": {
         parameters: {
             query?: never;
             header?: never;
@@ -25233,7 +25235,7 @@ export interface operations {
             };
         };
     };
-    "marketplace.check_update": {
+    "marketplace.create_update_check": {
         parameters: {
             query?: never;
             header?: never;
@@ -26009,7 +26011,7 @@ export interface operations {
             };
         };
     };
-    "marketplace.preview_dev_link": {
+    "marketplace.create_dev_link_preview": {
         parameters: {
             query?: never;
             header?: never;
@@ -26380,7 +26382,7 @@ export interface operations {
             };
         };
     };
-    "marketplace.unlink_dev_link": {
+    "marketplace.delete_dev_link": {
         parameters: {
             query: {
                 scope: "global" | "project";
@@ -26935,7 +26937,7 @@ export interface operations {
             500: components["responses"]["InternalErrorProblem"];
         };
     };
-    "shapes.apply": {
+    "shapes.create_application": {
         parameters: {
             query?: never;
             header?: never;
@@ -34189,7 +34191,7 @@ export interface operations {
             };
         };
     };
-    "rooms.export": {
+    "rooms.view_history": {
         parameters: {
             query?: never;
             header?: never;
@@ -35112,7 +35114,7 @@ export interface operations {
             };
         };
     };
-    "rooms.upload_files": {
+    "rooms.create_files": {
         parameters: {
             query?: never;
             header?: never;
@@ -35321,7 +35323,7 @@ export interface operations {
             };
         };
     };
-    "rooms.move_file": {
+    "rooms.update_file": {
         parameters: {
             query?: never;
             header?: never;
@@ -56896,7 +56898,7 @@ export interface operations {
             };
         };
     };
-    "yourBrowser.scan": {
+    "yourBrowser.create_profile_scan": {
         parameters: {
             query?: never;
             header?: never;
@@ -61122,7 +61124,7 @@ export interface operations {
             };
         };
     };
-    "harness.sync": {
+    "harness.create_sync": {
         parameters: {
             query?: never;
             header?: never;

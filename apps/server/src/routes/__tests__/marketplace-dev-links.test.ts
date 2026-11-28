@@ -352,6 +352,17 @@ describe('GET and unlink', () => {
     expect(done.body).toEqual({ restored: 'removed' });
   });
 
+  it.each([
+    ['no scope', ''],
+    ['a project for a global link', `?scope=global&projectPath=${encodeURIComponent('/work')}`],
+  ])('refuses an unlink with %s, and changes nothing', async (_label, query) => {
+    // Purpose: the scope picks which slot is taken out; a muddled one is refused, not guessed.
+    await request(server).post('/api/marketplace/dev-links').send({ path: work, scope: 'global' });
+    const res = await request(server).delete(`/api/marketplace/dev-links/flow${query}`);
+    expect(res.status).toBe(400);
+    expect(await readlink(slot())).toBe(work);
+  });
+
   it('refuses a name that is not a package name', async () => {
     // Purpose: the name is joined into a slot path.
     const res = await request(server).delete('/api/marketplace/dev-links/..%2Fetc?scope=global');

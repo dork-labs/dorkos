@@ -6604,7 +6604,7 @@
     },
     "/api/your-browser/profile-scans": {
       "post": {
-        "operationId": "yourBrowser.scan",
+        "operationId": "yourBrowser.create_profile_scan",
         "tags": [
           "Local browser"
         ],
@@ -12937,7 +12937,7 @@
     },
     "/api/harness/syncs": {
       "post": {
-        "operationId": "harness.sync",
+        "operationId": "harness.create_sync",
         "tags": [
           "Harness"
         ],

@@ -27,7 +27,7 @@ export function createHarnessMethods(baseUrl: string) {
     syncHarness(projectPath: string): Promise<HarnessSyncResponse> {
       // A body rather than a query string, unlike the read beside it: this is a
       // write, and a path in a URL is a path in an access log.
-      return api.call('harness.sync', { body: { projectPath } });
+      return api.call('harness.create_sync', { body: { projectPath } });
     },
 
     adoptHarness(projectPath: string, name: string): Promise<HarnessAdoptResponse> {

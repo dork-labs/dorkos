@@ -2341,7 +2341,7 @@ registry.registerPath({
 registry.registerPath({
   method: 'post',
   path: '/api/marketplace/sources/refreshes',
-  operationId: 'marketplace.refresh_source',
+  operationId: 'marketplace.create_source_refresh',
   tags: ['Marketplace'],
   summary: 'Force refetch of a source marketplace.json',
   description:
@@ -2676,7 +2676,7 @@ registry.registerPath({
 registry.registerPath({
   method: 'post',
   path: '/api/marketplace/packages/{name}/update-checks',
-  operationId: 'marketplace.check_update',
+  operationId: 'marketplace.create_update_check',
   tags: ['Marketplace'],
   summary: 'Check one package for an update',
   description:
@@ -2852,7 +2852,7 @@ const DevLinkScopeBody = {
 registry.registerPath({
   method: 'post',
   path: '/api/marketplace/dev-links/previews',
-  operationId: 'marketplace.preview_dev_link',
+  operationId: 'marketplace.create_dev_link_preview',
   tags: ['Marketplace'],
   summary: 'Preview running a package from a folder',
   description:
@@ -2968,7 +2968,7 @@ registry.registerPath({
 registry.registerPath({
   method: 'delete',
   path: '/api/marketplace/dev-links/{name}',
-  operationId: 'marketplace.unlink_dev_link',
+  operationId: 'marketplace.delete_dev_link',
   tags: ['Marketplace'],
   summary: 'Unlink a dev link',
   description:
@@ -3456,8 +3456,7 @@ registry.registerPath({
 registry.registerPath({
   method: 'post',
   path: '/api/shapes/{name}/applications',
-  // Keeps its id across the A5 rename (DOR-4982): the generated client calls it by name.
-  operationId: 'shapes.apply',
+  operationId: 'shapes.create_application',
   tags: ['Shapes'],
   summary: 'Apply an installed Shape',
   description:
@@ -4642,8 +4641,7 @@ registry.registerPath({
 registry.registerPath({
   method: 'get',
   path: '/api/rooms/{id}/history',
-  // Keeps its id across the A5 rename (DOR-4982).
-  operationId: 'rooms.export',
+  operationId: 'rooms.view_history',
   tags: ['Rooms'],
   summary: "Export a room's whole history as a JSONL file",
   description:
@@ -5214,7 +5212,7 @@ const roomFileChangeResponses = {
 registry.registerPath({
   method: 'post',
   path: '/api/rooms/{id}/files',
-  operationId: 'rooms.upload_files',
+  operationId: 'rooms.create_files',
   tags: ['Rooms'],
   summary: "Upload files into a room's files",
   description:
@@ -5240,7 +5238,7 @@ registry.registerPath({
 registry.registerPath({
   method: 'patch',
   path: '/api/rooms/{id}/files',
-  operationId: 'rooms.move_file',
+  operationId: 'rooms.update_file',
   tags: ['Rooms'],
   summary: "Rename or move one of a room's files or folders",
   description:
@@ -6347,8 +6345,7 @@ registry.registerPath({
 registry.registerPath({
   method: 'post',
   path: '/api/harness/syncs',
-  // Keeps its id across the A5 rename (DOR-4982): the generated client calls it by name.
-  operationId: 'harness.sync',
+  operationId: 'harness.create_sync',
   tags: ['Harness'],
   summary: 'Share this project’s agent files with every agent tool it has turned on',
   description:
