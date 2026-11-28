@@ -50,8 +50,8 @@ beforeEach(() => {
   wireSessionRelay({
     meshCore: () => undefined,
     origins: {},
-    roomSessionPlace: () => undefined,
     remoteAccessOn: () => state.remoteAccess,
+    handOverTurn: () => undefined,
   });
 });
 

@@ -6,7 +6,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { RelayResultBodySchemas } from '@dorkos/shared/session-relay';
-import { RELAY_SERVED_FEATURES, RELAY_MAX_LIVE_NEW_CHATS } from '../../relay-request-server.js';
+import { RELAY_SERVED_FEATURES } from '../../relay-request-server.js';
 import type { RelaySessionFacts } from '../../relay-serves.js';
 import {
   AGENT_ID,
@@ -77,7 +77,7 @@ describe('SessionRelayRequestServer', () => {
       // Every relayed answer is refused, served chat or not, so this says nothing either.
       expect(h.answerTo('q')).toMatchObject({ ok: false, error: { code: 'refused' } });
       expect(h.answerTo('l')).toEqual({ type: 'result', id: 'l', ok: true, body: { chats: [] } });
-      expect(h.dispatchSessionMessage).not.toHaveBeenCalled();
+      expect(h.handOverTurn).not.toHaveBeenCalled();
       expect(h.runtime.interruptQuery).not.toHaveBeenCalled();
       expect(h.runtime.submitAnswers).not.toHaveBeenCalled();
     });
@@ -112,7 +112,7 @@ describe('SessionRelayRequestServer', () => {
           error: { status: 404, code: 'not_found' },
         });
       }
-      expect(h.dispatchSessionMessage).not.toHaveBeenCalled();
+      expect(h.handOverTurn).not.toHaveBeenCalled();
     });
   });
 
@@ -161,16 +161,14 @@ describe('SessionRelayRequestServer', () => {
         ok: true,
         body: { sessionId: CHAT },
       });
-      const call = h.dispatchSessionMessage.mock.calls[0]![0];
-      expect(call.origin).toEqual({ kind: 'session-relay' });
-      expect(call.clientId).toBe('relay:test');
-      // A relayed turn runs at the agent's own level (DOR-3440).
-      expect(call.permissionCeiling).toBeUndefined();
-      // The folder is the one this server placed the chat in, never the
-      // caller's, and no disposition is passed on: the send path queues it.
-      expect(call.request).toEqual({
+      // A relayed turn runs at the agent's own level (DOR-3440): no ceiling,
+      // no mark. The folder is the one this server placed the chat in, never
+      // the caller's, and no disposition is passed on: the port queues it.
+      expect(h.handOverTurn.mock.calls[0]![0]).toEqual({
+        sessionId: CHAT,
         content: 'tidy up please',
-        clientMessageId: 'c1',
+        origin: { kind: 'session-relay' },
+        tier: 'owner',
         cwd: PROJECT,
       });
     });
@@ -191,7 +189,7 @@ describe('SessionRelayRequestServer', () => {
             message: 'Messages from the web wait their turn.',
           },
         });
-        expect(h.dispatchSessionMessage).not.toHaveBeenCalled();
+        expect(h.handOverTurn).not.toHaveBeenCalled();
         expect(h.audits.at(-1)).toMatchObject({
           action: 'relay.session.send',
           outcome: 'refused',
@@ -215,7 +213,7 @@ describe('SessionRelayRequestServer', () => {
             message: 'Slash commands run only at this computer.',
           },
         });
-        expect(h.dispatchSessionMessage).not.toHaveBeenCalled();
+        expect(h.handOverTurn).not.toHaveBeenCalled();
       }
     );
 
@@ -226,7 +224,7 @@ describe('SessionRelayRequestServer', () => {
         h.send('m', { op: 'session.send', sessionId: CHAT, content });
         await h.settle();
         expect(h.answerTo('m')).toMatchObject({ ok: true });
-        expect(h.dispatchSessionMessage.mock.calls[0]![0].request.content).toBe(content);
+        expect(h.handOverTurn.mock.calls[0]![0].content).toBe(content);
       }
     );
 
@@ -237,7 +235,7 @@ describe('SessionRelayRequestServer', () => {
       }
       await h.settle();
       expect(h.frames.every((f) => f.type === 'error' && f.error.code === 'invalid')).toBe(true);
-      expect(h.dispatchSessionMessage).not.toHaveBeenCalled();
+      expect(h.handOverTurn).not.toHaveBeenCalled();
     });
 
     it('starts a new chat in the agent’s folder from Mesh', async () => {
@@ -250,68 +248,37 @@ describe('SessionRelayRequestServer', () => {
       });
       await h.settle();
       expect(h.answerTo('m')).toMatchObject({ ok: true, body: { sessionId: NEW_CHAT } });
-      expect(h.dispatchSessionMessage.mock.calls[0]![0].request).toEqual({
+      // Marked as a chat started from the web, so it takes one of the web's slots.
+      expect(h.handOverTurn.mock.calls[0]![0]).toEqual({
+        sessionId: NEW_CHAT,
         content: 'hello',
-        create: true,
+        origin: { kind: 'session-relay', newChat: true },
+        tier: 'owner',
         cwd: PROJECT,
-        agentPath: PROJECT,
+        agentId: AGENT_ID,
       });
-      expect(h.dispatchSessionMessage.mock.calls[0]![0].permissionCeiling).toBeUndefined();
       expect(h.audits.at(-1)).toMatchObject({ action: 'relay.session.send', operation: 'create' });
     });
 
-    it('runs only a few new chats from the web at once, and frees a slot when a turn settles', async () => {
+    it('answers a new chat that waits for a free slot with its id, never a refusal', async () => {
+      // Purpose: fails if a full set of web chats is refused again (RELAY_TOO_MANY_NEW_CHATS);
+      // the wait itself is admission's, proven in services/runs.
       const h = harness({ chats: [] });
-      const ids = Array.from(
-        { length: RELAY_MAX_LIVE_NEW_CHATS + 1 },
-        (_, i) => `${NEW_CHAT.slice(0, -2)}${String(i).padStart(2, '0')}`
-      );
-      for (const [i, sessionId] of ids.entries()) {
-        h.send(`m${i}`, {
-          op: 'session.send',
-          sessionId,
-          content: 'hello',
-          newChat: { agentId: AGENT_ID },
-        });
-        await h.settle();
-      }
-      expect(h.dispatchSessionMessage).toHaveBeenCalledTimes(RELAY_MAX_LIVE_NEW_CHATS);
-      expect(h.answerTo(`m${RELAY_MAX_LIVE_NEW_CHATS}`)).toMatchObject({
-        ok: false,
-        error: { code: 'rate_limited' },
+      h.handOverTurn.mockResolvedValue({
+        kind: 'waiting',
+        runId: '01KRELAYRUN000000000000000',
+        waitReason: 'machine_full',
+        queuePosition: 1,
       });
-      // One turn settles: one more new chat may start.
-      h.dispatchSessionMessage.mock.calls[0]![0].onSettled?.('ok');
-      h.send('again', {
+      h.send('m', {
         op: 'session.send',
-        sessionId: ids.at(-1),
+        sessionId: NEW_CHAT,
         content: 'hello',
         newChat: { agentId: AGENT_ID },
       });
       await h.settle();
-      expect(h.answerTo('again')).toMatchObject({ ok: true });
-    });
-
-    it('records a send the dispatcher did not accept as failed, and holds no slot for it', async () => {
-      const h = harness({ chats: [] });
-      h.dispatchSessionMessage.mockResolvedValue({
-        accepted: false,
-        canonicalId: NEW_CHAT,
-        outcome: { requested: 'queue', applied: 'queue', messageId: 'm1' },
-        queuePosition: 1,
-        queued: false,
-      });
-      for (let i = 0; i <= RELAY_MAX_LIVE_NEW_CHATS; i += 1) {
-        h.send(`m${i}`, {
-          op: 'session.send',
-          sessionId: NEW_CHAT,
-          content: 'hello',
-          newChat: { agentId: AGENT_ID },
-        });
-        await h.settle();
-      }
-      expect(h.dispatchSessionMessage).toHaveBeenCalledTimes(RELAY_MAX_LIVE_NEW_CHATS + 1);
-      expect(h.audits.at(-1)).toMatchObject({ action: 'relay.session.send', outcome: 'failed' });
+      expect(h.answerTo('m')).toMatchObject({ ok: true, body: { sessionId: NEW_CHAT } });
+      expect(h.audits.at(-1)).toMatchObject({ action: 'relay.session.send', outcome: 'ok' });
     });
 
     it('never creates a chat without newChat, and never lands a newChat on another agent’s chat', async () => {
@@ -328,15 +295,20 @@ describe('SessionRelayRequestServer', () => {
       await h.settle();
       expect(h.answerTo('a')).toMatchObject({ ok: false, error: { code: 'not_found' } });
       expect(h.answerTo('b')).toMatchObject({ ok: false, error: { code: 'not_found' } });
-      expect(h.dispatchSessionMessage).not.toHaveBeenCalled();
+      expect(h.handOverTurn).not.toHaveBeenCalled();
     });
 
     it('answers a launch refusal plainly, never with the refusal’s own text', async () => {
       const h = harness({
         deps: {
-          dispatchSessionMessage: vi.fn(async () => ({
-            refused: 'DESK_NOT_OWN' as const,
-            message: 'This chat would run inside a room\'s files ("/secret/path")',
+          handOverTurn: vi.fn(async () => ({
+            kind: 'refused' as const,
+            runId: '01KRELAYRUN000000000000000',
+            reason: 'desk_not_own' as const,
+            refusal: {
+              code: 'DESK_NOT_OWN',
+              message: 'This chat would run inside a room\'s files ("/secret/path")',
+            },
           })),
         },
       });

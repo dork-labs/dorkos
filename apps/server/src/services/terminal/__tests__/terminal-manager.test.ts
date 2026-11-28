@@ -79,6 +79,24 @@ describe('TerminalManager', () => {
     expect(manager.has(id)).toBe(true);
   });
 
+  it('gives the shell the person’s environment and none of DorkOS’s own names', async () => {
+    vi.stubEnv('MCP_API_KEY', 'fixture-mcp');
+    vi.stubEnv('NANGO_ENCRYPTION_KEY', 'fixture-nango');
+    vi.stubEnv('DORKOS_HUB_INSTANCE_KEY', 'fixture-hub');
+    vi.stubEnv('GITHUB_TOKEN', 'fixture-github');
+    await manager.create({ cwd: boundary });
+    const env = lastSpawnOpts.env;
+    for (const name of [
+      'MCP_API_KEY',
+      'NANGO_ENCRYPTION_KEY',
+      'DORKOS_HUB_INSTANCE_KEY',
+      'GITHUB_TOKEN',
+    ])
+      expect(env, name).not.toHaveProperty(name);
+    expect(env).toMatchObject({ PATH: process.env.PATH, TERM: 'xterm-256color' });
+    vi.unstubAllEnvs();
+  });
+
   it('rejects a cwd that escapes the boundary before spawning anything', async () => {
     // Purpose: a terminal is a shell in the worktree — path escape must be
     // refused with a BoundaryError and no PTY spawned.

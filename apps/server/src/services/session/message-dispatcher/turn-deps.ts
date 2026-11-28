@@ -1,5 +1,5 @@
 /** Runtime-neutral turn ports shared by immediate and recovered dispatches. */
-import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { AgentRuntime, TurnStarter } from '@dorkos/shared/agent-runtime';
 import type { PermissionModeId } from '@dorkos/shared/schemas';
 import { tapEachEvent } from '../turn-stream/tap-each-event.js';
 import { holdRunStopper, runEventTeller } from '../turn-port/run-events.js';
@@ -73,37 +73,67 @@ export interface TaskTurnOptions {
 }
 
 /**
+ * A relay delivery's own turn options (T13): the level the binding that
+ * carried the message grants, sent with every turn as the relay always sent
+ * it, so a chat it opens is born at that level and the turn is never raised to
+ * its agent's. A message started the turn, not a person watching, so an
+ * approval card never holds it.
+ */
+export interface RelayTurnOptions {
+  /** The level the binding grants, else `default`; sent with every turn. */
+  permissionMode: PermissionModeId;
+  /** Who the turn shows as started by; display only. */
+  starter?: TurnStarter;
+}
+
+/** What a run's own turn options add to one send. */
+function sendOptionsOf(
+  opts: Parameters<TriggerTurnDeps['sendMessage']>[2],
+  task: TaskTurnOptions | undefined,
+  relay: RelayTurnOptions | undefined
+): Parameters<TriggerTurnDeps['sendMessage']>[2] {
+  if (task) {
+    return {
+      ...opts,
+      contextPlace: 'task',
+      permissionMode: task.permissionMode,
+      ...(task.approvedAllow?.length ? { taskApprovedAllow: task.approvedAllow } : {}),
+    };
+  }
+  if (relay) {
+    return {
+      ...opts,
+      permissionMode: relay.permissionMode,
+      unattendedApprovals: true,
+      ...(relay.starter ? { turnStarter: relay.starter } : {}),
+    };
+  }
+  return opts;
+}
+
+/**
  * The port for one turn-port run's turn (spec `turns-survive-restarts` §3.1):
  * the run's watchers hear every event the runtime sends, and the run's turn
  * can be stopped by its id while it does (`turn-port/run-events.ts`); a
- * scheduled task's turn carries its own level and rules. Every other launch gets `deps` unchanged.
+ * scheduled task's turn carries its own level and rules, and a relay
+ * delivery's its own level. Every other launch gets `deps` unchanged.
  *
  * @param deps - The port {@link turnDeps} built.
  * @param runId - The run, when the turn port started it.
- * @param task - A scheduled task's own options.
+ * @param turn - A scheduled task's or a relay delivery's own options.
  */
 export function withRunTurn(
   deps: TriggerTurnDeps,
   runId: string | undefined,
-  task: TaskTurnOptions | undefined
+  turn: { taskTurn?: TaskTurnOptions; relayTurn?: RelayTurnOptions }
 ): TriggerTurnDeps {
-  if (runId === undefined && task === undefined) return deps;
+  const { taskTurn: task, relayTurn: relay } = turn;
+  if (runId === undefined && task === undefined && relay === undefined) return deps;
   const tell = runId === undefined ? undefined : runEventTeller(runId);
   return {
     ...deps,
     sendMessage(sid, text, opts) {
-      const events = deps.sendMessage(
-        sid,
-        text,
-        task
-          ? {
-              ...opts,
-              contextPlace: 'task',
-              permissionMode: task.permissionMode,
-              ...(task.approvedAllow?.length ? { taskApprovedAllow: task.approvedAllow } : {}),
-            }
-          : opts
-      );
+      const events = deps.sendMessage(sid, text, sendOptionsOf(opts, task, relay));
       if (!tell || runId === undefined) return events;
       const letGo = holdRunStopper(runId, () => deps.interruptQuery(sid));
       return (async function* () {

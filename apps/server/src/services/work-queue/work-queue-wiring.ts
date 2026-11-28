@@ -119,8 +119,6 @@ export function startResultFrom(
   }
   const { code, error } = body as { code?: string; error?: string };
   switch (code) {
-    case 'LAUNCH_CAP_FULL':
-      return { kind: 'held', hold: 'chat-cap' };
     case 'AGENT_PAUSED':
       return { kind: 'held', hold: 'agent-paused' };
     case 'ACCOUNT_REFUSED':

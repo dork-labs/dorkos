@@ -27,6 +27,8 @@ import {
 } from '../../services/extensions/agent-send/agent-send.js';
 import { AgentSendStore } from '../../services/extensions/agent-send/agent-send-store.js';
 import { wireChatMessaging } from '../../services/session/chat-messages/chat-message-wiring.js';
+import { setSpinOffTurnPort } from '../../services/session/chat-messages/startup/spin-off-startup.js';
+import { handOverTurn, turnPort } from '../../services/runs/index.js';
 import { ChatMessageStore } from '../../services/session/chat-messages/chat-message-store.js';
 import { wireChatRowsPort } from '../space-views.js';
 import { wireTodos } from '../../services/todos/todo-wiring.js';
@@ -161,6 +163,8 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
   });
   // The computer side's view of those rows: a rekey carries them, a history reads stops.
   wireChatRowsPort(chatMessageStore);
+  // A spin-off's first turn starts through the turn port (T6).
+  setSpinOffTurnPort({ handOver: handOverTurn, port: turnPort });
   // What agents promised (spec `heartbeats` §12). The due timers are rebuilt
   // from the table here, so a restart loses no wake and no missed mark.
   const todoPromises = (refs.todoWiring = wireTodos({

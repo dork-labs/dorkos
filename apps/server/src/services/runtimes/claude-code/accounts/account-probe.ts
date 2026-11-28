@@ -36,7 +36,7 @@ import {
   resolveAccountRef,
   type RuntimeAccount,
 } from '../../../core/usage/runtime-accounts.js';
-import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
+import { childEnvironment } from '../../shared/runtime-environment-config.js';
 import { claudeConfigDirEnv, isClaudeAccountRoot } from '../claude-config-dir.js';
 import { createIdlePrompt, resolveClaudeBinaryBeforePath } from '../sdk/sdk-utils.js';
 import { mapSdkUsageWindows } from '../sdk/subscription-usage.js';
@@ -239,7 +239,7 @@ async function runProbe(
         ...(binary ? { pathToClaudeCodeExecutable: binary } : {}),
         // The account's own folder. `~/.claude` reaches the CLI as an unset
         // variable, the one spelling its sign-in answers to.
-        env: runtimeEnvironment('claude-code', 'warmup', { ...claudeConfigDirEnv(root) }),
+        env: childEnvironment('claude-code', 'warmup', { ...claudeConfigDirEnv(root) }),
       },
     });
     const usageCall = probe.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;

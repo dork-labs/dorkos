@@ -13,7 +13,7 @@
  * @module services/runtimes/shared/run-probe
  */
 import type { EnvironmentRuntime, EnvironmentPurpose } from './runtime-environment.js';
-import { runtimeEnvironment } from './runtime-environment-config.js';
+import { childEnvironment } from './runtime-environment-config.js';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { logger } from '../../../lib/logger.js';
@@ -59,7 +59,7 @@ export function runBinaryProbe(
   timeoutMs: number,
   environment: {
     runtime: EnvironmentRuntime;
-    purpose: EnvironmentPurpose;
+    purpose: Exclude<EnvironmentPurpose, 'login'>;
     overrides?: NodeJS.ProcessEnv;
   } = { runtime: 'claude-code', purpose: 'version-probe' }
 ): Promise<string> {
@@ -85,7 +85,7 @@ export function runBinaryProbe(
         encoding: 'utf-8',
         timeout: timeoutMs,
         killSignal: 'SIGKILL',
-        env: runtimeEnvironment(environment.runtime, environment.purpose, environment.overrides),
+        env: childEnvironment(environment.runtime, environment.purpose, environment.overrides),
       },
       (err, stdout) => {
         if (err) return finish(() => reject(err));

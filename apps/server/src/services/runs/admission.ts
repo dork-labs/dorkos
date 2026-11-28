@@ -34,6 +34,11 @@
  *    person or an agent started counts toward the cap but is never held by
  *    it, as before.
  *
+ * 6. **New chats from the web.** A message that opens a chat started from
+ *    the web through the session relay waits (`machine_full`) while
+ *    `WEB_NEW_CHATS_MAX` such chats have a turn going, and is woken when one
+ *    lets go (`web-chat-cap.ts`, T6); the relay no longer refuses it.
+ *
  * The rest have a slot and no rule yet: an agent busy in another room (T10,
  * rooms' own callers), the memory budget (DOR-5192), a playbook (DOR-5187,
  * absent rather than `null` on the port).
@@ -74,6 +79,8 @@ export interface AdmissionDeps {
   machineFull: () => boolean;
   /** Whether every slot under `scheduler.maxConcurrentRuns` is taken (a task's run only). */
   scheduleFull?: () => boolean;
+  /** Whether every slot for a chat started from the web is taken (`web-chat-cap.ts`). */
+  webChatsFull?: () => boolean;
 }
 
 /**
@@ -109,6 +116,9 @@ export function admit(
     return { wait: 'machine_full' };
   }
   if (run.origin.kind === 'schedule' && start.unattended === true && deps.scheduleFull?.()) {
+    return { wait: 'machine_full' };
+  }
+  if (run.origin.kind === 'session-relay' && run.origin.newChat === true && deps.webChatsFull?.()) {
     return { wait: 'machine_full' };
   }
   return {

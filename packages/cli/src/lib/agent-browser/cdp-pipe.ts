@@ -14,6 +14,7 @@
  *
  * @module lib/agent-browser/cdp-pipe
  */
+import { childEnvironment } from '@dorkos/shared/child-environment';
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { Readable, Writable } from 'node:stream';
 
@@ -79,7 +80,10 @@ export type SpawnChrome = (executable: string, args: string[]) => ChildProcess;
 
 /** The default spawner: fds 3 and 4 become the debugging pipe; Chrome's own output is dropped. */
 const defaultSpawn: SpawnChrome = (executable, args) =>
-  spawn(executable, args, { stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
+  spawn(executable, args, {
+    stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'],
+    env: childEnvironment('browser'),
+  });
 
 /**
  * Start Chrome with a debugging pipe and return a client for it.

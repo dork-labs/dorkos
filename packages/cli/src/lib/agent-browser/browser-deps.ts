@@ -5,6 +5,7 @@
  *
  * @module lib/agent-browser/browser-deps
  */
+import { childEnvironment } from '@dorkos/shared/child-environment';
 import fs from 'node:fs';
 import { homedir } from 'node:os';
 import { spawn, spawnSync } from 'node:child_process';
@@ -77,7 +78,7 @@ function waitForOperatorOnTerminal(closed: Promise<unknown>): Promise<OperatorAc
 
 /** Start Chrome plainly, and quit it the way a person would. */
 function spawnPlainChrome(executable: string, args: string[]): PlainChrome {
-  const child = spawn(executable, args, { stdio: 'ignore' });
+  const child = spawn(executable, args, { stdio: 'ignore', env: childEnvironment('browser') });
   const exited = new Promise<ChromeExit>((resolve) => {
     child.once('exit', (code, signal) => resolve({ code, signal }));
     child.once('error', () => resolve({ code: null, signal: null }));
@@ -91,7 +92,10 @@ function spawnPlainChrome(executable: string, args: string[]): PlainChrome {
       // so ask it to close its windows instead, which is what `taskkill`
       // without `/F` does.
       if (process.platform === 'win32') {
-        spawnSync('taskkill', ['/PID', String(child.pid)], { stdio: 'ignore' });
+        spawnSync('taskkill', ['/PID', String(child.pid)], {
+          stdio: 'ignore',
+          env: childEnvironment('os-helper'),
+        });
       } else {
         child.kill('SIGTERM');
       }

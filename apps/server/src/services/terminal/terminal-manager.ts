@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { childEnvironment } from '@dorkos/shared/child-environment';
 import * as pty from 'node-pty';
 import {
   TERMINAL_CLOSE_SUPERSEDED,
@@ -385,18 +386,11 @@ export class TerminalManager {
 }
 
 /**
- * Build the environment for a spawned shell: inherit the server's env, then set
- * the terminal-identifying vars xterm expects.
+ * Build the environment for a spawned shell: the person's real environment
+ * without DorkOS's own names, then the terminal-identifying vars xterm expects.
  */
 function buildTerminalEnv(): Record<string, string> {
-  const env: Record<string, string> = {};
-  // The spawned shell inherits the full OS environment; this is the process
-  // environment itself, not an app config value, so env.ts does not apply.
-  // eslint-disable-next-line no-restricted-syntax -- forwarding the whole OS env to the child shell
-  for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined) env[k] = v;
-  }
-  env.TERM = 'xterm-256color';
-  env.COLORTERM = 'truecolor';
-  return env;
+  return childEnvironment('project-work', {
+    set: { TERM: 'xterm-256color', COLORTERM: 'truecolor' },
+  });
 }

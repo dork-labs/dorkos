@@ -202,6 +202,16 @@ describe('Admin routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.message).toContain('Restart initiated');
     });
+
+    it('starts the new server with the real environment, whole', async () => {
+      vi.stubEnv('DORKOS_PORT', '4999');
+      await request(fixtureServer).post('/api/admin/restart');
+      await vi.waitFor(() => expect(spawn).toHaveBeenCalledOnce());
+      const options = vi.mocked(spawn).mock.calls[0]![2] as { env: NodeJS.ProcessEnv };
+      expect(options.env).toEqual({ ...process.env });
+      expect(options.env).not.toBe(process.env);
+      vi.unstubAllEnvs();
+    });
   });
 
   describe('when the desktop app manages the server (DORKOS_MANAGED_BY=desktop)', () => {

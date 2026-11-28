@@ -122,8 +122,19 @@ describe('reading a chat and a start', () => {
     });
   });
 
+  it('reads a chat whose first turn waits for a free slot as started (T6)', () => {
+    const waiting = {
+      sessionId: 's1',
+      status: 'waiting',
+      waiting: { reason: 'machine_full', place: 1 },
+    };
+    expect(startResultFrom(answer(waiting), null)).toMatchObject({
+      kind: 'started',
+      sessionId: 's1',
+    });
+  });
+
   it.each([
-    ['LAUNCH_CAP_FULL', 'chat-cap'],
     ['AGENT_PAUSED', 'agent-paused'],
     ['ACCOUNT_REFUSED', 'accounts'],
   ])('keeps the item in line on %s', (code, hold) => {

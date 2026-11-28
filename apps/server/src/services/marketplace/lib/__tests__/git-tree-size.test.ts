@@ -11,9 +11,8 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../../lib/git-safety.js', async (importOriginal) => ({
-  // The real `-c` hardening; only the environment is swapped for a local remote.
-  internalGitArgs: (await importOriginal<typeof import('../../../../lib/git-safety.js')>())
-    .internalGitArgs,
+  // The real `-c` hardening and fresh folders; only the environment is swapped for a local remote.
+  ...(await importOriginal<typeof import('../../../../lib/git-safety.js')>()),
   hardenedGitEnv: () => ({
     ...process.env,
     GIT_ALLOW_PROTOCOL: 'file',

@@ -93,6 +93,8 @@ export interface KeepAwakeOptions extends EnvironmentOptions {
   enabled?: boolean;
   /** Spawns the holder. Defaults to `child_process.spawn`. */
   spawn?: SpawnLike;
+  /** The holder's environment. DorkOS passes a small one: a holder needs its path and session. */
+  env?: Readonly<Record<string, string>>;
   /** Where routine news and the one-per-reason warning go. Defaults to silence. */
   logger?: KeepAwakeLogger;
 }
@@ -332,6 +334,7 @@ export function createKeepAwake(options: KeepAwakeOptions = {}): KeepAwake {
         stdio: 'ignore',
         detached: false,
         windowsHide: true,
+        ...(options.env ? { env: options.env } : {}),
       });
     } catch (err) {
       markUnsupported(

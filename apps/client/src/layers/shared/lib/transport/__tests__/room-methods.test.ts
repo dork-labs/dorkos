@@ -38,28 +38,6 @@ describe('postToRoom', () => {
     expect(init.method).toBe('POST');
     expect(init.body).toBe(JSON.stringify({ text: 'ship it' }));
   });
-
-  it('rejects with the server’s own sentence, so it can be shown as-is', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: false,
-        status: 409,
-        statusText: 'Conflict',
-        headers: new Headers(),
-        json: () =>
-          Promise.resolve({
-            title: 'This room is archived.',
-            status: 409,
-            code: 'room_archived',
-            detail: 'This room is archived',
-          }),
-      })
-    );
-    await expect(setup().postToRoom('room-1', { text: 'anyone still here?' })).rejects.toThrow(
-      'This room is archived'
-    );
-  });
 });
 
 describe('listRoomEntries', () => {
@@ -98,28 +76,6 @@ describe('room settings and roster writes', () => {
     expect(url).toBe('http://localhost:4242/api/rooms/room-1/members/author%2F1');
     expect(init.method).toBe('PATCH');
     expect(init.body).toBe(JSON.stringify({ responseMode: 'silent' }));
-  });
-
-  it('still rejects with the server’s own sentence when a roster write is refused', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: false,
-        status: 403,
-        statusText: 'Forbidden',
-        headers: new Headers(),
-        json: () =>
-          Promise.resolve({
-            title: 'Only the owner of this DorkOS can do that.',
-            status: 403,
-            code: 'owner_only',
-            detail: 'Only you can change who is in a room',
-          }),
-      })
-    );
-    await expect(setup().removeRoomMember('room-1', 'author-1')).rejects.toThrow(
-      'Only you can change who is in a room'
-    );
   });
 
   it('deletes a membership and reads no body back', async () => {

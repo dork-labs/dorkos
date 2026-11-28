@@ -1,7 +1,9 @@
 /**
  * The person's browser calls send exactly the requests the hand-written ones
- * did (DOR-5473). Only the request is under test: each answer is the same
- * made-up body, so a call whose own schema refuses it is let go.
+ * did (DOR-5473), except that a write with nothing to say sends no body where
+ * they sent `{}`: each of those routes reads none. Only the request is under
+ * test: each answer is the same made-up body, so a call whose own schema
+ * refuses it is let go.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ZodError } from 'zod';
@@ -82,8 +84,16 @@ describe('createLocalBrowserMethods', () => {
         method: 'DELETE',
         body: undefined,
       },
-      { url: '/api/local-browser/profiles/agent-a/forget-sign-ins', method: 'POST', body: '{}' },
-      { url: '/api/local-browser/profiles/default/forget-sign-ins', method: 'POST', body: '{}' },
+      {
+        url: '/api/local-browser/profiles/agent-a/forget-sign-ins',
+        method: 'POST',
+        body: undefined,
+      },
+      {
+        url: '/api/local-browser/profiles/default/forget-sign-ins',
+        method: 'POST',
+        body: undefined,
+      },
       { url: '/api/local-browser/profiles/agent-a', method: 'DELETE', body: undefined },
     ]);
   });
@@ -115,7 +125,7 @@ describe('createLocalBrowserMethods', () => {
       {
         url: '/api/local-browser/tabs/page%20a/select?sessionId=chat-a',
         method: 'POST',
-        body: '{}',
+        body: undefined,
       },
       {
         url: '/api/local-browser/navigate?sessionId=chat-a',
@@ -132,10 +142,10 @@ describe('createLocalBrowserMethods', () => {
         method: 'POST',
         body: '{"direction":"back"}',
       },
-      { url: '/api/local-browser/take-over?sessionId=chat-a', method: 'POST', body: '{}' },
-      { url: '/api/local-browser/pause?sessionId=chat-a', method: 'POST', body: '{}' },
-      { url: '/api/local-browser/resume', method: 'POST', body: '{}' },
-      { url: '/api/local-browser/disconnect?sessionId=chat-a', method: 'POST', body: '{}' },
+      { url: '/api/local-browser/take-over?sessionId=chat-a', method: 'POST', body: undefined },
+      { url: '/api/local-browser/pause?sessionId=chat-a', method: 'POST', body: undefined },
+      { url: '/api/local-browser/resume', method: 'POST', body: undefined },
+      { url: '/api/local-browser/disconnect?sessionId=chat-a', method: 'POST', body: undefined },
       {
         url: '/api/local-browser/sign-in?sessionId=chat-a',
         method: 'POST',
@@ -164,7 +174,7 @@ describe('createLocalBrowserMethods', () => {
     const fetchMock = record();
     await settle([() => methods.takeOverLocalBrowser('chat a')]);
     expect(sent(fetchMock)).toEqual([
-      { url: '/api/local-browser/take-over?sessionId=chat+a', method: 'POST', body: '{}' },
+      { url: '/api/local-browser/take-over?sessionId=chat+a', method: 'POST', body: undefined },
     ]);
   });
 });

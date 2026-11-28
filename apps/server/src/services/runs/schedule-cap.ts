@@ -8,20 +8,18 @@
  * A slot is claimed in the same synchronous step as admission's answer, before
  * the hand-over awaits anything, so two runs never both take the last one; it
  * is let go when the run's turn is over, when it goes back in line, or when the
- * hand-over did not take. Task runs the scheduler drives outside the port (a
- * run it hands the relay) count too, through the source the scheduler sets.
+ * hand-over did not take. A run the scheduler hands the relay starts its turn
+ * through the port too (T13), so it counts here as its own run, once.
  *
  * @module services/runs/schedule-cap
  */
 import type { RunStatus } from '@dorkos/shared/turn-port';
 import type { TurnRun } from './run-store.js';
 
-/** What the scheduler tells the cap: its limit, and its runs the port does not hold. */
+/** What the scheduler tells the cap: its limit. */
 export interface ScheduleCapSource {
   /** The most task turns that may run at once. */
   limit: () => number;
-  /** The scheduler's live runs outside the port (the relay's), counted against the limit. */
-  elsewhere: () => number;
 }
 
 /** The statuses a claimed slot is kept through: handed over, launching, running. */
@@ -42,7 +40,7 @@ export class ScheduleCap {
   /**
    * Set (or clear) what the scheduler says. With none, nothing is capped here.
    *
-   * @param source - The scheduler's limit and its other live runs.
+   * @param source - The scheduler's limit.
    */
   setSource(source: ScheduleCapSource | undefined): void {
     this.source = source;
@@ -51,7 +49,7 @@ export class ScheduleCap {
   /** Whether every slot is taken. */
   full(): boolean {
     if (!this.source) return false;
-    return this.claimed.size + this.source.elsewhere() >= this.source.limit();
+    return this.claimed.size >= this.source.limit();
   }
 
   /**

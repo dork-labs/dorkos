@@ -73,6 +73,14 @@ describe('checkForUpdate', () => {
     expect(readFile).not.toHaveBeenCalled();
   });
 
+  it('honours DO_NOT_TRACK=1 from the project .env file, which never reaches process.env', async () => {
+    vi.stubEnv('DO_NOT_TRACK', undefined);
+    mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({ version: '9.0.0' }) });
+
+    expect(await checkForUpdate('0.1.0', { DO_NOT_TRACK: '1' })).toBeNull();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it.each(SWITCHES)('still checks when %s is 0', async (name) => {
     vi.stubEnv(name, '0');
     vi.mocked(readFile).mockRejectedValue(new Error('ENOENT'));

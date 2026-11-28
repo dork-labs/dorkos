@@ -423,11 +423,8 @@ export class TaskSchedulerService {
     this.pruneTimer.unref?.();
 
     // Admission holds a timer's fire while this many task turns run (§3.5, T12);
-    // the runs this process hands the relay count against it too.
-    this.scheduleCap({
-      limit: () => this.config.maxConcurrentRuns,
-      elsewhere: () => this.runs.relayRunIds().length,
-    });
+    // a run handed to the relay starts its turn through the port too (T13).
+    this.scheduleCap({ limit: () => this.config.maxConcurrentRuns });
     this.started = true;
     logger.info(`started with ${this.cronJobs.size} active task(s)`);
   }

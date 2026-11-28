@@ -79,6 +79,8 @@ export interface TurnRun {
   chatSeq: number;
   chainId: string;
   agentId: string | null;
+  /** Who asked, as a `dork:` reference (§4.1), when the caller named one. */
+  askedByRef: string | null;
   /** What started it; `null` for a runtime's own turn or an unrecorded caller. */
   origin: TurnOrigin | null;
   openedBy: 'caller' | 'runtime' | 'recovery';
@@ -162,6 +164,8 @@ export interface NewRun {
   /** A caller on the turn port: where its words wait, and its deadline. */
   sourceRef?: string;
   notAfter?: number;
+  /** Who asked, as a `dork:` reference (§4.1 `asked_by_ref`), when the caller named one. */
+  askedByRef?: string;
   agentId?: string;
   runtime?: string;
   runtimeTurnRef?: number;

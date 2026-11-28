@@ -1106,15 +1106,12 @@
         "type": "object",
         "properties": {
           "project": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/ProjectRef"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           },
@@ -4612,15 +4609,12 @@
                 "$ref": "#/components/schemas/SessionLimit"
               },
               "accountUsage": {
-                "allOf": [
+                "anyOf": [
                   {
                     "$ref": "#/components/schemas/AccountUsage"
                   },
                   {
-                    "type": [
-                      "object",
-                      "null"
-                    ]
+                    "type": "null"
                   }
                 ]
               }
@@ -4969,15 +4963,12 @@
             "$ref": "#/components/schemas/UsageStatus"
           },
           "accountUsage": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/AccountUsage"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           },
@@ -5271,15 +5262,12 @@
             "minLength": 1
           },
           "project": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/ProjectRef"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           }
@@ -6627,15 +6615,12 @@
             "$ref": "#/components/schemas/ApprovalServiceAction"
           },
           "project": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/ProjectRef"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           }
@@ -12191,15 +12176,12 @@
             "$ref": "#/components/schemas/PermissionMode"
           },
           "requestedPermissionMode": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/PermissionMode"
               },
               {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           },
@@ -12288,15 +12270,12 @@
             "default": null
           },
           "effort": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/EffortLevel"
               },
               {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           },
@@ -12429,15 +12408,12 @@
             "default": []
           },
           "project": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/ProjectRef"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           },
@@ -12716,15 +12692,12 @@
             "$ref": "#/components/schemas/PermissionMode"
           },
           "previousMode": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/PermissionMode"
               },
               {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           }
@@ -12952,15 +12925,12 @@
             "minLength": 1
           },
           "effort": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/EffortLevel"
               },
               {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           },
@@ -13067,15 +13037,12 @@
             "minLength": 1
           },
           "effort": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/EffortLevel"
               },
               {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           },
@@ -14666,15 +14633,12 @@
             "type": "string"
           },
           "channelType": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/ChannelType"
               },
               {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           },
@@ -14686,15 +14650,12 @@
             ]
           },
           "platformChatType": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/PlatformChatType"
               },
               {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           },
@@ -15165,15 +15126,12 @@
         "type": "object",
         "properties": {
           "stop": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/PermissionStop"
               },
               {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           },
@@ -15195,15 +15153,12 @@
           "areas": {
             "type": "object",
             "additionalProperties": {
-              "allOf": [
+              "anyOf": [
                 {
                   "$ref": "#/components/schemas/PermissionState"
                 },
                 {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": "null"
                 }
               ]
             }
@@ -15211,29 +15166,23 @@
           "actions": {
             "type": "object",
             "additionalProperties": {
-              "allOf": [
+              "anyOf": [
                 {
                   "$ref": "#/components/schemas/PermissionState"
                 },
                 {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": "null"
                 }
               ]
             }
           },
           "filesAndCommands": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/PermissionStop"
               },
               {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           },
@@ -18139,15 +18088,12 @@
         "type": "object",
         "properties": {
           "cursor": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/ReadCursor"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           }
@@ -20434,15 +20380,12 @@
         "type": "object",
         "properties": {
           "effective": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/PermissionStop"
               },
               {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           },
@@ -20453,15 +20396,12 @@
             ]
           },
           "declared": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/PermissionStop"
               },
               {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "null"
               }
             ]
           },

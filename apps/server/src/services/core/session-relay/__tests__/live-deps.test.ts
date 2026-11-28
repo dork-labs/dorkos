@@ -79,8 +79,8 @@ function wiring(over: Partial<SessionRelayWiring> = {}): SessionRelayWiring {
           ids.filter((id) => id === 'room').map((id) => [id, { roomLabel: '#r', roomId: 'r' }])
         ),
     },
-    roomSessionPlace: () => undefined,
     remoteAccessOn: () => true,
+    handOverTurn: () => undefined,
     ...over,
   };
 }

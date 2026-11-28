@@ -10,14 +10,14 @@
  * still runs in the agent's home and as that agent.
  *
  * Nothing between the adapter and the database is stubbed: the adapter is the
- * one `createAdapter` builds, over the real `runtimeRegistry` on SQLite.
+ * one `createAdapter` builds, over the real `runtimeRegistry` on SQLite, and
+ * its turns go through the real turn port (T13).
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
-import { createTestDb } from '@dorkos/test-utils/db';
 import {
   CARRIED_TURN_LIMITS_FIELD,
   sealTurnLimits,
@@ -28,24 +28,18 @@ import {
 } from '@dorkos/relay';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { initBoundary } from '../../../lib/boundary.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
-import {
-  clearTestHomes,
-  registerTestHomes,
-} from '../../core/agent-identity/__tests__/agent-home-fixture.js';
 import { setSessionAgentSources } from '../../core/agent-identity/session-agent.js';
-import { registerClaudeCodeFacts } from '../../../startup/register-claude-code-facts.js';
 import { createAdapter } from '../adapter-factory.js';
-
-// The boot's own registration, so the protected-folder rule can read the account folders.
-registerClaudeCodeFacts();
+import { installRelayPort, uninstallRelayPort } from './relay-port-harness.js';
 
 const CHAT = '00000000-0000-4000-8000-0000000052c5';
 const SUBJECT = `relay.agent.claude-code.${CHAT}`;
 const SOL_SUBJECT = 'relay.agent.claude-code.sol-id';
 /** The id claude-code renames the chat to once its first turn starts. */
 const SDK_ID = '550e8400-e29b-41d4-a716-4466554452c5';
+/** Sol's Mesh id. */
+const SOL_ID = '01JRZ7S0AGENT0000000000000';
 
 /** A turn that says something: only a turn with content records its chat. */
 async function* answerScenario(): AsyncGenerator<StreamEvent> {
@@ -55,9 +49,12 @@ async function* answerScenario(): AsyncGenerator<StreamEvent> {
 
 /** A claude-code runtime with nothing in memory, which renames the chats it starts. */
 function freshClaudeCode(): FakeAgentRuntime {
-  return Object.assign(new FakeAgentRuntime('claude-code').withScenarios([answerScenario]), {
-    getSdkSessionId: () => SDK_ID,
-  });
+  const runtime = Object.assign(
+    new FakeAgentRuntime('claude-code').withScenarios([answerScenario]),
+    { getSdkSessionId: () => SDK_ID }
+  );
+  runtime.getInternalSessionId.mockReturnValue(undefined);
+  return runtime;
 }
 
 function relayStub(): RelayPublisher {
@@ -70,7 +67,9 @@ function relayStub(): RelayPublisher {
 
 /** A codex runtime with nothing in memory, which keeps the key it was given. */
 function freshCodex(): FakeAgentRuntime {
-  return new FakeAgentRuntime('codex').withScenarios([answerScenario]);
+  const runtime = new FakeAgentRuntime('codex').withScenarios([answerScenario]);
+  runtime.getInternalSessionId.mockReturnValue(undefined);
+  return runtime;
 }
 
 function message(payload: Record<string, unknown>, subject = SUBJECT): RelayEnvelope {
@@ -94,15 +93,8 @@ function message(payload: Record<string, unknown>, subject = SUBJECT): RelayEnve
 /** Where a turn's runtime was told to run it, and as whom. */
 function turnOf(runtime: FakeAgentRuntime) {
   const [key, , sent] = vi.mocked(runtime.sendMessage).mock.calls.at(-1)!;
-  const ensured = vi.mocked(runtime.ensureSession).mock.calls.at(-1)![1];
   const opts = sent as { cwd?: string; forAgent?: string };
-  return {
-    key,
-    cwd: opts.cwd,
-    forAgent: opts.forAgent,
-    ensuredCwd: ensured.cwd,
-    hasStarted: ensured.hasStarted,
-  };
+  return { key, cwd: opts.cwd, forAgent: opts.forAgent };
 }
 
 describe('a chat an agent started over relay', () => {
@@ -116,23 +108,22 @@ describe('a chat an agent started over relay', () => {
     scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'relay-keeps-folder-')));
     sol = path.join(scratch, 'agents', 'sol');
     fs.mkdirSync(sol, { recursive: true });
-    await initBoundary(scratch);
   });
 
   afterAll(() => fs.rmSync(scratch, { recursive: true, force: true }));
 
-  beforeEach(() => {
+  beforeEach(async () => {
     conversations = new Map();
     adapter = null;
-    runtimeRegistry.setDb(createTestDb());
-    registerTestHomes([sol]);
+    const port = await installRelayPort({ boundary: scratch });
+    port.standAgent(sol, SOL_ID);
     setSessionAgentSources({ liveCwd: () => undefined });
   });
 
   afterEach(async () => {
     await adapter?.stop();
     setSessionAgentSources(undefined);
-    clearTestHomes();
+    uninstallRelayPort();
   });
 
   /** Boot: register this runtime and build the adapter over it. */
@@ -183,13 +174,7 @@ describe('a chat an agent started over relay', () => {
     const next = await adapter!.deliver(SUBJECT, message({}));
 
     expect(next.success).toBe(true);
-    expect(turnOf(restarted)).toEqual({
-      key: SDK_ID,
-      cwd: sol,
-      forAgent: sol,
-      ensuredCwd: sol,
-      hasStarted: true,
-    });
+    expect(turnOf(restarted)).toEqual({ key: SDK_ID, cwd: sol, forAgent: sol });
   });
 
   it('keeps its folder and its agent after a restart on a runtime that keeps its key', async () => {
@@ -208,13 +193,7 @@ describe('a chat an agent started over relay', () => {
     const next = await adapter!.deliver(subject, message({}, subject));
 
     expect(next.success).toBe(true);
-    expect(turnOf(restarted)).toEqual({
-      key: CHAT,
-      cwd: sol,
-      forAgent: sol,
-      ensuredCwd: sol,
-      hasStarted: false,
-    });
+    expect(turnOf(restarted)).toEqual({ key: CHAT, cwd: sol, forAgent: sol });
   });
 
   it('records the chat as its agent’s, under the id its next turn runs on', async () => {

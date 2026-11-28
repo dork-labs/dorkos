@@ -82,6 +82,7 @@ export function toRun(row: TurnRunRow): TurnRun {
     chatSeq: row.chatSeq,
     chainId: row.chainId,
     agentId: row.agentId,
+    askedByRef: row.askedByRef,
     origin: parseOrigin(row.originJson),
     openedBy: row.openedBy,
     status: row.status,

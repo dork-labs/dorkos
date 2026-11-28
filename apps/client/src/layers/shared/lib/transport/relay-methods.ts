@@ -318,18 +318,12 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
       })) as ClaimUnclaimedChatResponse;
     },
 
-    // Stays hand-written: waits for batch 3's no-body client (DOR-5473).
-    ignoreUnclaimedChat(id: string): Promise<void> {
-      return fetchNoContent(baseUrl, `/relay/unclaimed-chats/${encodeURIComponent(id)}/ignore`, {
-        method: 'POST',
-      });
+    async ignoreUnclaimedChat(id: string): Promise<void> {
+      await api.call('relay.createUnclaimedChatsIgnore', { path: { id } });
     },
 
-    // Stays hand-written: waits for batch 3's no-body client (DOR-5473).
-    blockUnclaimedChat(id: string): Promise<void> {
-      return fetchNoContent(baseUrl, `/relay/unclaimed-chats/${encodeURIComponent(id)}/block`, {
-        method: 'POST',
-      });
+    async blockUnclaimedChat(id: string): Promise<void> {
+      await api.call('relay.createUnclaimedChatsBlock', { path: { id } });
     },
 
     // Stays hand-written: `POST /api/relay/unclaimed-chats/{id}/leave` has no operationId (DOR-5473).
