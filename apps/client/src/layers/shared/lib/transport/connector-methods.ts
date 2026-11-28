@@ -50,7 +50,9 @@ import type {
   ConnectorAccessChange,
   ConnectorAccessChangeUndo,
 } from '@dorkos/shared/connector-exclusion-schemas';
-import { fetchAllPages, fetchJSON, fetchNoContent, buildQueryString } from './http-client';
+import { LIST_PAGE_LIMIT, readAllPages } from '../read-all-pages';
+import { createTransportApiClient } from './api-client';
+import { fetchAllPages, fetchJSON, fetchNoContent } from './http-client';
 import type {
   ConnectorAgentConnections,
   ConnectorAgentConnectionsPage,
@@ -92,154 +94,150 @@ function oldestFirst(left: ConnectorAgentRequestItem, right: ConnectorAgentReque
 
 /** Create the connector methods bound to a base URL. */
 export function createConnectorMethods(baseUrl: string) {
+  const api = createTransportApiClient(baseUrl);
+  const authApi = createTransportApiClient(baseUrl, CONNECTOR_AUTHENTICATION_START_TIMEOUT_MS);
+  // One page of a paged list: its own fields first, then the cursor and the page size.
+  const listQuery = (query: Record<string, string | undefined>, cursor?: string) => ({
+    ...query,
+    cursor,
+    limit: LIST_PAGE_LIMIT,
+  });
   return {
-    getConnectorProviders(): Promise<ConnectorProvidersResource> {
-      return fetchJSON<ConnectorProvidersResource>(baseUrl, '/connectors/providers');
+    async getConnectorProviders(): Promise<ConnectorProvidersResource> {
+      return (await api.call('connectors.getProviders', {})) as ConnectorProvidersResource;
     },
 
-    putConnectorCredential(provider: string, secret: string): Promise<ConnectorProviderStatus> {
-      return fetchJSON<ConnectorProviderStatus>(
-        baseUrl,
-        `/connectors/providers/${encodeURIComponent(provider)}/credential`,
-        { method: 'PUT', body: JSON.stringify({ secret }) }
-      );
+    async putConnectorCredential(
+      provider: string,
+      secret: string
+    ): Promise<ConnectorProviderStatus> {
+      return (await api.call('connectors.updateProvidersCredential', {
+        path: { provider },
+        body: { secret },
+      })) as ConnectorProviderStatus;
     },
 
-    deleteConnectorCredential(provider: string): Promise<ConnectorProviderStatus> {
-      return fetchJSON<ConnectorProviderStatus>(
-        baseUrl,
-        `/connectors/providers/${encodeURIComponent(provider)}/credential`,
-        { method: 'DELETE' }
-      );
+    async deleteConnectorCredential(provider: string): Promise<ConnectorProviderStatus> {
+      return (await api.call('connectors.deleteProvidersCredential', {
+        path: { provider },
+      })) as ConnectorProviderStatus;
     },
 
-    getConnectorCatalog(
+    async getConnectorCatalog(
       input: { query?: string; cursor?: string; limit?: number } = {}
     ): Promise<ConnectorCatalogResourcePage> {
-      const qs = buildQueryString({ q: input.query, cursor: input.cursor, limit: input.limit });
-      return fetchJSON<ConnectorCatalogResourcePage>(baseUrl, `/connectors/catalog${qs}`, {
+      return (await api.call('connectors.listCatalog', {
+        query: { q: input.query, cursor: input.cursor, limit: input.limit },
         headers: { [CONNECTOR_AUTH_SETUP_HEADER]: CONNECTOR_AUTH_SETUP_VERSION },
-      });
+      })) as ConnectorCatalogResourcePage;
     },
 
     // The lists below come in pages, newest first; these read them whole, in name order.
     async getConnectorConnections(): Promise<Pick<ConnectorConnectionListResource, 'connections'>> {
-      const { rows } = await fetchAllPages(
-        baseUrl,
-        '/connectors/connections',
-        {},
-        (page: ConnectorConnectionListResource) => page.connections
+      const { rows } = await readAllPages(
+        async (cursor) =>
+          (await api.call('connectors.listConnections', {
+            query: listQuery({}, cursor),
+          })) as ConnectorConnectionListResource,
+        (list) => list.connections,
+        '/connectors/connections'
       );
       return { connections: rows.sort(byLabel) };
     },
 
-    getConnectorConnection(connectionId: string): Promise<ConnectorConnectionDetail> {
-      return fetchJSON<ConnectorConnectionDetail>(
-        baseUrl,
-        `/connectors/connections/${encodeURIComponent(connectionId)}`
-      );
+    async getConnectorConnection(connectionId: string): Promise<ConnectorConnectionDetail> {
+      return (await api.call('connectors.getConnections', {
+        path: { connectionId },
+      })) as ConnectorConnectionDetail;
     },
 
-    listConnectionEventDefinitions(
+    async listConnectionEventDefinitions(
       connectionId: string,
       cursor?: string
     ): Promise<ConnectionEventDefinitionPage> {
-      const qs = buildQueryString({ cursor });
-      return fetchJSON<ConnectionEventDefinitionPage>(
-        baseUrl,
-        `/connectors/connections/${encodeURIComponent(connectionId)}/events/definitions${qs}`
-      );
+      return (await api.call('connectors.listConnectionsEventsDefinitions', {
+        path: { connectionId },
+        query: { cursor },
+      })) as ConnectionEventDefinitionPage;
     },
 
-    listConnectionEventSubscriptions(
+    async listConnectionEventSubscriptions(
       connectionId: string,
       cursor?: string
     ): Promise<ConnectionEventSubscriptionPage> {
-      const qs = buildQueryString({ cursor });
-      return fetchJSON<ConnectionEventSubscriptionPage>(
-        baseUrl,
-        `/connectors/connections/${encodeURIComponent(connectionId)}/events/subscriptions${qs}`
-      );
+      return (await api.call('connectors.listConnectionsEventsSubscriptions', {
+        path: { connectionId },
+        query: { cursor },
+      })) as ConnectionEventSubscriptionPage;
     },
 
-    createConnectionEventSubscription(
+    async createConnectionEventSubscription(
       connectionId: string,
       input: CreateConnectionEventSubscription
     ): Promise<ConnectionEventSubscription> {
-      return fetchJSON<ConnectionEventSubscription>(
-        baseUrl,
-        `/connectors/connections/${encodeURIComponent(connectionId)}/events/subscriptions`,
-        { method: 'POST', body: JSON.stringify(input) }
-      );
+      return (await api.call('connectors.createConnectionsEventsSubscriptions', {
+        path: { connectionId },
+        body: input,
+      })) as ConnectionEventSubscription;
     },
 
-    deleteConnectionEventSubscription(connectionId: string, subscriptionId: string): Promise<void> {
-      return fetchNoContent(
-        baseUrl,
-        `/connectors/connections/${encodeURIComponent(connectionId)}/events/subscriptions/${encodeURIComponent(subscriptionId)}`,
-        { method: 'DELETE' }
-      );
-    },
-
-    getConnectionEventSource(connectionId: string): Promise<ConnectionEventSourceStatus> {
-      return fetchJSON<ConnectionEventSourceStatus>(
-        baseUrl,
-        `/connectors/connections/${encodeURIComponent(connectionId)}/events/source`
-      );
-    },
-
-    configureConnectionEventSource(
+    async deleteConnectionEventSubscription(
       connectionId: string,
-      input: ConfigureConnectionEventSource
-    ): Promise<ConnectionEventSourceStatus> {
-      return fetchJSON<ConnectionEventSourceStatus>(
-        baseUrl,
-        `/connectors/connections/${encodeURIComponent(connectionId)}/events/source`,
-        { method: 'PUT', body: JSON.stringify(input) }
-      );
-    },
-
-    startConnectorAuthentication(
-      input: ConnectorAuthenticationFlowCreateRequest
-    ): Promise<ConnectorAuthenticationFlowState> {
-      return fetchJSON<ConnectorAuthenticationFlowState>(baseUrl, '/connectors/connections', {
-        method: 'POST',
-        body: JSON.stringify(input),
-        timeout: CONNECTOR_AUTHENTICATION_START_TIMEOUT_MS,
+      subscriptionId: string
+    ): Promise<void> {
+      await api.call('connectors.deleteConnectionsEventsSubscriptions', {
+        path: { connectionId, subscriptionId },
       });
     },
 
-    pollConnectorAuthentication(flowId: string): Promise<ConnectorAuthenticationFlowState> {
-      return fetchJSON<ConnectorAuthenticationFlowState>(
-        baseUrl,
-        `/connectors/authentication-flows/${encodeURIComponent(flowId)}`
-      );
+    async getConnectionEventSource(connectionId: string): Promise<ConnectionEventSourceStatus> {
+      return (await api.call('connectors.getConnectionsEventsSource', {
+        path: { connectionId },
+      })) as ConnectionEventSourceStatus;
     },
 
-    renameConnectorConnection(
+    async configureConnectionEventSource(
+      connectionId: string,
+      input: ConfigureConnectionEventSource
+    ): Promise<ConnectionEventSourceStatus> {
+      return (await api.call('connectors.updateConnectionsEventsSource', {
+        path: { connectionId },
+        body: input,
+      })) as ConnectionEventSourceStatus;
+    },
+
+    async startConnectorAuthentication(
+      input: ConnectorAuthenticationFlowCreateRequest
+    ): Promise<ConnectorAuthenticationFlowState> {
+      return (await authApi.call('connectors.createConnections', {
+        body: input,
+      })) as ConnectorAuthenticationFlowState;
+    },
+
+    async pollConnectorAuthentication(flowId: string): Promise<ConnectorAuthenticationFlowState> {
+      return (await api.call('connectors.get_sign_in', {
+        path: { flowId },
+      })) as ConnectorAuthenticationFlowState;
+    },
+
+    async renameConnectorConnection(
       connectionId: string,
       input: ConnectorConnectionPatch
     ): Promise<ConnectorLifecycleResult> {
-      return fetchJSON<ConnectorLifecycleResult>(
-        baseUrl,
-        `/connectors/connections/${encodeURIComponent(connectionId)}`,
-        { method: 'PATCH', body: JSON.stringify(input) }
-      );
+      return (await api.call('connectors.rename_connection', {
+        path: { connectionId },
+        body: input,
+      })) as ConnectorLifecycleResult;
     },
 
-    reconnectConnectorConnection(
+    async reconnectConnectorConnection(
       connectionId: string,
       input: ConnectorReconnectRequest
     ): Promise<ConnectorAuthenticationFlowState> {
-      return fetchJSON<ConnectorAuthenticationFlowState>(
-        baseUrl,
-        `/connectors/connections/${encodeURIComponent(connectionId)}/reconnect`,
-        {
-          method: 'POST',
-          body: JSON.stringify(input),
-          timeout: CONNECTOR_AUTHENTICATION_START_TIMEOUT_MS,
-        }
-      );
+      return (await authApi.call('connectors.createConnectionsReconnect', {
+        path: { connectionId },
+        body: input,
+      })) as ConnectorAuthenticationFlowState;
     },
 
     pauseConnectorConnection(connectionId: string): Promise<ConnectorLifecycleResult> {
@@ -258,30 +256,26 @@ export function createConnectorMethods(baseUrl: string) {
       );
     },
 
-    getConnectorDisconnectImpact(connectionId: string): Promise<ConnectorDisconnectImpact> {
-      return fetchJSON<ConnectorDisconnectImpact>(
-        baseUrl,
-        `/connectors/connections/${encodeURIComponent(connectionId)}/disconnect-impact`
-      );
+    async getConnectorDisconnectImpact(connectionId: string): Promise<ConnectorDisconnectImpact> {
+      return (await api.call('connectors.disconnect_impact', {
+        path: { connectionId },
+      })) as ConnectorDisconnectImpact;
     },
 
-    getConnectorAppActions(
+    async getConnectorAppActions(
       toolkit: string,
       providerInstanceId: string
     ): Promise<ConnectorAppActions> {
-      const params = new URLSearchParams({ providerInstanceId });
-      return fetchJSON<ConnectorAppActions>(
-        baseUrl,
-        `/connectors/apps/${encodeURIComponent(toolkit)}/actions?${params}`
-      );
+      return (await api.call('connectors.getAppsActions', {
+        path: { toolkit },
+        query: { providerInstanceId },
+      })) as ConnectorAppActions;
     },
 
-    disconnectConnectorConnection(connectionId: string): Promise<ConnectorLifecycleResult> {
-      return fetchJSON<ConnectorLifecycleResult>(
-        baseUrl,
-        `/connectors/connections/${encodeURIComponent(connectionId)}`,
-        { method: 'DELETE' }
-      );
+    async disconnectConnectorConnection(connectionId: string): Promise<ConnectorLifecycleResult> {
+      return (await api.call('connectors.deleteConnections', {
+        path: { connectionId },
+      })) as ConnectorLifecycleResult;
     },
 
     removeConnectorConnection(connectionId: string): Promise<void> {
@@ -293,161 +287,159 @@ export function createConnectorMethods(baseUrl: string) {
     },
 
     async getAgentConnectorConnections(agentId: string): Promise<ConnectorAgentConnections> {
-      const path = `/connectors/agents/${encodeURIComponent(agentId)}/connections`;
-      const { first, rows } = await fetchAllPages(
-        baseUrl,
-        path,
-        {},
-        (page: ConnectorAgentConnectionsPage) => page.connections
+      const { first, rows } = await readAllPages(
+        async (cursor) =>
+          (await api.call('connectors.list_agent_connections', {
+            path: { agentId },
+            query: listQuery({}, cursor),
+          })) as ConnectorAgentConnectionsPage,
+        (list) => list.connections,
+        `/connectors/agents/${encodeURIComponent(agentId)}/connections`
       );
       return { agentId: first.agentId, connections: rows.sort(byLabel) };
     },
 
     async getEveryAgentConnectorGrants(): Promise<ConnectorEveryAgentGrants> {
-      const { rows } = await fetchAllPages(
-        baseUrl,
-        '/connectors/every-agent-grants',
-        {},
-        (page: ConnectorEveryAgentGrantsPage) => page.connections
+      const { rows } = await readAllPages(
+        async (cursor) =>
+          (await api.call('connectors.list_every_agent_grants', {
+            query: listQuery({}, cursor),
+          })) as ConnectorEveryAgentGrantsPage,
+        (list) => list.connections,
+        '/connectors/every-agent-grants'
       );
       return { connections: rows.sort(byLabel) };
     },
 
     async getSessionConnectorConnections(sessionId: string): Promise<ConnectorSessionConnections> {
-      const path = `/connectors/sessions/${encodeURIComponent(sessionId)}/connections`;
-      const { first, rows } = await fetchAllPages(
-        baseUrl,
-        path,
-        {},
-        (page: ConnectorSessionConnectionsPage) => page.connections
+      const { first, rows } = await readAllPages(
+        async (cursor) =>
+          (await api.call('connectors.list_session_connections', {
+            path: { sessionId },
+            query: listQuery({}, cursor),
+          })) as ConnectorSessionConnectionsPage,
+        (list) => list.connections,
+        `/connectors/sessions/${encodeURIComponent(sessionId)}/connections`
       );
       const { nextCursor: _last, ...chat } = first;
       return { ...chat, connections: rows.sort(byLabel) };
     },
 
-    setSessionConnectorAccess(
+    async setSessionConnectorAccess(
       sessionId: string,
       connectionId: string,
       update: ConnectorSessionAccessUpdate
     ): Promise<ConnectorSessionConnections> {
-      return fetchJSON<ConnectorSessionConnections>(
-        baseUrl,
-        `/connectors/sessions/${encodeURIComponent(sessionId)}/connections/${encodeURIComponent(connectionId)}`,
-        { method: 'PUT', body: JSON.stringify(update) }
-      );
+      return (await api.call('connectors.updateSessionsConnections', {
+        path: { sessionId, connectionId },
+        body: update,
+      })) as ConnectorSessionConnections;
     },
 
-    getAccessibleConnectorConnections(
+    async getAccessibleConnectorConnections(
       agentId: string
     ): Promise<ConnectorAccessibleConnectionsResponse> {
-      return fetchJSON<ConnectorAccessibleConnectionsResponse>(
-        baseUrl,
-        `/connectors/accessible?agentId=${encodeURIComponent(agentId)}`
-      );
+      return (await api.call('connectors.getAccessible', {
+        query: { agentId },
+      })) as ConnectorAccessibleConnectionsResponse;
     },
 
-    getAccessibleConnectorOperations(
+    async getAccessibleConnectorOperations(
       agentId: string,
       connectionId: ConnectionId
     ): Promise<ConnectorAccessibleOperationsResponse> {
-      const qs = buildQueryString({ agentId });
-      return fetchJSON<ConnectorAccessibleOperationsResponse>(
-        baseUrl,
-        `/connectors/accessible/${encodeURIComponent(connectionId)}/operations${qs}`
-      );
+      return (await api.call('connectors.getAccessibleOperations', {
+        path: { connectionId },
+        query: { agentId },
+      })) as ConnectorAccessibleOperationsResponse;
     },
 
-    executeConnector(input: ConnectorProgramExecutionRequest): Promise<ConnectorExecutionResponse> {
-      return fetchJSON<ConnectorExecutionResponse>(baseUrl, '/connectors/executions', {
-        method: 'POST',
-        body: JSON.stringify(input),
-      });
+    async executeConnector(
+      input: ConnectorProgramExecutionRequest
+    ): Promise<ConnectorExecutionResponse> {
+      return (await api.call('connectors.createExecutions', {
+        body: input,
+      })) as ConnectorExecutionResponse;
     },
 
-    getAgentConnectorUsage(input: {
+    async getAgentConnectorUsage(input: {
       agentId: string;
       cursor?: string;
       limit?: number;
     }): Promise<ConnectorUsagePage> {
-      const qs = buildQueryString(input);
-      return fetchJSON<ConnectorUsagePage>(baseUrl, `/connectors/usage/agent${qs}`);
+      return (await api.call('connectors.listUsageAgent', { query: input })) as ConnectorUsagePage;
     },
 
-    getOperatorConnectorUsage(input: {
+    async getOperatorConnectorUsage(input: {
       connectionId?: ConnectionId;
       cursor?: string;
       limit?: number;
     }): Promise<ConnectorUsagePage> {
-      const qs = buildQueryString(input);
-      return fetchJSON<ConnectorUsagePage>(baseUrl, `/connectors/usage/operator${qs}`);
+      return (await api.call('connectors.list_usage', { query: input })) as ConnectorUsagePage;
     },
 
-    previewConnectorReconciliation(
+    async previewConnectorReconciliation(
       input: ConnectorReconciliationPreviewRequest
     ): Promise<ConnectorReconciliationPreview> {
-      return fetchJSON<ConnectorReconciliationPreview>(
-        baseUrl,
-        '/connectors/reconciliation/previews',
-        { method: 'POST', body: JSON.stringify(input) }
-      );
+      return (await api.call('connectors.createReconciliationPreviews', {
+        body: input,
+      })) as ConnectorReconciliationPreview;
     },
 
-    applyConnectorReconciliation(
+    async applyConnectorReconciliation(
       input: ConnectorReconciliationApplyRequest
     ): Promise<ConnectorReconciliationApplyResponse> {
-      return fetchJSON<ConnectorReconciliationApplyResponse>(
-        baseUrl,
-        '/connectors/reconciliation/apply',
-        { method: 'POST', body: JSON.stringify(input) }
-      );
+      return (await api.call('connectors.applyReconciliation', {
+        body: input,
+      })) as ConnectorReconciliationApplyResponse;
     },
 
-    stopSharingConnectorWithEveryAgent(
+    async stopSharingConnectorWithEveryAgent(
       connectionId: string
     ): Promise<ConnectorEveryAgentRevokeResponse> {
-      return fetchJSON<ConnectorEveryAgentRevokeResponse>(
-        baseUrl,
-        `/connectors/connections/${encodeURIComponent(connectionId)}/every-agent`,
-        { method: 'DELETE' }
-      );
+      return (await api.call('connectors.stop_every_agent_share', {
+        path: { connectionId },
+      })) as ConnectorEveryAgentRevokeResponse;
     },
 
-    createConnectorManagementReview(
+    async createConnectorManagementReview(
       input: ConnectorManagementReviewCreateRequest
     ): Promise<ConnectorManagementReviewItem> {
-      return fetchJSON<ConnectorManagementReviewItem>(baseUrl, '/connectors/reviews', {
-        method: 'POST',
-        body: JSON.stringify(input),
-      });
+      return (await api.call('connectors.createReviews', {
+        body: input,
+      })) as ConnectorManagementReviewItem;
     },
 
-    getConnectorManagementReviews(
+    async getConnectorManagementReviews(
       state?: 'pending' | 'resolved'
     ): Promise<ConnectorManagementReviewItem[]> {
-      return fetchAllPages(
-        baseUrl,
-        '/connectors/reviews',
-        { state },
-        (page: ConnectorManagementReviewPage) => page.reviews
-      ).then(({ rows }) => rows);
-    },
-
-    getConnectorManagementReview(reviewRequestId: string): Promise<ConnectorManagementReviewItem> {
-      return fetchJSON<ConnectorManagementReviewItem>(
-        baseUrl,
-        `/connectors/reviews/${encodeURIComponent(reviewRequestId)}`
+      const { rows } = await readAllPages(
+        async (cursor) =>
+          (await api.call('connectors.list_reviews', {
+            query: listQuery({ state }, cursor),
+          })) as ConnectorManagementReviewPage,
+        (list) => list.reviews,
+        '/connectors/reviews'
       );
+      return rows;
     },
 
-    resolveConnectorManagementReview(
+    async getConnectorManagementReview(
+      reviewRequestId: string
+    ): Promise<ConnectorManagementReviewItem> {
+      return (await api.call('connectors.get_review', {
+        path: { reviewRequestId },
+      })) as ConnectorManagementReviewItem;
+    },
+
+    async resolveConnectorManagementReview(
       reviewRequestId: string,
       input: ConnectorManagementReviewDecision
     ): Promise<ConnectorManagementReviewDecisionResult> {
-      return fetchJSON<ConnectorManagementReviewDecisionResult>(
-        baseUrl,
-        `/connectors/reviews/${encodeURIComponent(reviewRequestId)}/decision`,
-        { method: 'POST', body: JSON.stringify(input) }
-      );
+      return (await api.call('connectors.createReviewsDecision', {
+        path: { reviewRequestId },
+        body: input,
+      })) as ConnectorManagementReviewDecisionResult;
     },
 
     getConnectorAgentRequests(
@@ -471,40 +463,33 @@ export function createConnectorMethods(baseUrl: string) {
       );
     },
 
-    resolveConnectorAgentRequest(
+    async resolveConnectorAgentRequest(
       requestId: string,
       input: ConnectorAgentRequestDecisionInput
     ): Promise<ConnectorAgentRequestItem> {
-      return fetchJSON<ConnectorAgentRequestItem>(
-        baseUrl,
-        `/connectors/agent-requests/${encodeURIComponent(requestId)}/decision`,
-        { method: 'POST', body: JSON.stringify(input) }
-      );
+      return (await api.call('connectors.answer_agent_request', {
+        path: { requestId },
+        body: input,
+      })) as ConnectorAgentRequestItem;
     },
 
-    startConnectorAgentRequestAuthentication(
+    async startConnectorAgentRequestAuthentication(
       requestId: string,
       input: ConnectorAgentRequestAuthenticationInput
     ): Promise<ConnectorAuthenticationFlowState> {
-      return fetchJSON<ConnectorAuthenticationFlowState>(
-        baseUrl,
-        `/connectors/agent-requests/${encodeURIComponent(requestId)}/authentication-flows`,
-        {
-          method: 'POST',
-          body: JSON.stringify(input),
-          timeout: CONNECTOR_AUTHENTICATION_START_TIMEOUT_MS,
-        }
-      );
+      return (await authApi.call('connectors.start_agent_request_sign_in', {
+        path: { requestId },
+        body: input,
+      })) as ConnectorAuthenticationFlowState;
     },
 
-    pollConnectorAgentRequestAuthentication(
+    async pollConnectorAgentRequestAuthentication(
       requestId: string,
       flowId: string
     ): Promise<ConnectorAuthenticationFlowState> {
-      return fetchJSON<ConnectorAuthenticationFlowState>(
-        baseUrl,
-        `/connectors/agent-requests/${encodeURIComponent(requestId)}/authentication-flows/${encodeURIComponent(flowId)}`
-      );
+      return (await api.call('connectors.get_agent_request_sign_in', {
+        path: { requestId, flowId },
+      })) as ConnectorAuthenticationFlowState;
     },
 
     cancelHeldConnectorAction(holdId: string): Promise<CancelHeldActionResponse> {
@@ -515,11 +500,10 @@ export function createConnectorMethods(baseUrl: string) {
       );
     },
 
-    getAccessChange(changeId: string): Promise<ConnectorAccessChange> {
-      return fetchJSON<ConnectorAccessChange>(
-        baseUrl,
-        `/connectors/access-changes/${encodeURIComponent(changeId)}`
-      );
+    async getAccessChange(changeId: string): Promise<ConnectorAccessChange> {
+      return (await api.call('connectors.getAccessChanges', {
+        path: { changeId },
+      })) as ConnectorAccessChange;
     },
 
     undoAccessChange(changeId: string): Promise<ConnectorAccessChangeUndo> {

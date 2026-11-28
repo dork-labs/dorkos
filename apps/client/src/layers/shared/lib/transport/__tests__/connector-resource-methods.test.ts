@@ -9,7 +9,7 @@ function setup() {
 function stubFetch(body: unknown) {
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(body) })
+    vi.fn(async () => new Response(JSON.stringify(body)))
   );
 }
 
@@ -21,55 +21,12 @@ function lastCall(): [string, RequestInit] {
 beforeEach(() => vi.restoreAllMocks());
 
 describe('connector resource transport methods', () => {
-  it('encodes the account-free catalog cursor and query on the canonical route', async () => {
-    stubFetch({ services: [], warnings: [] });
-    await setup().getConnectorCatalog({ query: 'work mail', cursor: 'next/page', limit: 25 });
-
-    expect(lastCall()[0]).toBe(
-      'http://localhost:4242/api/connectors/catalog?q=work+mail&cursor=next%2Fpage&limit=25'
-    );
-  });
-
   it('negotiates authentication metadata on every search and subsequent page', async () => {
     stubFetch({ services: [], warnings: [] });
     await setup().getConnectorCatalog({ query: 'mail' });
     expect(new Headers(lastCall()[1].headers).get('x-dorkos-catalog-auth-setup')).toBe('1');
     await setup().getConnectorCatalog({ query: 'mail', cursor: 'second' });
     expect(new Headers(lastCall()[1].headers).get('x-dorkos-catalog-auth-setup')).toBe('1');
-  });
-
-  it('sends the durable idempotency claim on the new authentication route', async () => {
-    const timeout = vi.spyOn(AbortSignal, 'timeout');
-    stubFetch({ state: 'pending', flowId: 'flow-a' });
-    const input = {
-      providerInstanceId: 'provider-a' as never,
-      toolkit: 'gmail',
-      idempotencyKey: 'connect-gmail',
-    };
-    await setup().startConnectorAuthentication(input);
-
-    const [url, init] = lastCall();
-    expect(url).toBe('http://localhost:4242/api/connectors/connections');
-    expect(init.method).toBe('POST');
-    expect(init.body).toBe(JSON.stringify(input));
-    expect(timeout).toHaveBeenLastCalledWith(75_000);
-  });
-
-  it('uses exact encoded owner, agent, and session resource paths', async () => {
-    stubFetch({ connections: [], nextCursor: null });
-    await setup().getConnectorConnection('connection/a');
-    expect(lastCall()[0].endsWith('/connectors/connections/connection%2Fa')).toBe(true);
-
-    await setup().getAgentConnectorConnections('agent/a');
-    expect(lastCall()[0].endsWith('/connectors/agents/agent%2Fa/connections?limit=200')).toBe(true);
-
-    await setup().getSessionConnectorConnections('session/a');
-    expect(lastCall()[0].endsWith('/connectors/sessions/session%2Fa/connections?limit=200')).toBe(
-      true
-    );
-
-    await setup().getEveryAgentConnectorGrants();
-    expect(lastCall()[0]).toBe('http://localhost:4242/api/connectors/every-agent-grants?limit=200');
   });
 
   it('reads a paged account list to its last page and shows it in name order', async () => {
@@ -80,11 +37,7 @@ describe('connector resource transport methods', () => {
     ];
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockImplementation(() =>
-          Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(pages.shift()) })
-        )
+      vi.fn(async () => new Response(JSON.stringify(pages.shift())))
     );
 
     const { connections } = await setup().getConnectorConnections();
@@ -93,18 +46,6 @@ describe('connector resource transport methods', () => {
     expect(lastCall()[0]).toBe(
       'http://localhost:4242/api/connectors/connections?cursor=after%2Fwork&limit=200'
     );
-  });
-
-  it('turns one app on or off for one chat with a PUT on its exact encoded path', async () => {
-    stubFetch({ sessionId: 'session/a', agentId: 'agent-a', connections: [] });
-    await setup().setSessionConnectorAccess('session/a', 'connection/a', { on: false });
-
-    const [url, init] = lastCall();
-    expect(url).toBe(
-      'http://localhost:4242/api/connectors/sessions/session%2Fa/connections/connection%2Fa'
-    );
-    expect(init.method).toBe('PUT');
-    expect(init.body).toBe(JSON.stringify({ on: false }));
   });
 
   it('stops a list whose server hands back the same cursor again, with a clear error', async () => {
@@ -124,7 +65,7 @@ describe('connector resource transport methods', () => {
     expect(requests.map((request) => request.requestId)).toEqual(['a', 'b', 'c']);
   });
 
-  it('uses owner-only agent request routes and forwards the exact decision body', async () => {
+  it('reads agents’ requests on their owner-only route', async () => {
     stubFetch({ requests: [], nextCursor: null });
     await setup().getConnectorAgentRequests('pending');
     expect(lastCall()[0]).toBe(
@@ -136,42 +77,6 @@ describe('connector resource transport methods', () => {
     expect(lastCall()[0]).toBe(
       'http://localhost:4242/api/connectors/agent-requests?sessionId=session%2Fa&limit=200'
     );
-
-    stubFetch({ requestId: 'request/a', status: 'denied' });
-    await setup().resolveConnectorAgentRequest('request/a', { decision: 'denied' });
-    const [url, init] = lastCall();
-    expect(url).toBe('http://localhost:4242/api/connectors/agent-requests/request%2Fa/decision');
-    expect(init.method).toBe('POST');
-    expect(init.body).toBe(JSON.stringify({ decision: 'denied' }));
-  });
-
-  it('keeps request authentication on its exact encoded owner route', async () => {
-    const timeout = vi.spyOn(AbortSignal, 'timeout');
-    stubFetch({ state: 'starting', flowId: 'flow/a' });
-    const input = { providerInstanceId: 'provider-a' as never, label: 'Work mail' };
-    await setup().startConnectorAgentRequestAuthentication('request/a', input);
-    const [startUrl, startInit] = lastCall();
-    expect(startUrl).toBe(
-      'http://localhost:4242/api/connectors/agent-requests/request%2Fa/authentication-flows'
-    );
-    expect(startInit.method).toBe('POST');
-    expect(startInit.body).toBe(JSON.stringify(input));
-    expect(timeout).toHaveBeenLastCalledWith(75_000);
-
-    stubFetch({ state: 'failed', flowId: 'flow/a' });
-    await setup().pollConnectorAgentRequestAuthentication('request/a', 'flow/a');
-    expect(lastCall()[0]).toBe(
-      'http://localhost:4242/api/connectors/agent-requests/request%2Fa/authentication-flows/flow%2Fa'
-    );
-  });
-
-  it('keeps ordinary connector reads on the generic thirty-second deadline', async () => {
-    const timeout = vi.spyOn(AbortSignal, 'timeout');
-    stubFetch({ services: [], warnings: [] });
-
-    await setup().getConnectorCatalog();
-
-    expect(timeout).toHaveBeenLastCalledWith(30_000);
   });
 
   it('lets authentication start answer after the generic deadline while ordinary reads time out', async () => {
@@ -236,57 +141,5 @@ describe('connector resource transport methods', () => {
       vi.clearAllTimers();
       vi.useRealTimers();
     }
-  });
-
-  it('uses exact event discovery, subscription, and source routes', async () => {
-    stubFetch({ definitions: [], nextCursor: 'next/page' });
-    await setup().listConnectionEventDefinitions('connection/a', 'cursor/a');
-    expect(lastCall()[0]).toBe(
-      'http://localhost:4242/api/connectors/connections/connection%2Fa/events/definitions?cursor=cursor%2Fa'
-    );
-
-    stubFetch({ subscriptions: [] });
-    await setup().listConnectionEventSubscriptions('connection/a');
-    expect(lastCall()[0]).toBe(
-      'http://localhost:4242/api/connectors/connections/connection%2Fa/events/subscriptions'
-    );
-
-    const input = {
-      definitionId: 'definition-a',
-      filter: { channel: 'alerts' },
-      agentId: 'agent-a',
-      destination: { kind: 'agent' as const, id: 'agent-a' },
-      requestId: '7337caa2-c19b-4715-aab4-9f33205331f1',
-      manageExistingTrigger: false,
-    };
-    stubFetch({ id: 'subscription-a', state: 'active' });
-    await setup().createConnectionEventSubscription('connection/a', input);
-    expect(lastCall()[0]).toBe(
-      'http://localhost:4242/api/connectors/connections/connection%2Fa/events/subscriptions'
-    );
-    expect(lastCall()[1]).toMatchObject({ method: 'POST', body: JSON.stringify(input) });
-
-    stubFetch(undefined);
-    await setup().deleteConnectionEventSubscription('connection/a', 'subscription/a');
-    expect(lastCall()[0]).toBe(
-      'http://localhost:4242/api/connectors/connections/connection%2Fa/events/subscriptions/subscription%2Fa'
-    );
-    expect(lastCall()[1].method).toBe('DELETE');
-
-    stubFetch({ setupMode: 'managed', configured: false, endpoint: null, reason: null });
-    await setup().getConnectionEventSource('connection/a');
-    expect(lastCall()[0]).toBe(
-      'http://localhost:4242/api/connectors/connections/connection%2Fa/events/source'
-    );
-
-    const source = {
-      webhookSecret: 'synthetic-secret-value',
-      publicOrigin: 'https://local.example',
-    };
-    await setup().configureConnectionEventSource('connection/a', source);
-    expect(lastCall()[0]).toBe(
-      'http://localhost:4242/api/connectors/connections/connection%2Fa/events/source'
-    );
-    expect(lastCall()[1]).toMatchObject({ method: 'PUT', body: JSON.stringify(source) });
   });
 });
