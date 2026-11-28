@@ -114,7 +114,7 @@ import {
 import { OPENCODE_CAPABILITIES, STREAM_LIVE_TIMEOUT_MS } from './runtime-constants.js';
 import { awaitAbortAck, delay } from './messaging/bounded-abort.js';
 import { sessionDirectoryOf } from './sessions/session-directory.js';
-import { resolveCompactionModel } from './messaging/compaction-model.js';
+import { resolveCompactionModel, summarizeOpenCodeSession } from './messaging/compaction-model.js';
 import { readOpenCodeTurnMode, type OpenCodeTurnOptions } from './messaging/turn-options.js';
 import { validatedGrants } from './messaging/directory-grants.js';
 import { ProjectPluginsRefusedError } from './messaging/project-plugin-guard.js';
@@ -508,7 +508,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       sessionId,
       cwd,
       undefined,
-      async (client, ocSessionId, _mcp, plan) => {
+      async (client, ocSessionId, _mcp, plan, arm) => {
         const model =
           plan.mode === 'credits'
             ? creditsPromptModel(settings.model, plan)
@@ -517,13 +517,7 @@ export class OpenCodeRuntime implements AgentRuntime {
                 cwd,
                 trackedModel: settings.model,
               });
-        const summarized = await client.session.summarize({
-          path: { id: ocSessionId },
-          body: model,
-        });
-        if (summarized.error !== undefined) {
-          throw new Error(`OpenCode session.summarize failed: ${JSON.stringify(summarized.error)}`);
-        }
+        await summarizeOpenCodeSession(client, ocSessionId, model, arm);
       }
     );
   }
@@ -746,14 +740,13 @@ export class OpenCodeRuntime implements AgentRuntime {
           const admit =
             matchesOpenCodeSession(event, directory, ocSessionId) ||
             matchesOpenCodeSubagentSession(event, directory, ctx);
-          if (admit) {
-            queue.push(event.payload as OpenCodeWireEvent);
-            if (
-              event.payload.type === 'session.idle' &&
-              matchesOpenCodeSession(event, directory, ocSessionId)
-            )
-              queue.end();
-          }
+          if (!admit || pluginTurn.atEvent(directory)) return;
+          queue.push(event.payload as OpenCodeWireEvent);
+          if (
+            event.payload.type === 'session.idle' &&
+            matchesOpenCodeSession(event, directory, ocSessionId)
+          )
+            queue.end();
         },
         onStreamDrop: (error) => queue.fail(error),
       });
@@ -764,12 +757,15 @@ export class OpenCodeRuntime implements AgentRuntime {
       // Trigger only once the stream is observably live (or the bounded wait
       // elapses) — a fast turn must not complete before we can see its idle.
       await Promise.race([subscription.live, delay(STREAM_LIVE_TIMEOUT_MS)]);
-      // Nothing is sent on a sidecar a plugin restart has begun to stop.
-      pluginTurn.assertCurrent();
-      await trigger(client, ocSessionId, mcpResult, plan, () => {
-        if (mcpResult.connectorApplied && turn.connectorBinding)
-          toolTurn.attach((event) => queue.push(event));
-      });
+      // Never sent on a sidecar a restart is stopping; the send arms the first-event check.
+      const onSend = pluginTurn.beforeSend(
+        (err) => queue.fail(err),
+        () => {
+          if (mcpResult.connectorApplied && turn.connectorBinding)
+            toolTurn.attach((event) => queue.push(event));
+        }
+      );
+      await pluginTurn.sent(trigger(client, ocSessionId, mcpResult, plan, onSend));
 
       const routing: ApprovalRouting = {
         ...opts,
@@ -806,10 +802,9 @@ export class OpenCodeRuntime implements AgentRuntime {
       }
       connectorRevokeReason = sawRuntimeError ? 'runtime_failed' : 'turn_terminal';
     } finally {
-      // First, before anything here waits: a folder this turn used may have
-      // gained plugins while it ran, and the restart must begin before any
-      // other turn can be sent (DOR-4412).
-      this.pluginRecheck.afterTurn(cwd, directory);
+      // First, before anything waits: a folder may have gained plugins as the
+      // turn ran; restart before any other turn is sent (DOR-4412).
+      pluginTurn.afterTurn(directory);
       toolTurn.close();
       if (controller.signal.aborted) connectorRevokeReason = 'turn_cancelled';
       turn.connectorSupervisor?.stop();

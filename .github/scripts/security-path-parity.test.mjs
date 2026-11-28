@@ -309,6 +309,32 @@ for (const [match, miss] of [
     'apps/server/src/services/core/approvals/computer-asks/consent-config.ts',
     'apps/server/src/services/core/approvalsx/computer-asks/consent-config.ts',
   ],
+  // DOR-5258 (Security t1j): the OpenCode project-plugin guard and re-check, the asks check
+  // and prompt that arm it, and the sidecar's manager and custody that a restart kills.
+  [
+    'apps/server/src/services/runtimes/opencode/messaging/project-plugin-guard.ts',
+    'apps/server/src/services/runtimes/opencode/messaging/project-plugin-guards.ts',
+  ],
+  [
+    'apps/server/src/services/runtimes/opencode/messaging/project-plugin-recheck.ts',
+    'apps/server/src/services/runtimes/opencode/messaging/project-plugin-recheck.test.ts',
+  ],
+  [
+    'apps/server/src/services/runtimes/opencode/messaging/keep-asks.ts',
+    'apps/server/src/services/runtimes/opencode/keep-asks.ts',
+  ],
+  [
+    'apps/server/src/services/runtimes/opencode/server-manager.ts',
+    'apps/server/src/services/runtimes/opencode/sessions/server-manager.ts',
+  ],
+  [
+    'apps/server/src/services/runtimes/opencode/sidecar-custody.ts',
+    'apps/server/src/services/runtimes/opencode/sidecar-custody-old.ts',
+  ],
+  [
+    'apps/server/src/services/runtimes/opencode/tool-turn/prompt.ts',
+    'apps/server/src/services/runtimes/opencode/tool-turn/prompts.ts',
+  ],
   // C14 (DOR-5459): the CLI verbs that write or show consent, and the store they write through.
   ['packages/cli/src/consent-config-store.ts', 'packages/cli/src/consent-config-stores.ts'],
   ['packages/cli/src/harness-consent.ts', 'packages/cli/src/harness-consent.test.ts'],

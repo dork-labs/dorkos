@@ -1,16 +1,19 @@
 /**
- * After every OpenCode turn, DorkOS looks again for a project's own plugins in
- * the folders the turn used, and restarts the shared sidecar when one has
- * appeared, before any other turn is sent (DOR-4412). Real folders, the real
- * runtime, a scripted sidecar client; only the provider's restart is a stub.
+ * When an OpenCode turn's first event arrives, and again after the turn,
+ * DorkOS looks again for a project's own plugins in the folders the turn used,
+ * and restarts the shared sidecar when one has appeared, before any other turn
+ * is sent (DOR-4412, DOR-5258). Real folders, the real runtime, a scripted
+ * sidecar client; only the provider's restart is a stub.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { OpencodeClient } from '@opencode-ai/sdk';
+import type { GlobalEvent, OpencodeClient } from '@opencode-ai/sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { OpenCodeRuntime } from '../opencode-runtime.js';
+import { TurnEventQueue } from '../events/global-event-hub.js';
+import type { OpenCodeWireEvent } from '../events/event-mapper.js';
 import type { OpenCodeClientProvider } from '../sessions/session-mapper.js';
 import {
   PLUGIN_RESTART_FAILED_MESSAGE,
@@ -22,7 +25,9 @@ import { makeConformanceClient } from './conformance-client.js';
 import {
   OC_SESSION_A,
   OC_SESSION_B,
+  globalEvent,
   opencodeSimpleTurn,
+  serverConnected,
   sessionInfo,
 } from './opencode-sse-fixtures.js';
 
@@ -271,5 +276,165 @@ describe('after an OpenCode turn, a folder that gained its own plugins', () => {
     restart.next.resolve();
     expect(await drain(runtime.sendMessage('b', 'hello', { cwd: other }))).toBe(STOP);
     expect(recycle).toHaveBeenCalledTimes(3);
+  });
+});
+
+/**
+ * A sidecar client whose turn events arrive only once the prompt is sent, as
+ * a real sidecar's do. `onEvent` runs before each event goes out.
+ */
+function sendingClient(
+  dir: string,
+  onEvent: (index: number) => void = () => {},
+  setupEvent?: OpenCodeWireEvent
+) {
+  const client = makeConformanceClient([], dir);
+  let stream = new TurnEventQueue<GlobalEvent>();
+  client.global.event.mockImplementation(async (options?: { signal?: AbortSignal }) => {
+    stream = new TurnEventQueue<GlobalEvent>();
+    options?.signal?.addEventListener('abort', () => stream.end(), { once: true });
+    stream.push(globalEvent(dir, serverConnected()));
+    return { stream };
+  });
+  // A setup call before the prompt (the asks check) that the sidecar answers
+  // with an event of the turn's own session.
+  const agents = client.app.agents.getMockImplementation();
+  if (setupEvent)
+    client.app.agents.mockImplementation(async () => {
+      stream.push(globalEvent(dir, setupEvent));
+      await settle();
+      return agents ? agents() : { data: [] };
+    });
+  client.session.promptAsync.mockImplementation(async () => {
+    const turn: OpenCodeWireEvent[] = opencodeSimpleTurn(OC_SESSION_A, 'pong');
+    // One at a time, each delivered before the next is made.
+    void (async () => {
+      for (const [index, event] of turn.entries()) {
+        onEvent(index);
+        stream.push(globalEvent(dir, event));
+        await settle();
+      }
+    })();
+    return {};
+  });
+  return client;
+}
+
+/** What the person saw: the reply's text and any error's message. */
+function seen(events: StreamEvent[] | string) {
+  if (typeof events === 'string') return { thrown: events };
+  return {
+    text: events
+      .filter((event) => event.type === 'text_delta')
+      .map((event) => (event.data as { text: string }).text)
+      .join(''),
+    errors: events
+      .filter((event) => event.type === 'error')
+      .map((event) => (event.data as { message: string }).message),
+    done: events.at(-1)?.type === 'done',
+  };
+}
+
+describe("when an OpenCode turn's first event arrives", () => {
+  it('restarts at once for a folder that has plugins by then, and ends the turn', async () => {
+    const dir = repo('northwind-widgets');
+    const other = repo('clean-elsewhere');
+    // The plugin is in place before the sidecar's first event for the turn.
+    const client = sendingClient(dir, (index) => {
+      if (index === 0) dropPlugin(dir);
+    });
+    const { provider, recycle, prepareTurn, restart } = harness({ [dir]: client });
+    const runtime = new OpenCodeRuntime({ provider });
+    runtime.ensureSession('a', { permissionMode: 'default', cwd: dir });
+
+    const first = await drain(runtime.sendMessage('a', 'clone it', { cwd: dir }));
+    expect(seen(first)).toEqual({ text: '', errors: [PLUGIN_RESTART_MESSAGE], done: true });
+    expect(recycle).toHaveBeenCalledTimes(1);
+    expect(lines).toEqual([
+      {
+        folder: dir,
+        folders: [dir],
+        summary: 'OpenCode restarted because northwind-widgets gained its own plugins.',
+      },
+    ]);
+
+    // Another chat waits for the restart.
+    const prepared = prepareTurn.mock.calls.length;
+    runtime.ensureSession('b', { permissionMode: 'default', cwd: other });
+    const second = drain(runtime.sendMessage('b', 'hello', { cwd: other }));
+    await settle();
+    expect(prepareTurn.mock.calls.length).toBe(prepared);
+    restart.next.resolve();
+    expect(await second).toBe(STOP);
+    expect(recycle).toHaveBeenCalledTimes(1);
+  });
+
+  it('does nothing when no folder has plugins', async () => {
+    const dir = repo('plain-repo');
+    const { provider, recycle } = harness({ [dir]: sendingClient(dir) });
+    const runtime = new OpenCodeRuntime({ provider });
+    runtime.ensureSession('a', { permissionMode: 'default', cwd: dir });
+
+    const events = await drain(runtime.sendMessage('a', 'hello', { cwd: dir }));
+    expect(seen(events)).toEqual({ text: 'pong', errors: [], done: true });
+    expect(recycle).not.toHaveBeenCalled();
+    expect(lines).toEqual([]);
+  });
+
+  it('fails closed on a plugin folder it cannot read', async () => {
+    const dir = repo('locked-repo');
+    const client = sendingClient(dir, (index) => {
+      if (index > 0) return;
+      mkdirSync(join(dir, '.opencode', 'plugin'), { recursive: true });
+      chmodSync(join(dir, '.opencode', 'plugin'), 0o000);
+    });
+    const { provider, recycle, restart } = harness({ [dir]: client });
+    // Done before the turn ends, so the post-turn check could start another.
+    restart.next.resolve();
+    const runtime = new OpenCodeRuntime({ provider });
+    runtime.ensureSession('a', { permissionMode: 'default', cwd: dir });
+
+    const events = await drain(runtime.sendMessage('a', 'hello', { cwd: dir }));
+    chmodSync(join(dir, '.opencode', 'plugin'), 0o700);
+    expect(seen(events)).toEqual({ text: '', errors: [PLUGIN_RESTART_MESSAGE], done: true });
+    expect(recycle).toHaveBeenCalledTimes(1);
+    expect(lines.map((line) => line.folder)).toEqual([dir]);
+  });
+
+  it('an event during setup does not use up the check; the first one after the send makes it', async () => {
+    const dir = repo('northwind-widgets');
+    const turn = opencodeSimpleTurn(OC_SESSION_A, 'pong');
+    // The plugin lands as the prompt goes out, after a setup call's event.
+    const client = sendingClient(
+      dir,
+      (index) => {
+        if (index === 0) dropPlugin(dir);
+      },
+      turn[0]
+    );
+    const { provider, recycle } = harness({ [dir]: client });
+    const runtime = new OpenCodeRuntime({ provider });
+    runtime.ensureSession('a', { permissionMode: 'default', cwd: dir });
+
+    const events = await drain(runtime.sendMessage('a', 'clone it', { cwd: dir }));
+    expect(client.app.agents).toHaveBeenCalled();
+    expect(seen(events)).toEqual({ text: '', errors: [PLUGIN_RESTART_MESSAGE], done: true });
+    expect(recycle).toHaveBeenCalledTimes(1);
+  });
+
+  it('checks only the first event; plugins that land later wait for the turn to end', async () => {
+    const dir = repo('northwind-widgets');
+    const client = sendingClient(dir, (index) => {
+      if (index === 1) dropPlugin(dir);
+    });
+    const { provider, recycle, restart } = harness({ [dir]: client });
+    restart.next.resolve();
+    const runtime = new OpenCodeRuntime({ provider });
+    runtime.ensureSession('a', { permissionMode: 'default', cwd: dir });
+
+    const events = await drain(runtime.sendMessage('a', 'clone it', { cwd: dir }));
+    expect(seen(events)).toEqual({ text: 'pong', errors: [], done: true });
+    expect(recycle).toHaveBeenCalledTimes(1);
+    expect(lines.map((line) => line.folder)).toEqual([dir]);
   });
 });

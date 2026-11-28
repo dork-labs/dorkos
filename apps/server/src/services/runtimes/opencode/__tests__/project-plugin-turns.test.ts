@@ -4,7 +4,15 @@
  * every path that can start one.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -151,7 +159,7 @@ describe('census: every turn start passes the plugin gate', () => {
     const start = source.indexOf('private async *runOpenCodeTurn(');
     const resolved = source.indexOf('directory = await sessionDirectoryOf(', start);
     const second = source.indexOf('pluginTurn.assertNoPlugins(directory);', start);
-    const sent = source.indexOf('await trigger(', start);
+    const sent = source.indexOf('await pluginTurn.sent(trigger(', start);
     expect(resolved).toBeGreaterThan(start);
     expect(second).toBeGreaterThan(resolved);
     expect(sent).toBeGreaterThan(second);
@@ -159,8 +167,8 @@ describe('census: every turn start passes the plugin gate', () => {
 
   it('sends nothing on a sidecar a plugin restart began to stop (DOR-4412)', () => {
     const start = source.indexOf('private async *runOpenCodeTurn(');
-    const sent = source.indexOf('await trigger(', start);
-    const current = source.lastIndexOf('pluginTurn.assertCurrent();', sent);
+    const sent = source.indexOf('await pluginTurn.sent(trigger(', start);
+    const current = source.lastIndexOf('pluginTurn.beforeSend(', sent);
     expect(current).toBeGreaterThan(start);
     // Nothing that waits sits between the check and the send.
     expect(source.slice(current, sent)).not.toContain('await ');
@@ -168,18 +176,20 @@ describe('census: every turn start passes the plugin gate', () => {
 
   it("looks again first thing in the turn's teardown, before it waits on anything (DOR-4412)", () => {
     const start = source.indexOf('private async *runOpenCodeTurn(');
-    const sent = source.indexOf('await trigger(', start);
+    const sent = source.indexOf('await pluginTurn.sent(trigger(', start);
     const teardown = source.indexOf('} finally {', sent);
     const body = source.slice(teardown + '} finally {'.length).replace(/^\s*(\/\/.*\n\s*)*/, '');
-    expect(body.startsWith('this.pluginRecheck.afterTurn(cwd, directory);')).toBe(true);
+    expect(body.startsWith('pluginTurn.afterTurn(directory);')).toBe(true);
   });
 
   it('sends a prompt or a summary only from inside a turn the gate checked', () => {
     const turnCalls = [...source.matchAll(/yield\* this\.runOpenCodeTurn\(/g)].map((m) => m.index!);
-    const sends = [
-      ...source.matchAll(/client\.session\.(promptAsync|summarize|command|prompt|shell)\(/g),
-    ];
-    expect(sends.length).toBeGreaterThan(0);
+    // The runtime sends through two helpers: the prompt and the summary.
+    const sends = [...source.matchAll(/\b(dispatchOpenCodePrompt|summarizeOpenCodeSession)\(/g)];
+    expect(sends.map((send) => send[1]).sort()).toEqual([
+      'dispatchOpenCodePrompt',
+      'summarizeOpenCodeSession',
+    ]);
     for (const send of sends) {
       // Each send sits in the callback of the nearest runOpenCodeTurn call above it.
       const opener = turnCalls.filter((at) => at < send.index!).at(-1);
@@ -187,6 +197,21 @@ describe('census: every turn start passes the plugin gate', () => {
       const between = source.slice(opener!, send.index!);
       expect(between, send[0]).not.toMatch(/\n {2}(async \*|private |public |get )\w/);
     }
+  });
+
+  it('sends from the two helpers the runtime calls inside a turn, and nowhere else', () => {
+    const root = join(here, '..');
+    const senders = readdirSync(root, { recursive: true, encoding: 'utf8' })
+      .filter((file) => file.endsWith('.ts') && !file.includes('__tests__'))
+      .filter((file) =>
+        /client\.session\.(promptAsync|summarize|command|prompt|shell)\(/.test(
+          readFileSync(join(root, file), 'utf8')
+        )
+      );
+    expect(senders.sort()).toEqual([
+      join('messaging', 'compaction-model.ts'),
+      join('tool-turn', 'prompt.ts'),
+    ]);
   });
 
   it('starts every public turn through the shared turn function', () => {
