@@ -400,4 +400,25 @@ describe('K14, the age bound (§7.3): a last sign of life two days old', () => {
     expect(getMessageQueueStore()!.get(started.queueMessageId!)?.restored).toBe(true);
     expect(h.answered).toEqual([]);
   });
+
+  it('still tells a mini app’s owner once that its old start did not run', async () => {
+    const dying = deadBoot();
+    const run = startedRun(dying.store, {
+      origin: { kind: 'extension-start' },
+      sourceRef: 'demo-start:old',
+    });
+    kill();
+    h.now += 2 * RUNS.RESTART_AGE_BOUND_MS;
+    boot();
+    await pass();
+    boot();
+    await pass();
+    // The one exception to the bound's silence: nothing starts, but the start
+    // an app made is never dropped without a word (§7.3, "The age bound").
+    expect(rows('extension.work_not_started')).toEqual([
+      expect.objectContaining({ dedupeKey: `notify:${run.id}:not_started` }),
+    ]);
+    expect(rows('turn.restarted')).toEqual([]);
+    expect(continuationsOf(run.id)).toEqual([]);
+  });
 });
