@@ -303,7 +303,7 @@ Whole-object writes per section (the `deepMerge`-replaces-arrays rule from ADR 2
 
 ### 5. Apply-shape flow (server) — `services/shapes/apply-shape.ts`
 
-`applyShape(name, opts)` is **idempotent** and returns `{ ok, applied, warnings[], offeredAgents[] }`, where **`applied` carries the resolved outcome the client needs to act without a second fetch**: `{ layout: ShapeLayout, activatedExtensions: string[], schedulesCreated: string[] }` — the manifest's chrome after resolution, the extension ids actually enabled (post-degradation), and the schedules created this apply. This same object is the `POST /api/shapes/:name/apply` response body (§9); the client (task 3.1) applies `applied.layout` through the dispatcher. Steps, each independently degradable:
+`applyShape(name, opts)` is **idempotent** and returns `{ ok, applied, warnings[], offeredAgents[] }`, where **`applied` carries the resolved outcome the client needs to act without a second fetch**: `{ layout: ShapeLayout, activatedExtensions: string[], schedulesCreated: string[] }` — the manifest's chrome after resolution, the extension ids actually enabled (post-degradation), and the schedules created this apply. This same object is the `POST /api/shapes/:name/applications` response body (§9); the client (task 3.1) applies `applied.layout` through the dispatcher. Steps, each independently degradable:
 
 1. **Resolve** the installed Shape manifest from `{dorkHome}/shapes/<name>/.dork/manifest.json`. Missing → hard error (can't apply what isn't installed).
 2. **Activate extensions:** for each id in `activates`, add to `UserConfigSchema.extensions.enabled` (the "turned ON that defaults OFF" list, `config-schema.ts:238`). If an id isn't discoverable (not core, not installed, not inline) → **skip + warn** (`extension '<id>' not found; install it to complete this Shape`).
@@ -365,7 +365,7 @@ apps/server/src/
     marketplace-installer.ts# + 'shape' dispatch case
     conflict-detector.ts    # + shape-aware checks
     fixtures/valid-shape/    # Linear Ops fixture (worked example)
-  routes/shapes.ts          # GET /api/shapes, POST /api/shapes/:name/apply, /fork
+  routes/shapes.ts          # GET /api/shapes, POST /api/shapes/:name/applications, /fork
   index.ts                  # construct ShapeInstallFlow + apply/fork services in the marketplace block
 apps/client/src/layers/
   shared/lib/ui-action-dispatcher.ts   # + apply_layout case → ctx.applyShape
@@ -376,7 +376,7 @@ packages/marketplace/       # validator + scaffolder: `dorkos package scaffold s
 ### 9. API changes
 
 - `GET /api/shapes` — installed Shapes (name, displayName, active flag, lineage).
-- `POST /api/shapes/:name/apply` → `{ ok, applied, warnings[], offeredAgents[] }` — the exact §5 return value, `applied` included, so the client applies `applied.layout` from the response without a second fetch (one contract across §5, this route, and task 3.1).
+- `POST /api/shapes/:name/applications` → `{ ok, applied, warnings[], offeredAgents[] }` — the exact §5 return value, `applied` included, so the client applies `applied.layout` from the response without a second fetch (one contract across §5, this route, and task 3.1).
 - `POST /api/shapes/:name/fork` (body `{ as?, captureCurrent? }`) → new Shape descriptor.
 - `PATCH /api/config` — already exists; `ui.shapes` rides it.
 - Marketplace install/uninstall routes are generic (`installer.install(req)`) — no route changes beyond the dispatch case.

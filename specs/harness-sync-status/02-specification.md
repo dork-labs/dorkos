@@ -28,7 +28,7 @@ This adds the missing three things:
 2. **A real Skills page** on the agent profile — every skill, its source, and a chip per enabled harness —
    replacing a list that reads marketplace `skill-pack` packages only and tells a person with 31 skills
    "No skills installed".
-3. **A drift banner** with one action (`POST /api/harness/sync`) that names what the click will delete before
+3. **A drift banner** with one action (`POST /api/harness/syncs`) that names what the click will delete before
    it deletes it, and clears when the tree is clean — plus the drop list as a
    **"Not shared with `<harness>`"** panel with every reason spelled out.
 
@@ -530,7 +530,7 @@ on POSIX). A relative path would otherwise resolve against the server's own `pro
 boundary-checked, so nothing escapes, but the answer describes a directory the caller never named, chosen by
 wherever the operator started the process.
 
-#### 2.2 `POST /api/harness/sync`
+#### 2.2 `POST /api/harness/syncs`
 
 Body `{ projectPath: string }`. Answers `200 HarnessSyncResponse`:
 
@@ -705,7 +705,7 @@ on its own when the person answers; §2.2.6 says how the page finds out.
 
 ##### 2.2.3 The capability tier
 
-**Decision: `POST /api/harness/sync` is not registered as a capability in v1**, and if it is ever surfaced to
+**Decision: `POST /api/harness/syncs` is not registered as a capability in v1**, and if it is ever surfaced to
 agents it is **`act`**, never `destructive`.
 
 - _Not registered_ because it has no agent-facing surface: an agent that installs a package already gets
@@ -1344,7 +1344,7 @@ construction:
   leaked in;
 - the narrowing still excludes every dork-home sibling of `agents/`, `extension-secrets/` included.
 
-**The write is the person's.** `POST /api/harness/sync` refuses any caller presenting an agent identity or an
+**The write is the person's.** `POST /api/harness/syncs` refuses any caller presenting an agent identity or an
 approval token (§2.2.4). The read is not gated, deliberately: it is the same information `dorkos harness sync
 --check` prints to anyone with a shell.
 
@@ -1459,7 +1459,7 @@ narrowest width is in the PR.
 
 ### Slice 7 — the sync: route, banner, and everything that tells the person (~800 lines)
 
-**Gated on Slices 2 and 2b.** `POST /api/harness/sync` with its person-only bar, its `409`, and
+**Gated on Slices 2 and 2b.** `POST /api/harness/syncs` with its person-only bar, its `409`, and
 `sweepOrphans: true`; `ask-withheld-hooks.ts` extracted from `auto-project.ts` with the `reproject` callback;
 `HarnessDriftBanner` with its four branches and its removal disclosure; `HarnessSyncSummary`;
 `use-harness-sync` with `setQueryData` and the `approval_resolved` subscription; the route tests and the

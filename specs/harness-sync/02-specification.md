@@ -258,7 +258,7 @@ re-vendor checklist (bump SHA, diff the 4 target tables, re-run `--check`).
 
 - `GET /api/harness/status` → `{ plan: ProjectionPlan, drift: ProjectionAction[] }` (the `--check`
   result, for the UI).
-- `POST /api/harness/sync` → applies the plan; returns the applied actions + drop list.
+- `POST /api/harness/syncs` → applies the plan; returns the applied actions + drop list.
 - CLI: `dorkos harness sync [--check] [--fix] [--harness <id>...]` (default = apply all enabled);
   `dorkos harness adopt [--from <harness>] [<asset>]` (Q2, phase 3 — explicit, reviewable).
 
@@ -281,7 +281,7 @@ A **Harnesses** page (route `/harnesses`), Calm Tech / status-first (`designing-
    columns = enabled harnesses. Each cell: a quiet status chip — `native` · `projected` ·
    `drift` · `dropped` — with the reason in a tooltip. The drop reasons are inline, never hidden.
 3. **Drift banner + re-sync** — when `status.drift` is non-empty, a top banner "N artifacts
-   drifted" with a **Re-sync** action → `POST /api/harness/sync`; on success the banner clears.
+   drifted" with a **Re-sync** action → `POST /api/harness/syncs`; on success the banner clears.
 4. **Drop list panel** — an explicit "Not projected" section per harness with each artifact +
    reason (Priya's honesty gate).
 5. **States** — empty (no harness enabled → onboarding nudge), loading (skeleton table), error

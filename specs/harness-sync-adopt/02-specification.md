@@ -480,7 +480,7 @@ that is not there yet.
 canonical root, which five of the six agent tools read natively. What is missing is Claude Code's
 symlink, and that is precisely the `symlink` action `planSkill` plans for that skill on every
 subsequent run. So the next `dorkos harness sync --fix`, the next `.agents/skills` watcher event
-(the move itself fires one), the next boot pass, or the next `POST /api/harness/sync` creates it.
+(the move itself fires one), the next boot pass, or the next `POST /api/harness/syncs` creates it.
 **The crash state is drift, which this engine already names and fixes, not damage.**
 
 > **Decision: `applyAdopt` has no staging directory and no backup, unlike the marketplace
@@ -494,7 +494,7 @@ subsequent run. So the next `dorkos harness sync --fix`, the next `.agents/skill
 > failure, and a lock held around the whole operation at the surface that has one.
 
 > **Decision: the CLI takes no lock; the route holds `withProjectLock`. Why:** this is the same split
-> `dorkos harness sync --fix` and `POST /api/harness/sync` already make, and the residual is the one
+> `dorkos harness sync --fix` and `POST /api/harness/syncs` already make, and the residual is the one
 > `project-with-consent.ts` already writes down — two processes on one repository are not serialised
 > and the engine has deliberately not taken a lock file. Adopt narrows that residual rather than
 > widening it: the whole operation is one `rename`, so a concurrent writer either sees the old
@@ -987,7 +987,7 @@ its command is _printed by the server_ for somebody who may be anywhere.
 > are one slice so that neither can land alone, and so that cutting the page (§7) cuts the route with
 > it and leaves the CLI shipping on its own — which is a coherent product, not a half-built one.
 
-It mirrors `POST /api/harness/sync` clause for clause:
+It mirrors `POST /api/harness/syncs` clause for clause:
 
 - **Person, not agent.** `resolveDecisionAuthority(readCallerAuthority(req, res))` **before** body
   validation, the order `POST /api/marketplace/sources` uses, so a caller who may not do this at all
@@ -1376,7 +1376,7 @@ the inventory it rides on.
 argument for the design as much as the correctness one: a staged copy would be O(bytes) and would
 scale with a skill's bundled files.
 
-**The route** does what `POST /api/harness/sync` does, minus the sweeps and minus the approval wait:
+**The route** does what `POST /api/harness/syncs` does, minus the sweeps and minus the approval wait:
 plan, one rename, one symlink, one status recompute, inside one lock turn.
 
 ## Security Considerations

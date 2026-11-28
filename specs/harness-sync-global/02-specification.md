@@ -1748,7 +1748,7 @@ pass would be borrowing a security narrowing for a feature.
 
 **What this work does not make reachable over HTTP.** The global pass is a CLI and boot capability.
 `GET /api/harness/status` gains global **rows** and no ability to write them; there is no
-`POST /api/harness/sync?scope=global` in this spec, and adding one is a separate decision with its own
+`POST /api/harness/syncs?scope=global` in this spec, and adding one is a separate decision with its own
 person-only bar.
 
 **Two things a person's home directory holds that this must never touch.** Codex's `$skill-installer`
@@ -1966,7 +1966,7 @@ Six, none owned here.
    `harnessCoverage()` walk it, which would let the coverage oracle answer at user scope too.
 5. **Cursor's `~/.claude/skills` compatibility path** means a Claude Code link is reachable twice for Cursor
    and OpenCode, the user-level twin of SK-09/SK-12. Worth a re-read on the next vendor-facts refresh.
-6. **A global `POST /api/harness/sync`.** Deliberately not in this spec (§Security). If the app ever needs
+6. **A global `POST /api/harness/syncs`.** Deliberately not in this spec (§Security). If the app ever needs
    to run a global sync, it needs its own person-only bar and its own removal disclosure.
 
 ## Related ADRs
