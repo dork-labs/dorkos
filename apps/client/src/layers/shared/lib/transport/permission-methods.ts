@@ -3,8 +3,8 @@
  *
  * The app's side of the permission routes: read the default layer, one agent,
  * and the history, and write the preset, the defaults and one agent. Every write
- * is refused by the server for anything that is not a person. The calls with a
- * documented operation go through the generated API client (DOR-5473).
+ * is refused by the server for anything that is not a person. Every call goes
+ * through the generated API client (DOR-5473).
  *
  * @module shared/lib/transport/permission-methods
  */
@@ -21,7 +21,6 @@ import type {
 } from '@dorkos/shared/permissions';
 import type { PermissionWriteResult } from '@dorkos/shared/transport';
 import { createTransportApiClient } from './api-client';
-import { fetchJSON } from './http-client';
 
 /**
  * Create the permission methods bound to a base URL.
@@ -31,9 +30,8 @@ import { fetchJSON } from './http-client';
 export function createPermissionMethods(baseUrl: string) {
   const api = createTransportApiClient(baseUrl);
   return {
-    // Stays hand-written: `GET /api/permissions` has no operationId (DOR-5473).
-    getPermissions(): Promise<PermissionsResponse> {
-      return fetchJSON(baseUrl, '/permissions');
+    async getPermissions(): Promise<PermissionsResponse> {
+      return (await api.call('permissions.get', {})) as PermissionsResponse;
     },
 
     // The document also lists each read capability's 202 approval answer, which
@@ -50,24 +48,20 @@ export function createPermissionMethods(baseUrl: string) {
       })) as AgentLevelResponse;
     },
 
-    // Stays hand-written: `PUT /api/permissions/preset` has no operationId (DOR-5473).
-    setPermissionPreset(
+    async setPermissionPreset(
       body: SetPermissionPresetBody
     ): Promise<PermissionWriteResult<PermissionsResponse>> {
-      return fetchJSON(baseUrl, '/permissions/preset', {
-        method: 'PUT',
-        body: JSON.stringify(body),
-      });
+      return (await api.call('permissions.updatePreset', {
+        body,
+      })) as PermissionWriteResult<PermissionsResponse>;
     },
 
-    // Stays hand-written: `PATCH /api/permissions/defaults` has no operationId (DOR-5473).
-    patchPermissionDefaults(
+    async patchPermissionDefaults(
       body: PatchPermissionDefaultsBody
     ): Promise<PermissionWriteResult<PermissionsResponse>> {
-      return fetchJSON(baseUrl, '/permissions/defaults', {
-        method: 'PATCH',
-        body: JSON.stringify(body),
-      });
+      return (await api.call('permissions.updateDefaults', {
+        body,
+      })) as PermissionWriteResult<PermissionsResponse>;
     },
 
     async patchAgentPermissions(
@@ -82,28 +76,27 @@ export function createPermissionMethods(baseUrl: string) {
       })) as PermissionWriteResult<AgentPermissionsResponse>;
     },
 
-    // Stays hand-written: `GET /api/permissions/history` has no operationId (DOR-5473).
-    getPermissionHistory(
+    // An empty agent, cursor or limit sends nothing, as the hand-written call did.
+    async getPermissionHistory(
       query: { agentId?: string; cursor?: string; limit?: number } = {}
     ): Promise<PermissionHistoryResponse> {
-      const params = new URLSearchParams();
-      if (query.agentId) params.set('agentId', query.agentId);
-      if (query.cursor) params.set('cursor', query.cursor);
-      if (query.limit) params.set('limit', String(query.limit));
-      const search = params.toString();
-      return fetchJSON(baseUrl, `/permissions/history${search ? `?${search}` : ''}`);
+      return (await api.call('permissions.view_history', {
+        query: {
+          agentId: query.agentId || undefined,
+          cursor: query.cursor || undefined,
+          limit: query.limit || undefined,
+        },
+      })) as PermissionHistoryResponse;
     },
 
-    // Stays hand-written: `POST /api/permissions/history/{eventId}/undo` has no
-    // operationId (DOR-5473).
-    undoPermissionChange(
+    async undoPermissionChange(
       eventId: string,
       body: UndoPermissionChangeBody = {}
     ): Promise<UndoPermissionChangeResponse> {
-      return fetchJSON(baseUrl, `/permissions/history/${encodeURIComponent(eventId)}/undo`, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
+      return (await api.call('permissions.undoHistory', {
+        path: { eventId },
+        body,
+      })) as UndoPermissionChangeResponse;
     },
   };
 }

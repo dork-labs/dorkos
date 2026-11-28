@@ -12,7 +12,6 @@ import type {
   WorkQueue,
 } from '@dorkos/shared/work-queue-schemas';
 import { createTransportApiClient } from './api-client';
-import { fetchJSON } from './http-client';
 
 /**
  * Create the work queue methods bound to a base URL.
@@ -56,13 +55,10 @@ export function createWorkQueueMethods(baseUrl: string) {
       await api.call('work-queue.remove_item', { path: { agentId, itemId } });
     },
 
-    // Stays hand-written: sends no body; waits for batch 3's no-body client (DOR-5473).
-    requeueWorkItem(agentId: string, itemId: string): Promise<WorkItem> {
-      return fetchJSON(
-        baseUrl,
-        `/agents/${encodeURIComponent(agentId)}/work-queue/items/${encodeURIComponent(itemId)}/requeue`,
-        { method: 'POST' }
-      );
+    async requeueWorkItem(agentId: string, itemId: string): Promise<WorkItem> {
+      return (await api.call('work-queue.requeue_item', {
+        path: { agentId, itemId },
+      })) as WorkItem;
     },
   };
 }

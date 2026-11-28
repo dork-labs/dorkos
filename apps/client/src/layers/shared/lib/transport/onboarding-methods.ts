@@ -11,7 +11,6 @@ import type {
   OnboardingWelcomeResult,
 } from '@dorkos/shared/onboarding-schemas';
 import { createTransportApiClient } from './api-client';
-import { fetchJSON } from './http-client';
 
 /** Create the first-run methods bound to a base URL. */
 export function createOnboardingMethods(baseUrl: string) {
@@ -21,11 +20,8 @@ export function createOnboardingMethods(baseUrl: string) {
       return api.call('onboarding.createFirstRun', { body: request });
     },
 
-    // Stays hand-written: sends no body; waits for batch 3's no-body client (DOR-5473).
-    postOnboardingWelcome(): Promise<OnboardingWelcomeResult> {
-      return fetchJSON<OnboardingWelcomeResult>(baseUrl, '/onboarding/welcome', {
-        method: 'POST',
-      });
+    async postOnboardingWelcome(): Promise<OnboardingWelcomeResult> {
+      return (await api.call('onboarding.createWelcome', {})) as OnboardingWelcomeResult;
     },
   };
 }

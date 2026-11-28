@@ -5,7 +5,6 @@ import type {
   ClaudeSigninPolicyView,
 } from '@dorkos/shared/runtime-connect';
 import { createTransportApiClient } from './api-client';
-import { fetchJSON } from './http-client';
 
 /**
  * All identity decisions stay on the server, addressed by registry ID. The
@@ -13,21 +12,20 @@ import { fetchJSON } from './http-client';
  */
 export function createAccountSigninMethods(baseUrl: string) {
   const api = createTransportApiClient(baseUrl);
-  const base = '/runtimes/claude-code/signins';
   return {
-    // Stays hand-written: sends no body when nothing is pinned; waits for batch 3's
-    // no-body client (DOR-5473).
-    delegateRuntimeLogin(
+    // Sends no body when nothing is pinned. The document names the two runtimes
+    // that sign in today; the cast keeps the caller's open `type`.
+    async delegateRuntimeLogin(
       type: string,
       options?: DelegateLoginOptions
     ): Promise<DelegatedLoginResult> {
-      const pin: Record<string, string> = {};
+      const pin: { sessionId?: string; accountId?: string } = {};
       if (options?.sessionId !== undefined) pin.sessionId = options.sessionId;
       if (options?.accountId !== undefined) pin.accountId = options.accountId;
-      return fetchJSON(baseUrl, `/runtimes/${encodeURIComponent(type)}/login`, {
-        method: 'POST',
-        ...(Object.keys(pin).length ? { body: JSON.stringify(pin) } : {}),
-      });
+      return (await api.call('runtimes.createLogin', {
+        path: { type: type as 'claude-code' | 'codex' },
+        ...(Object.keys(pin).length ? { body: pin } : {}),
+      })) as DelegatedLoginResult;
     },
     getClaudeSigninPolicy: (): Promise<ClaudeSigninPolicyView> =>
       api.call('runtimes.getClaudeCodeSignins', {}),
@@ -50,10 +48,9 @@ export function createAccountSigninMethods(baseUrl: string) {
             path: { id: input.accountId },
           });
         case 'accept':
-          // Stays hand-written: sends no body; waits for batch 3's no-body client (DOR-5473).
-          return fetchJSON(baseUrl, `${base}/${encodeURIComponent(input.accountId)}/accept`, {
-            method: 'POST',
-          });
+          return api.call('runtimes.acceptClaudeCodeSignins', {
+            path: { id: input.accountId },
+          }) as Promise<{ ok: boolean }>;
       }
     },
   };

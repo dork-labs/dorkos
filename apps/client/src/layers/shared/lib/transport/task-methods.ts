@@ -36,13 +36,9 @@ export function createTasksMethods(baseUrl: string) {
       });
     },
 
-    // Stays hand-written: the generated body drops the `null` that clears a
-    // schedule's effort (DOR-5473).
-    updateTask(id: string, opts: UpdateTaskRequest): Promise<Task> {
-      return fetchJSON<Task>(baseUrl, `/tasks/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(opts),
-      });
+    // `effort: null` clears a schedule's effort, so it reaches the wire as sent.
+    async updateTask(id: string, opts: UpdateTaskRequest): Promise<Task> {
+      return (await api.call('tasks.update', { path: { id }, body: opts })) as Task;
     },
 
     async deleteTask(id: string): Promise<{ success: boolean }> {

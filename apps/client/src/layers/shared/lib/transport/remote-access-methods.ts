@@ -26,11 +26,8 @@ export function createRemoteAccessMethods(baseUrl: string) {
       return fetchJSON<RemoteAccessReport>(baseUrl, '/remote-access/report');
     },
 
-    // Stays hand-written: a bodyless write, waits for batch 3's no-body client (DOR-5473).
-    startRemoteEnrolment(): Promise<RemoteAccessReport> {
-      return fetchJSON<RemoteAccessReport>(baseUrl, '/remote-access/enrolment', {
-        method: 'POST',
-      });
+    async startRemoteEnrolment(): Promise<RemoteAccessReport> {
+      return (await api.call('remoteAccess.createEnrolment', {})) as RemoteAccessReport;
     },
 
     async setRemoteAccessMode(mode: RemoteAccessMode): Promise<RemoteAccessReport> {

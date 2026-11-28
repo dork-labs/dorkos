@@ -41,6 +41,26 @@ describe('createApiClient', () => {
     expect(init?.body).toBeUndefined();
   });
 
+  it("passes a call's own headers through, and refuses one the request path owns", async () => {
+    const fetch = answering(200, {});
+    const api = createApiClient({ baseUrl: '/api', fetch });
+
+    await api.call('computers.deleteControl', {
+      body: { leaseId: 'l1' },
+      headers: { 'X-Client-Id': 'window-1' },
+    });
+
+    const headers = new Headers(fetch.mock.calls[0]![1]?.headers);
+    expect(headers.get('X-Client-Id')).toBe('window-1');
+    expect(headers.get('Content-Type')).toBe('application/json');
+    for (const name of ['content-type', 'Cookie', 'X-DorkOS-Community-Owner']) {
+      await expect(api.call('computers.get', { headers: { [name]: 'x' } })).rejects.toBeInstanceOf(
+        TypeError
+      );
+    }
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects a problem document as an ApiProblemError that carries the Problem', async () => {
     const problem = {
       type: 'urn:dorkos:problem:needs_approval',
