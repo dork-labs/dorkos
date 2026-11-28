@@ -21,13 +21,15 @@
  * `connected` exactly once — so fire-once is structural rather than defended.
  * It works with no browser open at all.
  *
- * ## What it deliberately does NOT do
+ * ## One resume per sign-in, and never a late one
  *
- * A locked session is skipped, quietly. A lock means a turn is already running,
- * which is usually the agent doing the very work the resume would ask for, and
- * the newly-connected server's tools are injected on its next turn regardless.
- * Queueing or retrying would buy a duplicate turn in the common case and a
- * retry storm in the bad one; one log line is the honest cost.
+ * The resume is a wake (spec `turns-survive-restarts` §6.3, T7), keyed by the
+ * flow's id and saved the moment the flow connects, so a restart before the
+ * turn starts loses nothing and a second report of one flow sends nothing
+ * more. It carries a short deadline (`WAKE_NOT_LATE_MS`) where it used to refuse
+ * a busy chat: it waits for a turn already running to end, and past the
+ * deadline it is dropped, since the newly-connected server's tools reach the
+ * agent on its next turn regardless.
  *
  * ## Where the working directory comes from (DOR-981)
  *
@@ -48,15 +50,10 @@
 import { formatUiActionMessage } from '@dorkos/shared/ui-widget';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 
-import { runtimeRegistry } from '../core/runtime-registry.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 import { logger } from '../../lib/logger.js';
-import {
-  dispatchMessage,
-  getOrCreateProjector,
-  peekProjector,
-  persistenceModeFor,
-} from '../session/index.js';
+import { peekProjector } from '../session/index.js';
+import { WAKE_NOT_LATE_MS, type WakeRequest } from '@dorkos/shared/turn-port';
 import { ceilingForContinuation } from '../core/turn-power/continuation-hold.js';
 
 /**
@@ -132,41 +129,29 @@ function settleCard(event: McpSigninConnectedEvent): void {
 }
 
 /**
- * Resume the agent in the session that asked for this sign-in.
+ * Resume the agent in the session that asked for this sign-in: settle its card
+ * and save the wake that starts the turn.
  *
- * Never throws and never rejects: it runs detached from an HTTP callback the
- * person's browser is waiting on, so a failure here must not turn their "you can
- * close this tab" page into an error. Every way it can decline is a log line.
+ * Never throws: it runs from an HTTP callback the person's browser is waiting
+ * on, so a failure here must not turn their "you can close this tab" page into
+ * an error. Every way it can decline is a log line.
  *
  * @param event - The connected sign-in, naming its session and server.
+ * @param wake - Saves the wake: the run record's `wakeChat`, handed in at startup.
+ * @param now - The clock, epoch ms; tests pin it.
  */
-export async function resumeAfterMcpSignin(event: McpSigninConnectedEvent): Promise<void> {
+export function resumeAfterMcpSignin(
+  event: McpSigninConnectedEvent,
+  wake: (request: WakeRequest) => boolean,
+  now = Date.now()
+): void {
   const { sessionId, serverName } = event;
   try {
     settleCard(event);
-
-    const runtime = await runtimeRegistry.resolveForSession(sessionId);
-    // WHERE the turn runs, resolved once and threaded through every hop that
-    // takes one — the storage probe, the projector, and the trigger — exactly as
-    // `session-ui-action-handler` threads its request `cwd`. The flow's own
-    // recorded directory wins: it survives the restart that empties the projector
-    // registry, which is the case that used to silently resume in the wrong place
-    // (DOR-981).
+    // WHERE the turn runs. The flow's own recorded directory wins: it survives
+    // the restart that empties the projector registry, which is the case that
+    // used to silently resume in the wrong place (DOR-981).
     const cwd = event.originCwd ?? peekProjector(sessionId)?.cwd ?? DEFAULT_CWD;
-    // The live session map empties on restart and on eviction, while a sign-in
-    // outlives both — a person can take minutes in a browser. A stored session
-    // cold-starts through the dispatcher; one that exists nowhere is gone for
-    // good and there is nothing to resume.
-    if (!runtime.hasSession(sessionId)) {
-      if (!(await runtime.getSession(cwd, sessionId))) {
-        logger.info('[mcp-signin-resume] session is gone — nothing to resume', {
-          sessionId,
-          serverName,
-        });
-        return;
-      }
-    }
-
     const content = formatUiActionMessage({
       actionId: RESUME_ACTION_ID,
       widgetTitle: `Sign-in: ${serverName}`,
@@ -176,54 +161,25 @@ export async function resumeAfterMcpSignin(event: McpSigninConnectedEvent): Prom
         instructions: RESUME_INSTRUCTIONS,
       },
     });
-
-    const projector = getOrCreateProjector(sessionId, cwd, {
-      persist: persistenceModeFor(runtime.getCapabilities()),
-    });
-    projector.cwd = cwd;
-
-    const result = await dispatchMessage({
-      turnStarter: 'agent',
-      // DorkOS carries the bound chat on: it adds no power to it.
-      origin: { kind: 'resume' },
-      sessionId,
-      clientId: `mcp-signin-${event.flowId}`,
-      content,
-      cwd,
-      projector,
-      runtime,
-      // Terminal rather than queued: this nudge is only worth sending while the
-      // agent is idle and waiting for it. On a busy session the server's tools
-      // reach the agent on its next turn anyway, so a queued copy would be a
-      // prompt nobody typed arriving after it stopped being useful.
-      //
-      // That promise is unchanged by DOR-1239, which lets a `'refuse'` caller
-      // through in the window where a finished turn is still closing its stream.
-      // The agent is idle there — the turn has ended, and every window says so —
-      // and no copy is queued: the nudge waits with no row and is dropped, never
-      // deferred, if the stream outlasts the wait bound. So it either lands while
-      // the agent is waiting for it, exactly as intended, or it does not land.
-      whenBusy: 'refuse',
-      // Held when the chat's latest turn was, as every turn nobody asked for is (DOR-3037).
-      ...ceilingForContinuation(sessionId),
-      onError: (err) => {
-        logger.warn('[mcp-signin-resume] detached turn error', {
-          sessionId,
-          serverName,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      },
-    });
-
-    if (!result.accepted) {
-      // The expected non-happy path, and deliberately terminal. A turn is already
-      // running — most often the agent already working — and the server's tools
-      // inject on its next turn either way.
-      logger.info('[mcp-signin-resume] session busy — the agent gets the server next turn', {
+    wake({
+      sourceKind: 'signin',
+      eventId: event.flowId,
+      start: {
         sessionId,
-        serverName,
-      });
-    }
+        cwd,
+        content,
+        // DorkOS carries the bound chat on: it adds no power to it.
+        origin: { kind: 'resume' },
+        tier: 'owner',
+        // Not late: worth sending only while the agent waits for it (see the module doc).
+        notAfter: now + WAKE_NOT_LATE_MS,
+        // Held when the chat's latest turn was, as every turn nobody asked for is (DOR-3037).
+        ...ceilingForContinuation(sessionId),
+      },
+      // A sign-in outlives a restart and an eviction; a chat stored nowhere is
+      // gone for good, and there is nothing to resume.
+      onlyIfChatExists: { cwd },
+    });
   } catch (err) {
     logger.warn('[mcp-signin-resume] could not resume', {
       sessionId,

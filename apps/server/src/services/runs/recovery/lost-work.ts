@@ -79,7 +79,11 @@ export function lostWorkWakeEffect(record: LostWorkRecord, now: number): NewEffe
 export interface LostWorkWakeDeps {
   runs: RunStore;
   /** Wake one chat: the computer face's seam (`wakeChatForLostWork`). */
-  wake: (chat: { sessionId: string; cwd: string; startKey: string }) => Promise<WakeOutcome>;
+  wakeLostWork: (chat: {
+    sessionId: string;
+    cwd: string;
+    startKey: string;
+  }) => Promise<WakeOutcome>;
   /** Let a record go once its chat is settled, by the effect's key; a no-op for one this boot never read. */
   release: (key: string) => void;
 }
@@ -100,7 +104,7 @@ export function lostWorkWakeHandler(deps: LostWorkWakeDeps): EffectHandler {
         return { kind: 'done', outcome: { alreadyWoken: true } };
       }
       const { sessionId, cwd } = parsed.data;
-      const outcome = await deps.wake({ sessionId, cwd, startKey: effect.key });
+      const outcome = await deps.wakeLostWork({ sessionId, cwd, startKey: effect.key });
       if (outcome === 'failed') throw new Error('The chat could not be woken yet');
       deps.release(effect.key);
       return { kind: 'done', outcome: { wake: outcome } };

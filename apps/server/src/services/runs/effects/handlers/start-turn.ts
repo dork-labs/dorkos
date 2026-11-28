@@ -226,6 +226,7 @@ export function requestOf(
     content: words,
     origin,
     wireOrigin: wireOriginOf(origin),
+    ...(run.notAfter !== null ? { notAfter: run.notAfter } : {}),
     ...stripUndefined(options),
     ...(verdict.accountRef !== undefined ? { accountRef: verdict.accountRef } : {}),
   };

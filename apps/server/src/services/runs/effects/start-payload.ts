@@ -29,6 +29,8 @@ export const StartPayloadSchema = z.strictObject({
   unattended: fields.unattended,
   carriedMarks: fields.carriedMarks,
   task: fields.task,
+  continuationHold: fields.continuationHold,
+  approvalVerdict: fields.approvalVerdict,
   relay: fields.relay,
   launcher: fields.launcher,
 });
@@ -49,6 +51,7 @@ export function startPayloadOf(start: StartTurnInput): StartPayload {
     origin: _origin,
     sourceRef: _sourceRef,
     notAfter: _notAfter,
+    startKey: _startKey,
     askedByRef: _askedByRef,
     ...payload
   } = start;

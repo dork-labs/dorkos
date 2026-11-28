@@ -628,6 +628,18 @@ export class EffectStore {
   }
 
   /**
+   * Replace an effect's payload, inside the caller's transaction: a wake that
+   * lets go of its words once its run ends keeps only what names its event (§6.2).
+   *
+   * @param id - The effect.
+   * @param payload - What it keeps.
+   */
+  replacePayload(id: string, payload: unknown): void {
+    const payloadJson = JSON.stringify(payload);
+    this.db.update(turnEffects).set({ payloadJson }).where(eq(turnEffects.id, id)).run();
+  }
+
+  /**
    * One effect by its idempotency key (§6.4).
    *
    * @param key - The key.

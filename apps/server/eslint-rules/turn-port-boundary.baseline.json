@@ -86,7 +86,6 @@
     "src/services/tasks/sync/file-agent-level.ts": 2,
     "src/services/tasks/task-scheduler-service.ts": 1,
     "src/services/todos/todo-direct-chat.ts": 1,
-    "src/services/todos/todo-turn-wiring.ts": 1,
     "src/services/work-queue/work-queue-wiring.ts": 4
   }
 }

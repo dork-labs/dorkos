@@ -85,6 +85,9 @@ import {
 } from '../../services/session/session-state-projector.js';
 import { resetMessageDispatcher } from '../../services/session/message-dispatcher.js';
 import { attachEventStream } from './helpers/trigger-turn-helpers.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { createComputerTurnPort } from '../../services/session/turn-port/computer-turn-port.js';
+import { getRunRecord, installRunRecord, uninstallRunRecord } from '../../services/runs/index.js';
 
 const admission = new MainRequestAdmission();
 
@@ -209,11 +212,32 @@ describe('a second trigger under a session’s retired id (DOR-1262)', () => {
 
     // A widget rendered in turn 1 can only be clicked with the id the page was
     // given, which is the retired one.
-    const second = await request(server)
-      .post(`/api/sessions/${REQUEST_ID}/ui-action`)
-      .send({ actionId: 'refresh', payload: { city: 'SF' }, widgetTitle: 'Weather' });
-    expect(second.status).toBe(202);
-    expect(second.body).toEqual({ sessionId: CANONICAL_ID });
+    // A click is a wake (spec `turns-survive-restarts` §6.3): its turn goes
+    // through the run record, its worker and the turn port's computer face.
+    const computer = createComputerTurnPort({
+      meshCore: () => undefined,
+      roomSessionPlace: () => undefined,
+    });
+    installRunRecord(createTestDb(), {
+      epoch: '01BOOTEPOCHRETIREDID000000',
+      computer: () => computer,
+    });
+    try {
+      const second = await request(server)
+        .post(`/api/sessions/${REQUEST_ID}/ui-action`)
+        .send({ actionId: 'refresh', payload: { city: 'SF' }, widgetTitle: 'Weather' });
+      expect(second.status).toBe(202);
+      expect(second.body).toEqual({ sessionId: CANONICAL_ID });
+      await vi.waitFor(
+        async () => {
+          await getRunRecord()!.worker.runOnce();
+          expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(2);
+        },
+        { timeout: WAIT_MS }
+      );
+    } finally {
+      uninstallRunRecord();
+    }
 
     const { frames } = await stream.done;
     expect(frames.filter((f) => f.event === 'turn_start')).toHaveLength(2);

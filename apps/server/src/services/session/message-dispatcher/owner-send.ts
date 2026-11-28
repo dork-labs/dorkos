@@ -13,7 +13,7 @@
 import { isChatClientId } from '@dorkos/shared/chat-client-id';
 import { RELAY_CLIENT_PREFIX } from '@dorkos/shared/session-relay';
 import { isExtensionClientId } from '@dorkos/shared/extension-id';
-import { HAND_BACK_CLIENT_ID } from '../local-browser/hand-back-wake/client-id.js';
+import { TURN_PORT_CLIENT_PREFIX } from '../turn-port/client-id.js';
 import { getMessageQueueStore } from '../message-queue-store.js';
 import { launchCarriesHold, launchCarriesWords, launchCeiling } from './state.js';
 import type { DispatchPlan } from './types.js';
@@ -28,12 +28,13 @@ export function isOwnersCleanSend(plan: DispatchPlan): boolean {
   if (turn.turnStarter !== 'person') return false;
   if (turn.roomTurn || turn.continuationHold || turn.unattended) return false;
   if (turn.carriedMarks?.outsider === true || turn.privateReceiptId !== undefined) return false;
-  // The web relay and the browser's hand-back wake both start their turns as a person's.
+  // The web relay and a wake both start their turns as a person's: a wake (the
+  // browser's hand-back, a widget click) reaches the dispatcher through the turn port.
   if (
     isChatClientId(clientId) ||
     isExtensionClientId(clientId) ||
     clientId.startsWith(RELAY_CLIENT_PREFIX) ||
-    clientId === HAND_BACK_CLIENT_ID
+    clientId.startsWith(TURN_PORT_CLIENT_PREFIX)
   ) {
     return false;
   }

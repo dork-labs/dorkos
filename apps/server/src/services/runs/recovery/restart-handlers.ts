@@ -23,7 +23,7 @@ export type RestartHandlerDeps = ContinueAfterRestartDeps & Omit<LostWorkWakeDep
  *   lost-work wake and the release of its record.
  */
 export function restartHandlers(deps: RestartHandlerDeps): EffectHandlers {
-  const { runs, effects, ceilingOf, cwdOf, wake, release } = deps;
+  const { runs, effects, ceilingOf, cwdOf, wakeLostWork, release } = deps;
   return {
     continue_after_restart: continueAfterRestartHandler({
       runs,
@@ -31,6 +31,6 @@ export function restartHandlers(deps: RestartHandlerDeps): EffectHandlers {
       ...(ceilingOf ? { ceilingOf } : {}),
       ...(cwdOf ? { cwdOf } : {}),
     }),
-    lost_work_wake: lostWorkWakeHandler({ runs, wake, release }),
+    lost_work_wake: lostWorkWakeHandler({ runs, wakeLostWork, release }),
   };
 }

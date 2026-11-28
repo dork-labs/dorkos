@@ -28,6 +28,10 @@ import { MeshCore } from '@dorkos/mesh';
 import { frontDoorListener } from './http/front-door.js';
 import { composeFrontDoor } from './http/hono-api.js';
 import { MainRequestAdmission } from './services/core/lifecycle/main-request-admission.js';
+import { ulid } from 'ulidx';
+import { installRunRecord, startRunEffects, uninstallRunRecord } from './services/runs/index.js';
+import { createComputerTurnPort } from './services/session/turn-port/computer-turn-port.js';
+import { setComputerTurnPort } from './services/session/turn-port/index.js';
 import { initBoundary } from './lib/boundary.js';
 import { logger } from './lib/logger.js';
 import { registerClaudeCodeFacts } from './startup/register-claude-code-facts.js';
@@ -176,6 +180,17 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
     rows: rooms.attachments,
   });
 
+  // **Wakes go through the run record (T7, DOR-5215).** A widget click, a
+  // browser hand-back or a sign-in resume saves a wake that the outbox worker
+  // turns into a run, which reaches the dispatcher through the computer face,
+  // as in `start()`. Without them the `widget-round-trip` click is saved
+  // nowhere and its turn never comes.
+  installRunRecord(db, { epoch: ulid() });
+  setComputerTurnPort(
+    createComputerTurnPort({ meshCore: () => mesh, roomSessionPlace: () => undefined })
+  );
+  startRunEffects();
+
   const admission = new MainRequestAdmission();
 
   // **The capability invoke route, with the rooms domain on it.** The Hono
@@ -222,6 +237,7 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
       })
     ),
     dispose: () => {
+      uninstallRunRecord();
       // Close the underlying better-sqlite3 handle so the sandbox teardown can
       // remove the db (and its WAL sidecars) without a lingering open descriptor.
       db.$client.close();

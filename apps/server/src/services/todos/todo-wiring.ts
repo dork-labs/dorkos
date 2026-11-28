@@ -8,14 +8,13 @@
 import type { Db } from '@dorkos/db';
 import type { MeshCore } from '@dorkos/mesh';
 import type { CapabilityDeps, CapabilityRequestFacts } from '../core/capabilities/index.js';
-import type { RoomSessionPlacePort } from '../workspace/room-session-place.js';
 import { ownerAccountExists } from '../core/auth/gate-policy.js';
 import { TodoPromiseService } from './todo-promise-service.js';
 import { TodoPromiseStore } from './todo-promise-store.js';
 import { rowCarriesOutsideWords } from './todo-authority.js';
 import { TodoService } from './todo-service.js';
 import { TodoStore } from './todo-store.js';
-import { TodoTurns } from './todo-turns.js';
+import { TodoTurns, type TodoTurnsDeps } from './todo-turns.js';
 import { todoTurnSeams } from './todo-turn-wiring.js';
 import { agentInRoom, readTodoSourceFacts } from './todo-source.js';
 import { logger } from '../../lib/logger.js';
@@ -34,8 +33,8 @@ export interface TodoWiringDeps {
   db: Db;
   /** The agent registry, read lazily: Mesh starts later in boot, or not at all. */
   meshCore: () => Pick<MeshCore, 'get' | 'getByPath' | 'getProjectPath'> | undefined;
-  /** Where a Direct chat's session stands in its room, read lazily: built later in boot. */
-  roomSessionPlace?: () => RoomSessionPlacePort | undefined;
+  /** Saves a to-do turn's wake: the run record's `wakeChat` (spec `turns-survive-restarts` §6.3). */
+  wake: TodoTurnsDeps['wake'];
 }
 
 /** The running to-dos domain, as boot holds it. */

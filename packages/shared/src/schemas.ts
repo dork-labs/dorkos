@@ -1661,6 +1661,15 @@ export const UiActionRequestSchema = z
     widgetTitle: z.string().max(UI_ACTION_TITLE_MAX_LENGTH).optional(),
     /** Optional working-directory override, mirroring the message trigger. */
     cwd: z.string().optional(),
+    /**
+     * One click's own id, minted by the app once per click and sent again on a
+     * retry, so the same click starts at most one turn. Absent, the server
+     * mints one for the request.
+     */
+    eventId: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{1,64}$/u)
+      .optional(),
   })
   .openapi('UiActionRequest');
 

@@ -238,6 +238,8 @@ Payload: (none)
 
 The payload carries whatever the action was authored with, plus (for `form` submits) every field's current value merged in under its `name`. Give actions stable, descriptive ids: that's the only handle the agent has for "which control fired."
 
+If the agent is still replying when you click, the click waits for that reply to finish, for up to five minutes, and then becomes the agent's next turn. A click that would wait longer is dropped, so it never answers a later reply. Each click starts at most one turn, even if DorkOS restarts in between.
+
 <Callout type="info">
   `agent` actions need a chat to send the POST to. Rendered in chat or the canvas, that's automatic.
   Outside a chat (for example DorkOS's internal dev component playground), `agent` buttons render

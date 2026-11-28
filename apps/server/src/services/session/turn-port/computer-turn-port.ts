@@ -76,6 +76,7 @@ import { queueKeyOf } from '../resolution/session-key-registry.js';
 import { isRunHeld, turnFacts } from './facts.js';
 import { stopRunTurn } from './run-events.js';
 import type { ComputerTurnPort, HandOverResult } from './computer-face.js';
+import { TURN_PORT_CLIENT_PREFIX } from './client-id.js';
 
 /** What the computer face needs at startup. */
 export interface ComputerTurnPortDeps {
@@ -134,7 +135,7 @@ function clientIdOf(runId: string, origin: TurnOrigin, askedByRef: string | unde
     return chatClientId(sender.value.id);
   }
   if (origin.kind === 'session-relay') return relayClientId(runId);
-  return `${origin.kind === 'heartbeat' ? HEARTBEAT_CLIENT_PREFIX : 'turn-port:'}${runId}`;
+  return `${origin.kind === 'heartbeat' ? HEARTBEAT_CLIENT_PREFIX : TURN_PORT_CLIENT_PREFIX}${runId}`;
 }
 
 /**
@@ -155,7 +156,8 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
     // A continuation after a restart (attempt 2 on) carries DorkOS's own
     // words, never a person's: they stay at their source, out of every
     // composer, whatever origin it copied from the turn it picks up (§7.3).
-    const composer = wordsWaitInComposer(request.origin) && request.attempt === 1;
+    // A run with a deadline never waits as a row either (§3.5, T7).
+    const composer = wordsWaitInComposer(request.origin, request.notAfter) && request.attempt === 1;
     const live = turnFacts()?.dispatcher.liveRunOf(queueKeyOf(request.sessionId));
     const chatBusy = live !== undefined && live !== request.runId;
     if (!composer && chatBusy) return { answer: { refused: 'chat_busy' } };
@@ -202,12 +204,14 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
         ? { permissionCeiling: request.permissionCeiling }
         : {}),
       ...(request.unattended ? { unattended: true } : {}),
+      ...(request.continuationHold ? { continuationHold: true as const } : {}),
       ...(request.carriedMarks ? { carriedMarks: request.carriedMarks } : {}),
       turnOptions: {
         ...(request.systemPromptAppend !== undefined
           ? { systemPromptAppend: request.systemPromptAppend }
           : {}),
         ...(request.settings ? { settings: request.settings } : {}),
+        ...(request.approvalVerdict ? { approvalVerdict: request.approvalVerdict } : {}),
         ...(request.task
           ? {
               taskTurn: {

@@ -8,20 +8,27 @@
  *
  * - the ENGINE calls the port exactly once, and only for a sign-in that began
  *   inside a session;
- * - the PORT's handler declines quietly when there is nothing it may do.
+ * - the PORT's handler settles the card and saves one wake per flow (spec
+ *   `turns-survive-restarts` §6.3, T7); what the wake does next is the run
+ *   record's (`services/runs/__tests__/wake-chat.test.ts`).
  *
  * @vitest-environment node
  */
 import { createTestDb } from '@dorkos/test-utils/db';
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { resetKeyCache } from '../../../lib/secret-store/extension-secrets.js';
 
+import { eq, turnEffects, type Db } from '@dorkos/db';
+import { WAKE_NOT_LATE_MS, WakeRequestSchema, type WakeRequest } from '@dorkos/shared/turn-port';
 import { AgentMcpOAuthService } from '../agent-mcp-oauth-service.js';
-import type { McpSigninConnectedEvent } from '../mcp-signin-resume.js';
+import { resumeAfterMcpSignin, type McpSigninConnectedEvent } from '../mcp-signin-resume.js';
+import { installRunRecord, uninstallRunRecord, wakeChat } from '../../runs/index.js';
+import { disposeProjector, getOrCreateProjector } from '../../session/index.js';
+import { noteTurnHold, setContinuationHoldDb } from '../../core/turn-power/continuation-hold.js';
 
 const AGENT_ID = '01HV7KJZZZ0000000000000000';
 const SERVER = 'granola';
@@ -173,116 +180,80 @@ describe('the connected port', () => {
 });
 
 describe('resumeAfterMcpSignin', () => {
-  /** The directory the session's own projector reports — NOT the server default. */
+  /** The directory the sign-in recorded when it started — NOT the server default. */
   const SESSION_CWD = '/projects/somewhere-else';
+  const NOW = Date.parse('2026-11-28T09:00:00.000Z');
 
   const EVENT: McpSigninConnectedEvent = {
     agentId: AGENT_ID,
     serverName: SERVER,
     sessionId: SESSION_ID,
     flowId: 'flow-1',
+    originCwd: SESSION_CWD,
     toolCount: 7,
   };
 
-  /** Load the module under a fresh set of session/runtime/logger mocks. */
-  async function loadWithMocks(options: {
-    accepted: boolean;
-    hasSession?: boolean;
-    ingest?: (event: unknown) => void;
-  }) {
-    vi.resetModules();
-    const dispatchMessage = vi.fn().mockResolvedValue({ accepted: options.accepted });
-    // The logger is how "declined quietly" is told apart from "blew up and was
-    // swallowed": this module never rejects, so without watching which LEVEL it
-    // logged at, a throw on the busy path is indistinguishable from the intended
-    // no-op.
-    const warn = vi.fn();
-    const info = vi.fn();
-    vi.doMock('../../../lib/logger.js', () => ({ logger: { warn, info } }));
-    const getSession = vi.fn(async () => ({ id: SESSION_ID }));
-    const runtime = {
-      hasSession: () => options.hasSession ?? true,
-      getSession,
-      getCapabilities: () => ({ logBackedHistory: false }),
-      acquireLock: vi.fn(),
-      releaseLock: vi.fn(),
-      sendMessage: vi.fn(),
-      interruptQuery: vi.fn(),
-      getInternalSessionId: vi.fn(),
-    };
-    vi.doMock('../../core/runtime-registry.js', () => ({
-      runtimeRegistry: { resolveForSession: async () => runtime },
-    }));
-    const getOrCreateProjector = vi.fn((_id: string, _cwd?: string) => ({ cwd: SESSION_CWD }));
-    vi.doMock('../../session/index.js', () => ({
-      dispatchMessage,
-      getOrCreateProjector,
-      peekProjector: () => ({ cwd: SESSION_CWD, ingest: options.ingest ?? (() => {}) }),
-      persistenceModeFor: () => 'record',
-    }));
-    const { resumeAfterMcpSignin } = await import('../mcp-signin-resume.js');
-    return { resumeAfterMcpSignin, dispatchMessage, getOrCreateProjector, runtime, warn, info };
+  let db: Db;
+
+  /** Every wake saved, by key, with its parsed request. */
+  function wakes(): { key: string; wake: WakeRequest }[] {
+    return db
+      .select()
+      .from(turnEffects)
+      .where(eq(turnEffects.kind, 'wake_chat'))
+      .all()
+      .map((row) => ({ key: row.key, wake: WakeRequestSchema.parse(JSON.parse(row.payloadJson)) }));
   }
 
+  beforeEach(() => {
+    db = createTestDb();
+    installRunRecord(db, { epoch: '01BOOTEPOCHSIGNIN000000000' });
+  });
+
   afterEach(() => {
-    vi.doUnmock('../../core/runtime-registry.js');
-    vi.doUnmock('../../session/index.js');
-    vi.doUnmock('../../../lib/logger.js');
-    vi.resetModules();
+    uninstallRunRecord();
+    setContinuationHoldDb(undefined);
+    disposeProjector(SESSION_ID);
   });
 
-  it('holds the nudge to the runtime default when the chat’s latest turn was held (DOR-3037)', async () => {
-    const { resumeAfterMcpSignin, dispatchMessage } = await loadWithMocks({ accepted: true });
-    const hold = await import('../../core/turn-power/continuation-hold.js');
-    hold.setContinuationHoldDb(createTestDb());
-    try {
-      hold.noteTurnHold(SESSION_ID, true);
-      await resumeAfterMcpSignin(EVENT);
-      expect(dispatchMessage.mock.calls[0][0].permissionCeiling).toBe('runtime-default');
-      hold.noteTurnHold(SESSION_ID, false);
-      await resumeAfterMcpSignin({ ...EVENT, flowId: 'flow-2' });
-      expect(dispatchMessage.mock.calls[1][0].permissionCeiling).toBeUndefined();
-    } finally {
-      hold.setContinuationHoldDb(undefined);
-    }
-  });
+  it('settles the session’s card, then saves one wake for the flow that must not run late', () => {
+    const ingest = vi.spyOn(getOrCreateProjector(SESSION_ID, SESSION_CWD), 'ingest');
 
-  it('settles the session’s card into a receipt, then resumes the agent', async () => {
-    const ingested: unknown[] = [];
-    const { resumeAfterMcpSignin, dispatchMessage } = await loadWithMocks({
-      accepted: true,
-      ingest: (event) => ingested.push(event),
+    resumeAfterMcpSignin(EVENT, wakeChat, NOW);
+    resumeAfterMcpSignin(EVENT, wakeChat, NOW);
+
+    expect(ingest.mock.calls[0]![0]).toEqual({
+      type: 'mcp_signin_resolved',
+      flowId: 'flow-1',
+      outcome: 'connected',
+      toolCount: 7,
     });
-
-    await resumeAfterMcpSignin(EVENT);
-
-    expect(ingested).toEqual([
-      { type: 'mcp_signin_resolved', flowId: 'flow-1', outcome: 'connected', toolCount: 7 },
-    ]);
-    expect(dispatchMessage).toHaveBeenCalledTimes(1);
-    const content = dispatchMessage.mock.calls[0][0].content as string;
-    expect(dispatchMessage.mock.calls[0][0].turnStarter).toBe('agent');
+    const [saved, ...more] = wakes();
+    expect(more, 'one flow, one resume').toEqual([]);
+    expect(saved!.key).toBe('wake:signin:flow-1');
+    expect(saved!.wake.start).toMatchObject({
+      sessionId: SESSION_ID,
+      // The flow's own directory: a restart empties the projector registry (DOR-981).
+      cwd: SESSION_CWD,
+      origin: { kind: 'resume' },
+      // `whenBusy: 'refuse'` became a deadline: a busy chat is waited for, briefly.
+      notAfter: NOW + WAKE_NOT_LATE_MS,
+    });
+    expect(saved!.wake.onlyIfChatExists).toEqual({ cwd: SESSION_CWD });
+    const { content } = saved!.wake.start;
     expect(content).toContain('Continue the task');
     expect(content).toContain('Do not describe or narrate');
     expect(content).toContain(SERVER);
   });
 
-  it('runs the turn in the SESSION’s directory, not the server default', async () => {
-    // Every hop that takes a cwd has to be given one. A turn triggered without it
-    // cold-starts a map-less session against the default root — the wrong
-    // checkout, silently — which is the same bug `/ui-action` threads its request
-    // cwd to avoid. The mocks deliberately report a directory that is NOT the
-    // default, so a dropped hop cannot pass by coincidence.
-    const { resumeAfterMcpSignin, dispatchMessage, getOrCreateProjector, runtime } =
-      await loadWithMocks({ accepted: true, hasSession: false });
-
-    await resumeAfterMcpSignin(EVENT);
-
-    // The storage probe that decides whether there is anything to resume…
-    expect(runtime.getSession).toHaveBeenCalledWith(SESSION_CWD, SESSION_ID);
-    // …the projector the turn is flushed through…
-    expect(getOrCreateProjector.mock.calls[0][1]).toBe(SESSION_CWD);
-    // …and the trigger itself.
-    expect(dispatchMessage.mock.calls[0][0].cwd).toBe(SESSION_CWD);
+  it('holds the nudge to the runtime default when the chat’s latest turn was held (DOR-3037)', () => {
+    setContinuationHoldDb(createTestDb());
+    noteTurnHold(SESSION_ID, true);
+    resumeAfterMcpSignin(EVENT, wakeChat, NOW);
+    noteTurnHold(SESSION_ID, false);
+    resumeAfterMcpSignin({ ...EVENT, flowId: 'flow-2' }, wakeChat, NOW);
+    const [held, free] = wakes().map(({ wake }) => wake.start);
+    expect(held).toMatchObject({ permissionCeiling: 'runtime-default', continuationHold: true });
+    expect(free!.permissionCeiling).toBeUndefined();
   });
 });

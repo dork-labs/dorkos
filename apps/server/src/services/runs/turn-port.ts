@@ -52,6 +52,7 @@ import { logger } from '../../lib/logger.js';
 import { chatKeyOf, type ComputerTurnPort } from '../session/turn-port/index.js';
 import type { StartTurns } from './effects/start-turns.js';
 import type { EffectStore } from './effects/effect-store.js';
+import { letGoOfWakeWords, WAKE_SOURCE } from './effects/wakes.js';
 import { StartPayloadSchema, startPayloadOf, type StartPayload } from './effects/start-payload.js';
 import type { RunStore, TurnRun } from './run-store.js';
 import { writeStopReceipt, writeStopRequest } from './run-stops.js';
@@ -174,6 +175,7 @@ export class SpaceTurnPort {
    * @param opts.handOverAt - Epoch ms before which the worker leaves its hand-over
    *   alone: a caller handing the run over now (`hand-over-now.ts`) goes first.
    * @returns The run's id, its status (`queued`) and its place among the chat's waiting runs.
+   *   A start under a `startKey` that already made a run saves nothing and answers that run.
    * @throws {TurnStartRefusedError} When the start is refused before anything is saved.
    */
   start(
@@ -220,7 +222,10 @@ export class SpaceTurnPort {
       throw new TurnStartRefusedError('agent_paused', `${paused.name} is paused.`);
     }
     const { runs, effects } = this.deps;
-    const run = runs.transaction(() => {
+    const [run, again] = runs.transaction((): [TurnRun, boolean] => {
+      // One key, one run (§6.4): a source asking again is answered, never doubled.
+      const made = start.startKey !== undefined ? runs.findByStartKey(start.startKey) : undefined;
+      if (made) return [made, true];
       let created = runs.create({
         ...(opts.runId !== undefined ? { id: opts.runId } : {}),
         chatKey: start.sessionId,
@@ -230,6 +235,7 @@ export class SpaceTurnPort {
         ...(start.agentId !== undefined ? { agentId: start.agentId } : {}),
         ...(start.sourceRef !== undefined ? { sourceRef: start.sourceRef } : {}),
         ...(start.notAfter !== undefined ? { notAfter: start.notAfter } : {}),
+        ...(start.startKey !== undefined ? { startKey: start.startKey } : {}),
         ...(start.askedByRef !== undefined ? { askedByRef: start.askedByRef } : {}),
       });
       const waits = this.deps.preview?.(created, startPayloadOf(start));
@@ -240,15 +246,17 @@ export class SpaceTurnPort {
         runId: created.id,
         // The chat it orders behind: only a run whose words stay at their
         // source waits in line here; a composer's words wait as a queue row.
-        ...(wordsWaitInComposer(start.origin) ? {} : { sessionId: created.sessionId }),
+        ...(wordsWaitInComposer(start.origin, start.notAfter)
+          ? {}
+          : { sessionId: created.sessionId }),
         payload: startPayloadOf(start),
         delivery: 'repeatable',
         notAfter: start.notAfter ?? null,
         ...(opts.handOverAt !== undefined ? { availableAt: opts.handOverAt } : {}),
       });
-      return created;
+      return [created, false];
     });
-    this.words.set(run.id, start.content);
+    if (!again) this.words.set(run.id, start.content);
     return { runId: run.id, status: run.status, queuePosition: this.queuePositionOf(run) };
   }
 
@@ -501,7 +509,13 @@ export class SpaceTurnPort {
   moved(run: TurnRun): void {
     // Kept until the run can no longer come back to `queued`: a pause can cut
     // its turn even after the runtime's first event (transition 15).
-    if (RUN_ENDS.has(run.status)) this.words.delete(run.id);
+    if (RUN_ENDS.has(run.status)) {
+      this.words.delete(run.id);
+      // A wake's words leave its payload with the run (§6.2).
+      if (run.sourceRef?.startsWith(`${WAKE_SOURCE}:`)) {
+        letGoOfWakeWords(this.deps.effects, run.sourceRef.slice(WAKE_SOURCE.length + 1));
+      }
+    }
     if (this.watchers.size === 0) return;
     // After the synchronous transaction it was called inside: a rolled-back
     // move is then read as it really stands, never as it was asked for.

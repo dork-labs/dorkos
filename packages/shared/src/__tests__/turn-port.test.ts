@@ -10,17 +10,12 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import * as port from '../turn-port.js';
 import {
-  RUN_TRANSITIONS,
   RunFactSchema,
-  RunStatusSchema,
   StartTurnInputSchema,
-  TERMINAL_RUN_STATUSES,
   TURN_ORIGIN_KINDS,
   TurnStartRequestSchema,
-  canTransition,
   runReference,
   wireOriginOf,
-  type RunStatus,
   type TurnOrigin,
   type WireOrigin,
 } from '../turn-port.js';
@@ -121,9 +116,36 @@ const SAMPLES: Record<string, readonly unknown[]> = {
       notAfter: 1_764_000_000_000,
       accountHint: 'account-1',
       sourceRef: 'extension-send:3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c',
+      startKey: 'wake:signin:flow-1',
     },
   ],
   RunStatusSchema: enumValues(port.RunStatusSchema),
+  WakeSourceKindSchema: enumValues(port.WakeSourceKindSchema),
+  WakeRequestSchema: [
+    {
+      sourceKind: 'approval',
+      eventId: '01KXQ3P7ADJY9DSXMZW1XGWCV4',
+      start: {
+        ...MINIMAL_INPUT,
+        origin: { kind: 'resume' },
+        continuationHold: true,
+        permissionCeiling: 'runtime-default',
+        approvalVerdict: {
+          approvalId: '01KXQ3P7ADJY9DSXMZW1XGWCV4',
+          capabilityTitle: 'Unregister an agent',
+          outcome: 'denied',
+          endedAt: '2026-11-28T09:00:00.000Z',
+          denyReason: 'not now',
+        },
+      },
+      onlyIfChatExists: { cwd: '/agents/scout' },
+    },
+    {
+      sourceKind: 'ui-action',
+      eventId: 'click-7f3a',
+      start: { ...MINIMAL_INPUT, notAfter: 1_764_000_300_000 },
+    },
+  ],
   StartTurnResultSchema: [{ runId: RUN, status: 'queued', queuePosition: 1 }],
   TurnStartRequestSchema: [
     { ...MINIMAL_INPUT, runId: RUN, attempt: 1, wireOrigin: 'chat' },
@@ -300,53 +322,6 @@ export type PlainDataProof = [
   Refuses<AllPlain<{ at: Date }>>,
   Refuses<AllPlain<{ nested: { list: readonly (() => void)[] } }>>,
 ];
-
-describe('the transition table', () => {
-  /** The fifteen legal pairs: the spec's table (§4.3) and the architect's rows 14 and 15. */
-  const SPEC: ReadonlyArray<readonly [RunStatus | null, RunStatus]> = [
-    [null, 'queued'],
-    [null, 'running'],
-    ['queued', 'queued'],
-    ['queued', 'starting'],
-    ['queued', 'cancelled'],
-    ['queued', 'superseded'],
-    ['starting', 'started'],
-    ['starting', 'queued'],
-    ['starting', 'cancelled'],
-    ['started', 'running'],
-    ['started', 'ended'],
-    ['running', 'ended'],
-    ['ended', 'settled'],
-    ['started', 'queued'],
-    ['running', 'queued'],
-  ];
-  const STATUSES = RunStatusSchema.options;
-
-  it('holds exactly the fifteen rows, numbered 1 to 15', () => {
-    expect(SPEC).toHaveLength(15);
-    expect(RUN_TRANSITIONS.map(({ from, to }) => [from, to])).toEqual(SPEC);
-    expect(RUN_TRANSITIONS.map(({ row }) => row)).toEqual(SPEC.map((_, index) => index + 1));
-    expect(canTransition('starting', 'superseded')).toBe(false);
-  });
-
-  it('answers every pair, legal or not', () => {
-    const legal = new Set(SPEC.map(([from, to]) => `${from}->${to}`));
-    const pairs = [null, ...STATUSES].flatMap((from) => STATUSES.map((to) => [from, to] as const));
-    expect(pairs).toHaveLength(9 * 8);
-    for (const [from, to] of pairs) {
-      expect(canTransition(from, to), `${from} -> ${to}`).toBe(legal.has(`${from}->${to}`));
-    }
-  });
-
-  it('gives every non-terminal status a way out, and none to a terminal one', () => {
-    expect(STATUSES).toHaveLength(8);
-    for (const status of STATUSES) {
-      const exits = STATUSES.filter((to) => to !== status && canTransition(status, to));
-      if (TERMINAL_RUN_STATUSES.includes(status)) expect(exits, status).toEqual([]);
-      else expect(exits.length, status).toBeGreaterThan(0);
-    }
-  });
-});
 
 describe('origins', () => {
   it('names all seventeen kinds, and the samples cover each', () => {

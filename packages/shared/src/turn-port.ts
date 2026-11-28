@@ -55,6 +55,7 @@ import {
 } from './schemas.js';
 import type { DirectoryGrant, TurnPermissionCeiling, TurnStarter } from './agent-runtime.js';
 import { RunEndingSchema, RunStatusSchema, type RunStatus } from './run-schemas.js';
+import type { ApprovalVerdictData } from './additional-context.js';
 
 // The record's words live in `run-schemas.ts`, which the session stream reads too.
 export {
@@ -342,10 +343,16 @@ export function wireOriginOf(origin: TurnOrigin): WireOrigin {
  * queued as a row; any other run is handed over only when no live run holds
  * its chat, and the computer face refuses it `chat_busy` otherwise.
  *
+ * A run with a deadline (`notAfter`) never waits as a row, whatever its
+ * origin: a row never expires by the clock (ADR `260811-184735`), so a
+ * caller that asked not to run late (a widget click, T7) waits at its source.
+ *
  * @param origin - What is starting the turn.
+ * @param notAfter - The run's deadline, when its caller set one.
  * @returns True when the words wait in the composer.
  */
-export function wordsWaitInComposer(origin: TurnOrigin): boolean {
+export function wordsWaitInComposer(origin: TurnOrigin, notAfter?: number | null): boolean {
+  if (notAfter !== undefined && notAfter !== null) return false;
   return (
     origin.kind === 'interactive' ||
     origin.kind === 'session-relay' ||
@@ -394,6 +401,16 @@ const SourceRefSchema = z
   .string()
   .max(200)
   .regex(/^[a-z][a-z-]{0,31}:[^\s]{1,160}$/u, { message: 'Not a <kind>:<id> source' });
+
+/**
+ * The key a source made a run under (spec §4.1 `start_key`, §6.4): `<kind>:<rest>`,
+ * such as `wake:approval:<approvalId>`. Unique, so making the run again by the
+ * same key makes nothing.
+ */
+const StartKeySchema = z
+  .string()
+  .max(200)
+  .regex(/^[a-z][a-z-]{0,31}:[^\s]{1,160}$/u, { message: 'Not a <kind>:<key> start key' });
 
 /** A chat, by its canonical id. */
 const SessionIdSchema = z.string().min(1).max(200);
@@ -507,6 +524,23 @@ export function isRelayOrigin(origin: TurnOrigin): boolean {
 }
 
 /**
+ * How an approval the agent asked for ended (`ApprovalVerdictData`), strict:
+ * a refusal's reason belongs only to a refusal.
+ */
+const ApprovalVerdictSchema = z
+  .strictObject({
+    approvalId: z.string().min(1),
+    capabilityTitle: z.string().min(1),
+    outcome: z.enum(['granted', 'denied', 'expired']),
+    endedAt: z.string().min(1),
+    denyReason: z.string().min(1).optional(),
+  })
+  .refine((v) => v.denyReason === undefined || v.outcome === 'denied', {
+    message: 'Only a refusal carries a reason',
+    path: ['denyReason'],
+  });
+
+/**
  * Compile-time proof that the option schemas above carry the runtime's own
  * types, in both directions: what a schema parses can be handed to a runtime,
  * and what a caller holds today can be parsed. Never evaluated.
@@ -521,11 +555,13 @@ type AssertMirrors<S extends z.ZodType, T> = [z.output<S>] extends [T]
 const _assertCeiling: AssertMirrors<typeof TurnPermissionCeilingSchema, TurnPermissionCeiling> =
   true;
 const _assertGrant: AssertMirrors<typeof DirectoryGrantSchema, DirectoryGrant> = true;
+const _assertVerdict: AssertMirrors<typeof ApprovalVerdictSchema, ApprovalVerdictData> = true;
 /** Every relay starter is a turn starter the runtime knows. */
 const _assertStarter: [z.output<typeof RelayStarterSchema>] extends [TurnStarter] ? true : never =
   true;
 void _assertCeiling;
 void _assertGrant;
+void _assertVerdict;
 void _assertStarter;
 
 /**
@@ -638,6 +674,17 @@ const callerTurnFields = {
   carriedMarks: z.strictObject({ outsider: z.literal(true) }).optional(),
   /** A scheduled task's own level and approved rules. See {@link TaskTurnSchema}. */
   task: TaskTurnSchema.optional(),
+  /**
+   * The ceiling is a continuation's hold (`MessageOpts.continuationHold`): DorkOS
+   * carried on a chat whose latest turn was held, so this turn is held in power
+   * only (T7, an approval's verdict and a finished sign-in).
+   */
+  continuationHold: z.literal(true).optional(),
+  /**
+   * How an approval the agent asked for ended, rendered per runtime through the
+   * shared writer (`MessageOpts.approvalVerdict`). Only an approval's wake sets it (T7).
+   */
+  approvalVerdict: ApprovalVerdictSchema.optional(),
   /** A relay delivery's own level. See {@link RelayTurnSchema}. */
   relay: RelayTurnSchema.optional(),
 };
@@ -660,6 +707,13 @@ const callerTurnFields = {
  */
 export const StartTurnInputSchema = z.strictObject({
   ...callerTurnFields,
+  /**
+   * The key the caller's source made this run under (spec §4.1 `start_key`,
+   * §6.3): `wake:<sourceKind>:<eventId>` for a wake. A start under a key that
+   * already made a run saves nothing and answers that run, so a source may
+   * ask again after a restart without starting its turn twice.
+   */
+  startKey: StartKeySchema.optional(),
   /**
    * Where the words wait until the turn starts, when the caller keeps them in
    * a store of its own (spec §4.1, `source_ref`): `<kind>:<id>`, read back by
@@ -698,6 +752,74 @@ export const StartTurnResultSchema = z.strictObject({
 /** The space face's answer. See {@link StartTurnResultSchema}. */
 export type StartTurnResult = z.infer<typeof StartTurnResultSchema>;
 
+// === Wakes ===
+
+/**
+ * The sources that wake a chat by starting a turn in it (spec §6.3), each
+ * minting one id per event at the source:
+ *
+ * - `approval`: an approval's verdict, by `approvals.id`, saved with the claim
+ *   that decides who delivers it;
+ * - `hand-back`: a person handed the browser back, by the hand-off's id;
+ * - `signin`: an MCP sign-in the agent asked for finished, by its flow id;
+ * - `ui-action`: a click on a widget's agent action, by the `eventId` the app
+ *   minted for the click, else one the server minted for the request;
+ * - `todo`: a to-do's turn, by its `todo_turns` row id, saved with the row.
+ *
+ * A connection event's turn is not a wake: it is keyed by its private
+ * message's receipt, saved with the inbox row it consumes (§4.7).
+ */
+export const WakeSourceKindSchema = z.enum([
+  'approval',
+  'hand-back',
+  'signin',
+  'ui-action',
+  'todo',
+]);
+
+/** A wake's source. See {@link WakeSourceKindSchema}. */
+export type WakeSourceKind = z.infer<typeof WakeSourceKindSchema>;
+
+/**
+ * What a source saves to wake a chat (spec §6.2 `wake_chat`): its kind, the
+ * event's own id, and the turn to start. The turn's words are DorkOS's own
+ * copy or the click itself; they ride the wake until its run starts.
+ */
+export const WakeRequestSchema = z.strictObject({
+  sourceKind: WakeSourceKindSchema,
+  /** The event's id at its source: one id, one turn, however often it is saved. */
+  eventId: z.string().regex(/^[^\s]{1,120}$/u, { message: 'Not an event id' }),
+  /** The turn, minus what the wake names itself: its key and where its words wait. */
+  start: StartTurnInputSchema.omit({ startKey: true, sourceRef: true }),
+  /**
+   * Start it only in a chat that is stored somewhere, probed in this folder:
+   * an event can outlive its chat, and a turn must never make a new one.
+   */
+  onlyIfChatExists: z.strictObject({ cwd: z.string().min(1) }).optional(),
+});
+
+/** A source's wake. See {@link WakeRequestSchema}. */
+export type WakeRequest = z.infer<typeof WakeRequestSchema>;
+
+/**
+ * How long a wake that asked not to run late (a widget click, a finished
+ * sign-in) waits for its chat before its run is cancelled as `expired`: five
+ * minutes, the session lock's own timeout, which is the bound those callers
+ * waited when they refused a busy chat (`whenBusy: 'refuse'`, spec §3.2).
+ */
+export const WAKE_NOT_LATE_MS = 5 * 60_000;
+
+/**
+ * The key one event's wake and its run are saved under (spec §6.3):
+ * `wake:<sourceKind>:<eventId>`.
+ *
+ * @param sourceKind - The source.
+ * @param eventId - The event's id at its source.
+ */
+export function wakeStartKey(sourceKind: WakeSourceKind, eventId: string): string {
+  return `wake:${sourceKind}:${eventId}`;
+}
+
 // === Computer face ===
 
 /**
@@ -718,6 +840,12 @@ export const TurnStartRequestSchema = z
     wireOrigin: AgentComputerTurnOriginSchema,
     /** The account the turn runs on, as admission chose it (§3.5). */
     accountRef: z.string().min(1).optional(),
+    /**
+     * The run's deadline, when its caller set one (a wake that must not run
+     * late). Read only to keep its words out of the composer
+     * (`wordsWaitInComposer`); waiting stays the space side's (§3.5).
+     */
+    notAfter: EpochMsSchema.optional(),
     /**
      * The playbook the turn starts under (DOR-5187). Absent, never `null`:
      * when admission answers "no playbook" (spec §3.5 writes it `null`), the

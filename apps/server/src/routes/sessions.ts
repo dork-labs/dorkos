@@ -499,12 +499,10 @@ export function createSessionRoutes(
   // POST /api/sessions/:id/ui-action — Generative-UI widget interactivity channel
   // (spec gen-ui-tier1 §3). The handler lives in `session-ui-action-handler.ts`
   // so this route file stays under the file-size rule, mirroring `/:id/events`.
-  // Semantics: fresh turn via the dispatcher, 202, turn streams over /events. A
-  // session still PRODUCING a turn answers 409 `session_locked` here — unlike
-  // /messages, which now queues: a widget action is answered by the turn it was
-  // clicked in, so running it against whatever a later turn leaves behind is not
-  // the same action. A click after that turn ENDED is accepted, even while the
-  // runtime finishes closing the stream (DOR-1239). See the handler's module doc.
+  // Semantics: a click saves one wake (spec `turns-survive-restarts` §6.3), 202,
+  // and its turn streams over /events. A session still working waits for it,
+  // briefly, and never as a queued message: a widget action is answered by the
+  // turn it was clicked in, so one run long after is dropped. See the handler's module doc.
   // A click is a chat message too, so it asks for the owner's step-up exactly as `/messages`
   // does (DOR-5071): without it, an unproven click into a Direct chat ran at the stranger's
   // bound with no step-up offered.

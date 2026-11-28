@@ -122,10 +122,15 @@ describe('to-do tools', () => {
     const store = new TodoStore(db);
     turns = new TodoTurns({
       db,
-      launch: async (request) => {
+      prepare: async (request) => {
         launched.push(request.agentId);
-        return { sessionId: `todo-chat-${launched.length}` };
+        return {
+          sessionId: `todo-chat-${launched.length}`,
+          content: request.content,
+          tier: 'owner',
+        };
       },
+      wake: () => true,
       isPaused: () => false,
       sharedBudget: () => true,
       readSource: () => undefined,

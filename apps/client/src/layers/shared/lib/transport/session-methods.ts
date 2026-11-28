@@ -428,7 +428,8 @@ export function createSessionMethods(
           'X-Client-Id': getClientId(),
         },
         credentials: 'include',
-        body: JSON.stringify(action),
+        // One id per click (each click sends once), so the server starts one turn for it.
+        body: JSON.stringify({ ...action, eventId: action.eventId ?? crypto.randomUUID() }),
       });
 
       if (!response.ok) {

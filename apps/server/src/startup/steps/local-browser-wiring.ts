@@ -13,6 +13,7 @@ import { createLocalBrowserProfileStore } from '../../services/session/local-bro
 import { liveOutsideTurnCheck } from '../../services/session/local-browser/outside-turn.js';
 import { agentWindowLabel } from '../../services/session/local-browser/agent-window/index.js';
 import { handBackWake } from '../../services/session/local-browser/hand-back-wake/index.js';
+import { wakeChat } from '../../services/runs/index.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { notify } from '../../services/notifications/notification-service.js';
 import { localBrowserChangedAnnouncer } from '../../services/core/streams/screen/live-change-broadcasts.js';
@@ -109,10 +110,7 @@ export function wireLocalBrowserProfiles(refs: ServerRefs, db: Db, dorkHome: str
     });
   });
   localBrowserService.handover.useEndListener(
-    handBackWake({
-      meshCore: () => refs.meshCore,
-      roomSessionPlace: () => refs.roomSessionPlacePort,
-    })
+    handBackWake({ wake: (request) => wakeChat(request) })
   );
   return {
     service: localBrowserService,

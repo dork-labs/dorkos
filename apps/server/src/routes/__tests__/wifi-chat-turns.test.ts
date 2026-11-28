@@ -72,6 +72,9 @@ vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
 
 import request from '@dorkos/test-utils/supertest';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { eq, turnEffects, type Db } from '@dorkos/db';
+import { WakeRequestSchema } from '@dorkos/shared/turn-port';
+import { installRunRecord, uninstallRunRecord } from '../../services/runs/index.js';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { markIngress } from '../../services/core/remote/ingress-mark.js';
@@ -138,12 +141,26 @@ function optsFor(content: string) {
   return fakeRuntime.sendMessage.mock.calls.find((call) => call[1] === content)?.[2];
 }
 
+/**
+ * The turn the one saved widget click asks for: a click is a wake (spec
+ * `turns-survive-restarts` §6.3), saved with the level it runs at.
+ */
+function savedClick() {
+  const rows = clicksDb.select().from(turnEffects).where(eq(turnEffects.kind, 'wake_chat')).all();
+  expect(rows).toHaveLength(1);
+  return WakeRequestSchema.parse(JSON.parse(rows[0]!.payloadJson)).start;
+}
+
 /** One turn that ends at once. */
 async function* doneTurn(): AsyncGenerator<StreamEvent> {
   yield { type: 'done', data: {} } as StreamEvent;
 }
 
+let clicksDb: Db;
+
 beforeEach(() => {
+  clicksDb = createTestDb();
+  installRunRecord(clicksDb, { epoch: '01BOOTEPOCHWIFICLICKS00000' });
   store = new MessageQueueStore(createTestDb());
   setMessageQueueStore(store);
   fakeRuntime = new FakeAgentRuntime();
@@ -160,6 +177,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  uninstallRunRecord();
   resetMessageDispatcher();
   setMessageQueueStore(undefined);
   disposeProjector(SESSION_ID);
@@ -206,14 +224,12 @@ describe('a message sent from Wi-Fi', () => {
   });
 
   it('holds a widget action from Wi-Fi to the runtime default', async () => {
-    fakeRuntime.withScenarios([doneTurn]);
     const res = await request(app())
       .post(`/api/sessions/${SESSION_ID}/ui-action`)
       .set('x-test-via', 'wifi')
       .send({ actionId: 'approve', label: 'Approve' });
     expect(res.status).toBe(202);
-    const call = fakeRuntime.sendMessage.mock.calls.at(-1);
-    expect(call?.[2]?.permissionCeiling).toBe('runtime-default');
+    expect(savedClick()).toMatchObject({ permissionCeiling: 'runtime-default' });
   });
 });
 
@@ -232,13 +248,12 @@ describe("the owner's own sign-in on Wi-Fi (DOR-3242)", () => {
   });
 
   it('runs a widget action at the agent’s own level', async () => {
-    fakeRuntime.withScenarios([doneTurn]);
     const res = await fromOwner(request(app()).post(`/api/sessions/${SESSION_ID}/ui-action`)).send({
       actionId: 'approve',
       label: 'Approve',
     });
     expect(res.status).toBe(202);
-    expect(fakeRuntime.sendMessage.mock.calls.at(-1)?.[2]?.permissionCeiling).toBeUndefined();
+    expect(savedClick()?.permissionCeiling).toBeUndefined();
   });
 
   it('holds a teammate signed in on Wi-Fi, as before', async () => {
