@@ -25,12 +25,12 @@ export function createWorkQueueMethods(baseUrl: string) {
   // person's own call never gets; the casts keep today's types.
   return {
     async getWorkQueue(agentId: string): Promise<WorkQueue> {
-      return (await api.call('work-queue.view_queue', { path: { id: agentId } })) as WorkQueue;
+      return (await api.call('work-queue.view_queue', { path: { agentId } })) as WorkQueue;
     },
 
     async updateWorkQueue(agentId: string, body: UpdateWorkQueueRequest): Promise<WorkQueue> {
       return (await api.call('work-queue.change_settings', {
-        path: { id: agentId },
+        path: { agentId },
         body,
       })) as WorkQueue;
     },
@@ -43,17 +43,17 @@ export function createWorkQueueMethods(baseUrl: string) {
 
     async reorderWorkQueue(agentId: string, itemIds: string[]): Promise<WorkQueue> {
       return (await api.call('work-queue.set_order', {
-        path: { id: agentId },
+        path: { agentId },
         body: { itemIds },
       })) as WorkQueue;
     },
 
     async addWorkItem(agentId: string, body: AddWorkItemRequest): Promise<WorkItem> {
-      return (await api.call('work-queue.add_item', { path: { id: agentId }, body })) as WorkItem;
+      return (await api.call('work-queue.add_item', { path: { agentId }, body })) as WorkItem;
     },
 
     async removeWorkItem(agentId: string, itemId: string): Promise<void> {
-      await api.call('work-queue.remove_item', { path: { id: agentId, itemId } });
+      await api.call('work-queue.remove_item', { path: { agentId, itemId } });
     },
 
     // Stays hand-written: sends no body; waits for batch 3's no-body client (DOR-5473).
