@@ -16,6 +16,7 @@ import {
   runWithAuditActor,
   type AuditActorContext,
 } from '../../audit/audit-context.js';
+import { onRuntime } from './support/runtime-task-turns.js';
 
 describe('scheduled firings and the audit scope', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -36,11 +37,15 @@ describe('scheduled firings and the audit scope', () => {
       cron: '* * * * * *',
       filePath: '/tmp/tasks/every-second/SKILL.md',
     });
-    const scheduler = new TaskSchedulerService(store, {} as never, {
-      maxConcurrentRuns: 1,
-      retentionCount: 100,
-      mayFire: true,
-      firingReason: 'test',
+    const scheduler = new TaskSchedulerService({
+      store: store,
+      ...onRuntime({} as never),
+      config: {
+        maxConcurrentRuns: 1,
+        retentionCount: 100,
+        mayFire: true,
+        firingReason: 'test',
+      },
     });
     const creator: AuditActorContext = {
       actor: { accountId: 'install:inst-1', kind: 'person', name: 'Owner' },

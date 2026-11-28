@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, onTestFinished } from 'vitest';
-import { TaskSchedulerService, singleRuntimeSource } from '../../task-scheduler-service.js';
-import type { SchedulerAgentManager } from '../../task-scheduler-service.js';
+import { TaskSchedulerService } from '../../task-scheduler-service.js';
 import type { RelayCore } from '@dorkos/relay';
 import { NotificationStore } from '../../../notifications/notification-store.js';
 import {
@@ -29,6 +28,7 @@ import {
 } from './task-scheduler.fixtures.js';
 import type { Dispatchable } from './task-scheduler.fixtures.js';
 import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+import { onRuntime, type RuntimeDouble } from '../support/runtime-task-turns.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
 // refuses every path and turn code knows no Claude transcript.
@@ -60,7 +60,7 @@ function toolWorked(toolName: string, id: string): StreamEvent {
 describe('TaskSchedulerService — how a run goes and how it ends', () => {
   let store: TaskStore;
   let db: Db;
-  let mockAgent: SchedulerAgentManager;
+  let mockAgent: RuntimeDouble;
 
   beforeEach(async () => {
     ({ db, store, mockAgent } = await freshHarness());
@@ -79,7 +79,11 @@ describe('TaskSchedulerService — how a run goes and how it ends', () => {
     // telling, and the one trigger that must keep its cards.
     it('marks a timer run unattended and briefs it so; leaves a "Run now" answerable', async () => {
       const task = store.createTask(taskInput({ name: 'Nightly', cron: '0 * * * *' }));
-      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const service = new TaskSchedulerService({
+        store: store,
+        ...onRuntime(mockAgent),
+        config: DEFAULT_CONFIG,
+      });
 
       await (service as unknown as Dispatchable).dispatch(task, ON_TIME_HOURLY);
       await runManually(service, task.id);
@@ -102,7 +106,11 @@ describe('TaskSchedulerService — how a run goes and how it ends', () => {
         yield { type: 'text_delta', data: { text: 'Checked what I could.' } } as StreamEvent;
       });
       const task = store.createTask(taskInput({ name: 'Refused', cron: '0 * * * *' }));
-      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const service = new TaskSchedulerService({
+        store: store,
+        ...onRuntime(mockAgent),
+        config: DEFAULT_CONFIG,
+      });
 
       const finished = await runManually(service, task.id);
 
@@ -132,7 +140,11 @@ describe('TaskSchedulerService — how a run goes and how it ends', () => {
       const task = store.createTask(
         taskInput({ name: 'Health check', cron: '0 * * * *', permissionMode: 'acceptEdits' })
       );
-      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const service = new TaskSchedulerService({
+        store: store,
+        ...onRuntime(mockAgent),
+        config: DEFAULT_CONFIG,
+      });
 
       await (service as unknown as Dispatchable).dispatch(task, ON_TIME_HOURLY);
       const [run] = store.listRuns({ taskId: task.id });
@@ -171,7 +183,11 @@ describe('TaskSchedulerService — how a run goes and how it ends', () => {
       const task = store.createTask(
         taskInput({ name: 'Publisher', cron: '0 * * * *', permissionMode: 'dontAsk' })
       );
-      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const service = new TaskSchedulerService({
+        store: store,
+        ...onRuntime(mockAgent),
+        config: DEFAULT_CONFIG,
+      });
 
       expect(await runManually(service, task.id)).toMatchObject({
         status: 'needs_attention',
@@ -187,7 +203,11 @@ describe('TaskSchedulerService — how a run goes and how it ends', () => {
         yield { type: 'text_delta', data: { text: 'I could not read the mail.' } } as StreamEvent;
       });
       const task = store.createTask(taskInput({ name: 'Mailroom', cron: '0 * * * *' }));
-      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const service = new TaskSchedulerService({
+        store: store,
+        ...onRuntime(mockAgent),
+        config: DEFAULT_CONFIG,
+      });
 
       expect(await runManually(service, task.id)).toMatchObject({
         status: 'needs_attention',
@@ -208,7 +228,7 @@ describe('TaskSchedulerService — how a run goes and how it ends', () => {
       const task = store.createTask(taskInput({ name: 'Noted', cron: '0 * * * *' }));
       const service = new TaskSchedulerService({
         store,
-        runtimes: singleRuntimeSource(mockAgent),
+        ...onRuntime(mockAgent),
         config: DEFAULT_CONFIG,
         activityService: activityService as unknown as ActivityService,
       });
@@ -243,7 +263,7 @@ describe('TaskSchedulerService — how a run goes and how it ends', () => {
       const relay = { publish: vi.fn().mockResolvedValue({ messageId: 'stop', deliveredTo: 0 }) };
       const service = new TaskSchedulerService({
         store,
-        runtimes: singleRuntimeSource(mockAgent),
+        ...onRuntime(mockAgent),
         config: DEFAULT_CONFIG,
         relay: relay as unknown as RelayCore,
         keepAwake: {
@@ -283,7 +303,11 @@ describe('TaskSchedulerService — how a run goes and how it ends', () => {
         const turn = parkedTurn();
         vi.mocked(mockAgent.sendMessage).mockImplementation(turn.impl);
         const task = store.createTask(taskInput({ name: 'Parked', cron: '0 * * * *', maxRuntime }));
-        const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+        const service = new TaskSchedulerService({
+          store: store,
+          ...onRuntime(mockAgent),
+          config: DEFAULT_CONFIG,
+        });
         const run = await service.triggerManualRun(task.id);
         await turn.parked;
 
@@ -311,11 +335,15 @@ describe('TaskSchedulerService — how a run goes and how it ends', () => {
       const task = store.createTask(
         taskInput({ name: 'PhotoFinish', cron: '0 * * * *', maxRuntime: null })
       );
-      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const service = new TaskSchedulerService({
+        store: store,
+        ...onRuntime(mockAgent),
+        config: DEFAULT_CONFIG,
+      });
       vi.mocked(mockAgent.sendMessage).mockImplementation((() =>
         turnThatEndsAsItIsStopped(
           () => void service.cancelRun(store.listRuns({ taskId: task.id })[0]!.id)
-        )) as unknown as SchedulerAgentManager['sendMessage']);
+        )) as unknown as RuntimeDouble['sendMessage']);
 
       const run = await service.triggerManualRun(task.id);
       await waitFor(() => expect(store.getRun(run!.id)!.finishedAt).not.toBeNull());
@@ -331,7 +359,11 @@ describe('TaskSchedulerService — how a run goes and how it ends', () => {
       const task = store.createTask(
         taskInput({ name: 'Wedged', cron: '0 * * * *', maxRuntime: 50 })
       );
-      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const service = new TaskSchedulerService({
+        store: store,
+        ...onRuntime(mockAgent),
+        config: DEFAULT_CONFIG,
+      });
       const run = await service.triggerManualRun(task.id);
       await turn.parked;
 
@@ -352,7 +384,11 @@ describe('TaskSchedulerService — how a run goes and how it ends', () => {
       const task = store.createTask(
         taskInput({ name: 'Turn', cron: '0 * * * *', maxRuntime: null })
       );
-      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const service = new TaskSchedulerService({
+        store: store,
+        ...onRuntime(mockAgent),
+        config: DEFAULT_CONFIG,
+      });
       const row = await runManually(service, task.id);
       await service.stop();
       return row;
@@ -386,7 +422,11 @@ describe('TaskSchedulerService — how a run goes and how it ends', () => {
       const task = store.createTask(
         taskInput({ name: 'Stopped', cron: '0 * * * *', maxRuntime: 50 })
       );
-      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const service = new TaskSchedulerService({
+        store: store,
+        ...onRuntime(mockAgent),
+        config: DEFAULT_CONFIG,
+      });
       const run = await service.triggerManualRun(task.id);
       await parked;
 
@@ -406,9 +446,13 @@ describe('TaskSchedulerService — how a run goes and how it ends', () => {
       const task = store.createTask(
         taskInput({ name: 'Sticky cold', cron: '* * * * *', sticky: true })
       );
-      const service = new TaskSchedulerService(store, fake as unknown as SchedulerAgentManager, {
-        ...DEFAULT_CONFIG,
-        maxConcurrentRuns: 5,
+      const service = new TaskSchedulerService({
+        store: store,
+        ...onRuntime(fake as unknown as RuntimeDouble),
+        config: {
+          ...DEFAULT_CONFIG,
+          maxConcurrentRuns: 5,
+        },
       });
       const dispatch = (service as unknown as Dispatchable).dispatch.bind(service);
 
@@ -431,9 +475,13 @@ describe('TaskSchedulerService — how a run goes and how it ends', () => {
       const { impl, parked } = parkedTurn();
       vi.mocked(mockAgent.sendMessage).mockImplementation(impl);
       // Cap high so the ONLY reason to skip is the one-session rule.
-      const service = new TaskSchedulerService(store, mockAgent, {
-        ...DEFAULT_CONFIG,
-        maxConcurrentRuns: 5,
+      const service = new TaskSchedulerService({
+        store: store,
+        ...onRuntime(mockAgent),
+        config: {
+          ...DEFAULT_CONFIG,
+          maxConcurrentRuns: 5,
+        },
       });
       const dispatch = (service as unknown as Dispatchable).dispatch.bind(service);
 

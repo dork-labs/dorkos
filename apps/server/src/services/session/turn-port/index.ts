@@ -33,6 +33,7 @@ export {
   type ComputerTurnPort,
 } from './computer-face.js';
 export { queueKeyOf as chatKeyOf } from '../resolution/session-key-registry.js';
+export { watchRunEvents } from './run-events.js';
 export { isAgentLaunchCapFull } from '../launch/launch-cap.js';
 
 /**

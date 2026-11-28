@@ -21,9 +21,10 @@ import { skillsRoot } from './task-root-fixtures.js';
 import { TaskReconciler } from '../task-reconciler.js';
 import { TaskRegistrar } from '../task-registrar.js';
 import { TaskStore } from '../task-store.js';
-import { TaskSchedulerService, type SchedulerAgentManager } from '../task-scheduler-service.js';
+import { TaskSchedulerService } from '../task-scheduler-service.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
+import { onRuntime, type RuntimeDouble } from './support/runtime-task-turns.js';
 
 /** A task SKILL.md with the given cron, in UTC so next-run times are stable. */
 function skillFile(name: string, cron: string, timezone = 'UTC'): string {
@@ -31,7 +32,7 @@ function skillFile(name: string, cron: string, timezone = 'UTC'): string {
 }
 
 /** An agent manager that would run a turn, if anything here ever fired one. */
-function silentAgentManager(): SchedulerAgentManager {
+function silentAgentManager(): RuntimeDouble {
   return {
     ensureSession: vi.fn(),
     sendMessage: vi.fn().mockImplementation(async function* () {}),
@@ -41,7 +42,7 @@ function silentAgentManager(): SchedulerAgentManager {
     // Nobody else is writing to these sessions, so the write-lock is always free.
     acquireLock: vi.fn(() => true),
     releaseLock: vi.fn(),
-  } as unknown as SchedulerAgentManager;
+  } as unknown as RuntimeDouble;
 }
 
 /** Poll `check` until it returns something truthy, or fail with `label`. */
@@ -70,13 +71,17 @@ describe('a task file on disk drives the running scheduler', () => {
     await mkdir(skillsDir, { recursive: true });
     db = createTestDb();
     store = new TaskStore(db);
-    scheduler = new TaskSchedulerService(store, silentAgentManager(), {
-      maxConcurrentRuns: 1,
-      retentionCount: 100,
-      // Nothing in this file waits long enough to fire, and the schedules are
-      // hours out; firing stays on so the jobs are the real thing.
-      mayFire: true,
-      firingReason: 'test',
+    scheduler = new TaskSchedulerService({
+      store: store,
+      ...onRuntime(silentAgentManager()),
+      config: {
+        maxConcurrentRuns: 1,
+        retentionCount: 100,
+        // Nothing in this file waits long enough to fire, and the schedules are
+        // hours out; firing stays on so the jobs are the real thing.
+        mayFire: true,
+        firingReason: 'test',
+      },
     });
     registrar = new TaskRegistrar({ store, scheduler });
     watcher = new TaskFileWatcher(store, registrar, new ScheduleIdentityRegistry());

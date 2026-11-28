@@ -15,7 +15,6 @@ import { TaskStore, type CreateTaskStoreInput } from '../../services/tasks/task-
 import {
   TaskSchedulerService,
   singleRuntimeSource,
-  type SchedulerAgentManager,
 } from '../../services/tasks/task-scheduler-service.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
@@ -34,6 +33,7 @@ import {
   clearTestHomes,
   registerEveryFolderAsHome,
 } from '../../services/core/agent-identity/__tests__/agent-home-fixture.js';
+import type { RuntimeDouble } from '../../services/tasks/__tests__/support/runtime-task-turns.js';
 
 // Every scratch folder counts as a registered home here, so this suite's
 // mocked mesh decides who is an agent, as it did before homes (DOR-2355).
@@ -894,7 +894,7 @@ describe('POST /api/tasks/runs/:id/cancel — relay-dispatched run', () => {
         // Nobody else is writing to these sessions, so the write-lock is always free.
         acquireLock: vi.fn(() => true),
         releaseLock: vi.fn(),
-      } as unknown as SchedulerAgentManager),
+      } as unknown as RuntimeDouble),
       config: {
         maxConcurrentRuns: 1,
         retentionCount: 100,

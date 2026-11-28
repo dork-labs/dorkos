@@ -44,10 +44,11 @@ import { capRunIfFileChanged } from '../file-cap/run-cap.js';
 import { AuditLog } from '../../../audit/audit-log.js';
 import { AccountIds } from '../../../audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../../audit/audit-trail.js';
-import { TaskSchedulerService, type SchedulerAgentManager } from '../../task-scheduler-service.js';
+import { TaskSchedulerService } from '../../task-scheduler-service.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import { isTerminalRunStatus } from '../../lifecycle/run-statuses.js';
 import { initBoundary } from '../../../../lib/boundary.js';
+import { onRuntime, type RuntimeDouble } from '../../__tests__/support/runtime-task-turns.js';
 
 /** The experiment's switch, flipped per test. */
 export const flag = hoisted.flag;
@@ -172,24 +173,23 @@ export function fakeAgentManager(events: StreamEvent[] = []) {
     getInternalSessionId: vi.fn(() => undefined),
     acquireLock: vi.fn(() => true),
     releaseLock: vi.fn(),
-  } as unknown as SchedulerAgentManager;
+  } as unknown as RuntimeDouble;
 }
 
 /** Fire the task's schedule once through the real dispatch, and wait for the run to end. */
 export async function fire(
   id: string,
-  agentManager: SchedulerAgentManager,
+  agentManager: RuntimeDouble,
   at = '2023-11-14T03:00:00.000Z'
 ) {
   const { store } = env;
   await initBoundary('/');
-  const service = new TaskSchedulerService(
+  const service = new TaskSchedulerService({
     store,
-    agentManager,
-    { maxConcurrentRuns: 5, retentionCount: 100, mayFire: true, firingReason: 'test' },
-    null,
-    env.meshCore
-  );
+    ...onRuntime(agentManager),
+    config: { maxConcurrentRuns: 5, retentionCount: 100, mayFire: true, firingReason: 'test' },
+    meshCore: env.meshCore,
+  });
   const dispatch = (service as unknown as { dispatch(t: Task, at: Date): Promise<void> }).dispatch;
   await dispatch.call(service, store.getTask(id)!, new Date(at));
   const run = store.listRuns({ taskId: id })[0]!;

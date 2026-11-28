@@ -11,7 +11,7 @@ import type { TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
 import type { RelayCore } from '@dorkos/relay';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { initBoundary } from '../../../lib/boundary.js';
-import { TaskSchedulerService, singleRuntimeSource } from '../task-scheduler-service.js';
+import { TaskSchedulerService } from '../task-scheduler-service.js';
 import { TaskStore } from '../task-store.js';
 import { isTerminalRunStatus } from '../lifecycle/run-statuses.js';
 import { holdAwakeDuringTurns, KeepAwakeService } from '../../core/keep-awake/index.js';
@@ -22,6 +22,7 @@ vi.mock('../../relay/relay-state.js', () => ({
 
 import { isRelayEnabled } from '../../relay/relay-state.js';
 import { registerClaudeCodeFacts } from '../../../startup/register-claude-code-facts.js';
+import { onRuntime } from './support/runtime-task-turns.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
 // refuses every path and turn code knows no Claude transcript.
@@ -90,7 +91,7 @@ describe('a task run holds the computer awake', () => {
     const wrapped = holdAwakeDuringTurns(agent, keepAwake);
     const service = new TaskSchedulerService({
       store,
-      runtimes: singleRuntimeSource(wrapped as never),
+      ...onRuntime(wrapped as never),
       config: CONFIG,
       keepAwake,
     });
@@ -126,7 +127,7 @@ describe('a task run holds the computer awake', () => {
     };
     const service = new TaskSchedulerService({
       store,
-      runtimes: singleRuntimeSource(wrapped as never),
+      ...onRuntime(wrapped as never),
       config: CONFIG,
       relay: relay as unknown as RelayCore,
       keepAwake,

@@ -6,6 +6,7 @@
  *
  * @module services/session/turn-port/computer-face
  */
+import type { InterruptReceipt } from '@dorkos/shared/schemas';
 import type { TurnStartAnswer, TurnStartRequest } from '@dorkos/shared/turn-port';
 
 /** The computer face: what the space face's `start_turn` handler calls. */
@@ -39,6 +40,15 @@ export interface ComputerTurnPort {
    * @returns Whether a row was removed.
    */
   removeQueued(sessionId: string, runId: string): boolean;
+  /**
+   * Stop one run's turn, leaving the chat's queue and every other run alone
+   * (§3.1, §3.6).
+   *
+   * @param runId - The run.
+   * @returns The runtime's receipt (ADR 260823-021312), or `undefined` when
+   *   the run has no turn running on this computer.
+   */
+  stop(runId: string): Promise<InterruptReceipt | undefined>;
 }
 
 let installed: ComputerTurnPort | undefined;

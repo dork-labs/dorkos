@@ -34,8 +34,9 @@ import { ConnectorUsageStore } from '../../connectors/execution/usage-store.js';
 import { isRelayEnabled } from '../../relay/relay-state.js';
 import { RELAY_DISPATCH_OK } from '../../relay/task-dispatch/readiness.js';
 import { TaskStore } from '../task-store.js';
-import { singleRuntimeSource, TaskSchedulerService } from '../task-scheduler-service.js';
+import { TaskSchedulerService } from '../task-scheduler-service.js';
 import { registerClaudeCodeFacts } from '../../../startup/register-claude-code-facts.js';
+import { onRuntime } from './support/runtime-task-turns.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
 // refuses every path and turn code knows no Claude transcript.
@@ -276,7 +277,7 @@ describe.each(['direct', 'relay'] as const)('%s scheduled connected apps', (disp
     vi.mocked(isRelayEnabled).mockReturnValue(dispatchPath === 'relay');
     service = new TaskSchedulerService({
       store,
-      runtimes: singleRuntimeSource(runtime),
+      ...onRuntime(runtime),
       config: CONFIG,
       meshCore: {
         getProjectPath: (id: string) => (id === 'agent-a' ? agentHome : undefined),

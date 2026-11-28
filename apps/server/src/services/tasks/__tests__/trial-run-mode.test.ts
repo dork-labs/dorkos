@@ -7,14 +7,11 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
-import {
-  TaskSchedulerService,
-  singleRuntimeSource,
-  type SchedulerAgentManager,
-} from '../task-scheduler-service.js';
+import { TaskSchedulerService } from '../task-scheduler-service.js';
 import { TaskStore } from '../task-store.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { registerClaudeCodeFacts } from '../../../startup/register-claude-code-facts.js';
+import { onRuntime, type RuntimeDouble } from './support/runtime-task-turns.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
 // refuses every path and turn code knows no Claude transcript.
@@ -22,7 +19,7 @@ registerClaudeCodeFacts();
 
 describe('a tightened trial of a sticky schedule', () => {
   let store: TaskStore;
-  let manager: SchedulerAgentManager;
+  let manager: RuntimeDouble;
   let service: TaskSchedulerService;
 
   beforeEach(() => {
@@ -36,10 +33,10 @@ describe('a tightened trial of a sticky schedule', () => {
       getInternalSessionId: vi.fn(() => undefined),
       acquireLock: vi.fn(() => true),
       releaseLock: vi.fn(),
-    } as unknown as SchedulerAgentManager;
+    } as unknown as RuntimeDouble;
     service = new TaskSchedulerService({
       store,
-      runtimes: singleRuntimeSource(manager),
+      ...onRuntime(manager),
       config: { maxConcurrentRuns: 1, retentionCount: 100, mayFire: true, firingReason: 'test' },
     });
   });

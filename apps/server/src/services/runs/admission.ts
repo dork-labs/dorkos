@@ -27,9 +27,16 @@
  * 4. **The account** the caller hinted passes through as `accountRef`
  *    (DOR-5190 replaces the choice).
  *
+ * 5. **The scheduler's cap.** A timer's fire of a task (nobody watching it)
+ *    waits (`machine_full`) while as many task turns as
+ *    `scheduler.maxConcurrentRuns` allows are running, and is woken when one
+ *    lets go (`schedule-cap.ts`, T12); the fire is no longer skipped. A run a
+ *    person or an agent started counts toward the cap but is never held by
+ *    it, as before.
+ *
  * The rest have a slot and no rule yet: an agent busy in another room (T10,
- * rooms' own callers), the scheduler's cap (T12), the memory budget
- * (DOR-5192), a playbook (DOR-5187, absent rather than `null` on the port).
+ * rooms' own callers), the memory budget (DOR-5192), a playbook (DOR-5187,
+ * absent rather than `null` on the port).
  *
  * @module services/runs/admission
  */
@@ -65,6 +72,8 @@ export interface AdmissionDeps {
   ) => { name: string } | undefined;
   /** Whether every launch slot under `runtimes.maxAgentChats` is taken. */
   machineFull: () => boolean;
+  /** Whether every slot under `scheduler.maxConcurrentRuns` is taken (a task's run only). */
+  scheduleFull?: () => boolean;
 }
 
 /**
@@ -87,7 +96,7 @@ export function countsTowardCap(origin: TurnOrigin): boolean {
  */
 export function admit(
   run: TurnRun & { origin: TurnOrigin },
-  start: Pick<StartPayload, 'cwd' | 'accountHint'>,
+  start: Pick<StartPayload, 'cwd' | 'accountHint' | 'unattended'>,
   deps: AdmissionDeps
 ): AdmissionVerdict {
   if (!personTyped(run.origin) && deps.pausedAgent(run.agentId, start.cwd, run.sessionId))
@@ -97,6 +106,9 @@ export function admit(
   const composer = wordsWaitInComposer(run.origin);
   if (!composer && chatBusy) return { wait: 'chat_busy' };
   if (countsTowardCap(run.origin) && !(composer && chatBusy) && deps.machineFull()) {
+    return { wait: 'machine_full' };
+  }
+  if (run.origin.kind === 'schedule' && start.unattended === true && deps.scheduleFull?.()) {
     return { wait: 'machine_full' };
   }
   return {
