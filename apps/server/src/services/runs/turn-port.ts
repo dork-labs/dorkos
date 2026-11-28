@@ -55,14 +55,9 @@ import type { EffectStore } from './effects/effect-store.js';
 import { StartPayloadSchema, startPayloadOf, type StartPayload } from './effects/start-payload.js';
 import type { RunStore, TurnRun } from './run-store.js';
 import { writeStopReceipt, writeStopRequest } from './run-stops.js';
+import { RUN_ENDS, runTurnEvents, stopRun, type RunTurnReading } from './run-turn-stream.js';
 
-/** The statuses after which a run never goes back in line, so its words are no longer needed. */
-export const RUN_ENDS: ReadonlySet<TurnRun['status']> = new Set([
-  'ended',
-  'settled',
-  'cancelled',
-  'superseded',
-]);
+export { RUN_ENDS };
 
 /** Why the space face refused a start before saving anything. */
 export type SpaceRefusalReason =
@@ -251,6 +246,17 @@ export class SpaceTurnPort {
   }
 
   /**
+   * A registered agent's home, by its Mesh id: how a caller that knows an
+   * agent by its folder checks that an id it read there names that folder.
+   *
+   * @param agentId - The agent's Mesh id.
+   * @returns The home, or `undefined` when Mesh is not running or knows no such agent.
+   */
+  agentHomeOf(agentId: string): string | undefined {
+    return this.deps.agentHome?.()?.(agentId);
+  }
+
+  /**
    * One run by id (§3.1 `get`).
    *
    * @param runId - The run.
@@ -320,6 +326,29 @@ export class SpaceTurnPort {
     const receipt = await computer.stop(runId);
     if (receipt) writeStopReceipt(this.deps.runs, request, receipt);
     return receipt;
+  }
+
+  /**
+   * A run's turn, read back as the events its runtime sends, until it is over
+   * (`run-turn-stream.ts`): for a caller that used to drive a runtime itself.
+   *
+   * @param runId - A run this caller started.
+   * @param reading - How a run that never started is worded.
+   */
+  turnEvents(runId: string, reading: RunTurnReading): AsyncGenerator<StreamEvent> {
+    return runTurnEvents(this, runId, reading);
+  }
+
+  /**
+   * Stop a run's turn, asking again once a launch under way has started
+   * (`run-turn-stream.ts`). Never rejects.
+   *
+   * @param runId - The run.
+   * @param by - Who asked, as a `dork:` reference, when known.
+   * @returns The receipt of the first ask, or `undefined` when no turn was running yet.
+   */
+  stopTurn(runId: string, by?: string): Promise<InterruptReceipt | undefined> {
+    return stopRun(this, runId, by);
   }
 
   /**

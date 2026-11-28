@@ -60,6 +60,7 @@ export {
 } from './run-store.js';
 export { createRunFactsSink } from './run-facts-sink.js';
 export type { ScheduleCapSource } from './schedule-cap.js';
+export type { RunTurnReading } from './run-turn-stream.js';
 export type { StopRequestRef } from './run-stops.js';
 export {
   RUN_ENDS,

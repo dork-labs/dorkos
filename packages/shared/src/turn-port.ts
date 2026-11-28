@@ -53,7 +53,7 @@ import {
   SEED_CONTEXT_MAX_LENGTH,
   SessionSettingsSchema,
 } from './schemas.js';
-import type { DirectoryGrant, TurnPermissionCeiling } from './agent-runtime.js';
+import type { DirectoryGrant, TurnPermissionCeiling, TurnStarter } from './agent-runtime.js';
 import { RunEndingSchema, RunStatusSchema, type RunStatus } from './run-schemas.js';
 
 // The record's words live in `run-schemas.ts`, which the session stream reads too.
@@ -451,6 +451,48 @@ const TaskTurnSchema = z.strictObject({
 });
 
 /**
+ * Who a relay delivery's turn shows as started by (`TurnStarter`, display only).
+ * A label from the sender's address, never a verified identity.
+ */
+const RelayStarterSchema = z.enum([
+  'telegram',
+  'slack',
+  'webhook',
+  'agent-message',
+  'outside-message',
+  'unknown',
+]);
+
+/**
+ * What a relay delivery's turn carries of its own (T13): the level the
+ * binding that carried the message grants (`__bindingPermissions`), else
+ * `default`, sent with every turn as the relay always sent it. A chat a
+ * message opens is born at it, and the turn is never raised to its agent's
+ * level, since it names a level of its own. A message started the turn, not a
+ * person watching, so an approval card never holds it. Only a relay origin
+ * sets it ({@link isRelayOrigin}); the computer face refuses it on any other.
+ */
+const RelayTurnSchema = z.strictObject({
+  permissionMode: PermissionModeIdSchema,
+  starter: RelayStarterSchema.optional(),
+});
+
+/**
+ * Whether an origin is a message the relay delivered to an agent: from a chat
+ * binding, from one of our agents, or from a sender outside DorkOS
+ * (`relayTurnOrigin` in the server). Only these may carry a relay turn's level.
+ *
+ * @param origin - What is starting the turn.
+ */
+export function isRelayOrigin(origin: TurnOrigin): boolean {
+  return (
+    origin.kind === 'relay-binding' ||
+    origin.kind === 'agent-dm' ||
+    origin.kind === 'outside-sender'
+  );
+}
+
+/**
  * Compile-time proof that the option schemas above carry the runtime's own
  * types, in both directions: what a schema parses can be handed to a runtime,
  * and what a caller holds today can be parsed. Never evaluated.
@@ -465,8 +507,12 @@ type AssertMirrors<S extends z.ZodType, T> = [z.output<S>] extends [T]
 const _assertCeiling: AssertMirrors<typeof TurnPermissionCeilingSchema, TurnPermissionCeiling> =
   true;
 const _assertGrant: AssertMirrors<typeof DirectoryGrantSchema, DirectoryGrant> = true;
+/** Every relay starter is a turn starter the runtime knows. */
+const _assertStarter: [z.output<typeof RelayStarterSchema>] extends [TurnStarter] ? true : never =
+  true;
 void _assertCeiling;
 void _assertGrant;
+void _assertStarter;
 
 /**
  * Work the computer side does when a turn LAUNCHES, named rather than passed
@@ -562,6 +608,8 @@ const callerTurnFields = {
   carriedMarks: z.strictObject({ outsider: z.literal(true) }).optional(),
   /** A scheduled task's own level and approved rules. See {@link TaskTurnSchema}. */
   task: TaskTurnSchema.optional(),
+  /** A relay delivery's own level. See {@link RelayTurnSchema}. */
+  relay: RelayTurnSchema.optional(),
 };
 
 // === Space face ===

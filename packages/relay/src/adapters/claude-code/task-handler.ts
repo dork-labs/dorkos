@@ -36,7 +36,12 @@ import {
 } from '@dorkos/shared/awake-clock';
 import { withSleepBlame } from '@dorkos/shared/schedule-notice-copy';
 import type { AdapterContext, DeliveryResult, TraceStoreLike } from '../../types.js';
-import type { AgentRuntimeLike, RefusedAskReporter, TasksStoreLike } from './types.js';
+import type {
+  AgentRuntimeLike,
+  RefusedAskReporter,
+  TasksStoreLike,
+  TurnStartNote,
+} from './types.js';
 import { OPERATOR_CANCEL } from './task-cancel-handler.js';
 import type { AbortRegistry } from '../../lib/abort-registry.js';
 import { interruptTurn } from './interrupt.js';
@@ -207,6 +212,8 @@ export interface TasksHandlerDeps {
    * this registry exists to close.
    */
   runningTasks: AbortRegistry;
+  /** Told before the run's turn starts, as an agent turn tells it — see {@link TurnStartNote}. */
+  noteTurnStart?: TurnStartNote;
   /**
    * This run's clock, injectable so a test can pin the TTL boundary instead of
    * racing it (DOR-1729).
@@ -466,6 +473,9 @@ export async function handleTasksMessage(
       ...executionSettings,
     });
 
+    // Before the turn runs, so the host knows the scheduler started it. The
+    // host's note must not throw (`TurnStartNote`).
+    deps.noteTurnStart?.({ sessionId, from: envelope.from });
     const eventStream = deps.agentManager.sendMessage(sessionId, prompt, {
       permissionMode,
       cwd: effectiveCwd,
