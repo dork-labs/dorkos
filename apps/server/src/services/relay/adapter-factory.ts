@@ -58,6 +58,7 @@ import { heldChatPlace } from '../session/launch/resolve-chat-place.js';
 import {
   portBackedRuntimes,
   registeredAgentIdOf,
+  relayTaskRunWords,
   relayTurnPort,
   RelayTurnNotes,
 } from './relay-turns/port-runtime.js';
@@ -375,6 +376,8 @@ export async function createAdapter(
             (await runtimeRegistry.resolveSessionRuntime(sessionId)).bound,
           forgetUnstarted: (sessionId) => runtimeRegistry.forgetUnstartedSession(sessionId),
         },
+        // A task's words wait at the scheduler's source, so a restart ends its run (DOR-5508).
+        taskRunWords: relayTaskRunWords,
       });
       // What answers a message that names no runtime; the adapter drives the
       // rest of the map per message (DOR-1614).

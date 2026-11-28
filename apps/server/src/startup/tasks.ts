@@ -16,6 +16,7 @@ import { resolveScheduleParkPayload } from '../services/notifications/emitters/s
 import { raiseStanding } from '../services/notifications/standing-events.js';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
 import { RELAY_NOT_BUILT } from '../services/relay/task-dispatch/readiness.js';
+import { setRelayTaskRunWords } from '../services/relay/relay-turns/port-runtime.js';
 import { startAgentExecutionWatch } from '../services/tasks/approvals/agent-execution-watch.js';
 import { attachAgentRoots, attachTaskRoot } from '../services/tasks/attach-task-roots.js';
 import { migrateLegacySchedules } from '../services/tasks/legacy-migration.js';
@@ -161,6 +162,11 @@ export async function startTasks(deps: TasksStartupDeps): Promise<StartedTasks> 
       logger,
     });
 
+    // One door for a task's turns: the scheduler's own fires, and the runs the
+    // relay carries, whose words wait at the same source so a restart ends
+    // them from the run record too (DOR-5508).
+    const taskTurns = portTaskTurns(turnPort, taskStore);
+    setRelayTaskRunWords(taskTurns);
     schedulerService = new TaskSchedulerService({
       store: taskStore,
       runtimes: runtimeRegistry,
@@ -196,7 +202,7 @@ export async function startTasks(deps: TasksStartupDeps): Promise<StartedTasks> 
       // A run's turn starts through the turn port, and a timer's fire at the cap
       // waits there for a slot (spec `turns-survive-restarts`, T12). A run whose
       // turn a restart cut is closed by the run record, in this store (DOR-5496).
-      turns: portTaskTurns(turnPort, taskStore),
+      turns: taskTurns,
       scheduleCap: setScheduleCap,
     });
     // The ONE registration seam, shared by every writer that can change what a

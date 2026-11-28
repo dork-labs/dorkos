@@ -61,9 +61,10 @@
  * alone every run the record still owes its ending ({@link TaskTurns.owesEnding}),
  * whoever leads, and one writer ends each run. That closes the residual above
  * for those runs too: a manual run a crash orphaned ends once its turn's lease
- * runs out. The sweep is left the runs the record does not hold: one whose
- * turn never reached the port, one the relay carried, and one whose turn ended
- * before the crash and whose own ending was never written.
+ * runs out. A run the relay carried names the same source (DOR-5508), so the
+ * record ends it too. The sweep is left the runs the record does not hold: one
+ * whose turn never reached the port, and one whose turn ended before the crash
+ * and whose own ending was never written.
  *
  * ## Runs this process is executing are never swept, by any rule
  *

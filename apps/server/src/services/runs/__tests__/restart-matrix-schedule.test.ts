@@ -6,14 +6,17 @@
  * says what happened, its terminal consumers hear it once, and nothing
  * continues. Past the age bound the ending is written and nothing wakes. The
  * scheduler's boot sweep leaves alone what the record still owes, so one writer
- * ends each task run.
+ * ends each task run. A run the relay carries for the scheduler names the same
+ * source through the relay's stand-in, and ends the same way (DOR-5508).
  *
  * Booted as startup orders it: the record, then Tasks (whose door registers
  * the scheduler's source), then recovery, then the worker, then the sweep.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eq, notifications } from '@dorkos/db';
+import type { AgentRuntimeLike } from '@dorkos/relay';
 import { createAwakeClock } from '@dorkos/shared/awake-clock';
+import { TASK_SCHEDULER_PRINCIPAL } from '@dorkos/shared/relay-schemas';
 import type { TaskRun } from '@dorkos/shared/types';
 import { RUNS } from '../../../config/constants.js';
 import { resetMessageDispatcher } from '../../session/message-dispatcher.js';
@@ -21,7 +24,8 @@ import { disposeProjector } from '../../session/session-state-projector.js';
 import { TaskStore } from '../../tasks/task-store.js';
 import { sweepInterruptedRuns } from '../../tasks/crash-recovery.js';
 import { portTaskTurns, type TaskTurns } from '../../tasks/execution/task-turns.js';
-import { turnPort, uninstallRunRecord } from '../index.js';
+import { portBackedRuntime, RelayTurnNotes } from '../../relay/relay-turns/port-runtime.js';
+import { turnPort, uninstallRunRecord, type RunRecord } from '../index.js';
 import { RUN_LEASE_MS } from '../run-store.js';
 import {
   AGENT,
@@ -31,6 +35,7 @@ import {
   kill,
   pass,
   runningRun,
+  settle,
   setUpHarness,
   tearDownHarness,
 } from './restart-harness.js';
@@ -68,6 +73,37 @@ function sweep(turns?: TaskTurns) {
   const clock = createAwakeClock();
   clock.dispose();
   return sweepInterruptedRuns(tasks, null, new Set(), clock, turns);
+}
+
+/**
+ * The relay's stand-in on the dying boot, starting a scheduled run the scheduler
+ * handed the relay, noted as its task handler notes it; the scheduler's door on
+ * that boot is the source its words wait at, as startup wires it.
+ */
+async function relayCarried(fire: TaskRun, dying: RunRecord, scheduler: TaskTurns) {
+  const chat = h.sessionId;
+  const notes = new RelayTurnNotes();
+  const standIn = portBackedRuntime({} as AgentRuntimeLike, h.inner.type, {
+    port: () => dying.port,
+    notes,
+    originOf: () => ({ kind: 'outside-sender' }),
+    agentIdOf: async () => AGENT.id,
+    chats: { isBound: async () => true, forgetUnstarted: async () => {} },
+    taskRunWords: () => scheduler,
+  });
+  standIn.ensureSession(chat, { permissionMode: 'acceptEdits', cwd: AGENT.home, unattended: true });
+  notes.note({ sessionId: chat, from: TASK_SCHEDULER_PRINCIPAL, taskRunId: fire.id });
+  standIn.sendMessage(chat, 'tidy the inbox', {
+    permissionMode: 'acceptEdits',
+    cwd: AGENT.home,
+    forAgent: AGENT.home,
+    unattendedApprovals: true,
+    taskApprovedAllow: ['Bash(git status)'],
+  } as Parameters<AgentRuntimeLike['sendMessage']>[2]);
+  await settle();
+  const run = dying.store.listForChat(chat)[0]!;
+  const start = dying.effects.listForRun(run.id).find((effect) => effect.kind === 'start_turn');
+  return { run, payload: start!.payload as Record<string, unknown> };
 }
 
 /** Every inbox row of the restart notice. */
@@ -230,5 +266,53 @@ describe('K15: a scheduled turn a restart cut', () => {
       error: 'Interrupted by server restart',
     });
     expect(heard.map((run) => run.id)).toEqual([fire.id]);
+  });
+
+  it('a run the relay carried for the scheduler ends its task run the same way, at the same power', async () => {
+    // Purpose: fails if a relay-carried task's run names no source, so a restart notice and the sweep end it instead.
+    const fire = taskRun();
+    const dying = deadBoot();
+    const { run, payload } = await relayCarried(
+      fire,
+      dying,
+      portTaskTurns(() => dying.port, tasks)
+    );
+
+    expect(run).toMatchObject({ origin: { kind: 'schedule' }, sourceRef: sourceOf(fire) });
+    // The scheduler's source holds its words, not only this boot's own copy.
+    const elsewhere = { id: 'another-run', sourceRef: run.sourceRef, sessionId: run.sessionId };
+    expect(dying.port.wordsOf(elsewhere)).toBe('tidy the inbox');
+    // Its level, rules and `unattended` are the task's, and nothing else holds it.
+    expect(payload).toMatchObject({
+      task: { permissionMode: 'acceptEdits', approvedAllow: ['Bash(git status)'] },
+      unattended: true,
+      originRef: `dork:run:${fire.id}`,
+    });
+    expect(payload).not.toHaveProperty('permissionCeiling');
+    expect(payload).not.toHaveProperty('carriedMarks');
+    expect(payload).not.toHaveProperty('relay');
+
+    // Its turn was handed over and running when the process died.
+    let cut = dying.store.move(run, 'starting', dying.store.lease());
+    cut = dying.store.move(cut, 'started', {
+      runtime: h.inner.type,
+      runtimeTurnRef: 3,
+      startedAt: dying.store.stamp(),
+      ...dying.store.lease(),
+    });
+    dying.store.move(cut, 'running', { deliveredAt: dying.store.stamp() });
+    kill();
+    const turns = bootWithTasks();
+    await pass();
+
+    expect(h.record!.store.get(run.id)?.ending).toBe('process_died');
+    expect(tasks.getRun(fire.id)).toMatchObject({
+      status: 'failed',
+      error: 'Interrupted by server restart',
+    });
+    expect(heard.map((ended) => ended.id)).toEqual([fire.id]);
+    expect(restartRows()).toEqual([]);
+    expect(h.answered).toEqual([]);
+    expect(sweep(turns).swept).toBe(0);
   });
 });

@@ -196,8 +196,14 @@ export type TurnRuntimeTypeResolver = (turn: {
  * @param binding.agentDirectory - The agent this conversation belongs to, when
  *   one resolved.
  */
-/** See {@link ClaudeCodeAdapterDeps.noteTurnStart}. Must not throw. */
-export type TurnStartNote = (turn: { sessionId: string; from: string }) => void;
+/**
+ * See {@link ClaudeCodeAdapterDeps.noteTurnStart}. Must not throw.
+ *
+ * @param turn.taskRunId - The scheduler's run this turn is, set only by the
+ *   task handler: the host names the run's words after it, as the scheduler's
+ *   own fire does (DOR-5508).
+ */
+export type TurnStartNote = (turn: { sessionId: string; from: string; taskRunId?: string }) => void;
 
 export type SessionRuntimeBinder = (binding: {
   sessionId: string;
