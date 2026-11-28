@@ -117,6 +117,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'browser.enabled',
       'computers.enabled',
       'sessionRelay.enabled',
+      'remoteComputers.enabled',
       'spaces.enabled',
       'spaces.official.url',
       'a2a.enabled',

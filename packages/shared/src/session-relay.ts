@@ -197,9 +197,22 @@ export type SessionRelayFeature = (typeof SESSION_RELAY_FEATURES)[number];
 
 /**
  * A peer's advertised features. Plain strings rather than the enum, so a newer
- * peer's feature this build has never heard of is carried, not refused.
+ * peer's feature this build has never heard of is carried, not refused. Each
+ * is bounded (at most 64 of them, each at most 64 characters of `a-z`, `0-9`,
+ * `.`, `_` and `-`), and a list past a bound is refused whole, never trimmed
+ * (spec `space-computer-contract` §4.1, Security's terms on DOR-5164). An id
+ * this build does not know is carried only: it never joins an agreed set
+ * (`wire/features.ts`), a log line or a decision.
  */
-export const RelayAdvertisedFeaturesSchema = z.array(z.string().min(1).max(64)).max(64);
+export const RelayAdvertisedFeaturesSchema = z
+  .array(
+    z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[a-z0-9._-]+$/)
+  )
+  .max(64);
 
 // === Ids ===
 

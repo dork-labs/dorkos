@@ -22,11 +22,7 @@ vi.mock('../../../../lib/logger.js', () => ({
 }));
 
 import { pinnableKey } from '../../session-relay/channel.js';
-import {
-  RelayDialer,
-  type RelayRequestServer,
-  type RelaySocket,
-} from '../../session-relay/relay-dialer.js';
+import { RelayDialer, type RelayRequestServer } from '../../session-relay/relay-dialer.js';
 import type { RelayPin } from '../../session-relay/pin-store.js';
 import {
   HUB_RELAY_HANDSHAKE_TIMEOUT_MS,
@@ -36,9 +32,9 @@ import {
   RELAY_COMPUTER_OFFLINE,
   RELAY_HUB_BUSY,
   RELAY_TIMED_OUT,
-  type HubRelaySocket,
   type RelayStreamFrame,
 } from '../computer-connection.js';
+import { Wire } from './relay-socket-pair.js';
 import {
   computerConnection,
   forgetConnection,
@@ -52,52 +48,6 @@ const AGENT = '01KJXYKJYW4N8QGQ5W4GB6YM9J';
 const SESSION = '3f1c2b7a-8d4e-4f6a-9b0c-1d2e3f4a5b6c';
 /** A chat the fake computer refuses to stream, with an `error` as the real one does. */
 const REFUSED_SESSION = '00000000-0000-4000-8000-000000000000';
-
-/** Frames in flight, delivered only when the test pumps, as a network would. */
-class Wire {
-  readonly queue: (() => void)[] = [];
-  /** Drop what the computer sends, as a half-open connection does. */
-  computerMuted = false;
-  readonly computer = new End(this, 'computer');
-  readonly hub = new End(this, 'hub');
-  pump(): void {
-    while (this.queue.length > 0) this.queue.shift()!();
-  }
-}
-
-/** One end of the {@link Wire}: a socket to whichever side holds it. */
-class End implements RelaySocket, HubRelaySocket {
-  bufferedAmount = 0;
-  closed = false;
-  readonly sent: string[] = [];
-  private readonly listeners = new Map<string, ((...args: unknown[]) => void)[]>();
-  constructor(
-    private readonly wire: Wire,
-    private readonly side: 'computer' | 'hub'
-  ) {}
-  private get peer(): End {
-    return this.side === 'computer' ? this.wire.hub : this.wire.computer;
-  }
-  send(text: string): void {
-    if (this.closed) return;
-    this.sent.push(text);
-    if (this.side === 'computer' && this.wire.computerMuted) return;
-    this.wire.queue.push(() => this.peer.fire('message', text, false));
-  }
-  close(): void {
-    if (this.closed) return;
-    this.closed = true;
-    this.fire('close');
-    this.wire.queue.push(() => this.peer.close());
-  }
-  on = ((event: string, listener: (...args: never[]) => void): void => {
-    const stored = listener as (...args: unknown[]) => void;
-    this.listeners.set(event, [...(this.listeners.get(event) ?? []), stored]);
-  }) as RelaySocket['on'] & HubRelaySocket['on'];
-  fire(event: string, ...args: unknown[]): void {
-    for (const listener of this.listeners.get(event) ?? []) listener(...args);
-  }
-}
 
 /** A computer's request server that answers a few requests and holds the rest. */
 function fakeServer(features: readonly string[]) {

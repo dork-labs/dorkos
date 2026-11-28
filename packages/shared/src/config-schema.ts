@@ -70,6 +70,7 @@ import {
   KeepAwakeConfigSchema,
   NetworkConfigSchema,
   RemoteAccessConfigSchema,
+  RemoteComputersConfigSchema,
   ServerConfigSchema,
 } from './config-sections.js';
 import { CredentialReferenceSchema } from './credential-reference.js';
@@ -697,6 +698,8 @@ export const UserConfigSchema = z.object({
       enabled: z.boolean().default(false),
     })
     .default(() => ({ enabled: false })),
+  /** Agent computers over the relay, an experiment (`config-sections.ts`, DOR-5164). */
+  remoteComputers: RemoteComputersConfigSchema,
   /**
    * Docs: markdown documents people and agents write together, with embeds,
    * wiki links, comments and live editing (DOR-2981 to DOR-2984).
