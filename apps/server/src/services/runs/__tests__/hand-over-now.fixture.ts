@@ -40,6 +40,7 @@ import { ChatMessageStore } from '../../session/chat-messages/chat-message-store
 import {
   ChatMessageService,
   type ChatCaller,
+  type ChatMessageServiceDeps,
 } from '../../session/chat-messages/chat-message-service.js';
 
 // What startup registers (DOR-4928): unregistered, the place rule refuses every folder.
@@ -151,8 +152,12 @@ export function installRecord(): void {
   record = getRunRecord()!;
 }
 
-/** Chat messaging as startup wires it, over the run record's port; the receiving chats exist. */
-export function chatMessaging(): ChatMessageService {
+/**
+ * Chat messaging as startup wires it, over the run record's port; the receiving chats exist.
+ *
+ * @param overrides - What a case reads differently (a sending chat's level, say).
+ */
+export function chatMessaging(overrides: Partial<ChatMessageServiceDeps> = {}): ChatMessageService {
   const agent = { id: AGENT.id, name: 'relay-scout', projectPath: AGENT.home };
   const service = new ChatMessageService({
     store: messages,
@@ -178,6 +183,7 @@ export function chatMessaging(): ChatMessageService {
     turnLevelOf: () => undefined,
     emitActivity: () => undefined,
     turns: { handOver: (input, opts) => record.handOver(input, opts), port: () => record.port },
+    ...overrides,
   });
   messaging.push(service);
   return service;
