@@ -204,6 +204,7 @@ export function conformanceSampleInputs(
     'work-graph.agent_work': { agentId: '01JCONFORMANCEAGENT0000000' },
     'work-graph.chat_tree': { chatId: 'conformance-chat' },
     'work-graph.chat_work': { chatId: 'conformance-chat' },
+    'work-graph.work_item_chats': { ref: 'DOR-1' },
     // Anonymous here, so the handler refuses with its own structured error
     // (there is no agent to scope the request to), which is what "wired" means.
     'permissions.request_access': {

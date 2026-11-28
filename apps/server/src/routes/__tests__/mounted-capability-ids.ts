@@ -96,6 +96,7 @@ export const MOUNTED_CAPABILITY_IDS: readonly string[] = [
   'work-graph.chat_tree',
   'work-graph.agent_work',
   'work-graph.chat_work',
+  'work-graph.work_item_chats',
   'agent.pause',
   'agent.resume',
   'agent.list_paused',

@@ -10,7 +10,11 @@ import { check, index, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite
  *   lineage query (W3, DOR-4969), which shows it as never started or leaves it
  *   out. A carry to another account is a move, not a start, and is never
  *   written as `started`.
- * - `claims`: a chat claims a ticket or pull request.
+ * - `claims`: a chat took a claim on a ticket or pull request (DOR-4972): one
+ *   row per claim, written in the step that took the lock in `work_claims`.
+ * - `released`: a chat's claim on a ticket or pull request ended (DOR-4972):
+ *   released, lapsed, handed over or cleaned up, one row per end. With
+ *   `claims`, it makes a claim's span; `source` says what wrote the row.
  * - `opened`: a chat opened a pull request, a branch or a worktree.
  * - `works_on`: a chat works on a ticket, a pull request or a branch.
  * - `belongs_to`: a thing belongs to another (a run to the chat it ran in).
@@ -29,10 +33,37 @@ export const WORK_LINK_RELATIONS = [
   'produced',
   'forked_from',
   'rekeyed_from',
+  'released',
 ] as const;
 
 /** One of {@link WORK_LINK_RELATIONS}. */
 export type WorkLinkRelation = (typeof WORK_LINK_RELATIONS)[number];
+
+/**
+ * The relations that record a span of time, not a lasting fact (DOR-4972): a
+ * chat may claim and release one ticket many times, so these rows are unique
+ * by their time as well (`work_links_span_unique`), and every other relation
+ * stays one row per edge (`work_links_edge_unique`).
+ */
+export const WORK_LINK_SPAN_RELATIONS = ['claims', 'released'] as const;
+
+/** One of {@link WORK_LINK_SPAN_RELATIONS}. */
+export type WorkLinkSpanRelation = (typeof WORK_LINK_SPAN_RELATIONS)[number];
+
+/**
+ * The two triggers that keep `work_links` append-only, as the migrations write
+ * them. Drizzle does not know triggers exist, so a migration that rebuilds the
+ * table drops them, and must end with these statements, copied exactly (its
+ * test, `work-links-triggers.test.ts`, holds every migration to that).
+ */
+export const WORK_LINKS_APPEND_ONLY_TRIGGERS: readonly string[] = (
+  ['UPDATE', 'DELETE'] as const
+).map(
+  (operation) =>
+    `CREATE TRIGGER \`work_links_append_only_${operation.toLowerCase()}\`\n` +
+    `BEFORE ${operation} ON \`work_links\`\n` +
+    `BEGIN\n\tSELECT RAISE(ABORT, 'work links are append-only');\nEND;`
+);
 
 /** The longest stored reference: a worktree's 255-character name with its prefix fits. */
 export const WORK_LINK_REF_MAX_LENGTH = 300;
@@ -41,6 +72,7 @@ export const WORK_LINK_REF_MAX_LENGTH = 300;
 export const WORK_LINK_SOURCE_MAX_LENGTH = 32;
 
 const relationList = sql.raw(WORK_LINK_RELATIONS.map((relation) => `'${relation}'`).join(', '));
+const spanList = sql.raw(WORK_LINK_SPAN_RELATIONS.map((relation) => `'${relation}'`).join(', '));
 
 /**
  * The work graph's edges (DOR-4968, W2): one row per fact "this chat started,
@@ -50,9 +82,14 @@ const relationList = sql.raw(WORK_LINK_RELATIONS.map((relation) => `'${relation}
  * Append-only: rows are inserted and read, never changed. Two triggers, written
  * by hand in migration `20261124200641_dor4968_work_links`, refuse every UPDATE
  * and DELETE, as `audit_events` does. Drizzle does not know they exist, so a
- * later migration that rebuilds this table must recreate them. An exact repeat
- * of an edge (same `from_ref`, `relation` and `to_ref`) is the same fact and
- * lands no second row (`work_links_edge_unique`); its first `recorded_at` stands.
+ * later migration that rebuilds this table must recreate them
+ * ({@link WORK_LINKS_APPEND_ONLY_TRIGGERS}; DOR-4972's rebuild did). An exact
+ * repeat of an edge (same `from_ref`, `relation` and `to_ref`) is the same fact
+ * and lands no second row (`work_links_edge_unique`); its first `recorded_at`
+ * stands. A span relation ({@link WORK_LINK_SPAN_RELATIONS}) is unique by its
+ * time too (`work_links_span_unique`): its `recorded_at` is the transition's
+ * own time from the claim, so a repeated write of one transition lands nothing
+ * and a later claim of the same ticket by the same chat lands a row of its own.
  *
  * Both ends are stored as one canonical text spelling of an entity reference
  * (`@dorkos/shared/entity-ref`), encoded and decoded by the server's
@@ -95,7 +132,12 @@ export const workLinks = sqliteTable(
     turnMarks: text('turn_marks'),
   },
   (table) => [
-    uniqueIndex('work_links_edge_unique').on(table.fromRef, table.relation, table.toRef),
+    uniqueIndex('work_links_edge_unique')
+      .on(table.fromRef, table.relation, table.toRef)
+      .where(sql`"relation" NOT IN (${spanList})`),
+    uniqueIndex('work_links_span_unique')
+      .on(table.fromRef, table.relation, table.toRef, table.recordedAt)
+      .where(sql`"relation" IN (${spanList})`),
     index('work_links_to_idx').on(table.toRef, table.relation),
     check('work_links_relation', sql`${table.relation} IN (${relationList})`),
     check(

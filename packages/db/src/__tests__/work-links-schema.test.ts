@@ -100,4 +100,16 @@ describe('work_links', () => {
     expect(() => insert()).toThrow(/UNIQUE/i);
     insert({ relation: 'forked_from' });
   });
+
+  it('keeps one row per claim or release at one time, and takes another at a new time', () => {
+    const claim = { fromRef: 'dork:chat:a', toRef: 'DOR-1', source: 'claim-tool' } as const;
+    insert({ ...claim, relation: 'claims' });
+    expect(() => insert({ ...claim, relation: 'claims' })).toThrow(/UNIQUE/i);
+    insert({ ...claim, relation: 'claims', recordedAt: '2026-11-24T13:00:00.000Z' });
+    insert({ ...claim, relation: 'released', source: 'release-tool' });
+    expect(() => insert({ ...claim, relation: 'released', source: 'lapse-sweep' })).toThrow(
+      /UNIQUE/i
+    );
+    expect(db.select().from(workLinks).all()).toHaveLength(3);
+  });
 });

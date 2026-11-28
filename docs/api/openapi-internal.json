@@ -10194,6 +10194,201 @@
         "x-stability": "internal"
       }
     },
+    "/api/push/vapid-public-key": {
+      "get": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Read the VAPID public key a browser needs to subscribe",
+        "description": "Generates this install’s keypair on the first call. Answers `key: null` when web push is unavailable here, so a client can say so instead of offering a button that fails.",
+        "responses": {
+          "200": {
+            "description": "The public key, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VapidPublicKeyResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`operator_only`: only the operator may see this install’s push setup",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "push.getVapidPublicKey",
+        "x-stability": "internal"
+      }
+    },
+    "/api/push/subscriptions": {
+      "get": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "List the browsers DorkOS may push to",
+        "description": "Never returns an endpoint, only the push service’s hostname and the dates. Newest subscribed first, the id breaking a tie, a page at a time: pass `nextCursor` back as `cursor` for the next. A cursor this list did not give is refused with `400 invalid_request`. A browser added or removed while paging can repeat or be missed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of subscribed browsers, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListPushSubscriptionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: a bad `limit`, or a cursor this list did not give",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`operator_only`: only the operator may list push devices",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "push.listSubscriptions",
+        "x-stability": "internal"
+      },
+      "post": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Let DorkOS push to this browser",
+        "description": "Idempotent by endpoint, so a client may call it on every load to refresh keys the browser rotated without accumulating dead rows.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterPushSubscriptionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The subscription as it now stands",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterPushSubscriptionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`operator_only`: only the operator may subscribe a device",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "push.createSubscriptions",
+        "x-stability": "internal"
+      }
+    },
+    "/api/push/subscriptions/{id}": {
+      "delete": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Stop pushing to one browser",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "How many rows went away — 0 when it was already gone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletePushSubscriptionResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`operator_only`: only the operator may remove a push device",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "push.deleteSubscriptions",
+        "x-stability": "internal"
+      }
+    },
     "/api/sessions/daily-counts": {
       "get": {
         "tags": [
@@ -11595,14 +11790,70 @@
           "Extensions"
         ],
         "summary": "List the code sources a person trusts",
-        "description": "Every source a person chose to trust outright, in the order they trusted it. An extension whose copy provably came from one of these (DorkOS’s own installer recorded fetching it from there) runs without asking first. A copy that only claims a source never counts.",
+        "description": "Every source a person chose to trust outright, in the order they trusted it. An extension whose copy provably came from one of these (DorkOS’s own installer recorded fetching it from there) runs without asking first. A copy that only claims a source never counts. A page at a time: pass `nextCursor` back as `cursor` for the next; a cursor this list did not give is refused with `400 invalid_request`. A source trusted or dropped while paging can repeat or be missed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "description": "The `nextCursor` of the page before; leave it out for the first page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before; leave it out for the first page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "How many this page holds, 1 to 200."
+            },
+            "required": false,
+            "description": "How many this page holds, 1 to 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
-            "description": "The trusted sources",
+            "description": "One page of the trusted sources",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TrustedSourcesResponse"
+                  "type": "object",
+                  "properties": {
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TrustedSource"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass as `cursor` for the next page; null on the last one."
+                    }
+                  },
+                  "required": [
+                    "sources",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_request`: a bad `limit`, or a cursor this list did not give",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -11611,7 +11862,7 @@
             "$ref": "#/components/responses/InternalErrorProblem"
           }
         },
-        "operationId": "extensions.getTrustedSources",
+        "operationId": "extensions.listTrustedSources",
         "x-stability": "internal"
       },
       "post": {
@@ -14238,164 +14489,6 @@
           }
         },
         "operationId": "harness.createAdopt",
-        "x-stability": "internal"
-      }
-    },
-    "/api/push/vapid-public-key": {
-      "get": {
-        "tags": [
-          "Notifications"
-        ],
-        "summary": "Read the VAPID public key a browser needs to subscribe",
-        "description": "Generates this install’s keypair on the first call. Answers `key: null` when web push is unavailable here, so a client can say so instead of offering a button that fails.",
-        "responses": {
-          "200": {
-            "description": "The public key, or null",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/VapidPublicKeyResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "`operator_only`: only the operator may see this install’s push setup",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "push.getVapidPublicKey",
-        "x-stability": "internal"
-      }
-    },
-    "/api/push/subscriptions": {
-      "get": {
-        "tags": [
-          "Notifications"
-        ],
-        "summary": "List the browsers DorkOS may push to",
-        "description": "Never returns an endpoint — only the push service’s hostname and the dates.",
-        "responses": {
-          "200": {
-            "description": "Every subscribed browser, newest first",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ListPushSubscriptionsResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "`operator_only`: only the operator may list push devices",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "push.listSubscriptions",
-        "x-stability": "internal"
-      },
-      "post": {
-        "tags": [
-          "Notifications"
-        ],
-        "summary": "Let DorkOS push to this browser",
-        "description": "Idempotent by endpoint, so a client may call it on every load to refresh keys the browser rotated without accumulating dead rows.",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RegisterPushSubscriptionRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The subscription as it now stands",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RegisterPushSubscriptionResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation error",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "`operator_only`: only the operator may subscribe a device",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "push.createSubscriptions",
-        "x-stability": "internal"
-      }
-    },
-    "/api/push/subscriptions/{id}": {
-      "delete": {
-        "tags": [
-          "Notifications"
-        ],
-        "summary": "Stop pushing to one browser",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "How many rows went away — 0 when it was already gone",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DeletePushSubscriptionResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "`operator_only`: only the operator may remove a push device",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "push.deleteSubscriptions",
         "x-stability": "internal"
       }
     },
@@ -20310,6 +20403,136 @@
           "code"
         ]
       },
+      "VapidPublicKeyResponse": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "key"
+        ]
+      },
+      "ListPushSubscriptionsResponse": {
+        "type": "object",
+        "properties": {
+          "subscriptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PushSubscriptionDTO"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` for the next page; null on the last one."
+          }
+        },
+        "required": [
+          "subscriptions",
+          "nextCursor"
+        ]
+      },
+      "PushSubscriptionDTO": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "service": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "service",
+          "createdAt",
+          "lastSeenAt"
+        ]
+      },
+      "RegisterPushSubscriptionResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "subscription": {
+            "$ref": "#/components/schemas/PushSubscriptionDTO"
+          }
+        },
+        "required": [
+          "ok",
+          "subscription"
+        ]
+      },
+      "RegisterPushSubscriptionRequest": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "format": "uri"
+          },
+          "keys": {
+            "$ref": "#/components/schemas/PushSubscriptionKeys"
+          }
+        },
+        "required": [
+          "endpoint",
+          "keys"
+        ]
+      },
+      "PushSubscriptionKeys": {
+        "type": "object",
+        "properties": {
+          "p256dh": {
+            "type": "string",
+            "minLength": 1
+          },
+          "auth": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "p256dh",
+          "auth"
+        ]
+      },
+      "DeletePushSubscriptionResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "removed": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "ok",
+          "removed"
+        ]
+      },
       "SessionDailyCountsResponse": {
         "type": "object",
         "properties": {
@@ -20838,20 +21061,6 @@
           "version"
         ]
       },
-      "TrustedSourcesResponse": {
-        "type": "object",
-        "properties": {
-          "sources": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TrustedSource"
-            }
-          }
-        },
-        "required": [
-          "sources"
-        ]
-      },
       "TrustedSource": {
         "type": "object",
         "properties": {
@@ -20866,6 +21075,20 @@
         "required": [
           "source",
           "trustedAt"
+        ]
+      },
+      "TrustedSourcesResponse": {
+        "type": "object",
+        "properties": {
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrustedSource"
+            }
+          }
+        },
+        "required": [
+          "sources"
         ]
       },
       "TrustedSourceRequest": {
@@ -22225,128 +22448,6 @@
         },
         "required": [
           "imageUrl"
-        ]
-      },
-      "VapidPublicKeyResponse": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "key"
-        ]
-      },
-      "ListPushSubscriptionsResponse": {
-        "type": "object",
-        "properties": {
-          "subscriptions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PushSubscriptionDTO"
-            }
-          }
-        },
-        "required": [
-          "subscriptions"
-        ]
-      },
-      "PushSubscriptionDTO": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "service": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string"
-          },
-          "lastSeenAt": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "service",
-          "createdAt",
-          "lastSeenAt"
-        ]
-      },
-      "RegisterPushSubscriptionResponse": {
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
-          },
-          "subscription": {
-            "$ref": "#/components/schemas/PushSubscriptionDTO"
-          }
-        },
-        "required": [
-          "ok",
-          "subscription"
-        ]
-      },
-      "RegisterPushSubscriptionRequest": {
-        "type": "object",
-        "properties": {
-          "endpoint": {
-            "type": "string",
-            "format": "uri"
-          },
-          "keys": {
-            "$ref": "#/components/schemas/PushSubscriptionKeys"
-          }
-        },
-        "required": [
-          "endpoint",
-          "keys"
-        ]
-      },
-      "PushSubscriptionKeys": {
-        "type": "object",
-        "properties": {
-          "p256dh": {
-            "type": "string",
-            "minLength": 1
-          },
-          "auth": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "p256dh",
-          "auth"
-        ]
-      },
-      "DeletePushSubscriptionResponse": {
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
-          },
-          "removed": {
-            "type": "integer",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "ok",
-          "removed"
         ]
       },
       "FoundClaudeFolder": {

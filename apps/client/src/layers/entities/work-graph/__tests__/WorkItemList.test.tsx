@@ -63,6 +63,21 @@ describe('WorkItemList', () => {
     expect(second).toHaveTextContent('Works on · Nov 20, 2025 · In a spin-off');
   });
 
+  it('says a claimed pull request was claimed', () => {
+    render(
+      <WorkItemList
+        emptyText="None yet."
+        chatId="mine"
+        query={query([
+          pr('#9', 'PR #9', [
+            { relation: 'claims', chatId: 'mine', recordedAt: '2026-11-24T10:00:00.000Z' },
+          ]),
+        ])}
+      />
+    );
+    expect(rows()[0]).toHaveTextContent('Claimed · Nov 24');
+  });
+
   it('says so when there are none, and offers the next page while one waits', async () => {
     const { rerender } = render(<WorkItemList emptyText="None yet." query={query([])} />);
     expect(screen.getByText('None yet.')).toBeInTheDocument();

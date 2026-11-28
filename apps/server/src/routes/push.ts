@@ -17,6 +17,7 @@ import { readCallerPrincipal } from '../lib/caller-principal.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { problem, readJsonBody, validationProblem } from '@dorkos/http-kit';
 import { honoRequestFacts } from '../http/request-facts.js';
+import { answerPage } from '../lib/paging/hand-route-page.js';
 import { notificationEntitlement } from '../services/notifications/notification-entitlement.js';
 import {
   pushSubscriptionDto,
@@ -64,7 +65,14 @@ export function createPushRoutes(deps: PushRouterDeps): Hono<ApiEnv> {
   router.get('/subscriptions', (c) => {
     const refused = refusedNonOperator(c);
     if (refused) return refused;
-    return c.json({ subscriptions: deps.subscriptions.list() });
+    // A page at a time, newest first: when each browser subscribed, the id breaking a tie.
+    // That is the order `list()` keeps (by ULID), and neither field ever moves.
+    return answerPage(c, {
+      list: 'push-subscriptions',
+      noun: 'subscriptions',
+      read: () => deps.subscriptions.list(),
+      keyOf: (row) => [row.createdAt, row.id],
+    });
   });
 
   router.post('/subscriptions', (c) => {

@@ -27,6 +27,7 @@ import { registerDevicesOpenApi } from '../auth/sessions/devices-openapi.js';
 import { registerOwnerFactorsOpenApi } from '../auth/factors/owner-factors-openapi.js';
 import { registerProblemOpenApi } from './problem-openapi.js';
 import { registerEventsOpenApi } from './events-openapi.js';
+import { registerPushOpenApi } from './push-openapi.js';
 
 /** Register independent domain paths in their existing order. */
 export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
@@ -59,4 +60,5 @@ export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
   registerOwnerFactorsOpenApi(registry);
   registerAccountSigninOpenApi(registry);
   registerEventsOpenApi(registry);
+  registerPushOpenApi(registry);
 }
