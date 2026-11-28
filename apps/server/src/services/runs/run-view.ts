@@ -102,7 +102,14 @@ function viewOf(run: TurnRun, place: number | null, notice: RunNotice | null): C
 export function chatRunsOf(runs: RunStore, effects: EffectStore, chatId: string): ChatRun[] {
   const { open, lastEnded, continued } = runs.shownRunsOf(chatId);
   const rows = waitingRowOrder(chatId);
-  const starts = effects.openStartRunsOf(chatKeyOf(chatId));
+  const keyed = effects.openStartRunsOf(chatKeyOf(chatId));
+  // A run whose words will become a queue row waits unkeyed until it is handed
+  // over (a full machine holds it first, T6): it follows the keyed ones.
+  const unkeyed = open
+    .filter((run) => run.status === 'queued' && run.queueMessageId === null)
+    .map((run) => run.id)
+    .filter((id) => !keyed.includes(id));
+  const starts = [...keyed, ...unkeyed];
   const placeOf = (run: TurnRun): number | null => {
     if (run.status !== 'queued') return null;
     const place =

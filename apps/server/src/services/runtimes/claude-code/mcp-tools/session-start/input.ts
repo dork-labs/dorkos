@@ -13,6 +13,7 @@ import {
 } from '@dorkos/shared/schemas';
 import { START_WORK_LIMITS } from '@dorkos/shared/extension-decision-schemas';
 import type { EffortLevel } from '@dorkos/shared/types';
+import type { WaitReason } from '@dorkos/shared/turn-port';
 import type { SessionStartPermission } from '../session-start-permission.js';
 import { CLAIM_KEY_MAX_LENGTH } from '../../../../session/claims/work-claim-service.js';
 import type { SessionAlreadyRunningResult } from '../../../../session/claims/work-claim-start.js';
@@ -146,8 +147,14 @@ export interface SessionStartedResult {
   account: { id: string; label: string | null } | null;
   /** The permission level it runs at. */
   permission: SessionStartPermission;
-  /** Always `started`. A refusal is an error result instead. */
-  status: 'started';
+  /**
+   * `started`, or `waiting` when every launch slot is taken and its first turn
+   * waits for one (it starts by itself when one frees). A refusal is an error
+   * result instead.
+   */
+  status: 'started' | 'waiting';
+  /** With `waiting`: why, and its place among its chat's waiting turns. */
+  waiting?: { reason: WaitReason | null; place: number };
 }
 
 /**

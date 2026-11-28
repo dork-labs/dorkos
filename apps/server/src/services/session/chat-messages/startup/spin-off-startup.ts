@@ -11,8 +11,22 @@
  * again from its last beat, and no wait holds it past {@link MAX_START_WAIT_MS}.
  * A start that comes after a failure was sent tells the same parent once that
  * it started after all, and never ahead of the failure itself.
+ *
+ * **The first turn itself** starts through the turn port (spec
+ * `turns-survive-restarts` §3, T6): `session_start` hands its first message to
+ * the space face here ({@link startSpinOffTurn}) and hears at once what became
+ * of it, and this follows the run until its turn is over. A spin-off that
+ * finds every launch slot under `runtimes.maxAgentChats` taken waits for one
+ * (`machine_full`), with its place, instead of being refused; while it waits
+ * the deadline is held a beat at a time, as a wait for a warm slot holds it.
+ * Chat messaging is space side (`contributing/architecture-target.md` §3), so
+ * the tool, which is turn code, reaches the port through here; startup hands
+ * the port in ({@link setSpinOffTurnPort}).
  */
 import { MAX_START_WAIT_MS } from '@dorkos/shared/run-time-limit';
+import type { RunStatus, StartTurnInput } from '@dorkos/shared/turn-port';
+import type { HandOverNowAnswer } from '@dorkos/shared/turn-hand-over';
+import type { SpaceTurnPort, TurnRun } from '../../../runs/index.js';
 import { NO_MARKS, type TurnMarks } from '../../../core/turn-power/turn-marks.js';
 import { logger, logError } from '../../../../lib/logger.js';
 
@@ -265,4 +279,112 @@ export function setSpinOffStartup(startup: SpinOffStartup | undefined): void {
 /** The startup service, absent before chat messaging boots. */
 export function getSpinOffStartup(): SpinOffStartup | undefined {
   return current;
+}
+
+/** The turn port's parts a spin-off's first turn uses, as startup hands them in. */
+export interface SpinOffTurnPort {
+  /** Save a run and hand it over now (`handOverTurn` in `services/runs`). */
+  handOver: (
+    input: StartTurnInput,
+    opts: { runId: string }
+  ) => Promise<HandOverNowAnswer> | undefined;
+  /** The space face, for following the run; `undefined` before startup wired it. */
+  port: () => Pick<SpaceTurnPort, 'watch' | 'get'> | undefined;
+}
+
+let spinOffPort: SpinOffTurnPort | undefined;
+
+/**
+ * Hand in the turn port at startup, or clear it.
+ *
+ * @param port - The hand-over and the space face.
+ */
+export function setSpinOffTurnPort(port: SpinOffTurnPort | undefined): void {
+  spinOffPort = port;
+}
+
+/** How often a waiting spin-off holds its first-turn deadline: inside the startup's lease. */
+export const SPIN_OFF_WAIT_BEAT_MS = 60_000;
+
+/** A run's statuses once its turn is over or never comes. */
+const OVER: ReadonlySet<RunStatus> = new Set(['ended', 'settled', 'cancelled', 'superseded']);
+
+/** How a spin-off's first turn settled, as `session_start` reads it. */
+export type SpinOffSettled = (outcome: 'ok' | 'failed', refusal?: string) => void;
+
+/** How a run's turn settled: a refusal carries the runtime's words; a stop is not a failure. */
+function settledAs(run: TurnRun): [outcome: 'ok' | 'failed', refusal?: string] {
+  if (run.status === 'superseded') return ['ok'];
+  if (run.status === 'cancelled') {
+    return ['failed', `It did not start (${run.endingDetail.cancelledBecause ?? 'cancelled'}).`];
+  }
+  if (run.ending === 'refused') {
+    return ['failed', run.endingDetail.refusal ?? 'The runtime refused the turn.'];
+  }
+  return run.ending === 'completed' || run.ending === 'stopped' ? ['ok'] : ['failed'];
+}
+
+/**
+ * Start a spin-off's first turn through the port and follow it.
+ *
+ * @param input - The turn, as the space face's `start()` takes it.
+ * @param opts.runId - The run's id: the first message's id, which its chat message names.
+ * @param opts.onSettled - Called once, when the turn is over or will never come.
+ * @returns What became of the hand-over, or `undefined` before startup wired the port.
+ * @throws What the launch path threw, after the run was cancelled.
+ */
+export async function startSpinOffTurn(
+  input: StartTurnInput,
+  opts: { runId: string; onSettled: SpinOffSettled }
+): Promise<HandOverNowAnswer | undefined> {
+  const port = spinOffPort?.port();
+  if (!port || !spinOffPort) return undefined;
+  const { handOver } = spinOffPort;
+  let beat: ReturnType<typeof setInterval> | undefined;
+  let over = false;
+  // The chat as the run is kept under now: a rebind moves it to the runtime's id.
+  let chat = input.sessionId;
+  const stopBeating = (): void => {
+    if (beat === undefined) return;
+    clearInterval(beat);
+    beat = undefined;
+    getSpinOffStartup()?.doneWaiting(chat);
+  };
+  const hear = (run: TurnRun): void => {
+    if (over) return;
+    chat = run.sessionId;
+    if (run.status === 'queued' && run.waitReason !== null) {
+      // Waiting in line holds the first-turn deadline, beat by beat.
+      getSpinOffStartup()?.waitingToStart(chat);
+      beat ??= setInterval(() => getSpinOffStartup()?.waitingToStart(chat), SPIN_OFF_WAIT_BEAT_MS);
+      beat.unref?.();
+    } else {
+      stopBeating();
+    }
+    if (!OVER.has(run.status)) return;
+    over = true;
+    unwatch();
+    opts.onSettled(...settledAs(run));
+  };
+  // Heard from the first write on: the hand-over below can start the turn.
+  const unwatch = port.watch(hear, { runId: opts.runId });
+  let answer: HandOverNowAnswer | undefined;
+  try {
+    answer = await handOver(input, { runId: opts.runId });
+  } catch (err) {
+    over = true;
+    unwatch();
+    stopBeating();
+    throw err;
+  }
+  if (!answer || answer.kind === 'refused') {
+    // A refusal is the caller's to report; it leaves no turn to follow.
+    over = true;
+    unwatch();
+    stopBeating();
+    return answer;
+  }
+  const now = port.get(opts.runId);
+  if (now) hear(now);
+  return answer;
 }

@@ -171,10 +171,15 @@ export class SpaceTurnPort {
    *   that keeps the words in its own row names the run by that row's id, so the
    *   row, the run, the queue row its words become and the caller's receipt share
    *   one id. Not part of the port's payload; the space side mints every run id.
+   * @param opts.handOverAt - Epoch ms before which the worker leaves its hand-over
+   *   alone: a caller handing the run over now (`hand-over-now.ts`) goes first.
    * @returns The run's id, its status (`queued`) and its place among the chat's waiting runs.
    * @throws {TurnStartRefusedError} When the start is refused before anything is saved.
    */
-  start(input: StartTurnInput, opts: { runId?: string } = {}): StartTurnResult {
+  start(
+    input: StartTurnInput,
+    opts: { runId?: string; handOverAt?: number } = {}
+  ): StartTurnResult {
     const parsed = StartTurnInputSchema.safeParse(input);
     if (!parsed.success) {
       const tooLong =
@@ -225,6 +230,7 @@ export class SpaceTurnPort {
         ...(start.agentId !== undefined ? { agentId: start.agentId } : {}),
         ...(start.sourceRef !== undefined ? { sourceRef: start.sourceRef } : {}),
         ...(start.notAfter !== undefined ? { notAfter: start.notAfter } : {}),
+        ...(start.askedByRef !== undefined ? { askedByRef: start.askedByRef } : {}),
       });
       const waits = this.deps.preview?.(created, startPayloadOf(start));
       if (waits !== undefined) created = runs.move(created, 'queued', { waitReason: waits });
@@ -238,6 +244,7 @@ export class SpaceTurnPort {
         payload: startPayloadOf(start),
         delivery: 'repeatable',
         notAfter: start.notAfter ?? null,
+        ...(opts.handOverAt !== undefined ? { availableAt: opts.handOverAt } : {}),
       });
       return created;
     });

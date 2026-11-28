@@ -112,9 +112,11 @@ const ORIGIN_HELPERS: Readonly<Record<string, readonly string[]>> = {
  * turn port names its origin at the space face's `start` (spec
  * `turns-survive-restarts` §3.1), spelled `door.start(` so it is told apart
  * from every other `start`; the computer face is a doorway like the launch
- * service, pinned at the bottom.
+ * service, pinned at the bottom. A caller that hands its run over at once
+ * (T6) names it at `handOverTurn({` or, for a spin-off, `startSpinOffTurn({`.
  */
-const BINDING_CALL = /(?:persistSessionRuntime|dispatchSessionMessage|door\.start)\(/g;
+const BINDING_CALL =
+  /(?:persistSessionRuntime|dispatchSessionMessage|door\.start)\(|(?:handOverTurn|startSpinOffTurn)\(\s*\{/g;
 
 /** The turn port's computer face: it forwards the request's origin to the launch service. */
 const COMPUTER_FACE = 'services/session/turn-port/computer-turn-port.ts';
@@ -160,7 +162,9 @@ describe('every session-binding call site declares what it is', () => {
     if (
       !source.includes('persistSessionRuntime(') &&
       !source.includes('dispatchSessionMessage(') &&
-      !source.includes('door.start(')
+      !source.includes('door.start(') &&
+      !source.includes('handOverTurn(') &&
+      !source.includes('startSpinOffTurn(')
     )
       continue;
     const rel = relative(SRC, file);

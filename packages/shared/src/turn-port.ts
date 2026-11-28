@@ -93,8 +93,12 @@ export type TurnOrigin =
    * open through the relay, the way `interactive`'s person holds it open here.
    * The relay is the owner, never an outsider, so the words are the owner's
    * own typing.
+   *
+   * `newChat` says the message opens a chat started from the web: at most
+   * `WEB_NEW_CHATS_MAX` (`turn-hand-over.ts`) of those run at once, and one past that waits
+   * for a slot (admission, spec `turns-survive-restarts` §3.5, T6).
    */
-  | { readonly kind: 'session-relay' }
+  | { readonly kind: 'session-relay'; readonly newChat?: true }
   /**
    * A room turn — unattended, because a room triggers a turn into the dark.
    *
@@ -247,7 +251,7 @@ const bareOrigin = <K extends string>(kind: K) => z.strictObject({ kind: z.liter
  */
 export const TurnOriginSchema = z.discriminatedUnion('kind', [
   bareOrigin('interactive'),
-  bareOrigin('session-relay'),
+  z.strictObject({ kind: z.literal('session-relay'), newChat: z.literal(true).optional() }),
   z.strictObject({ kind: z.literal('room'), externalAuthor: z.boolean() }),
   bareOrigin('schedule'),
   bareOrigin('relay-binding'),
@@ -450,6 +454,16 @@ const TaskTurnSchema = z.strictObject({
   approvedAllow: z.array(z.string().min(1)).readonly().optional(),
 });
 
+/** Who chose where a chat runs (`SessionLauncher` in the server's launch path). */
+const TurnLauncherSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('person') }),
+  z.strictObject({ kind: z.literal('agent'), agentPath: z.string().min(1) }),
+  z.strictObject({ kind: z.literal('unidentified') }),
+]);
+
+/** Who chose where a chat runs. See {@link TurnLauncherSchema}. */
+export type TurnLauncher = z.infer<typeof TurnLauncherSchema>;
+
 /**
  * Who a relay delivery's turn shows as started by (`TurnStarter`, display only).
  * A label from the sender's address, never a verified identity.
@@ -573,6 +587,22 @@ const callerTurnFields = {
    * beat turn names one is the wire's to apply.
    */
   originRef: DorkReferenceSchema.optional(),
+  /**
+   * Who asked for the turn, as a `dork:` reference (spec §4.1 `asked_by_ref`,
+   * T6): `dork:chat:<id>` for a chat message or a spin-off's first message
+   * (the chat that sent it). The run record keeps it. A chat message's turn
+   * runs under its sending chat's identity, which is how the dispatcher holds
+   * it to that chat's level and keeps the person's words first, so the
+   * computer face refuses a chat message that names no sending chat.
+   */
+  askedByRef: DorkReferenceSchema.optional(),
+  /**
+   * Who chose where a new chat runs, when a caller did (DOR-3644): the person,
+   * an agent by its home, or a caller DorkOS cannot name. Anyone but the person
+   * is held to the launch place rule before anything is written, and the chat
+   * records who placed it. Set by a spin-off (T6).
+   */
+  launcher: TurnLauncherSchema.optional(),
   /** The tier the turn runs at, decided by the space side. */
   tier: AgentComputerTurnTierSchema,
   /** The loosest level the turn may run at. */

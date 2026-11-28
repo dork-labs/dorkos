@@ -165,8 +165,8 @@ import {
   registerAccountAdvisor,
 } from '../../../../core/usage/account-advisor.js';
 import { ADVISOR_FAILED_REASON } from '../../../../core/usage/account-ranking.js';
+import { getRunRecord } from '../../../../runs/index.js';
 import {
-  agentLaunchCapMessage,
   AGENT_LAUNCH_MAX_LIVE,
   dispatchSessionMessage,
   isSessionLaunchRefusal,
@@ -205,11 +205,8 @@ import {
 } from '../../../../audit/session-visibility.js';
 import { handRegisteredInSessionTools } from '../index.js';
 import { SessionStore } from '../../sessions/session-store.js';
-import {
-  SESSION_START_CLIENT_ID,
-  UNKNOWN_CALLER_MESSAGE,
-  createSessionStartHandler,
-} from '../session-tools.js';
+import { UNKNOWN_CALLER_MESSAGE, createSessionStartHandler } from '../session-tools.js';
+import { installSpinOffPort } from './session-tools-port.fixture.js';
 import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
@@ -328,15 +325,27 @@ const BASE = { prompt: 'Fix the flaky test', cwd: '/work/project' };
 
 let claude: FakeAgentRuntime;
 let codex: FakeAgentRuntime;
+let uninstallPort: () => void;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  uninstallPort = installSpinOffPort(() => meshAgents);
   startFacts.value = { personSetStop: null, fullUnnamedAllowed: true };
   __resetAccountAdvisorForTests();
   registerTestHomes([AGENT_HOME, OTHER_HOME], { roomsDir: ROOMS_DIR });
   meshAgents = [
-    { id: 'a1', name: 'scout', displayName: 'Scout', projectPath: AGENT_HOME },
-    { id: 'a2', name: 'dorkbot', displayName: 'DorkBot', projectPath: OTHER_HOME },
+    {
+      id: '01KSCVTAGENT00000000000001',
+      name: 'scout',
+      displayName: 'Scout',
+      projectPath: AGENT_HOME,
+    },
+    {
+      id: '01KDRKBTAGENT0000000000002',
+      name: 'dorkbot',
+      displayName: 'DorkBot',
+      projectPath: OTHER_HOME,
+    },
   ];
   boundaryRoots.splice(0, boundaryRoots.length, '/work');
   runtimes.clear();
@@ -362,6 +371,7 @@ beforeEach(() => {
 afterEach(() => {
   // Free every launch slot a test took.
   for (const [opts] of vi.mocked(dispatchMessage).mock.calls) opts.onSettled?.('ok');
+  uninstallPort();
   setAccountUsageStore(undefined);
   clearTestHomes();
   vi.useRealTimers();
@@ -379,13 +389,14 @@ describe('session_start', () => {
     expect(runtimeRegistry.persistSessionRuntime).toHaveBeenCalledWith(
       expect.any(String),
       'claude-code',
-      { kind: 'agent-launch', launchedBy: 'a1' },
+      { kind: 'agent-launch', launchedBy: '01KSCVTAGENT00000000000001' },
       AGENT_HOME
     );
     const sent = vi.mocked(dispatchMessage).mock.calls[0]![0];
     expect(sent.content).toBe(BASE.prompt);
     expect(sent.cwd).toBe('/work/project');
-    expect(sent.clientId).toBe(SESSION_START_CLIENT_ID);
+    // Through the turn port (T6): the lock is held under its run's id.
+    expect(sent.clientId).toBe(`turn-port:${sent.messageId}`);
     // Omitted, the ladder decides: no hint rides the send.
     expect(sent.accountHint).toBeUndefined();
     expect(runtimeRegistry.discardSessionSettings).not.toHaveBeenCalled();
@@ -648,7 +659,7 @@ describe('session_start', () => {
       expect(runtimeRegistry.persistSessionRuntime).toHaveBeenCalledWith(
         expect.any(String),
         'claude-code',
-        { kind: 'agent-launch', launchedBy: 'a1' },
+        { kind: 'agent-launch', launchedBy: '01KSCVTAGENT00000000000001' },
         AGENT_HOME
       );
     });
@@ -799,61 +810,39 @@ describe('session_start', () => {
       expect(runtimeRegistry.discardSessionSettings).toHaveBeenCalledWith(sessionId);
     });
 
-    it('when the launch is not accepted', async () => {
+    it('when the dispatcher does not take the launch', async () => {
       vi.mocked(dispatchMessage).mockResolvedValueOnce({
         accepted: false,
         outcome: { kind: 'started', messageId: 'm' },
         queued: false,
         queuePosition: 0,
       } as never);
-      const result = await asScout()(BASE);
-      expect(payloadOf(result)).toMatchObject({ code: 'NOT_STARTED' });
+      await expect(asScout()(BASE)).rejects.toThrow(/did not take a run/u);
       const [sessionId] = vi.mocked(runtimeRegistry.saveSessionSettings).mock.calls[0]!;
       expect(runtimeRegistry.discardSessionSettings).toHaveBeenCalledWith(sessionId);
     });
-
-    it('when a launch loses the race for the last slot', async () => {
-      // All nine pass the early cap check together; the launch service then
-      // hands out eight slots and refuses the ninth after its row was saved.
-      const handler = asScout();
-      const results = await Promise.all(
-        Array.from({ length: AGENT_LAUNCH_MAX_LIVE + 1 }, () =>
-          handler({ ...BASE, model: 'claude-opus' })
-        )
-      );
-      const refused = results.filter((r) => r.isError);
-      expect(refused).toHaveLength(1);
-      expect(payloadOf(refused[0]!)).toMatchObject({ code: 'LAUNCH_CAP_FULL' });
-      expect(runtimeRegistry.saveSessionSettings).toHaveBeenCalledTimes(AGENT_LAUNCH_MAX_LIVE + 1);
-      const dispatched = new Set(
-        vi.mocked(dispatchMessage).mock.calls.map(([opts]) => opts.sessionId)
-      );
-      const lost = vi
-        .mocked(runtimeRegistry.saveSessionSettings)
-        .mock.calls.map(([id]) => id)
-        .find((id) => !dispatched.has(id));
-      expect(runtimeRegistry.discardSessionSettings).toHaveBeenCalledTimes(1);
-      expect(runtimeRegistry.discardSessionSettings).toHaveBeenCalledWith(lost);
-    });
   });
 
-  it(`refuses the ${AGENT_LAUNCH_MAX_LIVE + 1}th live launch, and starts again once one settles`, async () => {
+  it(`makes the ${AGENT_LAUNCH_MAX_LIVE + 1}th live launch wait for a slot, with its place, and starts it once one settles`, async () => {
+    // Purpose: fails if a full machine refuses a spin-off again (LAUNCH_CAP_FULL, T6).
     const handler = asScout();
     for (let i = 0; i < AGENT_LAUNCH_MAX_LIVE; i++) {
       expect((await handler(BASE)).isError).toBeUndefined();
     }
-    vi.mocked(runtimeRegistry.saveSessionSettings).mockClear();
-    const refused = await handler({ ...BASE, model: 'claude-opus' });
-    expect(payloadOf(refused)).toMatchObject({
-      error: agentLaunchCapMessage(),
-      code: 'LAUNCH_CAP_FULL',
+    const waiting = await handler({ ...BASE, model: 'claude-opus' });
+    expect(waiting.isError).toBeUndefined();
+    expect(payloadOf(waiting)).toMatchObject({
+      status: 'waiting',
+      waiting: { reason: 'machine_full', place: 1 },
     });
     expect(dispatchMessage).toHaveBeenCalledTimes(AGENT_LAUNCH_MAX_LIVE);
-    // Nothing is written for the refused launch either.
-    expect(runtimeRegistry.saveSessionSettings).not.toHaveBeenCalled();
-
+    // Its chat is kept: it starts by itself once a slot frees.
+    expect(runtimeRegistry.discardSessionSettings).not.toHaveBeenCalled();
     vi.mocked(dispatchMessage).mock.calls[0]![0].onSettled?.('ok');
-    expect((await handler(BASE)).isError).toBeUndefined();
+    await getRunRecord()!.worker.runOnce();
+    await vi.waitFor(() =>
+      expect(dispatchMessage).toHaveBeenCalledTimes(AGENT_LAUNCH_MAX_LIVE + 1)
+    );
   });
 
   describe('the chat title and link (DOR-2824)', () => {
@@ -1261,14 +1250,8 @@ describe('session_start records who started the new session (spec flow-multiproj
   });
 
   it('forgets the start when the launch does not go through', async () => {
-    vi.mocked(dispatchMessage).mockResolvedValueOnce({
-      accepted: false,
-      outcome: { kind: 'refused', messageId: 'm-1' },
-      queued: false,
-      queuePosition: 0,
-    } as never);
-    const result = await fromChat('parent-chat')(BASE);
-    expect(result.isError).toBe(true);
+    vi.mocked(dispatchMessage).mockRejectedValueOnce(new Error('spawn failed'));
+    await expect(fromChat('parent-chat')(BASE)).rejects.toThrow('spawn failed');
     const minted = vi.mocked(dispatchMessage).mock.calls[0]![0].sessionId;
     expect(store.get(minted)).toBeNull();
   });
@@ -2262,13 +2245,13 @@ describe('session_start claims the work it starts (DOR-4019)', () => {
     const result = await asScout()({ ...BASE, claim: 'dor-1' });
     expect(result.isError).toBeFalsy();
     const minted = vi.mocked(dispatchMessage).mock.calls[0]![0].sessionId;
-    expect(claims.check('a1')).toEqual([
+    expect(claims.check('01KSCVTAGENT00000000000001')).toEqual([
       expect.objectContaining({ key: 'DOR-1', sessionId: `canon-${minted}` }),
     ]);
   });
 
   it('refuses a key another chat holds without naming it when the caller cannot read it, and nothing starts', async () => {
-    claims.claim('a1', 'other-chat', 'DOR-1');
+    claims.claim('01KSCVTAGENT00000000000001', 'other-chat', 'DOR-1');
     const result = await asScout()({ ...BASE, claim: 'DOR-1' });
     expect(result.isError).toBe(true);
     const payload = payloadOf(result);
@@ -2281,22 +2264,18 @@ describe('session_start claims the work it starts (DOR-4019)', () => {
   });
 
   it('starts anyway when told to, and leaves the claim with its holder', async () => {
-    claims.claim('a1', 'other-chat', 'DOR-1');
+    claims.claim('01KSCVTAGENT00000000000001', 'other-chat', 'DOR-1');
     const result = await asScout()({ ...BASE, claim: 'DOR-1', startAnyway: true });
     expect(result.isError).toBeFalsy();
-    expect(claims.check('a1')).toEqual([expect.objectContaining({ sessionId: 'other-chat' })]);
+    expect(claims.check('01KSCVTAGENT00000000000001')).toEqual([
+      expect.objectContaining({ sessionId: 'other-chat' }),
+    ]);
   });
 
   it('frees the claim when the launch does not go through', async () => {
-    vi.mocked(dispatchMessage).mockResolvedValueOnce({
-      accepted: false,
-      outcome: { kind: 'refused', messageId: 'm-1' },
-      queued: false,
-      queuePosition: 0,
-    } as never);
-    const result = await asScout()({ ...BASE, claim: 'DOR-2' });
-    expect(result.isError).toBe(true);
-    expect(claims.check('a1')).toEqual([]);
+    vi.mocked(dispatchMessage).mockRejectedValueOnce(new Error('spawn failed'));
+    await expect(asScout()({ ...BASE, claim: 'DOR-2' })).rejects.toThrow('spawn failed');
+    expect(claims.check('01KSCVTAGENT00000000000001')).toEqual([]);
   });
 
   it('lets exactly one of two racing starts on one key through', async () => {
@@ -2322,14 +2301,15 @@ describe('session_start gives back a claim when the chat never runs (DOR-4019)',
   it('frees the claim when the launch fails before its first turn', async () => {
     const result = await asScout()({ ...BASE, claim: 'DOR-5' });
     expect(result.isError).toBeFalsy();
-    expect(claims.check('a1')).toHaveLength(1);
+    expect(claims.check('01KSCVTAGENT00000000000001')).toHaveLength(1);
     const [opts] = vi.mocked(dispatchMessage).mock.calls[0]!;
     opts.onSettled?.('failed', 'The runtime ended before its first turn started.');
-    expect(claims.check('a1')).toEqual([]);
+    // Heard from its run, once the write that ended it commits.
+    await vi.waitFor(() => expect(claims.check('01KSCVTAGENT00000000000001')).toEqual([]));
   });
 
   it('hands the calling chat’s own claim to the lane it starts for that work', async () => {
-    claims.claim('a1', 'coordinator', 'DOR-6');
+    claims.claim('01KSCVTAGENT00000000000001', 'coordinator', 'DOR-6');
     const fromCoordinator = createSessionStartHandler(makeDeps(), () => ({
       agentPath: AGENT_HOME,
       sessionId: 'coordinator',
@@ -2337,7 +2317,7 @@ describe('session_start gives back a claim when the chat never runs (DOR-4019)',
     const result = await fromCoordinator({ ...BASE, claim: 'DOR-6' });
     expect(result.isError).toBeFalsy();
     const minted = vi.mocked(dispatchMessage).mock.calls[0]![0].sessionId;
-    expect(claims.check('a1')).toEqual([
+    expect(claims.check('01KSCVTAGENT00000000000001')).toEqual([
       expect.objectContaining({ key: 'DOR-6', sessionId: `canon-${minted}` }),
     ]);
   });
@@ -2364,7 +2344,7 @@ describe('session_start hands back the chat already on the work (DOR-3690)', () 
   });
 
   it('returns the running chat for a named key instead of starting a second one', async () => {
-    claims.claim('a1', 'other-chat', 'DOR-10');
+    claims.claim('01KSCVTAGENT00000000000001', 'other-chat', 'DOR-10');
     const result = await fromCoordinator()({ ...BASE, claim: 'DOR-10' });
     expect(result.isError).toBeFalsy();
     const payload = payloadOf(result);
@@ -2383,7 +2363,7 @@ describe('session_start hands back the chat already on the work (DOR-3690)', () 
 
   it('refuses without naming the chat when the caller may not read it', async () => {
     resetSessionVisibility();
-    claims.claim('a1', 'other-chat', 'DOR-18');
+    claims.claim('01KSCVTAGENT00000000000001', 'other-chat', 'DOR-18');
     const result = await fromCoordinator()({ ...BASE, title: 'DOR-18 lane' });
     expect(result.isError).toBe(true);
     const payload = payloadOf(result);

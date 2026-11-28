@@ -29,9 +29,8 @@
  *
  * @module services/core/session-relay/relay-request-server
  */
-import { randomUUID } from 'node:crypto';
-import type { MeshCore } from '@dorkos/mesh';
 import type { InterruptReceipt, QueuedMessage } from '@dorkos/shared/schemas';
+import type { StartTurnInput } from '@dorkos/shared/turn-port';
 import {
   RelayRequestSchema,
   SESSION_RELAY_MAX_INFLIGHT_REQUESTS,
@@ -44,11 +43,7 @@ import {
 } from '@dorkos/shared/session-relay';
 import { BoundaryError } from '../../../lib/boundary.js';
 import { logger } from '../../../lib/logger.js';
-import type {
-  DispatchSessionMessageOpts,
-  DispatchSessionMessageResult,
-} from '../../session/launch/launch-session.js';
-import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
+import { WEB_NEW_CHATS_MAX, type HandOverNowAnswer } from '@dorkos/shared/turn-hand-over';
 import type { DurableStreamSink } from '../streams/durable-stream-sink.js';
 import type { SessionStreamRequest } from '../streams/session-stream-plan.js';
 import type { RelayRequestServer } from './relay-dialer.js';
@@ -68,12 +63,10 @@ import {
   RELAY_NOT_FOUND,
   RELAY_OUTSIDE_BOUNDARY,
   RELAY_RATE_LIMITED,
-  RELAY_TOO_MANY_NEW_CHATS,
   relayLaunchRefusal,
 } from './relay-errors.js';
 import { recordRelayAudit, type RelayAuditEntry } from './relay-audit.js';
 import { relayChatSummaries } from './relay-chat-list.js';
-import { relayClientId } from './relay-client-id.js';
 import { relayedMessage } from './relay-send.js';
 import { RelayStreamSink } from './relay-stream-sink.js';
 
@@ -119,20 +112,16 @@ export interface RelayRequestServerDeps extends RelayApprovalDeps {
   ) => Promise<Omit<SessionStreamRequest, 'principal'>>;
   /** Deliver a chat's durable stream to a sink until either side ends it. */
   deliverSessionStream: (sink: DurableStreamSink, plan: SessionStreamRequest) => Promise<void>;
-  /** Start or feed a chat from one message. */
-  dispatchSessionMessage: (
-    opts: DispatchSessionMessageOpts
-  ) => Promise<DispatchSessionMessageResult>;
-  /** Mesh, when it is running; the send path checks a new chat's agent against it. */
-  meshCore: () => MeshCore | undefined;
-  /** The room binding port, passed through to the send path. */
-  roomSessionPlace: () => RoomSessionPlacePort | undefined;
+  /**
+   * Start or feed a chat from one message, through the turn port (`handOverTurn`
+   * in `services/runs`, handed in at startup, T6); `undefined` before startup
+   * wired the run record.
+   */
+  handOverTurn: (input: StartTurnInput) => Promise<HandOverNowAnswer> | undefined;
   /** The runtime that owns a chat. */
   resolveRuntime: (sessionId: string) => Promise<RelayRuntime>;
   /** Empty a chat's queue, returning what was waiting. */
   clearQueuedMessages: (sessionId: string) => QueuedMessage[];
-  /** Mints the per-connection client id; injectable for tests. */
-  mintClientId?: () => string;
 }
 
 /** One stream slot: reserved when asked for, holding its sink once open. */
@@ -144,7 +133,6 @@ interface StreamSlot {
 
 /** What one relay connection holds. Replaced whole when the connection ends. */
 interface Connection {
-  clientId: string;
   inflight: number;
   streams: Map<string, StreamSlot>;
   /** The approval challenges issued on this connection; they end with it. */
@@ -155,14 +143,20 @@ interface Connection {
  * How many chats started over the relay may be running a turn at once, across
  * every connection. The in-flight cap ends when a send is accepted, long
  * before its turn does, so without this a hub could start chats without end.
+ * One past it waits for a slot (admission, `services/runs/web-chat-cap.ts`).
  */
-export const RELAY_MAX_LIVE_NEW_CHATS = 4;
+export const RELAY_MAX_LIVE_NEW_CHATS = WEB_NEW_CHATS_MAX;
+
+/** Why the port refused a start before saving it, or `undefined` for any other throw. */
+function refusedAtStart(error: unknown): string | undefined {
+  if (!(error instanceof Error) || error.name !== 'TurnStartRefusedError') return undefined;
+  const { reason } = error as Error & { reason?: unknown };
+  return typeof reason === 'string' ? reason : undefined;
+}
 
 /** Answers the requests one computer's relay connection carries. */
 export class SessionRelayRequestServer implements RelayRequestServer {
   private conn: Connection;
-  /** Chats this server started whose first turn has not settled yet. */
-  private liveNewChats = 0;
 
   /**
    * Hold the server's dependencies.
@@ -227,9 +221,7 @@ export class SessionRelayRequestServer implements RelayRequestServer {
   }
 
   private freshConnection(): Connection {
-    const mint = this.deps.mintClientId ?? (() => relayClientId(randomUUID()));
     return {
-      clientId: mint(),
       inflight: 0,
       streams: new Map(),
       approvals: newApprovalChallengeBook(),
@@ -475,55 +467,52 @@ export class SessionRelayRequestServer implements RelayRequestServer {
       refused(placed.error);
       return;
     }
-    // A new chat holds a slot from here until its first turn settles; a
-    // message into an existing chat adds at most one turn to a chat the owner
-    // already has, so it is not counted.
-    let release = (): void => undefined;
-    if (placed.startsChat) {
-      if (this.liveNewChats >= RELAY_MAX_LIVE_NEW_CHATS) {
-        refused(RELAY_TOO_MANY_NEW_CHATS);
-        return;
-      }
-      this.liveNewChats += 1;
-      let held = true;
-      release = () => {
-        if (!held) return;
-        held = false;
-        this.liveNewChats -= 1;
-      };
-    }
-    let result: DispatchSessionMessageResult;
+    // A new chat takes one of the web's slots until its turn is over, and
+    // waits for one when they are all taken (admission, T6); a message into an
+    // existing chat adds at most one turn to a chat the owner already has.
+    const agentId = placed.startsChat ? request.newChat?.agentId : undefined;
+    let answered: HandOverNowAnswer | undefined;
     try {
-      result = await this.deps.dispatchSessionMessage({
-        origin: { kind: 'session-relay' },
+      answered = await this.deps.handOverTurn({
         sessionId,
-        request: placed.message,
-        clientId: conn.clientId,
-        meshCore: this.deps.meshCore(),
-        roomSessionPlace: this.deps.roomSessionPlace(),
-        onSettled: () => release(),
+        content: placed.message.content,
+        origin: placed.startsChat
+          ? { kind: 'session-relay', newChat: true }
+          : { kind: 'session-relay' },
+        tier: 'owner',
+        ...(placed.message.cwd !== undefined ? { cwd: placed.message.cwd } : {}),
+        ...(agentId !== undefined ? { agentId } : {}),
       });
     } catch (error) {
-      release();
-      if (!(error instanceof BoundaryError)) throw error;
-      refused(RELAY_OUTSIDE_BOUNDARY);
+      if (error instanceof BoundaryError) {
+        refused(RELAY_OUTSIDE_BOUNDARY);
+        return;
+      }
+      // Refused before anything was saved (`TurnStartRefusedError`): no such
+      // agent, or words past the cap.
+      const reason = refusedAtStart(error);
+      if (reason !== undefined) {
+        refused(reason === 'invalid_agent_path' ? RELAY_NO_AGENT : RELAY_INVALID);
+        return;
+      }
+      throw error;
+    }
+    if (!answered) {
+      refused(RELAY_INTERNAL);
       return;
     }
-    if ('refused' in result) {
-      release();
-      refused(relayLaunchRefusal(result.refused));
+    if (answered.kind === 'refused') {
+      refused(relayLaunchRefusal(answered.reason));
       return;
     }
-    // Nothing runs for a message the dispatcher did not accept.
-    if (!result.accepted) release();
     this.audit({
       action: 'relay.session.send',
       operation: placed.startsChat ? 'create' : 'execute',
-      outcome: result.accepted ? 'ok' : 'failed',
+      outcome: 'ok',
       sessionId,
       summary: placed.startsChat ? 'Started a chat from the web' : 'Sent a message from the web',
     });
-    const id = result.canonicalId;
+    const id = answered.kind === 'handed' ? answered.receipt?.canonicalId : undefined;
     answer({ sessionId: id && /^[0-9a-f-]{36}$/.test(id) ? id : sessionId });
   }
 

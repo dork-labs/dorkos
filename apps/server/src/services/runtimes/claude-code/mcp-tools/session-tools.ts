@@ -49,9 +49,13 @@ import { discardUnstartedSession, stampStartMessage } from './session-start-setu
 import { claimForStart } from '../../../session/claims/work-claim-start.js';
 import { getWorkClaims } from '../../../session/claims/work-claim-current.js';
 import { marksForTurn } from '../../../core/turn-power/turn-marks.js';
-import { getSpinOffStartup } from '../../../session/chat-messages/startup/spin-off-startup.js';
+import {
+  getSpinOffStartup,
+  startSpinOffTurn,
+} from '../../../session/chat-messages/startup/spin-off-startup.js';
 import { SessionCapacityError } from '@dorkos/shared/running-chats';
 import crypto from 'node:crypto';
+import { ulid } from 'ulidx';
 import path from 'node:path';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { SEED_CONTEXT_MAX_LENGTH } from '@dorkos/shared/schemas';
@@ -73,13 +77,7 @@ import { nameStartedChat, startedChatTitle } from '../../../session/launch/start
 import { checkAccountLaunch } from '../../../core/usage/account-ranking.js';
 import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
 import { resolveAccountRef, type RuntimeAccount } from '../../../core/usage/runtime-accounts.js';
-import {
-  dispatchSessionMessage,
-  isAgentLaunchCapFull,
-  isSessionLaunchRefusal,
-  resolveRuntimeTypeForNewSession,
-  agentLaunchCapMessage,
-} from '../../../session/launch/launch-session.js';
+import { resolveRuntimeTypeForNewSession } from '../../../session/launch/launch-session.js';
 import { reserveChatStart } from './session-start-reserve.js';
 import {
   getChatMessageService,
@@ -104,9 +102,6 @@ import { launchPlaceRefusal } from '../../../session/launch/launch-caller.js';
 import { registerSessionStartPreGate } from '../../../session/launch/session-start-pre-gate.js';
 import { ceilingHoldsForOutsider } from '@dorkos/shared/permission-semantics';
 import { jsonContent, type AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
-
-/** The client id every `session_start` launch holds its session's write lock under. */
-export const SESSION_START_CLIENT_ID = 'mcp:session_start';
 
 /** The refusal for a caller that is not a registered agent. */
 export const UNKNOWN_CALLER_MESSAGE =
@@ -322,10 +317,6 @@ export function createSessionStartHandler(
       }
     }
 
-    // Asked here too, before the settings write below, so a full cap leaves no
-    // row behind. The launch service's own check is the one that holds a slot.
-    if (isAgentLaunchCapFull()) return refuse(agentLaunchCapMessage(), 'LAUNCH_CAP_FULL');
-
     // The level it runs at: the calling chat's own or lower, never higher (spec
     // `inherited-start-permission`). The ceiling is read here, at the moment of
     // the call, from server-bound state; nothing in `args` can raise it.
@@ -428,7 +419,8 @@ export function createSessionStartHandler(
     // `spin-off-chats` §1): the new chat's agent reads it as a teammate's, and
     // the app shows "From <agent> · <chat>". Only from a calling chat: the
     // external server has no chat to name.
-    const messageId = crypto.randomUUID();
+    // The first message's id is its run's (a ULID): the turn port names the run by it.
+    const messageId = ulid();
     let firstMessage: Awaited<ReturnType<typeof stampStartMessage>>;
     try {
       firstMessage = await stampStartMessage(
@@ -456,63 +448,67 @@ export function createSessionStartHandler(
     const carriesWords = startCarriesWords(caller);
     if (carriesWords) noteRoomTurnWords(sessionId, true);
 
-    let result: Awaited<ReturnType<typeof dispatchSessionMessage>>;
+    // A spin-off is told who started it and how it reports back (spec
+    // `spin-off-chats` §5), ahead of whatever background the starter gave.
+    const briefing = caller.chat?.sessionId
+      ? spinOffBriefing({
+          parentChatId: caller.chat.sessionId,
+          parentTitle: rememberedChatTitle(caller.chat.sessionId),
+          parentAgentName: caller.label,
+          reportBack,
+          parentTakesMessages,
+          parentIsRoomSeat,
+        })
+      : null;
+    // The starter's own background is never cut: the briefing gives way first
+    // when the two would pass the cap together.
+    const own = args.seedContext ?? '';
+    const room = SEED_CONTEXT_MAX_LENGTH - own.length - (own ? 2 : 0);
+    const lead = briefing && room > 0 ? briefing.slice(0, room) : null;
+    const seed = [lead, own].filter((p): p is string => Boolean(p));
+    // Who asked: the calling chat, else (the external server) the agent itself.
+    const askedByRef = parentChatId
+      ? dorkReferenceOrNull('chat', parentChatId)
+      : dorkReferenceOrNull('agent', caller.id);
+
+    // Through the turn port (T6): a full machine makes it wait for a slot, with
+    // its place, rather than refusing it. Its power is already the granted mode;
+    // a starter whose turn read an outsider's words passes that on, so the new
+    // session's turn is recorded as one that read them too (spec
+    // `trusted-by-default-flip` §4.7).
+    let answer: Awaited<ReturnType<typeof startSpinOffTurn>>;
     try {
-      result = await dispatchSessionMessage({
-        origin: { kind: 'agent-launch' },
-        launcher,
-        sessionId,
-        messageId,
-        request: {
-          content: firstMessage.content,
+      answer = await startSpinOffTurn(
+        {
+          sessionId,
+          agentId: caller.id,
           cwd,
+          content: firstMessage.content,
+          origin: { kind: 'agent-launch' },
+          tier: 'owner',
+          launcher,
           runtime: runtimeType,
-          ...(account ? { account: account.id } : {}),
-          agentPath,
-          ...(() => {
-            // A spin-off is told who started it and how it reports back (spec
-            // `spin-off-chats` §5), ahead of whatever background the starter gave.
-            const briefing = caller.chat?.sessionId
-              ? spinOffBriefing({
-                  parentChatId: caller.chat.sessionId,
-                  parentTitle: rememberedChatTitle(caller.chat.sessionId),
-                  parentAgentName: caller.label,
-                  reportBack,
-                  parentTakesMessages,
-                  parentIsRoomSeat,
-                })
-              : null;
-            // The starter's own background is never cut: the briefing gives
-            // way first when the two would pass the cap together.
-            const own = args.seedContext ?? '';
-            const room = SEED_CONTEXT_MAX_LENGTH - own.length - (own ? 2 : 0);
-            const lead = briefing && room > 0 ? briefing.slice(0, room) : null;
-            const seed = [lead, own].filter((p): p is string => Boolean(p));
-            return seed.length > 0 ? { seedContext: seed.join('\n\n') } : {};
-          })(),
+          ...(account ? { accountHint: account.id } : {}),
+          ...(seed.length > 0 ? { seedContext: seed.join('\n\n') } : {}),
+          ...(askedByRef ? { askedByRef } : {}),
+          ...markedCeiling,
+          ...(caller.permissionCeiling ? { permissionCeiling: caller.permissionCeiling } : {}),
         },
-        clientId: SESSION_START_CLIENT_ID,
-        // A starter whose turn read an outsider's words passes that on: the new
-        // session's turn is recorded as one that read them too (spec
-        // `trusted-by-default-flip` §4.7). Its power is already the granted mode.
-        ...markedCeiling,
-        ...(caller.permissionCeiling ? { permissionCeiling: caller.permissionCeiling } : {}),
-        meshCore: deps.meshCore,
-        // A session minted here is in no room.
-        roomSessionPlace: undefined,
-        countsTowardLaunchCap: true,
-        onSettled: (outcome, refusal) => {
-          if (outcome === 'failed') {
-            startup?.noteFailure(
-              startupId,
-              refusal ?? 'The runtime ended before its first turn started.'
-            );
-            getWorkClaims()?.releaseSession(startupId, 'the chat never started');
-          }
-          reservation?.settle();
-          lastTitleTry?.();
-        },
-      });
+        {
+          runId: messageId,
+          onSettled: (outcome, refusal) => {
+            if (outcome === 'failed') {
+              startup?.noteFailure(
+                startupId,
+                refusal ?? 'The runtime ended before its first turn started.'
+              );
+              getWorkClaims()?.releaseSession(startupId, 'the chat never started');
+            }
+            reservation?.settle();
+            lastTitleTry?.();
+          },
+        }
+      );
     } catch (err) {
       startup?.forget(startupId);
       reservation?.cancel();
@@ -521,28 +517,24 @@ export function createSessionStartHandler(
       if (err instanceof SessionCapacityError) return refuse(err.message, err.code);
       throw err;
     }
-    if (isSessionLaunchRefusal(result)) {
+    if (!answer || answer.kind === 'refused') {
       startup?.forget(startupId);
       reservation?.cancel();
       settleStamp(null);
       await discardUnstartedSession(sessionId);
+      if (!answer) return refuse('DorkOS is still starting. Try again in a moment.', 'NOT_STARTED');
       // The launch ladder's account refusal (the unnamed path: the agent's or
       // the default account may not work in this project) reads like the
       // named one above (spec `flow-multiproject` §8.4).
+      const code = answer.refusal?.code ?? answer.reason;
       return refuse(
-        result.message,
-        result.refused === 'ACCOUNT_NOT_ALLOWED' ? 'ACCOUNT_REFUSED' : result.refused
+        answer.refusal?.message ?? 'The session could not be started.',
+        code === 'ACCOUNT_NOT_ALLOWED' ? 'ACCOUNT_REFUSED' : code
       );
     }
-    if (!result.accepted) {
-      startup?.forget(startupId);
-      reservation?.cancel();
-      settleStamp(null);
-      await discardUnstartedSession(sessionId);
-      return refuse('The session could not be started.', 'NOT_STARTED');
-    }
 
-    const canonicalId = result.canonicalId ?? sessionId;
+    const canonicalId =
+      (answer.kind === 'handed' ? answer.receipt?.canonicalId : undefined) ?? sessionId;
     startup?.rekey(sessionId, canonicalId);
     startupId = canonicalId;
     // Under the id the chat settled on too; a later rename is carried by `aliasTurnLevel`.
@@ -584,7 +576,13 @@ export function createSessionStartHandler(
       runtime: runtimeType,
       account: account ? { id: account.id, label: account.label } : null,
       permission,
-      status: 'started',
+      // Its first turn waits for a free slot when the machine is full, with its place.
+      ...(answer.kind === 'waiting'
+        ? {
+            status: 'waiting' as const,
+            waiting: { reason: answer.waitReason ?? null, place: answer.queuePosition },
+          }
+        : { status: 'started' as const }),
     };
     return jsonContent(body);
   };
@@ -609,7 +607,9 @@ export function getSessionTools(deps: AgentToolDeps, resolveCaller?: SessionStar
         'higher one is refused, and never above what a person set for you. From your own chat ' +
         'at Full autonomy, with nothing outside in view, it starts at Full; otherwise Full ' +
         'autonomy is granted only when named in permissionMode. ' +
-        'At most 8 sessions started this way run at once. Give it a short `title`. When one of ' +
+        'At most 8 sessions started this way run at once; one more is started anyway and its ' +
+        'first turn waits for a free slot (`status: "waiting"`, with its place). Give it a ' +
+        'short `title`. When one of ' +
         'your chats already holds the ticket or PR it is for, that chat comes back instead ' +
         '(see `claim`). The result ' +
         'has `link`, a ready markdown link to the chat: when you tell a person about it, use ' +

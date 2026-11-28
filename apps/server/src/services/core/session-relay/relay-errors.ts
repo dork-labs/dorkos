@@ -6,7 +6,7 @@
  * @module services/core/session-relay/relay-errors
  */
 import type { RelayError } from '@dorkos/shared/session-relay';
-import type { SessionLaunchRefusal } from '../../session/launch/launch-session.js';
+import type { RefusalReason } from '@dorkos/shared/turn-port';
 
 /** No such chat, or one the relay does not serve: the two read the same. */
 export const RELAY_NOT_FOUND: RelayError = {
@@ -53,12 +53,6 @@ export const RELAY_FRAME_TOO_LARGE: RelayError = {
 export const RELAY_BACKLOGGED: RelayError = {
   ...RELAY_RATE_LIMITED,
   message: 'This chat fell behind. Reopen it to catch up.',
-};
-
-/** Too many chats started from the web are still running. */
-export const RELAY_TOO_MANY_NEW_CHATS: RelayError = {
-  ...RELAY_RATE_LIMITED,
-  message: 'Too many new chats are running. Try again when one finishes.',
 };
 
 /** No approvals passkey is pinned here, or its file cannot be read. */
@@ -163,11 +157,11 @@ export const RELAY_OUTSIDE_BOUNDARY: RelayError = {
  *
  * @param refused - Which check refused the launch.
  */
-export function relayLaunchRefusal(refused: SessionLaunchRefusal['refused']): RelayError {
+export function relayLaunchRefusal(refused: RefusalReason): RelayError {
   const message =
-    refused === 'AGENT_PAUSED'
+    refused === 'agent_paused'
       ? 'This agent is paused.'
-      : refused === 'ACCOUNT_NOT_ALLOWED'
+      : refused === 'account_not_allowed'
         ? "This chat's account can't work in this project."
         : 'This computer could not start that chat.';
   return { status: 409, code: 'refused', message };

@@ -636,6 +636,8 @@ describe('the start_turn rules (§6.2)', () => {
         content,
         origin: { kind: 'chat-message' },
         tier: 'owner',
+        // A chat message names the chat that sent it, or the computer face refuses it (T6).
+        askedByRef: 'dork:chat:4d1c6e2a-0b7f-4c3e-9a21-5e8f7d6c5b4a',
       }).runId;
     await personWorking();
     const kept = chatMessage('a chat, through the port');

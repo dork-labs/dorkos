@@ -493,6 +493,10 @@
       "types": "./src/turn-port.ts",
       "default": "./dist/turn-port.js"
     },
+    "./turn-hand-over": {
+      "types": "./src/turn-hand-over.ts",
+      "default": "./dist/turn-hand-over.js"
+    },
     "./bounded-json": {
       "types": "./src/bounded-json.ts",
       "default": "./dist/bounded-json.js"

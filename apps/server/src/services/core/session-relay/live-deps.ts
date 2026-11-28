@@ -19,7 +19,6 @@ import { auditTrail, recordAudit } from '../../audit/audit-trail.js';
 import { runtimeRegistry } from '../runtime-registry.js';
 import type { BroadcastAudience } from '../event-fan-out.js';
 import { aggregateSessionList } from '../../session/catalog/aggregate-session-list.js';
-import { dispatchSessionMessage } from '../../session/launch/launch-session.js';
 import { sessionExists } from '../../session/launch/session-exists.js';
 import {
   applySessionOriginOverlays,
@@ -29,7 +28,6 @@ import { clearQueuedMessages } from '../../session/queued-message-edits.js';
 import { resolveSessionCwdOrNull } from '../../session/resolution/resolve-read-cwd.js';
 import { resolveSettingsKey } from '../../session/resolution/session-settings-overlay.js';
 import { peekProjector } from '../../session/session-state-projector.js';
-import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import type { PendingApprovalCard } from './approval-challenges.js';
 import { bumpSignCount, readApprovalKeys } from './approval-key-store.js';
 import { readRelayPin } from './pin-store.js';
@@ -44,8 +42,8 @@ export interface SessionRelayWiring {
   meshCore: () => MeshCore | undefined;
   /** The session-origin lookups the session routes use (rooms, tasks, beats). */
   origins: SessionOriginResolvers;
-  /** The room binding port the send path takes. */
-  roomSessionPlace: () => RoomSessionPlacePort | undefined;
+  /** The turn port's hand-over (`handOverTurn` in `services/runs`), for a message sent from the web. */
+  handOverTurn: RelayRequestServerDeps['handOverTurn'];
   /**
    * Whether the Remote Access switch is on (`middleware/remote-access-switch.ts`):
    * while it is off the relay neither dials nor stays open (DOR-3650).
@@ -186,9 +184,7 @@ export function liveRelayDeps(wiring: () => SessionRelayWiring | null): RelayReq
       if (deliver) return deliver(sink, plan);
       sink.end();
     },
-    dispatchSessionMessage,
-    meshCore: () => wiring()?.meshCore(),
-    roomSessionPlace: () => wiring()?.roomSessionPlace(),
+    handOverTurn: (input) => wiring()?.handOverTurn(input),
     resolveRuntime: (sessionId) => runtimeRegistry.resolveForSession(sessionId),
     clearQueuedMessages,
 
