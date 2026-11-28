@@ -15,7 +15,7 @@ import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { noopLogger } from '@dorkos/shared/logger';
 
-import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../services/core/agent-tool-kit/agent-tool-kit.js';
 import { composeDorkOsCapabilityRegistry } from '../../services/core/self-description/dorkos-registry.js';
 import { createCapabilitiesCatalogRoutes } from '../capabilities-catalog.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
@@ -31,7 +31,7 @@ const fixtureTarget = swappableServer();
 function buildApp(
   registry = composeDorkOsCapabilityRegistry({
     logger: noopLogger,
-    operatorDeps: {} as McpToolDeps,
+    operatorDeps: {} as AgentToolDeps,
   })
 ) {
   return honoGroupListener({
@@ -117,7 +117,7 @@ describe('GET /api/capabilities/catalog', () => {
     // compact and the full entry, and leaves when it is removed.
     const registry = composeDorkOsCapabilityRegistry({
       logger: noopLogger,
-      operatorDeps: {} as McpToolDeps,
+      operatorDeps: {} as AgentToolDeps,
     });
     const app = fixtureTarget.mount(buildApp(registry));
     const added = registry.contribute({

@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { ExtensionManifest, ExtensionRecordPublic } from '@dorkos/extension-api';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../core/agent-tool-kit/agent-tool-kit.js';
 import {
   createGetExtensionErrorsHandler,
   createListExtensionsHandler,
@@ -50,14 +50,14 @@ function forgedRecord(): ExtensionRecordPublic {
   } as ExtensionRecordPublic;
 }
 
-function depsWith(records: ExtensionRecordPublic[]): McpToolDeps {
+function depsWith(records: ExtensionRecordPublic[]): AgentToolDeps {
   const extensionManager = {
     listPublic: vi.fn(() => records),
     listErrors: vi.fn(() => records),
     getServerHandler: vi.fn(() => null),
   } as unknown as ExtensionManager;
   return {
-    transcriptReader: {} as McpToolDeps['transcriptReader'],
+    transcriptReader: {} as AgentToolDeps['transcriptReader'],
     defaultCwd: '/t',
     dorkHome: '/t/.dork',
     extensionManager,

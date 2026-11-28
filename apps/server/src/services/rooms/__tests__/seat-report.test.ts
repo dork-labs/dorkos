@@ -432,12 +432,13 @@ describe('a spin-off reports into the room seat that started it (DOR-3488)', () 
       });
 
       // The saved report's scope and the real seat hand-in, together: the outbox, the server's
-      // start record, `deliverToRoomSeat` and this room service, with only the runner faked.
+      // start record, `deliverToRoomSeat` and this room service, with only the runner faked. A
+      // report the seat refuses comes back into the old chat as a chat message instead.
       it.each([
         ['before', -60_000, 1],
         ['after', 60_000, 0],
       ] as const)(
-        'a saved report from a spin-off started %s the move wakes the seat %i times',
+        'a saved report from a spin-off started %s the move wakes the seat %i times, else the old chat',
         async (_when, offset, turns) => {
           const { oldSeat, newSeat, movedAt } = await moved();
           const at = new Date(movedAt).toISOString();
@@ -472,7 +473,7 @@ describe('a spin-off reports into the room seat that started it (DOR-3488)', () 
             .run();
           setSessionStartedByStore(new SessionStartedByStore(db));
           setRoomSeatReports(service.handoffs.reports);
-          const send = vi.fn().mockRejectedValue(new Error('not sendable'));
+          const send = vi.fn().mockResolvedValue({ messageId: 'm', chatId: oldSeat });
           const onUndelivered = vi.fn().mockResolvedValue(undefined);
           try {
             await new ChatReportBack({
@@ -497,11 +498,10 @@ describe('a spin-off reports into the room seat that started it (DOR-3488)', () 
           }
 
           expect(reportTurns().map((turn) => turn.sessionId)).toEqual(turns ? [newSeat] : []);
-          expect(send).not.toHaveBeenCalled();
+          expect(send.mock.calls.map((call) => call[1].to)).toEqual(turns ? [] : [oldSeat]);
           expect(bosPosts()).toEqual([]);
-          const row = db.select().from(roomReportOutbox).get()!;
-          expect(row.state).toBe(turns ? 'delivered' : 'declined');
-          expect(onUndelivered).toHaveBeenCalledTimes(turns ? 0 : 1);
+          expect(db.select().from(roomReportOutbox).get()!.state).toBe('delivered');
+          expect(onUndelivered).not.toHaveBeenCalled();
         }
       );
 

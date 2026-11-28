@@ -32,7 +32,8 @@ import {
   type InteractiveSession,
 } from './interaction-wait.js';
 import { toSdkQuestionAnswers } from '../sessions/question-answers.js';
-import { IN_SESSION_TOOL_PREFIX, isHostServedOrUnattributed } from '../mcp-tools/tool-exposure.js';
+import { isHostServedOrUnattributed } from '../mcp-tools/tool-exposure.js';
+import { IN_SESSION_TOOL_PREFIX } from '../../../core/tool-names/tool-names.js';
 import { recordAutoModeStop } from '../../../observability/auto-mode-stops.js';
 import {
   approvalTimeoutDenial,
@@ -408,24 +409,20 @@ export interface ToolApprovalContext {
    * `can_use_tool` callback, so they raise a normal approval card and pause the
    * stall watchdog like any other. That much is pinned by a test.
    *
-   * BACKGROUNDED (async) subagents are the handled case, and they are handled
-   * SOMEWHERE ELSE (DOR-795). The CLI does not escalate their asks to this
-   * callback — a detached child has nobody to ask — it auto-denies and reports
-   * the refusal as a `permission_denied` system message on the parent's stream.
-   * SDK 0.3.224 says both halves out loud: `SDKPermissionDeniedMessage`'s
-   * docblock names "headless-agent auto-deny" among the cases it covers and
-   * carries the child's `agent_id`, and `asyncAgent` appears as a
-   * `decision_reason_type` on that message as well as on
-   * `SDKControlPermissionRequest`. So DorkOS surfaces the loss where it lands:
-   * the system-event mapper turns that message into a `permission_denied`
-   * StreamEvent, which is recorded durably and drawn as an attributed denial
-   * chip naming the child and the tool it lost.
+   * BACKGROUNDED (async) subagents reach it too. A fake-model capture against
+   * CLI 0.3.304 in `default` mode (DOR-2698) saw a background helper's Bash calls
+   * arrive here with its `agentID` after the parent's `result`, so the CLI asks
+   * rather than auto-denying them. Older CLIs auto-denied and reported a
+   * `permission_denied` system message carrying the child's `agent_id`, which
+   * the system-event mapper still draws as an attributed denial chip (DOR-795);
+   * that path stays for a CLI that does.
    *
-   * This callback is deliberately left alone by that work, because it is already
-   * correct for BOTH SDK branches. `asyncAgent` remains in the request wire's
-   * `decision_reason_type` list, so if a future CLI ever does escalate a
-   * backgrounded child's ask, it arrives here as an ordinary approval carrying
-   * this `agentID` and raises a normal card — no new code path, no gap.
+   * So the card for a helper's call can be raised when no turn is open. On a
+   * warm process that is handled where turns are cut, not here:
+   * `sessions/dispatch/asks-between-turns.ts` opens a window for an ask nobody's
+   * stream is reading, so the card reaches the chat and the session's state,
+   * and that window closes once nobody is waited on. This callback raises the
+   * card the same way either way.
    */
   agentID?: string;
   title?: string;

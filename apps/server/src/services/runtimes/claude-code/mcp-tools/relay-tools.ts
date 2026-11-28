@@ -11,13 +11,13 @@
  */
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import type { McpToolDeps } from './types.js';
-import { jsonContent } from './types.js';
+import type { AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
+import { jsonContent } from '../../../core/agent-tool-kit/agent-tool-kit.js';
 import { inferEndpointType, requireRelay, type SenderIdentity } from './relay-helpers.js';
 import { createRelayNotifyUserHandler } from './relay-notify-tools.js';
 
 /** List all registered Relay endpoints. */
-export function createRelayListEndpointsHandler(deps: McpToolDeps) {
+export function createRelayListEndpointsHandler(deps: AgentToolDeps) {
   return async () => {
     const err = requireRelay(deps);
     if (err) return err;
@@ -54,7 +54,7 @@ export function createRelayListEndpointsHandler(deps: McpToolDeps) {
  * @param identity - Server-resolved sender identity, which `relay_notify_user`
  *   resolves the caller's own bindings from (never read from tool arguments).
  */
-export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
+export function getRelayTools(deps: AgentToolDeps, identity: SenderIdentity) {
   return [
     tool(
       'relay_list_endpoints',

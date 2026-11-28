@@ -1,0 +1,8 @@
+{
+  "holder": {
+    "kind": "space",
+    "spaceUrl": "https://spaces.example.invalid/c/3b2a1c0d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+  },
+  "reason": "mention",
+  "expiresAt": "2026-12-03T09:00:00Z"
+}

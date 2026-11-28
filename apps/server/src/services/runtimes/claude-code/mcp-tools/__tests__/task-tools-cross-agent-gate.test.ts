@@ -21,7 +21,7 @@ vi.mock('../../../../tasks/scheduled-run-power.js', async (importOriginal) => {
 
 import { TaskStore } from '../../../../tasks/task-store.js';
 import { getTasksTools } from '../tasks/task-tools.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { recordTurnLevels } from '../../../../core/turn-power/turn-levels.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtime-constants.js';
 import { gateHandRegisteredMcpTools, type SdkMcpTool } from '../../../../core/mcp-tool-gate.js';
@@ -102,7 +102,7 @@ async function gatedToolsOfA() {
       listWithPaths: () => agents,
       getProjectPath: (id: string) => agents.find((a) => a.id === id)?.projectPath,
     } as unknown as MeshCore,
-  } as unknown as McpToolDeps;
+  } as unknown as AgentToolDeps;
   const raw = getTasksTools(deps, () => ({
     sessionId,
     agentPath: homeA,

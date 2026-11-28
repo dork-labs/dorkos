@@ -67,6 +67,8 @@ const { startAfterListen } = await import('../steps/after-listen.js');
 const { createTestDb } = await import('@dorkos/test-utils/db');
 const { getRunRecord, installRunRecord, uninstallRunRecord } =
   await import('../../services/runs/index.js');
+const { setChatReportBack } =
+  await import('../../services/session/chat-messages/chat-message-current.js');
 
 const resolved = () => ({ catch: () => undefined, then: () => ({ catch: () => undefined }) });
 /** Everything `startAfterListen` reads, as inert stubs. */
@@ -139,6 +141,26 @@ describe('the outbox worker at startAfterListen', () => {
       expect(getRunRecord()?.worker.isRunning).toBe(true);
     } finally {
       uninstallRunRecord();
+    }
+  });
+});
+
+// DOR-3753: a saved report into a room's old chat is refused until the rooms link is wired, which
+// `mountCoreRoutes` does before the server listens. So saved reports first resume here, at once,
+// not in the earlier wiring step and not only on the health tick.
+describe('saved spin-off reports at startAfterListen', () => {
+  it('resume once, right away', async () => {
+    env.DORKOS_SERVER_ROLE = 'computer';
+    const recoverPending = vi.fn(async () => undefined);
+    setChatReportBack({ recoverPending, stop: vi.fn() } as never);
+    try {
+      const input = built() as { recoverAcceptedPrivateSessions: ReturnType<typeof vi.fn> };
+      await startAfterListen(refs as never, input as never);
+      expect(recoverPending).toHaveBeenCalledTimes(1);
+      // The health tick's sweep is not what runs it first.
+      expect(input.recoverAcceptedPrivateSessions).not.toHaveBeenCalled();
+    } finally {
+      setChatReportBack(undefined);
     }
   });
 });

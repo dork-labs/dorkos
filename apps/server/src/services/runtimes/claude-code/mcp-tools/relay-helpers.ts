@@ -5,8 +5,8 @@
  */
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import type { McpToolDeps } from './types.js';
-import { jsonContent } from './types.js';
+import type { AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
+import { jsonContent } from '../../../core/agent-tool-kit/agent-tool-kit.js';
 import {
   homeOf,
   resolveAgentHome,
@@ -82,7 +82,7 @@ export interface SenderIdentity {
  *   `cwd` resolves to
  */
 export function resolveSenderIdentity(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   cwd: string | undefined,
   anchor: HomeResolution = resolveAgentHome(cwd)
 ): SenderIdentity {
@@ -124,7 +124,7 @@ export function inferEndpointType(
 }
 
 /** Guard that returns an error response when Relay is disabled. */
-export function requireRelay(deps: McpToolDeps) {
+export function requireRelay(deps: AgentToolDeps) {
   if (!deps.relayCore) {
     return jsonContent({ error: 'Message delivery is off', code: 'RELAY_DISABLED' }, true);
   }

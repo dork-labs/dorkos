@@ -10,7 +10,7 @@ import path from 'path';
 import type { ExtensionManifest, ExtensionRecord } from '@dorkos/extension-api';
 import { configManager, initConfigManager } from '../../core/config-manager.js';
 import { createListExtensionsHandler } from '../../runtimes/claude-code/mcp-tools/extension-tools.js';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../core/agent-tool-kit/agent-tool-kit.js';
 import type { ExtensionManager } from '../extension-manager.js';
 
 let tmp: string;
@@ -66,7 +66,7 @@ async function widenedMail(): Promise<ExtensionRecord> {
 }
 
 /** A manager over these records; `listRecords` is what the waiting list reads. */
-function depsFor(records: ExtensionRecord[], listRecords = () => records): McpToolDeps {
+function depsFor(records: ExtensionRecord[], listRecords = () => records): AgentToolDeps {
   const manager = {
     listPublic: () => records,
     listRecords,
@@ -74,10 +74,10 @@ function depsFor(records: ExtensionRecord[], listRecords = () => records): McpTo
     dorkHome: tmp,
     getServerHandler: () => null,
   } as unknown as ExtensionManager;
-  return { extensionManager: manager } as McpToolDeps;
+  return { extensionManager: manager } as AgentToolDeps;
 }
 
-async function listed(deps: McpToolDeps) {
+async function listed(deps: AgentToolDeps) {
   const result = await createListExtensionsHandler(deps)();
   return JSON.parse((result.content[0] as { text: string }).text);
 }

@@ -15,7 +15,7 @@ import { noteRoomTurnWords } from '../outside-words.js';
 import { gateCallerOf } from '../../../tasks/agent-mode/agent-mode-escalation.js';
 import { crossAgentRefusal, turnMarksOf } from '../../../tasks/approvals/cross-agent.js';
 import { createCreateExtensionHandler } from '../../../runtimes/claude-code/mcp-tools/extension-create-tool.js';
-import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../agent-tool-kit/agent-tool-kit.js';
 import type { ToolCallContext } from '../../capabilities/tool-call-escalation.js';
 
 const AGENT = {
@@ -93,7 +93,7 @@ describe('creating an extension (self-approval at Full)', () => {
   /** Whether `create_extension` asked the manager to approve the new copy itself. */
   async function approvesItself(sessionId: string): Promise<boolean> {
     const createExtension = vi.fn(async () => ({ autoApproved: false }));
-    const deps = { extensionManager: { createExtension } } as unknown as McpToolDeps;
+    const deps = { extensionManager: { createExtension } } as unknown as AgentToolDeps;
     const handler = createCreateExtensionHandler(deps, () => ({
       agentPath: AGENT.agentPath,
       sessionId,

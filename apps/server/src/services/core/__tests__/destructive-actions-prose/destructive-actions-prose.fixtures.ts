@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { noopLogger } from '@dorkos/shared/logger';
 import { MCP_TOOL_TIERS } from '../../mcp-tool-tiers.js';
 import { composeDorkOsCapabilityRegistry } from '../../self-description/dorkos-registry.js';
-import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../agent-tool-kit/agent-tool-kit.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 
 export const REPO_ROOT = fileURLToPath(new URL('../../../../../../../', import.meta.url));
@@ -134,7 +134,7 @@ export function destructiveToolNames(): string[] {
 export function destructiveCapabilities(): { id: string; toolName?: string }[] {
   return composeDorkOsCapabilityRegistry({
     logger: noopLogger,
-    operatorDeps: {} as McpToolDeps,
+    operatorDeps: {} as AgentToolDeps,
     marketplaceDeps: {} as MarketplaceMcpDeps,
   })
     .capabilities.filter((capability) => capability.tier === 'destructive')

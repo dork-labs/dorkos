@@ -77,7 +77,7 @@ import {
   NOTHING_HELD,
   type GrantedClasses,
 } from './resources/agent-request-classes.js';
-import { dorkosToolNameFor } from '../runtimes/shared/dorkos-tool-names.js';
+import { dorkosToolNameFor } from '../core/tool-names/tool-names.js';
 import type { ConnectorAuthenticationFlowService } from './resources/authentication-flow-service.js';
 import { agentGrantScope, type AgentGrantDenial } from './execution/agent-grant-scope.js';
 import { CONNECTOR_REQUEST_LIVE_HOLD_MS } from './runtime-capability-scope.js';

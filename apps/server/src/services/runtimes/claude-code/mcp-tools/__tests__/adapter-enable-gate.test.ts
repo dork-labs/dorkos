@@ -27,7 +27,7 @@ import { eventFanOut } from '../../../../core/event-fan-out.js';
 import { noteRoomTurnWords } from '../../../../core/turn-power/outside-words.js';
 import type { AgentIdentity } from '../../../../core/agent-identity/index.js';
 import type { AdapterManager } from '../../../../relay/adapter-manager.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import {
   createRelayEnableAdapterHandler,
   registerAdapterEnableEscalator,
@@ -58,7 +58,7 @@ const enableTool: SdkMcpTool = {
   inputSchema: {},
   handler: createRelayEnableAdapterHandler({
     adapterManager: manager as unknown as AdapterManager,
-  } as McpToolDeps) as unknown as SdkMcpTool['handler'],
+  } as AgentToolDeps) as unknown as SdkMcpTool['handler'],
 };
 
 /** The tool on the in-session server, as the agent's own chat. */

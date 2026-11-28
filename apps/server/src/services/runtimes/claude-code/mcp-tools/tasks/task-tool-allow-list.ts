@@ -18,8 +18,8 @@
  */
 import { z } from 'zod';
 import type { Task } from '@dorkos/shared/types';
-import type { McpToolDeps } from '../types.js';
-import { jsonContent } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
+import { jsonContent } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { NOT_RECORDED_REFUSAL } from './task-tool-mode.js';
 import { scheduleEdit } from '../../../../tasks/approvals/schedule-owner.js';
 import { broadcastTasksChanged } from '../../../../tasks/task-sse-events.js';
@@ -126,7 +126,7 @@ export const RUN_ONCE_ARG = z.literal(true).optional().describe(RUN_ONCE_DESCRIP
  * @param call - The call.
  */
 export async function settleAllowListCall(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   call: AllowListCall
 ): Promise<AllowListSettlement> {
   if (!Object.hasOwn(call.body, 'allowList')) return { kind: 'none' };
@@ -353,7 +353,7 @@ export function auditAllowListAborted(
  * @param caller - Who made it.
  */
 export function writeAllowList(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   task: Task,
   write: AllowListWrite,
   caller: AgentModeCaller
@@ -416,7 +416,7 @@ export const LIST_ALONE_REFUSAL: AllowListRefusal = {
  * @returns The task and whether its list applies; `null` when the audit failed.
  */
 export function finishOneShotCreate(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   task: Task,
   settled: AllowListSettlement,
   caller: AgentModeCaller,
@@ -474,7 +474,7 @@ export interface AllowListUpdateCaller {
  * @param who - Who is calling.
  */
 export async function updateAllowListAlone(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   args: { id: string } & Record<string, unknown>,
   who: AllowListUpdateCaller
 ): Promise<ReturnType<typeof jsonContent>> {

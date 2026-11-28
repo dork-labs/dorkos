@@ -26,8 +26,8 @@
  * @module services/runtimes/claude-code/mcp-tools/relay-notify-tools
  */
 import { noteBeatBypass } from '../../../heartbeats/beat-turns.js';
-import type { McpToolDeps } from './types.js';
-import { jsonContent } from './types.js';
+import type { AgentToolDeps } from '../../../core/agent-tool-kit/agent-tool-kit.js';
+import { jsonContent } from '../../../core/agent-tool-kit/agent-tool-kit.js';
 import { requireRelay, type SenderIdentity } from './relay-helpers.js';
 import { notify } from '../../../notifications/notification-service.js';
 import {
@@ -147,7 +147,7 @@ function answerFor(outcome: RelayDeliveryOutcome | undefined, channel: string | 
  * @param identity - Server-injected sender identity; its `agentId` selects the
  *   caller's own integration bindings (never taken from tool args)
  */
-export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: SenderIdentity) {
+export function createRelayNotifyUserHandler(deps: AgentToolDeps, identity: SenderIdentity) {
   return async (args: { message: string; channel?: string }) => {
     const err = requireRelay(deps);
     if (err) return err;

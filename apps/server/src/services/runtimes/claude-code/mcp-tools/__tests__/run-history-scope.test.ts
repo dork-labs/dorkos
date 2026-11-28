@@ -16,14 +16,14 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { TaskStore } from '../../../../tasks/task-store.js';
 import { getTasksTools } from '../tasks/task-tools.js';
 import { UNIDENTIFIED_RUNS_MESSAGE } from '../tasks/task-tool-parts.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { recordTurnLevels } from '../../../../core/turn-power/turn-levels.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtime-constants.js';
 
 let store: TaskStore;
 let scratch: string;
 let homeA: string;
-let deps: McpToolDeps;
+let deps: AgentToolDeps;
 
 beforeEach(async () => {
   store = new TaskStore(createTestDb());
@@ -43,7 +43,7 @@ beforeEach(async () => {
       listWithPaths: () => agents,
       getProjectPath: (id: string) => agents.find((a) => a.id === id)?.projectPath,
     } as unknown as MeshCore,
-  } as unknown as McpToolDeps;
+  } as unknown as AgentToolDeps;
 });
 
 afterEach(async () => {

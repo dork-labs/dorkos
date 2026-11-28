@@ -1,3 +1,4 @@
+import { NO_MODEL_CALL_FIELD } from '../../sessions/frames/result-frames.js';
 import { serverFailureWitness } from '../server-failure-witness.js';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent, TerminalReason, UsageStatus, UsageState } from '@dorkos/shared/types';
@@ -339,7 +340,11 @@ export async function* mapResultEvent(
                 ? { turnThinkingTokens: turn.thinkingTokens }
                 : {}),
             }
-          : {}),
+          : // A window DorkOS closed with no model call in it (an ask, DOR-2698)
+            // cost nothing, and says so, so no meter counts it at the estimate.
+            result[NO_MODEL_CALL_FIELD] === true
+            ? { turnCostUsd: 0 }
+            : {}),
         ...(terminalReason ? { terminalReason } : {}),
         // Attached only beside an ABORT reason, which is the only ending whose
         // settlement it changes. Every other terminal would carry a fact no

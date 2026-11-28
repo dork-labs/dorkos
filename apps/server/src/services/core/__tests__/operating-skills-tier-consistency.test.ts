@@ -47,7 +47,7 @@ import { noopLogger } from '@dorkos/shared/logger';
 
 import { MCP_TOOL_TIERS } from '../mcp-tool-tiers.js';
 import { composeDorkOsCapabilityRegistry } from '../self-description/dorkos-registry.js';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import type { MarketplaceMcpDeps } from '../../marketplace-mcp/marketplace-mcp-tools.js';
 
 /** One thing that stops and asks a person, however DorkOS happens to declare it. */
@@ -90,7 +90,7 @@ const destructiveTools: DestructiveAction[] = Object.entries(MCP_TOOL_TIERS)
 /** Registry capabilities that stop and ask, by id and by MCP tool name. */
 const destructiveCapabilities: DestructiveAction[] = composeDorkOsCapabilityRegistry({
   logger: noopLogger,
-  operatorDeps: {} as McpToolDeps,
+  operatorDeps: {} as AgentToolDeps,
   marketplaceDeps: {} as MarketplaceMcpDeps,
 })
   .capabilities.filter((c) => c.tier === 'destructive')

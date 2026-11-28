@@ -18,7 +18,7 @@ import fs from 'node:fs/promises';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { TaskStore } from '../../../../tasks/task-store.js';
-import type { McpToolDeps } from '../../mcp-tools/types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { getTasksTools } from '../../mcp-tools/tasks/task-tools.js';
 import { homeWriteDenyRules } from '../launch-folder-config.js';
 import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
@@ -54,7 +54,7 @@ beforeEach(async () => {
       getProjectPath: (id: string) => (id === 'nightly-bot' ? home : null),
       listWithPaths: () => [{ id: 'nightly-bot', projectPath: home }],
     },
-  } as unknown as McpToolDeps;
+  } as unknown as AgentToolDeps;
   // Called as the agent whose home it is: only a schedule's own agent may edit
   // it (DOR-3640 R1), and this test is about what DorkOS writes, not who asks.
   tools = Object.fromEntries(

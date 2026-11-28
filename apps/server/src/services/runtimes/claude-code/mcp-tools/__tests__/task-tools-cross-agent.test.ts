@@ -41,7 +41,7 @@ vi.mock('../../../../tasks/scheduled-run-power.js', async (importOriginal) => {
 
 import { TaskStore } from '../../../../tasks/task-store.js';
 import { getTasksTools } from '../tasks/task-tools.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { recordAudit } from '../../../../audit/audit-trail.js';
 import { MCP_TOOL_TIERS } from '../../../../core/mcp-tool-tiers.js';
 import { recordTurnLevels } from '../../../../core/turn-power/turn-levels.js';
@@ -79,7 +79,7 @@ let scratch: string;
 let homeA: string;
 let homeB: string;
 let homeC: string;
-let deps: McpToolDeps;
+let deps: AgentToolDeps;
 let mesh: MeshCore;
 let serial = 0;
 
@@ -151,7 +151,7 @@ beforeEach(async () => {
     defaultCwd: scratch,
     dorkHome: scratch,
     meshCore: mesh,
-  } as unknown as McpToolDeps;
+  } as unknown as AgentToolDeps;
 });
 
 afterEach(async () => {

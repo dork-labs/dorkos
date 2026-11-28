@@ -11,7 +11,7 @@ import { Hono } from 'hono';
 import { afterEach, beforeEach, expect, vi } from 'vitest';
 import type { ExtensionsConfig } from '../../../extension-enable-resolution.js';
 import { IsolatedExtensionHost } from '../../isolated-host.js';
-import type { McpToolDeps } from '../../../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { createGetExtensionErrorsHandler } from '../../../../runtimes/claude-code/mcp-tools/extension-tools.js';
 import { ExtensionManager } from '../../../extension-manager.js';
 import { grantsDigestOf } from '../../../pin/extension-path-trust.js';
@@ -277,7 +277,7 @@ export function refuseStarts(refuse: (attempt: number) => boolean) {
 export async function extensionErrors() {
   const result = await createGetExtensionErrorsHandler({
     extensionManager: st.manager,
-  } as McpToolDeps)();
+  } as AgentToolDeps)();
   return JSON.parse(result.content[0].text);
 }
 

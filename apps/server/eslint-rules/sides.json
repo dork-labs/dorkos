@@ -91,6 +91,7 @@
     "kernel": [
       "health",
       "observability",
+      "core/agent-tool-kit",
       "core/child-bundle",
       "core/codex-rollouts",
       "core/config",
@@ -111,6 +112,7 @@
       "core/skills-ledger",
       "core/telemetry",
       "core/telemetry-first-run.ts",
+      "core/tool-names",
       "core/untrusted-text"
     ],
     "frontDoor": [

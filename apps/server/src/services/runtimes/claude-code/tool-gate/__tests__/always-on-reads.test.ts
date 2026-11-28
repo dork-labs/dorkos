@@ -12,7 +12,7 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import type { PermissionMode, PermissionModeId } from '@dorkos/shared/schemas';
 import { NO_APPROVAL_SURFACE } from '@dorkos/shared/run-refusals';
 import { MCP_TOOL_TIERS } from '../../../../core/mcp-tool-tiers.js';
-import { inSessionToolName } from '../../mcp-tools/tool-exposure.js';
+import { inSessionToolName } from '../../../../core/tool-names/tool-names.js';
 import { createCanUseTool } from '../../messaging/interactive-handlers.js';
 import type { InteractiveSession, PendingInteraction } from '../../messaging/interaction-wait.js';
 import { NO_APPROVAL_SURFACE_DENIAL } from '../../sessions/tool-result-outcome.js';

@@ -22,7 +22,7 @@ import {
 } from '../../../rooms/__tests__/room-test-harness.js';
 import { registerTaskTools } from '../../external-mcp/task-tools.js';
 import { TaskStore } from '../../../tasks/task-store.js';
-import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../agent-tool-kit/agent-tool-kit.js';
 import type { ToolRegistrar } from '../../mcp-tool-gate.js';
 import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
 
@@ -127,7 +127,7 @@ describe('the external /mcp task tools', () => {
           listWithPaths: () => agents,
           getProjectPath: (id: string) => agents.find((a) => a.id === id)?.projectPath,
         },
-      } as unknown as McpToolDeps,
+      } as unknown as AgentToolDeps,
       identity as never
     );
     return handlers.get('tasks_create')!;

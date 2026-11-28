@@ -16,7 +16,7 @@ import {
   AgentManifestSchema,
 } from '@dorkos/shared/mesh-schemas';
 import type { ToolRegistrar } from '../mcp-tool-gate.js';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import { meshToolDefinitions } from '../../runtimes/claude-code/mcp-tools/mesh-tools.js';
 import { ToolAnnotationPresets } from '../mcp-tool-metadata.js';
 import { registerFromDefinitions, type ExternalToolConfigs } from './register-from-definitions.js';
@@ -82,6 +82,6 @@ const MESH_EXTERNAL_CONFIGS: ExternalToolConfigs = {
  *   tool's permission tier before its handler.
  * @param deps - Shared MCP tool dependencies.
  */
-export function registerMeshTools(registrar: ToolRegistrar, deps: McpToolDeps): void {
+export function registerMeshTools(registrar: ToolRegistrar, deps: AgentToolDeps): void {
   registerFromDefinitions(registrar, meshToolDefinitions(deps), MESH_EXTERNAL_CONFIGS);
 }

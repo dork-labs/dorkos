@@ -2,7 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { mkdtempSync } from 'node:fs';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/index.js';
+import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import {
   handlePing,
   handleGetServerInfo,
@@ -85,12 +85,12 @@ interface MockServer {
 /** A real, empty data directory: the task handlers write SKILL.md files under it. */
 const TASKS_HOME = mkdtempSync(path.join(os.tmpdir(), 'dorkos-mcp-tool-server-'));
 
-/** Create a mock McpToolDeps with a stubbed transcript reader */
-function makeMockDeps(overrides: { listSessions?: ReturnType<typeof vi.fn> } = {}): McpToolDeps {
+/** Create a mock AgentToolDeps with a stubbed transcript reader */
+function makeMockDeps(overrides: { listSessions?: ReturnType<typeof vi.fn> } = {}): AgentToolDeps {
   return {
     transcriptReader: {
       listSessions: overrides.listSessions ?? vi.fn().mockResolvedValue([]),
-    } as unknown as McpToolDeps['transcriptReader'],
+    } as unknown as AgentToolDeps['transcriptReader'],
     defaultCwd: '/test/cwd',
     dorkHome: TASKS_HOME,
   };
@@ -123,13 +123,13 @@ function makeMockTasksStore(overrides: Partial<Record<string, ReturnType<typeof 
     // tasks_list reads each task's last run (DOR-3641): none has run.
     runHistory: vi.fn().mockReturnValue(() => ({ lastRunAt: null })),
     ...overrides,
-  } as unknown as McpToolDeps['taskStore'];
+  } as unknown as AgentToolDeps['taskStore'];
 }
 
 /** Create mock deps with Tasks enabled */
 function makeTasksDeps(
   storeOverrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}
-): McpToolDeps {
+): AgentToolDeps {
   return {
     ...makeMockDeps(),
     taskStore: makeMockTasksStore(storeOverrides),
@@ -203,7 +203,7 @@ describe('MCP Tool Handlers', () => {
     it('includes agent_id in response when resolved via agent_id', async () => {
       const listSessions = vi.fn().mockResolvedValue([{ id: 's1' }]);
       const meshCore = { getProjectPath: vi.fn().mockReturnValue('/resolved/path') };
-      const deps = { ...makeMockDeps({ listSessions }), meshCore } as McpToolDeps;
+      const deps = { ...makeMockDeps({ listSessions }), meshCore } as AgentToolDeps;
       const handler = createGetSessionCountHandler(deps);
       const result = await handler({ agent_id: 'agent-123' });
       const parsed = JSON.parse(result.content[0].text);
@@ -316,7 +316,7 @@ describe('MCP Tool Handlers', () => {
             updateTask: vi.fn().mockReturnValue({ ...existing, enabled: enabledAfter }),
           }),
           activityService: { emit },
-        } as unknown as McpToolDeps;
+        } as unknown as AgentToolDeps;
         return { deps, emit };
       }
 
@@ -391,7 +391,7 @@ describe('MCP Tool Handlers', () => {
       const { readManifest } = await import('@dorkos/shared/manifest');
       vi.mocked(readManifest).mockResolvedValue(null);
       const meshCore = { getProjectPath: vi.fn().mockReturnValue('/resolved/agent/path') };
-      const deps = { ...makeMockDeps(), meshCore } as McpToolDeps;
+      const deps = { ...makeMockDeps(), meshCore } as AgentToolDeps;
       const handler = createGetAgentHandler(deps);
       await handler({ agent_id: 'agent-ulid' });
       expect(readManifest).toHaveBeenCalledWith('/resolved/agent/path');

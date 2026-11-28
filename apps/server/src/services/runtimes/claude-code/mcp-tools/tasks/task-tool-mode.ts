@@ -7,7 +7,7 @@
  * @module services/runtimes/claude-code/mcp-tools/tasks/task-tool-mode
  */
 import type { Task } from '@dorkos/shared/types';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { agentModeControlOn } from '../../../../tasks/agent-mode/agent-mode-actions.js';
 import {
   settleAgentModeCall,
@@ -62,7 +62,7 @@ import {
  * @param call - The write, without the editor record, which is read here.
  */
 export async function settleToolModeCall(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   call: Omit<AgentModeDoorCall, 'edits'>
 ): Promise<AgentModeSettlement> {
   if (!agentModeControlOn()) return {};
@@ -111,7 +111,7 @@ export async function settleToolModeCall(
  * @returns Whether the change stands.
  */
 export async function recordToolModeOutcome(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   mode: AgentModeSettlement,
   before: Task | null,
   after: Task,
@@ -182,7 +182,7 @@ export async function recordToolModeOutcome(
  * @param vouched - Whether the task's own agent vouched for the write.
  */
 async function reportOwnPromptEdit(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   before: Task | null,
   after: Task,
   caller: AgentModeCaller,
@@ -233,7 +233,7 @@ export const NOT_TOLD_REFUSAL = {
  * @param created - A create's body, when there is no task yet.
  */
 export function auditToolModeChange(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   mode: AgentModeSettlement,
   before: Task | null,
   created?: Record<string, unknown>
@@ -286,7 +286,7 @@ export const PARKED_BECAUSE = {
  * @param caller - Who is editing, with whether a scheduled run started it.
  */
 export async function contentEditVouched(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   existing: Task,
   caller: AgentModeCaller
 ): Promise<boolean> {
@@ -327,7 +327,7 @@ export async function contentEditVouched(
  * @param startedBy - Who started the calling turn.
  */
 export function recordToolAttestation(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   updated: Task,
   caller: AgentModeCaller,
   writesContent: boolean,
@@ -366,7 +366,7 @@ export function recordToolAttestation(
  *   ({@link contentEditVouched}), and whether it changed the content.
  */
 export function afterToolAgentEdit(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   updated: Task,
   mode: AgentModeSettlement,
   caller: AgentModeCaller,
@@ -422,7 +422,7 @@ export const NOT_ARMED_REFUSAL = {
  * @param caller - Who approved it.
  */
 export async function armToolApproval(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   mode: AgentModeSettlement,
   before: Task,
   caller: AgentModeCaller

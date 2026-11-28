@@ -18,7 +18,7 @@
 import path from 'node:path';
 import type { SidebarPrefs } from '@dorkos/shared/config-schema';
 import { buildIssueDraft, gatherFeedbackReport, type FeedbackKind } from '@dorkos/shared/feedback';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import type { CapabilityHandlerContext } from '../capabilities/registry.js';
 import type { GrantedApproval } from '../capabilities/tier-enforcement.js';
@@ -93,7 +93,7 @@ export function jsonResult(data: unknown, isError = false): OperatorToolResult {
  * @returns The resolved agent project directory (not yet boundary-validated).
  */
 export function resolveAgentPath(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   args: { agent_id?: string; cwd?: string }
 ): string {
   if (!args.agent_id && !args.cwd) {
@@ -196,7 +196,7 @@ function nopeRefusal(what: string): string {
  * @param deps - Tool deps (`meshCore` for `agent_id` resolution + DB sync).
  * @returns The bound handler.
  */
-export function createUpdateAgentHandler(deps: McpToolDeps) {
+export function createUpdateAgentHandler(deps: AgentToolDeps) {
   return async (args: UpdateAgentArgs): Promise<OperatorToolResult> => {
     try {
       const { agent_id, cwd, ...patch } = args;
@@ -298,7 +298,7 @@ export interface UpdateAgentBoundariesArgs {
  * @param deps - Tool deps (`meshCore` for `agent_id` resolution + DB sync).
  * @returns The bound handler.
  */
-export function createUpdateAgentBoundariesHandler(deps: McpToolDeps) {
+export function createUpdateAgentBoundariesHandler(deps: AgentToolDeps) {
   return async (args: UpdateAgentBoundariesArgs): Promise<OperatorToolResult> => {
     try {
       const { agent_id, cwd, nopeContent, enabled } = args;
@@ -375,7 +375,7 @@ const NOTHING_TO_CHANGE =
 
 /** Resolve and read the target agent, for the card and for the write. */
 async function readTargetAgent(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   args: { agent_id?: string; cwd?: string }
 ): Promise<{ agentPath: string; manifest: NonNullable<Awaited<ReturnType<typeof readManifest>>> }> {
   const agentPath = await validateBoundaryOrDorkHome(resolveAgentPath(deps, args));
@@ -404,7 +404,7 @@ async function readTargetAgent(
  * @returns The card's lines, or `undefined` when the agent cannot be read.
  */
 export async function describeAgentExecutionApproval(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   args: UpdateAgentExecutionArgs
 ): Promise<string | undefined> {
   let manifest: Awaited<ReturnType<typeof readTargetAgent>>['manifest'];
@@ -428,7 +428,7 @@ export async function describeAgentExecutionApproval(
  * @param deps - Tool deps (`meshCore` for `agent_id` resolution + DB sync).
  * @returns The bound handler.
  */
-export function createUpdateAgentExecutionHandler(deps: McpToolDeps) {
+export function createUpdateAgentExecutionHandler(deps: AgentToolDeps) {
   return async (args: UpdateAgentExecutionArgs): Promise<OperatorToolResult> => {
     try {
       const { agentPath, manifest } = await readTargetAgent(deps, args);
@@ -605,7 +605,7 @@ export interface SidebarRemoveFromGroupArgs {
  *   rooms half is scoped to. Absent only in a direct unit call.
  * @returns The roster to resolve against.
  */
-function sidebarRoster(deps: McpToolDeps, context?: CapabilityHandlerContext): SidebarRoster {
+function sidebarRoster(deps: AgentToolDeps, context?: CapabilityHandlerContext): SidebarRoster {
   return {
     agents: deps.meshCore ? deps.meshCore.listWithPaths() : [],
     rooms: context ? deps.listVisibleRooms?.(context) : undefined,
@@ -689,7 +689,7 @@ function sidebarWriteFailure(result: GuardedConfigWriteResult): OperatorToolResu
  * @returns The bound handler.
  */
 export function createSidebarAddToGroupHandler(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   context?: CapabilityHandlerContext
 ) {
   return async (args: SidebarAddToGroupArgs): Promise<OperatorToolResult> => {
@@ -762,7 +762,7 @@ export function createSidebarAddToGroupHandler(
  * @returns The bound handler.
  */
 export function createSidebarRemoveFromGroupHandler(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   context?: CapabilityHandlerContext
 ) {
   return async (args: SidebarRemoveFromGroupArgs): Promise<OperatorToolResult> => {
@@ -927,7 +927,7 @@ export function createFeedbackDraftHandler() {
  *   agent roster).
  * @returns The bound handler.
  */
-export function createAgentsRecentActivityHandler(deps: McpToolDeps) {
+export function createAgentsRecentActivityHandler(deps: AgentToolDeps) {
   return async (args: { limit?: number }): Promise<OperatorToolResult> => {
     if (!deps.runtimeRegistry) {
       return jsonResult({ error: 'Runtime registry is not available in this instance.' }, true);

@@ -21,8 +21,8 @@
  * @module services/runtimes/claude-code/mcp-tools/tasks/task-tool-narrow-bypass
  */
 import type { Task } from '@dorkos/shared/types';
-import type { McpToolDeps } from '../types.js';
-import { jsonContent } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
+import { jsonContent } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { scheduleEdit } from '../../../../tasks/approvals/schedule-owner.js';
 import { broadcastTasksChanged } from '../../../../tasks/task-sse-events.js';
 import { agentModeSnapshotOf } from '../../../../tasks/agent-mode/agent-mode-door.js';
@@ -86,7 +86,7 @@ export function namesMoveToDontAsk(args: Record<string, unknown>): boolean {
  * @param who - Who is calling.
  */
 export function updateTaskAllowList(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   args: { id: string } & Record<string, unknown>,
   who: AllowListUpdateCaller
 ): Promise<ReturnType<typeof jsonContent>> {
@@ -104,7 +104,7 @@ export function updateTaskAllowList(
  * @param who - Who is calling.
  */
 export async function moveToDontAskWithList(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   args: { id: string } & Record<string, unknown>,
   who: AllowListUpdateCaller
 ): Promise<ReturnType<typeof jsonContent>> {
@@ -248,13 +248,13 @@ export const CHANGED_AFTER_FILE_REFUSAL = {
 } as const;
 
 /** What the move was decided against: {@link agentModeSnapshotOf}, mode included. */
-function snapshotOf(deps: McpToolDeps, task: Task): string {
+function snapshotOf(deps: AgentToolDeps, task: Task): string {
   const edits = deps.taskStore!.approvals.agentEditsOf(task.id);
   return agentModeSnapshotOf(task, edits, { setsMode: false });
 }
 
 /** The row half of the snapshot, for the transaction: the file was just rewritten. */
-function rowKeyOf(store: NonNullable<McpToolDeps['taskStore']>, task: Task): string {
+function rowKeyOf(store: NonNullable<AgentToolDeps['taskStore']>, task: Task): string {
   const edits = store.approvals.agentEditsOf(task.id);
   return JSON.stringify([
     scheduleContentKey(taskWorkOf(task)),

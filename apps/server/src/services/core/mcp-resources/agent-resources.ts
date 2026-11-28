@@ -16,7 +16,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { AgentManifestSchema } from '@dorkos/shared/mesh-schemas';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import {
   firstVar,
   jsonResourceContents,
@@ -38,7 +38,7 @@ const AgentListResourceSchema = z.object({
 });
 
 /** Guard that returns the injected `MeshCore` or throws a clear "not available" error. */
-function requireMeshCore(deps: McpToolDeps): NonNullable<McpToolDeps['meshCore']> {
+function requireMeshCore(deps: AgentToolDeps): NonNullable<AgentToolDeps['meshCore']> {
   if (!deps.meshCore) {
     resourceUnavailable('The agent directory is off, so agent resources are unavailable.');
   }
@@ -51,7 +51,7 @@ function requireMeshCore(deps: McpToolDeps): NonNullable<McpToolDeps['meshCore']
  * @param server - The `McpServer` instance to register resources against.
  * @param deps - Shared MCP tool dependencies.
  */
-export function registerAgentResources(server: McpServer, deps: McpToolDeps): void {
+export function registerAgentResources(server: McpServer, deps: AgentToolDeps): void {
   server.registerResource(
     'agents',
     'dorkos://agents',

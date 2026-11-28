@@ -16,7 +16,7 @@ import { SidebarGroupSchema, type SidebarGroup } from '@dorkos/shared/config-sch
 import type { ConfigManager } from '../../config-manager.js';
 import type { GuardedConfigWrite } from '../config-write.js';
 import type { OperatorToolResult } from '../operator-tool-handlers.js';
-import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../agent-tool-kit/agent-tool-kit.js';
 import type { SidebarItemRefInput } from '../sidebar-item-refs.js';
 import type { CapabilityHandlerContext } from '../../capabilities/registry.js';
 
@@ -73,12 +73,12 @@ const ROSTER_ROOMS = [
 const UNSEEN_DM = { roomId: '01JPRIVATEDM', name: 'Dorian and Scout', slug: null };
 
 /** Tool deps carrying just the two rosters a reference is checked against. */
-function deps(over: Partial<McpToolDeps> = {}): McpToolDeps {
+function deps(over: Partial<AgentToolDeps> = {}): AgentToolDeps {
   return {
-    meshCore: { listWithPaths: () => ROSTER_AGENTS } as unknown as McpToolDeps['meshCore'],
+    meshCore: { listWithPaths: () => ROSTER_AGENTS } as unknown as AgentToolDeps['meshCore'],
     listVisibleRooms: () => [...ROSTER_ROOMS],
     ...over,
-  } as McpToolDeps;
+  } as AgentToolDeps;
 }
 
 /** An agent principal, as the registry resolves one onto the caller context. */

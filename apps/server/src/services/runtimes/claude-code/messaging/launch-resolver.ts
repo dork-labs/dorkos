@@ -75,7 +75,8 @@ import { applyBrowserToolDeny, mcpToolHookMatchers } from '../tool-gate/mcp-tool
 import { applySecretReadDeny } from '../secret-files/secret-read-deny.js';
 import { heldRuntimeNotice } from '../folder-settings/held-runtime-notice.js';
 import { applyLaunchHeldFolderDeny } from '../folder-settings/dev-link-deny.js';
-import { IN_SESSION_TOOL_PREFIX, loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
+import { loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
+import { IN_SESSION_TOOL_PREFIX } from '../../../core/tool-names/tool-names.js';
 import { env } from '../../../../env.js';
 import {
   CLASSIFIER_CONTEXT_MATCHER,
@@ -781,12 +782,12 @@ export async function resolveLaunch(args: {
   // modifies the tool (`continue: true`). First-touch-wins in the store makes
   // the canUseTool+hook double-fire a no-op.
   //
-  // Whether BACKGROUNDED (async) subagents also arrive at `canUseTool` is
-  // UNRESOLVED and is not asserted either way (DOR-795, DOR-782); the full
-  // reasoning is preserved in `message-sender.ts`'s history. Either way the
-  // backstop holds: `interactive-handlers.ts` auto-denies on abort and on
-  // timeout, so a prompt that arrives outside a foreground turn degrades
-  // gracefully rather than hanging one.
+  // BACKGROUNDED (async) subagents do arrive at `canUseTool` on CLI 0.3.304,
+  // after the parent's reply too (DOR-2698; `ToolApprovalContext.agentID` in
+  // `interactive-handlers.ts`). On a warm process, a card raised with no turn
+  // open gets a window of its own (`sessions/dispatch/asks-between-turns.ts`).
+  // The backstop still holds: `interactive-handlers.ts` denies on abort and on
+  // timeout, so a prompt nobody answers never hangs a turn.
   const auditTurn = {
     sessionId,
     turn: { cwd: effectiveCwd, forAgent, roomTurn: messageOpts?.roomTurn },

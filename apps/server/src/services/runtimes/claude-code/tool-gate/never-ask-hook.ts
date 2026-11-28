@@ -45,7 +45,7 @@ import { chatReadOutsideWords } from '../../../core/turn-power/chat-outside-word
 import { marksHold } from '../../../core/turn-power/turn-marks.js';
 import { marksOf } from '../../../core/turn-power/turn-levels.js';
 import { NEVER_ASK_MODE_ID } from '../runtime-constants.js';
-import { inSessionToolName } from '../mcp-tools/tool-exposure.js';
+import { inSessionToolName } from '../../../core/tool-names/tool-names.js';
 import {
   ceilingOn,
   gatePermissionMode,

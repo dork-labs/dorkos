@@ -15,7 +15,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 
 import { TaskStore } from '../../../../tasks/task-store.js';
 import { getTasksTools } from '../tasks/task-tools.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { recordTurnLevels } from '../../../../core/turn-power/turn-levels.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtime-constants.js';
 import { registerClaudeCodeFacts } from '../../../../../startup/register-claude-code-facts.js';
@@ -86,7 +86,7 @@ function toolsOf(folder: string, sessionId: string | undefined): Record<string, 
       listWithPaths: () => agents,
       getProjectPath: (id: string) => agents.find((a) => a.id === id)?.projectPath,
     } as unknown as MeshCore,
-  } as unknown as McpToolDeps;
+  } as unknown as AgentToolDeps;
   const tools = getTasksTools(deps, () => ({
     ...(sessionId !== undefined && { sessionId }),
     agentPath: agentFolder,

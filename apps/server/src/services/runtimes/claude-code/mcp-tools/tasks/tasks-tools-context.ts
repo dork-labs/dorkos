@@ -5,7 +5,7 @@
  * @module services/runtimes/claude-code/mcp-tools/tasks/tasks-tools-context
  */
 import { unmarkedTurnClause } from '../../../../core/turn-power/marked-turn-copy.js';
-import { IN_SESSION_TOOL_PREFIX as T } from '../tool-exposure.js';
+import { IN_SESSION_TOOL_PREFIX as T } from '../../../../core/tool-names/tool-names.js';
 
 /**
  * The Tasks tool docs, plus the one place an agent is told durable CronCreate

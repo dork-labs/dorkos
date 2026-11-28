@@ -113,7 +113,9 @@ export class ChatCapHold {
 
   private async offer(row: ChatMessageRow): Promise<void> {
     const caller = { sessionId: row.fromSessionId, agentPath: row.fromAgentPath };
-    const target = await resolveChatTarget(this.deps, caller, row.toSessionId, undefined);
+    // A held report keeps a report's reach, or one into a room's old chat would fail here (DOR-3753).
+    const kind = row.kind === 'report' ? 'report' : 'message';
+    const target = await resolveChatTarget(this.deps, caller, row.toSessionId, undefined, kind);
     const rendered = renderChatMessage(
       {
         messageId: row.id,

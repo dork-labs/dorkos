@@ -29,7 +29,7 @@
  *
  * @module services/runtimes/claude-code/tool-gate/own-connection-reads
  */
-import { inSessionToolName } from '../mcp-tools/tool-exposure.js';
+import { inSessionToolName } from '../../../core/tool-names/tool-names.js';
 
 /** The two capability ids, as the connector tools are registered. */
 export const OWN_CONNECTION_READ_IDS = [

@@ -49,7 +49,7 @@ import { noteRoomTurnWords } from '../../turn-power/outside-words.js';
 import { createUpdateAgentConfigHandler } from '../agent-config.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import { initBoundary } from '../../../../lib/boundary.js';
-import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../agent-tool-kit/agent-tool-kit.js';
 import type { AgentIdentity } from '../../agent-identity/index.js';
 
 const ID = 'operator.update_agent_config';
@@ -130,7 +130,7 @@ beforeEach(async () => {
 
   registry = composeRegistry([operatorDomain], {
     logger: noopLogger,
-    operatorDeps: {} as McpToolDeps,
+    operatorDeps: {} as AgentToolDeps,
   });
   approvals = new ApprovalService(createTestDb());
   vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
@@ -396,7 +396,7 @@ describe('Security review of #3879 (M1–M3, S4)', () => {
   });
 
   it('M3: the handler refuses its own folder too, however it was named', async () => {
-    const handler = createUpdateAgentConfigHandler({} as McpToolDeps, agentPath);
+    const handler = createUpdateAgentConfigHandler({} as AgentToolDeps, agentPath);
     const result = await handler({ cwd: agentPath, path: 'settings.json', content: '{}' });
     expect(result.isError).toBe(true);
     expect(result.content[0]!.text).toContain('SELF_TARGET');

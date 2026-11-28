@@ -16,7 +16,7 @@
  */
 import { DeliveryMetricsSchema } from '@dorkos/shared/relay-schemas';
 import type { ToolRegistrar } from '../mcp-tool-gate.js';
-import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../agent-tool-kit/agent-tool-kit.js';
 import type { SenderIdentity } from '../../runtimes/claude-code/mcp-tools/relay-helpers.js';
 import { getRelayTools } from '../../runtimes/claude-code/mcp-tools/relay-tools.js';
 import { adapterToolDefinitions } from '../../runtimes/claude-code/mcp-tools/adapter-tools.js';
@@ -51,7 +51,7 @@ const RELAY_EXTERNAL_CONFIGS: ExternalToolConfigs = {
  */
 export function registerRelayTools(
   registrar: ToolRegistrar,
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   identity: SenderIdentity
 ): void {
   const definitions = [

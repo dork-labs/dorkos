@@ -21,6 +21,7 @@ import { sweepOrphanedMessageQueues } from '../../services/session/index.js';
 import { resumeStrandedChatQueues } from '../../services/extensions/agent-send/agent-send-defaults.js';
 import { agentPause } from '../../services/mesh/pause/agent-pause.js';
 import { startRunEffects } from '../../services/runs/index.js';
+import { recoverChatReports } from '../../services/session/chat-messages/chat-message-current.js';
 import { sweepExpiredTurnContext } from '../../services/session/turn-context/record-turn-context.js';
 import { INTERVALS } from '../../config/constants.js';
 import { takeDailySnapshot } from '@dorkos/db';
@@ -127,6 +128,13 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
   // `turns-survive-restarts` §7.3). Until it runs, the "finished" emitter
   // tells every turn itself.
   startRunEffects();
+
+  // Saved spin-off reports resume now, once the rooms link is wired (`mountCoreRoutes`): a report
+  // into a room's old chat is refused before it (DOR-3753). The health tick asks again through
+  // `recoverAcceptedPrivateSessions`, which finds nothing more to recover.
+  void recoverChatReports().catch((error: unknown) => {
+    logger.warn('[reports] startup recovery remains durable', logError(error));
+  });
 
   // A hub reads who it belongs to and refuses everybody until it serves them
   // (DOR-2934). The server is listening, so Cloud's health check answers

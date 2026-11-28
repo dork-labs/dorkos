@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { createGetExtensionApiHandler, createTestExtensionHandler } from '../extension-tools.js';
 import type { ExtensionManager } from '../../../../extensions/extension-manager.js';
 
@@ -43,9 +43,9 @@ function createMockManager(overrides: Partial<ExtensionManager> = {}): Extension
   } as unknown as ExtensionManager;
 }
 
-function createDeps(extensionManager?: ExtensionManager): McpToolDeps {
+function createDeps(extensionManager?: ExtensionManager): AgentToolDeps {
   return {
-    transcriptReader: {} as McpToolDeps['transcriptReader'],
+    transcriptReader: {} as AgentToolDeps['transcriptReader'],
     defaultCwd: '/test',
     dorkHome: '/tmp/dorkos-test-home',
     extensionManager,

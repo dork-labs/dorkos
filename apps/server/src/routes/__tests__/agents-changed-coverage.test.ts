@@ -96,7 +96,7 @@ import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
 import { wireLiveChangeBroadcasts } from '../../services/core/streams/screen/live-change-broadcasts.js';
 import { createMeshRegisterHandler } from '../../services/runtimes/claude-code/mcp-tools/mesh-tools.js';
 import { createMeshAgentRegistry } from '../../services/marketplace/flows/mesh-agent-registry.js';
-import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
+import type { AgentToolDeps } from '../../services/core/agent-tool-kit/agent-tool-kit.js';
 import {
   clearTestHomes,
   registerEveryFolderAsHome,
@@ -343,7 +343,7 @@ describe('every agent mutation entry point broadcasts agents_changed exactly onc
 
   it('the in-session mesh_register MCP tool', async () => {
     const dir = await makeProjectDir('mcp-register');
-    const meshRegister = createMeshRegisterHandler({ meshCore: mesh } as unknown as McpToolDeps);
+    const meshRegister = createMeshRegisterHandler({ meshCore: mesh } as unknown as AgentToolDeps);
 
     const result = await meshRegister({ path: dir, name: 'mcp-register', runtime: 'claude-code' });
 

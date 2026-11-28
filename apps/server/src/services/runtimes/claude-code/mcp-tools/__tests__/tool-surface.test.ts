@@ -40,7 +40,7 @@ import { composeCapabilityRegistryForDocs } from '../../../../core/self-descript
 import { composeDorkOsCapabilityRegistry } from '../../../../core/self-description/dorkos-registry.js';
 import { CONNECTOR_RUNTIME_CAPABILITY_IDS } from '../../../../connectors/runtime-capability-scope.js';
 import { noopLogger } from '@dorkos/shared/logger';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import type { CapabilityRegistry } from '../../../../core/capabilities/index.js';
 import {
   clearTestHomes,
@@ -56,12 +56,12 @@ const FIXTURE = path.resolve(
 );
 
 /** Deps with every optional service handle present, so the whole surface builds. */
-function createFullDeps(): McpToolDeps {
+function createFullDeps(): AgentToolDeps {
   const stub = {} as never;
   return {
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
-    } as unknown as McpToolDeps['transcriptReader'],
+    } as unknown as AgentToolDeps['transcriptReader'],
     defaultCwd: '/tmp/dor-2685-surface',
     dorkHome: '/tmp/dorkos-test-home',
     taskStore: stub,
@@ -71,7 +71,7 @@ function createFullDeps(): McpToolDeps {
     bindingStore: stub,
     bindingRouter: stub,
     // A session folder is nobody's mesh agent here.
-    meshCore: { getSubjectByPath: () => undefined } as unknown as McpToolDeps['meshCore'],
+    meshCore: { getSubjectByPath: () => undefined } as unknown as AgentToolDeps['meshCore'],
     extensionManager: stub,
     runtimeRegistry: stub,
     activityService: stub,

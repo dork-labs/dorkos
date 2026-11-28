@@ -47,8 +47,8 @@ import {
   ALWAYS_LOADED_TOOLS,
   AGENT_TO_AGENT_TOOLS,
   alwaysLoadedToolsFor,
-  inSessionToolName,
 } from '../tool-exposure.js';
+import { inSessionToolName } from '../../../../core/tool-names/tool-names.js';
 import { DORKOS_AGENT_TOOLS, READ_ONLY_TOOLS } from '../../tool-gate/auto-allow.js';
 import { READ_ONLY_MCP_TOOL_NAMES } from '../../../../core/external-mcp/tool-security.js';
 import { composeCapabilityRegistryForDocs } from '../../../../core/self-description/dorkos-registry.js';
@@ -74,7 +74,7 @@ import {
   CONNECTOR_RUNTIME_KIND_HEADER,
 } from '../../../connector-tools.js';
 import { createServerPrincipal } from '../../../../connectors/principal/server-principal.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import type { CapabilityRegistry } from '../../../../core/capabilities/index.js';
 import {
   clearTestHomes,
@@ -114,12 +114,12 @@ const principal = createServerPrincipal({
 });
 
 /** Deps with every optional service handle present, so the whole surface builds. */
-function createFullDeps(): McpToolDeps {
+function createFullDeps(): AgentToolDeps {
   const stub = {} as never;
   return {
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
-    } as unknown as McpToolDeps['transcriptReader'],
+    } as unknown as AgentToolDeps['transcriptReader'],
     defaultCwd: '/tmp/dor-2685-every-list',
     dorkHome: '/tmp/dorkos-test-home',
     taskStore: stub,

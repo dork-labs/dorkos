@@ -48,7 +48,7 @@ import {
   resetAutoModeStops,
   autoModeStopStats,
 } from '../../../../observability/auto-mode-stops.js';
-import { inSessionToolName } from '../../mcp-tools/tool-exposure.js';
+import { inSessionToolName } from '../../../../core/tool-names/tool-names.js';
 import {
   CLASSIFIER_CONTEXT_MATCHER,
   CLASSIFIER_SENTENCES,

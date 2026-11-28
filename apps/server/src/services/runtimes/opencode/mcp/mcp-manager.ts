@@ -42,7 +42,7 @@ import { partitionReservedMcpServers } from '@dorkos/shared/global-mcp-schemas';
 import { managedConfigHeld } from '../../shared/policy/managed-config.js';
 import { logger, logError } from '../../../../lib/logger.js';
 import { resolveDorkosMcpInjection } from '../../shared/dorkos-mcp-injection.js';
-import { DORKOS_MCP_SERVER_NAME } from '../../shared/dorkos-tool-names.js';
+import { DORKOS_MCP_SERVER_NAME } from '../../../core/tool-names/tool-names.js';
 import {
   CONNECTOR_RUNTIME_MCP_SERVER_NAME,
   CONNECTOR_RUNTIME_TOOL_TIMEOUT_MS,

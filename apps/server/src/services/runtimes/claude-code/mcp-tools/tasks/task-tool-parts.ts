@@ -5,8 +5,12 @@
  *
  * @module services/runtimes/claude-code/mcp-tools/tasks/task-tool-parts
  */
-import type { McpToolDeps } from '../types.js';
-import { jsonContent, requireTasks, structuredJsonContent } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
+import {
+  jsonContent,
+  requireTasks,
+  structuredJsonContent,
+} from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import {
   describeOperatorOnlyTaskRefusal,
   findOperatorOnlyTaskFields,
@@ -177,7 +181,7 @@ export function refuseOperatorOnlyTaskFields(args: unknown) {
 }
 
 /** List all Tasks scheduled jobs. */
-export function createListSchedulesHandler(deps: McpToolDeps) {
+export function createListSchedulesHandler(deps: AgentToolDeps) {
   return async (args: { enabled_only?: boolean }) => {
     const err = requireTasks(deps);
     if (err) return err;
@@ -210,7 +214,7 @@ export const UNIDENTIFIED_RUNS_MESSAGE =
   "DorkOS can't tell which agent is asking, so it can't show an agent's scheduled task runs.";
 
 /** The Mesh id of the calling agent, or `undefined` when DorkOS cannot name one. */
-function callerIdOf(deps: McpToolDeps, agentPath: string | undefined): string | undefined {
+function callerIdOf(deps: AgentToolDeps, agentPath: string | undefined): string | undefined {
   return agentPath ? agentIdOfHome(deps.meshCore ?? undefined, agentPath) : undefined;
 }
 
@@ -238,7 +242,7 @@ export const RUN_SUMMARIES_LEFT_OUT =
  * @param readsOthers - Whether the calling turn may read another agent's schedule.
  */
 export function createGetRunHistoryHandler(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   resolveProvenance?: TaskProvenanceResolver,
   readsOthers: () => boolean = () => false
 ) {
@@ -292,7 +296,7 @@ export const AGENT_ID_ON_CREATE_REFUSAL = {
  * @param updated - The schedule after the edit.
  */
 export function emitAgentSwitchedOn(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   agentPath: string | undefined,
   updated: Task
 ): void {
@@ -330,7 +334,7 @@ export interface TaskAccountEditOutcome {
  * @param moved - Whether the edit was settled as a kept account move.
  */
 export async function settleTaskAccountEdit(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   before: Task,
   caller: { agentPath?: string | null },
   moved: boolean
@@ -354,7 +358,7 @@ export async function settleTaskAccountEdit(
  * @param caller - The calling agent and whether its turn is marked.
  */
 export async function accountMovePolicyFor(
-  deps: McpToolDeps,
+  deps: AgentToolDeps,
   task: Task,
   caller: Pick<AgentModeCaller, 'agentPath' | 'marked'>
 ): Promise<ReturnType<typeof accountMovePolicy>> {

@@ -150,10 +150,7 @@ export function wireDocDelivery(refs: ServerRefs, built: WireDocDeliveryInput) {
     (sessionId) => nudgePrivateSession(sessionId)
   );
   roomService.handoffs.initializeDurable(() => handoffNotices.flush());
-  const recoverAcceptedPrivateSessions = (): void => {
-    void recoverChatReports().catch((error: unknown) => {
-      logger.warn('[reports] startup recovery remains durable', logError(error));
-    });
+  const recoverPrivateWork = (): void => {
     try {
       roomService.handoffs.flushTerminals();
     } catch (error) {
@@ -167,7 +164,15 @@ export function wireDocDelivery(refs: ServerRefs, built: WireDocDeliveryInput) {
     refs.acceptedPrivateSessionCursor = sessionIds.length === 100 ? sessionIds.at(-1) : undefined;
     for (const sessionId of sessionIds) nudgePrivateSession(sessionId);
   };
-  recoverAcceptedPrivateSessions();
+  const recoverAcceptedPrivateSessions = (): void => {
+    void recoverChatReports().catch((error: unknown) => {
+      logger.warn('[reports] startup recovery remains durable', logError(error));
+    });
+    recoverPrivateWork();
+  };
+  // Saved spin-off reports wait for the rooms link (`mountCoreRoutes`), so they first resume in
+  // `startAfterListen`: before it, a report into a room's old chat is refused (DOR-3753).
+  recoverPrivateWork();
   const docPump = new DocBatchDeliveryPump({
     db,
     store: docChannelHttp.channels,

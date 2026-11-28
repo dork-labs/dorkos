@@ -96,7 +96,7 @@ vi.mock('../../../../tasks/agent-mode/agent-mode-sources.js', async () => {
 });
 
 import { TaskStore } from '../../../../tasks/task-store.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import { getTasksTools } from '../tasks/task-tools.js';
 import {
   initPermissionGate,
@@ -189,7 +189,7 @@ const STATUS_REFUSAL_TEXT = MODE_REFUSAL_TEXT.replace(/permissionMode/g, 'status
 
 describe('tasks_* and an agent’s mode or approval', () => {
   let store: TaskStore;
-  let deps: McpToolDeps;
+  let deps: AgentToolDeps;
   let emit: ReturnType<typeof vi.fn>;
   let dorkHome: string;
   let homeA: string;
@@ -223,7 +223,7 @@ describe('tasks_* and an agent’s mode or approval', () => {
         getProjectPath: (id: string) => agents.find((a) => a.id === id)?.projectPath,
         getSubjectByPath: () => undefined,
       } as unknown as MeshCore,
-    } as unknown as McpToolDeps;
+    } as unknown as AgentToolDeps;
     config = { preset: 'trusted', defaults: { areas: {}, actions: {} } };
     initPermissionGate({ readConfig: () => config });
     hooks.onRead = undefined;

@@ -31,9 +31,9 @@ vi.mock('../../../../../lib/logger.js', () => ({
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn().mockResolvedValue(null) }));
 
 import { createDorkOsToolServer } from '../index.js';
-import { inSessionToolName } from '../tool-exposure.js';
+import { inSessionToolName } from '../../../../core/tool-names/tool-names.js';
 import { composeCapabilityRegistryForDocs } from '../../../../core/self-description/dorkos-registry.js';
-import type { McpToolDeps } from '../types.js';
+import type { AgentToolDeps } from '../../../../core/agent-tool-kit/agent-tool-kit.js';
 import type { CapabilityRegistry } from '../../../../core/capabilities/index.js';
 import { checkDeclaredTools } from '@dorkos/extension-api/tool-check';
 import {
@@ -50,12 +50,12 @@ const FIXTURE = path.resolve(
 );
 
 /** Deps with every optional service handle present, so the whole surface builds. */
-function createFullDeps(): McpToolDeps {
+function createFullDeps(): AgentToolDeps {
   const stub = {} as never;
   return {
     transcriptReader: {
       listSessions: vi.fn().mockResolvedValue([]),
-    } as unknown as McpToolDeps['transcriptReader'],
+    } as unknown as AgentToolDeps['transcriptReader'],
     defaultCwd: '/tmp/dor-2685-listing',
     dorkHome: '/tmp/dorkos-test-home',
     taskStore: stub,

@@ -398,15 +398,18 @@ export class ChatMessageService {
   }
 
   /**
-   * Whether a chat takes ordinary dispatcher messages. Private seat asides
-   * are a separate route and do not make this predicate true. A spin-off is
-   * never promised ordinary reports into a chat that cannot take them.
+   * Whether a chat takes a spin-off's reports as ordinary dispatcher
+   * messages: any chat a chat message may reach, and a room's old chat no
+   * room answers for now (`takesReportsAsChat`, DOR-3753). Private seat
+   * asides are a separate route and do not make this predicate true. A
+   * spin-off is never promised ordinary reports into a chat that cannot
+   * take them.
    *
    * @param sessionId - The chat.
    */
   async canReceive(sessionId: string): Promise<boolean> {
     try {
-      await assertChatSendable(this.deps, sessionId, true);
+      await assertChatSendable(this.deps, sessionId, true, 'report');
       return true;
     } catch {
       return false;

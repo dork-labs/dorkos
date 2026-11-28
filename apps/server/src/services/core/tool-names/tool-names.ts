@@ -2,7 +2,11 @@
  * How the DorkOS MCP server and its tools are NAMED, on every runtime that
  * reaches them.
  *
- * A leaf module that imports only the shared package, and deliberately so. The
+ * Kernel, and a port of the services import boundary
+ * (`eslint-rules/import-boundary.js`): the tool files under `tasks`, `relay` and
+ * `mesh` render these names into their own text, so they must not have to import
+ * `runtimes/**` to do it (spec `computer-side-starts-alone` §5.1). A leaf module
+ * that imports only the shared package, and deliberately so. The
  * server's name itself lives in `@dorkos/shared/global-mcp-schemas`, beside the
  * reserved list the app's Name field reads too. These names are needed by
  * three places that must not depend on each other: the claude-code in-session
@@ -13,7 +17,7 @@
  * drift apart, and a drifted prefix produces tool names that are silently
  * uncallable (DOR-1292).
  *
- * @module services/runtimes/shared/dorkos-tool-names
+ * @module services/core/tool-names/tool-names
  */
 import { DORKOS_TOOL_SERVER_NAME } from '@dorkos/shared/global-mcp-schemas';
 
@@ -54,6 +58,24 @@ export const OPENCODE_DORKOS_TOOL_PREFIX = `${DORKOS_MCP_SERVER_NAME}_`;
  * The in-session server's `IN_SESSION_TOOL_PREFIX` is this value.
  */
 export const CLAUDE_CODE_DORKOS_TOOL_PREFIX = `mcp__${DORKOS_MCP_SERVER_NAME}__` as const;
+
+/**
+ * What Claude Code prepends to every in-session DorkOS tool name.
+ *
+ * Prose that teaches a tool must render this in front of it; a bare name in a
+ * system-prompt block is a name the model cannot call.
+ */
+export const IN_SESSION_TOOL_PREFIX = CLAUDE_CODE_DORKOS_TOOL_PREFIX;
+
+/**
+ * Qualify a registered tool name the way Claude Code exposes it.
+ *
+ * @param bare - The name the tool is registered under (`react_to_room_entry`).
+ * @returns The only string the model can actually call.
+ */
+export function inSessionToolName(bare: string): string {
+  return `${IN_SESSION_TOOL_PREFIX}${bare}`;
+}
 
 /**
  * Spell any MCP tool the way one runtime's model has to call it.
