@@ -233,7 +233,6 @@ import type { RetiringPump } from './diagnostics/retired-turn.js';
  */
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { ContextUsage, UsageStatus } from '@dorkos/shared/types';
-import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
 import { logger } from '../../../../lib/logger.js';
 import type { TurnOrigin } from '../../../session/session-event-normalizer.js';
 import { validateDispatchBoundary } from '../dispatch-boundary.js';
@@ -252,7 +251,20 @@ import { beginsATurn, carriesVisibleContent, isHelperFrame } from './frames/fram
 import {
   dropSupersededProgress,
   HelperFramesBetweenTurns,
+  keepNewestProgress,
 } from './frames/helper-frames-between-turns.js';
+import {
+  askSettledResult,
+  closesAnAbortedTurn,
+  closesWithAFailure,
+  immediateCloseReason,
+  readAnsweredIds,
+  readQueuedTurnCount,
+  readTurnProvenance,
+  stoppedResult,
+  strandedResult,
+  type ImmediateCloseReason,
+} from './frames/result-frames.js';
 
 /**
  * How long a window's accounting fetch may take before the window closes
@@ -499,6 +511,13 @@ export interface SessionTurnWindowsOptions {
    * segment the CLI already handed over inside a turn.
    */
   onFoldedDelivery?: (count: number) => void;
+  /**
+   * Whether a person is being waited on right now: an approval card, a question
+   * or a form still open (`isWaitingOnPerson`). A window opened only to show an
+   * ask ({@link SessionTurnWindows.openForAsk}) closes at the first frame after
+   * this turns false. Absent, nobody is ever waited on.
+   */
+  waitingOnPerson?: () => boolean;
 }
 
 /** A buffered stream of SDK messages with an explicit end. */
@@ -618,6 +637,12 @@ interface WindowRecord {
    */
   emptyClose?: boolean;
   /**
+   * True while this window exists only to show an ask raised with no turn
+   * open (DOR-2698). Cleared the moment the agent's main thread starts a turn
+   * inside it, which makes it an ordinary runtime turn from then on.
+   */
+  forAsk?: boolean;
+  /**
    * Resolves once this window has closed and its observers have been told.
    *
    * Only a RUNTIME window's is ever awaited ({@link SessionTurnWindows.dispatch}):
@@ -661,20 +686,6 @@ function createRecord(
 }
 
 /**
- * Whether a `result` reports a FAILED or cut-short turn, which closes its window
- * at once even when the window carried nothing (spec `warm-process-lifecycle`
- * D5). An error has already said what went wrong, and a Stop must not wait.
- *
- * @param message - The `result` about to close a window
- */
-function closesWithAFailure(message: SDKMessage): boolean {
-  return (message as { is_error?: unknown }).is_error === true || closesAnAbortedTurn(message);
-}
-
-/** Why an empty dispatched window closed on its `result` at once rather than waiting. */
-type ImmediateCloseReason = 'failure-result' | 'aborted' | 'local-command';
-
-/**
  * Whether, and how long, a dispatched window with nothing in it waits after a
  * `result` (spec `warm-process-lifecycle` D5, DOR-2064).
  *
@@ -700,193 +711,6 @@ function emptyCloseOutlook(
     return 'close';
   }
   return namesAny(record, answered) ? 'grace' : 'until-cap';
-}
-
-/**
- * Name the reason an empty dispatched window closed on its `result` at once.
- *
- * @param result - The `result` that closed it
- */
-function immediateCloseReason(result: SDKMessage): ImmediateCloseReason {
-  if (closesAnAbortedTurn(result)) return 'aborted';
-  if (readTurnProvenance(result).localCommand !== undefined) return 'local-command';
-  return 'failure-result';
-}
-
-/**
- * Every id an SDK `result` says it answers, or an empty list when it names none.
- *
- * **The UNION of both fields, never one instead of the other.**
- * `user_message_uuids` (claude-agent-sdk 0.3.259) is the full set a coalesced
- * turn consumed and it LEADS, because its order is the SDK's own consumption
- * order and this is the only field that can carry more than one id. The singular
- * `user_message_uuid` is then appended if the list did not already contain it.
- *
- * Appending rather than choosing is the whole point. The SDK documents the
- * plural field as "always contains user_message_uuid", so on a healthy producer
- * the append is a no-op and the union costs nothing. What it buys is the
- * unhealthy one: a producer whose two fields DISAGREE would, under a
- * prefer-the-list rule, have its singular id silently discarded — and an id this
- * layer drops is an id that cannot close the window it belongs to, which is
- * exactly the stranding DOR-1294 was. A spurious extra id is the cheaper
- * failure by a wide margin: it correlates nothing (no window holds it, nothing
- * sent it) and lands in the runtime-window branch, where it is said out loud.
- *
- * An empty or absent list therefore needs no special case — it simply
- * contributes nothing, and the singular carries the result on its own. That is
- * the fallback the SDK prescribes for delivery-failure results, zeroed results,
- * and older producers.
- *
- * Read defensively off the message rather than by narrowing to the branch that
- * declares the fields, and keep it that way. Until claude-agent-sdk 0.3.268 only
- * `SDKResultSuccess` declared `user_message_uuid`; at 0.3.268 `SDKResultError`
- * declares it too. Narrowing would have made that vendor change an outage here
- * instead of a comment, and nothing says the fields cannot move again.
- *
- * @param message - The `result` being correlated
- */
-function readAnsweredIds(message: SDKMessage): readonly string[] {
-  const ids: string[] = [];
-  const add = (id: unknown): void => {
-    if (typeof id !== 'string' || id.length === 0 || ids.includes(id)) return;
-    ids.push(id);
-  };
-  const all = (message as { user_message_uuids?: unknown }).user_message_uuids;
-  if (Array.isArray(all)) for (const id of all) add(id);
-  add((message as { user_message_uuid?: unknown }).user_message_uuid);
-  return ids;
-}
-
-/**
- * How many of this session's sends the CLI still had QUEUED when it produced
- * this `result` (`queued_turn_count`, claude-agent-sdk 0.3.243), or `undefined`
- * when it did not say.
- *
- * A positive count is the CLI stating, about its own queue, that another turn
- * runs without anybody sending anything else — which is the only thing
- * {@link continuationOutlook} acts on. A `0` and an ABSENT field are treated
- * identically there and deliberately so; read that function for why a `0` is
- * not evidence of an empty queue.
- *
- * Anything that is not a finite count of zero or more is read as ABSENT: a
- * negative is not a queue depth, and inventing a meaning for it would be
- * inventing evidence. Same reason the value is read off the message rather than
- * by narrowing to a branch — see {@link readAnsweredIds}.
- *
- * That normalization is **contract hygiene, not behaviour**, and saying so is
- * the honest thing: today's one reader asks `> 0`, so a negative would take the
- * same branch as an absent field whether this rejected it or not. No test can
- * therefore prove the guard from the outside, and none pretends to. It is here
- * so this function's promise — a count of zero or more, or nothing — is true for
- * whoever reads it next, rather than true only for the caller that happens to
- * exist now.
- *
- * @param message - The `result` closing, or about to close, a window
- */
-function readQueuedTurnCount(message: SDKMessage): number | undefined {
-  const queued = (message as { queued_turn_count?: unknown }).queued_turn_count;
-  if (typeof queued !== 'number' || !Number.isFinite(queued) || queued < 0) return undefined;
-  return queued;
-}
-
-/**
- * What a `result` says about a turn DorkOS did not ask for — the fields that
- * explain a synthetic `origin: 'runtime'` window instead of leaving it a
- * mystery (claude-agent-sdk 0.3.268).
- *
- * All three are diagnostics. None of them changes which window closes, and
- * `resultIndex` in particular must never become an ordinal this module counts:
- * correlation here is by id and never by position, which is the one rule the
- * module doc puts above the others.
- *
- * @param message - The `result` about to open or close a window
- */
-function readTurnProvenance(message: SDKMessage): {
-  /**
-   * Set ONLY on the automatic re-run of a turn a host restart interrupted, and
-   * carrying why (`host_draining`, `checkpoint_restore`, …, else
-   * `'interrupted_turn'`). A `result` carrying this answered a turn nobody in
-   * this session asked for a second time, which is precisely the case the
-   * runtime window exists for — so when it is present, the window is explained
-   * rather than merely reported.
-   */
-  resumeReason?: string;
-  /** The slash command a turn ran without ever entering the model loop. */
-  localCommand?: string;
-  /** This result's delivery sequence within the run; a gap means one was lost. */
-  resultIndex?: number;
-} {
-  const result = message as {
-    resume_reason?: unknown;
-    local_command?: unknown;
-    result_index?: unknown;
-  };
-  return {
-    ...(typeof result.resume_reason === 'string' && result.resume_reason.length > 0
-      ? { resumeReason: result.resume_reason }
-      : {}),
-    ...(typeof result.local_command === 'string' && result.local_command.length > 0
-      ? { localCommand: result.local_command }
-      : {}),
-    ...(typeof result.result_index === 'number' ? { resultIndex: result.result_index } : {}),
-  };
-}
-
-/**
- * Whether this `result` closes a turn that was CUT SHORT — by a person, or by
- * anything else that aborted it (DOR-1319).
- *
- * **Shape only, deliberately, and this is the one place that is enough.** The
- * terminal reason says a turn was aborted and never by whom (see
- * `sdk/sdk-error-mapping.ts`, which ANDs the same shape with DorkOS's own stop
- * record before it will drop an error frame). This layer cannot ask the same
- * question — it never sees the stop request and holds no session — but it does
- * not need to, because of what it does with the answer: it skips an accounting
- * fetch. A false positive costs one turn's context breakdown, which the next
- * window's close refetches. Nothing about the turn's honesty rides on it, so
- * the cheaper question is the right one HERE and would be the wrong one there.
- *
- * Read defensively, exactly as {@link readAnsweredIds} is, and for the same
- * reason: the field is not declared on every `result` member.
- *
- * @param message - The `result` closing a window
- */
-function closesAnAbortedTurn(message: SDKMessage): boolean {
-  const reason = (message as { terminal_reason?: unknown }).terminal_reason;
-  return typeof reason === 'string' && isInterruptedTerminalReason(reason);
-}
-
-/**
- * The `result` for a process a STOP killed — the same synthetic close as
- * {@link crashResult}, told honestly (DOR-1302).
- *
- * A Stop the CLI neither acks nor refuses escalates to `query.close()`
- * (`session-store.ts`), and on the pump that close is a process death like any
- * other: the same seam, the same abandoned window. What differs is who asked.
- * Settling it as a crash reported the operator's own Stop as the agent falling
- * over — a red frame in the durable record of a turn they ended on purpose.
- *
- * **It carries the terminal the CLI never got to send.** `'interrupted'` is
- * DorkOS's own reason for exactly this case, the one the resume path already
- * supplies from `message-sender.ts` when a close ends its stream with no
- * `result` at all. The mapper reads it as an abort, ANDs it with DorkOS's stop
- * record, and therefore drops the error frame and settles the turn
- * `interrupted` — one rule for a stopped turn, wherever the turn was running.
- *
- * The subtype stays `error_during_execution`, matching what the CLI itself
- * sends for a stop it DID ack: the turn did not finish, and the suppression
- * above is what keeps that from reading as a failure.
- */
-function stoppedResult(crash: PumpCrash): SDKMessage {
-  return {
-    type: 'result',
-    subtype: 'error_during_execution',
-    is_error: true,
-    terminal_reason: 'interrupted',
-    errors: ['This reply was stopped, so DorkOS ended the agent that was writing it.'],
-    uuid: `stopped-${crash.sessionId}`,
-    session_id: crash.sessionId,
-  } as unknown as SDKMessage;
 }
 
 /**
@@ -987,26 +811,6 @@ function continuationOutlook(
   if (record.steered.size === 0) return 'close';
   const queued = readQueuedTurnCount(result);
   return queued !== undefined && queued > 0 ? 'until-cap' : 'grace';
-}
-
-/**
- * The `result` a turn never produced, for a window that has to be closed anyway.
- *
- * Same shape and same reasoning as {@link crashResult}: a non-success subtype
- * maps to a typed `error` event and `feedProjector`'s error latch settles the
- * window as `turn_end{terminalReason:'error'}`. The wording is the operator's,
- * not the SDK's, because nothing in the SDK ever said this — DorkOS is the one
- * declaring the turn over (DOR-1294).
- */
-function strandedResult(sessionId: string): SDKMessage {
-  return {
-    type: 'result',
-    subtype: 'error_during_execution',
-    is_error: true,
-    errors: ['The agent never finished this turn, so DorkOS ended it to accept the next message.'],
-    uuid: `stranded-${sessionId}`,
-    session_id: sessionId,
-  } as unknown as SDKMessage;
 }
 
 /**
@@ -1300,6 +1104,11 @@ export class SessionTurnWindows {
     // The queue pump normally keeps a dispatch from arriving here at all (the
     // subscriber registers the session in `inFlight` as the window opens); this is
     // the last guard, for a caller that reached the runtime without the queue.
+    //
+    // A window opened only to show an ask is the exception (DOR-2698): it holds
+    // no words, only a card, and the card outlives it in the session's state. So
+    // it closes now rather than making this message wait for an answer.
+    if (this.current?.forAsk === true) this.closeAskWindow(this.current);
     while (this.current !== undefined && this.current.origin === 'runtime') {
       await this.current.settled;
     }
@@ -1373,6 +1182,7 @@ export class SessionTurnWindows {
       this.onResult(message);
       return;
     }
+    if (this.current?.forAsk === true) this.settleAskWindow(this.current, message);
     if (this.current !== undefined) {
       // Two tiers, while this window is waiting to see whether a steer got a
       // turn of its own (DOR-1314).
@@ -1443,9 +1253,10 @@ export class SessionTurnWindows {
    * session with the queue pump as it opens — a runtime turn the pump cannot see
    * is one a queued message can be launched straight into.
    *
-   * @param first - The model frame that proves the segment is running
+   * @param first - The model frame that proves the segment is running, or
+   *   nothing for a window opened to show an ask
    */
-  private openRuntimeWindow(first: SDKMessage): void {
+  private openRuntimeWindow(first?: SDKMessage): void {
     const record = createRecord([], 'runtime', (frames, bytes) => {
       logger.error('[SessionTurnWindows] a runtime turn is buffering more than it should', {
         sessionId: this.opts.sessionId,
@@ -1454,11 +1265,67 @@ export class SessionTurnWindows {
         limit: RUNTIME_WINDOW_BUFFER_WARN_BYTES,
       });
     });
+    record.forAsk = first === undefined;
     this.current = record;
     this.flushHeld(record);
-    if (carriesVisibleContent(first)) record.contentFrames += 1;
-    record.channel.push(first);
+    if (first !== undefined && carriesVisibleContent(first)) record.contentFrames += 1;
+    if (first !== undefined) record.channel.push(first);
     this.opts.onWindowOpen?.(record.window);
+  }
+
+  /**
+   * Open a window for an ask raised while no turn is open, so it reaches the
+   * chat (DOR-2698).
+   *
+   * A background helper still working after the reply can ask a person to
+   * approve a tool call, or wait in line for a heavy-job slot. The ask lands on
+   * the session's event queue, and only an open window's turn reads that queue,
+   * so with no window the card sat unseen until the wait ran out, and a
+   * person's next message cleared it. The window this opens carries the ask
+   * into the chat and the session's state, and closes as soon as it can
+   * ({@link settleAskWindow}): at the first frame after nobody is being waited
+   * on, at any `result`, or when a person's message is dispatched.
+   *
+   * @returns True when a window was opened; false when one was already open,
+   *   whose turn already carries the ask
+   */
+  openForAsk(): boolean {
+    if (this.current !== undefined) return false;
+    this.openRuntimeWindow();
+    return true;
+  }
+
+  /**
+   * Decide what a frame means for a window opened only to show an ask.
+   *
+   * The agent's main thread starting a turn makes it an ordinary runtime turn,
+   * which closes on its `result`. Any other frame, once nobody is waited on, is
+   * the process moving on from the ask (a helper's tool result after the
+   * answer, or a denial after the wait ran out), so the window closes first
+   * and the frame is handled as one with no turn open. Closing at that frame
+   * rather than at the answer itself keeps the answer path free of windowing,
+   * and the CLI writes that frame within moments of the answer.
+   *
+   * @param record - The open window, opened for an ask
+   * @param message - The frame the process just produced
+   */
+  private settleAskWindow(record: WindowRecord, message: SDKMessage): void {
+    if (beginsATurn(message)) record.forAsk = false;
+    else if (this.opts.waitingOnPerson?.() !== true) this.closeAskWindow(record);
+  }
+
+  /**
+   * Close a window opened for an ask, on a quiet success: no accounting fetch
+   * (no model call happened in it) and no pump turn behind it.
+   *
+   * @param record - The open window, opened for an ask
+   */
+  private closeAskWindow(record: WindowRecord): void {
+    this.current = undefined;
+    record.channel.push(askSettledResult(this.opts.sessionId));
+    record.channel.end();
+    this.opts.onWindowClose?.(record.window);
+    record.markSettled();
   }
 
   /**
@@ -2151,11 +2018,14 @@ export class SessionTurnWindows {
   /**
    * Put an abandoned window's messages back at the FRONT of the hold, ahead of
    * anything that arrived after them, so the next window reads them in the
-   * order the process produced them. Bounded exactly as {@link hold} is.
+   * order the process produced them. Bounded exactly as {@link hold} is, and
+   * by the same two rules (DOR-2698): a helper's frames are left out, and only
+   * the newest progress line per task run is kept.
    */
   private rehold(messages: SDKMessage[]): void {
     if (messages.length === 0) return;
-    this.held.unshift(...messages);
+    this.held.unshift(...this.helpersBetweenTurns.leaveOutAll(messages));
+    keepNewestProgress(this.held);
     if (this.held.length <= MAX_UNATTRIBUTED_MESSAGES) return;
     this.held.splice(0, this.held.length - MAX_UNATTRIBUTED_MESSAGES);
     logger.warn('[SessionTurnWindows] dropped held messages; a dispatch was refused', {

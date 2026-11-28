@@ -39,6 +39,7 @@
  */
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { logger } from '../../../../../lib/logger.js';
+import { isHelperFrame } from './frame-kinds.js';
 
 /**
  * Counts the helper frames left out between two turns, and says so once, when
@@ -69,6 +70,21 @@ export class HelperFramesBetweenTurns {
     }
     this.dropped += 1;
     this.byType[message.type] = (this.byType[message.type] ?? 0) + 1;
+  }
+
+  /**
+   * Leave out, and count, every helper frame in a batch going back on hold.
+   *
+   * @param messages - Frames returning to the hold, such as a refused dispatch's
+   * @returns The frames that are not a helper's, in order
+   */
+  leaveOutAll(messages: readonly SDKMessage[]): SDKMessage[] {
+    const kept: SDKMessage[] = [];
+    for (const message of messages) {
+      if (isHelperFrame(message)) this.leaveOut(message);
+      else kept.push(message);
+    }
+    return kept;
   }
 
   /** Say how many helper frames were left out since the last turn, then start again. */
@@ -110,4 +126,21 @@ export function dropSupersededProgress(held: SDKMessage[], message: SDKMessage):
   if (key === undefined) return;
   const index = held.findIndex((candidate) => progressKey(candidate) === key);
   if (index !== -1) held.splice(index, 1);
+}
+
+/**
+ * Keep only the newest progress line per task run in a hold, in place. For a
+ * batch that went back on hold in one piece, where {@link dropSupersededProgress}
+ * never saw the lines one by one.
+ *
+ * @param held - The windower's between-turn hold, changed in place
+ */
+export function keepNewestProgress(held: SDKMessage[]): void {
+  const seen = new Set<string>();
+  for (let index = held.length - 1; index >= 0; index -= 1) {
+    const key = progressKey(held[index]!);
+    if (key === undefined) continue;
+    if (seen.has(key)) held.splice(index, 1);
+    else seen.add(key);
+  }
 }

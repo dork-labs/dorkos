@@ -15,10 +15,14 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
  * Task tool) rather than from the agent's own main thread.
  *
  * The CLI stamps `parent_tool_use_id` with the Task call's id on every frame a
- * helper produces: its complete `assistant` messages, its `stream_event`
- * partials, its `user` tool results and its `tool_progress` lines. Main-thread
- * frames carry `null`, and frame kinds that never come from a helper do not
- * carry the field at all.
+ * helper produces. On CLI 0.3.304 (a fake-model capture with
+ * `forwardSubagentText` and `includePartialMessages` both on) those are its
+ * complete `assistant` messages and its `user` tool results; a helper emits no
+ * `stream_event`, `system/init`, `result` or `thinking_tokens` of its own. The
+ * SDK also declares the field on `stream_event` and `tool_progress`, so those
+ * are read the same way should a helper ever send them. Main-thread frames
+ * carry `null`, and frame kinds that never come from a helper do not carry the
+ * field at all.
  *
  * @param message - The message the process just produced
  */
