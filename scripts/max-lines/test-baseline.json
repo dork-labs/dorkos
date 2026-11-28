@@ -266,7 +266,7 @@
     "apps/server/src/services/session/__tests__/message-dispatcher.test.ts": 1550,
     "apps/server/src/services/session/__tests__/pause-holds-queued.test.ts": 779,
     "apps/server/src/services/session/__tests__/transcript-reader.test.ts": 1119,
-    "apps/server/src/services/session/chat-messages/__tests__/chat-message-service.test.ts": 1156,
+    "apps/server/src/services/session/chat-messages/__tests__/chat-message-service.test.ts": 1090,
     "apps/server/src/services/session/chat-messages/__tests__/chat-report-back.test.ts": 883,
     "apps/server/src/services/session/chat-messages/__tests__/report-back-restart.test.ts": 898,
     "apps/server/src/services/session/fleet/__tests__/continue-service.test.ts": 1067,

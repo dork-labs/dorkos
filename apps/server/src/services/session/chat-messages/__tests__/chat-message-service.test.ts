@@ -39,10 +39,10 @@ import type {
   DispatchSessionMessageResult,
 } from '../../launch/launch-session.js';
 import type { SessionFacts } from '../../../extensions/agent-send/agent-send-defaults.js';
-import { CAP_HOLD_NOTE } from '../chat-cap-hold.js';
+import { MACHINE_FULL_NOTE } from '../sending/chat-turn-hand-over.js';
+import { turnsOver } from './chat-turns.fixture.js';
 import { TURN_NO_ANSWER } from '../../launch/turn-not-started.js';
 import { ChatMessageStore } from '../chat-message-store.js';
-import { chatLaunchCapMessage } from '../chat-queue-standing.js';
 import {
   ChatMessageError,
   ChatMessageService,
@@ -167,10 +167,10 @@ function build(overrides: Partial<ChatMessageServiceDeps> = {}): ChatMessageServ
     chatTitle: async (id) => (id === ANA.sessionId ? 'Planning' : `Title of ${id}`),
     sessionCwd: async (id) => `/work/${id}`,
     isBusy: async (id) => busy.has(id),
-    dispatch: async (opts) => {
+    turns: turnsOver(async (opts) => {
       dispatched.push(opts);
       return dispatchImpl(opts);
-    },
+    }, mesh),
     interruptTurn,
     steerInto: (id, content, messageId) => steerInto(id, content, messageId),
     canonicalId: async (id) => aliases.get(id) ?? id,
@@ -276,7 +276,6 @@ describe('send — to an idle chat', () => {
     expect(chatMessageFenceNonces(opts!.request.content)).toEqual([row!.nonce]);
     expect(opts!.request.content).toContain('Please review PR 12.');
     expect(opts!.request.content).toContain('From: Ana (agent agent-ana)');
-    expect(opts!.countsTowardLaunchCap).toBe(true);
 
     expect(row).toMatchObject({
       toSessionId: 'chat-b',
@@ -326,7 +325,6 @@ describe('send — to a busy chat', () => {
     const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi' });
 
     expect(receipt).toMatchObject({ status: 'queued', position: 2 });
-    expect(dispatched[0]!.countsTowardLaunchCap).toBe(false);
     expect(sentByAna()[0]!.status).toBe('queued');
   });
 
@@ -415,104 +413,26 @@ describe('send — refusals', () => {
       message: 'Too many spin-off chats are running (8). Try again when one finishes.',
     }) as DispatchSessionMessageResult;
 
-  it('refuses a brand-new chat at a full cap, keeps nothing, and never calls it a spin-off', async () => {
+  // The port holds it and starts it when a slot frees (`runs/__tests__/hand-over-now-chat.test.ts`).
+  it('a brand-new chat at a full machine waits for a slot, keeping its message and its chat', async () => {
     dispatchImpl = capFull;
 
-    const err = await refusal(service.send(ANA, { to: 'agent-bo', message: 'hi' }));
+    const receipt = await service.send(ANA, { to: 'agent-bo', message: 'hi' });
 
-    expect(err.code).toBe('UNAVAILABLE');
-    expect(err.message).toBe(chatLaunchCapMessage());
-    expect(err.message).not.toMatch(/spin-off/);
-    expect(err.message).toMatch(/Nothing was kept/);
-    expect(sentByAna()).toEqual([]);
+    expect(receipt).toMatchObject({ status: 'queued', position: 1, note: MACHINE_FULL_NOTE });
+    expect(store.get(receipt.messageId)).toMatchObject({ status: 'queued' });
+    expect(store.dmChat(ANA.agentPath, 'agent-bo')).toBe(receipt.chatId);
   });
 
-  describe('an existing chat at a full cap (DOR-3375)', () => {
-    it('keeps the message, says queued, and starts the turn when a slot frees', async () => {
-      chat('chat-b');
-      dispatchImpl = capFull;
+  it('an existing chat at a full machine waits for a slot, never held here (DOR-3375)', async () => {
+    chat('chat-b');
+    dispatchImpl = capFull;
 
-      const receipt = await service.send(ANA, { to: 'chat-b', message: 'hold, host overloaded' });
+    const receipt = await service.send(ANA, { to: 'chat-b', message: 'hold, host overloaded' });
 
-      expect(receipt).toMatchObject({ status: 'queued', chatId: 'chat-b', note: CAP_HOLD_NOTE });
-      expect(store.get(receipt.messageId)).toMatchObject({
-        status: 'queued',
-        queueMessageId: null,
-      });
-
-      // Still full: nothing changes.
-      await service.retryHeld();
-      expect(store.get(receipt.messageId)).toMatchObject({
-        status: 'queued',
-        queueMessageId: null,
-      });
-
-      dispatchImpl = defaultDispatch;
-      lifecycle!({ phase: 'settled', messageId: 'other', sessionId: 'chat-z', outcome: 'ok' });
-      await service.retryHeld();
-
-      expect(store.get(receipt.messageId)).toMatchObject({
-        status: 'working',
-        queueMessageId: expect.any(String),
-      });
-      const last = dispatched.at(-1)!;
-      expect(last.sessionId).toBe('chat-b');
-      expect(last.request.content).toContain('hold, host overloaded');
-      expect(last.request.content).toContain(store.get(receipt.messageId)!.nonce!);
-      expect(last.messageId).toBe(store.get(receipt.messageId)!.queueMessageId);
-    });
-
-    it('queues a held message behind a chat that went busy meanwhile', async () => {
-      chat('chat-b');
-      dispatchImpl = capFull;
-      const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi' });
-
-      dispatchImpl = defaultDispatch;
-      busy.add('chat-b');
-      await service.retryHeld();
-
-      const row = store.get(receipt.messageId)!;
-      expect(row.status).toBe('queued');
-      expect(queue.list('chat-b').map((r) => r.id)).toEqual([row.queueMessageId]);
-    });
-
-    it('fails a held message, with why, when the chat no longer takes messages', async () => {
-      chat('chat-b');
-      dispatchImpl = capFull;
-      const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi' });
-
-      sessions.delete('chat-b');
-      await service.retryHeld();
-
-      expect(store.get(receipt.messageId)).toMatchObject({
-        status: 'failed',
-        failureReason: expect.any(String),
-      });
-    });
-
-    it('drops what is held when another chat stops that chat', async () => {
-      chat('chat-b');
-      dispatchImpl = capFull;
-      const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi' });
-
-      await service.stopChat(ANA, { chat: 'chat-b' });
-      dispatchImpl = defaultDispatch;
-      const sends = dispatched.length;
-      await service.retryHeld();
-
-      expect(store.get(receipt.messageId)?.status).toBe('failed');
-      expect(dispatched.length).toBe(sends);
-    });
-
-    it('does not count toward the cap when the busy check itself failed', async () => {
-      chat('chat-b');
-      service.stop();
-      service = build({ isBusy: async () => Promise.reject(new Error('no answer')) });
-
-      await service.send(ANA, { to: 'chat-b', message: 'hi' });
-
-      expect(dispatched[0]!.countsTowardLaunchCap).toBe(false);
-    });
+    expect(receipt).toMatchObject({ status: 'queued', chatId: 'chat-b', note: MACHINE_FULL_NOTE });
+    // Its run's id: the queue row its words become once a slot frees.
+    expect(store.get(receipt.messageId)!.queueMessageId).toBe(dispatched[0]!.messageId);
   });
 });
 

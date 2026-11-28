@@ -221,6 +221,32 @@ describe('K4, K5, K6: killed while running', () => {
     });
   });
 
+  it('a continuation of a chat message that opened a new direct chat does not carry its birth record', async () => {
+    const dying = deadBoot();
+    const run = runningRun(dying.store, { origin: { kind: 'chat-message' } });
+    const newDirectChat = {
+      receiptId: 'receipt-1',
+      fromSessionId: 'chat-asking',
+      fromAgentPath: '/agents/asking',
+      allocationCreatedAt: '2026-11-28T10:00:00.000Z',
+      targetAgent: { id: '01JD0000000000000000000000', path: '/agents/target' },
+    };
+    dying.effects.insert({
+      kind: 'start_turn',
+      key: `start:${run.id}:${run.attempt}`,
+      runId: run.id,
+      payload: { tier: 'teammate', newDirectChat },
+      delivery: 'repeatable',
+      notAfter: null,
+    });
+    kill();
+    boot();
+    await pass();
+    const carried = startOfContinuation(run.id);
+    expect(carried).toMatchObject({ tier: 'teammate' });
+    expect(carried).not.toHaveProperty('newDirectChat');
+  });
+
   it('a continuation of words the person did not type, whose start was never saved, is marked outsider', async () => {
     const dying = deadBoot();
     const run = runningRun(dying.store, { origin: { kind: 'chat-message' } });

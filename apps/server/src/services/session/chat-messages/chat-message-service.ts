@@ -12,7 +12,9 @@
  *    turn, never the input. A `chat_messages` row is written BEFORE the
  *    dispatch, with the fence nonce and the sender's level, so the turn it
  *    starts finds both.
- * 3. **How it arrives.** Queue by default (the dispatcher holds it while the
+ * 3. **How it arrives.** Through the turn port (T6b, `sending/chat-turn-hand-over.ts`),
+ *    as the sending chat, so a full machine makes it wait for a slot with its
+ *    place. Queue by default (the dispatcher holds it while the
  *    receiver is busy; an idle receiver starts at once). Every message keeps
  *    its own queue row. At the receiver's next turn boundary, the dispatcher
  *    joins adjacent agent rows into one turn, in the order they were sent
@@ -40,14 +42,10 @@ export { CHAT_SUMMARY_MAX, CHAT_STOP_REASON_MAX } from './sending/chat-message-l
 import { answeringRoomTurn, sendChatMessage } from './sending/chat-send-message.js';
 import type { ChatUsagePause } from './sending/chat-usage-recovery.js';
 import type { RoomSeatMessagesPort } from '../../rooms/handoff/seat-message-types.js';
-import {
-  CHAT_MESSAGE_ORIGIN,
-  mayChatSteer,
-  rowsCeiling,
-  senderCeilingJson,
-} from './chat-message-ceiling.js';
+import { mayChatSteer, rowsCeiling, senderCeilingJson } from './chat-message-ceiling.js';
 import crypto from 'node:crypto';
 import type { MeshCore } from '@dorkos/mesh';
+import type { WaitReason } from '@dorkos/shared/turn-port';
 import type { ChatMessageRow } from '@dorkos/db';
 import type { TurnPermissionCeiling, TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
 import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
@@ -60,12 +58,6 @@ import type {
 } from '@dorkos/shared/chat-messages';
 import { pausedChatMessageNote } from './chat-message-receipt.js';
 import { chatStopByLine, stopChatTurn } from './stops/chat-stop-record.js';
-import {
-  dispatchSessionMessage,
-  isSessionLaunchRefusal,
-  type DispatchSessionMessageOpts,
-  type DispatchSessionMessageResult,
-} from '../launch/launch-session.js';
 import { onDispatchLifecycle, type DispatchLifecycleEvent } from '../message-dispatcher.js';
 import { getMessageQueueStore } from '../message-queue-store.js';
 import { queueKeyOf } from '../resolution/session-key-registry.js';
@@ -77,12 +69,20 @@ import {
 import { cancelQueuedMessage } from '../queued-message-edits.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import type { SessionFacts } from '../../extensions/agent-send/agent-send-defaults.js';
-import { CHAT_MESSAGE_MAX, chatClientId, isChatClientId } from '@dorkos/shared/chat-client-id';
+import { CHAT_MESSAGE_MAX, isChatClientId } from '@dorkos/shared/chat-client-id';
 import { renderChatMessage } from './chat-message-fence.js';
 import { stampOf } from './chat-message-stamps.js';
 import type { FreshDmBirth } from './sending/chat-message-birth.js';
 import type { ChatMessageStore } from './chat-message-store.js';
-import { ChatCapHold } from './chat-cap-hold.js';
+import { adoptHeldChatMessages } from './chat-held-adoption.js';
+import {
+  chatMessageWords,
+  CHAT_MESSAGE_SOURCE,
+  handOverChatMessage,
+  MACHINE_FULL_NOTE,
+  withdrawWaitingChatMessages,
+  type ChatTurnPort,
+} from './sending/chat-turn-hand-over.js';
 import { ChatMessageError } from './chat-message-error.js';
 import * as standing from './chat-queue-standing.js';
 import { assertChatSendable, sameChat, type ChatTarget } from './chat-target.js';
@@ -153,8 +153,8 @@ export interface ChatMessageServiceDeps {
   isBusy: (sessionId: string) => Promise<boolean>;
   /** A current usage pause, so the sender is told before acceptance. */
   usagePauseOf?: (sessionId: string, cwd?: string) => Promise<ChatUsagePause | null>;
-  /** The send itself. */
-  dispatch?: (opts: DispatchSessionMessageOpts) => Promise<DispatchSessionMessageResult>;
+  /** The turn port a message starts its turn through (T6b), handed in at startup. */
+  turns?: ChatTurnPort;
   /**
    * Join a chat's running turn with a message (a steer), whoever's window
    * holds that turn. True when it landed. Agents can do what people can; the
@@ -177,6 +177,11 @@ export interface ChatMessageServiceDeps {
   now?: () => number;
 }
 
+/** What a sender is told about a message that waits before its words reach the chat's queue. */
+function waitNote(reason: WaitReason | undefined): string | undefined {
+  return reason === 'machine_full' ? MACHINE_FULL_NOTE : undefined;
+}
+
 /** The calling agent's name and Mesh id. */
 interface AgentFacts {
   agentId: string | null;
@@ -185,10 +190,10 @@ interface AgentFacts {
 
 /** The chat-message service. See the module documentation. */
 export class ChatMessageService {
-  private readonly dispatch: NonNullable<ChatMessageServiceDeps['dispatch']>;
   private readonly now: () => number;
   private readonly unsubscribe: () => void;
-  private readonly capHold: ChatCapHold;
+  /** The space face this service's words are registered with, and how to let go. */
+  private attached: { port: object; detach: () => void } | undefined;
   /** Sends opening an agent's DM chat, chained per (sender, agent), so two firsts open one chat. */
   private stopped = false;
   private seatInbox: RoomSeatMessagesPort | undefined;
@@ -204,13 +209,7 @@ export class ChatMessageService {
     if (resolveSeat)
       this.deps = { ...deps, seatMessages: () => (this.seatInbox ??= resolveSeat()) };
 
-    this.dispatch = deps.dispatch ?? dispatchSessionMessage;
     this.now = deps.now ?? Date.now;
-    this.capHold = new ChatCapHold({
-      ...deps,
-      deliver: (caller, row, target, content) =>
-        this.deliver(caller, row, target, content, row.delivery),
-    });
     this.unsubscribe = (deps.onLifecycle ?? onDispatchLifecycle)((event) => this.onDispatch(event));
   }
 
@@ -219,19 +218,27 @@ export class ChatMessageService {
     if (this.stopped) return;
     this.stopped = true;
     this.unsubscribe();
-    this.capHold.stop();
+    this.attached?.detach();
     this.seatInbox?.stop();
     this.deps.stopSeatMessages?.();
   }
 
-  /** Start offering held messages again on a clock (boot; tests call {@link retryHeld}). */
-  startHeldRetries(): void {
-    this.capHold.start();
+  /**
+   * At boot: read waiting messages' words for the turn port, and start through
+   * it the messages an earlier version held for a launch slot.
+   */
+  startTurns(): Promise<void> {
+    this.attach();
+    return adoptHeldChatMessages(this.deps);
   }
 
-  /** Offer every message waiting for a launch slot again. */
-  retryHeld(): Promise<void> {
-    return this.capHold.retry();
+  /** Register this service's receipts as the words of its waiting runs, once per space face. */
+  private attach(): void {
+    const port = this.deps.turns?.port();
+    if (!port || port === this.attached?.port || this.stopped) return;
+    this.attached?.detach();
+    const detach = port.registerSource(CHAT_MESSAGE_SOURCE, chatMessageWords(this.deps.store));
+    this.attached = { port, detach };
   }
 
   /**
@@ -289,7 +296,7 @@ export class ChatMessageService {
     });
   }
 
-  /** Hand one message to the dispatcher, by the delivery asked for. */
+  /** Start one message's turn through the turn port, or steer it in, by the delivery asked for. */
   private async deliver(
     caller: ChatCaller,
     row: ChatMessageRow,
@@ -299,7 +306,7 @@ export class ChatMessageService {
     birth?: FreshDmBirth,
     onAccepted?: () => void
   ): Promise<ChatSendReceipt> {
-    // Null when the check failed: not known to be idle, so it never counts toward the cap.
+    // Null when the check failed: not known to be busy, so nothing is steered.
     const busy =
       target.sessionId !== null && (await this.deps.isBusy(target.sessionId).catch(() => null));
 
@@ -332,52 +339,34 @@ export class ChatMessageService {
     if (!sessionId || (target.sessionId === null && !birth))
       throw new ChatMessageError('UNAVAILABLE', 'DorkOS could not resolve this chat.');
     const cwd = target.sessionId ? await this.deps.sessionCwd(target.sessionId) : undefined;
-    const result = await this.dispatch({
-      origin: CHAT_MESSAGE_ORIGIN,
-      ...(birth ? { freshDmBirth: birth } : {}),
+    // Through the turn port (T6b): a full machine makes it wait for a slot, with
+    // its place, rather than refusing a new chat or holding it here.
+    this.attach();
+    const handed = await handOverChatMessage(this.deps.turns, {
+      fromSessionId: caller.sessionId,
+      row,
       sessionId,
-      messageId: row.queueMessageId ?? undefined,
-      request: {
-        content,
-        ...(cwd ? { cwd } : {}),
-        ...(target.agent ? { agentPath: target.agent.path } : {}),
-      },
-      clientId: chatClientId(caller.sessionId),
-      meshCore: this.deps.meshCore() as MeshCore | undefined,
-      roomSessionPlace: this.deps.roomSessionPlace?.(),
-      // A message into a busy chat adds no turn beside the running one.
-      countsTowardLaunchCap: busy === false,
+      ...(target.agent ? { agent: target.agent } : {}),
+      ...(cwd ? { cwd } : {}),
+      content,
+      ...(birth ? { birth } : {}),
     });
-    if (isSessionLaunchRefusal(result)) {
-      // Only a chat that does not exist yet is refused for machine load.
-      if (result.refused === 'LAUNCH_CAP_FULL' && target.sessionId !== null)
-        return this.capHold.hold(row, target.sessionId);
-      throw new ChatMessageError(
-        result.refused === 'LAUNCH_CAP_FULL' ? 'UNAVAILABLE' : 'NOT_ALLOWED',
-        result.refused === 'LAUNCH_CAP_FULL' ? standing.chatLaunchCapMessage() : result.message
-      );
-    }
-    if (!result.accepted) {
-      throw new ChatMessageError('UNAVAILABLE', 'The chat could not take the message. Try again.');
-    }
     onAccepted?.();
-    const chatId = result.canonicalId ?? sessionId;
+    const { chatId } = handed;
     if (target.agent && target.sessionId === null) {
       this.deps.store.keepDmChat(caller.agentPath, target.agent.id, chatId);
     }
+    const queued = handed.kind === 'waiting' || handed.queued;
 
-    // A turn that started inside the dispatch already moved the row on.
+    // A turn that started inside the hand-over already moved the row on.
     const current = this.deps.store.get(row.id);
     const status: ChatMessageStatus =
-      current && current.status !== 'queued'
-        ? current.status
-        : result.queued
-          ? 'queued'
-          : 'working';
+      current && current.status !== 'queued' ? current.status : queued ? 'queued' : 'working';
     this.deps.store.update(row.id, { toSessionId: chatId, status });
 
-    let position = result.queued ? result.queuePosition : undefined;
-    if (delivery === 'interrupt' && result.queued && row.queueMessageId) {
+    let position = queued ? handed.queuePosition : undefined;
+    if (handed.kind === 'waiting') note = waitNote(handed.waitReason) ?? note;
+    else if (delivery === 'interrupt' && handed.queued && row.queueMessageId) {
       position = standing.moveToHead(chatId, row.queueMessageId);
       // Stopped AFTER the move, so the turn ending releases this message and
       // not whatever was ahead of it. Recorded as this chat's stop (DOR-4668).
@@ -548,7 +537,13 @@ export class ChatMessageService {
     // Other chats' queued messages go first, synchronously, so the turn ending
     // below cannot release one of them.
     let dropped = 0;
-    this.capHold.dropFor(input.chat, `${byLine} before it ran.`);
+    const withdrawn = withdrawWaitingChatMessages(
+      this.deps.turns,
+      this.deps.store,
+      input.chat,
+      `${byLine} before it ran.`
+    );
+    for (const row of withdrawn) this.deps.emitActivity(row.fromSessionId);
     const queue = getMessageQueueStore();
     for (const queued of queue?.list(queueKeyOf(input.chat)) ?? []) {
       if (!isChatClientId(queued.enqueuedBy)) continue;
@@ -661,7 +656,6 @@ export class ChatMessageService {
 
   /** Follow a sent message through the receiving chat's queue and turn. */
   private onDispatch(event: DispatchLifecycleEvent): void {
-    if (event.phase === 'settled') void this.capHold.retry();
     const rows = this.deps.store.listByQueueMessage(event.messageId);
     if (rows.length === 0) {
       // A turn no chat message rides on — a person's, a schedule's — is

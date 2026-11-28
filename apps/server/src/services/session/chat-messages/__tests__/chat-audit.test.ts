@@ -27,6 +27,7 @@ import { ChatMessageStore } from '../chat-message-store.js';
 import { ChatMessageService } from '../chat-message-service.js';
 import { chatDomain } from '../chat-capabilities.js';
 import type { ChatReadDeps } from '../chat-read.js';
+import { turnsOver } from './chat-turns.fixture.js';
 
 const ANA: AgentIdentity = {
   agentPath: '/agents/ana',
@@ -69,13 +70,15 @@ beforeEach(() => {
     chatTitle: async (id) => `Title of ${id}`,
     sessionCwd: async (id) => `/work/${id}`,
     isBusy: async () => false,
-    dispatch: async (opts) =>
-      ({
-        accepted: true,
-        queued: false,
-        queuePosition: 1,
-        outcome: { messageId: opts.messageId ?? 'm', requested: 'queue', applied: 'queue' },
-      }) as never,
+    turns: turnsOver(
+      async (opts) =>
+        ({
+          accepted: true,
+          queued: false,
+          queuePosition: 1,
+          outcome: { messageId: opts.messageId ?? 'm', requested: 'queue', applied: 'queue' },
+        }) as never
+    ),
     interruptTurn: vi.fn(async () => true),
     steerInto: vi.fn(async () => true),
     canonicalId: async (id) => id,

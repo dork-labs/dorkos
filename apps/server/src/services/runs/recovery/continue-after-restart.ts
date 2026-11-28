@@ -100,7 +100,8 @@ export interface ContinueAfterRestartDeps {
  * continues (its tier, ceiling, outsider mark and unattended flag). A start
  * that was never saved (a caller not yet on the port) gives the outsider mark
  * to any turn the person did not type. Where its words wait and what prepares
- * them are the continuation's own.
+ * them are the continuation's own, and a new direct chat's birth record is the
+ * first attempt's alone (the chat exists by then): none of these is carried.
  *
  * @param dead - The run it continues.
  * @param effects - The outbox, where the dead run's start was saved.
@@ -109,7 +110,14 @@ export function carriedStartOf(dead: TurnRun, effects: EffectStore): StartPayloa
   const saved = effects.byKey(`start:${dead.id}:${dead.attempt}`);
   const parsed = saved ? StartPayloadSchema.safeParse(saved.payload) : undefined;
   if (parsed?.success) {
-    const { prepare: _prepare, seedContext: _seedContext, ...carried } = parsed.data;
+    // A new direct chat's birth record is the first attempt's alone: the chat
+    // exists by now, and the computer face refuses it on any later attempt.
+    const {
+      prepare: _prepare,
+      seedContext: _seedContext,
+      newDirectChat: _newDirectChat,
+      ...carried
+    } = parsed.data;
     return carried;
   }
   if (dead.origin !== null && personTyped(dead.origin)) return { tier: 'owner' };

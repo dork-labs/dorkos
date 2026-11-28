@@ -24,6 +24,7 @@ import { ChatMessageStore } from '../chat-message-store.js';
 import { ChatMessageService } from '../chat-message-service.js';
 import { mayReadChat } from '../chat-message-wiring.js';
 import { readChat, type ChatReadDeps } from '../chat-read.js';
+import { turnsOver } from './chat-turns.fixture.js';
 
 const CODY = { id: 'agent-cody', projectPath: '/agents/cody', name: 'cody', displayName: 'Cody' };
 const DORK = { id: 'agent-dork', projectPath: '/agents/dork', name: 'dork', displayName: 'DorkOS' };
@@ -62,18 +63,21 @@ function service(): ChatMessageService {
     chatTitle: async (id) => id,
     sessionCwd: async () => undefined,
     isBusy: async () => false,
-    dispatch: async (opts) => {
-      // A new id opens the receiving agent's DM chat, bound in its home.
-      if (!sessions.has(opts.sessionId)) {
-        bind(opts.sessionId, 'chat-message', opts.request.agentPath ?? '');
-      }
-      return {
-        accepted: true,
-        queued: false,
-        queuePosition: 1,
-        outcome: { messageId: opts.messageId, requested: 'queue', applied: 'queue' },
-      } as DispatchSessionMessageResult;
-    },
+    turns: turnsOver(
+      async (opts) => {
+        // A new id opens the receiving agent's DM chat, bound in its home.
+        if (!sessions.has(opts.sessionId)) {
+          bind(opts.sessionId, 'chat-message', opts.request.agentPath ?? '');
+        }
+        return {
+          accepted: true,
+          queued: false,
+          queuePosition: 1,
+          outcome: { messageId: opts.messageId, requested: 'queue', applied: 'queue' },
+        } as DispatchSessionMessageResult;
+      },
+      { getProjectPath: (id) => [CODY, DORK].find((a) => a.id === id)?.projectPath }
+    ),
     steerInto: async () => false,
     canonicalId: async (id) => id,
     interruptTurn: async () => false,

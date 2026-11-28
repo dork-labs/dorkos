@@ -281,7 +281,7 @@ export class ChatMessageStore {
       .all();
   }
 
-  /** The messages waiting for a launch slot, oldest first (`chat-cap-hold.ts`). */
+  /** The messages an earlier version held for a launch slot, oldest first (`chat-held-adoption.ts`). */
   listHeldForSlot(): ChatMessageRow[] {
     return this.db
       .select()

@@ -28,6 +28,7 @@ import { MessageQueueStore, setMessageQueueStore } from '../message-queue-store.
 import { SESSIONS } from '../../../config/constants.js';
 import { disposeProjector, getOrCreateProjector } from '../session-state-projector.js';
 import { logger } from '../../../lib/logger.js';
+import { turnsOver } from '../chat-messages/__tests__/chat-turns.fixture.js';
 
 let session: string;
 let runtime: FakeAgentRuntime;
@@ -67,7 +68,7 @@ beforeEach(() => {
     chatTitle: async () => 'Demo chat',
     sessionCwd: async () => undefined,
     isBusy: async () => busy,
-    dispatch: async (opts) =>
+    turns: turnsOver(async (opts) =>
       dispatchMessage({
         origin: { kind: 'interactive' },
         sessionId: opts.sessionId,
@@ -76,7 +77,8 @@ beforeEach(() => {
         messageId: opts.messageId,
         projector: getOrCreateProjector(opts.sessionId),
         runtime,
-      }),
+      })
+    ),
     interruptTurn: async () => false,
     steerInto: async () => false,
     canonicalId: async (id) => id,

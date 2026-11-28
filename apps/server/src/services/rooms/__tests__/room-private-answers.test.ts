@@ -21,6 +21,7 @@ import {
   outcomeRunner,
   settleUntil,
 } from './room-test-harness.js';
+import { turnsOver } from '../../session/chat-messages/__tests__/chat-turns.fixture.js';
 
 const agents = agentLookupFor({
   '/agents/ana': { name: 'ana', displayName: 'Ana', responseMode: 'mention-only' },
@@ -123,7 +124,7 @@ beforeEach(() => {
     chatTitle: () => title(),
     sessionCwd: async () => '/agents/bo',
     isBusy: async () => false,
-    dispatch: async (opts) => {
+    turns: turnsOver(async (opts) => {
       if (opts.sessionId !== BO_DM) throw new Error('a seat must never use ordinary dispatch');
       dispatched.push(opts.sessionId);
       if (dmFails) {
@@ -136,7 +137,7 @@ beforeEach(() => {
         queuePosition: 1,
         outcome: { messageId: opts.messageId ?? 'unset', requested: 'queue', applied: 'queue' },
       } as DispatchSessionMessageResult;
-    },
+    }),
     steerInto: async () => false,
     interruptTurn: async () => false,
     canonicalId: async (id) => id,

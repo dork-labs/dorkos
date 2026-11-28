@@ -1,5 +1,6 @@
 /** Verified send orchestration; private seats never fall through to ordinary dispatch. */
 import crypto from 'node:crypto';
+import { ulid } from 'ulidx';
 import { logError, logger } from '../../../../lib/logger.js';
 import type { ChatDelivery, ChatMessageKind } from '@dorkos/shared/chat-messages';
 import type { ChatMessageRow } from '@dorkos/db';
@@ -118,7 +119,8 @@ export async function sendChatMessage(options: SendOptions): Promise<ChatSendRec
     nonce: rendered.nonce,
     delivery,
     status: 'queued',
-    queueMessageId: crypto.randomUUID(),
+    // The run's id too (a ULID): the turn port names the run, its queue row and its reservation by it.
+    queueMessageId: ulid(),
     ceilingJson,
     replyToId,
   };

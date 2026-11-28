@@ -31,6 +31,7 @@ export const StartPayloadSchema = z.strictObject({
   task: fields.task,
   relay: fields.relay,
   launcher: fields.launcher,
+  newDirectChat: fields.newDirectChat,
 });
 
 /** A `start_turn` effect's payload. See {@link StartPayloadSchema}. */

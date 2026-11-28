@@ -160,6 +160,8 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
     store: chatMessageStore,
     meshCore: () => refs.meshCore,
     roomSessionPlace: () => refs.roomSessionPlacePort,
+    // A chat message starts its turn through the turn port (T6b).
+    turns: { handOver: handOverTurn, port: turnPort },
   });
   // The computer side's view of those rows: a rekey carries them, a history reads stops.
   wireChatRowsPort(chatMessageStore);

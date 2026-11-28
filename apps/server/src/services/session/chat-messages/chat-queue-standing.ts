@@ -12,24 +12,8 @@ import type { ChatMessageStatus } from '@dorkos/shared/chat-messages';
 import { getMessageQueueStore } from '../message-queue-store.js';
 import { emitQueueUpdate } from '../queue-stream-events.js';
 import { queueKeyOf } from '../resolution/session-key-registry.js';
-import { AGENT_LAUNCH_CAP_SETTING, agentLaunchMaxLive } from '../launch/launch-session.js';
 import type { ChatMessageStore } from './chat-message-store.js';
 import { TURN_NO_ANSWER, type TurnRefusal } from '../launch/turn-not-started.js';
-
-/**
- * What a send refused by the machine-load launch cap answers. Not the
- * spin-off sentence the cap gives `session_start`: a message to an agent's DM
- * is no spin-off, and agents that read it as one rewrote and resent their
- * words somewhere else.
- */
-export function chatLaunchCapMessage(): string {
-  return (
-    `Not sent: ${agentLaunchMaxLive()} agent chats are already running on this computer, ` +
-    'and this one would be new. ' +
-    'Nothing was kept. Send the same message again in a few minutes. ' +
-    `A person can raise the limit with the ${AGENT_LAUNCH_CAP_SETTING} setting.`
-  );
-}
 
 /** How many of a chat's recent sends to one chat `chat_read` reports. */
 export const YOUR_MESSAGES_MAX = 5;
