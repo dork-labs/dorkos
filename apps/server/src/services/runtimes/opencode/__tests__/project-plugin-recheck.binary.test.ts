@@ -10,9 +10,12 @@
  * DorkOS's real runtime and real sidecar, a fake model on 127.0.0.1:
  *
  * 1. The plugin lands as the turn's prompt is sent, and the fake model waits
- *    until it has loaded, so its code is running during the turn. Once the
- *    turn ends, the process running it must be gone before the next chat's
- *    prompt reaches the model, and its heartbeat must stop.
+ *    until it has loaded, so its code is running during the turn. DorkOS's
+ *    in-turn checks are kept from seeing it until then: they look within
+ *    about a second and a half of the send, OpenCode imports it about half a
+ *    second in, and a slow machine can swap the two (DOR-5507). Once the turn
+ *    ends, the process running it must be gone before the next chat's prompt
+ *    reaches the model, and its heartbeat must stop.
  * 2. The plugin lands while the model is answering, as a `git clone` in the
  *    turn would. The sidecar is restarted, the folder's next turn is refused,
  *    and the marker stays unwritten.
@@ -46,6 +49,13 @@ import { OFFLINE_PROXY_ENV, pinnedOpenCode, guardedOpenCodeSpawn } from './pinne
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
   return { ...actual, spawn: vi.fn(actual.spawn) };
+});
+
+// The real file system; row 1 hides one plugin folder from DorkOS for a while.
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  const readdirSync = vi.fn(actual.readdirSync);
+  return { ...actual, default: { ...actual, readdirSync }, readdirSync };
 });
 
 const BINARY = pinnedOpenCode();
@@ -254,9 +264,22 @@ describe.skipIf(BINARY === null)(
       const race = project(root, 'northwind-race');
       const marker = path.join(root, 'race-marker');
       const beat = path.join(root, 'race-beat');
-      // The plugin lands once the model is asked, after the turn's first event
-      // (which finds none), and the reply waits until it has loaded: the path
-      // only the after-turn check covers.
+      // The plugin lands once the model is asked, and the reply waits until it
+      // has loaded: the path only the after-turn check covers. Until OpenCode
+      // has imported it, DorkOS's in-turn checks list its folder as empty;
+      // otherwise one could restart the sidecar first, and it never loads.
+      const pluginDir = path.join(race, '.opencode', 'plugin');
+      const realReaddir = vi.mocked(fs.readdirSync).getMockImplementation()!;
+      vi.mocked(fs.readdirSync).mockImplementation(((dir: fs.PathLike, ...rest: unknown[]) =>
+        String(dir) === pluginDir && !fs.existsSync(marker)
+          ? []
+          : (realReaddir as (...args: unknown[]) => unknown)(
+              dir,
+              ...rest
+            )) as typeof fs.readdirSync);
+      onTestFinished(() => {
+        vi.mocked(fs.readdirSync).mockImplementation(realReaddir);
+      });
       let dropped = false;
       beforeReply = async () => {
         if (!dropped) dropPlugin(race, marker, beat);
