@@ -158,6 +158,13 @@ export interface EffectHandler {
    */
   onExpired?(effect: TurnEffect): void;
   /**
+   * The effect reached a terminal state through the worker (done, dropped or
+   * unknown). Runs inside that transaction.
+   *
+   * @param effect - The effect, as it was held.
+   */
+  onEnded?(effect: TurnEffect): void;
+  /**
    * This boot holds the effect past its `not_after` (it answered `await`).
    *
    * @param effect - The effect, still leased.
@@ -402,6 +409,7 @@ export class EffectWorker {
     const lease: EffectLease = { id: effect.id, owner: this.opts.epoch };
     return this.opts.effects.transaction(() => {
       if (!this.opts.effects.finish(lease, state, outcome)) return false;
+      this.opts.handlers[effect.kind]?.onEnded?.(effect);
       this.settleRun(effect.runId);
       return true;
     });

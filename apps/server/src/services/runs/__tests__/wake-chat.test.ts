@@ -194,7 +194,12 @@ describe('the wake’s own rules', () => {
     wakeChat({ ...wake(), onlyIfChatExists: { cwd: h.home } });
     const effect = h.record().effects.leaseNext(EPOCH, EFFECT_LEASE_MS)!;
     const chatExists = vi.fn(async () => false);
-    const handler = wakeChatHandler({ runs: h.record().store, port: h.record().port, chatExists });
+    const handler = wakeChatHandler({
+      runs: h.record().store,
+      effects: h.record().effects,
+      port: h.record().port,
+      chatExists,
+    });
     const answer = await handler.handle(effect, {
       now: h.now,
       markDone: vi.fn(),
@@ -221,5 +226,37 @@ describe('the wake’s own rules', () => {
     await vi.waitFor(() => expect(h.runtime.isTurnOpen(h.sessionId)).toBe(false));
     await drain();
     expect(h.answered).toEqual(['the person is working']);
+  });
+});
+
+describe('a wake lets go of its words (§6.2, F29)', () => {
+  /** What a wake keeps once it let go: the event's names, never its words. */
+  const keptOf = (eventId: string, origin: WakeRequest['start']['origin']) => ({
+    sourceKind: 'signin',
+    eventId,
+    sessionId: h.sessionId,
+    origin,
+    wordsLetGo: true,
+  });
+
+  it('keeps no words once its run ended, and its key still refuses a second wake', async () => {
+    expect(wakeChat(wake())).toBe(true);
+    await drain();
+    expect(runsUnder()[0]).toMatchObject({ ending: 'completed' });
+    expect(wakeEffect()?.payload).toEqual(keptOf('event-1', { kind: 'resume' }));
+    expect(JSON.stringify(wakeEffect()?.payload)).not.toContain(WORDS);
+    expect(wakeChat(wake())).toBe(false);
+    await drain();
+    expect(runsUnder()).toHaveLength(1);
+  });
+
+  it('keeps no words once it expired with no run, and its key still refuses a second wake', async () => {
+    wakeChat(wake('late-1', { notAfter: h.now() + 1_000 }));
+    h.advance(1_001);
+    await drain();
+    expect(wakeEffect('late-1')?.state).toBe('expired');
+    expect(runsUnder('late-1')).toEqual([]);
+    expect(wakeEffect('late-1')?.payload).toEqual(keptOf('late-1', { kind: 'resume' }));
+    expect(wakeChat(wake('late-1'))).toBe(false);
   });
 });

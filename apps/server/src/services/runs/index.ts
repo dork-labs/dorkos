@@ -198,6 +198,7 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
       ...effectHandlers(handlerDeps),
       wake_chat: wakeChatHandler({
         runs: store,
+        effects,
         port,
         ...(handlerDeps?.chatExists ? { chatExists: handlerDeps.chatExists } : {}),
       }),

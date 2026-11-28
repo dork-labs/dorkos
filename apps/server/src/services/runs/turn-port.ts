@@ -52,6 +52,7 @@ import { logger } from '../../lib/logger.js';
 import { chatKeyOf, type ComputerTurnPort } from '../session/turn-port/index.js';
 import type { StartTurns } from './effects/start-turns.js';
 import type { EffectStore } from './effects/effect-store.js';
+import { letGoOfWakeWords, WAKE_SOURCE } from './effects/wakes.js';
 import { StartPayloadSchema, startPayloadOf, type StartPayload } from './effects/start-payload.js';
 import type { RunStore, TurnRun } from './run-store.js';
 import { writeStopReceipt, writeStopRequest } from './run-stops.js';
@@ -451,7 +452,13 @@ export class SpaceTurnPort {
   moved(run: TurnRun): void {
     // Kept until the run can no longer come back to `queued`: a pause can cut
     // its turn even after the runtime's first event (transition 15).
-    if (RUN_ENDS.has(run.status)) this.words.delete(run.id);
+    if (RUN_ENDS.has(run.status)) {
+      this.words.delete(run.id);
+      // A wake's words leave its payload with the run (§6.2).
+      if (run.sourceRef?.startsWith(`${WAKE_SOURCE}:`)) {
+        letGoOfWakeWords(this.deps.effects, run.sourceRef.slice(WAKE_SOURCE.length + 1));
+      }
+    }
     if (this.watchers.size === 0) return;
     // After the synchronous transaction it was called inside: a rolled-back
     // move is then read as it really stands, never as it was asked for.

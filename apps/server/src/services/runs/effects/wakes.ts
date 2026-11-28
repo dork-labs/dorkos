@@ -14,7 +14,12 @@
  * **Where its words wait.** A wake's words are DorkOS's own copy or the click
  * itself, with no store of their own: they ride the wake's payload, and its
  * run names the wake as its source (`wake:<effectId>`), so a restart before
- * the turn starts reads them back from there.
+ * the turn starts reads them back from there. **Only until its run ends:** the
+ * outbox keeps its rows for their keys and is never pruned, so once the run
+ * ends, or the wake ends with no run, the payload is cut down to what names the
+ * event ({@link letGoOfWakeWords}). The key stays, so one event is still one
+ * turn. The words have one reader each: the wake's handler and
+ * {@link wakeWords}. Never log them or answer them from a route, tool or view.
  *
  * @module services/runs/effects/wakes
  */
@@ -63,4 +68,31 @@ export function wakeWords(effects: Pick<EffectStore, 'get'>): WordSource {
       return wake.success ? wake.data.start.content : undefined;
     },
   };
+}
+
+/**
+ * Let go of a wake's words, inside the transaction that ends its run or the
+ * wake itself (§6.2): the payload keeps only what names the event (its source
+ * kind, its id, the chat and the origin). Not before: a pause can put a run
+ * back in line after the runtime's first event (transition 15).
+ *
+ * @param effects - The outbox.
+ * @param effectId - The wake's effect.
+ */
+export function letGoOfWakeWords(
+  effects: Pick<EffectStore, 'get' | 'replacePayload'>,
+  effectId: string
+): void {
+  const effect = effects.get(effectId);
+  if (effect?.kind !== 'wake_chat') return;
+  const wake = WakeRequestSchema.safeParse(effect.payload);
+  if (!wake.success) return;
+  const { sourceKind, eventId, start } = wake.data;
+  effects.replacePayload(effectId, {
+    sourceKind,
+    eventId,
+    sessionId: start.sessionId,
+    origin: start.origin,
+    wordsLetGo: true,
+  });
 }

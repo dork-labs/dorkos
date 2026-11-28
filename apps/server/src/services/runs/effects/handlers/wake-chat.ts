@@ -22,12 +22,15 @@ import { WakeRequestSchema } from '@dorkos/shared/turn-port';
 import { logger } from '../../../../lib/logger.js';
 import type { RunStore } from '../../run-store.js';
 import { TurnStartRefusedError, type SpaceTurnPort } from '../../turn-port.js';
-import { WAKE_SOURCE } from '../wakes.js';
+import { letGoOfWakeWords, WAKE_SOURCE } from '../wakes.js';
+import type { EffectStore } from '../effect-store.js';
 import type { EffectHandler } from '../worker.js';
 
 /** What the handler needs. */
 export interface WakeChatDeps {
   runs: Pick<RunStore, 'findByStartKey' | 'transaction'>;
+  /** The outbox, where a wake that ends with no run lets go of its words (§6.2). */
+  effects: Pick<EffectStore, 'get' | 'replacePayload'>;
   port: Pick<SpaceTurnPort, 'start'>;
   /**
    * Whether a chat is stored anywhere, probed in a folder. Handed in at
@@ -69,7 +72,13 @@ export function wakeChatHandler(deps: WakeChatDeps): EffectHandler {
         throw err;
       }
     },
+    onEnded(effect) {
+      // Ended with no run (dropped, or failed for good): its words go now. A
+      // wake that made its run lets go of them when that run ends.
+      if (!deps.runs.findByStartKey(effect.key)) letGoOfWakeWords(deps.effects, effect.id);
+    },
     onExpired(effect) {
+      letGoOfWakeWords(deps.effects, effect.id);
       // Nobody waits on a wake: its source moved on long ago. Kept for the record.
       logger.info('[runs] a wake passed its deadline before its turn was asked for', {
         effectId: effect.id,
