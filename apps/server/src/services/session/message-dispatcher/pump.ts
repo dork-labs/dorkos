@@ -21,6 +21,7 @@ import {
 } from './state.js';
 import { launchDueCompaction } from './agent-compaction.js';
 import { toRuns } from './run-feed.js';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { PendingDispatch } from './types.js';
 
 /**
@@ -115,6 +116,12 @@ export function pumpLocked(sessionKey: string): void {
   // first of those fires while the ending turn still holds the write-lock — so
   // this gate is also what keeps the queue from racing a release it would lose.
   if (inFlight.has(sessionKey)) return;
+  // Turns the agent started are still open: the slot is theirs, even when a
+  // person's turn held it as they opened and has only now let it go (DOR-2829).
+  if ((runtimeTurns.get(sessionKey)?.open ?? 0) > 0) {
+    claimForRuntimeTurns(sessionKey);
+    return;
+  }
   // A summary the agent asked for runs first, once the turn that asked for it
   // has ended (DOR-2732; the module doc says why it goes ahead of the queue).
   if (launchDueCompaction(sessionKey)) return;
@@ -156,7 +163,8 @@ export function pumpLocked(sessionKey: string): void {
  * only the first took the slot, so its end handed the session back while the
  * agent was still writing its answer. A message launched then took the
  * write-lock ahead of that answer's projection, and the turn it opened settled
- * the answer as a failure.
+ * the answer as a failure. While any are open, the slot is theirs whenever it
+ * comes free: here, at a close that is not the last, and in {@link pumpLocked}.
  *
  * @param sessionId - The session the agent started talking on, in any id it
  *   answers to
@@ -201,15 +209,30 @@ function claimForRuntimeTurns(sessionKey: string): void {
  * turn. While others are still open the claim stays, and is taken if that
  * person's turn has since let the slot go.
  *
+ * At the last one, the runtime is asked whether it still has a turn open. It
+ * should not: every turn the agent starts is announced here as it opens. If it
+ * does, the count and the runtime disagree, which is said at `warn`, and the
+ * count is reset all the same, so a miscount can never hold the queue for good.
+ *
  * @param sessionId - The session whose agent-initiated turn ended
+ * @param runtime - The runtime the turn ran on, asked at the last close
  */
-export function noteRuntimeTurnClosed(sessionId: string): void {
+export function noteRuntimeTurnClosed(
+  sessionId: string,
+  runtime?: Pick<AgentRuntime, 'isTurnOpen'>
+): void {
   const sessionKey = primaryOf(sessionId);
   const turns = runtimeTurns.get(sessionKey);
   if (turns !== undefined && turns.open > 1) {
     turns.open -= 1;
     claimForRuntimeTurns(sessionKey);
   } else {
+    if (turns !== undefined && runtime?.isTurnOpen?.(sessionId) === true) {
+      logger.warn(
+        '[MessageDispatcher] the last agent-started turn ended, but the runtime still has one open',
+        { sessionId: sessionKey, resetTo: 0 }
+      );
+    }
     runtimeTurns.delete(sessionKey);
     if (turns?.token !== undefined && inFlight.get(sessionKey)?.token === turns.token) {
       inFlight.delete(sessionKey);

@@ -207,7 +207,7 @@ async function projectRuntimeTurn(
     // The queue is told last, and always: a runtime turn that ends without
     // handing the session back would hold every queued message for the life of
     // the process.
-    noteRuntimeTurnClosed(sessionId);
+    noteRuntimeTurnClosed(sessionId, runtime);
   };
 
   try {

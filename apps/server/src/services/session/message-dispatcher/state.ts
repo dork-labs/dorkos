@@ -41,6 +41,12 @@ export const inFlight = new Map<string, InFlightTurn>();
  * runtime turn opens exactly when the process talks with nothing dispatched.
  * Counted because several can be open at once (DOR-2829), and the slot is
  * theirs until the last one ends.
+ *
+ * **The count is load-bearing.** While it is above zero no queued message
+ * launches on the session, so every open must be matched by exactly one close.
+ * `runtime-turns/runtime-turn.ts` guarantees that (one guarded release per
+ * turn, on every path), and the last close checks the count against the
+ * runtime's own view ({@link noteRuntimeTurnClosed}).
  */
 export const runtimeTurns = new Map<string, { open: number; token?: symbol }>();
 /** Accepted messages waiting to launch, keyed by message id. */

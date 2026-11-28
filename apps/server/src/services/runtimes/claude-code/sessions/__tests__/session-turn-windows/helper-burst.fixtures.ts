@@ -5,7 +5,8 @@
  * Not a test file — a test-support module only.
  *
  * **Captured.** Each `../fixtures/helper-burst-<shape>-sdk-0.3.304.jsonl` is
- * every frame, verbatim and in stream order, of one real CLI 0.3.304 run
+ * every frame, verbatim and in stream order, of one real run of the CLI
+ * bundled with claude-agent-sdk 0.3.304 (`claude_code_version` 2.1.304)
  * against a fake model on 127.0.0.1 with a made-up key and throwaway homes, in
  * `bypassPermissions` mode with `forwardSubagentText` and
  * `includePartialMessages` on. The parent started three background helpers in
@@ -21,7 +22,8 @@
  *   the reports landed inside its turn, beside that tool's result, and the
  *   parent answered them in the same turn.
  *
- * The changes from the wire: the machine's temporary paths are replaced with
+ * The changes from the wire: the machine's temporary paths (the working
+ * folder, the account folder and the messaging socket) are replaced with
  * made-up `/tmp/made-up-…` placeholders, and the message id the probe wrote is
  * renamed here to `m1`, the id the harness dispatches.
  *

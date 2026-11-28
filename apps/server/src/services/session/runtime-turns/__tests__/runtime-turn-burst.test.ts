@@ -12,15 +12,24 @@
  * a message arriving then launched into the middle of it.
  *
  * The real `dispatchMessage`, queue store, runtime-turn projection and session
- * lock are under test. Only the runtime is a double.
+ * lock are under test. Only the runtime is a double. Fixed waits come only
+ * before a "not sent" check; a send that must happen is waited for.
  *
  * @module services/session/runtime-turns/__tests__/runtime-turn-burst
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { dispatchMessage, resetMessageDispatcher } from '../../message-dispatcher.js';
+import { logger } from '../../../../lib/logger.js';
+import {
+  dispatchMessage,
+  isTurnInFlight,
+  noteRuntimeTurnClosed,
+  noteRuntimeTurnOpen,
+  resetMessageDispatcher,
+} from '../../message-dispatcher.js';
+import { inFlight } from '../../message-dispatcher/state.js';
 import { MessageQueueStore, setMessageQueueStore } from '../../message-queue-store.js';
 import { SessionLockManager } from '../../session-lock.js';
 import { disposeProjector, getOrCreateProjector } from '../../session-state-projector.js';
@@ -110,14 +119,35 @@ afterEach(async () => {
   disposeProjector(session);
 });
 
+/** A turn that answers at once. */
+async function* quickTurn(): AsyncGenerator<StreamEvent> {
+  yield { type: 'text_delta', data: { text: 'answering you' } } as StreamEvent;
+  yield { type: 'done', data: {} } as StreamEvent;
+}
+
+/** A person's message, as the chat sends it. */
+function send(content: string) {
+  return dispatchMessage({
+    origin: { kind: 'interactive' },
+    sessionId: session,
+    clientId: 'person',
+    content,
+    projector: getOrCreateProjector(session),
+    runtime,
+  });
+}
+
+/** Who started each turn on the durable stream, in order. */
+function turnOrigins(): string[] {
+  return getOrCreateProjector(session)
+    .replayFrom(0)
+    .filter((event) => event.type === 'turn_start')
+    .map((event) => (event as { origin?: string }).origin ?? 'person');
+}
+
 describe('several reports at once (DOR-2829)', () => {
   it('holds a message until the last turn the agent started has ended', async () => {
-    runtime.withScenarios([
-      async function* (): AsyncGenerator<StreamEvent> {
-        yield { type: 'text_delta', data: { text: 'answering you' } } as StreamEvent;
-        yield { type: 'done', data: {} } as StreamEvent;
-      },
-    ]);
+    runtime.withScenarios([quickTurn]);
     // Three helpers report together: two empty segments, then the answer.
     const empty1 = pushable();
     const empty2 = pushable();
@@ -129,14 +159,7 @@ describe('several reports at once (DOR-2829)', () => {
     await settle();
 
     // The agent is still writing its answer to the reports.
-    const sent = await dispatchMessage({
-      origin: { kind: 'interactive' },
-      sessionId: session,
-      clientId: 'person',
-      content: 'how is it going?',
-      projector: getOrCreateProjector(session),
-      runtime,
-    });
+    const sent = await send('how is it going?');
     await settle();
     expect(sent.queued).toBe(true);
     expect(runtime.sendMessage).not.toHaveBeenCalled();
@@ -146,15 +169,89 @@ describe('several reports at once (DOR-2829)', () => {
     expect(runtime.sendMessage).not.toHaveBeenCalled();
 
     finish(answer, session, 'all three helpers are done');
-    await settle();
-    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(1));
 
     // Each turn whole and in order: the agent's three, then the person's.
-    const events = getOrCreateProjector(session).replayFrom(0);
-    const origins = events
-      .filter((event) => event.type === 'turn_start')
-      .map((event) => (event as { origin?: string }).origin ?? 'person');
-    expect(origins).toEqual(['runtime', 'runtime', 'runtime', 'person']);
-    expect(getOrCreateProjector(session).getStatus().lifecycle).toBe('idle');
+    await vi.waitFor(() => expect(turnOrigins()).toHaveLength(4));
+    expect(turnOrigins()).toEqual(['runtime', 'runtime', 'runtime', 'person']);
+    await vi.waitFor(() =>
+      expect(getOrCreateProjector(session).getStatus().lifecycle).toBe('idle')
+    );
+  });
+
+  it('holds a queued message when the reports open while a person’s turn holds the session', async () => {
+    const reply = pushable();
+    runtime.withScenarios([
+      async function* (): AsyncGenerator<StreamEvent> {
+        yield* reply.stream;
+      },
+      quickTurn,
+    ]);
+    void send('start the helpers');
+    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(1));
+    reply.push({ type: 'text_delta', data: { text: 'on it' } } as StreamEvent);
+
+    // The reports arrive while that turn is still settling, and a second
+    // message is queued behind it.
+    const empty = pushable();
+    const answer = pushable();
+    runtime.emitRuntimeTurn(session, empty.stream);
+    runtime.emitRuntimeTurn(session, answer.stream);
+    finish(empty, session);
+    const second = send('and now?');
+    reply.push({ type: 'done', data: { sessionId: session } } as StreamEvent);
+    reply.end();
+    await settle();
+    await settle();
+    // The person's turn let the session go, and the answer is still open.
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+
+    finish(answer, session, 'all done');
+    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(2));
+    expect((await second).queued).toBe(true);
+    await vi.waitFor(() => expect(turnOrigins()).toHaveLength(4));
+    expect(turnOrigins()).toEqual(['person', 'runtime', 'runtime', 'person']);
+  });
+
+  it('takes the session back in the same step one of several ends, not a pump later', () => {
+    // A person's turn holds the slot as two of the agent's turns open.
+    const personal = Symbol('a person’s turn');
+    inFlight.set(session, {
+      clientId: 'person',
+      token: personal,
+      startedAt: 0,
+      sawTurnStart: true,
+    });
+    noteRuntimeTurnOpen(session);
+    noteRuntimeTurnOpen(session);
+    // It lets go, and before the queue runs again one of the agent's ends.
+    inFlight.delete(session);
+    noteRuntimeTurnClosed(session, runtime);
+    expect(isTurnInFlight(session, runtime)).toBe(true);
+    noteRuntimeTurnClosed(session, runtime);
+    expect(isTurnInFlight(session, runtime)).toBe(false);
+  });
+
+  it('says so, and lets the queue move, when the runtime disagrees at the last close', async () => {
+    const warn = vi.spyOn(logger, 'warn');
+    runtime.withScenarios([quickTurn]);
+    const turn = pushable();
+    runtime.emitRuntimeTurn(session, turn.stream);
+    await settle();
+    const sent = await send('anyone there?');
+    await settle();
+    expect(sent.queued).toBe(true);
+
+    // The runtime still reports a turn open as the agent's last one ends.
+    runtime.isTurnOpen.mockReturnValueOnce(true);
+    finish(turn, session);
+    await vi.waitFor(() =>
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('the runtime still has one open'),
+        expect.objectContaining({ sessionId: session, resetTo: 0 })
+      )
+    );
+    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(1));
+    warn.mockRestore();
   });
 });
