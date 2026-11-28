@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createAccountSigninMethods } from '../account-signin-methods';
 import { createCloudMethods } from '../cloud-methods';
 import { createComputerMethods } from '../computer-methods';
+import { createConnectorMethods } from '../connector-methods';
 import { createFrameBridgeMethods } from '../frame-bridge-methods';
 import { createOnboardingMethods } from '../onboarding-methods';
 import { createPermissionMethods } from '../permission-methods';
@@ -35,6 +36,7 @@ const queue = createWorkQueueMethods(base);
 const locations = createSessionLocationMethods(base);
 const cloud = createCloudMethods(base);
 const system = createSystemMethods(base);
+const conn = createConnectorMethods(base);
 const input = {
   leaseId: 'l1',
   generation: 2,
@@ -171,6 +173,75 @@ const plain: Record<string, () => Promise<unknown>> = {
   'POST /api/cloud/communities/c%2F1/restore': () => cloud.restoreHostedCommunity('c/1'),
   'POST /api/cloud/communities/moves/m%2F1/upload': () =>
     cloud.retryHostedCommunityMoveUpload('m/1'),
+  // Connectors. A paged list asks for its first page at the full page size.
+  'GET /api/connectors/providers': () => conn.getConnectorProviders(),
+  'PUT /api/connectors/providers/a%2Fb/credential {"secret":"s"}': () =>
+    conn.putConnectorCredential('a/b', 's'),
+  'DELETE /api/connectors/providers/a%2Fb/credential': () => conn.deleteConnectorCredential('a/b'),
+  'GET /api/connectors/catalog?q=work+mail&cursor=n%2Fp&limit=25': () =>
+    conn.getConnectorCatalog({ query: 'work mail', cursor: 'n/p', limit: 25 }),
+  'GET /api/connectors/connections?limit=200': () => conn.getConnectorConnections(),
+  'GET /api/connectors/connections/c%2F1': () => conn.getConnectorConnection('c/1'),
+  'GET /api/connectors/connections/c%2F1/events/definitions?cursor=x%2Fy': () =>
+    conn.listConnectionEventDefinitions('c/1', 'x/y'),
+  'GET /api/connectors/connections/c%2F1/events/subscriptions': () =>
+    conn.listConnectionEventSubscriptions('c/1'),
+  'POST /api/connectors/connections/c%2F1/events/subscriptions {"definitionId":"d"}': () =>
+    conn.createConnectionEventSubscription('c/1', { definitionId: 'd' } as never),
+  'DELETE /api/connectors/connections/c%2F1/events/subscriptions/s%2F1': () =>
+    conn.deleteConnectionEventSubscription('c/1', 's/1'),
+  'GET /api/connectors/connections/c%2F1/events/source': () => conn.getConnectionEventSource('c/1'),
+  'PUT /api/connectors/connections/c%2F1/events/source {"webhookSecret":"w"}': () =>
+    conn.configureConnectionEventSource('c/1', { webhookSecret: 'w' } as never),
+  'POST /api/connectors/connections {"toolkit":"gmail","idempotencyKey":"k"}': () =>
+    conn.startConnectorAuthentication({ toolkit: 'gmail', idempotencyKey: 'k' } as never),
+  'GET /api/connectors/authentication-flows/f%2F1': () => conn.pollConnectorAuthentication('f/1'),
+  'PATCH /api/connectors/connections/c%2F1 {"label":"Work"}': () =>
+    conn.renameConnectorConnection('c/1', { label: 'Work' }),
+  'POST /api/connectors/connections/c%2F1/reconnect {"idempotencyKey":"k"}': () =>
+    conn.reconnectConnectorConnection('c/1', { idempotencyKey: 'k' } as never),
+  'GET /api/connectors/connections/c%2F1/disconnect-impact': () =>
+    conn.getConnectorDisconnectImpact('c/1'),
+  'GET /api/connectors/apps/g%2Fm/actions?providerInstanceId=p+1': () =>
+    conn.getConnectorAppActions('g/m', 'p 1'),
+  'DELETE /api/connectors/connections/c%2F1': () => conn.disconnectConnectorConnection('c/1'),
+  'GET /api/connectors/agents/a%2F1/connections?limit=200': () =>
+    conn.getAgentConnectorConnections('a/1'),
+  'GET /api/connectors/every-agent-grants?limit=200': () => conn.getEveryAgentConnectorGrants(),
+  'GET /api/connectors/sessions/s%2F1/connections?limit=200': () =>
+    conn.getSessionConnectorConnections('s/1'),
+  'PUT /api/connectors/sessions/s%2F1/connections/c%2F1 {"on":false}': () =>
+    conn.setSessionConnectorAccess('s/1', 'c/1', { on: false }),
+  'GET /api/connectors/accessible?agentId=a%2F1': () =>
+    conn.getAccessibleConnectorConnections('a/1'),
+  'GET /api/connectors/accessible/c%2F1/operations?agentId=a%2F1': () =>
+    conn.getAccessibleConnectorOperations('a/1', 'c/1' as never),
+  'POST /api/connectors/executions {"agentId":"a"}': () =>
+    conn.executeConnector({ agentId: 'a' } as never),
+  'GET /api/connectors/usage/agent?agentId=a&cursor=c&limit=5': () =>
+    conn.getAgentConnectorUsage({ agentId: 'a', cursor: 'c', limit: 5 }),
+  'GET /api/connectors/usage/operator?connectionId=c': () =>
+    conn.getOperatorConnectorUsage({ connectionId: 'c' as never }),
+  'POST /api/connectors/reconciliation/previews {"connectionId":"c"}': () =>
+    conn.previewConnectorReconciliation({ connectionId: 'c' } as never),
+  'POST /api/connectors/reconciliation/apply {"previewId":"p"}': () =>
+    conn.applyConnectorReconciliation({ previewId: 'p' } as never),
+  'DELETE /api/connectors/connections/c%2F1/every-agent': () =>
+    conn.stopSharingConnectorWithEveryAgent('c/1'),
+  'POST /api/connectors/reviews {"reason":"r"}': () =>
+    conn.createConnectorManagementReview({ reason: 'r' } as never),
+  'GET /api/connectors/reviews?state=pending&limit=200': () =>
+    conn.getConnectorManagementReviews('pending'),
+  'GET /api/connectors/reviews/r%2F1': () => conn.getConnectorManagementReview('r/1'),
+  'POST /api/connectors/reviews/r%2F1/decision {"decision":"denied"}': () =>
+    conn.resolveConnectorManagementReview('r/1', { decision: 'denied' }),
+  'POST /api/connectors/agent-requests/q%2F1/decision {"decision":"denied"}': () =>
+    conn.resolveConnectorAgentRequest('q/1', { decision: 'denied' }),
+  'POST /api/connectors/agent-requests/q%2F1/authentication-flows {"label":"Work"}': () =>
+    conn.startConnectorAgentRequestAuthentication('q/1', { label: 'Work' } as never),
+  'GET /api/connectors/agent-requests/q%2F1/authentication-flows/f%2F1': () =>
+    conn.pollConnectorAgentRequestAuthentication('q/1', 'f/1'),
+  'GET /api/connectors/access-changes/x%2F1': () => conn.getAccessChange('x/1'),
   // Files, diffs and system reads. A flag goes out only when it is on.
   'GET /api/directory?path=%2Fa+b&showHidden=true': () => system.browseDirectory('/a b', true),
   'GET /api/directory': () => system.browseDirectory(undefined, false),

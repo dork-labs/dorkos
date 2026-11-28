@@ -63,11 +63,16 @@ type JsonBody<Id extends OperationId> =
       : undefined;
 
 /**
- * The only headers a call may add of its own, lowercased. Everything else (the
- * body's type, the cookie, credentials, the community-owner header) belongs to
- * the request path, so a call that names anything not listed here is refused.
+ * The only headers a call may add of its own, lowercased: a window's
+ * `X-Client-Id`, and the connector catalog's ask for sign-in setup details.
+ * Everything else (the body's type, the cookie, credentials, the
+ * community-owner header) belongs to the request path, so a call that names
+ * anything not listed here is refused.
  */
-export const ALLOWED_CALL_HEADERS: readonly string[] = ['x-client-id'];
+export const ALLOWED_CALL_HEADERS: readonly string[] = [
+  'x-client-id',
+  'x-dorkos-catalog-auth-setup',
+];
 
 /**
  * What a call to an operation takes: its path and query parameters, its JSON
