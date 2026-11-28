@@ -95,9 +95,11 @@ import {
   type ExtensionStoppedPayloads,
 } from '../extensions/isolation/notices/extension-stopped-notice.js';
 import {
+  RESTART_NOTICE_ENTRIES,
   WORK_NOT_STARTED_ENTRIES,
+  type RestartNoticePayloads,
   type WorkNotStartedPayloads,
-} from '../runs/effects/work-not-started.js';
+} from '../runs/effects/notice-kinds.js';
 
 /** The payloads of every declared kind, joined into `NotificationPayloads`. */
 export interface DeclaredPayloads
@@ -120,6 +122,7 @@ export interface DeclaredPayloads
     FolderRulesTooLongPayloads,
     ExtensionStoppedPayloads,
     WorkNotStartedPayloads,
+    RestartNoticePayloads,
     SpendingPayloads {}
 
 /** Every declared entry, spread into the registry's `ENTRIES`. */
@@ -142,6 +145,7 @@ export const DECLARED_ENTRIES = {
   ...FOLDER_RULES_TOO_LONG_ENTRIES,
   ...EXTENSION_STOPPED_ENTRIES,
   ...WORK_NOT_STARTED_ENTRIES,
+  ...RESTART_NOTICE_ENTRIES,
   ...SPENDING_ENTRIES,
 };
 
@@ -170,5 +174,6 @@ export const DECLARED_WIRED_KINDS = [
   'agent.folder_rules_too_long',
   'extension.stopped',
   'extension.work_not_started',
+  'turn.restarted',
   ...SPENDING_NOTIFICATION_KINDS,
 ] as const;

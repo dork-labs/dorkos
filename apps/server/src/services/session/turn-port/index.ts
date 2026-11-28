@@ -7,7 +7,9 @@
  * space side imports), the facts sink the run record registers with, and the few
  * reads the space side needs of this computer: how a chat is named the way
  * its queue rows are, whether a queue row still holds a run's words, and
- * whether every launch slot is taken (admission, §3.5).
+ * whether every launch slot is taken (admission, §3.5). Recovery (§7) reaches
+ * the launch gate's seat, a restarted turn's queue row and the lost-work wake
+ * through here too.
  *
  * @module services/session/turn-port
  */
@@ -35,6 +37,12 @@ export {
 export { queueKeyOf as chatKeyOf } from '../resolution/session-key-registry.js';
 export { watchRunEvents } from './run-events.js';
 export { isAgentLaunchCapFull } from '../launch/launch-cap.js';
+export { setLaunchGate, wakeChat, type LaunchGate } from './launch-gate.js';
+export { dropKeptRow, keptRowIds, restoreDraftRow, tellSenderTurnLost } from './restart-rows.js';
+export {
+  wakeCutShortChat as wakeChatForLostWork,
+  type WakeOutcome,
+} from '../runtime-turns/wake-cut-short-work.js';
 
 /**
  * Whether a queue row still holds its words (a run handed over through the

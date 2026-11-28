@@ -12667,7 +12667,7 @@ export interface components {
         /** @enum {string|null} */
         RunEnding: "completed" | "failed" | "stopped" | "limited" | "refused" | "shutdown" | "process_died" | null;
         /** @enum {string|null} */
-        RunNotice: "restart_stopped" | null;
+        RunNotice: "restart_stopped" | "restart_continued" | "restart_waited_on_you" | "restart_chain_cap" | null;
         SessionUpdateResponse: components["schemas"]["Session"] & {
             /** @enum {boolean} */
             permissionModePendingUntilNextTurn?: true;
@@ -14567,7 +14567,7 @@ export interface components {
             meta?: string;
         };
         /** @enum {string} */
-        NotificationKind: "step-up.remote-refused" | "ask.pending" | "schedule.parked" | "schedule.armed_by_agent" | "approval.pending" | "session.error" | "turn.completed" | "run.completed" | "dm.received" | "mention.received" | "agent.note" | "dead-letter.created" | "agent.unreachable" | "signin.required" | "update.installed" | "report.daily" | "account.limited" | "account.reset" | "credits.refused" | "extension.approval" | "extension.decision" | "extension.stopped" | "extension.work_not_started" | "community.owner-replacement" | "community.teammate-limit" | "community.teammate-limits-reset" | "spending.near-limit" | "spending.limit-reached" | "spending.meter-reset" | "browser.handoff" | "heartbeat.credits-offer" | "connector.destructive_pending" | "connector.destructive_executed" | "connector.access_narrowed" | "connector.write_available" | "mcp-server.tool_added" | "mcp-server.reserved_name" | "web.new_device" | "signin.check_added" | "signin.check_removed" | "agent.secret_files" | "agent.folder_rules_too_long" | "account.signin_review" | "shell.check_down" | "report.undelivered" | "todo.changed";
+        NotificationKind: "step-up.remote-refused" | "ask.pending" | "schedule.parked" | "schedule.armed_by_agent" | "approval.pending" | "session.error" | "turn.completed" | "run.completed" | "dm.received" | "mention.received" | "agent.note" | "dead-letter.created" | "agent.unreachable" | "signin.required" | "update.installed" | "report.daily" | "account.limited" | "account.reset" | "credits.refused" | "extension.approval" | "extension.decision" | "extension.stopped" | "extension.work_not_started" | "turn.restarted" | "community.owner-replacement" | "community.teammate-limit" | "community.teammate-limits-reset" | "spending.near-limit" | "spending.limit-reached" | "spending.meter-reset" | "browser.handoff" | "heartbeat.credits-offer" | "connector.destructive_pending" | "connector.destructive_executed" | "connector.access_narrowed" | "connector.write_available" | "mcp-server.tool_added" | "mcp-server.reserved_name" | "web.new_device" | "signin.check_added" | "signin.check_removed" | "agent.secret_files" | "agent.folder_rules_too_long" | "account.signin_review" | "shell.check_down" | "report.undelivered" | "todo.changed";
         /** @enum {string} */
         NotificationTier: "blocking" | "notable" | "quiet";
         NotificationSubject: {

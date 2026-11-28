@@ -13,6 +13,9 @@
  *   the chat-busy backoff, so it is handed over again for a new launch, and
  *   never twice for one: the computer face answers `already_held` while the
  *   dispatcher still holds the run.
+ * - **Cancelled before it started**: a mini app's start tells its owner, and
+ *   a start a restart lost tells whoever asked, once (§7.3, step 5); a
+ *   continuation that will never start lets its chat's queue move (§7.5).
  * - **A live run lets go** (`starting`, `started` or `running` to anything
  *   else): every waiting `start_turn` is due now. That run may be what a run
  *   waited on as `chat_busy` (its chat) or `machine_full` (a launch slot), so
@@ -27,6 +30,8 @@ import type { SpaceTurnPort } from '../turn-port.js';
 import type { EffectStore, TurnEffect } from './effect-store.js';
 import { retryDelayMs } from './worker.js';
 import { workNotStartedNotice } from './work-not-started.js';
+import { restartNotice } from './restart-notices.js';
+import { RUNS } from '../../../config/constants.js';
 
 const LIVE: ReadonlySet<RunStatus> = new Set(['starting', 'started', 'running']);
 
@@ -45,12 +50,14 @@ export class StartTurns implements HandedStarts {
    * @param effects - The outbox.
    * @param port - The space face, which forgets a run's words and tells its watchers.
    * @param now - The clock, epoch ms.
+   * @param wakeChat - Lets a chat's queue move once the launch gate no longer holds it (§7.5).
    */
   constructor(
     private readonly runs: RunStore,
     private readonly effects: EffectStore,
     private readonly port: () => SpaceTurnPort | undefined,
-    private readonly now: () => number
+    private readonly now: () => number,
+    private readonly wakeChat: (chatKey: string) => void = () => {}
   ) {}
 
   /**
@@ -69,6 +76,16 @@ export class StartTurns implements HandedStarts {
     if (to === 'cancelled' && run.origin?.kind === 'extension-start') {
       const app = this.port()?.appOf(run);
       if (app) this.effects.insert(workNotStartedNotice(run, app, this.now()));
+    } else if (to === 'cancelled' && this.lostRecently(run)) {
+      // Its start was lost with the process that held it: whoever asked
+      // hears once (§7.3, step 5). Rowless, so never a person's own words.
+      this.effects.insert(restartNotice(run, 'start_lost', this.now()));
+    }
+    // A continuation that will never start no longer holds its chat's
+    // launches (§7.5): the chat's queue moves now, after this write commits.
+    if (to === 'cancelled' && run.continuesRunId !== null) {
+      const chatKey = run.sessionId;
+      queueMicrotask(() => this.wakeChat(chatKey));
     }
     // The others first: the run that let go waits out its own backoff.
     if (LIVE.has(from) && !LIVE.has(to)) this.effects.wakeAllStarts();
@@ -80,6 +97,14 @@ export class StartTurns implements HandedStarts {
     )
       this.startAgain(run);
     this.port()?.moved(run);
+  }
+
+  /** A run cancelled as `start_lost` whose last sign of life is within the age bound (§7.3). */
+  private lostRecently(run: TurnRun): boolean {
+    return (
+      run.endingDetail.cancelledBecause === 'start_lost' &&
+      this.now() - Date.parse(run.createdAt) <= RUNS.RESTART_AGE_BOUND_MS
+    );
   }
 
   /**

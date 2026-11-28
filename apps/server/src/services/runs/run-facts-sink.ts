@@ -242,13 +242,14 @@ function dispatcherFeed(
   starts: HandedStarts | undefined
 ): DispatcherRunFeed {
   return {
-    accept: ({ chatKey, origin, queueMessageId }) =>
+    accept: ({ chatKey, origin, queueMessageId, startKey }) =>
       store.create({
         chatKey,
         status: 'queued',
         openedBy: 'caller',
         origin,
         ...(queueMessageId !== undefined ? { queueMessageId } : {}),
+        ...(startKey !== undefined ? { startKey } : {}),
       }).id,
 
     queueRowTaken: (runId, queueMessageId) =>

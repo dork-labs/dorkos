@@ -87,9 +87,14 @@ export function applyQueue(
 /**
  * The line a person sees about the chat's last run (§7.4), or `null`: only
  * while that run is the chat's newest, so the line goes once anything is sent.
+ * A continuation DorkOS opened after a restart (`openedBy: 'recovery'`) is
+ * not something sent: while it waits, the line about the run it picks back
+ * up stays.
  *
  * @param runs - The chat's runs, oldest first.
  */
 export function runNoticeOf(runs: readonly ChatRun[]): ChatRun['notice'] {
-  return runs.at(-1)?.notice ?? null;
+  const sent = runs.filter((run) => run.openedBy !== 'recovery');
+  const last = runs.at(-1);
+  return (last?.openedBy === 'recovery' ? sent.at(-1) : last)?.notice ?? null;
 }

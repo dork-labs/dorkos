@@ -254,6 +254,7 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     name: 'Flow',
     reason: 'account_not_allowed',
   },
+  'turn.restarted': { runId: '01KJXYKJYW4N8QGQ5W4GB6YM9K', sessionId: 'sess-1', case: 'continued' },
   'browser.handoff': {
     handoffId: 'h-1',
     sessionId: 'sess-1',
@@ -338,6 +339,8 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'extension.stopped': 'quiet',
   // A start a mini app was answered for never ran: worth a glance (DOR-5232).
   'extension.work_not_started': 'notable',
+  // A reply a restart cut, or a start it lost: worth a glance, nothing waits (DOR-5161).
+  'turn.restarted': 'notable',
   // A notice with a way to act, never a hold: nothing waits on it (DOR-3245).
   'account.signin_review': 'notable',
   'browser.handoff': 'notable',
@@ -461,6 +464,7 @@ describe('notification registry', () => {
       'step-up.remote-refused',
       'todo.changed',
       'turn.completed',
+      'turn.restarted',
       'update.installed',
       'web.new_device',
     ]);
@@ -528,13 +532,6 @@ describe('notification registry', () => {
     ]);
   });
 
-  it('builds a stable dedupe key that does not change between calls', () => {
-    for (const kind of NOTIFICATION_KINDS) {
-      const entry = notificationEntry(kind);
-      expect(entry.dedupeKey(PAYLOADS[kind])).toBe(entry.dedupeKey(PAYLOADS[kind]));
-    }
-  });
-
   it('gives two different subjects two different dedupe keys', () => {
     const entry = notificationEntry('run.completed');
     expect(entry.dedupeKey({ ...PAYLOADS['run.completed'], runId: 'run-2' })).not.toBe(
@@ -542,8 +539,10 @@ describe('notification registry', () => {
     );
   });
 
-  it('gives every kind a dedupe key nobody else can collide with', () => {
-    const keys = NOTIFICATION_KINDS.map((k) => notificationEntry(k).dedupeKey(PAYLOADS[k]));
+  it('gives every kind a stable dedupe key nobody else can collide with', () => {
+    const keysOf = () => NOTIFICATION_KINDS.map((k) => notificationEntry(k).dedupeKey(PAYLOADS[k]));
+    const keys = keysOf();
+    expect(keysOf()).toEqual(keys);
     expect(new Set(keys).size).toBe(keys.length);
   });
 

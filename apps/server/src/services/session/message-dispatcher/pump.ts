@@ -21,6 +21,7 @@ import {
 } from './state.js';
 import { launchDueCompaction } from './agent-compaction.js';
 import { toRuns } from './run-feed.js';
+import { launchGateHolds, setLaunchGateWake } from '../turn-port/launch-gate.js';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { PendingDispatch } from './types.js';
 
@@ -44,6 +45,9 @@ export function schedulePump(sessionId: string): void {
     });
   });
 }
+
+// A chat the launch gate held is woken through its pump (spec §7.5).
+setLaunchGateWake(schedulePump);
 
 /**
  * Keep a waiting row from launching while a person sends it into the running
@@ -125,22 +129,47 @@ export function pumpLocked(sessionKey: string): void {
   // A summary the agent asked for runs first, once the turn that asked for it
   // has ended (DOR-2732; the module doc says why it goes ahead of the queue).
   if (launchDueCompaction(sessionKey)) return;
-  // Budget-held documents occupy no runtime slot and cannot block a person's work.
-  const head = orderedWaiting(sessionKey).find(
-    (entry) => entry.notBefore === undefined || entry.notBefore <= Date.now()
-  );
-  if (!head || head.waitingOnLock) return;
-  // Held for the agent's background work: it, and everything behind it, waits
-  // (order is never changed behind a person's back). Cleared by a boundary or
-  // the runtime's gate release, each of which tries it again.
-  if (head.held !== undefined) return;
+  const next = nextToLaunch(sessionKey);
   // A delivery the runtime already owes is on its way, and it opens a segment of
   // its own (spec `warm-process-lifecycle` D6). Launching now would put the
   // person's words and a background helper's report into one turn. The runtime
   // owes this gate a bound — it is re-asked at the next boundary, and the
   // runtime's own clock releases it — so a queue held here always moves again.
-  if (head.runtime.isSegmentPending?.(sessionKey) === true) return;
-  head.launch({ budgetExhausted: false });
+  if (!next || next.runtime.isSegmentPending?.(sessionKey) === true) return;
+  next.launch({ budgetExhausted: false });
+}
+
+/**
+ * What the pump launches next, if anything may launch: the head row, else the
+ * oldest entry without a row (spec `turns-survive-restarts` §7.5). Rows go in
+ * the queue's order, which a person can change, and entries without a row in
+ * the order they arrived; a row never waits behind an entry without one, nor
+ * one without a row behind a row the pump cannot launch.
+ *
+ * A row the pump cannot launch: one deferred (`notBefore`), held for the
+ * agent's background work (it, and every row behind it, waits: order is never
+ * changed behind a person's back, and a boundary or the runtime's release tries
+ * it again), or refused by the write-lock. And every entry asks the launch
+ * gate (§7.5): while the chat has a run a restart ended that is not decided,
+ * or a continuation still to make or start, only that continuation goes.
+ */
+function nextToLaunch(sessionKey: string): PendingDispatch | undefined {
+  const now = Date.now();
+  const waiting = orderedWaiting(sessionKey).filter(
+    // Budget-held documents occupy no runtime slot and cannot block a person's work.
+    (entry) => entry.notBefore === undefined || entry.notBefore <= now
+  );
+  const rows = new Set(
+    (getMessageQueueStore()?.list(queueKeyOf(sessionKey)) ?? []).map((r) => r.id)
+  );
+  const head = waiting.find((entry) => rows.has(entry.messageId));
+  const rowless = waiting.find((entry) => !rows.has(entry.messageId));
+  for (const entry of [head, rowless]) {
+    if (!entry || entry.waitingOnLock || entry.held !== undefined) continue;
+    if (launchGateHolds(sessionKey, entry.runId)) continue;
+    return entry;
+  }
+  return undefined;
 }
 
 /**

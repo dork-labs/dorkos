@@ -202,6 +202,12 @@ export class StartWorkService {
           ? { extensionId, name: this.deps.extensionName(extensionId) }
           : undefined;
       },
+      // A restart ended its turn before the agent read the prompt (spec
+      // `turns-survive-restarts` §7.3): the prompt and title go, never replayed.
+      forget: (id, run) => {
+        const row = rowOf(id, run);
+        if (row) this.deps.store.clearPrompt(row.sessionId);
+      },
     });
     port.watch((run) => this.onStartRun(port, run));
     this.sweepWords(port);

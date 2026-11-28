@@ -94,6 +94,19 @@ describe('a turn whose process died', () => {
     expect(runNoticeOf([DIED])).toBe('restart_stopped');
     expect(runNoticeOf([DIED, next])).toBeNull();
   });
+
+  it('keeps the line while the continuation DorkOS opened waits', () => {
+    // Purpose: fails if a waiting continuation hid the "picking it back up" line.
+    const continued = { ...DIED, notice: 'restart_continued' as const };
+    const continuation = run({
+      id: '01RUNCONT00000000000000000',
+      chatSeq: 2,
+      status: 'queued',
+      openedBy: 'recovery',
+      attempt: 2,
+    });
+    expect(runNoticeOf([continued, continuation])).toBe('restart_continued');
+  });
 });
 
 describe('a restored draft', () => {

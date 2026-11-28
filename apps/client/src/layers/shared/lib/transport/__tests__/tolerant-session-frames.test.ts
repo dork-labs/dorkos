@@ -236,7 +236,7 @@ describe('a chat’s runs from a newer server (spec `turns-survive-restarts` §4
     const result = parseSessionEvent({
       type: 'run_update',
       seq: 4,
-      runs: [run({ notice: 'restart_continued' })],
+      runs: [run({ notice: 'line_from_a_newer_server' })],
     });
 
     expect(result).toMatchObject({ ok: true, event: { runs: [{ notice: null }] } });

@@ -585,7 +585,7 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
       carriedLimits: queuedLimitsOf(opts),
     });
     // A run the turn port saved gets its row; any other caller's run is written now.
-    if (runId === undefined) runId = acceptRun({ sessionId, turn: opts }, row.id);
+    if (runId === undefined) runId = acceptRun({ sessionId, turn: opts }, row.id, opts.startKey);
     else if (!recordRunRow(runId, row.id)) {
       // Taken back while it was being handed over (its app stopped): no row
       // stays, and its launch finds the run gone.
@@ -594,7 +594,7 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
     }
     return row;
   });
-  runId ??= acceptRun({ sessionId, turn: opts }, undefined);
+  runId ??= acceptRun({ sessionId, turn: opts }, undefined, opts.startKey);
   // **The person first** (spec `spin-off-chats` §3): a message a person (or
   // anything but another chat) queues goes ahead of every row another chat
   // sent, so a busy agent answers its person before its peers. Done as a real

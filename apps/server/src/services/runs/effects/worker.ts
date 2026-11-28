@@ -11,7 +11,8 @@
  * (an in-process signal), when the next open effect falls due (no sooner
  * than a second, no later than 30), and once more when every lease of the
  * boot before has run out; with nothing open it sleeps until the next insert. What follows a dead run beyond its
- * ending (a continuation, a person's line) stays recovery's to decide (T15).
+ * ending (a continuation, a person's line) is recovery's to decide, which each
+ * pass asks right after it retires them (`afterRetire`, §7.3).
  *
  * **Leases.** Taking an effect is one conditional update, so two workers never
  * both run it. A lease lasts 60 seconds and is renewed every 20 while the
@@ -184,6 +185,12 @@ export interface EffectWorkerOptions {
   epoch: string;
   /** The clock, epoch ms. Injected by tests. */
   now?: () => number;
+  /**
+   * Called each pass right after the dead boots' live runs are retired:
+   * recovery decides what follows them (§7.3), since a run another boot left
+   * is dead only once its lease runs out, which can be after the boot pass.
+   */
+  afterRetire?: () => void;
 }
 
 /**
@@ -360,6 +367,7 @@ export class EffectWorker {
   private housekeep(): void {
     const { effects, runs } = this.opts;
     runs.retireDeadRuns();
+    this.opts.afterRetire?.();
     for (const effect of effects.reclaimLapsed(this.opts.epoch)) {
       logger.warn('[runs] an effect another boot was running ended unknown', {
         effectId: effect.id,
