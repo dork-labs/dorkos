@@ -8,7 +8,7 @@
  * What this pins: a relay turn has a run record; the relay's handlers never
  * reach the runtime they were handed (every turn reaches the runtime through
  * the dispatcher); a relay turn runs at exactly the power it ran at before the
- * port, sender by sender (the trust-parity proof, F29); and a scheduled run
+ * port, sender by sender (the trust-parity proof, F30); and a scheduled run
  * the scheduler handed the relay is a `schedule` run at its task's level.
  */
 import fs from 'node:fs';
@@ -241,7 +241,7 @@ describe('a relay turn goes through the turn port', () => {
     expect(port.runsOf(chat)).toEqual([]);
   });
 
-  // F29: whatever the direct path gave a relay turn, the port path gives exactly.
+  // F30: whatever the direct path gave a relay turn, the port path gives exactly.
   it.each([
     [
       'a bound chat’s stranger, marked, at the binding’s level',
