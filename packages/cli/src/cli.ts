@@ -22,6 +22,7 @@ import {
 import { defaultDorkHome } from './lib/dork-home.js';
 import { stampCliLaunch } from './lib/distribution.js';
 import { loadProjectEnv } from './lib/project-env.js';
+import { openInBrowser } from './lib/open-browser.js';
 import { parseCliArgs } from './parse-cli-args.js';
 import { recordInstallRef } from '@dorkos/shared/install-ref';
 
@@ -817,17 +818,18 @@ if (resolvedDir !== effectiveBoundary && !resolvedDir.startsWith(effectiveBounda
   process.env.DORKOS_DEFAULT_CWD = effectiveBoundary;
 }
 
-// Log level: CLI flag > env var > config > default
+// The project .env (lib/project-env.ts): only its allowed settings, held in memory
+// and handed to the server; no project value enters process.env.
+const projectSettings = loadProjectEnv(process.env.DORKOS_DEFAULT_CWD!, console.warn);
+
+// Log level: CLI flag > env var > project .env > config > default
 const logLevelName =
   values['log-level'] ||
   env.LOG_LEVEL ||
+  projectSettings.LOG_LEVEL ||
   (cfgMgr.getDot('logging.level') as string | null) ||
   (env.NODE_ENV === 'production' ? 'info' : 'debug');
 process.env.DORKOS_LOG_LEVEL = String(LOG_LEVEL_MAP[logLevelName] ?? 3);
-
-// Load .env from user's cwd (project-local, optional): it never overrides a value
-// already set, and never sets a trust setting (lib/project-env.ts).
-loadProjectEnv(path.join(process.env.DORKOS_DEFAULT_CWD!, '.env'), process.env, console.warn);
 
 // Hand off error handling to the server, which installs its own reporter and
 // process handlers once imported — avoids double-reporting on the cockpit path.
@@ -909,10 +911,7 @@ void import('./commands/marketplace-held-back.js').then(({ printHeldBackNotice }
 
 // Open browser automatically (skipped in non-TTY or when --no-open)
 if (shouldOpenBrowser && process.stdin.isTTY) {
-  const { exec } = await import('node:child_process');
-  const openCmd =
-    process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
-  exec(`${openCmd} ${localUrl}`);
+  openInBrowser(localUrl);
 }
 
 // Non-blocking update check (fire-and-forget)

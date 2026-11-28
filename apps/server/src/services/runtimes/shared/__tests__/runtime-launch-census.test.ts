@@ -23,7 +23,7 @@ const expected: Record<string, number> = {
   'codex/policy/hidden-folder-scans.ts': 1,
   // DOR-4358: the same vendored rg, once on the turn's path (a working folder)
   // and once off it (the home's background scan). No shell, fixed flags,
-  // `runtimeEnvironment` env; DorkOS sets the root and globs from its own list.
+  // `childEnvironment` env; DorkOS sets the root and globs from its own list.
   'codex/policy/deep-glob-rg.ts': 2,
   'connect/delegated-login.ts': 2,
   'opencode/server-manager.ts': 1,
@@ -170,7 +170,7 @@ function census(text: string, name: string): { count: number; unprojected: strin
         (name === 'claude-code/sessions/tracked-spawn.ts' && /\benv,/.test(call)) ||
         (name === 'codex/model-catalog.ts' && call === "{ stdio: 'pipe', env: environment }") ||
         // The app-server pool forwards the spec's complete environment, built
-        // by the transport through `runtimeEnvironment` (or the credits
+        // by the transport through `childEnvironment` (or the credits
         // projection over it) and fingerprinted into the process key.
         (name === 'codex/app-server/process-pool.ts' &&
           call === "{ env: options.env, cwd: options.cwd, stdio: 'pipe' }") ||
@@ -183,7 +183,7 @@ function census(text: string, name: string): { count: number; unprojected: strin
       const projected =
         name === 'opencode/server-manager.ts' && kind === 'spawn'
           ? sidecarProjection(node, arg)
-          : forwarded || (/\benv:/.test(call) && /runtimeEnvironment\(/.test(call));
+          : forwarded || (/\benv:/.test(call) && /childEnvironment\(/.test(call));
       if (!projected) unprojected.push(kind);
     }
     ts.forEachChild(node, visit);
@@ -215,7 +215,7 @@ describe('runtime launch adoption census', () => {
       'const env = buildSidecarSpawnEnv(plan); spawn(binary, argv, { env, env: ambient });',
       'const env = buildSidecarSpawnEnv(plan); spawn(binary, argv, { env, [key]: ambient });',
       "const env = buildSidecarSpawnEnv(plan); spawn(binary, argv, { env, 'env': other });",
-      'spawn(binary, argv, { env: other, unrelated: runtimeEnvironment() });',
+      'spawn(binary, argv, { env: other, unrelated: childEnvironment() });',
       "const env = buildSidecarSpawnEnv(plan); env.KEY = 'changed'; spawn(binary, argv, { env });",
       'const env = ambient; const other = buildSidecarSpawnEnv(plan); spawn(binary, argv, { env });',
       '{ const env = buildSidecarSpawnEnv(plan); } spawn(binary, argv, { env });',
@@ -245,7 +245,7 @@ describe('runtime launch adoption census', () => {
       const source = readFileSync(path.join(root, name), 'utf8');
       const matches = [
         ...source.matchAll(
-          /env:\s*runtimeEnvironment\('opencode',\s*'(?:locator|provision|process-inspection)'\)/g
+          /env:\s*childEnvironment\('opencode',\s*'(?:locator|provision|process-inspection)'\)/g
         ),
       ];
       expect(matches).toHaveLength(expected[name]);
@@ -259,7 +259,7 @@ describe('runtime launch adoption census', () => {
   it('rejects a registry-lock helper that drops its inspection projection', () => {
     const name = 'codex/policy/mount-target-guard.ts';
     const source = readFileSync(path.join(root, name), 'utf8');
-    const projection = "env: runtimeEnvironment('codex', 'process-inspection'),";
+    const projection = "env: childEnvironment('codex', 'process-inspection'),";
     expect(source).toContain(projection);
     expect(census(source.replace(projection, ''), name).unprojected).toEqual(['spawn']);
   });
@@ -267,7 +267,7 @@ describe('runtime launch adoption census', () => {
   it('rejects a hidden-folder copy check that drops its inspection projection', () => {
     const name = 'codex/policy/hidden-folder-scans.ts';
     const source = readFileSync(path.join(root, name), 'utf8');
-    const projection = "env: runtimeEnvironment('codex', 'process-inspection'),";
+    const projection = "env: childEnvironment('codex', 'process-inspection'),";
     expect(source).toContain(projection);
     expect(census(source.replace(projection, ''), name).unprojected).toEqual(['execFileSync']);
   });

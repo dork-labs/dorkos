@@ -20,6 +20,7 @@ import { assertRepoConfigSafe, runSafeGit } from '@dorkos/shared/safe-git';
 import { mayRunGitHere } from '../../core/agent-identity/index.js';
 import { mayReadOsKeychain } from '../../../lib/keychain/os-keychain-policy.js';
 import type { Change, GatherContext, Gatherer } from './types.js';
+import { childEnvironment } from '@dorkos/shared/child-environment';
 
 /** How often `gh pr checks` may run per checkout. */
 export const PR_CHECKS_TTL_MS = 30 * 60 * 1000;
@@ -43,8 +44,11 @@ export const runCommand: RunCommand = async (command, args, { cwd, signal }) => 
   }
   if (command === 'gh') await assertRepoConfigSafe(cwd);
   return new Promise((resolve, reject) => {
-    execFile(command, args, { cwd, signal, timeout: 2000, maxBuffer: 256 * 1024 }, (err, stdout) =>
-      err ? reject(err) : resolve(stdout)
+    execFile(
+      command,
+      args,
+      { cwd, signal, timeout: 2000, maxBuffer: 256 * 1024, env: childEnvironment('git') },
+      (err, stdout) => (err ? reject(err) : resolve(stdout))
     );
   });
 };

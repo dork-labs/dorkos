@@ -25,6 +25,7 @@ import { promisify } from 'node:util';
 import { ExtensionSecretStore } from '../../lib/secret-store/extension-secrets.js';
 import { parseCredentialReference } from '@dorkos/shared/config-schema';
 import { mayReadOsKeychain } from '../../lib/keychain/os-keychain-policy.js';
+import { childEnvironment } from '@dorkos/shared/child-environment';
 
 const execFileAsync = promisify(execFile);
 
@@ -159,7 +160,7 @@ export class MacOsKeychainAccessor implements KeychainAccessor {
       const { stdout } = await execFileAsync(
         'security',
         ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', id, '-w'],
-        { timeout: KEYCHAIN_TIMEOUT_MS, killSignal: 'SIGKILL' }
+        { timeout: KEYCHAIN_TIMEOUT_MS, killSignal: 'SIGKILL', env: childEnvironment('os-helper') }
       );
       // `-w` prints the raw password on stdout with a trailing newline.
       const secret = stdout.replace(/\n$/, '');

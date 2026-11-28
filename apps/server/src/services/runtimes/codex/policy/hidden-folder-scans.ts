@@ -22,7 +22,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { resolveCodexVendoredBinary } from '../check-dependencies.js';
-import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
+import { childEnvironment } from '../../shared/runtime-environment-config.js';
 
 type Access = 'read' | 'deny';
 
@@ -161,7 +161,7 @@ export function hasPathCopy(root: string, dir: string, rg: string | null): boole
         encoding: 'utf8',
         timeout: 20_000,
         maxBuffer: 1 << 20,
-        env: runtimeEnvironment('codex', 'process-inspection'),
+        env: childEnvironment('codex', 'process-inspection'),
       }
     );
   } catch (error) {

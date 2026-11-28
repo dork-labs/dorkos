@@ -8,6 +8,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { logger } from '../../../lib/logger.js';
 import { quitPlainChild, type QuitRunner } from './connection/mac-quit.js';
+import { childEnvironment } from '@dorkos/shared/child-environment';
 
 /** How a plain Chromium ended. A spawn error reads as no code and no signal. */
 export interface PlainChromiumExit {
@@ -221,7 +222,7 @@ function isAlive(pid: number): boolean {
  * which name the binary's path. A quit that doesn't land is caught by the sign-in's deadline.
  */
 const runQuit: QuitRunner = (file, args) => {
-  execFile(file, args, { timeout: 5_000 }, (error, stdout) => {
+  execFile(file, args, { timeout: 5_000, env: childEnvironment('os-helper') }, (error, stdout) => {
     const outcome = error ? 'error' : String(stdout).trim();
     if (outcome !== 'sent' && file !== 'taskkill')
       logger.warn('[Browser] Sign-in window quit not sent', { outcome });
@@ -230,7 +231,7 @@ const runQuit: QuitRunner = (file, args) => {
 
 /** Start a real plain Chromium. Its output is ignored, and it gets no pipe beyond stdio. */
 export const spawnPlainChromium: PlainChromiumSpawner = (executable, args) => {
-  const child = spawn(executable, args, { stdio: 'ignore' });
+  const child = spawn(executable, args, { stdio: 'ignore', env: childEnvironment('browser') });
   const exited = new Promise<PlainChromiumExit>((resolve) => {
     child.once('exit', (code, signal) => resolve({ code, signal }));
     child.once('error', () => resolve({ code: null, signal: null }));
@@ -245,7 +246,10 @@ export const spawnPlainChromium: PlainChromiumSpawner = (executable, args) => {
       if (child.pid === undefined || child.exitCode !== null) return;
       // Only this child, by its own handle: never a pid looked up or a name matched.
       if (process.platform === 'win32')
-        spawnSync('taskkill', ['/F', '/PID', String(child.pid)], { stdio: 'ignore' });
+        spawnSync('taskkill', ['/F', '/PID', String(child.pid)], {
+          stdio: 'ignore',
+          env: childEnvironment('os-helper'),
+        });
       else child.kill('SIGKILL');
     },
   };

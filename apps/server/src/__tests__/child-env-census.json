@@ -1,0 +1,139 @@
+{
+  "$comment": "Child starts whose environment is not a childEnvironment(...) call at the call site (child-env-census.test.ts). Each row names how many such starts the file holds and why each is safe. 'forwarded': the env was built by childEnvironment upstream and passed through. 'owned': a fixed, caller-built env that inherits nothing broadly. A row may not hold a start that inherits process.env.",
+  "wrappers": {
+    "hardenedGitEnv": "apps/server/src/lib/git-safety.ts",
+    "gitEnv": "apps/server/src/services/rooms/repo/room-repo-git.ts"
+  },
+  "sites": {
+    "apps/server/src/services/computers/backend/subprocess.ts": {
+      "calls": 1,
+      "kind": "owned",
+      "reason": "Lima's limactl, with the env its caller builds for the agent computer; the seam injects nothing ambient."
+    },
+    "apps/server/src/services/core/load-gate/holder-identity.ts": {
+      "calls": 1,
+      "kind": "owned",
+      "reason": "ps with PS_ENV: PATH and the C locale only."
+    },
+    "apps/server/src/services/extensions/isolation/isolated-host.ts": {
+      "calls": 1,
+      "kind": "owned",
+      "reason": "The extension host: buildChildEnv copies only locale and time zone, plus its own names."
+    },
+    "apps/server/src/services/extensions/isolation/run-broker.ts": {
+      "calls": 1,
+      "kind": "owned",
+      "reason": "A program an extension was granted: its own requested env (no loader names) plus the host PATH."
+    },
+    "apps/server/src/services/mcp-apps/mcp-app-resource-service.ts": {
+      "calls": 1,
+      "kind": "owned",
+      "reason": "A stdio MCP server: the SDK's six defaults (HOME, PATH, SHELL, TERM, USER, LOGNAME) plus the env its config names."
+    },
+    "apps/server/src/services/mesh/agent-mcp-probe.ts": {
+      "calls": 1,
+      "kind": "owned",
+      "reason": "A stdio MCP server probe: the SDK's six defaults plus the env its config names."
+    },
+    "apps/server/src/services/rooms/repo/room-git-args.ts": {
+      "calls": 1,
+      "kind": "forwarded",
+      "reason": "Its caller passes gitEnv(), which builds on childEnvironment('git')."
+    },
+    "apps/server/src/services/rooms/repo/room-repo-git.ts": {
+      "calls": 1,
+      "kind": "forwarded",
+      "reason": "env is gitEnv(), which builds on childEnvironment('git')."
+    },
+    "apps/server/src/services/runtimes/claude-code/sessions/tracked-spawn.ts": {
+      "calls": 1,
+      "kind": "forwarded",
+      "reason": "The Agent SDK's spawn hook: the env the launch resolver built with childEnvironment('claude-code')."
+    },
+    "apps/server/src/services/runtimes/claude-code/shell-guard/guard-host.ts": {
+      "calls": 1,
+      "kind": "owned",
+      "reason": "The shell guard: an empty env, or only ELECTRON_RUN_AS_NODE."
+    },
+    "apps/server/src/services/runtimes/codex/app-server/process-pool.ts": {
+      "calls": 1,
+      "kind": "forwarded",
+      "reason": "The app-server pool: the spec's env, built by childEnvironment('codex') in acquire-codex-process.ts."
+    },
+    "apps/server/src/services/runtimes/codex/app-server/protocol/snapshot.ts": {
+      "calls": 2,
+      "kind": "owned",
+      "reason": "The protocol-snapshot generator: a scratch HOME and CODEX_HOME and a fixed PATH, nothing inherited."
+    },
+    "apps/server/src/services/runtimes/codex/model-catalog.ts": {
+      "calls": 1,
+      "kind": "forwarded",
+      "reason": "The model probe: childEnvironment('codex', 'auth-probe') unless a test passes its own."
+    },
+    "apps/server/src/services/runtimes/connect/delegated-login.ts": {
+      "calls": 2,
+      "kind": "forwarded",
+      "reason": "The default spawner, used with the command's env from childEnvironment('runtime-login', runtime)."
+    },
+    "apps/server/src/services/runtimes/opencode/server-manager.ts": {
+      "calls": 1,
+      "kind": "forwarded",
+      "reason": "The sidecar: buildSidecarSpawnEnv, which builds on childEnvironment('opencode')."
+    },
+    "apps/server/src/services/terminal/terminal-manager.ts": {
+      "calls": 1,
+      "kind": "forwarded",
+      "reason": "node-pty's spawn, given buildTerminalEnv(): childEnvironment('project-work')."
+    },
+    "packages/browser/src/runtime/darwin-journal-worker.ts": {
+      "calls": 1,
+      "kind": "owned",
+      "reason": "A fixed PATH and the C locale."
+    },
+    "packages/browser/src/runtime/darwin-owned-child.ts": {
+      "calls": 1,
+      "kind": "owned",
+      "reason": "The browser's own child, with the env its command names."
+    },
+    "packages/browser/src/runtime/darwin-process-observer.ts": {
+      "calls": 1,
+      "kind": "owned",
+      "reason": "A fixed PATH and the C locale."
+    },
+    "packages/browser/src/runtime/darwin-supervisor-client.ts": {
+      "calls": 1,
+      "kind": "owned",
+      "reason": "A fixed PATH, its own profile HOME and the C locale."
+    },
+    "packages/browser/src/runtime/host-identity.ts": {
+      "calls": 1,
+      "kind": "owned",
+      "reason": "ps with a fixed PATH and the C locale."
+    },
+    "packages/browser/src/runtime/installation/jobs.ts": {
+      "calls": 1,
+      "kind": "owned",
+      "reason": "An installer job, with the env its caller names."
+    },
+    "packages/cli/src/commands/community-deploy/provider-process.ts": {
+      "calls": 1,
+      "kind": "owned",
+      "reason": "dorkos community deploy's provider CLIs: the env the command builds, with the person's own provider tokens. That command loads no project .env."
+    },
+    "packages/doe/src/builder.ts": {
+      "calls": 1,
+      "kind": "forwarded",
+      "reason": "Doe's builder shell: the policy env, childEnvironment('doe') in execute-turn.ts."
+    },
+    "packages/keep-awake/src/keep-awake.ts": {
+      "calls": 1,
+      "kind": "forwarded",
+      "reason": "The default spawner, given the env option: the server passes childEnvironment('os-helper')."
+    },
+    "packages/shared/src/safe-git.ts": {
+      "calls": 3,
+      "kind": "owned",
+      "reason": "minimalGitEnv(): twelve fixed names git needs to start, nothing of DorkOS's."
+    }
+  }
+}

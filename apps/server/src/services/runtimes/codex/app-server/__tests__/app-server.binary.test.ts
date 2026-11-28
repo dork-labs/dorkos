@@ -1832,7 +1832,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
         // must start at Full to prove its intentional Git metadata writes.
         withoutClaudeBackups: permissionMode === 'bypassPermissions',
       });
-      const env = vi.spyOn(runtimeEnv, 'runtimeEnvironment').mockImplementation(() => ({
+      const env = vi.spyOn(runtimeEnv, 'childEnvironment').mockImplementation(() => ({
         PATH: process.env.PATH ?? '',
         HOME: policy.roots.home,
         CODEX_HOME: codexHome,
@@ -1935,7 +1935,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
       const configFile = path.join(codexHome, 'config.toml');
       const previous = fs.readFileSync(configFile, 'utf8');
       fs.writeFileSync(configFile, `sandbox_mode = "danger-full-access"\n${previous}`);
-      const env = vi.spyOn(runtimeEnv, 'runtimeEnvironment').mockImplementation(() => ({
+      const env = vi.spyOn(runtimeEnv, 'childEnvironment').mockImplementation(() => ({
         PATH: process.env.PATH ?? '',
         HOME: policy.roots.home,
         CODEX_HOME: codexHome,

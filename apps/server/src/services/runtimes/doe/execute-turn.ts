@@ -26,7 +26,7 @@ import { runtimeFacts } from '../agent-facts.js';
 import { agentRunsOnCredits } from '../../core/cloud/credits-model-gate.js';
 import { chosenModeWithinOwnBounds } from '../../core/turn-power/full-autonomy.js';
 import { creditsRefusalEvent } from '../../core/cloud/credits-protocols.js';
-import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
+import { childEnvironment } from '../shared/runtime-environment-config.js';
 import { CREDITS_PROVIDER_ID } from '../shared/credits/environment.js';
 import { turnReferenceEnv } from '../shared/references/turn-reference-env.js';
 import type { ConnectorTurnLeaseSupervisorHandle } from '../connectors/connector-turn-lease-supervisor.js';
@@ -296,7 +296,7 @@ export async function executeDoeTurn(
               // Through the turn allow-list, which admits DORKOS_SESSION_ID and the
               // agent and space references; Dork's builder env exists only at
               // Bypass, so only then does it carry them.
-              environment: runtimeEnvironment('doe', 'turn', {
+              environment: childEnvironment('doe', 'turn', {
                 DORKOS_SESSION_ID: id,
                 ...turnReferenceEnv(
                   agentPath ? hostState.mesh?.getByPath(agentPath)?.id : undefined

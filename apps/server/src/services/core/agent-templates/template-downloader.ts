@@ -42,6 +42,7 @@ import { isSafeGitUrl } from '@dorkos/marketplace';
 import { logger } from '../../../lib/logger.js';
 import { hardenedGitEnv, internalGitArgs } from '../../../lib/git-safety.js';
 import { env } from '../../../env.js';
+import { childEnvironment } from '@dorkos/shared/child-environment';
 
 /** Progress callback invoked during git clone. */
 export type ProgressCallback = (percent: number, phase: string) => void;
@@ -260,7 +261,11 @@ export function resolveGitAuth(): string | undefined {
   }
 
   try {
-    const token = execSync('gh auth token', { encoding: 'utf-8', timeout: 5000 }).trim();
+    const token = execSync('gh auth token', {
+      encoding: 'utf-8',
+      timeout: 5000,
+      env: childEnvironment('git'),
+    }).trim();
     return token || undefined;
   } catch {
     return undefined;

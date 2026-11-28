@@ -23,6 +23,7 @@
  *
  * @module lib/git-safety
  */
+import { childEnvironment } from '@dorkos/shared/child-environment';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import {
@@ -51,8 +52,8 @@ const ALLOWED_GIT_PROTOCOLS = 'https:ssh:git';
 export function hardenedGitEnv(): NodeJS.ProcessEnv {
   return withGitConfigEnv(
     {
-      // eslint-disable-next-line no-restricted-syntax -- git must inherit PATH/HOME/proxy/credential vars; we only ADD the protocol allowlist on top.
-      ...process.env,
+      // git needs PATH, HOME, proxy and credential vars, never DorkOS's own names.
+      ...childEnvironment('git'),
       GIT_ALLOW_PROTOCOL: ALLOWED_GIT_PROTOCOLS,
       GIT_TERMINAL_PROMPT: '0',
       // No lazy fetch either (DOR-3667): a fresh clone is ours, but a read of a

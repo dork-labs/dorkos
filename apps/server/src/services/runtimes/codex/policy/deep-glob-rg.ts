@@ -13,7 +13,7 @@
 import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
+import { childEnvironment } from '../../shared/runtime-environment-config.js';
 import { codexVendoredRg } from './hidden-folder-scans.js';
 import { trackedUnchangedNpmrc } from './tracked-npmrc.js';
 
@@ -165,7 +165,7 @@ export const ripgrepScanner: DeepGlobScanner = {
         encoding: 'utf8',
         timeout: WORKING_SCAN_TIMEOUT_MS,
         maxBuffer: SCAN_MAX_BUFFER,
-        env: runtimeEnvironment('codex', 'process-inspection'),
+        env: childEnvironment('codex', 'process-inspection'),
       });
       return outputFiles(base, out);
     } catch (error) {
@@ -186,7 +186,7 @@ export const ripgrepScanner: DeepGlobScanner = {
           encoding: 'utf8',
           timeout: BACKGROUND_SCAN_TIMEOUT_MS,
           maxBuffer: SCAN_MAX_BUFFER,
-          env: runtimeEnvironment('codex', 'process-inspection'),
+          env: childEnvironment('codex', 'process-inspection'),
         },
         (error, stdout, stderr) => {
           const out = rgOutcome(base, error === null ? null : { ...error, stderr }, stdout);

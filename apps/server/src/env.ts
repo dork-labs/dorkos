@@ -1,5 +1,6 @@
 import { links } from '@dorkos/shared/links';
 import { z } from 'zod';
+import { projectSetting } from './lib/process/project-env-store.js';
 
 /** Reusable Zod type for 'true'/'false' env flags → boolean. */
 const boolFlag = z
@@ -547,7 +548,13 @@ const result = serverEnvSchema
       ? { ...parsed, DORKOS_HOST: AGENT_COMPUTER_HOST }
       : parsed
   )
-  .safeParse({ ...process.env, DORKOS_HUB_INSTANCE_KEY: keptKeys[HUB_KEY_SLOT] });
+  .safeParse({
+    ...process.env,
+    DORKOS_HUB_INSTANCE_KEY: keptKeys[HUB_KEY_SLOT],
+    // The project .env may turn telemetry off. It arrives in memory, never
+    // through process.env, so no child process inherits it.
+    DO_NOT_TRACK: process.env.DO_NOT_TRACK ?? projectSetting('DO_NOT_TRACK'),
+  });
 
 if (!result.success) {
   console.error('\n  Missing or invalid environment variables:\n');

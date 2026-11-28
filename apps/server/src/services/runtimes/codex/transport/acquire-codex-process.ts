@@ -1,5 +1,5 @@
 /** Resolve the launch environment and acquire the matching Codex process. */
-import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
+import { childEnvironment } from '../../shared/runtime-environment-config.js';
 import { CreditsUnavailableError } from '../../../core/cloud/credits-protocols.js';
 import { creditsCodexHome, resolveCodexHome } from '../codex-home.js';
 import { codexCreditsAppServerEnv, ensureCreditsCodexHome } from '../credits-launch.js';
@@ -24,10 +24,9 @@ export async function acquireCodexProcess(
     if (!options.creditsRelay?.()) throw new CreditsUnavailableError('unreachable', 'Codex');
     ensureCreditsCodexHome();
     const env =
-      options.environment?.credits() ??
-      codexCreditsAppServerEnv(runtimeEnvironment('codex', 'turn'));
+      options.environment?.credits() ?? codexCreditsAppServerEnv(childEnvironment('codex', 'turn'));
     return pool.acquire({ binary, codexHome: creditsCodexHome(), env, onCredits: true });
   }
-  const env = options.environment?.person() ?? runtimeEnvironment('codex', 'turn');
+  const env = options.environment?.person() ?? childEnvironment('codex', 'turn');
   return pool.acquire({ binary, codexHome: resolveCodexHome(env), env });
 }

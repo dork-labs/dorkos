@@ -13,6 +13,7 @@ export function hostIdentity(pid: number): ProcessIdentity | null {
     const text = execFileSync('ps', ['-p', String(pid), '-o', 'lstart=', '-o', 'stat='], {
       encoding: 'utf8',
       timeout: 1000,
+      env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' },
     }).trim();
     const match = /^(.*?)\s+(\S+)$/.exec(text);
     if (!match) throw new Error();

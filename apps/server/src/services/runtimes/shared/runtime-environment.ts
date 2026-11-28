@@ -34,6 +34,8 @@ export interface RuntimeEnvironmentInput {
   inherit?: readonly string[];
   overrides?: Readonly<Record<string, string | undefined>>;
   platform?: NodeJS.Platform;
+  /** Telemetry is off for a reason the parent can't show (the project `.env`'s `DO_NOT_TRACK`). */
+  telemetryOff?: boolean;
 }
 
 function enabled(value: string | undefined): boolean {
@@ -176,7 +178,7 @@ export function projectRuntimeEnvironment(input: RuntimeEnvironmentInput): Recor
     else result[name] = value;
   }
   // Set last, so no inherited value or override can turn telemetry back on.
-  if (parentDisablesTelemetry(input))
+  if (input.telemetryOff || parentDisablesTelemetry(input))
     for (const [name, value] of Object.entries(RUNTIME_TELEMETRY_OFF_ENV)) {
       if (windows)
         for (const key of Object.keys(result)) if (key.toUpperCase() === name) delete result[key];

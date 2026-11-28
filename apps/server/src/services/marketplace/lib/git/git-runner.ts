@@ -21,6 +21,7 @@ import path from 'node:path';
 import { withGitConfigEnv, type GitConfigEntry } from '@dorkos/shared/git-hardening';
 import { hardenedGitEnv, internalGitArgs } from '../../../../lib/git-safety.js';
 import { killProcessTree } from '../../../../lib/process/kill-tree.js';
+import { childEnvironment } from '@dorkos/shared/child-environment';
 
 /** One `git -c`-style setting, passed through the environment instead of argv. */
 export type { GitConfigEntry };
@@ -181,7 +182,7 @@ export function stopAllGit(kill: (pid: number) => void = stopTreeNow): void {
 /** {@link killProcessTree}, synchronous on Windows too. */
 function stopTreeNow(pid: number): void {
   killProcessTree(pid, process.platform, (file, args) => {
-    spawnSync(file, args, { windowsHide: true });
+    spawnSync(file, args, { windowsHide: true, env: childEnvironment('os-helper') });
   });
 }
 

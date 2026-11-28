@@ -165,6 +165,14 @@
       "types": "./src/work-graph-reads.ts",
       "default": "./dist/work-graph-reads.js"
     },
+    "./child-environment": {
+      "types": "./src/child-environment.ts",
+      "default": "./dist/child-environment.js"
+    },
+    "./project-environment": {
+      "types": "./src/project-environment.ts",
+      "default": "./dist/project-environment.js"
+    },
     "./telemetry-consent": {
       "types": "./src/telemetry-consent.ts",
       "default": "./dist/telemetry-consent.js"

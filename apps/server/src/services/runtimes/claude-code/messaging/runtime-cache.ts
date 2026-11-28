@@ -9,7 +9,7 @@
  * @module services/runtimes/claude-code/runtime-cache
  */
 import { claudeConfigDirEnv, resolveActiveClaudeRoot } from '../claude-config-dir.js';
-import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
+import { childEnvironment } from '../../shared/runtime-environment-config.js';
 import path from 'path';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { query, type Query, type ModelInfo } from '@anthropic-ai/claude-agent-sdk';
@@ -329,7 +329,7 @@ export class RuntimeCache {
             // the CLI in the default folder with no such check (DOR-4409). The
             // model list needs nothing from the project.
             settingSources: ['user'],
-            env: runtimeEnvironment(
+            env: childEnvironment(
               'claude-code',
               'warmup',
               claudeConfigDirEnv(resolveActiveClaudeRoot())

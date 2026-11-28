@@ -33,6 +33,7 @@
  */
 import { outsideAuditScope } from '../../audit/audit-context.js';
 import { createKeepAwake, type Hold, type KeepAwake } from '@dorkos/keep-awake';
+import { childEnvironment } from '@dorkos/shared/child-environment';
 import type { KeepAwakeStatus } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
 import { isPersonalComputer } from '../server-role/role-checks.js';
@@ -197,6 +198,7 @@ export class KeepAwakeService {
     this.keepAwake = factory({
       watchPid: process.pid,
       enabled: this.enabled,
+      env: childEnvironment('os-helper'),
       logger: { info: (msg) => logger.debug(msg), warn: (msg) => logger.warn(msg) },
     });
     for (const record of this.records) record.hold = this.keepAwake.hold(holdReason(record));

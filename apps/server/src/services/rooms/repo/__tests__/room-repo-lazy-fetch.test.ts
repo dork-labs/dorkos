@@ -15,7 +15,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { isSafeRoomRepoConfigKey } from '@dorkos/shared/safe-git';
-import { gitEnv, initRepo, ROOM_GIT_CONFIG_ARGS, runGit } from '../room-repo-git.js';
+import { gitEnv, initRepo, runGit } from '../room-repo-git.js';
+import { ROOM_GIT_CONFIG_ARGS } from '../room-git-args.js';
 import { removeFixtureTree } from './fixture-git.js';
 
 let home: string;

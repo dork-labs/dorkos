@@ -25,6 +25,7 @@ import {
   SESSION_GIT_CONFIG,
   type GitConfigEntry,
 } from '@dorkos/shared/git-hardening';
+import { childEnvironment } from '@dorkos/shared/child-environment';
 
 const execFileAsync = promisify(execFile);
 
@@ -151,13 +152,14 @@ export async function runGit(
           ...minimalGitEnv(),
           ...(unsafe.length > 0 ? { GIT_ATTR_SOURCE: EMPTY_TREE } : {}),
         }
-      : {
-          // eslint-disable-next-line no-restricted-syntax -- a clone from an address needs PATH/HOME/credential vars; only the transport allowlist and prompt are added.
-          ...process.env,
-          ...env,
-          GIT_ALLOW_PROTOCOL: WORKSPACE_GIT_PROTOCOLS,
-          GIT_TERMINAL_PROMPT: '0',
-        },
+      : // A clone from an address needs PATH, HOME and the credential helper.
+        childEnvironment('git', {
+          set: {
+            ...env,
+            GIT_ALLOW_PROTOCOL: WORKSPACE_GIT_PROTOCOLS,
+            GIT_TERMINAL_PROMPT: '0',
+          },
+        }),
   });
   return stdout;
 }

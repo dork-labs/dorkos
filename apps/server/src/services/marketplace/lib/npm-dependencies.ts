@@ -67,6 +67,7 @@ import path from 'node:path';
 import { PACKAGE_TEXT_MAX_BYTES, readPackageFileWithin } from '@dorkos/shared/bounded-read';
 import type { Logger } from '@dorkos/shared/logger';
 import { EFFECT_BEARING_PATHS } from '@dorkos/marketplace';
+import { childEnvironment } from '@dorkos/shared/child-environment';
 
 /** How long one dependency install may run before it is killed. */
 export const NPM_INSTALL_TIMEOUT_MS = 120_000;
@@ -494,6 +495,8 @@ export async function spawnNpmInstall(command: NpmInstallCommand): Promise<NpmIn
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: NPM_INSTALL_TIMEOUT_MS,
       killSignal: 'SIGKILL',
+      // Only home, path, npm's own folders, proxy and CA: no token, no DorkOS name.
+      env: childEnvironment('npm-install'),
     });
 
     child.stdout?.on('data', (chunk: Buffer) => {

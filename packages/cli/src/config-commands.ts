@@ -1,3 +1,4 @@
+import { childEnvironment } from '@dorkos/shared/child-environment';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { execFileSync } from 'child_process';
@@ -310,7 +311,7 @@ export function handleConfigReset(store: ConfigStore, key?: string): void {
 export function handleConfigEdit(store: ConfigStore): void {
   const editor = process.env.EDITOR || (process.platform === 'win32' ? 'notepad' : 'nano');
   try {
-    execFileSync(editor, [store.path], { stdio: 'inherit' });
+    execFileSync(editor, [store.path], { stdio: 'inherit', env: childEnvironment('project-work') });
   } catch {
     console.error(`Failed to open editor: ${editor}`);
     console.error(`Set $EDITOR or ensure ${editor} is installed.`);
