@@ -1,12 +1,15 @@
 /**
  * How an ask that nobody answered leaves the stream: the resolution a runtime's
- * `interaction_cancelled` projects to, and the withdrawal of every ask a failed
- * turn left behind (DOR-3210). Split out of `session-event-normalizer.ts`,
+ * `interaction_cancelled` projects to, the withdrawal of every ask a failed
+ * turn left behind (DOR-3210), and of every ask a Stop found nothing behind
+ * (DOR-3202). Split out of `session-event-normalizer.ts`,
  * which is past the line ceiling.
  *
  * @module services/session/turn-stream/withdrawn-asks
  */
 import type { SessionEvent } from '@dorkos/shared/session-stream';
+import type { InterruptReceipt } from '@dorkos/shared/types';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { SessionStateProjector } from '../session-state-projector.js';
 import { liveChildren } from './stranded-children.js';
 
@@ -62,4 +65,30 @@ export function retireStrandedAsks(
     };
     projector.ingest(withdrawn);
   }
+}
+
+/**
+ * Withdraw the asks a Stop found nothing behind (DOR-3202).
+ *
+ * A runtime that answers a Stop with `not-running` holds no turn, so nothing
+ * will ever answer a card the projector still lists. Left alone it kept the
+ * session `blocked`, and the chat showed a Stop that did nothing every time it
+ * was pressed. Each is withdrawn the way a runtime's own abort withdraws one,
+ * and the lifecycle settles with the last. A helper the runtime still sees
+ * running keeps its asks, as {@link retireStrandedAsks} rules.
+ *
+ * @param projector - The session's projector, when it has one.
+ * @param receipt - What the runtime answered the Stop with.
+ * @param runtime - The session's runtime, for the helpers it still runs.
+ * @param sessionId - The stopped session.
+ */
+export function withdrawAsksAfterIdleStop(
+  projector: SessionStateProjector | undefined,
+  receipt: InterruptReceipt,
+  runtime: Pick<AgentRuntime, 'liveHelperIds'>,
+  sessionId: string
+): void {
+  if (projector === undefined || receipt.outcome !== 'not-running') return;
+  const helpers = runtime.liveHelperIds?.bind(runtime);
+  retireStrandedAsks(projector, helpers === undefined ? undefined : () => helpers(sessionId));
 }

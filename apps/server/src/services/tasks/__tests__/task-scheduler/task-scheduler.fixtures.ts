@@ -9,11 +9,7 @@ import { mkdir, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { initBoundary } from '../../../../lib/boundary.js';
 import { TaskSchedulerService } from '../../task-scheduler-service.js';
-import type {
-  SchedulerAgentManager,
-  SchedulerRuntimes,
-  RelayRuntimePredicate,
-} from '../../task-scheduler-service.js';
+import type { SchedulerRuntimes, RelayRuntimePredicate } from '../../task-scheduler-service.js';
 import { RELAY_DISPATCH_OK } from '../../../relay/task-dispatch/readiness.js';
 import type { RelayCore } from '@dorkos/relay';
 import { TaskStore } from '../../task-store.js';
@@ -25,9 +21,10 @@ import type { StreamEvent, TaskRun } from '@dorkos/shared/types';
 import type { MeshCore } from '@dorkos/mesh';
 import { writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import { turnsOn, type RuntimeDouble } from '../support/runtime-task-turns.js';
 
 /** A bare mock agent manager whose turns end at once with no events. */
-function createMockAgentManager(): SchedulerAgentManager {
+function createMockAgentManager(): RuntimeDouble {
   return {
     ensureSession: vi.fn(),
     sendMessage: vi.fn().mockImplementation(async function* () {
@@ -40,7 +37,7 @@ function createMockAgentManager(): SchedulerAgentManager {
     // Nobody else is writing to these sessions, so the write-lock is always free.
     acquireLock: vi.fn(() => true),
     releaseLock: vi.fn(),
-  } as unknown as SchedulerAgentManager;
+  } as unknown as RuntimeDouble;
 }
 
 /**
@@ -287,7 +284,7 @@ export const FOLLOWER_LOCK = {
 export async function freshHarness(boundary = '/'): Promise<{
   db: Db;
   store: TaskStore;
-  mockAgent: SchedulerAgentManager;
+  mockAgent: RuntimeDouble;
 }> {
   const db = createTestDb();
   runtimeRegistry.setDb(db);
@@ -316,7 +313,7 @@ export function relayStub(messageId = 'msg-1'): MockRelay {
  * @param store - The store the scheduler reads and writes.
  */
 export function runtimeHarness(store: TaskStore) {
-  const managers: Record<string, SchedulerAgentManager> = {};
+  const managers: Record<string, RuntimeDouble> = {};
 
   /**
    * A registry stand-in with one manager per registered runtime. Each manager is
@@ -353,6 +350,7 @@ export function runtimeHarness(store: TaskStore) {
     return new TaskSchedulerService({
       store,
       runtimes: runtimesWith(registered),
+      turns: turnsOn(runtimesWith(registered)),
       config: { ...DEFAULT_CONFIG },
       relay,
       ...(relayHoldsRuntime ? { relayHoldsRuntime } : {}),

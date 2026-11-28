@@ -44,8 +44,11 @@ class FakeConnection implements DurableStreamConnection {
     readonly url: string,
     readonly opts: StreamConnectionOptions
   ) {}
+  /** Deliver a frame; the global stream's goes through its decoder as a whole `DorkOsEvent`. */
   push(eventName: string, data: unknown): void {
-    this.opts.eventHandlers[eventName]?.(data);
+    const envelope = { seq: 1, at: '2026-11-27T00:00:00.000Z', type: eventName, payload: data };
+    const frame = this.opts.decodeFrame?.(JSON.stringify(envelope)) ?? { event: eventName, data };
+    this.opts.eventHandlers[frame.event]?.(frame.data);
   }
   emitState(state: Parameters<NonNullable<StreamConnectionOptions['onStateChange']>>[0]): void {
     this.opts.onStateChange?.(state, 0);

@@ -41,6 +41,8 @@ import type { TaskStore } from '../services/tasks/task-store.js';
 import { ensureDefaultTemplates } from '../services/tasks/task-templates.js';
 import { registerAgentModeEscalators } from '../services/tasks/agent-mode/agent-mode-escalation.js';
 import { readOperatorTimeZone } from '../services/core/config/operator-time-zone.js';
+import { portTaskTurns } from '../services/tasks/execution/task-turns.js';
+import { setScheduleCap, turnPort } from '../services/runs/index.js';
 
 /** What starting Tasks needs from the startup that came before it. */
 export interface TasksStartupDeps {
@@ -191,6 +193,10 @@ export async function startTasks(deps: TasksStartupDeps): Promise<StartedTasks> 
       keepAwake: keepAwakeService,
       // A paused agent's runs are skipped, never started (spec `audit-trail` PR5).
       agentPauses,
+      // A run's turn starts through the turn port, and a timer's fire at the cap
+      // waits there for a slot (spec `turns-survive-restarts`, T12).
+      turns: portTaskTurns(turnPort),
+      scheduleCap: setScheduleCap,
     });
     // The ONE registration seam, shared by every writer that can change what a
     // task's schedule is: these routes, the file watcher, and the reconciler.

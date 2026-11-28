@@ -27,6 +27,7 @@ import {
   tellSenderTurnLost,
   wakeChat,
   wakeChatForLostWork,
+  watchRunEvents,
   type ComputerTurnPort,
 } from '../session/turn-port/index.js';
 import { logger } from '../../lib/logger.js';
@@ -44,12 +45,9 @@ import { admit } from './admission.js';
 import { SpaceTurnPort } from './turn-port.js';
 import { chatRunsOf, RunAnnouncer } from './run-view.js';
 import { RunRecovery, type BootFacts, type RunRecoveryDeps } from './recovery/run-recovery.js';
-import {
-  continueAfterRestartHandler,
-  RESTART_SOURCE,
-  restartWordSource,
-} from './recovery/continue-after-restart.js';
-import { lostWorkWakeHandler } from './recovery/lost-work.js';
+import { RESTART_SOURCE, restartWordSource } from './recovery/continue-after-restart.js';
+import { restartHandlers } from './recovery/restart-handlers.js';
+import { ScheduleCap, type ScheduleCapSource } from './schedule-cap.js';
 
 export {
   IllegalRunTransitionError,
@@ -61,6 +59,7 @@ export {
   type TurnRun,
 } from './run-store.js';
 export { createRunFactsSink } from './run-facts-sink.js';
+export type { ScheduleCapSource } from './schedule-cap.js';
 export type { StopRequestRef } from './run-stops.js';
 export {
   RUN_ENDS,
@@ -86,6 +85,8 @@ export interface RunRecord {
   view: (chatId: string) => ChatRun[];
   /** What follows the runs a restart ended (§7.3), and the launch gate's answer (§7.5). */
   recovery: RunRecovery;
+  /** The scheduler's cap on task turns at once, as admission reads it (§3.5). */
+  scheduleCap: ScheduleCap;
 }
 
 let installed:
@@ -147,6 +148,8 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
   } = opts;
   const now = opts.now ?? Date.now;
   const effects = new EffectStore(db, { now });
+  // A freed slot lets the runs waiting for one look again now, not at their next backoff.
+  const scheduleCap = new ScheduleCap(() => effects.wakeAllStarts());
   // Every created or moved run puts its chat's runs on the chat's stream (§4.6).
   const view = (chatId: string): ChatRun[] => chatRunsOf(store, effects, chatId);
   const announcer = new RunAnnouncer(view);
@@ -159,15 +162,19 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
     // Its `start_turn` settles, goes back to `pending`, or wakes the waiting.
     // Read at call time: nothing moves a run before the record is built.
     onMoved: (run, from) => {
+      scheduleCap.onRunMoved(run, from);
       starts.onRunMoved(run, from);
       announcer.changed(run.sessionId);
     },
     onChanged: (chatKey) => announcer.changed(chatKey),
   });
   // A pause the record is not told of still refuses at the door (`AGENT_PAUSED`).
-  const admissionSources = admission?.admission ?? {
-    pausedAgent: () => undefined,
-    machineFull: isAgentLaunchCapFull,
+  const admissionSources = {
+    ...(admission?.admission ?? {
+      pausedAgent: () => undefined,
+      machineFull: isAgentLaunchCapFull,
+    }),
+    scheduleFull: () => scheduleCap.full(),
   };
   const admitRun = admission?.admit ?? admit;
   const port: SpaceTurnPort = new SpaceTurnPort({
@@ -176,6 +183,7 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
     ...(agentHome ? { agentHome } : {}),
     computer: computer ?? getComputerTurnPort,
     queueRowExists,
+    events: watchRunEvents,
     starts: (): StartTurns => starts,
     pausedAgent: (agentId, cwd, sessionId) => admissionSources.pausedAgent(agentId, cwd, sessionId),
     preview: (run, start) => {
@@ -212,14 +220,11 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
     afterRetire: () => recovery.decidePending(),
     handlers: {
       ...effectHandlers(handlerDeps),
-      continue_after_restart: continueAfterRestartHandler({
+      ...restartHandlers({
         runs: store,
         effects,
         ...(recoveryDeps?.ceilingOf ? { ceilingOf: recoveryDeps.ceilingOf } : {}),
         ...(recoveryDeps?.cwdOf ? { cwdOf: recoveryDeps.cwdOf } : {}),
-      }),
-      lost_work_wake: lostWorkWakeHandler({
-        runs: store,
         wake: wakeChatForLostWork,
         release: (key) => recovery.releaseLostWork(key),
       }),
@@ -231,6 +236,7 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
         queueRowExists,
         admission: admissionSources,
         admit: admitRun,
+        scheduleCap,
       }),
     },
     epoch: opts.epoch,
@@ -245,6 +251,7 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
     starts,
     view,
     recovery,
+    scheduleCap,
   };
 }
 
@@ -308,6 +315,17 @@ export function turnPort(): SpaceTurnPort | undefined {
   return installed?.port;
 }
 
+/**
+ * Tell admission the scheduler's cap (`scheduler.maxConcurrentRuns`) and the
+ * scheduler's live runs outside the port, or clear it (§3.5, T12). Nothing
+ * happens before startup wired the run record.
+ *
+ * @param source - The scheduler's limit and its other live runs.
+ */
+export function setScheduleCap(source: ScheduleCapSource | undefined): void {
+  installed?.scheduleCap.setSource(source);
+}
+
 /** The installed run record and its outbox, or `undefined` before startup wired them. */
 export function getRunRecord(): RunRecord | undefined {
   return installed;
@@ -337,11 +355,31 @@ export function chatRuns(sessionId: string): ChatRun[] {
 }
 
 /**
+ * Whether a chat's live run is a scheduled task's (T12): its turn is told by
+ * the task run's own `run.completed`, so the chat's lifecycle tells nothing of
+ * it. False before startup wired the record. Never throws.
+ *
+ * @param sessionId - The chat, by any id it answers to.
+ */
+export function scheduledRunHolds(sessionId: string): boolean {
+  if (!installed) return false;
+  try {
+    return installed.store.liveRunOf(sessionId)?.origin?.kind === 'schedule';
+  } catch (err) {
+    logger.warn('[runs] could not read a chat’s live run', {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
+/**
  * The projector's emitter found a turn finished and worth telling (§6.2):
  * when the turn is a run's, the run's `notify_person` effect tells it, and
  * this answers `true` so the emitter writes nothing. A turn with no run (a
- * task's or a relay's, until T12 and T13), or a boot whose worker never
- * started, answers `false`, and the emitter tells it as before. Never throws.
+ * relay's, until T13), or a boot whose worker never started, answers
+ * `false`, and the emitter tells it as before. Never throws.
  *
  * @param sessionId - The chat, by any id it answers to.
  * @param turnRef - The turn, by its `turn_start` seq, as the status change carries it.

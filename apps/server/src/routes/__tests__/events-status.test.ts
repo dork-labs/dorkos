@@ -152,11 +152,16 @@ function openEventStream(): {
   };
 }
 
-/** Parse the `data:` payload of the first SSE frame carrying `eventName`. */
+/** The payload of a frame's `data:` line, which is a whole `DorkOsEvent`. */
+function payloadOf(dataLine: string): unknown {
+  return (JSON.parse(dataLine.replace('data: ', '')) as { payload: unknown }).payload;
+}
+
+/** Parse the payload of the first SSE frame carrying `eventName`. */
 function parseEventData(body: string, eventName: string): unknown {
   const frame = body.split('\n\n').find((f) => f.includes(`event: ${eventName}`));
   const dataLine = frame?.split('\n').find((l) => l.startsWith('data: '));
-  return dataLine ? JSON.parse(dataLine.replace('data: ', '')) : undefined;
+  return dataLine ? payloadOf(dataLine) : undefined;
 }
 
 /**
@@ -173,7 +178,7 @@ function parseLastEventData(body: string, eventName: string): unknown {
     .at(-1)
     ?.split('\n')
     .find((l) => l.startsWith('data: '));
-  return dataLine ? JSON.parse(dataLine.replace('data: ', '')) : undefined;
+  return dataLine ? payloadOf(dataLine) : undefined;
 }
 
 describe('GET /api/events — global session-list broadcaster', () => {
@@ -440,7 +445,7 @@ describe('GET /api/events — connect snapshot', () => {
       .filter((frame) => frame.includes(`event: ${eventName}`))
       .flatMap((frame) => {
         const line = frame.split('\n').find((l) => l.startsWith('data: '));
-        return line ? [JSON.parse(line.replace('data: ', ''))] : [];
+        return line ? [payloadOf(line)] : [];
       });
   }
 

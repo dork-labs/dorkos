@@ -17,7 +17,10 @@
  * The frame shape deliberately mirrors what SSE carried, field for field, so
  * the durable contract above it is untouched: `event` is the SSE `event:` name,
  * `data` the parsed `data:` payload, and `id` the `id:` line the client echoes
- * back to resume. What changes is only how the bytes arrive.
+ * back to resume. What changes is only how the bytes arrive. The global stream,
+ * `GET /api/events`, is the exception: each of its messages is a whole
+ * `DorkOsEvent` with the cursor beside it as `id` (`./dorkos-event-frame.ts`),
+ * so this module's {@link StreamFrame} describes the chat and room streams.
  *
  * @module stream-socket
  */

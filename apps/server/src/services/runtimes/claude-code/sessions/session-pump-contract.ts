@@ -102,6 +102,12 @@ export type QuietnessBlocker =
   | 'background-work'
   /** A settled notification has not been delivered yet, bounded by the owed-delivery clock. */
   | 'delivery-owed'
+  /**
+   * A segment has opened (its `system/init` arrived) and not yet spoken: a
+   * helper's report, a timer's wake or the agent's next step is on its way
+   * (DOR-5490). Bounded by the segment-start clock (`messaging/segment-start-hold.ts`).
+   */
+  | 'segment-starting'
   /** A session timer the agent set (CronCreate, ScheduleWakeup, /loop) has not fired yet (DOR-2717). */
   | 'timer-pending'
   /** Somebody was asked a question and has not answered it. */

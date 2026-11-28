@@ -369,17 +369,15 @@ export class PersistentDispatch {
    * A settled background helper's report arrives as a segment of its own, and a
    * queued message launched into the gap before it would share a turn with it.
    * Bounded by the pump's owed-delivery clock, so a delivery that never arrives
-   * releases the queue after thirty seconds rather than holding it forever.
+   * releases the queue after thirty seconds rather than holding it forever. A
+   * segment that has opened but not spoken yet is on its way too, bounded by
+   * the segment-start clock (DOR-5490).
    *
    * @param sessionId - The session whose queue head is waiting, in any id it
    *   answers to
    */
   isSegmentPending(sessionId: string): boolean {
-    const key = this.sessionKeyOf(sessionId);
-    const pump = this.registry.peek(key);
-    if (pump === undefined) return false;
-    const quietness = pump.quietness();
-    return !quietness.quiet && quietness.because === 'delivery-owed';
+    return this.registry.peek(this.sessionKeyOf(sessionId))?.isSegmentOnItsWay() === true;
   }
 
   /**

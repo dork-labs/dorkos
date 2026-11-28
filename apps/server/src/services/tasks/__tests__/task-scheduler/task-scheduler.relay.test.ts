@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import { TaskSchedulerService, singleRuntimeSource } from '../../task-scheduler-service.js';
-import type { SchedulerAgentManager, SchedulerRuntimes } from '../../task-scheduler-service.js';
+import type { SchedulerRuntimes } from '../../task-scheduler-service.js';
 import { RUN_START_WAIT_MS } from '../../timing/wake-settle.js';
 import type { RelayCore } from '@dorkos/relay';
 import type { TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
@@ -23,6 +23,7 @@ import {
 } from './task-scheduler.fixtures.js';
 import type { MockRelay, Dispatchable } from './task-scheduler.fixtures.js';
 import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+import { turnsOn, type RuntimeDouble } from '../support/runtime-task-turns.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
 // refuses every path and turn code knows no Claude transcript.
@@ -35,7 +36,7 @@ const TICK = new Date(1_700_000_000_000);
 // `trigger === 'scheduled'`), so these drive the scheduled-firing chokepoint.
 describe('TaskSchedulerService — the relay path', () => {
   let store: TaskStore;
-  let mockAgent: SchedulerAgentManager;
+  let mockAgent: RuntimeDouble;
   let mockRelay: MockRelay;
 
   beforeEach(async () => {
@@ -57,9 +58,11 @@ describe('TaskSchedulerService — the relay path', () => {
       meshAgents?: Record<string, string>;
     } = {}
   ): TaskSchedulerService {
+    const runtimes = extra.runtimes ?? singleRuntimeSource(mockAgent);
     return new TaskSchedulerService({
       store,
-      runtimes: extra.runtimes ?? singleRuntimeSource(mockAgent),
+      runtimes,
+      turns: turnsOn(runtimes),
       config: { ...DEFAULT_CONFIG, maxConcurrentRuns: extra.maxConcurrentRuns ?? 1 },
       relay: mockRelay as unknown as RelayCore,
       ...(extra.meshAgents ? { meshCore: createMockMeshCore(extra.meshAgents) } : {}),
@@ -350,9 +353,11 @@ describe('TaskSchedulerService — the relay path', () => {
   });
 
   describe('the concurrency cap counts relay runs too (DOR-1482)', () => {
-    it('refuses a tick while a relay run holds the only slot, and frees it when the run ends', async () => {
+    it('keeps a tick off the bus while a relay run holds the only slot, and frees it when the run ends', async () => {
       // With the relay enabled `maxConcurrentRuns` never tripped, so a slow
-      // hourly task could pile up unbounded agent turns.
+      // hourly task could pile up unbounded agent turns. A tick at the cap is no
+      // longer skipped: it goes in process, where admission holds it for a slot
+      // (spec `turns-survive-restarts` §3.5, proven in `tasks-through-turn-port`).
       const first = store.createTask(taskInput({ name: 'First', cron: '0 * * * *' }));
       const second = store.createTask(taskInput({ name: 'Second', cron: '0 * * * *' }));
       const service = relayScheduler();
@@ -361,12 +366,13 @@ describe('TaskSchedulerService — the relay path', () => {
       expect(service.getActiveRunCount()).toBe(1);
       await fire(service, second, new Date(1_700_000_040_000));
       expect(mockRelay.publish).toHaveBeenCalledOnce();
-      expect(store.listRuns({ taskId: second.id })[0]!.status).toBe('skipped');
+      expect(store.listRuns({ taskId: second.id })[0]!.status).not.toBe('skipped');
+      expect(mockAgent.sendMessage).toHaveBeenCalledOnce();
 
       // The receiver finishes it; the row is the only thing that says so.
       const held = store.listRuns({ taskId: first.id })[0]!;
       store.updateRun(held.id, { status: 'completed', finishedAt: new Date().toISOString() });
-      expect(service.getActiveRunCount()).toBe(0);
+      await waitFor(() => expect(service.getActiveRunCount()).toBe(0));
       // The next occurrence (one inside the same hour is the same tick, DOR-2718).
       await fire(service, second, new Date(1_700_000_040_000 + 3_600_000));
       expect(mockRelay.publish).toHaveBeenCalledTimes(2);

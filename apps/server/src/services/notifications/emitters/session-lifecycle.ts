@@ -45,7 +45,7 @@ import { onProjectorStatusChange } from '../../session/session-state-projector.j
 import { resolveAgentIdForPath } from '../../mesh/agent-path-lookup.js';
 import { notify, resolveStanding } from '../notification-service.js';
 import { sessionLabelFor } from '../notification-copy.js';
-import { claimTurnFinished } from '../../runs/index.js';
+import { claimTurnFinished, scheduledRunHolds } from '../../runs/index.js';
 import { armEscalation, cancelEscalationByKey } from '../escalation-service.js';
 import { notificationEntry, type NotificationPayload } from '../notification-registry.js';
 import { withSessionLimitStore } from '../../session/fleet/session-limit-store.js';
@@ -278,6 +278,9 @@ export function watchSessionLifecycle(): () => void {
       // A beat finishing is not news either: only what the agent raises through
       // `end_beat` reaches a person (spec `heartbeats` §7.4).
       if (isBeatTurn(sessionId)) return;
+      // A task's run is told by its own `run.completed`; its turn reaches the
+      // chat's lifecycle only since it goes through the turn port (T12).
+      if (scheduledRunHolds(sessionId)) return;
       const agentId = resolveAgentIdForPath(cwd);
       // A turn the run record holds, named by the turn this transition
       // belongs to, is told by its run's `notify_person` effect, with the same
@@ -321,6 +324,8 @@ export function watchSessionLifecycle(): () => void {
       // person's notifications (spec `heartbeats` §7.4). `account.limited`
       // above still fires for a beat: an account at its limit is news.
       if (isBeatTurn(sessionId)) return;
+      // Nor a task's run: its failure is on its run row and in its `run.completed`.
+      if (scheduledRunHolds(sessionId)) return;
       // A turn of its own failed outside a beat: its beat looks, once a day
       // per chat (spec `heartbeats` §3.3).
       const failedAgentId = resolveAgentIdForPath(cwd);

@@ -1377,7 +1377,7 @@ export class SessionStateProjector {
    */
   resolveInteraction(
     interactionId: string,
-    resolution?: 'approved' | 'denied' | 'answered',
+    resolution?: 'approved' | 'denied' | 'answered' | 'cancelled',
     opts?: { reasonGiven?: boolean; answeredBy?: string }
   ): void {
     if (!this.interactions.has(interactionId)) return;
@@ -1519,9 +1519,13 @@ export class SessionStateProjector {
     for (const settle of [...this.turnSettledWaiters]) settle();
   }
 
-  /** Lifecycle to settle into when a turn ends: blocked if interactions remain. */
+  /**
+   * Lifecycle to settle into when a turn ends: blocked if an ask is still
+   * pending. Bounded by expiry like every other reader, so a stranded entry
+   * cannot latch every later turn at `blocked` (DOR-3202).
+   */
   private deriveIdleLifecycle(): SessionLifecycle {
-    return this.interactions.size > 0 ? 'blocked' : 'idle';
+    return this.hasPendingInteractions() ? 'blocked' : 'idle';
   }
 
   /**

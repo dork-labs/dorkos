@@ -24,7 +24,7 @@ function stream(principal: CallerPrincipal): unknown[] {
   const client: FanOutClient = {
     send: (frame) => {
       if (frame.event === 'read_cursor')
-        cursors.push((JSON.parse(frame.json) as { data: unknown }).data);
+        cursors.push((JSON.parse(frame.json) as { payload: unknown }).payload);
     },
     drop() {},
     bufferedBytes: 0,

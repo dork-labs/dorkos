@@ -27,6 +27,14 @@ describe('projectInProgressTurn — approval receipts', () => {
     };
   }
 
+  it('settles a running row once a Stop withdraws its card, so it stops spinning (DOR-3202)', () => {
+    const part = approvalPart([
+      { seq: 1, type: 'tool_call', toolCallId: 'tc-1', toolName: 'Bash', status: 'running' },
+      { seq: 2, type: 'interaction_resolved', id: 'tc-1', resolution: 'cancelled', at: 5_000 },
+    ]);
+    expect(part.status).toBe('error');
+  });
+
   it('records an approval as allowed, with when it was answered', () => {
     // Purpose: the answer has to survive on the part, not in a component — this
     // is the whole basis for a receipt that outlives the card.

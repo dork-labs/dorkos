@@ -115,6 +115,8 @@ export function burstSession(sessionId: string) {
       ref.windows?.onMessage(message);
     },
     onCrash: (crash) => ref.windows?.onCrash(crash),
+    // As `PersistentDispatch` wires it: an open runtime window holds the process.
+    hasRuntimeTurnOpen: () => ref.windows?.openWindow?.origin === 'runtime',
     drainGraceMs: 20,
   });
   const windows = new SessionTurnWindows({
@@ -156,6 +158,7 @@ export function burstSession(sessionId: string) {
   return {
     session,
     projector,
+    pump,
     windows,
     opened,
     streamEvents,

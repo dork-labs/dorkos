@@ -64,6 +64,11 @@ interface InputActionButtonProps {
    * what ends the wait, never a second click racing the first (DOR-1300).
    */
   stopPending?: boolean;
+  /**
+   * What both stop controls are called, when "Stop generating" would be
+   * wrong: a turn waiting on a person is not generating anything (DOR-3202).
+   */
+  stopLabel?: string;
 }
 
 const BUTTON_CONFIG = {
@@ -212,6 +217,7 @@ export function InputActionButton({
   onSteer,
   onStage,
   stopPending = false,
+  stopLabel = BUTTON_CONFIG.stop.label,
 }: InputActionButtonProps) {
   const buttonState = resolveButtonState(
     hasText,
@@ -272,7 +278,7 @@ export function InputActionButton({
             onClick={onStop}
             type="button"
             className="bg-dui-destructive-fill text-destructive-foreground hover:bg-dui-destructive-fill-hover shrink-0 rounded-lg p-1.5 transition-colors max-md:p-2"
-            aria-label="Stop generating"
+            aria-label={stopLabel}
           >
             <Square className="size-(--size-icon-sm)" />
           </motion.button>
@@ -331,7 +337,7 @@ export function InputActionButton({
               BUTTON_CONFIG[buttonState].className,
               sendBlocked && 'pointer-events-none'
             )}
-            aria-label={BUTTON_CONFIG[buttonState].label}
+            aria-label={buttonState === 'stop' ? stopLabel : BUTTON_CONFIG[buttonState].label}
           >
             <ActionIcon className="size-(--size-icon-sm)" />
           </motion.button>

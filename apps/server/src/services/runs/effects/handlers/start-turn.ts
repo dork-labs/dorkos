@@ -44,6 +44,7 @@ import {
 import type { ComputerTurnPort } from '../../../session/turn-port/index.js';
 import { admit, type AdmissionDeps, type AdmissionVerdict } from '../../admission.js';
 import type { RunStore, TurnRun } from '../../run-store.js';
+import type { ScheduleCap } from '../../schedule-cap.js';
 import type { SpaceTurnPort } from '../../turn-port.js';
 import type { TurnEffect } from '../effect-store.js';
 import { StartPayloadSchema, type StartPayload } from '../start-payload.js';
@@ -70,6 +71,8 @@ export interface StartTurnDeps {
   admission: Omit<AdmissionDeps, 'runs'>;
   /** Admission itself; tests stand in for a chat turning busy right after it. */
   admit?: typeof admit;
+  /** The scheduler's cap: a task's run takes its slot the moment admission lets it go. */
+  scheduleCap?: Pick<ScheduleCap, 'claim' | 'release'>;
 }
 
 /** The handler, bound to what it needs. */
@@ -137,7 +140,16 @@ async function handOver(
     ...deps.admission,
   });
   if ('wait' in verdict) return waitFor(deps, run, effect, ctx, verdict);
-  const answer = await handTo(deps, effect, requestOf(run, run.origin, words, start.data, verdict));
+  // Nothing awaits between admission's answer and the slot's claim.
+  deps.scheduleCap?.claim(run);
+  let answer: TurnStartAnswer | undefined;
+  try {
+    answer = await handTo(deps, effect, requestOf(run, run.origin, words, start.data, verdict));
+  } finally {
+    if (answer === undefined || !('accepted' in answer || answer.refused === 'already_held')) {
+      deps.scheduleCap?.release(run.id);
+    }
+  }
   if (answer === undefined) return { kind: 'done' };
   if ('accepted' in answer || answer.refused === 'already_held') return { kind: 'await' };
   if (answer.refused === 'chat_busy') return waitFor(deps, run, effect, ctx, { wait: 'chat_busy' });

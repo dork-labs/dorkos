@@ -52,14 +52,12 @@ import { CanonicalConnectorRuntimeAuthorityResolver } from '../../../connectors/
 import { ConnectorRuntimePrincipalService } from '../../../connectors/principal/runtime-principal-service.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import { TaskStore } from '../../../tasks/task-store.js';
-import {
-  TaskSchedulerService,
-  singleRuntimeSource,
-} from '../../../tasks/task-scheduler-service.js';
+import { TaskSchedulerService } from '../../../tasks/task-scheduler-service.js';
 import { bodyHash } from '../../../tasks/agent-mode/file-cap/file-hash.js';
 import { initBoundary } from '../../../../lib/boundary.js';
 import type { MeshCore } from '@dorkos/mesh';
 import { registerClaudeCodeFacts } from '../../../../startup/register-claude-code-facts.js';
+import { onRuntime } from '../../../tasks/__tests__/support/runtime-task-turns.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
 // refuses every path and turn code knows no Claude transcript.
@@ -395,7 +393,7 @@ describe('the dorkos tool server on a Codex turn', () => {
         });
         const service = new TaskSchedulerService({
           store,
-          runtimes: singleRuntimeSource(runtime),
+          ...onRuntime(runtime),
           config: { maxConcurrentRuns: 1, retentionCount: 10, mayFire: true, firingReason: 'test' },
           meshCore: { getProjectPath: () => agentDir } as unknown as MeshCore,
         });

@@ -21,11 +21,14 @@ import {
   type AcquirePumpOptions,
 } from '../session-pump-registry.js';
 import { PumpRefusedError } from '../session-pump.js';
+import { PersistentDispatch } from '../persistent-dispatch.js';
 import {
   assistantMessage,
   backgroundTasksMessage,
   FakeQuery,
   initMessage,
+  resultMessage,
+  taskNotificationMessage,
   type BackgroundTaskType,
 } from './fake-pump-query.js';
 
@@ -147,6 +150,56 @@ describe('the idle timer leaves a process with a background shell running', () =
   });
 });
 
+// DOR-5490. What the queue asks before it launches a person's message: a
+// report's segment that has opened and not spoken yet is on its way.
+describe('isSegmentPending holds the queue for a report not yet spoken', () => {
+  /** Warm `sessionId` and hand its process `frames`. */
+  async function warmWith(
+    registry: SessionPumpRegistry,
+    queries: Map<string, FakeQuery>,
+    sessionId: string,
+    frames: ReturnType<typeof initMessage>[]
+  ): Promise<void> {
+    await registry.acquire(sessionId, launchOpts(queries, sessionId)).warm();
+    for (const frame of frames) queries.get(sessionId)!.emit(frame);
+    await vi.advanceTimersByTimeAsync(0);
+  }
+
+  it('is true from the segment opening until its first word', async () => {
+    const queries = new Map<string, FakeQuery>();
+    const registry = new SessionPumpRegistry(identity);
+    const dispatch = new PersistentDispatch(registry, identity);
+    await warmWith(registry, queries, 's1', [
+      resultMessage(),
+      taskNotificationMessage('t-1'),
+      initMessage(),
+    ]);
+    expect(dispatch.isSegmentPending('s1')).toBe(true);
+
+    queries.get('s1')!.emit(assistantMessage());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(dispatch.isSegmentPending('s1')).toBe(false);
+  });
+
+  it('is true while a second helper still runs, which outranks it as the reason', async () => {
+    const queries = new Map<string, FakeQuery>();
+    const registry = new SessionPumpRegistry(identity);
+    const dispatch = new PersistentDispatch(registry, identity);
+    await warmWith(registry, queries, 's1', [
+      backgroundTasksMessage([
+        { id: 'helper-a', type: 'local_agent' },
+        { id: 'helper-b', type: 'local_agent' },
+      ]),
+      resultMessage(),
+      backgroundTasksMessage([{ id: 'helper-b', type: 'local_agent' }]),
+      taskNotificationMessage('helper-a'),
+      initMessage(),
+    ]);
+    expect(registry.peek('s1')!.quietness()).toMatchObject({ because: 'background-work' });
+    expect(dispatch.isSegmentPending('s1')).toBe(true);
+  });
+});
+
 // T7. Warmth is a cache and LRU is what a cache does — but only over processes
 // that are genuinely reclaimable, and a process holding work is not one.
 describe('the warm ceiling reclaims only processes that are not working', () => {
@@ -189,6 +242,27 @@ describe('the warm ceiling reclaims only processes that are not working', () => 
     for (let i = 1; i < CEILING; i += 1) {
       expect(registry.warmth(`shell-${i}`)).toBe('warm');
     }
+  });
+
+  it('passes over a process whose report segment has opened, though it is the oldest (DOR-5490)', async () => {
+    const queries = new Map<string, FakeQuery>();
+    const registry = new SessionPumpRegistry(identity);
+    const opts = (id: string) => launchOpts(queries, id, { maxWarmSessions: 2 });
+    await registry.acquire('reporting', opts('reporting')).warm();
+    // A helper finished; the CLI opened the segment for its report and is
+    // waiting on the model's first token.
+    for (const frame of [resultMessage(), taskNotificationMessage('t-1'), initMessage()]) {
+      queries.get('reporting')!.emit(frame);
+    }
+    await vi.advanceTimersByTimeAsync(0);
+    await registry.acquire('idle', opts('idle')).warm();
+
+    const warming = registry.acquire('late', opts('late')).warm();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await warming;
+    expect(registry.warmth('late')).toBe('warm');
+    expect(registry.warmth('idle')).toBe('cold');
+    expect(registry.warmth('reporting')).toBe('warm');
   });
 
   it('never reclaims a process a helper or Monitor holds, even when it is the oldest', async () => {

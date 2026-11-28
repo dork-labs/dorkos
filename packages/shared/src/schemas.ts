@@ -1305,7 +1305,8 @@ export const QueuedWaitingOnSchema = z
     /**
      * What the agent is doing, when the counts above are all zero: a helper's
      * report still owed (`delivery-owed`), a question waiting on the person
-     * (`waiting-on-person`), a reminder the agent set (`timer-pending`), or a
+     * (`waiting-on-person`), a reminder the agent set (`timer-pending`), the
+     * agent's next step begun and not yet speaking (`segment-starting`), or a
      * turn still open. A string rather than an
      * enum, so a reason added later reads as "busy" on an older client.
      */

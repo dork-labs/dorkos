@@ -563,6 +563,14 @@ export class SessionPump {
   }
 
   /**
+   * Is a delivery on its way on this process (DOR-5490)? See
+   * `ProcessQuiet.isSegmentOnItsWay`; what `isSegmentPending` holds the queue on.
+   */
+  isSegmentOnItsWay(): boolean {
+    return this.quiet.isSegmentOnItsWay();
+  }
+
+  /**
    * Is a helper agent still working on this process, inside the four-hour
    * ceiling (DOR-2681)? What the stall watchdog asks before calling a silent
    * turn stalled.
@@ -888,6 +896,9 @@ export class SessionPump {
    */
   private noteProcessGone(error: unknown): void {
     this.clearInitTimer();
+    // A dead process cannot speak, so a segment it opened holds nothing now;
+    // dropped first, so nothing reads the hold after this point.
+    this.quiet.noteProcessGone();
     this.query = undefined;
     this.held = undefined;
     if (this.currentState === 'reaped' || this.currentState === 'cold') return;

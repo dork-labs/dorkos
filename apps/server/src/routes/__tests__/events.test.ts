@@ -102,12 +102,15 @@ describe('GET /api/events (unified SSE stream)', () => {
     expect(body).toContain('event: connected');
     expect(body).toContain('"connectedAt"');
 
-    // Parse the data payload to verify it's valid JSON with a timestamp
+    // The data is a whole envelope: outside the numbering, so seq null and no id.
     const dataLine = body.split('\n').find((line: string) => line.startsWith('data: '));
     expect(dataLine).toBeDefined();
-    const parsed = JSON.parse(dataLine!.replace('data: ', ''));
-    expect(parsed.connectedAt).toBeDefined();
-    expect(() => new Date(parsed.connectedAt)).not.toThrow();
+    const envelope = JSON.parse(dataLine!.replace('data: ', ''));
+    expect(envelope).toMatchObject({ seq: null, type: 'connected' });
+    expect(new Date(envelope.at).toISOString()).toBe(envelope.at);
+    expect(envelope.payload.connectedAt).toBeDefined();
+    expect(() => new Date(envelope.payload.connectedAt)).not.toThrow();
+    expect(body).not.toContain('id: ');
   });
 
   it('states when the session lists were last declared wrong, once they were', async () => {
@@ -119,7 +122,7 @@ describe('GET /api/events (unified SSE stream)', () => {
         .split('\n')
         .find((line: string) => line.startsWith('data: '))!
         .replace('data: ', '')
-    );
+    ).payload;
     expect(before).not.toHaveProperty('sessionListsResetAt');
 
     const at = markSessionListsReset();
@@ -128,7 +131,7 @@ describe('GET /api/events (unified SSE stream)', () => {
         .split('\n')
         .find((line: string) => line.startsWith('data: '))!
         .replace('data: ', '')
-    );
+    ).payload;
     expect(after.sessionListsResetAt).toBe(at);
     resetSessionListResetForTests();
   });

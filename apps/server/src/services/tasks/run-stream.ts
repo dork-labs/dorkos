@@ -9,18 +9,12 @@
  * — its asks are refused the moment they are raised (spec
  * `unattended-session-permission-prompts`) — but a long tool call, a slow model
  * or a MANUAL run holding an answerable card produces the same silence, and this
- * is what makes a stop reach the runtime through it.
- * This module owns the two mechanics that make a stop real, kept together
- * because neither is sufficient alone.
+ * is what makes a stop return through it. The stop itself reaches the agent
+ * through the turn port (`execution/task-turns.ts`).
  *
  * @module services/tasks/run-stream
  */
-import type { InterruptReceipt, StreamEvent } from '@dorkos/shared/types';
-import { worthRetrying } from '@dorkos/shared/schemas';
-import { SESSIONS } from '../../config/constants.js';
-import { createTaggedLogger } from '../../lib/logger.js';
-
-const logger = createTaggedLogger('Tasks');
+import type { StreamEvent } from '@dorkos/shared/types';
 
 /**
  * Race sentinel: the run was stopped (cancelled or out of time) before the
@@ -28,26 +22,11 @@ const logger = createTaggedLogger('Tasks');
  */
 const RUN_STOPPED = Symbol('run-stopped');
 
-/** Race sentinel: the runtime's interrupt did not settle inside its own bound. */
-const INTERRUPT_TIMEOUT = Symbol('interrupt-timeout');
-
-/**
- * Narrow port for the one runtime call that ends an in-flight turn. Every
- * `AgentRuntime` satisfies it structurally.
- */
-export interface RunInterrupter {
-  /**
-   * Answers the {@link InterruptReceipt} vocabulary — `not-running` when the
-   * runtime found no in-flight turn to abort.
-   */
-  interruptQuery(sessionId: string): Promise<InterruptReceipt>;
-}
-
 /**
  * Consume a run's event stream until it ends or the run is stopped.
  *
- * Stopping has to reach the RUNTIME, not just this loop — `sendMessage` takes
- * no `AbortSignal`, so abandoning its stream leaves the agent running. Two
+ * Stopping has to reach the RUNTIME, not just this loop: abandoning the
+ * turn's events leaves the agent running. Two
  * things make a stop real, and both are needed: `onStop` ends the turn at the
  * agent, and racing each `next()` against the signal returns even if the
  * runtime ignores the interrupt or answers slowly.
@@ -108,64 +87,5 @@ export async function consumeRunStream(
     }
   } finally {
     signal.removeEventListener('abort', onAbort);
-  }
-}
-
-/**
- * Ask the runtime to end the turn behind a stopped run.
- *
- * Never rejects: it is called from an abort listener, where a rejection would
- * surface as an unhandled rejection and take the process down, and a runtime
- * that cannot be interrupted must not stop the run from being finalized.
- *
- * Bounded by `SESSIONS.STALL_INTERRUPT_TIMEOUT_MS` for the same reason
- * `stall-guard` bounds its own: `interruptQuery` reaches the very subprocess
- * being interrupted, so it can hang, and an unobserved dangling await is a leak
- * nobody ever sees. The run is finalized by the caller either way — this bound
- * only decides how long we wait to learn the outcome.
- *
- * @param runtime - The runtime driving the run.
- * @param sessionId - Session backing the run (the run id).
- */
-export async function interruptRun(runtime: RunInterrupter, sessionId: string): Promise<void> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    const expiry = new Promise<typeof INTERRUPT_TIMEOUT>((resolve) => {
-      timer = setTimeout(() => resolve(INTERRUPT_TIMEOUT), SESSIONS.STALL_INTERRUPT_TIMEOUT_MS);
-      // Never hold the process open for an interrupt we already gave up on.
-      timer.unref();
-    });
-    const outcome = await Promise.race([runtime.interruptQuery(sessionId), expiry]);
-    if (outcome === INTERRUPT_TIMEOUT) {
-      // This bound winning IS an `unconfirmed / ack-timeout` ending — the
-      // request went out and nothing came back — and it is logged as such
-      // rather than as a receipt, because the receipt belongs to whoever the
-      // runtime eventually answers, which by now is nobody.
-      logger.warn(
-        `run ${sessionId}: interrupt did not settle within ` +
-          `${SESSIONS.STALL_INTERRUPT_TIMEOUT_MS}ms; the run is finalized anyway`
-      );
-    } else if (outcome.outcome === 'not-running') {
-      // Also the honest answer for a turn that just finished, and what
-      // TestModeRuntime always says — so this is not evidence of a leak.
-      logger.debug(`run ${sessionId}: runtime reported no in-flight turn to interrupt`);
-    } else if (worthRetrying(outcome)) {
-      // The one ending worth a warning: nothing DorkOS did ended the turn, so
-      // the run is being finalized over an agent that may still be working.
-      logger.warn(`run ${sessionId}: the turn was not confirmed stopped`, {
-        outcome: outcome.outcome,
-        reason: outcome.reason,
-        runtime: outcome.runtime,
-      });
-    } else {
-      logger.debug(`run ${sessionId}: the turn was stopped`, {
-        outcome: outcome.outcome,
-        reason: outcome.reason,
-      });
-    }
-  } catch (err) {
-    logger.error(`run ${sessionId}: interrupting the turn failed:`, err);
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
   }
 }

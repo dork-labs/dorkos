@@ -15,9 +15,9 @@
     "apps/client/src/dev/showcases/SettingsShowcases.tsx": 742,
     "apps/client/src/layers/entities/session/model/stream/session-stream-store.ts": 593,
     "apps/client/src/layers/features/canvas/model/use-devtools-bridge.ts": 976,
-    "apps/client/src/layers/features/chat/model/stream/project-session-turn.ts": 688,
+    "apps/client/src/layers/features/chat/model/stream/project-session-turn.ts": 681,
     "apps/client/src/layers/features/dashboard-sidebar/ui/context/ConnectCommunityDialog.tsx": 525,
-    "apps/client/src/layers/shared/lib/transport/stream-manager.ts": 529,
+    "apps/client/src/layers/shared/lib/transport/stream-manager.ts": 528,
     "apps/client/src/layers/shared/lib/transport/system-methods.ts": 529,
     "apps/client/src/layers/shared/model/app-store/app-store-canvas.ts": 685,
     "apps/client/src/layers/shared/ui/navigation-layout.tsx": 570,
@@ -74,7 +74,7 @@
     "apps/server/src/services/rooms/room-store.ts": 944,
     "apps/server/src/services/rooms/room-turn-runner.ts": 526,
     "apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts": 1042,
-    "apps/server/src/services/runtimes/claude-code/sessions/persistent-dispatch.ts": 710,
+    "apps/server/src/services/runtimes/claude-code/sessions/persistent-dispatch.ts": 706,
     "apps/server/src/services/runtimes/claude-code/sessions/session-turn-windows.ts": 601,
     "apps/server/src/services/runtimes/claude-code/sessions/transcript-reader.ts": 539,
     "apps/server/src/services/runtimes/codex/app-server/notification-mapper.ts": 525,
@@ -91,7 +91,7 @@
     "apps/server/src/services/spaces/routes/community/administration.ts": 605,
     "apps/server/src/services/spaces/routes/community/pairings.ts": 531,
     "apps/server/src/services/spaces/schema.ts": 1774,
-    "apps/server/src/services/tasks/task-scheduler-service.ts": 706,
+    "apps/server/src/services/tasks/task-scheduler-service.ts": 671,
     "apps/server/src/services/workbench-serve/devtools-driving.ts": 801,
     "packages/browser/src/engine.ts": 741,
     "packages/browser/src/input/engine-input.ts": 530,
@@ -129,6 +129,6 @@
     "packages/test-utils/src/fake-community-adapter.ts": 789,
     "packages/test-utils/src/mock-factories.ts": 1223,
     "packages/test-utils/src/runtime-capability-matrix.ts": 700,
-    "packages/test-utils/src/runtime-conformance.ts": 2304
+    "packages/test-utils/src/runtime-conformance.ts": 2303
   }
 }

@@ -17,7 +17,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { AddressInfo } from 'node:net';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
-import { openSseStream, type SseFrame } from '@dorkos/test-utils';
+import { envelopePayload, openSseStream, type SseFrame } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { readCursors, type Db } from '@dorkos/db';
 import { ReadCursorSchema } from '@dorkos/shared/read-cursor-schemas';
@@ -202,7 +202,7 @@ describe('PUT /api/read-cursors/:kind/:id', () => {
       // Without the count this event is one the room list cannot act on, so the
       // client drops it — and the badge stays lit on the other device, which is
       // the whole failure this route exists to avoid.
-      expect(frames.filter((f) => f.event === 'read_cursor').map((f) => f.data)).toEqual([
+      expect(frames.filter((f) => f.event === 'read_cursor').map(envelopePayload)).toEqual([
         {
           userId: callerId(),
           threadKind: 'room',
@@ -247,7 +247,7 @@ describe('PUT /api/read-cursors/:kind/:id', () => {
     expect(cursors).toHaveLength(1);
     // A session, so no unread count rides along: only the rooms domain can count
     // what is above a cursor, and this route invents nothing on its behalf.
-    expect(cursors[0].data).toEqual({
+    expect(envelopePayload(cursors[0])).toEqual({
       userId: callerId(),
       threadKind: 'session',
       threadId: 's-4',

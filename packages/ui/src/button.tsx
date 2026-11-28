@@ -171,6 +171,8 @@ function splitLeading(children: React.ReactNode) {
  * Both labels in one grid cell, the idle one hidden while busy.
  *
  * The box is always as wide as the wider of the two, so the button never shifts.
+ * Beside a leading icon the label starts at the icon's gap and the spare width
+ * trails it; centred, the shorter label drifted away from its icon.
  */
 function StableLabel({
   children,
@@ -185,7 +187,12 @@ function StableLabel({
   return (
     <>
       {leading}
-      <span className="grid justify-items-center *:[grid-area:1/1]">
+      <span
+        className={cn(
+          'grid *:[grid-area:1/1]',
+          leading.length > 0 ? 'justify-items-start' : 'justify-items-center'
+        )}
+      >
         <span className={loading ? 'invisible' : undefined}>{label}</span>
         <span className={loading ? undefined : 'invisible'}>{loadingLabel}</span>
       </span>

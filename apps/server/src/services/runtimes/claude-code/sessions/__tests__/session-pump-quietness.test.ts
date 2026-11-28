@@ -429,7 +429,118 @@ describe('the owed-delivery clock', () => {
     expect(harness.gateChanges).toHaveLength(0);
     expect(harness.pump.quietness()).toMatchObject({ because: 'delivery-owed' });
 
+    // The init hands the debt over, and the segment holds until it speaks
+    // (DOR-5490); a segment with nothing in it ends at its `result`.
     await harness.emit(initMessage());
+    expect(harness.pump.quietness()).toMatchObject({ because: 'segment-starting' });
+    await harness.emit(resultMessage());
+    expect(harness.pump.quietness()).toMatchObject({ quiet: true });
+  });
+});
+
+// DOR-5490. A report segment's init clears the owed delivery, and no window
+// opens until the model's first frame, so for the whole time to first token the
+// process read as quiet: a reap, a slot reclaim or a relaunch for new settings
+// could end it mid-request, and the queue launched a person's message into it.
+describe('a segment that has opened and not yet spoken', () => {
+  /** A finished helper's report segment, opened and waiting on the model. */
+  async function reportSegmentOpened(harness: Harness): Promise<void> {
+    await harness.emit(resultMessage());
+    await harness.emit(taskNotificationMessage('task-1'));
+    await harness.emit(initMessage());
+  }
+
+  it('holds past the restart settle interval, and a reap declines', async () => {
+    const harness = await warmPump();
+    await reportSegmentOpened(harness);
+
+    vi.advanceTimersByTime(SESSIONS.RESTART_SETTLE_MS * 10);
+    expect(harness.pump.quietness()).toMatchObject({ quiet: false, because: 'segment-starting' });
+    expect(await reapNow(harness.pump)).toBe(false);
+
+    // A helper still talking is not the segment speaking.
+    await harness.emit({ ...assistantMessage(), parent_tool_use_id: 'toolu-helper' } as never);
+    expect(harness.pump.quietness()).toMatchObject({ because: 'segment-starting' });
+
+    // The main thread's first frame ends it; from here the open runtime window
+    // holds the process (`session-turn-windows.report-gap.test.ts`).
+    await harness.emit(assistantMessage());
+    expect(harness.pump.quietness()).toMatchObject({ quiet: true });
+  });
+
+  it('is not given up as shells-only work while the segment is opening', async () => {
+    const harness = await warmPump();
+    await reportSegmentOpened(harness);
+    await runTask(harness, 'local_bash');
+
+    expect(harness.pump.isHoldingOnlyReclaimable()).toBe(false);
+    expect(await harness.pump.reapReclaimable()).toBe(false);
+  });
+
+  it('drops at once when the process dies in the gap, and a relaunch starts quiet', async () => {
+    const harness = await warmPump();
+    await reportSegmentOpened(harness);
+
+    // What `isSegmentPending` reads: a dead process cannot speak, so a person's
+    // message must not wait two minutes on it.
+    await harness.crash();
+    expect(harness.pump.state).toBe('crashed');
+    expect(harness.pump.quietness()).toMatchObject({ quiet: true });
+
+    await harness.pump.warm();
+    expect(harness.pump.quietness()).toMatchObject({ quiet: true });
+  });
+
+  it('keeps the owed-delivery clock when the process dies before the segment opens', async () => {
+    const harness = await warmPump();
+    await harness.emit(resultMessage());
+    await harness.emit(taskNotificationMessage('task-1'));
+    await harness.crash();
+    expect(harness.pump.quietness()).toMatchObject({ because: 'delivery-owed' });
+
+    // The clock is what clears the dead tracker's debt and lets the queue go.
+    vi.advanceTimersByTime(OWED_DELIVERY_TIMEOUT_MS);
+    expect(harness.pump.quietness()).toMatchObject({ quiet: true });
+    expect(harness.gateChanges).toHaveLength(1);
+  });
+
+  it('is not kept past the wait by a helper that keeps talking', async () => {
+    const harness = await warmPump();
+    await reportSegmentOpened(harness);
+
+    const helperFrame = { ...assistantMessage(), parent_tool_use_id: 'toolu-helper' } as never;
+    vi.advanceTimersByTime(90_000);
+    await harness.emit(helperFrame);
+    vi.advanceTimersByTime(SESSIONS.TURN_FIRST_EVENT_TIMEOUT_MS - 90_000);
+    expect(harness.gateChanges).toHaveLength(1);
+    expect(harness.pump.quietness()).toMatchObject({ quiet: true });
+  });
+
+  it('is not kept past the wait by task progress from a finished helper', async () => {
+    const harness = await warmPump();
+    await reportSegmentOpened(harness);
+
+    // A `task_progress` carries no `parent_tool_use_id`; no task is live.
+    const progress = { type: 'system', subtype: 'task_progress', task_id: 'task-1' } as never;
+    vi.advanceTimersByTime(90_000);
+    await harness.emit(progress);
+    vi.advanceTimersByTime(SESSIONS.TURN_FIRST_EVENT_TIMEOUT_MS - 90_000);
+    expect(harness.gateChanges).toHaveLength(1);
+    expect(harness.pump.quietness()).toMatchObject({ quiet: true });
+  });
+
+  it('gives up after two minutes of silence, releasing the gate; a frame of its own restarts the wait', async () => {
+    const harness = await warmPump();
+    await reportSegmentOpened(harness);
+
+    vi.advanceTimersByTime(SESSIONS.TURN_FIRST_EVENT_TIMEOUT_MS - 1_000);
+    await harness.emit({ type: 'system', subtype: 'status', status: 'requesting' } as never);
+    vi.advanceTimersByTime(SESSIONS.TURN_FIRST_EVENT_TIMEOUT_MS - 1);
+    expect(harness.gateChanges).toHaveLength(0);
+    expect(harness.pump.quietness()).toMatchObject({ because: 'segment-starting' });
+
+    vi.advanceTimersByTime(1);
+    expect(harness.gateChanges).toHaveLength(1);
     expect(harness.pump.quietness()).toMatchObject({ quiet: true });
   });
 });

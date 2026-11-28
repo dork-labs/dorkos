@@ -3,12 +3,14 @@
  * remote-access surface reads, and the person's actions on DorkOS managed
  * remote access, under `/api/remote-access`. Every write answers with the full
  * report. The person's own ngrok tunnel keeps `startTunnel`/`stopTunnel` in
- * `system-methods.ts`.
+ * `system-methods.ts`. Documented calls go through the generated API client
+ * (DOR-5473).
  *
  * @module shared/lib/transport/remote-access-methods
  */
 import type { LanAccessStatus, RemoteAccessReport } from '@dorkos/shared/types';
 import type { RemoteAccessMode } from '@dorkos/shared/config-schema';
+import { createTransportApiClient } from './api-client';
 import { fetchJSON } from './http-client';
 
 /**
@@ -17,45 +19,47 @@ import { fetchJSON } from './http-client';
  * @param baseUrl - The API base, e.g. `/api`.
  */
 export function createRemoteAccessMethods(baseUrl: string) {
+  const api = createTransportApiClient(baseUrl);
   return {
+    // Stays hand-written: `GET /api/remote-access/report` has no operationId (DOR-5473).
     getRemoteAccessReport(): Promise<RemoteAccessReport> {
       return fetchJSON<RemoteAccessReport>(baseUrl, '/remote-access/report');
     },
 
+    // Stays hand-written: a bodyless write, waits for batch 3's no-body client (DOR-5473).
     startRemoteEnrolment(): Promise<RemoteAccessReport> {
       return fetchJSON<RemoteAccessReport>(baseUrl, '/remote-access/enrolment', {
         method: 'POST',
       });
     },
 
-    setRemoteAccessMode(mode: RemoteAccessMode): Promise<RemoteAccessReport> {
-      return fetchJSON<RemoteAccessReport>(baseUrl, '/remote-access/mode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode }),
-      });
+    async setRemoteAccessMode(mode: RemoteAccessMode): Promise<RemoteAccessReport> {
+      const answer = await api.call('remoteAccess.createMode', { body: { mode } });
+      // The document does not describe this answer yet, so the cast keeps today's type.
+      return answer as RemoteAccessReport;
     },
 
+    // Stays hand-written: `POST /api/remote-access/close` has no operationId (DOR-5473).
     closeRemoteAccess(): Promise<RemoteAccessReport> {
       return fetchJSON<RemoteAccessReport>(baseUrl, '/remote-access/close', { method: 'POST' });
     },
 
+    // Stays hand-written: `POST /api/remote-access/withdraw` has no operationId (DOR-5473).
     withdrawRemoteAccess(): Promise<RemoteAccessReport> {
       return fetchJSON<RemoteAccessReport>(baseUrl, '/remote-access/withdraw', {
         method: 'POST',
       });
     },
 
+    // Stays hand-written: `GET /api/lan-access` has no operationId (DOR-5473).
     getLanAccess(): Promise<LanAccessStatus> {
       return fetchJSON<LanAccessStatus>(baseUrl, '/lan-access');
     },
 
-    setLanAccess(enabled: boolean): Promise<LanAccessStatus> {
-      return fetchJSON<LanAccessStatus>(baseUrl, '/lan-access', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled }),
-      });
+    async setLanAccess(enabled: boolean): Promise<LanAccessStatus> {
+      const answer = await api.call('lanAccess.create', { body: { enabled } });
+      // The document does not describe this answer yet, so the cast keeps today's type.
+      return answer as LanAccessStatus;
     },
   };
 }

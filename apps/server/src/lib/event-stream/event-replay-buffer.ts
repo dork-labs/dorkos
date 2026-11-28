@@ -97,18 +97,19 @@ export class EventReplayBuffer<D> {
    * the module doc).
    *
    * @param type - The event type.
-   * @param deliver - Builds the delivery record from the event's frame id.
+   * @param deliver - Builds the delivery record from the event's frame id and
+   *   `seq`.
    * @param measure - The bytes the delivery holds.
    * @returns The numbered entry, for the live write.
    */
   append(
     type: DorkOsEventType,
-    deliver: (frameId: string) => D,
+    deliver: (frameId: string, seq: number) => D,
     measure: (delivery: D) => number
   ): ReplayEntry<D> {
     const seq = ++this.counter;
     const frameId = streamFrameId(this.resourceId, this.generation, seq);
-    const delivery = deliver(frameId);
+    const delivery = deliver(frameId, seq);
     const entry: ReplayEntry<D> = { seq, type, frameId, delivery, bytes: measure(delivery) };
     if (entry.bytes > this.limits.maxBytes) {
       this.entries = [];

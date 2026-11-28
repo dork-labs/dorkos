@@ -451,13 +451,15 @@ Schemas live in `packages/shared/src/session-stream.ts`; the handler in `apps/se
 
 ### GET /api/events
 
-Unified SSE stream for all real-time system events, on one connection. Clients filter by the SSE `event:` field.
+Unified SSE stream for all real-time system events, on one connection. Clients filter by the SSE `event:` field, which repeats the event's type.
 
-**The contract** (ADR `261123-170833`). Every event is a `DorkOsEvent`, `{ seq, at, type, payload }`, and every type is a member of one union in `packages/shared/src/dorkos-events.ts`, which also names each type's area (a permission area, or `null` with a note). The fan-out's `broadcast` only takes members, `event-union-census.test.ts` checks every call site, and the client's `GENERIC_EVENTS` derives from the union. On this stream `type` is the `event:` name, `payload` the `data:` (unchanged), and `seq` the last part of the frame id. `seq` only grows within one stream, may skip numbers, and is never compared across streams. A new domain adds its own table to the union.
+**The contract** (ADR `261123-170833`). Every event is a `DorkOsEvent`, `{ seq, at, type, payload }`, and every type is a member of one union in `packages/shared/src/dorkos-events.ts`, which also names each type's area (a permission area, or `null` with a note). The fan-out's `broadcast` only takes members, `event-union-census.test.ts` checks every call site, and the client's `GENERIC_EVENTS` derives from the union. `seq` only grows within one stream, may skip numbers, and is never compared across streams. A new domain adds its own table to the union.
 
-**Replay.** Every broadcast frame carries `id: events-<epoch>-<generation>-<seq>`, written by `streamFrameId` and read by `parseResumeCursor` like the chat and room streams. `Last-Event-ID` (or `?resume=` on the socket) inside the window replays the gap, filtered per reader by the same audience and redaction rules, asked with the rights the reader has when it resumes (a room's membership now, not when the event was sent), and the `connected` frame says `resumed: true`. The window is `EVENT_REPLAY_LIMITS` in `lib/event-stream/event-replay-buffer.ts` (500 events, 512 KiB counted as the bytes of both wire renderings; an event over the whole budget is sent live, not kept, and empties the window).
+**The wire** (DOR-5474). Over SSE, `data:` is the whole envelope as JSON, `event:` repeats `type`, and `id:` is the opaque resume cursor. On the socket at the same path, each message is the envelope with the cursor beside it as `id` (`{ id?, seq, at, type, payload }`); the keepalive is a `heartbeat` envelope, not the chat and room sockets' `__heartbeat` frame. A reader takes `seq` from the envelope and never parses the id. `at` is the server's time when it emitted the event; the encoded frames are kept for replay, so a replayed event keeps its first `at`. A frame outside the numbering (`connected`, the cold-connect snapshot, `heartbeat`) has `seq: null` and no id: it is never stored as a position and never used to order or drop a frame, so a reader that drops frames at or below the last `seq` it saw still gets the snapshot after a reconnect. The encoder is `encodeBroadcast` in `lib/event-stream/global-event-frames.ts`; the readers are `@dorkos/shared/dorkos-event-frame` (`decodeDorkOsEventFrame`, `readDorkOsEvent`). The API document publishes `DorkOsEvent` as the frame's schema.
 
-The API document describes what is sent today: `event:` is the type, `data:` the bare payload, `id:` the opaque cursor; the envelope on the wire is DOR-5474. A cursor older than the window, ahead of the counter, from another generation or process, or for another stream is a cold connect: `connected` and the snapshot, the same answer the chat stream gives when its replay floor has moved past a cursor.
+**Replay.** Every broadcast frame carries `id: events-<epoch>-<generation>-<seq>`, written by `streamFrameId` and read by `parseResumeCursor` like the chat and room streams. `Last-Event-ID` (or `?resume=` on the socket) inside the window replays the gap, filtered per reader by the same audience and redaction rules, asked with the rights the reader has when it resumes (a room's membership now, not when the event was sent), and the `connected` frame says `resumed: true`. The window is `EVENT_REPLAY_LIMITS` in `lib/event-stream/event-replay-buffer.ts` (500 events, 512 KiB counted as the bytes of both wire renderings, so the envelope's extra fields mean somewhat fewer events fit than before; an event over the whole budget is sent live, not kept, and empties the window).
+
+A cursor older than the window, ahead of the counter, from another generation or process, or for another stream is a cold connect: `connected` and the snapshot, the same answer the chat stream gives when its replay floor has moved past a cursor.
 
 **The snapshot** is the current `tunnel_status` (to a reader `frontDoorReadAudience` admits: the person or their key, never an agent) and the `session_status` frames. The opening frames (`connected`, the snapshot) carry no id.
 
@@ -468,7 +470,7 @@ The API document describes what is sent today: `event:` is the type, `data:` the
 | Event                | Description                                                                                                           | Payload                                           |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
 | `connected`          | Sent on every connect; `resumed: true` when it picked up from the cursor                                              | `{ connectedAt, sessionListsResetAt?, resumed? }` |
-| `heartbeat`          | Keepalive (every 15 s)                                                                                                | _(empty)_                                         |
+| `heartbeat`          | Keepalive (every 15 s), on both wires                                                                                 | `null`                                            |
 | `session_upserted`   | Session created or metadata changed                                                                                   | `{ session: Session }`                            |
 | `session_removed`    | Session deleted                                                                                                       | `{ sessionId: string }`                           |
 | `session_status`     | Session status projection changed; `retiredSessionId` announces a first-turn rekey (drop state held under the old id) | `{ sessionId, cwd?, retiredSessionId?, status }`  |
@@ -485,9 +487,9 @@ The session-list events (`session_upserted`/`session_removed`/`session_status`) 
 
 - `503` `temporarily_unavailable` when `SSE.MAX_TOTAL_CLIENTS` (500) is exceeded
 
-**Keepalive:** `event: heartbeat\ndata: \n\n` every 15 seconds.
+**Keepalive:** a `heartbeat` event (`seq` `null`, payload `null`) every 15 seconds.
 
-**Usage:** Open one `EventSource` to `/api/events` and filter on `event.type`. Close when the application unmounts.
+**Usage:** Open one `EventSource` to `/api/events`, listen by type, and read `JSON.parse(event.data).payload`. Close when the application unmounts.
 
 ### GET /api/sessions/:id/messages
 

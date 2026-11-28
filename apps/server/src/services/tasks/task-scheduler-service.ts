@@ -27,14 +27,14 @@ import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatc
 import { formatDuration } from '../../lib/format-duration.js';
 import { SchedulerLock, SCHEDULER_HEARTBEAT_MS, type LeaderLock } from './scheduler-lock.js';
 import { withSpan, SPAN, ATTR } from '../observability/index.js';
-import { consumeRunStream, interruptRun } from './run-stream.js';
+import { consumeRunStream } from './run-stream.js';
 import {
   publishRunStop,
   unconfirmedStop,
   type CancelRunOutcome,
   type RunStopDelivery,
 } from './run-cancel.js';
-import { atCapSkipReason, RunAccounting } from './run-accounting.js';
+import { RunAccounting } from './run-accounting.js';
 import { emitRefusedAskActivity } from './run-activity.js';
 import { checkRunAccount } from './session/run-account.js';
 import { dispatchRunViaRelay } from './relay-dispatch.js';
@@ -59,14 +59,11 @@ import { failRun, skipRun } from './lifecycle/fail-run.js';
 import { retryAfterSleep } from './lifecycle/sleep-retry.js';
 import { runMarked, withRunMarks } from './approvals/run-marks.js';
 import { endRunSessions, noteRunSession } from './session/active-run-sessions.js';
-import { claimRunTurn, SESSION_BUSY_ERROR, type RunTurn } from './session/run-projection.js';
 import { recordRunSession } from './session/record-run-session.js';
 import { resolveRunExecution, type RunExecution } from './execution/resolve-run-execution.js';
-import {
-  singleRuntimeSource,
-  type SchedulerAgentManager,
-  type SchedulerRuntimes,
-} from './execution/scheduler-runtimes.js';
+import { portTaskTurns, type TaskTurns } from './execution/task-turns.js';
+import type { ScheduleCapSource } from '../runs/index.js';
+import type { SchedulerRuntimes } from './execution/scheduler-runtimes.js';
 import type { AgentExecutionDefaults } from '../session/resolution/resolve-session-defaults.js';
 import type { TaskAwakeHold, TaskAwakeHolds } from '../core/keep-awake/index.js';
 import {
@@ -235,6 +232,18 @@ export interface SchedulerDeps {
    * time limit counts awake time on (DOR-3286). The process clock by default.
    */
   wakeSettle?: WakeSettle;
+  /**
+   * Where a run in this process starts its turn: the turn port (spec
+   * `turns-survive-restarts`, T12), which startup hands in. Absent, a run
+   * fails as DorkOS still starting. Tests stand a runtime double in.
+   */
+  turns?: TaskTurns;
+  /**
+   * Tells admission the scheduler's cap and its runs outside the port, or
+   * clears it (`setScheduleCap` in `services/runs`, §3.5). Absent in tests that
+   * do not care, and then nothing holds a fire for a slot.
+   */
+  scheduleCap?: (source: ScheduleCapSource | undefined) => void;
 }
 
 /**
@@ -272,8 +281,8 @@ export class TaskSchedulerService {
   private meshCore: MeshCore | null;
   private activityService: ActivityService | null;
   /**
-   * The `dorkHome`-scoped leader lock (ADR-285), or `null` for single-process /
-   * positional-constructor (test) setups where this process is always leader.
+   * The `dorkHome`-scoped leader lock (ADR-285), or `null` for single-process
+   * (test) setups where this process is always leader.
    */
   private leaderLock: LeaderLock | null;
   /** Heartbeat timer that keeps the leader lock fresh; cleared on `stop()`. */
@@ -299,64 +308,32 @@ export class TaskSchedulerService {
   private pauseHold = new TaskPauseHold(null);
   /** See {@link SchedulerDeps.wakeSettle}. */
   private wakeSettle = new WakeSettle();
+  /** See {@link SchedulerDeps.turns}. */
+  private turns: TaskTurns = portTaskTurns(() => undefined);
+  /** See {@link SchedulerDeps.scheduleCap}. */
+  private scheduleCap: NonNullable<SchedulerDeps['scheduleCap']> = () => {};
 
-  constructor(
-    store: TaskStore,
-    agentManager: SchedulerAgentManager,
-    config: SchedulerConfig,
-    relay?: RelayCore | null,
-    meshCore?: MeshCore | null
-  );
-  constructor(deps: SchedulerDeps);
-  constructor(
-    storeOrDeps: TaskStore | SchedulerDeps,
-    agentManager?: SchedulerAgentManager,
-    config?: SchedulerConfig,
-    relay?: RelayCore | null,
-    meshCore?: MeshCore | null
-  ) {
-    if ('store' in storeOrDeps && 'runtimes' in storeOrDeps && 'config' in storeOrDeps) {
-      // SchedulerDeps object form
-      this.store = storeOrDeps.store;
-      this.runtimes = storeOrDeps.runtimes;
-      this.config = storeOrDeps.config;
-      this.relay = storeOrDeps.relay ?? null;
-      this.relayHoldsRuntime = storeOrDeps.relayHoldsRuntime ?? V1_RELAY_RUNTIME;
-      this.meshCore = storeOrDeps.meshCore ?? null;
-      this.activityService = storeOrDeps.activityService ?? null;
-      this.beforeScheduledFire = storeOrDeps.beforeScheduledFire ?? null;
-      this.keepAwake = storeOrDeps.keepAwake ?? null;
-      this.pauseHold = new TaskPauseHold(storeOrDeps.agentPauses ?? null);
-      this.wakeSettle = storeOrDeps.wakeSettle ?? this.wakeSettle;
-      this.leaderLock =
-        storeOrDeps.leaderLock ??
-        (storeOrDeps.dorkHome ? new SchedulerLock({ dorkHome: storeOrDeps.dorkHome }) : null);
-    } else {
-      // A deps object that is MISSING `runtimes` reaches here and would be
-      // silently treated as a `TaskStore`, leaving `this.store.getTask`
-      // undefined until the first dispatch. TypeScript does not catch it — the
-      // first parameter is a union, so the object simply matches the other arm
-      // — and it is exactly what the rename from `agentManager` to `runtimes`
-      // produced in three integration tests (DOR-1615). Said out loud instead.
-      if ('store' in storeOrDeps && 'config' in storeOrDeps) {
-        throw new TypeError(
-          'TaskSchedulerService was given a deps object with no `runtimes`. ' +
-            'The scheduler resolves a runtime per run off the registry; pass ' +
-            '`runtimes: runtimeRegistry`, or `runtimes: singleRuntimeSource(fake)` in a test.'
-        );
-      }
-      // Positional args form: one agent manager standing in for every runtime.
-      this.store = storeOrDeps as TaskStore;
-      this.runtimes = singleRuntimeSource(agentManager!);
-      this.config = config!;
-      this.relay = relay ?? null;
-      // Positional form is tests only; it names no relay runtimes, so it takes
-      // the same v1 reading as a deps object that omits the predicate.
-      this.relayHoldsRuntime = V1_RELAY_RUNTIME;
-      this.meshCore = meshCore ?? null;
-      this.activityService = null;
-      this.leaderLock = null;
-    }
+  /**
+   * Build the scheduler.
+   *
+   * @param deps - Its store, runtimes, config and the seams it reaches the rest of the server through.
+   */
+  constructor(deps: SchedulerDeps) {
+    this.store = deps.store;
+    this.runtimes = deps.runtimes;
+    this.config = deps.config;
+    this.relay = deps.relay ?? null;
+    this.relayHoldsRuntime = deps.relayHoldsRuntime ?? V1_RELAY_RUNTIME;
+    this.meshCore = deps.meshCore ?? null;
+    this.activityService = deps.activityService ?? null;
+    this.beforeScheduledFire = deps.beforeScheduledFire ?? null;
+    this.keepAwake = deps.keepAwake ?? null;
+    this.pauseHold = new TaskPauseHold(deps.agentPauses ?? null);
+    this.wakeSettle = deps.wakeSettle ?? this.wakeSettle;
+    this.turns = deps.turns ?? this.turns;
+    this.scheduleCap = deps.scheduleCap ?? this.scheduleCap;
+    this.leaderLock =
+      deps.leaderLock ?? (deps.dorkHome ? new SchedulerLock({ dorkHome: deps.dorkHome }) : null);
     this.runs = new RunAccounting(this.store, this.wakeSettle.clock);
   }
 
@@ -445,6 +422,12 @@ export class TaskSchedulerService {
     this.pruneTimer = setInterval(outsideAuditScope(prune), PRUNE_INTERVAL_MS);
     this.pruneTimer.unref?.();
 
+    // Admission holds a timer's fire while this many task turns run (§3.5, T12);
+    // the runs this process hands the relay count against it too.
+    this.scheduleCap({
+      limit: () => this.config.maxConcurrentRuns,
+      elsewhere: () => this.runs.relayRunIds().length,
+    });
     this.started = true;
     logger.info(`started with ${this.cronJobs.size} active task(s)`);
   }
@@ -519,6 +502,7 @@ export class TaskSchedulerService {
     }
     this.expectedTicks.clear();
 
+    this.scheduleCap(undefined);
     this.runs.abortDirect();
     await this.stopRelayRuns();
 
@@ -934,26 +918,23 @@ export class TaskSchedulerService {
 
     // Three reasons a tick is recorded but not run, in priority order. Stale
     // comes first because it is about this occurrence itself: it would not run
-    // whatever else were true. The global cap is about the whole machine;
-    // sticky single-session serialization is about this one task (DOR-1571). A
-    // sticky task runs everything on one session, so a fire that lands while
-    // its previous run is still going must NOT open a second turn on it — that
-    // would corrupt the very session sticky exists to keep coherent. All three
-    // end in the same `skipped` run row.
-    // A paused agent starts nothing (spec `audit-trail` PR5). Ahead of the
-    // cap: a paused agent's tick is skipped for that reason whatever else holds.
+    // whatever else were true. Sticky single-session serialization is about
+    // this one task (DOR-1571). A sticky task runs everything on one session,
+    // so a fire that lands while its previous run is still going must NOT open
+    // a second turn on it — that would corrupt the very session sticky exists
+    // to keep coherent. All three end in the same `skipped` run row. The global
+    // cap is no longer one of them: a fire at the cap waits for a slot in
+    // admission and runs when one frees (spec `turns-survive-restarts` §3.5).
+    // A paused agent starts nothing (spec `audit-trail` PR5).
     const pausedAgent = this.pauseHold.pausedAgentOf(current.agentId);
-    const atCap = this.runs.count() >= this.config.maxConcurrentRuns;
-    const stickyBusy = !atCap && current.sticky && this.store.hasRunningRunForTask(current.id);
+    const stickyBusy = current.sticky && this.store.hasRunningRunForTask(current.id);
     const skipReason = occurrence?.stale
       ? STALE_SKIP_REASON
       : pausedAgent
         ? AGENT_PAUSED_SKIP_REASON
-        : atCap
-          ? atCapSkipReason(this.config.maxConcurrentRuns)
-          : stickyBusy
-            ? STICKY_BUSY_SKIP_REASON
-            : null;
+        : stickyBusy
+          ? STICKY_BUSY_SKIP_REASON
+          : null;
 
     // Idempotency gate (ADR-285): atomically claim this scheduled occurrence,
     // opening its run row in the same transaction. If another process (or a
@@ -1121,7 +1102,10 @@ export class TaskSchedulerService {
         // at. It is NOT why the predicate is optional — an absent predicate
         // takes the v1 reading instead, see {@link V1_RELAY_RUNTIME}.
         const relayVerdict = this.assessRelayDispatch(execution.runtimeType, task.id, run.trigger);
-        const viaRelay = relayVerdict.deliverable && !runMarked(this.store, task);
+        // A fire at the scheduler's cap goes in process, where it waits for a slot
+        // (spec `turns-survive-restarts` §3.5); the bus would not hold it.
+        const atCap = this.runs.count() >= this.config.maxConcurrentRuns;
+        const viaRelay = relayVerdict.deliverable && !runMarked(this.store, task) && !atCap;
         span.setAttr(ATTR.TASK_DISPATCH, viaRelay ? 'relay' : 'direct');
         if (!relayVerdict.deliverable) {
           span.setAttr(ATTR.TASK_DISPATCH_REASON, relayVerdict.reason);
@@ -1236,8 +1220,9 @@ export class TaskSchedulerService {
   }
 
   /**
-   * Execute a run directly via the resolved runtime's agent manager — manages
-   * AbortController, streams output, updates status.
+   * Execute a run in this process: its turn starts through the turn port
+   * ({@link SchedulerDeps.turns}), and this manages its AbortController, reads
+   * its turn's events and writes its row.
    *
    * @param task - The task being run.
    * @param run - Its run row, already opened.
@@ -1260,9 +1245,9 @@ export class TaskSchedulerService {
     forAgent: string | undefined,
     onSession: (sessionId: string) => void
   ): Promise<void> {
-    // The manager for the runtime this run RESOLVED to, not one bound at boot.
-    // Safe to `get` unconditionally: `resolveRunExecution` has already refused an
-    // unregistered type, so a throw here would be a bug rather than a state.
+    // The runtime this run RESOLVED to, read here only for the id it ran the
+    // chat under. Safe to `get` unconditionally: `resolveRunExecution` has
+    // already refused an unregistered type.
     const agentManager = this.runtimes.get(execution.runtimeType);
 
     const controller = new AbortController();
@@ -1308,18 +1293,10 @@ export class TaskSchedulerService {
 
     // Is somebody waiting in front of the app for this? A scheduled fire is the
     // one trigger that has nobody: its asks are refused the moment they are
-    // raised, and it needs no live surface. Everything else — a "Run now" a
-    // person clicked, a run an agent started inside a session they can be
-    // looking at — is watched, keeps its answerable approval cards, and gets the
-    // session surfaces that make those cards reachable. One predicate, read
-    // three times below, so the two halves can never disagree about who is
-    // there.
+    // raised. Everything else (a "Run now" a person clicked, a run an agent
+    // started inside a session they can be looking at) is watched and keeps its
+    // answerable approval cards.
     const attended = run.trigger !== 'scheduled';
-    // The run's claim on its session — the chain slot, the write-lock, the
-    // stranded-turn settle, the projection and the rename-following a person's
-    // turn gets. Taken inside the `try` below so a session that never came free
-    // fails the run through the one finalizer, and released in the `finally`.
-    let turn: RunTurn | undefined;
 
     let terminal: Parameters<TaskStore['updateRun']>[1] | undefined;
     let emitCancellation = false;
@@ -1329,102 +1306,51 @@ export class TaskSchedulerService {
       // identity for the turn, but leave the fresh session without app authority.
       const connectedAgent = this.store.getRun(run.id)?.cappedAt ? undefined : forAgent;
       await recordRunSession(sessionId, execution.runtimeType, connectedAgent);
-      if (attended) {
-        // Opened BEFORE the turn, so an approval raised by the very first tool
-        // call already has a projector behind its session. Resolves only once
-        // the run may safely write to the session — a sticky task whose session
-        // a person is mid-turn in waits here rather than opening a second stream
-        // into one projector (`session/run-projection.ts`).
-        turn =
-          (await claimRunTurn({
-            sessionId,
-            cwd: effectiveCwd,
-            prompt: task.prompt,
-            capabilities: execution.capabilities,
-            runtime: agentManager,
-          })) ?? undefined;
-        if (!turn) throw new Error(SESSION_BUSY_ERROR);
-        // On the row before the turn starts, not only when it ends. A run parked
-        // on an approval is exactly when a person needs to open its conversation,
-        // and the run history only offers that link once `sessionId` is set.
-        this.store.updateRun(run.id, { sessionId });
-      }
+      // On the row before the turn starts, not only when it ends: a run parked on
+      // an approval is exactly when a person needs to open its conversation.
+      if (attended) this.store.updateRun(run.id, { sessionId });
 
-      // DEFENCE IN DEPTH, and deliberately not more than that. The `??` branch is
-      // unreachable through the shipped store: `pulse_schedules.permission_mode`
-      // is `NOT NULL DEFAULT 'acceptEdits'`, so a row always carries a mode and
-      // the level a task runs at is decided once, at CREATE, by the ladder in
-      // `scheduled-run-power.ts` (spec `full-power-defaults`, D6).
-      //
-      // Say that plainly rather than letting this line read as the thing that
-      // makes existing tasks follow the operator's level — it is not, and they do
-      // not: a task created before the ladder existed keeps the mode stored on
-      // its row. What this covers is a row that reached memory without one (a
-      // hand-built fixture, a future store, a column that loses its constraint),
-      // and it answers with the same ladder rather than a second hardcoded
-      // constant, so the two can never disagree. Still `'acceptEdits'` when
-      // nothing is configured, which is what this line always did.
-      //
-      // The profile is the RESOLVED runtime's, so a task that runs on Codex has
-      // its trust stop read in Codex's mode vocabulary (DOR-1615).
+      // DEFENCE IN DEPTH: `pulse_schedules.permission_mode` is `NOT NULL DEFAULT
+      // 'acceptEdits'`, so the `??` branch covers only a row that reached memory
+      // without one, and answers with the same ladder the task was created
+      // with (spec `full-power-defaults`, D6), in the resolved runtime's modes.
       const permissionMode = (task.permissionMode ??
         resolveScheduledRunPermissionMode({
           capabilities: execution.capabilities,
         })) as PermissionMode;
 
-      agentManager.ensureSession(sessionId, {
-        permissionMode,
-        cwd: effectiveCwd,
-        // What this run resolved to run on. Spread into BOTH calls, the way
-        // `agent-handler.ts` spreads its own, because the two seams answer for
-        // different runtimes: claude-code reads the model off the session record
-        // at launch, while a runtime that does not hold sessions in memory sees
-        // only the send. Absent keys mean "the runtime decides".
-        ...execution.settings,
-        // Resume a sticky session that has already run, so the turn picks the
-        // conversation back up rather than starting over. This explicit
-        // `ensureSession` short-circuits `sendMessage`'s own transcript probe, so
-        // the answer has to be carried here (DOR-1571). Always false for a
-        // non-sticky run and a sticky task's first fire.
-        hasStarted,
-        // Nobody is coming back to a run the timer started, so an ask raised in
-        // it is refused the moment it is raised rather than waiting for an
-        // answer that cannot arrive (spec
-        // `unattended-session-permission-prompts`).
-        //
-        // **Only a scheduled fire.** A "Run now" a person clicked reaches this
-        // same function with `trigger: 'manual'`, and they are sitting in front
-        // of the app waiting for it — their approval card is answerable and must
-        // keep the ordinary wait. Passing `true` unconditionally would have
-        // taken the cards away from the one trigger that has somebody watching.
-        // A run an AGENT started (`trigger: 'agent'`) is treated the same as a
-        // manual one: it happens inside a live session a person can be looking
-        // at, and its card lands in the app like any other.
-        unattended: !attended,
-      });
-
-      const stream = agentManager.sendMessage(sessionId, task.prompt, {
-        permissionMode,
-        cwd: effectiveCwd,
+      // Through the turn port, as every other turn starts (T12): the chat's one
+      // writer, the launch cap and the scheduler's own cap all apply, and a
+      // timer's fire at the cap waits for a slot instead of being skipped.
+      const { systemPromptAppend, taskApprovedAllow } = taskTurnOpts(task, run);
+      const marks = withRunMarks(this.store, task, {});
+      const turnRun = this.turns.open({
+        runId: run.id,
+        sessionId,
+        ...(task.agentId ? { agentId: task.agentId } : {}),
         ...(forAgent !== undefined ? { forAgent } : {}),
-        ...taskTurnOpts(task, run),
-        // With the marks of another agent that wrote the task, as a hop carries them (DOR-3938),
-        // and the outsider mark for a task that said it reads outside text (DOR-3969).
-        ...withRunMarks(this.store, task, execution.settings),
-        // The same line as `unattended` above, for approval cards: a timer fire
-        // does not hold its turn for one, a Run now a person pressed does
-        // (spec `agent-permissions` D6).
-        unattendedApprovals: !attended,
+        cwd: effectiveCwd,
+        prompt: task.prompt,
+        runtime: execution.runtimeType,
+        permissionMode,
+        settings: execution.settings,
+        systemPromptAppend,
+        ...(taskApprovedAllow ? { approvedAllow: taskApprovedAllow } : {}),
+        attended,
+        ...(marks.permissionCeiling !== undefined
+          ? { permissionCeiling: marks.permissionCeiling }
+          : {}),
+        ...(marks.carriedMarks?.outsider === true
+          ? { carriedMarks: { outsider: true as const } }
+          : {}),
+        hasStarted,
       });
 
       const stopped = await consumeRunStream(
-        stream,
+        turnRun.events,
         stop.signal,
-        () => void interruptRun(agentManager, sessionId),
+        () => void turnRun.stop(),
         (event) => {
-          // First, so the card reaches the app before anything else is done with
-          // the event. Everything below only reads.
-          turn?.observe(event);
           stop.observe(event);
           outcome.observe(event);
           // Emitted as it happens rather than at the end, so the feed shows the
@@ -1530,9 +1456,6 @@ export class TaskSchedulerService {
         startTime,
         terminal,
         stop,
-        turn,
-        outputSummary,
-        refusals,
         agentManager,
         store: this.store,
         runs: this.runs,

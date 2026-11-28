@@ -18,11 +18,12 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { Db } from '@dorkos/db';
 import { initBoundary } from '../../../lib/boundary.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
-import { TaskSchedulerService, type SchedulerAgentManager } from '../task-scheduler-service.js';
+import { TaskSchedulerService } from '../task-scheduler-service.js';
 import { TaskStore } from '../task-store.js';
 import { mergePins, pinPrograms } from '../allow-list/allow-list-pins.js';
 import { LEVEL_DROPPED_MESSAGE, PROGRAM_CHANGED_MESSAGE } from '../allow-list/run-allow-list.js';
 import { registerClaudeCodeFacts } from '../../../startup/register-claude-code-facts.js';
+import { onRuntime, type RuntimeDouble } from './support/runtime-task-turns.js';
 
 // What the server's startup registers (DOR-4928): unregistered, the protected-path policy
 // refuses every path and turn code knows no Claude transcript.
@@ -30,7 +31,7 @@ registerClaudeCodeFacts();
 
 const CONFIG = { maxConcurrentRuns: 2, retentionCount: 100, mayFire: true, firingReason: 'test' };
 
-function agentManager(): SchedulerAgentManager {
+function agentManager(): RuntimeDouble {
   return {
     ensureSession: vi.fn(),
     sendMessage: vi.fn().mockImplementation(async function* () {}),
@@ -38,13 +39,16 @@ function agentManager(): SchedulerAgentManager {
     getInternalSessionId: vi.fn(() => undefined),
     acquireLock: vi.fn(() => true),
     releaseLock: vi.fn(),
-  } as unknown as SchedulerAgentManager;
+  } as unknown as RuntimeDouble;
 }
+
+/** A made-up agent, paused. */
+const PAUSED_AGENT = { id: '01KPAUSEDAGENT000000000000', name: 'Sample' } as const;
 
 describe('a one-shot task', () => {
   let db: Db;
   let store: TaskStore;
-  let agent: SchedulerAgentManager;
+  let agent: RuntimeDouble;
   let dir: string;
   let services: TaskSchedulerService[];
 
@@ -63,14 +67,18 @@ describe('a one-shot task', () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  function scheduler(config = CONFIG): TaskSchedulerService {
-    const service = new TaskSchedulerService(store, agent, config);
+  function scheduler(
+    config = CONFIG,
+    extra: Partial<ConstructorParameters<typeof TaskSchedulerService>[0]> = {}
+  ): TaskSchedulerService {
+    const service = new TaskSchedulerService({ store, ...onRuntime(agent), config, ...extra });
     services.push(service);
     return service;
   }
 
-  function oneShot(extra: { approvedAllow?: string[] } = {}) {
+  function oneShot(extra: { approvedAllow?: string[] } = {}, agentId?: string) {
     const task = store.createTask({
+      ...(agentId ? { agentId } : {}),
       name: 'sample-backfill',
       description: 'A one-off sample backfill',
       prompt: 'Run the sample backfill once.',
@@ -113,8 +121,17 @@ describe('a one-shot task', () => {
   });
 
   it('keeps a skipped run on its row, and keeps its claim: that skip was its run', async () => {
-    const task = oneShot();
-    const service = scheduler({ ...CONFIG, maxConcurrentRuns: 0 });
+    // Its agent is paused, so its one fire is skipped (spec `audit-trail` PR5).
+    const task = oneShot({}, PAUSED_AGENT.id);
+    const service = scheduler(CONFIG, {
+      agentPauses: {
+        pausedAgent: (agentId: string) =>
+          agentId === PAUSED_AGENT.id
+            ? { ...PAUSED_AGENT, pausedAt: new Date().toISOString() }
+            : undefined,
+        recordHeld: vi.fn(),
+      },
+    });
     await service.start();
     await settled();
     expect(store.listRuns()).toEqual([

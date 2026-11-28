@@ -97,6 +97,9 @@ interface TurnAccumulator {
   receipts: Map<string, ApprovalReceipt>;
 }
 
+/** Resolutions after which the gated tool never ran: nobody allowed it. */
+const UNRUN_RESOLUTIONS = new Set<string | undefined>(['cancelled', 'expired', 'denied']);
+
 /** Get-or-create the merged tool entry for a toolCallId. */
 function toolEntry(turn: TurnAccumulator, toolCallId: string, toolName: string): HistoryToolCall {
   let entry = turn.tools.get(toolCallId);
@@ -576,6 +579,13 @@ export function reconstructHistoryFromEvents(
         // projector holds interactions across the turn boundary by design, so
         // "late" is a state it models rather than an anomaly — it goes to
         // {@link applyLateReceipts}, which lands it on the already-emitted row.
+        // A withdrawn or expired ask leaves its gated tool unrun, whatever the
+        // last frame said; the live fold settles it the same way, so a
+        // reopened transcript does not spin on a stopped turn (DOR-3202).
+        const gated = turn?.tools.get(event.id);
+        if (gated?.status === 'running' && UNRUN_RESOLUTIONS.has(event.resolution)) {
+          gated.status = 'error';
+        }
         const receipt = receiptFor(event);
         if (receipt === undefined) break;
         if (turn) turn.receipts.set(event.id, receipt);

@@ -445,6 +445,10 @@
       "types": "./src/dorkos-events.ts",
       "default": "./dist/dorkos-events.js"
     },
+    "./dorkos-event-frame": {
+      "types": "./src/dorkos-event-frame.ts",
+      "default": "./dist/dorkos-event-frame.js"
+    },
     "./interaction-events": {
       "types": "./src/interaction-events.ts",
       "default": "./dist/interaction-events.js"

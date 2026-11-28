@@ -27,6 +27,7 @@ import {
 import { encodeBroadcast, type BroadcastAudience } from '../../../event-fan-out.js';
 import type { CallerPrincipal } from '../../../../../lib/caller-principal.js';
 import type { AgentIdentityChange } from '@dorkos/mesh';
+import type { DorkOsEventType } from '@dorkos/shared/dorkos-events';
 
 /** One broadcast as the fan-out received it, audience included. */
 interface Recorded {
@@ -198,7 +199,7 @@ describe('config_changed', () => {
     config.fire({ sections: ['tunnel', 'profile'], paths: ['tunnel', 'profile'] });
 
     const { event, data } = fanOut.only('config_changed');
-    const encoded = encodeBroadcast(event, data);
+    const encoded = encodeBroadcast(event as DorkOsEventType, data);
     expect(`${encoded.json}\n${encoded.sse}`).toMatch(/^[^]*tunnel[^]*$/);
     expect(`${encoded.json}\n${encoded.sse}`).not.toContain('authtoken');
   });
@@ -258,7 +259,7 @@ describe('community_connections_changed', () => {
 
     const { event, data } = fanOut.only('community_connections_changed');
     expect(data).toEqual({ changedAt: '2026-09-15T00:00:00.000Z' });
-    const encoded = encodeBroadcast(event, data);
+    const encoded = encodeBroadcast(event as DorkOsEventType, data);
     for (const secret of [ENDED.ownerKey, ENDED.ref, ENDED.status]) {
       expect(`${encoded.json}\n${encoded.sse}`).not.toContain(secret);
     }

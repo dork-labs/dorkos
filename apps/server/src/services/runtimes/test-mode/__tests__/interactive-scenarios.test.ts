@@ -366,7 +366,11 @@ describe('stoppable-turn (C-10) — Stop ends a turn that would never end itself
     // interactive methods, and this is what proves it did.
     const snapshot = await runtime.getSessionSnapshot(CTX, SESSION);
     expect(snapshot.pendingInteractions).toEqual([]);
-    expect(replay(projector).some((e) => e.type === 'interaction_resolved')).toBe(true);
+    // As a withdrawal, the way a real runtime's abort reports it, so the tool
+    // row settles instead of spinning on after the turn (DOR-3202).
+    expect(replay(projector)).toContainEqual(
+      expect.objectContaining({ type: 'interaction_resolved', resolution: 'cancelled' })
+    );
   });
 
   it('resolves EVERY stranded card when a batch of them is interrupted', async () => {

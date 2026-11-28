@@ -30,7 +30,11 @@
  * chat's stream (`run-view.ts`); this is the in-process half a space-side
  * caller needs today.
  *
- * `stop` and `answer` arrive with their first callers (T6 onward).
+ * {@link SpaceTurnPort.watchEvents} hears what the run's turn says, event by
+ * event, for a caller that reads it (a scheduled task's summary, T12).
+ *
+ * `stop` came with its first caller, the scheduler (T12); `answer` arrives
+ * with its own.
  *
  * @module services/runs/turn-port
  */
@@ -43,12 +47,14 @@ import {
   type WaitReason,
 } from '@dorkos/shared/turn-port';
 import { SESSION_RELAY_MAX_MESSAGE_LENGTH } from '@dorkos/shared/session-relay';
+import type { InterruptReceipt, StreamEvent } from '@dorkos/shared/schemas';
 import { logger } from '../../lib/logger.js';
 import { chatKeyOf, type ComputerTurnPort } from '../session/turn-port/index.js';
 import type { StartTurns } from './effects/start-turns.js';
 import type { EffectStore } from './effects/effect-store.js';
 import { StartPayloadSchema, startPayloadOf, type StartPayload } from './effects/start-payload.js';
 import type { RunStore, TurnRun } from './run-store.js';
+import { writeStopReceipt, writeStopRequest } from './run-stops.js';
 
 /** The statuses after which a run never goes back in line, so its words are no longer needed. */
 export const RUN_ENDS: ReadonlySet<TurnRun['status']> = new Set([
@@ -144,6 +150,8 @@ export interface SpaceTurnPortDeps {
   computer?: () => ComputerTurnPort | undefined;
   /** The record side of the hand-overs, for cancelling a run that never left here. */
   starts?: () => StartTurns | undefined;
+  /** Every event of a run's turn from now on (`watchRunEvents` on this computer). */
+  events?: (runId: string, hear: (event: StreamEvent) => void) => () => void;
 }
 
 /** The space face. See the module documentation. */
@@ -285,6 +293,45 @@ export class SpaceTurnPort {
     computer?.withdraw(run.id);
     this.deps.starts?.()?.cancel(run.id, why);
     return this.deps.runs.get(runId)?.status === 'cancelled';
+  }
+
+  /**
+   * Stop one run (§3.1 `stop`), leaving its chat's queue and other runs alone.
+   * A run that has not begun is taken back and cancelled (`stopped`). A run
+   * whose turn is running has the request written on it before its computer
+   * is asked, and the receipt after, so a crash in between still shows it was
+   * asked (§4.4). A launch under way has no turn to stop yet: nothing is
+   * asked, and the caller asks again once the run has `started`.
+   *
+   * @param runId - The run.
+   * @param by - Who asked, as a `dork:` reference, when known.
+   * @returns The receipt, or `undefined` when no turn was asked to stop.
+   */
+  async stop(runId: string, by?: string): Promise<InterruptReceipt | undefined> {
+    const run = this.deps.runs.get(runId);
+    if (!run || RUN_ENDS.has(run.status)) return undefined;
+    if (run.status === 'queued' && this.withdraw(runId, 'stopped')) return undefined;
+    const request = writeStopRequest(this.deps.runs, run.sessionId, {
+      via: 'stop',
+      ...(by !== undefined ? { by } : {}),
+    });
+    const computer = this.deps.computer?.();
+    if (request?.runId !== runId || !computer) return undefined;
+    const receipt = await computer.stop(runId);
+    if (receipt) writeStopReceipt(this.deps.runs, request, receipt);
+    return receipt;
+  }
+
+  /**
+   * Hear every event of a run's turn from now on: what its runtime says, as
+   * the chat's stream shows it. Nothing before the call is replayed.
+   *
+   * @param runId - The run.
+   * @param hear - Called with each event.
+   * @returns A function that stops listening.
+   */
+  watchEvents(runId: string, hear: (event: StreamEvent) => void): () => void {
+    return this.deps.events?.(runId, hear) ?? (() => {});
   }
 
   /**

@@ -30,6 +30,9 @@
  *   "a helper finished and its report has not been handed over". On the resume
  *   path that debt is bounded by a deferred stdin close; a warm process never
  *   performs that close, so it needs its own deadline here.
+ * - **The segment-start clock** (`segment-start-hold.ts`, DOR-5490) bounds the
+ *   gap between a segment's `system/init`, which clears the owed delivery, and
+ *   its first word. Without it a report on its way read as quiet in that gap.
  *
  * Lives beside `turn-liveness.ts` and `stdin-hold.ts` rather than beside the
  * pump, because those are the other two modules answering the same family of
@@ -44,6 +47,7 @@ import { logger } from '../../../../lib/logger.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import type { LiveTaskCounts, LivenessChange, TurnLiveness } from './turn-liveness.js';
 import { isTurnActivity } from '../sessions/records/turn-activity.js';
+import { SegmentStartHold } from './segment-start-hold.js';
 import {
   OWED_DELIVERY_TIMEOUT_MS,
   type Quietness,
@@ -151,6 +155,11 @@ export class ProcessQuiet {
    * state {@link ProcessQuietOptions.onHoldingWorkChange} reports flips of.
    */
   private holdingWork = false;
+  /**
+   * Holds the process from a segment's `system/init` to its first word
+   * (DOR-5490), the stretch where nothing else here says it is busy.
+   */
+  private readonly segmentStart = new SegmentStartHold(() => this.expireSegmentStart());
 
   /**
    * Build a tracker for one process.
@@ -186,6 +195,7 @@ export class ProcessQuiet {
   observe(message: SDKMessage): LivenessChange {
     const owedBefore = this.opts.liveness().owedCount();
     const change = this.opts.liveness().observe(message);
+    this.segmentStart.observe(message, change);
     this.noteOwedDelivery(message, change, owedBefore);
     // Every frame is also a chance to notice the busy spell has ended, so the
     // sixty seconds of quiet do not wait on a consumer happening to ask.
@@ -282,10 +292,24 @@ export class ProcessQuiet {
   isHoldingOnlyReclaimable(): boolean {
     if (this.opts.isTurnOpen() || this.opts.hasRuntimeTurnOpen()) return false;
     if (this.opts.hasPendingInteraction()) return false;
-    if (this.opts.liveness().owedCount() > 0) return false;
+    if (this.opts.liveness().owedCount() > 0 || this.segmentStart.holding) return false;
     const counts = this.opts.liveness().liveTaskCounts();
     if (counts.agents > 0 || counts.other > 0) return false;
     return counts.shells > 0 || this.opts.hasPendingTimer?.() === true;
+  }
+
+  /**
+   * Is a delivery on its way: a settled helper's report still owed, or a
+   * segment that has opened and not yet spoken (DOR-5490)?
+   *
+   * What the queue holds a person's message on (`isSegmentPending`). Asked
+   * directly rather than read off {@link quietness}'s top reason, because a
+   * second helper still running outranks both there, and a message launched
+   * then would still land in the first helper's report. Bounded by the
+   * owed-delivery clock and the segment-start clock.
+   */
+  isSegmentOnItsWay(): boolean {
+    return this.opts.liveness().owedCount() > 0 || this.segmentStart.holding;
   }
 
   /**
@@ -379,8 +403,23 @@ export class ProcessQuiet {
     this.noteHoldingWork();
   }
 
-  /** Stop the owed-delivery clock, because the process it belonged to is going. */
+  /**
+   * The process died. A segment it had opened will never speak, so that hold
+   * goes now; the owed-delivery clock stays, because it is what clears the
+   * debt left on this tracker (DOR-5490 review).
+   */
+  noteProcessGone(): void {
+    this.segmentStart.dispose();
+  }
+
+  /** Stop both delivery clocks, because the process they belonged to is going. */
   dispose(): void {
+    this.clearOwedClock();
+    this.segmentStart.dispose();
+  }
+
+  /** Stop the owed-delivery clock alone. */
+  private clearOwedClock(): void {
     if (this.owedTimer !== undefined) clearTimeout(this.owedTimer);
     this.owedTimer = undefined;
   }
@@ -412,7 +451,7 @@ export class ProcessQuiet {
     // Only once nothing is owed: a fold that settles one of several debts
     // leaves the rest on the clock they were armed with.
     if (this.opts.liveness().owedCount() > 0) return;
-    this.dispose();
+    this.clearOwedClock();
     this.fireGateChange();
   }
 
@@ -434,6 +473,10 @@ export class ProcessQuiet {
     // resume path, where stdin does close and the CLI ends its shells itself.
     if (counts.agents + counts.other + counts.shells > 0) return 'background-work';
     if (this.opts.liveness().owedCount() > 0) return 'delivery-owed';
+    // A segment has opened and not yet spoken (DOR-5490): a helper's report, a
+    // timer's wake or the agent's next step is on its way, and no window is
+    // open to say so yet.
+    if (this.segmentStart.holding) return 'segment-starting';
     // A timer the agent set fires inside this process, so ending the process
     // loses it, exactly like a shell (DOR-2717). Bounded by the same ceiling,
     // which is what ends a `/loop` that would otherwise hold it forever.
@@ -511,7 +554,7 @@ export class ProcessQuiet {
     if (change.segmentRunning) {
       this.segmentRunning = true;
       this.noteLateDelivery();
-      this.dispose();
+      this.clearOwedClock();
       return;
     }
     if (message.type === 'result') {
@@ -558,6 +601,14 @@ export class ProcessQuiet {
       sessionId: this.opts.sessionId,
       tasks: abandoned,
       waitedMs: this.owedTimeout,
+    });
+    this.fireGateChange();
+  }
+
+  /** A segment opened and said nothing for the whole wait: let go, and say so. */
+  private expireSegmentStart(): void {
+    logger.info('[SessionPump] a segment opened and never spoke; releasing the queue', {
+      sessionId: this.opts.sessionId,
     });
     this.fireGateChange();
   }

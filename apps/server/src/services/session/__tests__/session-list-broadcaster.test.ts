@@ -493,7 +493,9 @@ describe('sendSessionStatusSnapshot — the connect preamble', () => {
       /** Session ids the client was told about, in order. */
       sessionIds: () =>
         frames.map(
-          (frame) => (JSON.parse(frame.sse.split('data: ')[1]!) as { sessionId: string }).sessionId
+          (frame) =>
+            (JSON.parse(frame.sse.split('data: ')[1]!) as { payload: { sessionId: string } })
+              .payload.sessionId
         ),
       wasDropped: () => dropped,
     };
