@@ -19,6 +19,8 @@ import type { ActivityService } from '../services/activity/activity-service.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { ADAPTER_CONFIG_FILE } from '../services/relay/adapter-secrets.js';
 import { AdapterManager, type AdapterManagerDeps } from '../services/relay/adapter-manager.js';
+import { setRelayTurnPort } from '../services/relay/relay-turns/port-runtime.js';
+import { turnPort } from '../services/runs/index.js';
 import { makeChatNoticeTargetResolver } from '../services/relay/binding-subsystem.js';
 import {
   createInitiateConsentGate,
@@ -128,6 +130,9 @@ export async function startRelayAdapters(
   // nothing in test mode needs it configured; it exists so a seeded manifest
   // naming a real runtime enum resolves.
   if (relayEnabled && relayCore && adapterRegistry && traceStore && relayAgentRuntime) {
+    // Every turn the built-in adapter starts goes through the turn port (spec
+    // `turns-survive-restarts` T13), on the run record core-stores installed.
+    setRelayTurnPort(turnPort);
     try {
       const adapterConfigPath = path.join(dorkHome, ADAPTER_CONFIG_FILE);
       adapterManager = new AdapterManager(adapterRegistry, adapterConfigPath, {

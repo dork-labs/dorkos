@@ -149,10 +149,13 @@ export interface DispatchSessionMessageOpts {
   /**
    * What a turn-port run carries beside its words (T12, a scheduled task's
    * run): its system prompt's standing brief, the model and effort its caller
-   * resolved, and a task's own level and approved rules. Passed straight
-   * through; see `DispatchMessageOpts`.
+   * resolved, a task's own level and approved rules, and a relay delivery's
+   * own level (T13). Passed straight through; see `DispatchMessageOpts`.
    */
-  turnOptions?: Pick<DispatchMessageOpts, 'systemPromptAppend' | 'settings' | 'taskTurn'>;
+  turnOptions?: Pick<
+    DispatchMessageOpts,
+    'systemPromptAppend' | 'settings' | 'taskTurn' | 'relayTurn'
+  >;
 }
 
 export {

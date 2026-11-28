@@ -3,21 +3,22 @@
  * (DOR-1627), and keeps that program for the whole conversation (DOR-1774).
  * Nothing is stubbed between the manifest and the runtime: a real manifest, the
  * real ladder, the real `runtimeRegistry` over SQLite (the row a turn WRITES is
- * the row the next one READS), and the adapter built by the real `createAdapter`.
+ * the row the next one READS), and the adapter built by the real `createAdapter`,
+ * whose turns go through the real turn port (T13).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
-import { createTestDb } from '@dorkos/test-utils/db';
 import type { AdapterConfig, RelayAdapter, RelayPublisher, TraceStoreLike } from '@dorkos/relay';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { createAdapter } from '../adapter-factory.js';
+import { installRelayPort, uninstallRelayPort, type RelayPort } from './relay-port-harness.js';
 
-const AGENT_ID = '01AGENTULIDDOR1627';
+const AGENT_ID = '01JRZ7AGENTDR1627000000000';
 const MESH_SUBJECT = `relay.agent.ana.${AGENT_ID}`;
 /** The id claude-code renames its session to once a turn has started. */
 const SDK_ID = '550e8400-e29b-41d4-a716-446655440000';
@@ -30,17 +31,29 @@ async function* answerScenario(): AsyncGenerator<StreamEvent> {
 
 /** A runtime that answers two turns (a spent fake yields nothing at all). */
 function fakeRuntime(type: string): FakeAgentRuntime {
-  return new FakeAgentRuntime(type).withScenarios([answerScenario, answerScenario]);
+  const runtime = new FakeAgentRuntime(type).withScenarios([answerScenario, answerScenario]);
+  runtime.getInternalSessionId.mockReturnValue(undefined);
+  return runtime;
 }
 
-/** Teach a fake to rename its own session, as claude-code does, so the durable-key rule has work to do. */
+/**
+ * Teach a fake to rename its own session, as claude-code does, so the durable-key rule has work
+ * to do: a turn that speaks moves its conversation's row to the id it renamed to
+ * (`sdk-session-rebind.ts`), and the relay reads that id back.
+ */
 function renamingItsOwnSessions(runtime: FakeAgentRuntime, sdkSessionId: string): FakeAgentRuntime {
+  async function* renamingAnswer(): AsyncGenerator<StreamEvent> {
+    await runtimeRegistry.rekeySessionSettings(AGENT_ID, sdkSessionId);
+    yield* answerScenario();
+  }
+  runtime.withScenarios([renamingAnswer, renamingAnswer]);
   return Object.assign(runtime, { getSdkSessionId: () => sdkSessionId });
 }
 
 /** Write a real `.dork/agent.json`. */
 async function writeAgentManifest(runtime: string | undefined, dir: string): Promise<void> {
-  await mkdir(path.join(dir, '.dork'), { recursive: true });
+  // Registered as boot sees it; the manifest below is what this test varies.
+  port.standAgent(dir, AGENT_ID);
   await writeFile(
     path.join(dir, '.dork', 'agent.json'),
     JSON.stringify({
@@ -79,6 +92,8 @@ function agentEnvelope(): RelayEnvelope {
   } as unknown as RelayEnvelope;
 }
 
+let port: RelayPort;
+
 describe('a mesh agent subject runs on the target agent’s own runtime', () => {
   let claude: FakeAgentRuntime;
   let codex: FakeAgentRuntime;
@@ -89,9 +104,9 @@ describe('a mesh agent subject runs on the target agent’s own runtime', () => 
 
   beforeEach(async () => {
     sessionStore = new Map<string, string>();
+    port = await installRelayPort();
     claude = renamingItsOwnSessions(fakeRuntime('claude-code'), SDK_ID);
     codex = fakeRuntime('codex');
-    runtimeRegistry.setDb(createTestDb());
     runtimeRegistry.register(claude);
     runtimeRegistry.register(codex);
     runtimeRegistry.setDefault('claude-code');
@@ -128,6 +143,7 @@ describe('a mesh agent subject runs on the target agent’s own runtime', () => 
 
   afterEach(async () => {
     await adapter.stop();
+    uninstallRelayPort();
     await rm(agentDir, { recursive: true, force: true });
   });
 

@@ -1,18 +1,25 @@
 /**
  * The boot flag reaches the turn through the real wiring (DOR-3858 review): `createAdapter` reads
  * `DORKOS_MARK_STRANGER_TURNS` and hands it to the built-in adapter, which hands it to the handler
- * on every delivery. A bound chat's stranger then reaches `sendMessage` with the outsider mark.
- * Dropping either spread (`adapter-factory.ts` or `claude-code-adapter.ts`) reddens the flag-on case.
+ * on every delivery. A bound chat's stranger then reaches the runtime's `sendMessage` with the
+ * outsider mark, through the turn port (T13). Dropping either spread (`adapter-factory.ts` or
+ * `claude-code-adapter.ts`) reddens the flag-on case.
  */
-import { describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { AgentRuntimeLike, RelayAdapter, RelayPublisher } from '@dorkos/relay';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { env } from '../../../env.js';
-
+import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { createAdapter, type AdapterFactoryDeps } from '../adapter-factory.js';
+import { installRelayPort, uninstallRelayPort } from './relay-port-harness.js';
 
-const SUBJECT = 'relay.agent.default.agent-scout';
+const AGENT_ID = '01JRZ7SC0VTAGENT0000000000';
+const SUBJECT = `relay.agent.default.${AGENT_ID}`;
 
 /** A bound Telegram stranger's message, as the binding router stamps it. */
 function strangerEnvelope(): RelayEnvelope {
@@ -37,24 +44,33 @@ function strangerEnvelope(): RelayEnvelope {
   };
 }
 
+let scout: string;
+let runtime: FakeAgentRuntime;
+
+beforeEach(async () => {
+  const port = await installRelayPort();
+  scout = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'relay-stranger-scout-')));
+  port.standAgent(scout, AGENT_ID);
+  runtime = new FakeAgentRuntime('claude-code').withScenarios([
+    async function* () {
+      yield { type: 'done', data: {} } as StreamEvent;
+    },
+  ]);
+  runtime.getInternalSessionId.mockReturnValue(undefined);
+  runtimeRegistry.register(runtime);
+  runtimeRegistry.setDefault('claude-code');
+});
+
+afterEach(() => {
+  uninstallRelayPort();
+  fs.rmSync(scout, { recursive: true, force: true });
+});
+
 /**
  * Build the adapter through the factory, deliver, and return the turn options. Leave `enabled` out
  * to build with this boot's parsed flag, untouched.
  */
 async function sentOptions(enabled?: boolean): Promise<Record<string, unknown>> {
-  const sendMessage = vi.fn().mockImplementation(() =>
-    (async function* () {
-      yield { type: 'done', data: {} } as StreamEvent;
-    })()
-  );
-  const runtime = {
-    type: 'claude-code',
-    ensureSession: vi.fn(),
-    sendMessage,
-    getSdkSessionId: vi.fn().mockReturnValue(undefined),
-    approveTool: vi.fn().mockReturnValue(true),
-    interruptQuery: vi.fn().mockResolvedValue(true),
-  } as unknown as AgentRuntimeLike;
   const relay: RelayPublisher = {
     publish: vi.fn().mockResolvedValue({ messageId: 'reply-example', deliveredTo: 1 }),
     onSignal: vi.fn().mockReturnValue(() => {}),
@@ -72,7 +88,7 @@ async function sentOptions(enabled?: boolean): Promise<Record<string, unknown>> 
     adapter = await createAdapter(
       { id: 'claude-code', type: 'claude-code', enabled: true, config: {} } as never,
       {
-        agentRuntimes: new Map([['claude-code', runtime]]),
+        agentRuntimes: new Map([['claude-code', runtime as unknown as AgentRuntimeLike]]),
         traceStore: { insertSpan: vi.fn(), updateSpan: vi.fn() },
       } as unknown as AdapterFactoryDeps,
       '/tmp/adapters.json'
@@ -86,12 +102,12 @@ async function sentOptions(enabled?: boolean): Promise<Record<string, unknown>> 
   await adapter!.start(relay);
   const envelope = strangerEnvelope();
   await adapter!.deliver(envelope.subject, envelope, {
-    agent: { directory: '/agents/scout', runtime: 'claude-code' },
+    agent: { directory: scout, runtime: 'claude-code' },
   });
   await adapter!.stop();
 
-  expect(sendMessage).toHaveBeenCalledTimes(1);
-  return sendMessage.mock.calls[0]![2] as Record<string, unknown>;
+  expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+  return runtime.sendMessage.mock.calls[0]![2] as Record<string, unknown>;
 }
 
 describe('the factory-built adapter and the stranger mark (DOR-3858)', () => {

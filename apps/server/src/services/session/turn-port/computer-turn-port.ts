@@ -37,6 +37,7 @@
  */
 import type { MeshCore } from '@dorkos/mesh';
 import {
+  isRelayOrigin,
   personTyped,
   TurnStartRequestSchema,
   wordsWaitInComposer,
@@ -154,6 +155,9 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
       if (request.task && request.origin.kind !== 'schedule') {
         throw new Error('Only a schedule’s run carries a task’s level');
       }
+      if (request.relay && !isRelayOrigin(request.origin)) {
+        throw new Error('Only a relay delivery’s run carries a relay turn’s level');
+      }
       let agentPath: string | undefined;
       if (request.agentId !== undefined) {
         agentPath = deps.meshCore()?.getProjectPath(request.agentId);
@@ -201,6 +205,7 @@ export function createComputerTurnPort(deps: ComputerTurnPortDeps): ComputerTurn
                 },
               }
             : {}),
+          ...(request.relay ? { relayTurn: request.relay } : {}),
         },
       }).finally(() => inFlight.delete(request.runId));
       if (result === 'runtime_mismatch') return { refused: 'runtime_mismatch' };

@@ -21,19 +21,11 @@
  *
  * @module services/tasks/execution/task-turns
  */
-import { SLOT_WAIT_STATUS, SLOT_WAIT_TEXT, type InterruptReceipt } from '@dorkos/shared/schemas';
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { PermissionMode, StreamEvent } from '@dorkos/shared/types';
 import { formatDorkReference } from '@dorkos/shared/dork-ref';
-import type { RunStatus } from '@dorkos/shared/turn-port';
 import type { SpaceTurnPort, TurnRun } from '../../runs/index.js';
 import type { RunExecutionSettings } from './resolve-run-execution.js';
-import { createTaggedLogger, logError } from '../../../lib/logger.js';
-
-const logger = createTaggedLogger('Tasks');
-
-/** The statuses after which a run's turn is over or never comes (`RUN_ENDS` in `services/runs`). */
-const RUN_ENDS: ReadonlySet<RunStatus> = new Set(['ended', 'settled', 'cancelled', 'superseded']);
 
 /** The source kind a task's run keeps its words under: the scheduler's watch of it. */
 export const TASK_RUN_SOURCE = 'task-run';
@@ -89,12 +81,6 @@ export interface TaskTurns {
    */
   open(request: TaskTurnRequest): TaskTurn;
 }
-
-/** The server's slot-wait status: what pauses a run's time limit while it waits. */
-const SLOT_WAIT_EVENT: StreamEvent = {
-  type: 'system_status',
-  data: { status: SLOT_WAIT_STATUS, message: SLOT_WAIT_TEXT },
-} as StreamEvent;
 
 /** The run row's sentence for each reason the port gives a run that never started. */
 const NOT_STARTED: Readonly<Record<string, string>> = {
@@ -171,8 +157,13 @@ export function portTaskTurns(port: () => SpaceTurnPort | undefined): TaskTurns 
       }
       const by = formatDorkReference({ kind: 'run', id: request.runId });
       return {
-        events: watchTurn(face, turnRunId, () => words.delete(request.runId)),
-        stop: () => stopTurn(face, turnRunId, by),
+        events: face.turnEvents(turnRunId, {
+          notStarted: notStartedLine,
+          onEnd: () => words.delete(request.runId),
+        }),
+        stop: async () => {
+          await face.stopTurn(turnRunId, by);
+        },
       };
     },
   };
@@ -187,95 +178,4 @@ function settingsOf(settings: RunExecutionSettings): {
     ...(settings.effort !== undefined ? { effort: settings.effort } : {}),
   };
   return Object.keys(chosen).length > 0 ? { settings: chosen } : {};
-}
-
-/**
- * Stop a turn. A launch still under way has no turn to stop yet, so the stop
- * is asked again the moment its run has started. Never rejects: it is called
- * from an abort listener, and a turn that cannot be stopped must not keep the
- * run from being written.
- */
-async function stopTurn(face: SpaceTurnPort, runId: string, by: string): Promise<void> {
-  const ask = (): Promise<InterruptReceipt | undefined> =>
-    face.stop(runId, by).catch((err: unknown) => {
-      logger.warn(`a task's turn could not be stopped`, { runId, ...logError(err) });
-      return undefined;
-    });
-  if ((await ask()) !== undefined) return;
-  const run = face.get(runId);
-  if (!run || RUN_ENDS.has(run.status)) return;
-  const stopOnStart = face.watch(
-    (moved) => {
-      if (moved.status === 'started' || moved.status === 'running') {
-        stopOnStart();
-        void ask();
-      } else if (RUN_ENDS.has(moved.status)) {
-        stopOnStart();
-      }
-    },
-    { runId }
-  );
-}
-
-/**
- * A run's turn events until its turn is over. Subscribed before the first
- * hand-over can happen (the start was only saved), so nothing is missed.
- */
-async function* watchTurn(
-  face: SpaceTurnPort,
-  runId: string,
-  forget: () => void
-): AsyncGenerator<StreamEvent> {
-  const waiting: StreamEvent[] = [];
-  let over: TurnRun | undefined;
-  let wake: (() => void) | undefined;
-  let saidWaiting = false;
-  let sawDone = false;
-  const push = (event: StreamEvent): void => {
-    if (event.type === 'done') sawDone = true;
-    waiting.push(event);
-    wake?.();
-  };
-  const hear = (run: TurnRun): void => {
-    if (run.status === 'queued' && run.waitReason === 'machine_full' && !saidWaiting) {
-      saidWaiting = true;
-      push(SLOT_WAIT_EVENT);
-    }
-    if (RUN_ENDS.has(run.status)) {
-      over = run;
-      wake?.();
-    }
-  };
-  const unwatchEvents = face.watchEvents(runId, push);
-  const unwatchRun = face.watch(hear, { runId });
-  try {
-    const now = face.get(runId);
-    if (now) hear(now);
-    for (;;) {
-      while (waiting.length > 0) yield waiting.shift()!;
-      if (over) break;
-      await new Promise<void>((resolve) => {
-        wake = resolve;
-      });
-      wake = undefined;
-    }
-    if (over.status === 'cancelled' && over.endingDetail.cancelledBecause !== 'stopped') {
-      throw new Error(notStartedLine(over));
-    }
-    // The runtime's stream broke off (a throw, a refusal, a process that died):
-    // what DorkOS closed the turn with never passed here, so the run fails on
-    // its ending rather than reading as done.
-    if (
-      !sawDone &&
-      over.ending !== null &&
-      over.ending !== 'completed' &&
-      over.ending !== 'stopped'
-    ) {
-      throw new Error(over.endingDetail.refusal ?? `The run’s turn ended early (${over.ending}).`);
-    }
-  } finally {
-    unwatchEvents();
-    unwatchRun();
-    forget();
-  }
 }

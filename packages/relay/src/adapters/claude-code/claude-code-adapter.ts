@@ -835,6 +835,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
             // What tells the host a scheduled run was refused a tool nobody was
             // there to approve (DOR-1580).
             onRefusedAsk: this.deps.onRefusedAsk,
+            ...(this.deps.noteTurnStart ? { noteTurnStart: this.deps.noteTurnStart } : {}),
             runningTasks: this.runningTasks,
             logger: this.deps.logger,
           }

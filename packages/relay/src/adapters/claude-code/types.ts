@@ -538,9 +538,12 @@ export interface ClaudeCodeAdapterDeps {
   recallChatPlace?: ChatPlaceRecall;
   /**
    * Told when a turn is about to start, with the session it runs in and who sent
-   * the message, before anything runs. The host uses it to know, per turn,
-   * whether the turn is a stranger's (a bridged chat, an outside agent), which
-   * the session's first binding alone cannot say. Absent means nobody is told.
+   * the message, just before `sendMessage`: an agent turn's and a scheduled
+   * task's run alike. The host uses it to know, per turn, whether the turn is a
+   * stranger's (a bridged chat, an outside agent), which the session's first
+   * binding alone cannot say; the DorkOS server starts each turn through its
+   * turn port as a run whose origin this sender decides. Absent means nobody is
+   * told.
    */
   noteTurnStart?: TurnStartNote;
   /**

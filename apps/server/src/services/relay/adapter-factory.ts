@@ -55,6 +55,12 @@ import { AdapterError } from './adapter-error.js';
 import { env } from '../../env.js';
 import { createTurnExecutionSettingsResolver } from './turn-execution-settings.js';
 import { heldChatPlace } from '../session/launch/resolve-chat-place.js';
+import {
+  portBackedRuntimes,
+  registeredAgentIdOf,
+  relayTurnPort,
+  RelayTurnNotes,
+} from './relay-turns/port-runtime.js';
 
 /** Dependencies for constructing runtime adapters. */
 export interface AdapterFactoryDeps {
@@ -353,12 +359,30 @@ export async function createAdapter(
       return adapter;
     }
     case 'claude-code': {
+      // Every turn the adapter starts goes through the turn port, so it has a
+      // run record and the dispatcher's one decision about its chat (spec
+      // `turns-survive-restarts` T13): the adapter holds only port-backed
+      // stand-ins, never a runtime. Who sent each turn's message, which decides
+      // its origin, reaches them through the adapter's own note.
+      const notes = new RelayTurnNotes();
+      const agentRuntimes = portBackedRuntimes(deps.agentRuntimes, {
+        port: relayTurnPort,
+        notes,
+        originOf: relayTurnOrigin,
+        agentIdOf: registeredAgentIdOf,
+        chats: {
+          isBound: async (sessionId) =>
+            (await runtimeRegistry.resolveSessionRuntime(sessionId)).bound,
+          forgetUnstarted: (sessionId) => runtimeRegistry.forgetUnstartedSession(sessionId),
+        },
+      });
       // What answers a message that names no runtime; the adapter drives the
       // rest of the map per message (DOR-1614).
-      const agentManager = defaultRuntimeFor(deps.agentRuntimes, config.id);
+      const agentManager = defaultRuntimeFor(agentRuntimes, config.id);
       return new ClaudeCodeAdapter(config.id, config.config as Record<string, unknown>, {
         agentManager,
-        agentRuntimes: deps.agentRuntimes,
+        agentRuntimes,
+        noteTurnStart: notes.note,
         traceStore: deps.traceStore,
         taskStore: deps.taskStore,
         onRefusedAsk: deps.onRefusedAsk,
