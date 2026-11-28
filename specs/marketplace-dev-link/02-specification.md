@@ -371,12 +371,12 @@ passes the path it already has.
 
 All under `/api/marketplace`, registered in the OpenAPI registry, docs regenerated.
 
-| Route                          | Bar                                                    | Body / answer                                                                                                                                                                     |
-| ------------------------------ | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /dev-links/preview`      | none (read-only)                                       | `{ path, scope, projectPath? }` → `{ name, type, version?, path, scope, slot, replaces: { version } \| null, effects, extensions: string[] }`, or the typed refusal (400/403/409) |
-| `POST /dev-links`              | `marketplace.link` gate via `ctx` (202 card, 403, run) | `{ path, scope, projectPath?, replaceInstalled? }` + `X-DorkOS-Approval` on retry → `201 DevLinkStatus`                                                                           |
-| `GET /dev-links`               | none                                                   | `{ links: DevLinkStatus[], registryUnreadable?: string }`                                                                                                                         |
-| `POST /dev-links/:name/unlink` | `trustedCaller` (as `/held-back/:name/decision`)       | `{ scope, projectPath? }` → `{ restored: 'installed' \| 'removed' }`                                                                                                              |
+| Route                      | Bar                                                    | Body / answer                                                                                                                                                                     |
+| -------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /dev-links/previews` | none (read-only)                                       | `{ path, scope, projectPath? }` → `{ name, type, version?, path, scope, slot, replaces: { version } \| null, effects, extensions: string[] }`, or the typed refusal (400/403/409) |
+| `POST /dev-links`          | `marketplace.link` gate via `ctx` (202 card, 403, run) | `{ path, scope, projectPath?, replaceInstalled? }` + `X-DorkOS-Approval` on retry → `201 DevLinkStatus`                                                                           |
+| `GET /dev-links`           | none                                                   | `{ links: DevLinkStatus[], registryUnreadable?: string }`                                                                                                                         |
+| `DELETE /dev-links/:name`  | `trustedCaller` (as `/held-back/:name/decision`)       | query `scope`, `projectPath?` → `{ restored: 'installed' \| 'removed' }`                                                                                                          |
 
 `DevLinkStatus = { name, type, scope, projectPath?, path, state: 'active' | 'folder-missing' |
 'link-missing' | 'link-replaced', parked: { version? } | null, linkedAt, lastReloadAt? }`.
