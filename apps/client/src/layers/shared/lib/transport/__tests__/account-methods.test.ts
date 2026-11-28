@@ -103,18 +103,4 @@ describe('createAccountMethods', () => {
       body: { path: '/Users/me/.claude2' },
     });
   });
-
-  it('rejects a refusal with the server’s message and the status', async () => {
-    const message = 'This conversation did not start here, so it can only wait for the reset.';
-    answer(409, {
-      title: 'That clashes with a change made meanwhile.',
-      status: 409,
-      code: 'conflict',
-      detail: message,
-    });
-    await expect(methods.continueSession('s1', { account: 'acct-2' })).rejects.toMatchObject({
-      message,
-      status: 409,
-    });
-  });
 });

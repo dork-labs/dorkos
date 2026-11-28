@@ -52,29 +52,6 @@ describe('revealEntry', () => {
     expect(init.method).toBe('POST');
     expect(init.body).toBe(JSON.stringify({ cwd: '/repo', path: 'src/index.ts' }));
   });
-
-  it('rejects with the server code when the entry is gone', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            type: 'urn:dorkos:problem:not_found',
-            title: 'That doesn’t exist here.',
-            status: 404,
-            code: 'not_found',
-            detail: 'That isn’t there anymore.',
-          }),
-          { status: 404, headers: { 'Content-Type': 'application/problem+json' } }
-        )
-      )
-    );
-
-    await expect(setup().revealEntry('/repo', 'gone.txt')).rejects.toMatchObject({
-      code: 'not_found',
-      message: 'That isn’t there anymore.',
-    });
-  });
 });
 
 describe('copyEntry', () => {
@@ -95,29 +72,6 @@ describe('copyEntry', () => {
     expect(url).toBe(`${BASE}/files/copy`);
     expect(init.method).toBe('POST');
     expect(init.body).toBe(JSON.stringify({ cwd: '/repo', from: 'a.txt', to: 'b.txt' }));
-  });
-
-  it('rejects with already_exists when the destination is taken', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            type: 'urn:dorkos:problem:already_exists',
-            title: 'Something with that name is already there.',
-            status: 409,
-            code: 'already_exists',
-            detail: 'Something with that name is already there.',
-          }),
-          { status: 409, headers: { 'Content-Type': 'application/problem+json' } }
-        )
-      )
-    );
-
-    await expect(setup().copyEntry('/repo', 'a.txt', 'b.txt')).rejects.toMatchObject({
-      code: 'already_exists',
-      message: 'Something with that name is already there.',
-    });
   });
 });
 

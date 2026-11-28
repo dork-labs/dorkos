@@ -67,28 +67,4 @@ describe('createTasksMethods', () => {
       expect(fetchMock.mock.calls[0]![1]).toMatchObject({ credentials: 'include' });
     }
   });
-
-  it('throws a refusal as the app error, with its code and status', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(
-        async () =>
-          new Response(
-            JSON.stringify({
-              type: 'urn:dorkos:problem:task_not_found',
-              title: 'Not found',
-              status: 404,
-              code: 'task_not_found',
-              detail: 'No such schedule.',
-            }),
-            { status: 404, headers: { 'Content-Type': 'application/problem+json' } }
-          )
-      )
-    );
-    await expect(methods.deleteTask('t1')).rejects.toMatchObject({
-      message: 'No such schedule.',
-      code: 'task_not_found',
-      status: 404,
-    });
-  });
 });

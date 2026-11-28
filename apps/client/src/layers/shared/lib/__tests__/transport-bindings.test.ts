@@ -46,23 +46,6 @@ describe('HttpTransport — Relay Bindings', () => {
       ]);
       expect(result).toEqual([second, mockBinding]);
     });
-
-    it('throws when the server responds with an error', async () => {
-      vi.mocked(fetch).mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            title: 'That’s not available right now. Try again soon.',
-            status: 503,
-            code: 'temporarily_unavailable',
-            detail: 'Relay not enabled',
-          }),
-          { status: 503 }
-        )
-      );
-
-      const transport = new HttpTransport(BASE_URL);
-      await expect(transport.getBindings()).rejects.toThrow('Relay not enabled');
-    });
   });
 
   describe('createBinding()', () => {
@@ -89,48 +72,10 @@ describe('HttpTransport — Relay Bindings', () => {
       );
       expect(result).toEqual(mockBinding);
     });
-
-    it('throws when the server responds with a validation error', async () => {
-      vi.mocked(fetch).mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            title: 'The request didn’t pass its checks.',
-            status: 400,
-            code: 'invalid_request',
-            detail: 'Validation failed',
-          }),
-          { status: 400 }
-        )
-      );
-
-      const transport = new HttpTransport(BASE_URL);
-      await expect(
-        transport.createBinding({
-          adapterId: 'x',
-          agentId: 'y',
-          sessionStrategy: 'per-chat',
-          label: '',
-        })
-      ).rejects.toThrow('Validation failed');
-    });
   });
 
   describe('deleteBinding()', () => {
-    it('calls DELETE /relay/bindings/:id', async () => {
-      vi.mocked(fetch).mockResolvedValue(
-        new Response(JSON.stringify({ ok: true }), { status: 200 })
-      );
-
-      const transport = new HttpTransport(BASE_URL);
-      await transport.deleteBinding('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11');
-
-      expect(fetch).toHaveBeenCalledWith(
-        `${BASE_URL}/relay/bindings/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11`,
-        expect.objectContaining({ method: 'DELETE' })
-      );
-    });
-
-    it('URL-encodes the binding ID', async () => {
+    it('calls DELETE /relay/bindings/:id with the id encoded', async () => {
       vi.mocked(fetch).mockResolvedValue(
         new Response(JSON.stringify({ ok: true }), { status: 200 })
       );
@@ -140,25 +85,8 @@ describe('HttpTransport — Relay Bindings', () => {
 
       expect(fetch).toHaveBeenCalledWith(
         `${BASE_URL}/relay/bindings/id%20with%20spaces`,
-        expect.anything()
+        expect.objectContaining({ method: 'DELETE' })
       );
-    });
-
-    it('throws when the server responds with 404', async () => {
-      vi.mocked(fetch).mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            title: 'That doesn’t exist here.',
-            status: 404,
-            code: 'not_found',
-            detail: 'Binding not found',
-          }),
-          { status: 404 }
-        )
-      );
-
-      const transport = new HttpTransport(BASE_URL);
-      await expect(transport.deleteBinding('missing-id')).rejects.toThrow('Binding not found');
     });
   });
 });

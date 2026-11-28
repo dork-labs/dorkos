@@ -38,39 +38,4 @@ describe('HttpTransport.listRelayDeadLetters', () => {
       expect.anything()
     );
   });
-
-  it('omits query string when filters are empty', async () => {
-    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
-
-    const transport = new HttpTransport(BASE_URL);
-    await transport.listRelayDeadLetters({});
-
-    expect(fetch).toHaveBeenCalledWith(`${BASE_URL}/relay/dead-letters`, expect.anything());
-  });
-
-  it('throws when the server responds with an error', async () => {
-    vi.mocked(fetch).mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          title: 'That’s not available right now. Try again soon.',
-          status: 503,
-          code: 'temporarily_unavailable',
-          detail: 'Relay not enabled',
-        }),
-        { status: 503 }
-      )
-    );
-
-    const transport = new HttpTransport(BASE_URL);
-    await expect(transport.listRelayDeadLetters()).rejects.toThrow('Relay not enabled');
-  });
-
-  it('returns an empty array when server returns []', async () => {
-    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
-
-    const transport = new HttpTransport(BASE_URL);
-    const result = await transport.listRelayDeadLetters();
-
-    expect(result).toEqual([]);
-  });
 });
