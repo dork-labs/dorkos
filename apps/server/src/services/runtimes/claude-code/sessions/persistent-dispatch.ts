@@ -369,7 +369,9 @@ export class PersistentDispatch {
    * A settled background helper's report arrives as a segment of its own, and a
    * queued message launched into the gap before it would share a turn with it.
    * Bounded by the pump's owed-delivery clock, so a delivery that never arrives
-   * releases the queue after thirty seconds rather than holding it forever.
+   * releases the queue after thirty seconds rather than holding it forever. A
+   * segment that has opened but not spoken yet is still on its way, bounded by
+   * the segment-start clock (DOR-5490).
    *
    * @param sessionId - The session whose queue head is waiting, in any id it
    *   answers to

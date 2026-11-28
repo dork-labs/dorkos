@@ -26,6 +26,8 @@ import {
   backgroundTasksMessage,
   FakeQuery,
   initMessage,
+  resultMessage,
+  taskNotificationMessage,
   type BackgroundTaskType,
 } from './fake-pump-query.js';
 
@@ -189,6 +191,27 @@ describe('the warm ceiling reclaims only processes that are not working', () => 
     for (let i = 1; i < CEILING; i += 1) {
       expect(registry.warmth(`shell-${i}`)).toBe('warm');
     }
+  });
+
+  it('passes over a process whose report segment has opened, though it is the oldest (DOR-5490)', async () => {
+    const queries = new Map<string, FakeQuery>();
+    const registry = new SessionPumpRegistry(identity);
+    const opts = (id: string) => launchOpts(queries, id, { maxWarmSessions: 2 });
+    await registry.acquire('reporting', opts('reporting')).warm();
+    // A helper finished; the CLI opened the segment for its report and is
+    // waiting on the model's first token.
+    for (const frame of [resultMessage(), taskNotificationMessage('t-1'), initMessage()]) {
+      queries.get('reporting')!.emit(frame);
+    }
+    await vi.advanceTimersByTimeAsync(0);
+    await registry.acquire('idle', opts('idle')).warm();
+
+    const warming = registry.acquire('late', opts('late')).warm();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await warming;
+    expect(registry.warmth('late')).toBe('warm');
+    expect(registry.warmth('idle')).toBe('cold');
+    expect(registry.warmth('reporting')).toBe('warm');
   });
 
   it('never reclaims a process a helper or Monitor holds, even when it is the oldest', async () => {

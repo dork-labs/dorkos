@@ -100,7 +100,12 @@ export type QuietnessBlocker =
   | 'runtime-turn-open'
   /** A helper agent, Monitor or unknown background task is still working. */
   | 'background-work'
-  /** A settled notification has not been delivered yet, bounded by the owed-delivery clock. */
+  /**
+   * A settled notification has not been delivered yet, bounded by the
+   * owed-delivery clock. Also a segment that has opened and not yet spoken
+   * (DOR-5490): its init cleared the debt, but the report is still on its way,
+   * bounded by the segment-start clock (`messaging/segment-start-hold.ts`).
+   */
   | 'delivery-owed'
   /** A session timer the agent set (CronCreate, ScheduleWakeup, /loop) has not fired yet (DOR-2717). */
   | 'timer-pending'
