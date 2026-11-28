@@ -37,6 +37,7 @@ export const REPO_WIDE_SUITES = [
   // Reads docs/api/openapi.json with docs/api/openapi-internal.json, the route
   // census and the server's hand-written OpenAPI registry (DOR-4996).
   '__tests__/check-api-lint.test.ts',
+  '__tests__/check-api-lint-list-paging-exemptions.test.ts',
   '__tests__/check-boundary.test.ts',
   // Reads package.json, lefthook.yml and ci/required-checks.json (DOR-4947).
   '__tests__/check-cli.test.ts',
