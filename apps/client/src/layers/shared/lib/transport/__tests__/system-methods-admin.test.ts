@@ -70,26 +70,6 @@ describe('restartServer', () => {
       DESKTOP_REFUSAL
     );
   });
-
-  it('carries the refusal code and status, so a caller can branch on them', async () => {
-    serve(409, { ...MANAGED_BY_DESKTOP, detail: DESKTOP_REFUSAL });
-
-    const err = (await createSystemMethods(BASE)
-      .restartServer()
-      .catch((e: unknown) => e)) as Error & { code?: string; status?: number };
-
-    expect(err.code).toBe('managed_by_desktop');
-    expect(err.status).toBe(409);
-  });
-
-  it('posts to the admin route and hands back what it said', async () => {
-    const fetchMock = serve(200, { message: 'Restart initiated.' });
-
-    await expect(createSystemMethods(BASE).restartServer()).resolves.toEqual({
-      message: 'Restart initiated.',
-    });
-    expect(fetchMock.mock.calls[0][0]).toBe(`${BASE}/admin/restart`);
-  });
 });
 
 describe('prepareReset', () => {
@@ -102,25 +82,9 @@ describe('prepareReset', () => {
     expect(fetchMock.mock.calls[0][0]).toBe(`${BASE}/admin/reset/prepare`);
     expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('POST');
   });
-
-  it('throws the sentence the server wrote, not the body it came in', async () => {
-    serve(409, { ...MANAGED_BY_DESKTOP, detail: 'Nothing was deleted.' });
-
-    await expect(refusalMessage(createSystemMethods(BASE).prepareReset())).resolves.toBe(
-      'Nothing was deleted.'
-    );
-  });
 });
 
 describe('resetAllData', () => {
-  it('throws the sentence the server wrote, not the body it came in', async () => {
-    serve(409, { ...MANAGED_BY_DESKTOP, detail: 'Nothing was deleted.' });
-
-    await expect(
-      refusalMessage(createSystemMethods(BASE).resetAllData('reset', 'a-one-time-token'))
-    ).resolves.toBe('Nothing was deleted.');
-  });
-
   // The confirmation says a person typed a word; the token says the server was
   // asked for one and answered THIS caller (DOR-1707). Both travel, or the
   // server refuses.

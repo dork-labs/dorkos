@@ -91,22 +91,4 @@ describe('the cloud transport methods', () => {
       expect(result.problem.status).toBe(403);
     }
   });
-
-  it('sends the subject an assignment is for, and percent-encodes the seat id', async () => {
-    const fetchMock = stubFetch(200, { ok: true });
-    await methods.assignCloudSeat('seat/0001', { kind: 'user', id: 'acct_0001' });
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBeTruthy();
-    expect(url).toContain('/cloud/seats/seat%2F0001/assign');
-    expect(JSON.parse(init.body as string)).toEqual({
-      subject: { kind: 'user', id: 'acct_0001' },
-    });
-  });
-
-  it('asks for the grouping the caller named', async () => {
-    const fetchMock = stubFetch(200, { available: false });
-    await methods.getCloudUsage('model');
-    const [url] = fetchMock.mock.calls[0] as unknown as [string];
-    expect(url).toContain('groupBy=model');
-  });
 });

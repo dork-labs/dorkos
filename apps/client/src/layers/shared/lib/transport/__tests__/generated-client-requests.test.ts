@@ -6,6 +6,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createAccountSigninMethods } from '../account-signin-methods';
+import { createCloudMethods } from '../cloud-methods';
 import { createComputerMethods } from '../computer-methods';
 import { createFrameBridgeMethods } from '../frame-bridge-methods';
 import { createOnboardingMethods } from '../onboarding-methods';
@@ -15,6 +16,7 @@ import { createProjectMethods } from '../project-methods';
 import { createQueuedChatMethods } from '../queued-chat-methods';
 import { createRemoteAccessMethods } from '../remote-access-methods';
 import { createSessionLocationMethods } from '../session-location-methods';
+import { createSystemMethods } from '../system-methods';
 import { createTasksMethods } from '../task-methods';
 import { createTeamMethods } from '../team-methods';
 import { createWorkQueueMethods } from '../work-queue-methods';
@@ -31,6 +33,8 @@ const profile = createProfileMethods(base);
 const tasks = createTasksMethods(base);
 const queue = createWorkQueueMethods(base);
 const locations = createSessionLocationMethods(base);
+const cloud = createCloudMethods(base);
+const system = createSystemMethods(base);
 const input = {
   leaseId: 'l1',
   generation: 2,
@@ -139,6 +143,57 @@ const plain: Record<string, () => Promise<unknown>> = {
   'GET /api/permissions/history?agentId=a+1&cursor=c&limit=5': () =>
     perms.getPermissionHistory({ agentId: 'a 1', cursor: 'c', limit: 5 }),
   'POST /api/permissions/history/e%2F1/undo {}': () => perms.undoPermissionChange('e/1'),
+  // Cloud. The bodyless writes send no body, as they always have.
+  'POST /api/cloud/link/start': () => cloud.startCloudLink(),
+  'GET /api/cloud/link/status': () => cloud.getCloudLinkStatus(),
+  'POST /api/cloud/link/cancel': () => cloud.cancelCloudLink(),
+  'POST /api/cloud/unlink': () => cloud.unlinkCloud(),
+  'GET /api/cloud/status': () => cloud.getCloudStatus(),
+  'POST /api/cloud/link/check': () => cloud.checkCloudLink(),
+  'GET /api/cloud/offers': () => cloud.getCloudOffers(),
+  'POST /api/cloud/seats/s%2F1/assign {"subject":{"kind":"user","id":"u1"}}': () =>
+    cloud.assignCloudSeat('s/1', { kind: 'user', id: 'u1' }),
+  'POST /api/cloud/billing/portal {}': () => cloud.createCloudBillingSession('portal'),
+  'POST /api/cloud/billing/checkout {"skuId":"k1"}': () =>
+    cloud.createCloudBillingSession('checkout', 'k1'),
+  'POST /api/cloud/account/export': () => cloud.requestCloudAccountExport(),
+  'POST /api/cloud/account/deletion': () => cloud.requestCloudAccountDeletion(),
+  'PUT /api/cloud/credits/default {"runtime":"codex","useCredits":true}': () =>
+    cloud.setCloudCreditsDefault('codex', true),
+  'POST /api/cloud/communities {"idempotencyKey":"k","name":"Team"}': () =>
+    cloud.startHostedCommunity({ idempotencyKey: 'k', name: 'Team' }),
+  'POST /api/cloud/communities/c%2F1/keep {"expectedHeldCommunityIds":["c2"]}': () =>
+    cloud.keepHostedCommunity('c/1', ['c2']),
+  'POST /api/cloud/communities/c%2F1/restore': () => cloud.restoreHostedCommunity('c/1'),
+  'POST /api/cloud/communities/moves/m%2F1/upload': () =>
+    cloud.retryHostedCommunityMoveUpload('m/1'),
+  // Files, diffs and system reads. A flag goes out only when it is on.
+  'GET /api/directory?path=%2Fa+b&showHidden=true': () => system.browseDirectory('/a b', true),
+  'GET /api/directory': () => system.browseDirectory(undefined, false),
+  'GET /api/directory/default': () => system.getDefaultCwd(),
+  'GET /api/files/content?cwd=%2Fr&path=a+b.md': () => system.readFileContent('/r', 'a b.md'),
+  'GET /api/diff/baseline?cwd=%2Fr&path=a&sessionId=s1&mode=head': () =>
+    system.readDiffBaseline('/r', 'a', 's1', 'head'),
+  'POST /api/diff/baseline/advance {"cwd":"/r","path":"a","sessionId":"s1"}': () =>
+    system.advanceDiffBaseline('/r', 'a', 's1'),
+  'POST /api/diff/revert {"cwd":"/r","path":"a","sessionId":"s1"}': () =>
+    system.revertDiffBaseline('/r', 'a', 's1'),
+  'POST /api/files {"cwd":"/r","path":"d","type":"dir"}': () =>
+    system.createEntry('/r', 'd', 'dir'),
+  'POST /api/files {"cwd":"/r","path":"f","type":"file","content":"x"}': () =>
+    system.createEntry('/r', 'f', 'file', 'x'),
+  'DELETE /api/files?cwd=%2Fr&path=d&recursive=true': () =>
+    system.deleteEntry('/r', 'd', { recursive: true }),
+  'DELETE /api/files?cwd=%2Fr&path=f': () => system.deleteEntry('/r', 'f'),
+  'POST /api/files/rename {"cwd":"/r","from":"a","to":"b"}': () =>
+    system.renameEntry('/r', 'a', 'b'),
+  'POST /api/files/reveal {"cwd":"/r","path":"a"}': () => system.revealEntry('/r', 'a'),
+  'GET /api/commands?refresh=true&cwd=%2Fr&sessionId=s1&runtime=codex': () =>
+    system.getCommands(true, '/r', { sessionId: 's1', runtime: 'codex' }),
+  'GET /api/commands': () => system.getCommands(),
+  'GET /api/health': () => system.health(),
+  'GET /api/keep-awake': () => system.getKeepAwake(),
+  'GET /api/templates': () => system.getTemplates(),
 };
 
 describe('calls on the generated client', () => {
