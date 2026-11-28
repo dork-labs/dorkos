@@ -16,16 +16,25 @@
  *
  * **Where its words wait.** With the scheduler's watch of the run, in this
  * process (`task-run:<id>`): a restart before the turn starts cancels the
- * turn's run (`start_lost`), and the task's own run is ended as interrupted by
- * the scheduler's boot sweep, as it was.
+ * turn's run (`start_lost`).
+ *
+ * **After a restart** (§7.3, DOR-5496). The scheduler that read a turn dies
+ * with its boot, so the run record hands the turn's run back through this
+ * source once a restart cut it or lost its start (`WordSource.ended`), and the
+ * task's run ends with that run's ending (`task-run-endings.ts`), once. The
+ * scheduler's boot sweep leaves alone a task run the record still owes its
+ * ending ({@link TaskTurns.owesEnding}). The source is registered as soon as
+ * the door is built, so a gone boot's start finds a reader, not a wait.
  *
  * @module services/tasks/execution/task-turns
  */
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { PermissionMode, StreamEvent } from '@dorkos/shared/types';
 import { formatDorkReference } from '@dorkos/shared/dork-ref';
-import type { SpaceTurnPort, TurnRun } from '../../runs/index.js';
+import type { SpaceTurnPort } from '../../runs/index.js';
+import type { TaskStore } from '../task-store.js';
 import type { RunExecutionSettings } from './resolve-run-execution.js';
+import { endTaskRun, notStartedLine } from './task-run-endings.js';
 
 /** The source kind a task's run keeps its words under: the scheduler's watch of it. */
 export const TASK_RUN_SOURCE = 'task-run';
@@ -80,25 +89,14 @@ export interface TaskTurns {
    * @param request - What the turn is.
    */
   open(request: TaskTurnRequest): TaskTurn;
-}
-
-/** The run row's sentence for each reason the port gives a run that never started. */
-const NOT_STARTED: Readonly<Record<string, string>> = {
-  start_lost: 'The run did not start: DorkOS restarted before it began.',
-  expired: 'The run did not start: it waited too long for a free slot.',
-  start_failed: 'The run did not start: DorkOS could not hand it to the agent.',
-  agent_paused: 'The run did not start: its agent is paused.',
-  desk_not_own: 'The run did not start: its folder belongs to another agent.',
-  invalid_agent_path: 'The run did not start: its agent is not registered.',
-  account_not_allowed: 'The run did not start: its account may not work in this project.',
-  unknown_runtime: 'The run did not start: its runtime is not available here.',
-  runtime_mismatch: 'The run did not start: its runtime is not available here.',
-};
-
-/** Why a run the port never started did not start, in a sentence for the run row. */
-function notStartedLine(run: TurnRun): string {
-  const why = run.endingDetail.cancelledBecause;
-  return (why && NOT_STARTED[why]) ?? 'The run did not start.';
+  /**
+   * Whether the run record still owes a task's run its ending: its turn's run
+   * is live or waiting, or a restart ended it and recovery has not decided it.
+   * The record ends such a run itself; nothing else may.
+   *
+   * @param taskRunId - The task's run (`pulse_runs.id`).
+   */
+  owesEnding?(taskRunId: string): boolean;
 }
 
 /**
@@ -106,8 +104,13 @@ function notStartedLine(run: TurnRun): string {
  * face, so the tasks domain reads the port only through its types.
  *
  * @param port - The space face, read at call time; `undefined` before startup wired it.
+ * @param store - The task store a run a restart ended is closed in; without
+ *   one, the scheduler's boot sweep closes it.
  */
-export function portTaskTurns(port: () => SpaceTurnPort | undefined): TaskTurns {
+export function portTaskTurns(
+  port: () => SpaceTurnPort | undefined,
+  store?: Pick<TaskStore, 'updateRun' | 'markRunsInterrupted'>
+): TaskTurns {
   /** The words of the runs this process is watching, by task run id. */
   const words = new Map<string, string>();
   let registeredOn: SpaceTurnPort | undefined;
@@ -116,11 +119,17 @@ export function portTaskTurns(port: () => SpaceTurnPort | undefined): TaskTurns 
     if (!face) throw new Error('DorkOS is still starting. Try the task again in a moment.');
     if (face !== registeredOn) {
       registeredOn = face;
-      face.registerSource(TASK_RUN_SOURCE, { read: (id) => words.get(id) });
+      face.registerSource(TASK_RUN_SOURCE, {
+        read: (id) => words.get(id),
+        ...(store ? { ended: (id, run, told) => endTaskRun(store, id, run, told) } : {}),
+      });
     }
     return face;
   };
+  if (port()) door();
   return {
+    owesEnding: (taskRunId) =>
+      store !== undefined && port()?.owesEnding(`${TASK_RUN_SOURCE}:${taskRunId}`) === true,
     open(request) {
       const face = door();
       words.set(request.runId, request.prompt);

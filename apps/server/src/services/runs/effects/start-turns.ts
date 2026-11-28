@@ -76,10 +76,14 @@ export class StartTurns implements HandedStarts {
     if (to === 'cancelled' && run.origin?.kind === 'extension-start') {
       const app = this.port()?.appOf(run);
       if (app) this.effects.insert(workNotStartedNotice(run, app, this.now()));
-    } else if (to === 'cancelled' && this.lostRecently(run)) {
+    } else if (to === 'cancelled' && run.endingDetail.cancelledBecause === 'start_lost') {
       // Its start was lost with the process that held it: whoever asked
-      // hears once (§7.3, step 5). Rowless, so never a person's own words.
-      this.effects.insert(restartNotice(run, 'start_lost', this.now()));
+      // hears once (§7.3, step 5), through its source's own record when it
+      // keeps one (a task's run), else a notice. Rowless, so never a
+      // person's own words. Past the age bound, nobody is told.
+      const recent = this.lostRecently(run);
+      const heard = this.port()?.endedUnwatched(run, recent) === true;
+      if (recent && !heard) this.effects.insert(restartNotice(run, 'start_lost', this.now()));
     }
     // A continuation that will never start no longer holds its chat's
     // launches (§7.5): the chat's queue moves now, after this write commits.
@@ -99,12 +103,9 @@ export class StartTurns implements HandedStarts {
     this.port()?.moved(run);
   }
 
-  /** A run cancelled as `start_lost` whose last sign of life is within the age bound (§7.3). */
+  /** Whether a run's last sign of life, its `created_at`, is within the age bound (§7.3). */
   private lostRecently(run: TurnRun): boolean {
-    return (
-      run.endingDetail.cancelledBecause === 'start_lost' &&
-      this.now() - Date.parse(run.createdAt) <= RUNS.RESTART_AGE_BOUND_MS
-    );
+    return this.now() - Date.parse(run.createdAt) <= RUNS.RESTART_AGE_BOUND_MS;
   }
 
   /**

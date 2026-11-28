@@ -184,6 +184,7 @@ export function createRunRecord(db: Db, opts: RunRecordOptions): RunRecord {
       scheduleCap.onRunMoved(run, from);
       webChatCap.onRunMoved(run, from);
       starts.onRunMoved(run, from);
+      recovery.onRunMoved(run, from);
       announcer.changed(run.sessionId);
     },
     onChanged: (chatKey) => announcer.changed(chatKey),

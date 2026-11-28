@@ -5,7 +5,21 @@
 import { eq } from 'drizzle-orm';
 import { pulseRuns, type Db } from '@dorkos/db';
 import type { TaskRun, TaskRunStatus, TaskRunOutcome } from '@dorkos/shared/types';
+import { RUN_LINE } from '@dorkos/shared/schedule-notice-copy';
 import { refusedToolsColumnOf, type RunCap, type RunCapFile } from './run-cap-column.js';
+
+/** The status and line a run is ended with when nothing is left to read its turn. */
+export interface RunEndingFields {
+  status: Extract<TaskRunStatus, 'completed' | 'failed' | 'cancelled'>;
+  /** The line a person reads, or `null` for none. */
+  error: string | null;
+}
+
+/** A run a restart interrupted. The notice reads this opening back as "DorkOS restarted" (DOR-4121). */
+export const INTERRUPTED_BY_RESTART: RunEndingFields = {
+  status: 'failed',
+  error: RUN_LINE.serverRestart,
+};
 
 /** Fields that can be updated on a run. */
 export interface RunUpdate {

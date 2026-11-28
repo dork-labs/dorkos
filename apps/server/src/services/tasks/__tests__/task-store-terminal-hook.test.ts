@@ -64,6 +64,29 @@ describe('TaskStore run-terminal hook (DOR-240)', () => {
     expect(store.getRun(created.id)?.status).toBe('completed');
   });
 
+  it('tells nobody of a write its caller’s transaction rolled back (DOR-5496)', async () => {
+    const task = store.createTask(taskInput('rolled-back'));
+    const created = store.createRun(task.id, 'scheduled');
+    const listener = vi.fn();
+    const notice = vi.fn();
+    store.setOnRunTerminal(listener);
+    store.runNotices.terminal = notice;
+
+    // The run record ends a task run inside its own transaction; a later
+    // write in it that fails takes the ending back, and nothing was told.
+    expect(() =>
+      db.transaction(() => {
+        store.updateRun(created.id, { status: 'failed', error: 'cut' });
+        throw new Error('a later write in the same transaction failed');
+      })
+    ).toThrow();
+    await flush();
+
+    expect(store.getRun(created.id)?.status).toBe('running');
+    expect(listener).not.toHaveBeenCalled();
+    expect(notice).not.toHaveBeenCalled();
+  });
+
   it('a throwing listener does not break the DB write or the returned run', async () => {
     const task = store.createTask(taskInput('throws'));
     const created = store.createRun(task.id, 'scheduled');
